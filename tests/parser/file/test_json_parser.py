@@ -79,3 +79,29 @@ def test_json_parser_scalar_preserves_custom_decoder(tmp_path, concat_rows):
     result = JSONParser(concat_rows=concat_rows, json_config={"parse_float": Decimal}).parse_file(path)
     assert result == ("1.25" if concat_rows else [Decimal("1.25")])
 
+
+def test_json_parser_malformed_json_raises_document_parse_error(tmp_path):
+    """A truncated export fails as ``DocumentParseError``, not ``JSONDecodeError``.
+
+    ``SimpleDirectoryReader.load_data`` skips only ``DocumentParseError``, so
+    the raw decode error used to abort an entire multi-file ingest, and the
+    attachment tasks autoretry everything except that type, re-failing a
+    deterministic poison file on every retry.
+    """
+    from docsgpt.parser.file.base_parser import DocumentParseError
+
+    path = tmp_path / "truncated.json"
+    path.write_text('{"key": "value", "list": [1, 2', encoding="utf-8")
+    with pytest.raises(DocumentParseError, match="truncated.json"):
+        JSONParser().parse_file(path)
+
+
+def test_json_parser_invalid_utf8_raises_document_parse_error(tmp_path):
+    """Bytes that are not valid UTF-8 are not valid JSON and fail the same way."""
+    from docsgpt.parser.file.base_parser import DocumentParseError
+
+    path = tmp_path / "binary.json"
+    path.write_bytes(b'\xff\xfe{"key": "value"}')
+    with pytest.raises(DocumentParseError, match="binary.json"):
+        JSONParser().parse_file(path)
+
