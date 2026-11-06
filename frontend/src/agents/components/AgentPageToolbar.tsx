@@ -85,9 +85,9 @@ export default function AgentPageToolbar({
   return (
     <PageToolbar
       intro={byline}
-      // The spacer only matters beside the byline (sm up); stacked on a
-      // phone it would be an empty band.
-      action={action ?? <div aria-hidden className="hidden h-9.5 sm:block" />}
+      // The spacer only matters beside the byline (a toolbar @2xl wide, as
+      // the row stacks); on a narrower one it would be an empty band.
+      action={action ?? <div aria-hidden className="hidden h-9.5 @2xl:block" />}
       stack={Boolean(actions)}
       divider
     >

@@ -2432,7 +2432,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }
           loading={publishLoading}
           onClick={handlePublish}
-          className="flex-1 sm:flex-none"
+          // Stretched while the toolbar's row is stacked (by its width, so
+          // also beside the docked drawer).
+          className="flex-1 @2xl:flex-none"
         >
           {modeConfig[effectiveMode].buttonText}
         </Button>

@@ -1834,11 +1834,13 @@ describe('NewAgent form', () => {
     expect(sheet.textContent).toContain('agents.form.preview.publishTitle');
   });
 
-  it('stretches the main button on a phone', async () => {
+  // By the toolbar's width, as its row stacks: also with the drawer docked.
+  it('stretches the main button while the toolbar row is stacked', async () => {
     await render();
-    const publish = buttonByText('agents.form.buttons.publish');
+    const publish = buttonByText('agents.form.buttons.publish')!;
     expect(publish.className).toContain('flex-1');
-    expect(publish.className).toContain('sm:flex-none');
+    expect(publish.className).toContain('@2xl:flex-none');
+    expect(publish.className).not.toContain('sm:flex-none');
   });
 
   // The sidebar (and the agent card's menu) already switch between an
