@@ -62,6 +62,9 @@ const endpoints = {
       `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
     RESOURCE_SETTINGS: '/api/resource_settings',
     ALL_TEAMS: '/api/admin/teams',
+    // The drafter's routes (session-only on the server; access tokens get 403).
+    DRAFTER_CONFIG: '/api/drafter/config',
+    DRAFTER_STREAM: '/api/drafter/stream',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',

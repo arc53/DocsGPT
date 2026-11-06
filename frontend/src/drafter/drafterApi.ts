@@ -1,12 +1,7 @@
 import apiClient from '../api/client';
+import endpoints from '../api/endpoints';
 import { isQuotaError } from '../conversation/quotaError';
 import { readSSEStream } from '../events/eventStreamClient';
-
-/** The drafter's routes (session-only on the server; access tokens get 403). */
-export const DRAFTER_ENDPOINTS = {
-  CONFIG: '/api/drafter/config',
-  STREAM: '/api/drafter/stream',
-} as const;
 
 /**
  * The server's caps on the history a turn sends (docsgpt/drafter/service.py):
@@ -112,7 +107,7 @@ export async function getDrafterConfig(
   };
   try {
     const response: Response = await apiClient.get(
-      DRAFTER_ENDPOINTS.CONFIG,
+      endpoints.USER.DRAFTER_CONFIG,
       token,
       {},
       signal,
@@ -196,7 +191,7 @@ export async function streamDrafter(
   let response: Response;
   try {
     response = await apiClient.post(
-      DRAFTER_ENDPOINTS.STREAM,
+      endpoints.USER.DRAFTER_STREAM,
       request,
       token,
       {},

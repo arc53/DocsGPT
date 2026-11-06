@@ -70,15 +70,6 @@ function checks(value: unknown): PromptCheck[] {
   );
 }
 
-/**
- * A `proposal` event's payload as a prompt proposal.
- *
- * Args:
- *   raw: The payload.
- *
- * Returns:
- *   The proposal, or null when it isn't one.
- */
 /** A proposal's `edits`, malformed ones dropped. */
 export function readPromptEdits(raw: unknown): PromptEdit[] {
   if (!Array.isArray(raw)) return [];
@@ -102,6 +93,15 @@ export function readPromptEdits(raw: unknown): PromptEdit[] {
 /** A proposal's `checks`, unknown codes dropped. */
 export const readPromptChecks = (raw: unknown): PromptCheck[] => checks(raw);
 
+/**
+ * A `proposal` event's payload as a prompt proposal.
+ *
+ * Args:
+ *   raw: The payload.
+ *
+ * Returns:
+ *   The proposal, or null when it isn't one.
+ */
 export function readPromptProposal(raw: unknown): PromptProposal | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
