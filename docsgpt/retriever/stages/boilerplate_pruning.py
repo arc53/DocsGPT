@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
@@ -355,10 +356,29 @@ def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[
 
     return docs
 
+def _mac_torch_faiss_conflict() -> bool:
+    """Check if loading PyTorch on macOS would collide with FAISS in the same process."""
+    if sys.platform != "darwin":
+        return False
+    if "faiss" in sys.modules:
+        return True
+    try:
+        from docsgpt.core.settings import settings
+
+        return getattr(settings, "VECTOR_STORE", "faiss") == "faiss"
+    except Exception:
+        return True
+
+
 def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
     """Compresses retrieved chunks using SuperCompress when available, falling back to in-tree boilerplate pruning."""
     if not docs:
         return docs
+
+    # On macOS, PyTorch and FAISS cannot share the same process without aborting.
+    # Fall back to in-tree boilerplate pruning when they would share a macOS process.
+    if _mac_torch_faiss_conflict():
+        return prune_boilerplate(docs, query=query or "")
 
     try:
         from supercompress import compress_for_turn

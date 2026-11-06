@@ -693,6 +693,30 @@ class TestCompressingRetrieverIntegration:
             out2 = compress_retrieved_chunks(docs2, query="test")
             assert out2[0]["text"] == "Compressed text from object"
 
+    def test_supercompress_macos_faiss_collision_uses_intree_pruning(self, monkeypatch):
+        """On macOS, torch and FAISS must never share a process; falls back to in-tree pruning."""
+        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+
+        mock_compress_for_turn = Mock(return_value=("SuperCompressed text", Mock()))
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+
+        docs = [{"id": "doc1", "text": "Home > Guides\nFactual chunk.", "source": "s1"}]
+
+        # On macOS with faiss loaded: uses in-tree pruning without invoking SuperCompress
+        monkeypatch.setattr("sys.platform", "darwin")
+        with patch.dict("sys.modules", {"supercompress": mock_module, "faiss": Mock()}):
+            res = compress_retrieved_chunks(docs, query="query")
+            assert res[0]["text"] == "Factual chunk."
+            mock_compress_for_turn.assert_not_called()
+
+        # On non-macOS (e.g. linux), SuperCompress is used even if faiss is present
+        monkeypatch.setattr("sys.platform", "linux")
+        with patch.dict("sys.modules", {"supercompress": mock_module, "faiss": Mock()}):
+            res2 = compress_retrieved_chunks(docs, query="query")
+            assert res2[0]["text"] == "SuperCompressed text"
+            mock_compress_for_turn.assert_called_once()
+
+
 
     def test_token_reduction_and_oracle_recall_on_evaluation_set(self):
         """Measures token reduction and oracle recall on a representative evaluation set."""
