@@ -274,6 +274,24 @@ class TestAvailability:
             read.assert_not_called()
 
 
+    def test_a_saved_agents_own_sources_give_their_folders_too(self, monkeypatch):
+        # An editor building the owner's agent: the owner's private source is on the agent, not attachable.
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter import topics_recipe
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        saved = Workspace(sources=[{"id": SOURCE_ID, "name": "Help"}], agent={"id": "a1", "name": "Docs"})
+        form = {"sources": [SOURCE_ID, "owners-private", "not-on-it"]}
+        context = {"agent_id": "a1", "step": "safety", "form": form}
+        with patch.object(agent_recipe, "load_workspace", return_value=saved), patch(
+            "docsgpt.decisions.available", return_value=True
+        ), patch.object(topics_recipe, "topics_status", return_value={"available": False}), patch.object(
+            agent_recipe, "saved_source_ids", return_value={"owners-private"}
+        ) as saved_ids, patch.object(agent_recipe, "source_folders", return_value=FOLDERS) as read:
+            AGENT_RECIPE.load_workspace("bob", context)
+            saved_ids.assert_called_once_with("bob", "a1")
+            read.assert_called_once_with([SOURCE_ID, "owners-private"])
+
     def test_the_agents_own_saved_prompt_is_read_whole(self, monkeypatch):
         loaded = _ws()
         context = {"agent_id": None, "step": "prompt", "form": {"prompt_id": PROMPT_ID}}
@@ -288,6 +306,26 @@ class TestAvailability:
             assert AGENT_RECIPE.load_workspace("alice", {**context, "form": draft}).editable_prompt_text is None
             AGENT_RECIPE.load_workspace("alice", {**context, "form": {"prompt_id": "strict"}})
             read.assert_not_called()
+
+
+def test_saved_source_ids_are_the_agents_for_someone_who_can_edit_it(pg_conn):
+    from contextlib import contextmanager
+
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+    first = SourcesRepository(pg_conn).create("Docs", user_id="alice")
+    second = SourcesRepository(pg_conn).create("Wiki", user_id="alice")
+    agent = AgentsRepository(pg_conn).create("alice", "Bot", "published", key="k-saved-sources",
+                                             source_id=str(first["id"]), extra_source_ids=[str(second["id"])])
+
+    @contextmanager
+    def _same():
+        yield pg_conn
+
+    with patch("docsgpt.storage.db.session.db_readonly", _same):
+        assert agent_recipe.saved_source_ids("alice", str(agent["id"])) == {str(first["id"]), str(second["id"])}
+        assert agent_recipe.saved_source_ids("mallory", str(agent["id"])) == set()
 
 
 def test_saved_prompt_text_reads_the_callers_prompt_uncut(pg_conn):

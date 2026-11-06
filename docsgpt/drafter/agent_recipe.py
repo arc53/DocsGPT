@@ -276,6 +276,25 @@ def source_folders(source_ids: list[str]) -> list[dict]:
     return analytics_topics.folders(rows)
 
 
+def saved_source_ids(user_id: str, agent_id: str) -> set[str]:
+    """The saved agent's source ids, when the caller may edit it (empty otherwise).
+
+    An editor's form keeps the owner's private sources, which the editor can't attach: their folders are still
+    the agent's topics.
+    """
+    from docsgpt.analytics.topics import agent_sources
+    from docsgpt.api.user.resource_access import AccessDenied
+    from docsgpt.drafter.topics_recipe import editable_agent
+    from docsgpt.storage.db.session import db_readonly
+
+    with db_readonly() as conn:
+        try:
+            agent = editable_agent(conn, user_id, agent_id)
+        except AccessDenied:
+            return set()
+        return {str(row["id"]) for row in agent_sources(conn, agent)}
+
+
 def saved_prompt_text(user_id: str, prompt_id: str) -> Optional[str]:
     """The whole text of the caller's own saved prompt, cleaned as the model reads it but not cut; None if not theirs."""
     from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -308,8 +327,9 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
     if context.get("step") == "safety" and out.insights:
         from docsgpt.drafter import topics_recipe
 
-        attachable = ws.ids("sources")
-        out.folders = source_folders([s for s in (context.get("form") or {}).get("sources", []) if s in attachable])
+        # The form's sources the caller may attach, and those already on the saved agent.
+        known = ws.ids("sources") | (saved_source_ids(user_id, ws.agent["id"]) if ws.agent else set())
+        out.folders = source_folders([s for s in form.get("sources", []) if s in known])
         if ws.agent:
             try:
                 out.topics_from_conversations = bool(topics_recipe.topics_status(user_id, ws.agent["id"])["available"])

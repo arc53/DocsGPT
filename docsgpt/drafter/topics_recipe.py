@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from sqlalchemy import Connection
+
 from docsgpt.analytics import schema as analytics_schema, topics as analytics_topics
 from docsgpt.analytics.config import (
     AnalyticsConfig,
@@ -189,7 +191,7 @@ def parse_context(raw: Any) -> dict:
     return {"agent_id": agent_id.strip()[:_ID_CHARS]}
 
 
-def _editable_agent(conn, user_id: str, agent_id: str) -> dict:
+def editable_agent(conn: Connection, user_id: str, agent_id: str) -> dict:
     """The agent row, when the caller may edit it.
 
     Raises:
@@ -254,7 +256,7 @@ def topics_status(user_id: str, agent_id: str) -> dict:
     from docsgpt.storage.db.session import db_readonly
 
     with db_readonly() as conn:
-        agent = _editable_agent(conn, user_id, agent_id)
+        agent = editable_agent(conn, user_id, agent_id)
         reason = insights_off(agent)
         if reason:
             return {"available": False, "conversations": 0, "needed": MIN_CONVERSATIONS, "reason": reason}
@@ -310,7 +312,7 @@ def load_workspace(user_id: str, context: dict) -> TopicsWorkspace:
     )
     with db_readonly() as conn:
         try:
-            agent = _editable_agent(conn, user_id, context["agent_id"])
+            agent = editable_agent(conn, user_id, context["agent_id"])
         except AccessDenied as denied:
             raise BadDraftRequest(denied.message) from None
         off = insights_off(agent)
