@@ -102,6 +102,7 @@ import { usePromptReview } from '../drafter/usePromptReview';
 import { promptAsRead, type PromptEdit } from '../drafter/promptDraft';
 import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
+import { joinList } from '../settings/insights/format';
 import { can } from '../utils/accessUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import {
@@ -1424,9 +1425,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     );
     return edited.length > 0
       ? t('drafter.agent.formEdited', {
-          fields: edited
-            .map(({ field }) => t(AGENT_FIELD_LABEL_KEYS[field]))
-            .join(', '),
+          fields: joinList(
+            edited.map(({ field }) => t(AGENT_FIELD_LABEL_KEYS[field])),
+          ),
           interpolation: { escapeValue: false },
         })
       : undefined;
@@ -1660,7 +1661,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           // Three or more steps fold into one line that opens a row each.
           <DrafterStepRow
             icon={CircleCheck}
-            label={build.finished.map(stepName).join(', ')}
+            label={joinList(build.finished.map(stepName))}
           >
             {build.finished.map((step) => (
               <FilledRow

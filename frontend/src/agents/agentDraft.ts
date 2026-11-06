@@ -8,6 +8,7 @@ import {
 } from '../drafter/promptDraft';
 import type { ProposalReasonRow } from '../drafter/ProposalSummary';
 import type { DrafterStarter } from '../drafter/starters';
+import { joinList } from '../settings/insights/format';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { newTopicId } from './analyticsConfig';
 import {
@@ -781,6 +782,6 @@ export function agentStepResult(
     }
   }
   return parts.length > 0
-    ? parts.join(', ')
+    ? joinList(parts)
     : t('drafter.agent.build.result.none');
 }

@@ -1,3 +1,5 @@
+import i18next from 'i18next';
+
 import { DEFAULT_ANALYTICS } from './analyticsConfig';
 import {
   type AgentDraftForm,
@@ -746,14 +748,24 @@ describe('agentDraft', () => {
       'agents.pageHeader.fallbackName',
     );
     expect(agentStepResult('knowledge', filled, t, '')).toBe(
-      'drafter.counts.sources:2, Tracking API',
+      'drafter.counts.sources:2 and Tracking API',
     );
     expect(agentStepResult('prompt', filled, t, 'Support')).toBe(
-      'Support, drafter.agent.build.result.starters:2',
+      'Support and drafter.agent.build.result.starters:2',
     );
     expect(agentStepResult('safety', filled, t, '')).toBe(
-      'drafter.agent.build.result.requests:500, drafter.agent.build.result.checks:2',
+      'drafter.agent.build.result.requests:500 and drafter.agent.build.result.checks:2',
     );
+    // Listed the way the language lists things.
+    const language = i18next.language;
+    i18next.language = 'ja';
+    try {
+      expect(agentStepResult('prompt', filled, t, 'Support')).toBe(
+        'Support、drafter.agent.build.result.starters:2',
+      );
+    } finally {
+      i18next.language = language;
+    }
     expect(agentStepResult('knowledge', form(), t, '')).toBe(
       'drafter.agent.build.result.none',
     );
