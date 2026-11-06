@@ -31,6 +31,7 @@ def settings(monkeypatch):
         ("OCR_DEEPSEEK_MAX_RETRIES", 3),
         ("OCR_DEEPSEEK_TIMEOUT", 300.0),
         ("OCR_DEEPSEEK_PROMPT", "Free OCR."),
+        ("OCR_DEEPSEEK_EXTRA_BODY", None),
         ("NOVITA_API_KEY", None),
     ):
         monkeypatch.setattr(settings, name, value)
@@ -226,6 +227,23 @@ class TestResolveEndpoint:
         assert "sk-secret-value" not in text
         assert "novita" in text and "deepseek/deepseek-ocr-2" in text
 
+    def test_extra_body_is_parsed(self, settings):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = '{"mm_processor_kwargs": {"max_slice_nums": 9}}'
+        endpoint = op.resolve_deepseek_endpoint()
+        assert endpoint.extra_body == {"mm_processor_kwargs": {"max_slice_nums": 9}}
+        assert endpoint.extra_body_problem is None
+
+    @pytest.mark.parametrize("value", ["{not json", "[1, 2]"])
+    def test_malformed_extra_body_names_the_setting(self, settings, value):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = value
+        endpoint = op.resolve_deepseek_endpoint()
+        assert endpoint.extra_body == {}
+        assert "OCR_DEEPSEEK_EXTRA_BODY" in endpoint.extra_body_problem
+
+    def test_extra_body_is_described_by_key(self, settings):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = '{"mm_processor_kwargs": {}}'
+        assert "extra_body=mm_processor_kwargs" in op.resolve_deepseek_endpoint().describe()
+
 
 # ---------------------------------------------------------------------------
 # Engine: auth, errors, retries, usage
@@ -241,6 +259,36 @@ class TestEngineRequests:
         assert engine.url == "https://api.novita.ai/openai/chat/completions"
         assert engine.model == "deepseek/deepseek-ocr-2"
         assert engine.concurrency == 4
+
+    def test_extra_body_fields_are_sent_with_the_page(self, settings, monkeypatch):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = json.dumps(
+            {"mm_processor_kwargs": {"max_slice_nums": 9, "downsample_mode": "4x"}}
+        )
+        post = FakePost(FakeResponse(body=_completion("hello")))
+        monkeypatch.setattr("requests.post", post)
+        assert op.DeepseekOcrEngine().ocr_image(_image()) == "hello"
+        assert post.calls[0]["json"]["mm_processor_kwargs"] == {
+            "max_slice_nums": 9,
+            "downsample_mode": "4x",
+        }
+
+    def test_extra_body_cannot_replace_core_fields(self, settings):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = json.dumps(
+            {"model": "other", "messages": [], "max_tokens": 1, "temperature": 9}
+        )
+        body = op.DeepseekOcrEngine().payload(_image())
+        assert body["model"] == "deepseek-ocr:3b"
+        assert body["max_tokens"] == op._DEEPSEEK_MAX_TOKENS
+        assert body["temperature"] == 0
+        assert body["messages"][0]["content"][0]["type"] == "image_url"
+
+    def test_malformed_extra_body_fails_before_any_request(self, settings, monkeypatch):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = "{not json"
+        post = FakePost()
+        monkeypatch.setattr("requests.post", post)
+        with pytest.raises(op.OcrUnavailableError, match="OCR_DEEPSEEK_EXTRA_BODY"):
+            op.DeepseekOcrEngine().ocr_image(_image())
+        assert post.calls == []
 
     def test_sends_the_bearer_token(self, settings, monkeypatch):
         settings.OCR_DEEPSEEK_PROVIDER = "deepinfra"

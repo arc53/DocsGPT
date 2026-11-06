@@ -245,6 +245,10 @@ behind an OpenAI-compatible chat-completions endpoint. It always runs on the
 OCRs images — so it never loads docling, whatever `OCR_BACKEND` says. Pages
 with a text layer are read directly and never sent.
 
+The request speaks the plain OpenAI chat-completions shape, so any OCR model
+served that way works — see [MiniCPM-OCR](#minicpm-ocr) for one that needs an
+extra request field.
+
 Pick where the model runs with a provider preset:
 
 | `OCR_DEEPSEEK_PROVIDER` | Endpoint | Model | Pages in flight |
@@ -277,6 +281,39 @@ throughput, serve `deepseek-ai/DeepSeek-OCR` with vLLM on a GPU and set
 `OCR_DEEPSEEK_PROVIDER=vllm`; vLLM batches concurrent requests, so that
 preset sends four pages at a time. A server behind a token takes it in
 `OCR_DEEPSEEK_API_KEY` too.
+
+### MiniCPM-OCR
+
+[MiniCPM-OCR 1.0](https://huggingface.co/openbmb/MiniCPM-OCR-1.0) is a 1.3B
+Apache-2.0 OCR model that reads English and Chinese pages and returns text or
+Markdown. It uses the same engine; only the model, the prompt and one extra
+request field change:
+
+```bash
+vllm serve openbmb/MiniCPM-OCR-1.0 --port 8000
+```
+
+```env
+OCR_ENABLED=true
+OCR_ENGINE=deepseek
+OCR_DEEPSEEK_PROVIDER=vllm             # http://localhost:8000/v1/chat/completions
+OCR_DEEPSEEK_MODEL=minicpm-ocr         # the name the server was started with
+OCR_DEEPSEEK_PROMPT=Text Recognition:
+OCR_DEEPSEEK_EXTRA_BODY={"mm_processor_kwargs": {"max_slice_nums": 9, "downsample_mode": "4x"}}
+```
+
+`OCR_DEEPSEEK_EXTRA_BODY` is a JSON object merged into every page request. Its
+`mm_processor_kwargs` are the page-slicing arguments MiniCPM-OCR's own client
+sends to vLLM/SGLang; without them dense pages are downsampled more
+aggressively and small text is lost. The core request fields (model, messages,
+max_tokens, temperature) always win over the extra object, and invalid JSON
+fails only the files that need OCR. A server that rejects the field can be
+used by dropping `OCR_DEEPSEEK_EXTRA_BODY` — recognition still works, with the
+server's own slicing defaults.
+
+`OCR_DEEPSEEK_PROVIDER=ollama` works too when the model is served through
+Ollama, and `docsgpt ocr-check` prints the resolved endpoint and the extra
+body keys before you ingest anything.
 
 ### Hosted API
 
