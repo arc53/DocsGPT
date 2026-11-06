@@ -317,7 +317,7 @@ export default function Defaults() {
             disabled={
               !(retrievalChanged || agentsChanged || taskModelChanged) || !valid
             }
-            className="w-full sm:w-auto"
+            className="w-full @2xl:w-auto"
           >
             Save
           </Button>
