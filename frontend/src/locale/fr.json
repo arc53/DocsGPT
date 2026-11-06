@@ -4703,7 +4703,8 @@
         "no_access": "un élément que vous ne pouvez pas ouvrir",
         "invalid": "un élément non valide",
         "other": "un élément inutilisable",
-        "not_allowed": "un réglage que votre rôle ne permet pas de modifier"
+        "not_allowed": "un réglage que votre rôle ne permet pas de modifier",
+        "other_step": "une modification pour une autre étape"
       },
       "build": {
         "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances et les outils, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un point de départ, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",

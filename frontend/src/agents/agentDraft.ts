@@ -101,7 +101,8 @@ export type AgentProposalFields = {
   tools?: string[];
   prompt?:
     | { kind: 'existing'; id: string }
-    | { kind: 'new'; name: string; content: string }
+    /** A prompt it wrote; `checks` say what it does to the one it replaces. */
+    | { kind: 'new'; name: string; content: string; checks: PromptCheck[] }
     /** Changes to the agent's own saved prompt, reviewed in the prompt view. */
     | { kind: 'edit'; id: string; edits: PromptEdit[]; checks: PromptCheck[] };
   starters?: string[];
@@ -230,6 +231,7 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
       kind: 'new',
       name: prompt.name.trim(),
       content: prompt.content,
+      checks: readPromptChecks(prompt.checks),
     };
   else if (prompt?.kind === 'edit' && isString(prompt.id) && prompt.id) {
     const edits = readPromptEdits(prompt.edits);
@@ -607,7 +609,14 @@ export const AGENT_FIELD_LABEL_KEYS: Record<AgentDraftField, string> = {
   analytics: 'agents.form.sections.analytics',
 };
 
-const DROPPED_REASONS = ['not_found', 'no_access', 'invalid', 'not_allowed'];
+/** Why the server left a part out; `other_step` is a field this step doesn't take. */
+const DROPPED_REASONS = [
+  'not_found',
+  'no_access',
+  'invalid',
+  'not_allowed',
+  'other_step',
+];
 
 /** How many words a prompt's text has, for "Wrote a new prompt · 131 words". */
 const wordCount = (text: string): number =>

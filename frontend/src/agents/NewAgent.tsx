@@ -1179,7 +1179,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     // A prompt it wrote opens in the prompt view; one of the caller's picked
     // instead turns a written one down. A drafted limit shows in Advanced.
     const prompt = proposal.fields.prompt;
-    if (prompt?.kind === 'new') showWrittenPrompt(prompt);
+    if (prompt?.kind === 'new')
+      showWrittenPrompt({ name: prompt.name, content: prompt.content });
     else if (prompt?.kind === 'edit') showPromptEdits(prompt.id, prompt.edits);
     else if (prompt?.kind === 'existing') dropPromptDraft();
     if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
@@ -1330,18 +1331,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       appliedFields(raw),
     );
     const written = proposal.fields.prompt;
+    // What a written or changed prompt does to the one it replaces first.
     const notes =
-      written?.kind === 'new'
-        ? [...proposal.notes, t('drafter.agent.prompt.viewHint')]
-        : written?.kind === 'edit'
-          ? [
-              ...written.checks.map((code) =>
-                t(`drafter.prompt.checks.${code}`),
-              ),
-              ...proposal.notes,
-              t('drafter.agent.prompt.reviewHint'),
-            ]
-          : proposal.notes;
+      written?.kind === 'new' || written?.kind === 'edit'
+        ? [
+            ...written.checks.map((code) => t(`drafter.prompt.checks.${code}`)),
+            ...proposal.notes,
+            t(
+              written.kind === 'new'
+                ? 'drafter.agent.prompt.viewHint'
+                : 'drafter.agent.prompt.reviewHint',
+            ),
+          ]
+        : proposal.notes;
     const review = promptReview.review;
     const reviewing = latest && written?.kind === 'edit' && review !== null;
     // Fields it changed on the form behind the prompt view.

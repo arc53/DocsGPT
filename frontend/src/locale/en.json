@@ -4589,7 +4589,8 @@
         "no_access": "an item you can't open",
         "invalid": "an item that isn't valid",
         "other": "an item it couldn't use",
-        "not_allowed": "a setting your role can't change"
+        "not_allowed": "a setting your role can't change",
+        "other_step": "a change for another step"
       },
       "build": {
         "intro": "Let's build this agent together, one part at a time: basics, knowledge and tools, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",

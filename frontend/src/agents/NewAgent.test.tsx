@@ -2997,10 +2997,12 @@ describe('NewAgent drafter', () => {
       expect(viewText().value).toBe('Shorter text.');
       await act(async () => use().click());
       expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
+      // At the version it was saved at.
       expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
         id: 'np1',
         name: 'Shipping support',
         content: 'Shorter text.',
+        expected_updated_at: 'v1',
       });
       expect(
         container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
@@ -3010,6 +3012,28 @@ describe('NewAgent drafter', () => {
       expect(lastRequest().context.form).toMatchObject({
         prompt_id: 'np1',
         prompt_draft: null,
+      });
+    });
+
+    it('lists what a written prompt does to the one it replaces, as edits do', async () => {
+      drafter.scripts = [
+        [
+          proposal({
+            prompt: { ...WRITTEN, checks: ['citations_removed'] },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await render();
+      await ask('Write a prompt with no citations');
+      expect(panel()!.textContent).toContain(
+        'drafter.prompt.checks.citations_removed',
+      );
+      // The view's text goes back without the proposal's own keys.
+      await ask('Shorter');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        name: 'Shipping support',
+        content: PROMPT_TEXT,
       });
     });
 

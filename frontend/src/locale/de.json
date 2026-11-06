@@ -4568,7 +4568,8 @@
         "no_access": "ein Element, das du nicht öffnen kannst",
         "invalid": "ein ungültiges Element",
         "other": "ein Element, das nicht verwendet werden konnte",
-        "not_allowed": "eine Einstellung, die deine Rolle nicht ändern darf"
+        "not_allowed": "eine Einstellung, die deine Rolle nicht ändern darf",
+        "other_step": "eine Änderung für einen anderen Schritt"
       },
       "build": {
         "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen und Tools, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle einen Ausgangspunkt oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",

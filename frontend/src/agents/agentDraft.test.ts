@@ -61,7 +61,13 @@ describe('agentDraft', () => {
     expect(proposal.fields).toEqual({
       name: 'Shipping help',
       sources: ['s1'],
-      prompt: { kind: 'new', name: 'Support', content: 'You help.' },
+      // An older server sends no checks.
+      prompt: {
+        kind: 'new',
+        name: 'Support',
+        content: 'You help.',
+        checks: [],
+      },
     });
     expect(proposal.reasons).toEqual([{ field: 'name', summary: 'Short' }]);
     expect(proposal.notes).toEqual(['Note']);
@@ -171,7 +177,14 @@ describe('agentDraft', () => {
   it('leaves the picked prompt alone for a new prompt', () => {
     expect(
       planAgentPatch(
-        { prompt: { kind: 'new', name: 'Support', content: 'You help.' } },
+        {
+          prompt: {
+            kind: 'new',
+            name: 'Support',
+            content: 'You help.',
+            checks: [],
+          },
+        },
         form({ prompt: 'p9' }),
         [],
       ),
@@ -565,6 +578,26 @@ describe('agentDraft', () => {
       'drafter.agent.droppedLine',
       'drafter.agent.droppedLine',
     ]);
+    // A field this step doesn't take has a reason of its own.
+    const reasons: string[] = [];
+    const record = ((key: string) => {
+      if (key.startsWith('drafter.agent.droppedReasons.')) reasons.push(key);
+      return key;
+    }) as never;
+    agentProposalSummary(
+      parseAgentProposal({
+        fields: {},
+        dropped: [
+          { field: 'prompt', reason: 'other_step' },
+          { field: 'tools', reason: 'made_up' },
+        ],
+      })!,
+      record,
+    );
+    expect(reasons).toEqual([
+      'drafter.agent.droppedReasons.other_step',
+      'drafter.agent.droppedReasons.other',
+    ]);
     // Without a record of the changes, every reason shows.
     expect(agentProposalSummary(proposal, t).rows).toHaveLength(3);
   });
@@ -578,6 +611,7 @@ describe('agentDraft', () => {
           kind: 'new',
           name: 'Support',
           content: ' You help\n people. ',
+          checks: ['citations_removed', 'nope'],
         },
         starters: ['Hi'],
       },
@@ -586,6 +620,11 @@ describe('agentDraft', () => {
         { field: 'starters', summary: 'One per task' },
       ],
     })!;
+    // What it does to the prompt it replaces, as edits carry it.
+    expect(proposal.fields.prompt).toMatchObject({
+      kind: 'new',
+      checks: ['citations_removed'],
+    });
     expect(agentProposalSummary(proposal, t, ['starters']).rows).toEqual([
       {
         key: 'prompt-new',
