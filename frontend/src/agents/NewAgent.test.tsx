@@ -2592,6 +2592,12 @@ describe('NewAgent drafter', () => {
     await act(async () =>
       buttonByText('agents.form.sections.advanced')!.click(),
     );
+    const switches = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[role="switch"]'),
+    );
+    expect(switches.length).toBeGreaterThan(0);
+    for (const s of switches)
+      expect(s.getAttribute('aria-checked')).toBe('false');
     expect(
       [...error.mock.calls, ...warn.mock.calls].filter((call) =>
         /uncontrolled/i.test(String(call[0])),
@@ -2918,6 +2924,24 @@ describe('NewAgent drafter', () => {
     await act(async () => next()!.click());
     expect(panel()!.textContent).toContain('drafter.agent.build.done');
     expect(panel()!.textContent).toContain('drafter.agent.build.allFilled');
+  });
+
+  it('reads an agent as unchanged once its drafted guardrails are undone', async () => {
+    drafter.scripts = [
+      [proposal({ guardrails: { checks: ['pii'] } }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view', 'edit_policy']);
+    await ask('Screen for personal data');
+    const guardrails = () =>
+      mocks.guardrailsProps.mock.calls.at(-1)![0] as {
+        drafted: boolean;
+        onUndo: () => void;
+      };
+    expect(guardrails().drafted).toBe(true);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeDefined();
+    await act(async () => guardrails().onUndo());
+    expect(guardrails().drafted).toBe(false);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
   });
 
   it('starts the build over from the drawer, back at its plan', async () => {

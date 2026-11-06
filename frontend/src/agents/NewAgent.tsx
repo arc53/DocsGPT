@@ -1162,10 +1162,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           return;
         case 'guardrails':
         case 'analytics':
-          setAgent((prev) => ({
-            ...prev,
-            config: { ...(prev.config ?? {}), [field]: value },
-          }));
+          // Undo to none drops the key, so the form reads as saved again.
+          setAgent((prev) => {
+            const config = { ...(prev.config ?? {}), [field]: value };
+            if (value === undefined) delete config[field];
+            return { ...prev, config };
+          });
           return;
         default:
           setAgent((prev) => ({ ...prev, [field]: value as string }));
