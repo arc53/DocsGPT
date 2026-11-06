@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -571,3 +571,74 @@ class TestCompressingRetrieverIntegration:
         assert len(result) == 2
         assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
         assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
+    def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self):
+        """Integrate SuperCompress between retrieval and generation with automated delegation tests."""
+        mock_result_1 = Mock(compressed_text="SuperCompressed chunk 1")
+        mock_result_2 = Mock(compressed_text="SuperCompressed chunk 2")
+        mock_compress_for_turn = Mock(side_effect=[mock_result_1, mock_result_2])
+
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Raw retrieved chunk 1", "source": "s1"},
+            {"id": "doc2", "text": "Raw retrieved chunk 2", "source": "s2"},
+        ]
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="API authentication")
+
+            assert len(result) == 2
+            assert result[0] == {"id": "doc1", "text": "SuperCompressed chunk 1", "source": "s1"}
+            assert result[1] == {"id": "doc2", "text": "SuperCompressed chunk 2", "source": "s2"}
+            assert mock_compress_for_turn.call_count == 2
+            call1_kwargs = mock_compress_for_turn.call_args_list[0][1]
+            assert call1_kwargs.get("user_query") == "API authentication"
+            assert call1_kwargs.get("context_blocks") == ["Raw retrieved chunk 1"]
+
+    def test_supercompress_fallback_when_absent(self):
+        """Falls back gracefully to in-tree boilerplate pruning when SuperCompress is not installed."""
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
+            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
+        ]
+        with patch.dict("sys.modules", {"supercompress": None}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="authentication")
+            assert len(result) == 2
+            assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
+            assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
+
+    def test_token_reduction_and_oracle_recall_on_evaluation_set(self):
+        """Measures token reduction and oracle recall on a representative evaluation set."""
+        corpus = [
+            {
+                "id": "doc1",
+                "text": "Home > Guides > Settings\nUse Bearer token for auth.\nNext page: Config",
+                "target": "Use Bearer token for auth.",
+            },
+            {
+                "id": "doc2",
+                "text": "Skip to content\nAPI limits: 60 req/min.\nPrevious page: Overview",
+                "target": "API limits: 60 req/min.",
+            },
+        ]
+        # Measure baseline tokens before in-place pruning
+        orig_chars = sum(len(d["text"]) for d in corpus)
+        mock_inner = Mock()
+        mock_inner.search.return_value = corpus
+        retriever = CompressingRetriever(mock_inner)
+        pruned = retriever.search(query="Bearer")
+
+        # 1. Oracle Recall: All key targets must be preserved
+        preserved_targets = sum(
+            1 for c, p in zip(corpus, pruned) if c["target"] in p["text"]
+        )
+        oracle_recall = preserved_targets / len(corpus)
+        assert oracle_recall == 1.0
+
+        # 2. Token Reduction: Non-essential navigation lines must be stripped
+        pruned_chars = sum(len(d["text"]) for d in pruned)
+        assert pruned_chars < orig_chars
+
