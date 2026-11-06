@@ -697,6 +697,7 @@ class TestWorkflows:
             "provider": "openai_compatible",
             "source": "user",
             "supports_structured_output": True,
+            "context_window": 128000,
         }]
 
     @pytest.mark.parametrize("scopes,listed", [

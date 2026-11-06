@@ -646,7 +646,7 @@ def _editor_only_model(model_id: Any, owner_id: str | None, editor_id: str | Non
 
 #: What a team editor's node model picker reads of the owner's custom models: what
 #: it shows (name, provider) and checks (structured output for a node with a schema).
-_OWNER_MODEL_FIELDS = ("id", "display_name", "provider", "source", "supports_structured_output")
+_OWNER_MODEL_FIELDS = ("id", "display_name", "provider", "source", "supports_structured_output", "context_window")
 
 
 def _owner_models(owner_id: str) -> List[Dict]:
