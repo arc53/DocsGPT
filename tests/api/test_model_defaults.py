@@ -137,6 +137,30 @@ class TestAdminModelDefaults:
         assert resp.status_code == 200 and resp.json["task_model_id"] is None
         assert model_defaults.stored_task_model(db) is None
 
+    def test_surrounding_whitespace_is_stripped_before_checking(self, client, db):
+        with _admin():
+            resp = client.put(URL, json={"task_model_id": " gpt-a "})
+        assert resp.status_code == 200 and resp.json["task_model_id"] == "gpt-a"
+        assert model_defaults.stored_task_model(db) == "gpt-a"
+
+    def test_whitespace_only_clears_it(self, client, db):
+        model_defaults.save_task_model(db, "gpt-a")
+        with _admin():
+            resp = client.put(URL, json={"task_model_id": "   "})
+        assert resp.status_code == 200 and resp.json["task_model_id"] is None
+        assert model_defaults.stored_task_model(db) is None
+
+    def test_a_disabled_default_model_is_no_fallback(self, client, db, monkeypatch):
+        registry = _registry()
+        registry.default_model_id = "gpt-off"
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        BUILTINS.append(_model("gpt-off", enabled=False))
+        try:
+            with _admin():
+                assert client.get(URL).json["fallback_model_id"] is None
+        finally:
+            BUILTINS.pop()
+
     @pytest.mark.parametrize(
         "body",
         [{}, {"task_model_id": 5}, {"task_model_id": "gone-model"}, {"task_model_id": "byom-admin"}, []],

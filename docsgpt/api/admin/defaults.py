@@ -178,11 +178,11 @@ class AdminModelDefaultsResource(Resource):
         if not isinstance(body, dict) or "task_model_id" not in body:
             return _bad("task_model_id is required (a built-in model id, or null)")
         model_id = body["task_model_id"]
-        if model_id == "":
-            model_id = None
+        if isinstance(model_id, str):
+            # Blank clears it, as null does.
+            model_id = model_id.strip() or None
         if model_id is not None and not (isinstance(model_id, str) and model_is_usable(model_id)):
             return _bad("task_model_id must be an enabled built-in model id, or null")
-        model_id = model_id.strip() if model_id else None
         with db_session() as conn:
             before = model_defaults.stored_task_model(conn)
             model_defaults.save_task_model(conn, model_id)

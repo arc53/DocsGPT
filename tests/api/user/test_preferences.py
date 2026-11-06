@@ -224,10 +224,10 @@ def _registry(default="gpt-default"):
     def get_model(model_id, user_id=None):
         if user_id == ALICE and model_id == "byom-alice":
             return SimpleNamespace(id=model_id, enabled=True)
-        if model_id in ("gpt-a", "gpt-b", default):
-            return SimpleNamespace(id=model_id, enabled=True)
         if model_id == "gpt-off":
             return SimpleNamespace(id=model_id, enabled=False)
+        if model_id in ("gpt-a", "gpt-b", default):
+            return SimpleNamespace(id=model_id, enabled=True)
         return None
 
     return SimpleNamespace(
@@ -269,7 +269,7 @@ class TestTaskModel:
         assert resp.json == {"success": True, "task_model_id": model_id}
         assert _call(app, pg_conn, "get").json["task_model_id"] == model_id
 
-    @pytest.mark.parametrize("cleared", [None, ""])
+    @pytest.mark.parametrize("cleared", [None, "", "   "])
     def test_null_goes_back_to_the_instance_default(self, app, pg_conn, cleared):
         _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
         resp = _call(app, pg_conn, "put", json={"task_model_id": cleared})
@@ -288,6 +288,15 @@ class TestTaskModel:
     def test_someone_elses_custom_model_is_400(self, app, pg_conn):
         resp = _call(app, pg_conn, "put", user=BOB, json={"task_model_id": "byom-alice"})
         assert resp.status_code == 400
+
+    def test_surrounding_whitespace_is_stripped(self, app, pg_conn):
+        resp = _call(app, pg_conn, "put", json={"task_model_id": " gpt-a "})
+        assert resp.status_code == 200 and resp.json["task_model_id"] == "gpt-a"
+
+    def test_a_disabled_default_model_is_no_instance_model(self, app, pg_conn, monkeypatch):
+        registry = _registry(default="gpt-off")
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        assert _call(app, pg_conn, "get").json["instance_task_model_id"] is None
 
     def test_a_stale_choice_reads_as_null(self, app, pg_conn):
         UsersRepository(pg_conn).set_task_model_id(ALICE, "gone-model")

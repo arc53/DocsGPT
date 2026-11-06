@@ -153,12 +153,12 @@ def _task_models(conn: Connection, user_id: str) -> dict:
 
 
 def _task_model_value(value) -> tuple[bool, Optional[str]]:
-    """``(valid, model_id)`` for a sent ``task_model_id``: null or ``""`` clears it to ``None``."""
-    if value is None or value == "":
+    """``(valid, model_id)`` for a sent ``task_model_id``: null or a blank string clears it to ``None``."""
+    if value is None:
         return True, None
     if not isinstance(value, str) or len(value) > MAX_MODEL_ID_LENGTH:
         return False, None
-    return True, value.strip()
+    return True, value.strip() or None
 
 
 @me_ns.route("/user/preferences")
