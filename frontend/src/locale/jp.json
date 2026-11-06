@@ -1752,7 +1752,8 @@
       "actionsMenuAria": "{{modelName}} のアクション",
       "modelsGroup": {
         "builtin": "組み込み",
-        "user": "マイモデル"
+        "user": "マイモデル",
+        "owner": "所有者のモデル"
       },
       "actions": {
         "edit": "編集",

@@ -651,6 +651,46 @@ class TestWorkflows:
 
         assert _status(resp) == 200, resp.get_json()
 
+    @staticmethod
+    def _byom(model_id, enabled=True):
+        from docsgpt.core.model_settings import AvailableModel, ModelProvider
+
+        return AvailableModel(
+            id=model_id, provider=ModelProvider.OPENAI_COMPATIBLE, display_name=model_id,
+            enabled=enabled, base_url="https://llm.internal.example/v1", source="user",
+        )
+
+    def _get(self, app, pg_conn, wid, user):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        return _call(app, pg_conn, WorkflowDetail, "get", f"/api/workflows/{wid}", user, args=(wid,))
+
+    def test_editor_reads_the_owners_custom_models_for_the_node_picker(self, app, pg_conn, monkeypatch):
+        # The picker can only offer what the save accepts: the owner's models, not the editor's.
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {
+            OWNER: {"owners-model": self._byom("owners-model"), "off": self._byom("off", enabled=False)},
+            EDITOR: {"editors-model": self._byom("editors-model")},
+        })
+
+        resp = self._get(app, pg_conn, wid, EDITOR)
+
+        assert _status(resp) == 200, resp.get_json()
+        models = resp.get_json()["data"]["owner_models"]
+        assert [m["id"] for m in models] == ["owners-model"]
+        assert models[0]["source"] == "user"
+        # The owner's endpoint stays private.
+        assert "base_url" not in models[0]
+
+    def test_owner_reads_no_owner_models(self, app, pg_conn, monkeypatch):
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {OWNER: {"owners-model": self._byom("owners-model")}})
+
+        resp = self._get(app, pg_conn, wid, OWNER)
+
+        assert _status(resp) == 200, resp.get_json()
+        assert "owner_models" not in resp.get_json()["data"]
+
     def test_engine_resolves_sponsored_node_refs(self, app, pg_conn):
         from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 

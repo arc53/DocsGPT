@@ -1820,7 +1820,8 @@
       "actionsMenuAria": "Acciones para {{modelName}}",
       "modelsGroup": {
         "builtin": "Integrados",
-        "user": "Mis modelos"
+        "user": "Mis modelos",
+        "owner": "Modelos del propietario"
       },
       "actions": {
         "edit": "Editar",

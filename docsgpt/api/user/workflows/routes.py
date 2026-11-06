@@ -643,6 +643,29 @@ def _editor_only_model(model_id: Any, owner_id: str | None, editor_id: str | Non
     )
 
 
+def _owner_models(owner_id: str) -> List[Dict]:
+    """The owner's enabled custom models, for a team editor's node model picker.
+
+    A node's model resolves in the owner's account, so these are the custom
+    models an editor can set (their own are refused on save). The endpoint
+    URL is left out: it is the owner's, and the picker doesn't need it.
+
+    Args:
+        owner_id: The workflow's owner.
+
+    Returns:
+        The models as ``/api/models`` lists them, without ``base_url``.
+    """
+    from docsgpt.core.model_registry import ModelRegistry
+
+    models = ModelRegistry.get_instance().get_enabled_models(user_id=owner_id)
+    return [
+        {k: v for k, v in model.to_dict().items() if k != "base_url"}
+        for model in models
+        if model.source == "user"
+    ]
+
+
 def validate_workflow_structure(
     nodes: List[Dict], edges: List[Dict], user_id: str | None = None, editor_id: str | None = None
 ) -> List[str]:
@@ -1086,9 +1109,14 @@ class WorkflowDetail(Resource):
                 sponsored: list = []
                 states: list = []
                 audience = None
+                owner_models: Optional[List[Dict]] = None
                 visible: Optional[Set[str]] = None
                 with cached_resolves():
                     if resource_access.holder_editable_by(conn, "workflow", workflow, user_id):
+                        if workflow["user_id"] != user_id:
+                            owner_models = best_effort(
+                                conn, "the owner's custom models", lambda: _owner_models(workflow["user_id"]), [],
+                            )
                         refs = _node_refs(serialized_nodes)
                         sponsored = sponsor_details(conn, "workflow", workflow, viewer=user_id)
                         # Run state never fails the read; node names follow
@@ -1119,6 +1147,7 @@ class WorkflowDetail(Resource):
                 "resource_states": states,
                 "ref_details": ref_details,
                 **({"sponsor_audience": audience} if audience is not None else {}),
+                **({"owner_models": owner_models} if owner_models is not None else {}),
             }
         )
 

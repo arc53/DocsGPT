@@ -1756,7 +1756,8 @@
       "actionsMenuAria": "Actions for {{modelName}}",
       "modelsGroup": {
         "builtin": "Built-in",
-        "user": "My Models"
+        "user": "My Models",
+        "owner": "Owner's Models"
       },
       "actions": {
         "edit": "Edit",

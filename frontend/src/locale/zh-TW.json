@@ -1752,7 +1752,8 @@
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
         "builtin": "內建",
-        "user": "我的模型"
+        "user": "我的模型",
+        "owner": "擁有者的模型"
       },
       "actions": {
         "edit": "編輯",

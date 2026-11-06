@@ -1884,7 +1884,8 @@
       "actionsMenuAria": "Действия для {{modelName}}",
       "modelsGroup": {
         "builtin": "Встроенные",
-        "user": "Мои модели"
+        "user": "Мои модели",
+        "owner": "Модели владельца"
       },
       "actions": {
         "edit": "Изменить",

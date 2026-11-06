@@ -1756,7 +1756,8 @@
       "actionsMenuAria": "Aktionen für {{modelName}}",
       "modelsGroup": {
         "builtin": "Integriert",
-        "user": "Meine Modelle"
+        "user": "Meine Modelle",
+        "owner": "Modelle des Eigentümers"
       },
       "actions": {
         "edit": "Bearbeiten",
