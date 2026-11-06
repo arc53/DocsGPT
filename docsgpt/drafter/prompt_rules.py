@@ -143,7 +143,14 @@ def tool_variables_problem(content: str, previous: str, req: DraftRequest) -> Op
 
 
 def template_parses(content: str) -> bool:
-    """Whether ``PromptRenderer.validate_template`` accepts the prompt."""
+    """Whether the prompt renders: ``PromptRenderer.validate_template`` accepts it, or it isn't rendered at all.
+
+    Only a text with both ``{{`` and ``}}`` goes through the template engine
+    (``PromptRenderer.render_prompt``); any other text reaches the model as
+    written, so a ``{%`` or a lone ``{{`` in it is plain text.
+    """
     from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
+    if "{{" not in content or "}}" not in content:
+        return True
     return bool(PromptRenderer().validate_template(content))

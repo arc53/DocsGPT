@@ -541,7 +541,7 @@ class TestValidate:
         {"name": "  "},
         {"description": "x" * 501},
         {"prompt": {"kind": "new", "name": "P", "content": ""}},
-        {"prompt": {"kind": "new", "name": "P", "content": "Hello {{ broken"}},
+        {"prompt": {"kind": "new", "name": "P", "content": "Hello {{ broken }} {% if x %}"}},
     ])
     def test_fixable_problems_go_back_to_the_model(self, fields):
         with pytest.raises(ProposalInvalid):
@@ -578,6 +578,18 @@ class TestValidate:
             _validate(fields)
         asked = _validate(fields, messages=("Put {{ tools.memory.memory_view }} in the prompt",))
         assert asked["fields"]["prompt"]["content"].startswith("Memory:")
+
+    @pytest.mark.parametrize("text", ["Explain Liquid tags such as {% for %}.", "Say {# hi #}.", "Write {{ alone."])
+    def test_plain_text_with_braces_is_not_parsed_as_a_template(self, text):
+        proposal = _validate({"prompt": {"kind": "new", "name": "Liquid", "content": text}})
+        assert proposal["fields"]["prompt"]["content"] == text
+        edit = {"find": "You help customers.", "replace": text, "reason": "Asked."}
+        edited = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [edit]}}, form={"prompt_id": PROMPT_ID})
+        assert edited["fields"]["prompt"]["edits"][0]["replace"] == text
+
+    def test_a_template_that_does_not_parse_goes_back_to_the_model(self):
+        with pytest.raises(ProposalInvalid, match="parse"):
+            _validate({"prompt": {"kind": "new", "name": "P", "content": "{{ system.date }} {% for %}"}})
 
     def test_tool_variables_already_in_the_template_are_kept(self):
         template = "Hi {% if tools.memory.memory_view %}{{ tools.memory.memory_view }}{% endif %}"
@@ -620,7 +632,7 @@ class TestPromptEdits:
 
     @pytest.mark.parametrize("edit", [
         {"find": "not in the prompt", "replace": "x", "reason": "r"},
-        {"find": "You help customers.", "replace": "Hi {{ broken", "reason": "r"},
+        {"find": "You help customers.", "replace": "Hi {{ broken }} {% if x %}", "reason": "r"},
         {"find": "You help customers.", "replace": "x", "reason": ""},
     ])
     def test_edits_follow_the_prompt_recipes_rules(self, edit):

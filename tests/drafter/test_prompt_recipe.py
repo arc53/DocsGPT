@@ -230,11 +230,20 @@ class TestImprove:
 
     def test_a_result_that_does_not_parse_goes_back_to_the_model(self):
         with pytest.raises(ProposalInvalid, match="parse"):
-            _improve([_edit("Hi {{ system.date }}", "Hi {{ system.date ")], content="Hi {{ system.date }}")
+            _improve([_edit("Hi {{ system.date }}", "Hi {{ system.date }} {% if x %}")], content="Hi {{ system.date }}")
 
     def test_a_prompt_that_never_parsed_is_not_blamed_on_the_edit(self):
-        proposal = _improve([_edit("Be brief.", "Be brief and kind.")], content="Literal {% here. Be brief.")
-        assert proposal["result"] == "Literal {% here. Be brief and kind."
+        content = "Hi {{ system.date }} {% here. Be brief."
+        proposal = _improve([_edit("Be brief.", "Be brief and kind.")], content=content)
+        assert proposal["result"] == "Hi {{ system.date }} {% here. Be brief and kind."
+
+    @pytest.mark.parametrize("text", ["Explain Liquid tags such as {% for %}.", "Say {# hi #}.", "Write {{ alone."])
+    def test_plain_text_with_braces_is_not_parsed_as_a_template(self, text):
+        # Only a text with both {{ and }} is rendered as a template; the rest reaches the model as written.
+        proposal = _improve([_edit("Be polite and concise.", text)])
+        assert proposal["result"].endswith(text)
+        written = validate({"name": "Liquid", "content": text}, _req("write", "", "Write it"), Workspace())
+        assert written["content"] == text
 
     def test_tool_variables_need_the_users_ask(self):
         edit = [_edit("Be polite and concise.", "Memory: {{ tools.memory.memory_view }}")]
@@ -278,7 +287,7 @@ class TestWrite:
         assert len(proposal["assumptions"]) == 3
         assert proposal["suggestions"] == ["Add office hours", "Make it shorter", "Four"]
 
-    @pytest.mark.parametrize("name,content", [("", "x"), ("N", ""), ("x" * 101, "x"), ("N", "Hi {{ broken")])
+    @pytest.mark.parametrize("name,content", [("", "x"), ("N", ""), ("x" * 101, "x"), ("N", "Hi {{ broken }} {% if x %}")])
     def test_fixable_problems_go_back_to_the_model(self, name, content):
         with pytest.raises(ProposalInvalid):
             self._write(content, name=name)
@@ -334,7 +343,7 @@ class TestTurn:
 
     def test_a_template_that_does_not_parse_is_retried_then_accepted(self):
         req = _req("write", "", "HR helper")
-        bad = calls(tool_call("submit_proposal", {"message": "x", "name": "HR", "content": "Hi {{ x", "reason": "r"}))
+        bad = calls(tool_call("submit_proposal", {"message": "x", "name": "HR", "content": "Hi {{ x }} {% if", "reason": "r"}))
         good = calls(tool_call("submit_proposal", {"message": "x", "name": "HR", "content": "Hi there", "reason": "r"}))
         fake, events = self._run(bad, good, req=req)
         assert "parse" in fake.calls[1]["messages"][-1]["content"]

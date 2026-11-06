@@ -413,7 +413,7 @@ def apply_edits(content: str, edits: list[dict]) -> tuple[list[dict], str]:
 def _check_text(result: str, previous: str, req: DraftRequest) -> None:
     """Template syntax and tool-variable rules for a drafted prompt text.
 
-    A prompt whose text didn't parse before the change (a persona with a stray
+    A prompt whose text didn't parse before the change (a template with a stray
     ``{%``) isn't blamed on the change.
 
     Raises:
