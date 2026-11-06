@@ -2579,7 +2579,8 @@
         "systemRequestId": "Identifiant unique de la requête",
         "systemUserId": "ID de l’utilisateur actuel",
         "artifactsLookup": "Métadonnées de l’artefact par ID"
-      }
+      },
+      "templateBroken": "Ce modèle ne fonctionnera pas : une balise ou une variable n’est pas fermée, ou des balises de bloc comme {% if %} et {% endif %} ne vont pas par paires. Les chats qui l’utilisent échoueraient ; corrigez-le avant d’enregistrer."
     },
     "chunk": {
       "add": "Ajouter un fragment",

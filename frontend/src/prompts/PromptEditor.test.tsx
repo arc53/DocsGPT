@@ -122,6 +122,18 @@ describe('PromptEditor', () => {
     expect(onUndo).toHaveBeenCalled();
   });
 
+  it("says when the text is a template that won't parse", async () => {
+    await render({ content: '{{ source.content }}{% if x %}Hi' });
+    expect(container.textContent).toContain('modals.prompts.templateBroken');
+    expect(
+      container.querySelector('textarea')!.getAttribute('aria-invalid'),
+    ).toBe('true');
+    await render({ content: '{{ source.content }}{% if x %}Hi{% endif %}' });
+    expect(container.textContent).not.toContain(
+      'modals.prompts.templateBroken',
+    );
+  });
+
   // The review of a running draft is built from the text it was sent with:
   // nothing may change the text until it lands.
   it('changes nothing while a draft runs: no menus, no undo', async () => {

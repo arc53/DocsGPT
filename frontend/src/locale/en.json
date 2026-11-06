@@ -2494,7 +2494,8 @@
         "systemRequestId": "Unique request identifier",
         "systemUserId": "Current user ID",
         "artifactsLookup": "Artifact metadata by id"
-      }
+      },
+      "templateBroken": "This template won't run: a tag or variable isn't closed, or block tags such as {% if %} and {% endif %} don't pair up. Chats with it would fail, so fix it before saving."
     },
     "chunk": {
       "add": "Add chunk",

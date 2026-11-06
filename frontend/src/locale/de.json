@@ -2494,7 +2494,8 @@
         "systemRequestId": "Eindeutige Anfrage-ID",
         "systemUserId": "Aktuelle Benutzer-ID",
         "artifactsLookup": "Artefakt-Metadaten nach ID"
-      }
+      },
+      "templateBroken": "Diese Vorlage lässt sich nicht ausführen: Ein Tag oder eine Variable ist nicht geschlossen, oder Block-Tags wie {% if %} und {% endif %} passen nicht zusammen. Chats damit würden fehlschlagen, korrigiere sie also vor dem Speichern."
     },
     "chunk": {
       "add": "Chunk hinzufügen",

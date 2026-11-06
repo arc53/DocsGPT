@@ -1165,6 +1165,52 @@ describe('Prompts page', () => {
     expect(textArea()!.value).toBe('You check vendors.');
   });
 
+  // The server checks the whole proposal; a part of it can break the template.
+  it('refuses to save a template that a partly accepted review broke', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      proposal({
+        ...IMPROVE,
+        edits: [
+          {
+            id: 'e1',
+            find: 'Hello.',
+            replace: '{% if source.count %}Hello.',
+            reason: 'Only with sources.',
+          },
+          {
+            id: 'e2',
+            find: 'Be brief.',
+            replace: 'Be brief.{% endif %}',
+            reason: 'Close it.',
+          },
+        ],
+      }),
+    ];
+    withText('{{ source.content }}\nHello.\nBe brief.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>(
+        '[data-suggestion="lookOver"]',
+      )!,
+    );
+    const choose = (id: string, action: string) =>
+      click(
+        view()!.querySelector<HTMLButtonElement>(
+          `[data-change-id="${id}"] [data-action="${action}"]`,
+        )!,
+      );
+    await choose('e1', 'accept');
+    await choose('e2', 'reject');
+    expect(textArea()!.value).toBe(
+      '{{ source.content }}\n{% if source.count %}Hello.\nBe brief.',
+    );
+    expect(view()!.textContent).toContain('modals.prompts.templateBroken');
+    expect(save().disabled).toBe(true);
+  });
+
   it('starts the drawer over from its header', async () => {
     drafter.config = { enabled: true };
     drafter.scripts = [

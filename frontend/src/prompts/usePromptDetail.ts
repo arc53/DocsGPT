@@ -7,6 +7,7 @@ import type { Prompt } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { canEditPrompt, copyName } from './promptAccess';
+import { templateBroken } from './promptTemplate';
 
 /**
  * The prompt a detail view shows: a saved one (`edit`, read-only when the
@@ -216,7 +217,8 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     status === 'ready' &&
     !!name.trim() &&
     !nameExists &&
-    content.trim() !== '';
+    content.trim() !== '' &&
+    !templateBroken(content);
 
   /**
    * Read the version a save left (the save routes don't return it); a view

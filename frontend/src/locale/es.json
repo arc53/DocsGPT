@@ -2579,7 +2579,8 @@
         "systemRequestId": "Identificador único de solicitud",
         "systemUserId": "ID del usuario actual",
         "artifactsLookup": "Metadatos de artefactos por id"
-      }
+      },
+      "templateBroken": "Esta plantilla no funcionará: una etiqueta o una variable no está cerrada, o etiquetas de bloque como {% if %} y {% endif %} no se emparejan. Los chats con ella fallarían, así que corrígela antes de guardar."
     },
     "chunk": {
       "add": "Agregar fragmento",

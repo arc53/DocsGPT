@@ -164,6 +164,7 @@ export function PromptEditReview({
                     variant="ghost"
                     size="xs"
                     shape="pill"
+                    data-action="reject"
                     aria-label={t('drafter.prompt.rejectChange', { number })}
                     onClick={() => onDecide(edit.id, 'rejected')}
                   >

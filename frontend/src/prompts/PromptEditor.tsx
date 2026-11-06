@@ -20,6 +20,7 @@ import { PromptEditReview } from '../drafter/PromptEditReview';
 import type { PromptDecision, PromptReview } from '../drafter/usePromptDrafter';
 import { selectToken } from '../preferences/preferenceSlice';
 import { UserToolType } from '../settings/types';
+import { templateBroken } from './promptTemplate';
 
 const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
 
@@ -341,7 +342,8 @@ export type PromptEditorProps = {
  * A prompt's name and text with the variable menus, on the page's
  * background (the prompt view's editor). The text highlights its `{{ }}`
  * variables, and the System and Tool variables menus insert one at the
- * cursor. The drafter's parts: the Drafted marks with undo, an improve
+ * cursor; a template that won't parse says so under the text (its Save is
+ * off: usePromptDetail's `canSave`). The drafter's parts: the Drafted marks with undo, an improve
  * proposal's review in place of the text (its per-change Accept and Reject
  * inline), and `locked` while a draft runs. A prompt to view has the name
  * disabled, the text read-only and no menus.
@@ -406,6 +408,11 @@ export function PromptEditor({
             <FormField
               label={t('modals.prompts.promptText')}
               labelSurface="background"
+              error={
+                templateBroken(content)
+                  ? t('modals.prompts.templateBroken')
+                  : undefined
+              }
             >
               <PromptTextarea
                 id={textareaId}
