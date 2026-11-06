@@ -489,6 +489,16 @@ class TestValidate:
             {"field": "prompt", "id": "someone-elses", "reason": "not_found"},
         ]
 
+    def test_a_list_whose_every_id_is_dropped_leaves_the_forms_list_alone(self):
+        # A name in place of an id isn't a request to clear the form's knowledge.
+        proposal = _validate({"name": "Help desk", "sources": ["Help Center"], "tools": ["Tracking"]},
+                             form={"sources": [SOURCE_ID], "tools": [TOOL_ID]}, step="basics")
+        assert proposal["fields"] == {"name": "Help desk"}
+        assert [d["id"] for d in proposal["dropped"]] == ["Help Center", "Tracking"]
+        assert proposal["steps"] == ["basics"] and proposal["next_step"] == "knowledge"
+        # An empty list is still a request to clear it.
+        assert _validate({"sources": []}, form={"sources": [SOURCE_ID]})["fields"] == {"sources": []}
+
     def test_ids_already_on_the_form_are_kept(self):
         proposal = _validate({"tools": ["owners-tool", TOOL_ID]}, form={"tools": ["owners-tool"]})
         assert proposal["fields"]["tools"] == ["owners-tool", TOOL_ID] and proposal["dropped"] == []

@@ -731,8 +731,13 @@ PROPOSAL_SCHEMA: dict = {
 }
 
 
-def _refs(field_name: str, value: Any, allowed: set[str], current: list[str], dropped: list[dict]) -> list[str]:
+def _refs(
+    field_name: str, value: Any, allowed: set[str], current: list[str], dropped: list[dict]
+) -> Optional[list[str]]:
     """The drafted list of source or tool ids, each once, those the caller can't attach dropped as ``not_found``.
+
+    None when ids were sent and every one was dropped (a name in place of an id): the form's list stays as it is,
+    rather than being cleared. An empty list sent on purpose stays empty.
 
     Args:
         field_name: ``sources`` or ``tools``.
@@ -745,14 +750,18 @@ def _refs(field_name: str, value: Any, allowed: set[str], current: list[str], dr
         ProposalInvalid: The proposal adds more than :data:`MAX_REFS` ids.
     """
     out: list[str] = []
+    missing = 0
     for item in value if isinstance(value, list) else []:
         ref = str(item).strip()
         if not ref or ref in out:
             continue
         if ref not in allowed:
             dropped.append({"field": field_name, "id": ref[:_ID_CHARS], "reason": "not_found"})
+            missing += 1
             continue
         out.append(ref)
+    if missing and not out:
+        return None
     if len([ref for ref in out if ref not in current]) > MAX_REFS:
         raise ProposalInvalid([f"Add at most {MAX_REFS} {field_name}."])
     return out
@@ -1029,12 +1038,11 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         fields["description"] = description
     if "agent_type" in raw_fields:
         fields["agent_type"] = raw_fields["agent_type"]
-    if "sources" in raw_fields:
-        fields["sources"] = _refs("sources", raw_fields["sources"], ws.ids("sources") | set(form["sources"]),
-                                  form["sources"], dropped)
-    if "tools" in raw_fields:
-        fields["tools"] = _refs("tools", raw_fields["tools"], ws.ids("tools") | set(form["tools"]), form["tools"],
-                                dropped)
+    for kind in ("sources", "tools"):
+        if kind in raw_fields:
+            refs = _refs(kind, raw_fields[kind], ws.ids(kind) | set(form[kind]), form[kind], dropped)
+            if refs is not None:
+                fields[kind] = refs
     if "starters" in raw_fields:
         try:
             fields["starters"] = normalize_starters(raw_fields["starters"])
