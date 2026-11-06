@@ -1030,7 +1030,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [drafterOpen, setDrafterOpen] = useState(false);
   const formColumnRef = useRef<HTMLDivElement>(null);
   // Hidden while the server says it is off, and from anyone who can't edit.
-  const drafterEnabled = drafterConfig?.enabled === true && can(agent, 'edit');
+  // A saved agent's form holds a stub with no access fields (read as the
+  // owner's) until the agent loads: nothing shows before then.
+  const accessKnown = mode === 'new' || initialAgentRef.current !== null;
+  const drafterEnabled =
+    drafterConfig?.enabled === true && accessKnown && can(agent, 'edit');
 
   const draftForm = useMemo<AgentDraftForm>(
     () => ({

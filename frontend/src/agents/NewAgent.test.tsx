@@ -2530,6 +2530,44 @@ describe('NewAgent drafter', () => {
     expect(wand()).toBeUndefined();
   });
 
+  it('shows no wand until the agent says what the caller may do', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    mocks.getAgent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    // Still loading: the form's stub has no access fields to read.
+    expect(wand()).toBeUndefined();
+    await act(async () =>
+      answer({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'agent-1',
+            name: 'Deal Desk',
+            status: 'published',
+            access: 'editor',
+            allowed_actions: ['edit', 'publish', 'use', 'view'],
+          }),
+      }),
+    );
+    expect(wand()).toBeDefined();
+  });
+
   it('offers Improve on a filled agent, left of Preview', async () => {
     await renderEdit(['edit', 'publish', 'use', 'view']);
     expect(wand()!.textContent).toContain('drafter.improve');
