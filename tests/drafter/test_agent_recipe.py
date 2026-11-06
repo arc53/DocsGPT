@@ -58,6 +58,29 @@ def _added(*checks: str) -> dict:
                          for check in checks for stage, action in agent_recipe.GUARDRAIL_MENU[check]]}
 
 
+class _OneConn:
+    """Counts the read-only transactions a load opens; each yields the same stand-in connection."""
+
+    def __init__(self) -> None:
+        self.conn = object()
+        self.opened = 0
+
+
+@pytest.fixture
+def one_conn():
+    from contextlib import contextmanager
+
+    tracker = _OneConn()
+
+    @contextmanager
+    def _readonly():
+        tracker.opened += 1
+        yield tracker.conn
+
+    with patch("docsgpt.storage.db.session.db_readonly", _readonly), patch.object(agent_recipe, "load_models"):
+        yield tracker
+
+
 def _req(form=None, *user_messages, step=None, earlier=None, asked=False) -> DraftRequest:
     messages = [{"role": "user", "content": m} for m in (user_messages or ("Build me a support agent",))]
     if asked:
@@ -256,26 +279,26 @@ class TestAvailability:
         monkeypatch.setattr(settings, "GUARDRAILS_ENABLED", False)
         assert guardrail_menu() == []
 
-    def test_the_workspace_carries_the_instance_flags(self, monkeypatch):
+    def test_the_workspace_carries_the_instance_flags(self, monkeypatch, one_conn):
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
         monkeypatch.setattr(settings, "GUARDRAILS_ENABLED", True)
         monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", [])
         loaded = Workspace(sources=[{"id": SOURCE_ID, "name": "Help"}], policy_editable=False)
-        with patch.object(agent_recipe, "load_workspace", return_value=loaded), patch(
+        with patch.object(agent_recipe, "read_workspace", return_value=loaded), patch(
             "docsgpt.decisions.available", return_value=True
         ):
             ws = AGENT_RECIPE.load_workspace("alice", {"agent_id": None})
         assert isinstance(ws, AgentWorkspace) and ws.sources == loaded.sources
         assert ws.policy_editable is False and ws.insights is True and ws.guardrail_menu == MENU
         monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
-        with patch.object(agent_recipe, "load_workspace", return_value=Workspace()), patch(
+        with patch.object(agent_recipe, "read_workspace", return_value=Workspace()), patch(
             "docsgpt.decisions.available", return_value=True
         ):
             assert AGENT_RECIPE.load_workspace("alice", {"agent_id": None}).insights is False
 
-    def test_both_recipes_read_the_instances_insights_switch_from_one_check(self, monkeypatch):
+    def test_both_recipes_read_the_instances_insights_switch_from_one_check(self, monkeypatch, one_conn):
         from docsgpt.core.settings import settings
         from docsgpt.drafter import topics_recipe
 
@@ -285,54 +308,86 @@ class TestAvailability:
         with patch("docsgpt.decisions.available", return_value=True):
             assert topics_recipe.insights_on_here() is True
         with patch.object(topics_recipe, "insights_on_here", return_value=False), patch.object(
-            agent_recipe, "load_workspace", return_value=Workspace()
+            agent_recipe, "read_workspace", return_value=Workspace()
         ):
             assert AGENT_RECIPE.load_workspace("alice", {"agent_id": None}).insights is False
             assert topics_recipe.insights_off({}) == "off_on_this_instance"
 
-    def test_the_safety_step_asks_whether_a_saved_agent_has_enough_conversations(self, monkeypatch):
+    def test_the_safety_step_reads_everything_through_one_connection(self, monkeypatch, one_conn):
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter import topics_recipe
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        loaded = _ws()
+        saved = Workspace(**{k: getattr(loaded, k) for k in ("sources", "tools", "prompts", "prompt_texts")},
+                          agent={"id": "a1", "name": "Docs"})
+        context = {"agent_id": "a1", "step": "safety", "form": {"prompt_id": PROMPT_ID, "sources": [SOURCE_ID]}}
+        row = {"id": "a1", "config": {}}
+        with patch.object(agent_recipe, "read_workspace", return_value=saved) as read_ws, patch(
+            "docsgpt.decisions.available", return_value=True
+        ), patch.object(topics_recipe, "editable_agent", return_value=row) as agent, patch.object(
+            topics_recipe, "status_of", return_value={"available": True}
+        ) as status, patch.object(agent_recipe, "saved_source_ids", return_value=set()) as sources, patch.object(
+            agent_recipe, "source_folders", return_value=FOLDERS
+        ) as folders, patch.object(agent_recipe, "saved_prompt_text", return_value="Whole.") as prompt:
+            ws = AGENT_RECIPE.load_workspace("alice", context)
+        assert one_conn.opened == 1
+        read_ws.assert_called_once_with(one_conn.conn, "alice", "a1")
+        prompt.assert_called_once_with(one_conn.conn, "alice", PROMPT_ID)
+        # The agent row is read once, and the saved sources and the conversations count reuse it.
+        agent.assert_called_once_with(one_conn.conn, "alice", "a1")
+        sources.assert_called_once_with(one_conn.conn, row)
+        folders.assert_called_once_with(one_conn.conn, [SOURCE_ID])
+        status.assert_called_once_with(one_conn.conn, row)
+        assert ws.folders == FOLDERS and ws.topics_from_conversations is True and ws.editable_prompt_text == "Whole."
+
+    def test_the_safety_step_asks_whether_a_saved_agent_has_enough_conversations(self, monkeypatch, one_conn):
+        from docsgpt.api.user.resource_access import AccessDenied
         from docsgpt.core.settings import settings
         from docsgpt.drafter import topics_recipe
 
         monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
         saved = Workspace(agent={"id": "a1", "name": "Docs"})
         context = {"agent_id": "a1", "step": "safety", "form": {}}
-        with patch.object(agent_recipe, "load_workspace", return_value=saved), patch(
+        with patch.object(agent_recipe, "read_workspace", return_value=saved), patch(
             "docsgpt.decisions.available", return_value=True
-        ), patch.object(topics_recipe, "topics_status", return_value={"available": True}) as status, patch.object(
-            agent_recipe, "saved_source_ids", return_value=set()
-        ):
+        ), patch.object(topics_recipe, "editable_agent", return_value={"id": "a1"}) as agent, patch.object(
+            topics_recipe, "status_of", return_value={"available": True}
+        ) as status, patch.object(agent_recipe, "saved_source_ids", return_value=set()):
             assert AGENT_RECIPE.load_workspace("alice", context).topics_from_conversations is True
-            status.assert_called_once_with("alice", "a1")
-            status.side_effect = RuntimeError("no access")
+            status.side_effect = RuntimeError("count failed")
             assert AGENT_RECIPE.load_workspace("alice", context).topics_from_conversations is False
+            # A caller who may only view the agent gets no count.
             status.reset_mock()
+            agent.side_effect = AccessDenied(403, "no")
+            assert AGENT_RECIPE.load_workspace("alice", context).topics_from_conversations is False
+            status.assert_not_called()
+            agent.side_effect = None
             AGENT_RECIPE.load_workspace("alice", {**context, "step": "prompt"})
             status.assert_not_called()
-        with patch.object(agent_recipe, "load_workspace", return_value=Workspace()), patch(
+        with patch.object(agent_recipe, "read_workspace", return_value=Workspace()), patch(
             "docsgpt.decisions.available", return_value=True
-        ), patch.object(topics_recipe, "topics_status") as status:
+        ), patch.object(topics_recipe, "status_of") as status:
             AGENT_RECIPE.load_workspace("alice", {"agent_id": None, "step": "safety", "form": {}})
             status.assert_not_called()
 
-    def test_the_safety_step_reads_the_folders_of_the_sources_the_caller_may_attach(self, monkeypatch):
+    def test_the_safety_step_reads_the_folders_of_the_sources_the_caller_may_attach(self, monkeypatch, one_conn):
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
         loaded = Workspace(sources=[{"id": SOURCE_ID, "name": "Help"}])
         context = {"agent_id": None, "step": "safety", "form": {"sources": [SOURCE_ID, "not-mine"]}}
-        with patch.object(agent_recipe, "load_workspace", return_value=loaded), patch(
+        with patch.object(agent_recipe, "read_workspace", return_value=loaded), patch(
             "docsgpt.decisions.available", return_value=True
         ), patch.object(agent_recipe, "source_folders", return_value=FOLDERS) as read:
             ws = AGENT_RECIPE.load_workspace("alice", context)
             assert ws.folders == FOLDERS
-            read.assert_called_once_with([SOURCE_ID])
+            read.assert_called_once_with(one_conn.conn, [SOURCE_ID])
             read.reset_mock()
             AGENT_RECIPE.load_workspace("alice", {**context, "step": "knowledge"})
             read.assert_not_called()
 
-
-    def test_a_saved_agents_own_sources_give_their_folders_too(self, monkeypatch):
+    def test_a_saved_agents_own_sources_give_their_folders_too(self, monkeypatch, one_conn):
         # An editor building the owner's agent: the owner's private source is on the agent, not attachable.
         from docsgpt.core.settings import settings
         from docsgpt.drafter import topics_recipe
@@ -341,23 +396,26 @@ class TestAvailability:
         saved = Workspace(sources=[{"id": SOURCE_ID, "name": "Help"}], agent={"id": "a1", "name": "Docs"})
         form = {"sources": [SOURCE_ID, "owners-private", "not-on-it"]}
         context = {"agent_id": "a1", "step": "safety", "form": form}
-        with patch.object(agent_recipe, "load_workspace", return_value=saved), patch(
+        row = {"id": "a1"}
+        with patch.object(agent_recipe, "read_workspace", return_value=saved), patch(
             "docsgpt.decisions.available", return_value=True
-        ), patch.object(topics_recipe, "topics_status", return_value={"available": False}), patch.object(
+        ), patch.object(topics_recipe, "editable_agent", return_value=row), patch.object(
+            topics_recipe, "status_of", return_value={"available": False}
+        ), patch.object(
             agent_recipe, "saved_source_ids", return_value={"owners-private"}
         ) as saved_ids, patch.object(agent_recipe, "source_folders", return_value=FOLDERS) as read:
             AGENT_RECIPE.load_workspace("bob", context)
-            saved_ids.assert_called_once_with("bob", "a1")
-            read.assert_called_once_with([SOURCE_ID, "owners-private"])
+            saved_ids.assert_called_once_with(one_conn.conn, row)
+            read.assert_called_once_with(one_conn.conn, [SOURCE_ID, "owners-private"])
 
-    def test_the_agents_own_saved_prompt_is_read_whole(self, monkeypatch):
+    def test_the_agents_own_saved_prompt_is_read_whole(self, monkeypatch, one_conn):
         loaded = _ws()
         context = {"agent_id": None, "step": "prompt", "form": {"prompt_id": PROMPT_ID}}
-        with patch.object(agent_recipe, "load_workspace", return_value=Workspace(**{
+        with patch.object(agent_recipe, "read_workspace", return_value=Workspace(**{
             k: getattr(loaded, k) for k in ("sources", "tools", "prompts", "prompt_texts")
         })), patch.object(agent_recipe, "saved_prompt_text", return_value="The whole text.") as read:
             assert AGENT_RECIPE.load_workspace("alice", context).editable_prompt_text == "The whole text."
-            read.assert_called_once_with("alice", PROMPT_ID)
+            read.assert_called_once_with(one_conn.conn, "alice", PROMPT_ID)
             read.reset_mock()
             # Unsaved text in the prompt view is the text edits fit; a built-in has nothing to read.
             draft = {**context["form"], "prompt_draft": {"id": PROMPT_ID, "name": "S", "content": "Unsaved."}}
@@ -366,9 +424,7 @@ class TestAvailability:
             read.assert_not_called()
 
 
-def test_saved_source_ids_are_the_agents_for_someone_who_can_edit_it(pg_conn):
-    from contextlib import contextmanager
-
+def test_saved_source_ids_are_the_agents(pg_conn):
     from docsgpt.storage.db.repositories.agents import AgentsRepository
     from docsgpt.storage.db.repositories.sources import SourcesRepository
 
@@ -376,31 +432,48 @@ def test_saved_source_ids_are_the_agents_for_someone_who_can_edit_it(pg_conn):
     second = SourcesRepository(pg_conn).create("Wiki", user_id="alice")
     agent = AgentsRepository(pg_conn).create("alice", "Bot", "published", key="k-saved-sources",
                                              source_id=str(first["id"]), extra_source_ids=[str(second["id"])])
+    assert agent_recipe.saved_source_ids(pg_conn, agent) == {str(first["id"]), str(second["id"])}
+
+
+def test_the_safety_step_reads_a_saved_agent_for_someone_who_can_edit_it(pg_conn, monkeypatch):
+    from contextlib import contextmanager
+
+    from docsgpt.core.settings import settings
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+    monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+    source = SourcesRepository(pg_conn).create("Docs", user_id="alice")
+    agent = AgentsRepository(pg_conn).create("alice", "Bot", "published", key="k-one-conn",
+                                             source_id=str(source["id"]))
+    context = {"agent_id": str(agent["id"]), "step": "safety", "form": {"sources": [str(source["id"])]}}
 
     @contextmanager
     def _same():
         yield pg_conn
 
-    with patch("docsgpt.storage.db.session.db_readonly", _same):
-        assert agent_recipe.saved_source_ids("alice", str(agent["id"])) == {str(first["id"]), str(second["id"])}
-        assert agent_recipe.saved_source_ids("mallory", str(agent["id"])) == set()
+    with patch("docsgpt.storage.db.session.db_readonly", _same), patch(
+        "docsgpt.decisions.available", return_value=True
+    ), patch.object(agent_recipe, "load_models"), patch.object(
+        agent_recipe, "source_folders", return_value=FOLDERS
+    ) as folders:
+        ws = AGENT_RECIPE.load_workspace("alice", context)
+        assert ws.agent["id"] == str(agent["id"]) and ws.folders == FOLDERS
+        assert ws.topics_from_conversations is False
+        folders.assert_called_once_with(pg_conn, [str(source["id"])])
+        # Someone who can't edit the agent reads none of its own sources.
+        folders.reset_mock()
+        AGENT_RECIPE.load_workspace("mallory", context)
+        folders.assert_called_once_with(pg_conn, [])
 
 
 def test_saved_prompt_text_reads_the_callers_prompt_uncut(pg_conn):
-    from contextlib import contextmanager
-
     from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
     long = "You help.\n" + "y" * 30000
     prompt = PromptsRepository(pg_conn).create("alice", "Long", long)
-
-    @contextmanager
-    def _same():
-        yield pg_conn
-
-    with patch("docsgpt.storage.db.session.db_readonly", _same):
-        assert agent_recipe.saved_prompt_text("alice", str(prompt["id"])) == long
-        assert agent_recipe.saved_prompt_text("mallory", str(prompt["id"])) is None
+    assert agent_recipe.saved_prompt_text(pg_conn, "alice", str(prompt["id"])) == long
+    assert agent_recipe.saved_prompt_text(pg_conn, "mallory", str(prompt["id"])) is None
 
 
 @pytest.mark.unit

@@ -356,6 +356,25 @@ def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> No
     }
 
 
+def read_workspace(conn, user_id: str, agent_id: Optional[str] = None) -> Workspace:
+    """Read the caller's sources, tools, prompts and the agent being edited through ``conn``; models are left out.
+
+    Args:
+        conn: A read-only connection, for a recipe that reads more in the same transaction.
+        user_id: The caller (``decoded_token["sub"]``).
+        agent_id: The agent being edited, if any.
+
+    Returns:
+        The workspace, without ``models`` (:func:`load_models` fills them).
+    """
+    ws = Workspace()
+    load_sources(conn, user_id, ws)
+    load_tools(conn, user_id, ws)
+    load_prompts(conn, user_id, ws)
+    load_agent(conn, user_id, agent_id, ws)
+    return ws
+
+
 def load_workspace(user_id: str, *, agent_id: Optional[str] = None) -> Workspace:
     """Read the caller's workspace in one read-only transaction.
 
@@ -368,11 +387,7 @@ def load_workspace(user_id: str, *, agent_id: Optional[str] = None) -> Workspace
     """
     from docsgpt.storage.db.session import db_readonly
 
-    ws = Workspace()
     with db_readonly() as conn:
-        load_sources(conn, user_id, ws)
-        load_tools(conn, user_id, ws)
-        load_prompts(conn, user_id, ws)
-        load_agent(conn, user_id, agent_id, ws)
+        ws = read_workspace(conn, user_id, agent_id)
     load_models(user_id, ws)
     return ws

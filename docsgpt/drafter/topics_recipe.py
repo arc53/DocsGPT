@@ -264,17 +264,22 @@ def topics_status(user_id: str, agent_id: str) -> dict:
     Raises:
         AccessDenied: The caller can't edit the agent.
     """
-    from docsgpt.storage.db.repositories.conversation_labels import ConversationLabelsRepository
     from docsgpt.storage.db.session import db_readonly
 
     with db_readonly() as conn:
-        agent = editable_agent(conn, user_id, agent_id)
-        reason = insights_off(agent)
-        if reason:
-            return {"available": False, "conversations": 0, "needed": MIN_CONVERSATIONS, "reason": reason}
-        counts = ConversationLabelsRepository(conn).agent_question_counts(
-            str(agent["id"]), agent.get("key"), DAYS, cap=MIN_CONVERSATIONS
-        )
+        return status_of(conn, editable_agent(conn, user_id, agent_id))
+
+
+def status_of(conn: Connection, agent: dict) -> dict:
+    """:func:`topics_status` for an agent row the caller may edit (:func:`editable_agent`), read through ``conn``."""
+    from docsgpt.storage.db.repositories.conversation_labels import ConversationLabelsRepository
+
+    reason = insights_off(agent)
+    if reason:
+        return {"available": False, "conversations": 0, "needed": MIN_CONVERSATIONS, "reason": reason}
+    counts = ConversationLabelsRepository(conn).agent_question_counts(
+        str(agent["id"]), agent.get("key"), DAYS, cap=MIN_CONVERSATIONS
+    )
     return {
         "available": counts["conversations"] >= MIN_CONVERSATIONS,
         "conversations": counts["conversations"],

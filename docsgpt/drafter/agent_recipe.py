@@ -23,7 +23,7 @@ from pydantic import ValidationError
 
 from docsgpt.analytics.config import AnalyticsTopic, TOPIC_DESCRIPTION_UNITS, TOPIC_NAME_CHARS
 from docsgpt.core.settings import settings
-from docsgpt.drafter.catalog import is_template, load_workspace, Workspace
+from docsgpt.drafter.catalog import is_template, load_models, read_workspace, Workspace
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.prompt_rules import (
     COMPOSER_ADDS,
@@ -276,76 +276,77 @@ def guardrail_menu() -> list[str]:
     return out
 
 
-def source_folders(source_ids: list[str]) -> list[dict]:
+def source_folders(conn, source_ids: list[str]) -> list[dict]:
     """The folders of these sources, as the agent's topic question offers them (``topics.folders``)."""
     from docsgpt.analytics import topics as analytics_topics
     from docsgpt.storage.db.repositories.sources import SourcesRepository
-    from docsgpt.storage.db.session import db_readonly
 
     if not source_ids:
         return []
-    with db_readonly() as conn:
-        rows = SourcesRepository(conn).list_by_ids(source_ids)
-    return analytics_topics.folders(rows)
+    return analytics_topics.folders(SourcesRepository(conn).list_by_ids(source_ids))
 
 
-def saved_source_ids(user_id: str, agent_id: str) -> set[str]:
-    """The saved agent's source ids, when the caller may edit it (empty otherwise).
+def editable_saved_agent(conn, user_id: str, agent_id: str) -> Optional[dict]:
+    """The saved agent's row when the caller may edit it, else None."""
+    from docsgpt.api.user.resource_access import AccessDenied
+
+    try:
+        return topics_recipe.editable_agent(conn, user_id, agent_id)
+    except AccessDenied:
+        return None
+
+
+def saved_source_ids(conn, agent: dict) -> set[str]:
+    """The source ids of a saved agent the caller may edit (:func:`editable_saved_agent`).
 
     An editor's form keeps the owner's private sources, which the editor can't attach: their folders are still
     the agent's topics.
     """
     from docsgpt.analytics.topics import agent_sources
-    from docsgpt.api.user.resource_access import AccessDenied
-    from docsgpt.drafter.topics_recipe import editable_agent
-    from docsgpt.storage.db.session import db_readonly
 
-    with db_readonly() as conn:
-        try:
-            agent = editable_agent(conn, user_id, agent_id)
-        except AccessDenied:
-            return set()
-        return {str(row["id"]) for row in agent_sources(conn, agent)}
+    return {str(row["id"]) for row in agent_sources(conn, agent)}
 
 
-def saved_prompt_text(user_id: str, prompt_id: str) -> Optional[str]:
+def saved_prompt_text(conn, user_id: str, prompt_id: str) -> Optional[str]:
     """The whole text of the caller's own saved prompt, cleaned as the model reads it but not cut; None if not theirs."""
     from docsgpt.storage.db.repositories.prompts import PromptsRepository
-    from docsgpt.storage.db.session import db_readonly
 
-    with db_readonly() as conn:
-        row = PromptsRepository(conn).get(prompt_id, user_id)
+    row = PromptsRepository(conn).get(prompt_id, user_id)
     content = (row or {}).get("content")
     return clean_text(content, len(content)) if isinstance(content, str) and content else None
 
 
 def _load(user_id: str, context: dict) -> AgentWorkspace:
-    """The caller's workspace plus what this request's step needs.
+    """The caller's workspace plus what this request's step needs, read in one read-only transaction.
 
     Every step reads the whole text of the prompt edits may change. The safety step also reads the instance's
     guardrail menu and Insights switch, the folders of the agent's sources, and whether a saved agent has enough
-    conversations for Suggest from conversations.
+    conversations for Suggest from conversations; the saved agent's row is read once for both.
     """
-    ws = load_workspace(user_id, agent_id=context.get("agent_id"))
-    out = AgentWorkspace(
-        **vars(ws),
-        guardrail_menu=guardrail_menu(),
-        insights=topics_recipe.insights_on_here(),
-        max_topics=int(settings.ANALYTICS_MAX_TOPICS),
-    )
+    from docsgpt.storage.db.session import db_readonly
+
     form = context.get("form") or {}
-    editable = _editable_prompt(form, ws)
-    if editable and not form.get("prompt_draft"):
-        out.editable_prompt_text = saved_prompt_text(user_id, editable)
-    if context.get("step") == "safety" and out.insights:
-        # The form's sources the caller may attach, and those already on the saved agent.
-        known = ws.ids("sources") | (saved_source_ids(user_id, ws.agent["id"]) if ws.agent else set())
-        out.folders = source_folders([s for s in form.get("sources", []) if s in known])
-        if ws.agent:
-            try:
-                out.topics_from_conversations = bool(topics_recipe.topics_status(user_id, ws.agent["id"])["available"])
-            except Exception:
-                out.topics_from_conversations = False
+    # The instance's switches first: the decision model's status needn't hold a connection.
+    menu, insights = guardrail_menu(), topics_recipe.insights_on_here()
+    with db_readonly() as conn:
+        ws = read_workspace(conn, user_id, context.get("agent_id"))
+        out = AgentWorkspace(**vars(ws), guardrail_menu=menu, insights=insights,
+                             max_topics=int(settings.ANALYTICS_MAX_TOPICS))
+        editable = _editable_prompt(form, ws)
+        if editable and not form.get("prompt_draft"):
+            out.editable_prompt_text = saved_prompt_text(conn, user_id, editable)
+        if context.get("step") == "safety" and out.insights:
+            agent = editable_saved_agent(conn, user_id, ws.agent["id"]) if ws.agent else None
+            # The form's sources the caller may attach, and those already on the saved agent.
+            known = ws.ids("sources") | (saved_source_ids(conn, agent) if agent else set())
+            out.folders = source_folders(conn, [s for s in form.get("sources", []) if s in known])
+            if agent:
+                # Last in the transaction: a failed count leaves nothing after it to read.
+                try:
+                    out.topics_from_conversations = bool(topics_recipe.status_of(conn, agent)["available"])
+                except Exception:
+                    out.topics_from_conversations = False
+    load_models(user_id, out)
     return out
 
 
