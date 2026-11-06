@@ -24,6 +24,24 @@ function Harness() {
   return null;
 }
 
+// A form whose tools are objects, compared by their ids.
+const shaped: {
+  drafted: DraftedFields<'tools'> | null;
+  tools: { id: string }[];
+  setTools: (tools: { id: string }[]) => void;
+} = { drafted: null, tools: [], setTools: () => undefined };
+
+function ShapedHarness() {
+  const [tools, setTools] = useState<{ id: string }[]>([{ id: 'a' }]);
+  shaped.tools = tools;
+  shaped.setTools = setTools;
+  shaped.drafted = useDraftedFields<'tools'>(
+    { tools: tools.map((tool) => tool.id) },
+    (_field, previous) => setTools(previous as { id: string }[]),
+  );
+  return null;
+}
+
 describe('useDraftedFields', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -61,6 +79,22 @@ describe('useDraftedFields', () => {
     await act(async () => harness.drafted!.undo('name'));
     expect(harness.form).toEqual({ name: 'Old', tools: ['a'] });
     expect(harness.drafted!.fields).toEqual([]);
+  });
+
+  it('keeps the first previous value when the form holds another shape than it compares', async () => {
+    await act(async () => root.render(<ShapedHarness />));
+    const draftTools = async (ids: string[]) =>
+      act(async () => {
+        const previous = shaped.tools;
+        const next = ids.map((id) => ({ id }));
+        shaped.setTools(next);
+        shaped.drafted!.mark('tools', previous, ids);
+      });
+    await draftTools(['a', 'b']);
+    await draftTools(['a', 'b', 'c']);
+    await act(async () => shaped.drafted!.undo('tools'));
+    // Back to before the first draft, in the form's own shape.
+    expect(shaped.tools).toEqual([{ id: 'a' }]);
   });
 
   it('drops the mark of a field the user then edits by hand', async () => {

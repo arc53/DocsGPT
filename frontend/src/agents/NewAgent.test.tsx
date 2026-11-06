@@ -2879,6 +2879,29 @@ describe('NewAgent drafter', () => {
     expect(lastRequest().context.step).toBeNull();
   });
 
+  it('undoes a field drafted twice back to before the first draft', async () => {
+    drafter.scripts = [
+      [proposal({ limits: { mode: 'requests', value: 500 } }), { type: 'end' }],
+      [proposal({ limits: { mode: 'requests', value: 300 } }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view']);
+    await ask('Cap it at 500');
+    await ask('300 is enough');
+    const requestLimit = () =>
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="agents.form.advanced.requestLimit"]',
+      )!;
+    expect(requestLimit().value).toBe('300');
+    await act(async () =>
+      buttonByLabel(
+        'drafter.undoField',
+        requestLimit().closest('[data-slot="setting-row"]')!,
+      )!.click(),
+    );
+    // No limit, as the agent had before either draft.
+    expect(requestLimit().disabled).toBe(true);
+  });
+
   it('drops the mark of a field edited by hand', async () => {
     drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
     await render();

@@ -8,10 +8,12 @@ export type DraftedFields<K extends string> = {
   fields: K[];
   isDrafted: (field: K) => boolean;
   /**
-   * Mark a field the drafter changed. `previous` is what undo puts back; a
-   * field drafted twice keeps the value from before the first draft.
-   * `applied` is the value it now holds: once the field's value differs, the
-   * user edited it by hand and the mark goes.
+   * Mark a field the drafter changed. `previous` is what undo puts back, in
+   * the form's own shape; a field drafted again while it still holds what
+   * the last draft set keeps the value from before the first draft.
+   * `applied` is the value it now holds, in the comparable shape of
+   * `values`: once the field's value differs, the user edited it by hand
+   * and the mark goes.
    */
   mark: (field: K, previous: unknown, applied: unknown) => void;
   /** Put a field's previous value back and drop its mark. */
@@ -42,6 +44,8 @@ export function useDraftedFields<K extends string>(
   restoreRef.current = restore;
   const markersRef = useRef(markers);
   markersRef.current = markers;
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
   // A field whose value moved off what the draft set was edited by hand.
   useEffect(() => {
@@ -57,10 +61,12 @@ export function useDraftedFields<K extends string>(
   }, [markers, values]);
 
   const mark = useCallback((field: K, previous: unknown, applied: unknown) => {
+    // Compared as `values` has it, not as the form holds it (`previous`).
+    const now = valuesRef.current[field];
     setMarkers((prev) => {
       const next = new Map(prev);
       const earlier = prev.get(field);
-      if (earlier && isEqual(previous, earlier.applied)) {
+      if (earlier && isEqual(now, earlier.applied)) {
         // Drafted again: undo still goes back to before the first draft.
         next.set(field, { previous: earlier.previous, applied });
       } else next.set(field, { previous, applied });
