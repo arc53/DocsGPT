@@ -8,6 +8,13 @@ export const DRAFTER_ENDPOINTS = {
   STREAM: '/api/drafter/stream',
 } as const;
 
+/**
+ * The server's caps on the history a turn sends (docsgpt/drafter/service.py):
+ * messages in all, and characters in one user message.
+ */
+export const DRAFTER_MAX_MESSAGES = 24;
+export const DRAFTER_USER_MESSAGE_CHARS = 8000;
+
 /** What a drafter session fills: the agent form, a prompt, or Insights topics. */
 export type DrafterRecipe = 'agent' | 'prompt' | 'topics';
 
@@ -18,7 +25,11 @@ export type DrafterConfig = {
   reason: 'disabled' | 'no_model' | null;
 };
 
-/** One turn the client sends; an assistant turn is a questions/proposal event as JSON. */
+/**
+ * One turn the client sends; an assistant turn is a questions/proposal event
+ * as JSON (questions carry the line said before them as `message`), or a
+ * plain reply's text.
+ */
 export type DrafterMessage = { role: 'user' | 'assistant'; content: string };
 
 export type DrafterOption = { id: string; label: string };

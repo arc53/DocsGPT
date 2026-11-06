@@ -3,6 +3,8 @@ import { useSelector } from 'react-redux';
 
 import { selectToken } from '../preferences/preferenceSlice';
 import {
+  DRAFTER_MAX_MESSAGES,
+  DRAFTER_USER_MESSAGE_CHARS,
   type DrafterCounts,
   type DrafterErrorCode,
   type DrafterEvent,
@@ -45,6 +47,11 @@ export type DrafterSession = {
   step: DrafterStep | null;
   streaming: boolean;
   /**
+   * The history is as long as the server takes: a send does nothing until
+   * `reset` starts over.
+   */
+  full: boolean;
+  /**
    * Send a user message (a description, a change, composed answers).
    * `hidden` sends one the client composed ("Continue with Knowledge and
    * tools."): it runs the turn but draws no bubble and is not in
@@ -67,7 +74,10 @@ export type DrafterSession = {
  * The drafter's conversation, independent of the screen it fills: it keeps
  * the history the server needs (nothing is stored server-side), runs each
  * turn as an SSE stream, turns the events into panel items and hands every
- * proposal to `onProposal`. Unmounting stops a running turn.
+ * proposal to `onProposal`. The history holds only answered turns: a failed,
+ * stopped or replaced turn's message stays on screen but is not sent again
+ * (Retry runs it once more), so the server never gets two user messages in a
+ * row. Unmounting stops a running turn.
  *
  * Args:
  *   options: The recipe, a context getter and the proposal callback.
@@ -83,7 +93,11 @@ export function useDrafterSession({
   const token = useSelector(selectToken);
   const [items, setItems] = useState<DrafterItem[]>([]);
   const [step, setStep] = useState<DrafterStep | null>(null);
+  const [full, setFull] = useState(false);
+  // Answered turns only: each user message with the drafter's answer.
   const history = useRef<DrafterMessage[]>([]);
+  // The turn being answered: its message and the lines said so far.
+  const pending = useRef<{ user: DrafterMessage; said: string[] } | null>(null);
   const userWords = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
   const nextId = useRef(0);
@@ -97,6 +111,22 @@ export function useDrafterSession({
     setItems((prev) => [...prev, { ...item, id } as DrafterItem]);
   }, []);
 
+  /** Close the pending turn with the drafter's answer, into the history. */
+  const answer = useCallback((content: string) => {
+    const turn = pending.current;
+    if (!turn) return;
+    pending.current = null;
+    history.current.push(turn.user, { role: 'assistant', content });
+    // The next send adds one message.
+    setFull(history.current.length + 1 > DRAFTER_MAX_MESSAGES);
+  }, []);
+
+  /** A turn that only said something (a refusal, an explanation) is answered by it. */
+  const answerWithWords = useCallback(() => {
+    const said = pending.current?.said ?? [];
+    if (said.length > 0) answer(said.join('\n\n'));
+  }, [answer]);
+
   const handle = useCallback(
     (event: DrafterEvent) => {
       switch (event.type) {
@@ -107,20 +137,24 @@ export function useDrafterSession({
           } else setStep('drafting');
           return;
         case 'message':
-          if (event.text) push({ kind: 'message', text: event.text });
+          if (!event.text) return;
+          pending.current?.said.push(event.text);
+          push({ kind: 'message', text: event.text });
           return;
-        case 'questions':
-          history.current.push({
-            role: 'assistant',
-            content: JSON.stringify(event),
-          });
+        case 'questions': {
+          const said = pending.current?.said ?? [];
+          answer(
+            JSON.stringify(
+              said.length > 0
+                ? { ...event, message: said.join('\n\n') }
+                : event,
+            ),
+          );
           push({ kind: 'questions', questions: event.questions ?? [] });
           return;
+        }
         case 'proposal':
-          history.current.push({
-            role: 'assistant',
-            content: JSON.stringify(event),
-          });
+          answer(JSON.stringify(event));
           push({ kind: 'proposal', proposal: event.proposal });
           latest.current.onProposal(event.proposal);
           return;
@@ -128,14 +162,17 @@ export function useDrafterSession({
           push({ kind: 'error', code: event.code, message: event.message });
           return;
         case 'end':
+          answerWithWords();
           setStep(null);
           return;
       }
     },
-    [push],
+    [answer, answerWithWords, push],
   );
 
   const run = useCallback(() => {
+    const turn = pending.current;
+    if (!turn) return;
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
@@ -143,7 +180,7 @@ export function useDrafterSession({
     void streamDrafter(
       {
         recipe,
-        messages: [...history.current],
+        messages: [...history.current, turn.user],
         context: latest.current.getContext(),
       },
       latest.current.token,
@@ -161,9 +198,10 @@ export function useDrafterSession({
 
   const send = useCallback(
     (text: string, options?: { hidden?: boolean }) => {
-      const message = text.trim();
-      if (!message) return;
-      history.current.push({ role: 'user', content: message });
+      const message = text.trim().slice(0, DRAFTER_USER_MESSAGE_CHARS);
+      if (!message || history.current.length + 1 > DRAFTER_MAX_MESSAGES) return;
+      // A turn still pending (failed, stopped or running) gives way.
+      pending.current = { user: { role: 'user', content: message }, said: [] };
       if (!options?.hidden) {
         userWords.current.push(message);
         push({ kind: 'user', text: message });
@@ -183,11 +221,12 @@ export function useDrafterSession({
   const stop = useCallback(() => {
     controller.current?.abort();
     controller.current = null;
+    answerWithWords();
     setStep(null);
-  }, []);
+  }, [answerWithWords]);
 
   const retry = useCallback(() => {
-    // The failed turn's error goes; the history still ends with the turn.
+    // The failed turn's error goes; its message is still pending.
     setItems((prev) =>
       prev.at(-1)?.kind === 'error' ? prev.slice(0, -1) : prev,
     );
@@ -198,6 +237,8 @@ export function useDrafterSession({
     controller.current?.abort();
     controller.current = null;
     history.current = [];
+    pending.current = null;
+    setFull(false);
     userWords.current = [];
     setItems([]);
     setStep(null);
@@ -210,6 +251,7 @@ export function useDrafterSession({
     items,
     step,
     streaming: step !== null,
+    full,
     send,
     addMessage,
     userTexts,
