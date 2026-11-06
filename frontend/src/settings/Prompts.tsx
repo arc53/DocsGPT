@@ -474,7 +474,7 @@ function PromptDetailPage({
   const usedBy = agentUseCount(saved?.used_by);
 
   const drafterConfig = useDrafterConfig();
-  const mode = promptDrafterMode(saved ? 'EDIT' : 'ADD', detail.content);
+  const mode = promptDrafterMode(detail.content);
   const drafter = usePromptDrafter({
     mode,
     promptId: saved?.id ?? null,

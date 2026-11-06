@@ -953,6 +953,21 @@ describe('Prompts page', () => {
     );
   });
 
+  it('writes a saved prompt that has no text, as the server improves none', async () => {
+    drafter.config = { enabled: true };
+    withText('');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.prompt.write', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="website"]')!,
+    );
+    expect(drafter.requests[0].context).toMatchObject({
+      mode: 'write',
+      prompt: { id: 'p-own', content: '' },
+    });
+  });
+
   const WRITE = {
     mode: 'write',
     message: 'A first draft for Meridian.',

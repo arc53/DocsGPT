@@ -50,12 +50,12 @@ export type PromptWriteProposal = {
 
 export type PromptProposal = PromptImproveProposal | PromptWriteProposal;
 
-/** `improve` for an existing prompt or a new one with text, `write` for an empty new one. */
-export function promptDrafterMode(
-  type: 'ADD' | 'EDIT',
-  content: string,
-): 'improve' | 'write' {
-  return type === 'EDIT' || content.trim() ? 'improve' : 'write';
+/**
+ * `improve` for a prompt with text, `write` for an empty one, saved or new
+ * (the server has nothing to improve in an empty prompt).
+ */
+export function promptDrafterMode(content: string): 'improve' | 'write' {
+  return content.trim() ? 'improve' : 'write';
 }
 
 const isString = (value: unknown): value is string => typeof value === 'string';

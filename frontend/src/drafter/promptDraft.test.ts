@@ -19,10 +19,11 @@ const EDITS: PromptEdit[] = [
 ];
 
 describe('promptDrafterMode', () => {
-  it('improves an existing prompt or a filled new one, writes an empty one', () => {
-    expect(promptDrafterMode('EDIT', '')).toBe('improve');
-    expect(promptDrafterMode('ADD', 'Some text')).toBe('improve');
-    expect(promptDrafterMode('ADD', '  ')).toBe('write');
+  // The server refuses to improve no text, saved prompt or not.
+  it('improves a prompt with text and writes an empty one', () => {
+    expect(promptDrafterMode('Some text')).toBe('improve');
+    expect(promptDrafterMode('')).toBe('write');
+    expect(promptDrafterMode('  ')).toBe('write');
   });
 });
 
