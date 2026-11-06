@@ -126,6 +126,17 @@ describe('DrafterQuestions', () => {
     await act(async () => control('q1', 'drafter.somethingElse').click());
     const input = card('q1').querySelector('input')!;
     await act(async () => setValue(input, 'To the shop'));
+    // Enter that picks an IME candidate (Japanese, Chinese) doesn't send.
+    await act(async () =>
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          isComposing: true,
+        }),
+      ),
+    );
+    expect(onAnswer).not.toHaveBeenCalled();
     await act(async () =>
       input.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),

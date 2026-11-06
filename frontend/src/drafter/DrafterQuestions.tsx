@@ -165,7 +165,12 @@ export function DrafterQuestions({
               update(question.id, { ...answer, other: event.target.value })
             }
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && message) {
+              // Not the Enter that picks an IME candidate (Japanese, Chinese).
+              if (
+                event.key === 'Enter' &&
+                !event.nativeEvent.isComposing &&
+                message
+              ) {
                 event.preventDefault();
                 onAnswer(message);
               }
