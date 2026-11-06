@@ -18,11 +18,14 @@ export const DRAFTER_USER_MESSAGE_CHARS = 8000;
 /** What a drafter session fills: the agent form, a prompt, or Insights topics. */
 export type DrafterRecipe = 'agent' | 'prompt' | 'topics';
 
-/** `GET /api/drafter/config`: whether the wand shows, and on which model. */
+/**
+ * `GET /api/drafter/config`: whether the wand shows, and on which model.
+ * `unavailable` is the client's own reason: the config couldn't be read.
+ */
 export type DrafterConfig = {
   enabled: boolean;
   model: { id: string; display_name: string } | null;
-  reason: 'disabled' | 'no_model' | null;
+  reason: 'disabled' | 'no_model' | 'unavailable' | null;
 };
 
 /**
@@ -87,7 +90,9 @@ const ERROR_CODES: DrafterErrorCode[] = [
 
 /**
  * Read the drafter's config. Any failure (an older server without the route,
- * a network error) reads as disabled, so the wand simply doesn't show.
+ * a network error) reads as off with `reason: 'unavailable'`, so the wand
+ * simply doesn't show, and a cache can tell it from a server with drafting
+ * off.
  *
  * Args:
  *   token: The session token.
@@ -100,10 +105,10 @@ export async function getDrafterConfig(
   token: string | null,
   signal?: AbortSignal,
 ): Promise<DrafterConfig> {
-  const disabled: DrafterConfig = {
+  const unavailable: DrafterConfig = {
     enabled: false,
     model: null,
-    reason: 'disabled',
+    reason: 'unavailable',
   };
   try {
     const response: Response = await apiClient.get(
@@ -112,7 +117,7 @@ export async function getDrafterConfig(
       {},
       signal,
     );
-    if (!response?.ok) return disabled;
+    if (!response?.ok) return unavailable;
     const data = (await response.json()) as Partial<DrafterConfig>;
     return {
       enabled: data.enabled === true,
@@ -120,7 +125,7 @@ export async function getDrafterConfig(
       reason: data.reason ?? null,
     };
   } catch {
-    return disabled;
+    return unavailable;
   }
 }
 

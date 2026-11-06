@@ -47,7 +47,7 @@ describe('drafterApi', () => {
     client.post.mockReset();
   });
 
-  it('reads the config, and an unreadable one as disabled', async () => {
+  it('reads the config, and an unreadable one as unavailable', async () => {
     client.get.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -62,10 +62,22 @@ describe('drafterApi', () => {
       model: { id: 'm', display_name: 'Model' },
       reason: null,
     });
+    // A failed read is off but says so, unlike a server with drafting off.
+    const unread = { enabled: false, model: null, reason: 'unavailable' };
     client.get.mockResolvedValueOnce(new Response('nope', { status: 404 }));
-    expect((await getDrafterConfig('tok')).enabled).toBe(false);
+    await expect(getDrafterConfig('tok')).resolves.toEqual(unread);
     client.get.mockRejectedValueOnce(new Error('offline'));
-    expect((await getDrafterConfig('tok')).enabled).toBe(false);
+    await expect(getDrafterConfig('tok')).resolves.toEqual(unread);
+    client.get.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ enabled: false, model: null, reason: 'disabled' }),
+      ),
+    );
+    await expect(getDrafterConfig('tok')).resolves.toEqual({
+      enabled: false,
+      model: null,
+      reason: 'disabled',
+    });
   });
 
   it('posts the request and hands over each event, split across chunks', async () => {
