@@ -160,15 +160,14 @@ def run_benchmark():
     # Markdown Table output for PR description
     print("### PR Summary Table:\n")
     table = [
-        "| Metric | `CHUNK_COMPRESSION_ENABLED=False` (Baseline) | `CHUNK_COMPRESSION_ENABLED=True` (SuperCompress) | Delta / Verification |",
+        "| Metric | `CHUNK_COMPRESSION_ENABLED=False` (Baseline) | `CHUNK_COMPRESSION_ENABLED=True` (Boilerplate Pruning) | Delta / Verification |",
         "| :--- | :--- | :--- | :--- |",
         f"| **Context Tokens / Query** | {total_orig_tokens // len(queries)} | {total_pruned_tokens // len(queries)} | **-{((total_orig_tokens - total_pruned_tokens) / total_orig_tokens) * 100:.1f}% token reduction** |",
-        f"| **Oracle Recall on Evaluation Set** | 100% | {oracle_recall_pct:.1f}% | 100% target evidence preserved |",
+        f"| **Oracle Recall on Evaluation Set** | 100% | {oracle_recall_pct:.1f}% | {preserved_oracle_targets}/{total_oracle_targets} queries preserved key evidence |",
+        f"| **Fenced Code Blocks Preserved** | 100% | {cb_pct:.1f}% | {preserved_code_blocks}/{total_expected_cb} blocks preserved |",
+        f"| **Markdown Tables Preserved** | 100% | {tb_pct:.1f}% | {preserved_tables}/{total_expected_tb} tables preserved |",
+        f"| **Negations & Warnings Preserved** | 100% | {ng_pct:.1f}% | {preserved_negations}/{total_expected_ng} markers preserved |",
         f"| **Retrieval Latency** | Baseline (0.0 ms) | +{avg_latency_ms:.2f} ms | negligible (~{avg_latency_ms:.2f}ms) |",
-        "| **Code & Table Fidelity** | 100% | 100% | Exact match (Zero loss) |",
-        "| **Factual Negations / Warnings** | 100% | 100% | Zero polarity inversion |",
-        "| **Citations & Document IDs** | 100% | 100% | Byte-identical document IDs |",
-        "| **Both Retrieval Paths Supported** | Yes (ClassicRAG & Dispatcher) | Yes (ClassicRAG & Dispatcher) | Positional & Kwarg query handling |",
     ]
     print("\n".join(table))
 

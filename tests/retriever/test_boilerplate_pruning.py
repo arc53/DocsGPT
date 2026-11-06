@@ -586,15 +586,40 @@ class TestCompressingRetrieverIntegration:
 
         with patch.dict("sys.modules", {"supercompress": mock_module}):
             retriever = CompressingRetriever(mock_inner)
+            raw_docs = mock_inner.search.return_value
             result = retriever.search(query="API authentication")
 
             assert len(result) == 2
+            assert result is raw_docs
+            assert result[0] is raw_docs[0]
+            assert result[1] is raw_docs[1]
             assert result[0] == {"id": "doc1", "text": "SuperCompressed chunk 1", "source": "s1"}
             assert result[1] == {"id": "doc2", "text": "SuperCompressed chunk 2", "source": "s2"}
             assert mock_compress_for_turn.call_count == 2
             call1_kwargs = mock_compress_for_turn.call_args_list[0][1]
             assert call1_kwargs.get("user_query") == "API authentication"
             assert call1_kwargs.get("context_blocks") == ["Raw retrieved chunk 1"]
+
+    def test_supercompress_avoids_partial_updates_on_failure(self):
+        """When compression raises midway, documents must not be partially modified and fallback is used."""
+        mock_result_1 = Mock(compressed_text="SuperCompressed chunk 1")
+        mock_compress_for_turn = Mock(side_effect=[mock_result_1, RuntimeError("compression failed")])
+
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+        doc1 = {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"}
+        doc2 = {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"}
+        mock_inner = Mock()
+        mock_inner.search.return_value = [doc1, doc2]
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="authentication")
+
+            # Documents preserved without partial SuperCompress mutation
+            assert result[0] is doc1
+            assert result[1] is doc2
+            assert result[0]["text"] == "Factual chunk 1."
+            assert result[1]["text"] == "Factual chunk 2."
 
     def test_supercompress_fallback_when_absent(self):
         """Falls back gracefully to in-tree boilerplate pruning when SuperCompress is not installed."""
