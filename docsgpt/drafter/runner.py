@@ -273,6 +273,7 @@ class _Turn:
 
     def __init__(self, req: DraftRequest, recipe: Recipe, ws: Workspace, llm: Any, model_id: str,
                  tool_mode: bool) -> None:
+        """Set up the turn: whether it may still ask, and the messages its first call sends."""
         self.req = req
         self.recipe = recipe
         self.ws = ws

@@ -105,6 +105,7 @@ class Workspace:
 
 
 def _cap(rows: list, limit: int, kind: str, hidden: dict[str, int]) -> list:
+    """The first ``limit`` rows; how many were left out is counted in ``hidden[kind]``."""
     if len(rows) > limit:
         hidden[kind] = len(rows) - limit
         return rows[:limit]
@@ -112,6 +113,7 @@ def _cap(rows: list, limit: int, kind: str, hidden: dict[str, int]) -> list:
 
 
 def _attachable(resource_type: str, access: Optional[str], switches: Optional[dict]) -> bool:
+    """Whether the caller's access to a resource (and its sharing switches) lets them attach it to an agent."""
     from docsgpt.api.user.resource_access import REF_USE_ACTION, allowed_actions
 
     return REF_USE_ACTION[resource_type] in allowed_actions(resource_type, access, switches)
@@ -207,6 +209,7 @@ def _tool_actions(row: dict) -> list[dict]:
 
 
 def _tool_entry(row: dict, *, shared: bool = False, kind: Optional[str] = None) -> dict:
+    """A tool's catalog row: id, cleaned name and kind (``kind`` or the tool's type), description, shared flag."""
     name = clean_text(row.get("custom_name") or row.get("display_name") or row.get("name"), NAME_CHARS)
     entry: dict[str, Any] = {"id": str(row["id"]), "name": name, "kind": kind or clean_text(row.get("name"), 40)}
     description = clean_text(row.get("description"), DESCRIPTION_CHARS)
