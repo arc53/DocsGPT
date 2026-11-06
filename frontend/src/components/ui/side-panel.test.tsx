@@ -3,8 +3,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const media = { isMobile: false, isDesktop: true };
+// Counts the panel's renders: it reads the media query once per render.
+const mediaReads = { count: 0 };
 vi.mock('../../hooks', () => ({
-  useMediaQuery: () => media,
+  useMediaQuery: () => {
+    mediaReads.count += 1;
+    return media;
+  },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -200,6 +205,15 @@ describe('SidePanel variant="docked"', () => {
         </SidePanel>,
       );
       expect(aside()!.textContent).toContain('renewal-note.md');
+    });
+
+    it('renders once per page render while open', async () => {
+      // A new content element on every page render must not re-render the
+      // panel a second time to remember it.
+      await render(panel({ variant: 'docked' }));
+      mediaReads.count = 0;
+      await render(panel({ variant: 'docked' }));
+      expect(mediaReads.count).toBe(1);
     });
 
     it('stays open when reopened mid-exit', async () => {

@@ -174,8 +174,10 @@ function SidePanel({
   const [present, setPresent] = React.useState(open);
   if (open && !present) setPresent(true);
   const closing = present && !open;
-  const [lastChildren, setLastChildren] = React.useState(children);
-  if (open && children !== lastChildren) setLastChildren(children);
+  // A ref, not state: the content is a new element on most page renders,
+  // and state would render the panel twice each time to remember it.
+  const lastChildren = React.useRef(children);
+  if (open) lastChildren.current = children;
   React.useEffect(() => {
     if (!closing) return;
     const timer = window.setTimeout(
@@ -245,7 +247,7 @@ function SidePanel({
           data-slot="side-panel-content"
           className="absolute inset-y-0 right-0 flex w-full min-w-120 flex-col"
         >
-          {closing ? lastChildren : children}
+          {closing ? lastChildren.current : children}
         </div>
       </aside>
     </SidePanelContext.Provider>
