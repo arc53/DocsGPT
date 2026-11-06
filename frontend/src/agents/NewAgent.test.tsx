@@ -2531,7 +2531,10 @@ describe('NewAgent drafter', () => {
   });
 
   it('shows no wand until the agent says what the caller may do', async () => {
-    let answer: (value: unknown) => void = () => undefined;
+    let answer: (value: {
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }) => void = () => undefined;
     mocks.getAgent.mockImplementation(
       () =>
         new Promise((resolve) => {
