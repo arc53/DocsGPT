@@ -3173,7 +3173,10 @@ describe('NewAgent drafter', () => {
     const use = () => buttonByText('drafter.agent.prompt.use', view()!)!;
 
     it('opens the prompt it wrote in the view, and Use this prompt saves and sets it', async () => {
-      mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
+      // A save answers with the version it wrote.
+      mocks.createPrompt.mockImplementation(() =>
+        jsonResponse({ id: 'np1', updated_at: 'v1' }),
+      );
       drafter.scripts = [writes()];
       await render();
       await ask('A shipping agent for our website');
