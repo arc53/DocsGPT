@@ -20,9 +20,10 @@ MESSAGE_CHARS = 1000
 
 #: Most characters of a ``questions`` or ``proposal`` event as the panel sends it back as an assistant message
 #: (``JSON.stringify``). The largest a recipe builds is a near-total rewrite of a prompt at its 20000-character
-#: cap: the result plus every edit's find and replace (60000 together) and the reasons, at worst doubled by JSON
-#: escaping. The runner sends a longer event back to the model, so whatever the server emits comes back whole.
-EVENT_CHARS = 160_000
+#: cap with edits: every find and replace (40000 together) and their reasons, about 47000 characters, at worst
+#: doubled by JSON escaping. An agent proposal adds its other fields to that; a new prompt's text is at most
+#: 20000. The runner sends a longer event back to the model, so whatever the server emits comes back whole.
+EVENT_CHARS = 120_000
 
 #: Arguments of the ``ask_user`` terminal tool.
 QUESTIONS_SCHEMA: dict = {

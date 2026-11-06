@@ -3,9 +3,10 @@
 Improve returns *edits*, not a rewrite: each ``find`` is an exact passage of the
 current text that occurs once, each ``replace`` its new text (``''`` deletes;
 an insertion anchors on nearby text and repeats it). The server checks them,
-applies them to compute ``result``, and reports what the change does to the
-prompt's mode: a plain-text prompt is a persona DocsGPT wraps with its own
-sections, any ``{{ }}`` makes it a template used verbatim. Those findings go
+applies them to check the text they make (only the edits go out: the client
+applies them itself), and reports what the change does to the prompt's mode:
+a plain-text prompt is a persona DocsGPT wraps with its own sections, any
+``{{ }}`` makes it a template used verbatim. Those findings go
 out as ``checks`` codes the client words in the user's language; the model's
 own ``warnings`` are already in it.
 
@@ -452,8 +453,6 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             "mode": "improve",
             "message": message,
             "edits": edits,
-            "result": result,
-            "template_mode": {"before": is_template(current), "after": is_template(result)},
             "warnings": _warnings(args),
             "checks": checks_for(current, result),
             "suggestions": _suggestions(args),
@@ -479,7 +478,6 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         "content": content,
         "reason": clean_text(args.get("reason"), REASON_MAX),
         "warnings": _warnings(args),
-        "template_mode": {"before": is_template(current), "after": is_template(content)},
         "checks": checks_for(current, content),
         "assumptions": _texts(args, "assumptions", ASSUMPTION_MAX, MAX_ASSUMPTIONS),
         "suggestions": _suggestions(args),

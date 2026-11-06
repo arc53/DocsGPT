@@ -43,8 +43,7 @@ class TestPromptStream:
         # Nothing was read, so there is no "Looked at your workspace" line.
         assert _types(events) == ["status:drafting", "proposal", "end"]
         proposal = events[1]["proposal"]
-        assert proposal["result"] == "You answer shipping questions.\nBe brief."
-        assert proposal["template_mode"] == {"before": True, "after": False}
+        assert [e["id"] for e in proposal["edits"]] == ["e1"] and "result" not in proposal
         assert proposal["checks"] == ["to_persona"]
 
     def test_write_returns_a_name_and_text(self, client):

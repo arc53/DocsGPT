@@ -38,8 +38,6 @@ const IMPROVE = {
     { id: 'e1', find: 'Hello.', replace: 'Hi.', reason: 'Shorter.' },
     { id: 'e2', find: 'Be brief.', replace: 'Be short.', reason: 'Plain.' },
   ],
-  result: 'Hi.\nBe short.',
-  template_mode: { before: false, after: false },
   warnings: [],
   checks: [],
 };

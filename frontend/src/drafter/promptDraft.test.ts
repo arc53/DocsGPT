@@ -34,6 +34,7 @@ describe('readPromptProposal', () => {
       mode: 'improve',
       message: 'Done',
       edits: [...EDITS, { id: 'x' }, null],
+      // Fields the review doesn't use are left out.
       result: 'r',
       template_mode: { before: false, after: true },
       warnings: ['w', 3],
@@ -44,8 +45,6 @@ describe('readPromptProposal', () => {
       mode: 'improve',
       message: 'Done',
       edits: EDITS,
-      result: 'r',
-      templateMode: { before: false, after: true },
       warnings: ['w'],
       checks: ['to_template'],
       suggestions: ['Add a hand-off'],

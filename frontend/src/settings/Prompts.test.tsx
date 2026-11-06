@@ -920,8 +920,6 @@ describe('Prompts page', () => {
         reason: 'Clearer.',
       },
     ],
-    result: 'You check every vendor.',
-    template_mode: { before: false, after: false },
     warnings: ['Mind the tone.'],
     checks: ['boundaries_removed'],
   };
@@ -1005,7 +1003,6 @@ describe('Prompts page', () => {
     content: 'You answer visitors of Meridian Freight.',
     reason: 'A persona.',
     warnings: [],
-    template_mode: { before: false, after: false },
     checks: [],
     assumptions: ['Hand-offs go to your support team.'],
     suggestions: ['Add your opening hours', 'Make it shorter'],

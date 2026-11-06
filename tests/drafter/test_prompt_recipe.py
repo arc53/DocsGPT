@@ -7,7 +7,9 @@ import json
 import pytest
 
 from docsgpt.drafter.catalog import Workspace
+from docsgpt.drafter.output import echo_length, EVENT_CHARS
 from docsgpt.drafter.prompt_recipe import (
+    apply_edits,
     CONTENT_MAX,
     context_data,
     instructions,
@@ -44,6 +46,11 @@ def _improve(edits, content=PERSONA, messages=(), **extra):
 
 def _edit(find, replace, reason="Because."):
     return {"find": find, "replace": replace, "reason": reason}
+
+
+def _applied(proposal, content=PERSONA):
+    """The text with a proposal's edits applied, as the review applies them."""
+    return apply_edits(content, proposal["edits"])[1]
 
 
 @pytest.mark.unit
@@ -196,12 +203,16 @@ class TestImprove:
         assert proposal["mode"] == "improve"
         assert [e["id"] for e in proposal["edits"]] == ["e1", "e2"]
         assert proposal["edits"][0]["find"].startswith("Use the context")
-        assert proposal["result"] == (
+        assert _applied(proposal) == (
             "You answer customer questions for Meridian Freight Group.\n"
             "Be polite and concise. Never quote a price."
         )
-        assert proposal["template_mode"] == {"before": False, "after": False}
         assert proposal["checks"] == [] and proposal["warnings"] == []
+
+    def test_the_rewritten_text_is_not_sent(self):
+        # The review applies the edits itself; the whole text would come back with every later message.
+        proposal = _improve([_edit("Be polite", "Be warm")])
+        assert set(proposal) == {"mode", "message", "edits", "warnings", "checks", "suggestions"}
 
     def test_a_find_that_is_missing_goes_back_to_the_model(self):
         with pytest.raises(ProposalInvalid, match="not found"):
@@ -217,7 +228,7 @@ class TestImprove:
 
     def test_no_op_edits_are_dropped(self):
         proposal = _improve([_edit("Be polite", "Be polite")])
-        assert proposal["edits"] == [] and proposal["result"] == PERSONA
+        assert proposal["edits"] == []
 
     def test_too_many_edits(self):
         content = " ".join(f"w{i}." for i in range(MAX_EDITS + 2))
@@ -235,12 +246,10 @@ class TestImprove:
     def test_switching_a_persona_to_a_template_is_flagged(self):
         proposal = _improve([_edit("Be polite and concise.", "Be polite. Company: {{ passthrough.company }}")],
                             messages=("Use {{ passthrough.company }}",))
-        assert proposal["template_mode"] == {"before": False, "after": True}
         assert proposal["checks"] == ["to_template"]
 
     def test_switching_a_template_to_a_persona_is_flagged(self):
         proposal = _improve([_edit(" {{ system.date }}", "")], content="Hi. Today {{ system.date }}")
-        assert proposal["template_mode"] == {"before": True, "after": False}
         assert proposal["checks"] == ["to_persona"]
 
     def test_removing_boundaries_or_citations_from_a_template_is_flagged(self):
@@ -258,13 +267,13 @@ class TestImprove:
     def test_a_prompt_that_never_parsed_is_not_blamed_on_the_edit(self):
         content = "Hi {{ system.date }} {% here. Be brief."
         proposal = _improve([_edit("Be brief.", "Be brief and kind.")], content=content)
-        assert proposal["result"] == "Hi {{ system.date }} {% here. Be brief and kind."
+        assert _applied(proposal, content) == "Hi {{ system.date }} {% here. Be brief and kind."
 
     @pytest.mark.parametrize("text", ["Explain Liquid tags such as {% for %}.", "Say {# hi #}.", "Write {{ alone."])
     def test_plain_text_with_braces_is_not_parsed_as_a_template(self, text):
         # Only a text with both {{ and }} is rendered as a template; the rest reaches the model as written.
         proposal = _improve([_edit("Be polite and concise.", text)])
-        assert proposal["result"].endswith(text)
+        assert _applied(proposal).endswith(text)
         written = validate({"name": "Liquid", "content": text}, _req("write", "", "Write it"), Workspace())
         assert written["content"] == text
 
@@ -273,7 +282,7 @@ class TestImprove:
         with pytest.raises(ProposalInvalid, match="tools"):
             _improve(edit)
         asked = _improve(edit, messages=("Add {{ tools.memory.memory_view }}",))
-        assert "memory_view" in asked["result"]
+        assert "memory_view" in asked["edits"][0]["replace"]
 
     def test_suggestions_come_with_the_edits(self):
         proposal = _improve([_edit("Be polite", "Be warm")], suggestions=["Add a hand-off"], assumptions=["x"])
@@ -283,9 +292,19 @@ class TestImprove:
     def test_a_prompt_over_the_drafting_cap_takes_edits_anywhere_that_do_not_make_it_longer(self):
         long = "Be brief.\n" + "x" * CONTENT_MAX + "\nThe end."
         proposal = _improve([_edit("The end.", "Thanks.")], content=long)
-        assert proposal["result"] == "Be brief.\n" + "x" * CONTENT_MAX + "\nThanks."
+        assert _applied(proposal, long) == "Be brief.\n" + "x" * CONTENT_MAX + "\nThanks."
         with pytest.raises(ProposalInvalid, match="already over"):
             _improve([_edit("The end.", "The very end.")], content=long)
+
+    def test_a_near_total_rewrite_at_the_cap_fits_the_event_limit(self):
+        # The largest improve event: every edit at its longest, in text that JSON escaping doubles.
+        size = CONTENT_MAX // MAX_EDITS
+        chunks = [f"{i:02d}" + '"' * (size - 2) for i in range(MAX_EDITS)]
+        edits = [_edit(chunk, chunk[:2] + "\\" * (size - 2), '"' * 300) for chunk in chunks]
+        proposal = _improve(edits, content="".join(chunks), warnings=['"' * 300] * 3,
+                            suggestions=['"' * 120] * 3, message='"' * 600)
+        assert len(proposal["edits"]) == MAX_EDITS
+        assert echo_length({"type": "proposal", "proposal": proposal}) <= EVENT_CHARS
 
     def test_model_warnings_are_kept_and_capped(self):
         proposal = _improve([], warnings=["One", "", "Two", "Three", "Four"])
@@ -303,7 +322,7 @@ class TestWrite:
         assert proposal == {
             "mode": "write", "message": "Wrote it.", "name": "HR handbook assistant",
             "content": "You help employees with the HR handbook.", "reason": "A persona.",
-            "warnings": [], "template_mode": {"before": False, "after": False}, "checks": [],
+            "warnings": [], "checks": [],
             "assumptions": [], "suggestions": [],
         }
 
@@ -361,7 +380,7 @@ class TestTurn:
             "message": "Done.", "edits": [_edit("Be polite", "Be warm")]})))
         assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["submit_proposal"]
         assert events[-1]["type"] == "proposal"
-        assert events[-1]["proposal"]["result"].endswith("Be warm and concise.")
+        assert events[-1]["proposal"]["edits"][0]["replace"] == "Be warm"
 
     def test_a_long_prompts_proposal_is_handed_over_and_taken_back(self):
         # The panel sends the proposal back as the next request's assistant message.

@@ -26,9 +26,8 @@ export const PROMPT_CHECKS: PromptCheck[] = [
 export type PromptImproveProposal = {
   mode: 'improve';
   message: string;
+  /** The review applies them to the text itself. */
   edits: PromptEdit[];
-  result: string;
-  templateMode: { before: boolean; after: boolean };
   warnings: string[];
   checks: PromptCheck[];
   /** Next changes the model offers, each worded as the user's request. */
@@ -107,16 +106,10 @@ export function readPromptProposal(raw: unknown): PromptProposal | null {
   const value = raw as Record<string, unknown>;
   const message = isString(value.message) ? value.message : '';
   if (value.mode === 'improve' && Array.isArray(value.edits)) {
-    const mode = (value.template_mode ?? {}) as Record<string, unknown>;
     return {
       mode: 'improve',
       message,
       edits: readPromptEdits(value.edits),
-      result: isString(value.result) ? value.result : '',
-      templateMode: {
-        before: mode.before === true,
-        after: mode.after === true,
-      },
       warnings: strings(value.warnings),
       checks: checks(value.checks),
       suggestions: strings(value.suggestions),
