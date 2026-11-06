@@ -53,8 +53,11 @@ export type TopicSuggestionsOptions = {
 export type TopicSuggestions = {
   /** "Suggest from conversations", or null while it can't be offered. */
   button: React.ReactNode;
-  /** Why the button isn't there yet (too few conversations), or null. */
-  hold: string | null;
+  /**
+   * Why the button isn't there yet (too few conversations), or that the
+   * status couldn't be read, with Retry; null otherwise.
+   */
+  hold: React.ReactNode;
   /** The running or finished suggestions, inline above the topics; null when closed. */
   panel: React.ReactNode;
 };
@@ -81,24 +84,44 @@ function useDrafterConfigFor(
   return wanted && config?.token === token ? config.value : null;
 }
 
-/** The agent's suggestion status, read while `agentId` is set. */
+/**
+ * The agent's suggestion status, read while `agentId` is set: null before it
+ * is read and when the suggestions aren't for this caller; `failed` when it
+ * couldn't be read, until `retry` reads it again.
+ */
 function useTopicsStatus(
   agentId: string | null,
   token: string | null,
-): TopicsStatus | null {
-  const [status, setStatus] = React.useState<{
+): { status: TopicsStatus | null; failed: boolean; retry: () => void } {
+  const [attempt, setAttempt] = React.useState(0);
+  const [read, setRead] = React.useState<{
     agentId: string;
+    attempt: number;
     value: TopicsStatus | null;
+    failed: boolean;
   } | null>(null);
   React.useEffect(() => {
     if (!agentId) return;
     const controller = new AbortController();
-    void getTopicsStatus(agentId, token, controller.signal).then((value) => {
-      if (!controller.signal.aborted) setStatus({ agentId, value });
-    });
+    getTopicsStatus(agentId, token, controller.signal).then(
+      (value) => {
+        if (!controller.signal.aborted)
+          setRead({ agentId, attempt, value, failed: false });
+      },
+      () => {
+        if (!controller.signal.aborted)
+          setRead({ agentId, attempt, value: null, failed: true });
+      },
+    );
     return () => controller.abort();
-  }, [agentId, token]);
-  return status && status.agentId === agentId ? status.value : null;
+  }, [agentId, token, attempt]);
+  const current = read && read.agentId === agentId ? read : null;
+  return {
+    status: current?.value ?? null,
+    // A retry under way shows nothing until it answers.
+    failed: current?.failed === true && current.attempt === attempt,
+    retry: () => setAttempt((n) => n + 1),
+  };
 }
 
 /**
@@ -132,7 +155,10 @@ export function useTopicSuggestions({
   const wanted = enabled && !!agentId;
   const drafter = useDrafterConfigFor(wanted, token);
   const offered = wanted && drafter?.enabled === true;
-  const status = useTopicsStatus(offered && agentId ? agentId : null, token);
+  const { status, failed, retry } = useTopicsStatus(
+    offered && agentId ? agentId : null,
+    token,
+  );
   const [open, setOpen] = React.useState(false);
 
   const close = () => setOpen(false);
@@ -156,14 +182,23 @@ export function useTopicSuggestions({
         {t('drafter.topics.suggest')}
       </Button>
     ) : null;
-  const hold =
-    offered && status && !status.available
-      ? t('drafter.topics.hold', {
-          count: status.needed,
-          needed: formatCount(status.needed),
-          formatted: formatCount(status.conversations),
-        })
-      : null;
+  let hold: React.ReactNode = null;
+  if (offered && failed)
+    hold = (
+      <>
+        {t('drafter.topics.statusFailed')}{' '}
+        <Button type="button" variant="link" size="text" onClick={retry}>
+          {t('retry')}
+        </Button>
+      </>
+    );
+  // Off (the drafter or Insights) offers nothing; too few conversations says how many it takes.
+  else if (offered && status && !status.available && !status.reason)
+    hold = t('drafter.topics.hold', {
+      count: status.needed,
+      needed: formatCount(status.needed),
+      formatted: formatCount(status.conversations),
+    });
   const panel =
     open && offered && agentId ? (
       <TopicSuggestionsCard

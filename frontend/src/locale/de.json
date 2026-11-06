@@ -4679,7 +4679,8 @@
       "errors": {
         "invalid_output": "Die Antwort des Modells war nicht verwendbar. Es wurden keine Themen hinzugefügt.",
         "model_error": "Beim Vorschlagen von Themen ist etwas schiefgelaufen. Es wurden keine Themen hinzugefügt."
-      }
+      },
+      "statusFailed": "Es ließ sich nicht prüfen, ob Vorschläge aus Gesprächen verfügbar sind."
     },
     "lookedAtWorkspaceCounts": "Deinen Arbeitsbereich angesehen: {{counts}}",
     "filled_one": "{{count}} Feld ausgefüllt",

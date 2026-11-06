@@ -4831,7 +4831,8 @@
       "errors": {
         "invalid_output": "La réponse du modèle n’a pas pu être utilisée. Aucun sujet n’a été ajouté.",
         "model_error": "Un problème est survenu pendant la suggestion de sujets. Aucun sujet n’a été ajouté."
-      }
+      },
+      "statusFailed": "Impossible de vérifier si des suggestions à partir des conversations sont disponibles."
     },
     "lookedAtWorkspaceCounts": "Votre espace de travail a été examiné : {{counts}}",
     "filled_one": "{{count}} champ rempli",

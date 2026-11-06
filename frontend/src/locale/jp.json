@@ -4645,7 +4645,8 @@
       "errors": {
         "invalid_output": "モデルの回答を使用できませんでした。トピックは追加されていません。",
         "model_error": "トピックの提案中に問題が発生しました。トピックは追加されていません。"
-      }
+      },
+      "statusFailed": "会話からの提案を使えるか確認できませんでした。"
     },
     "lookedAtWorkspaceCounts": "ワークスペースを確認しました: {{counts}}",
     "filled_one": "{{count}} 個のフィールドを入力しました",

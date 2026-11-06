@@ -10,7 +10,22 @@ export type TopicsStatus = {
   conversations: number;
   /** How many it takes before suggestions are offered. */
   needed: number;
+  /**
+   * Why suggestions aren't offered at all, whatever the count: the drafter or
+   * Insights is off. Null when only the count decides.
+   */
+  reason:
+    'disabled' | 'off_on_this_instance' | 'turned_off_for_this_agent' | null;
 };
+
+const STATUS_REASONS = [
+  'disabled',
+  'off_on_this_instance',
+  'turned_off_for_this_agent',
+] as const;
+
+/** Answers that mean the suggestions aren't for this caller, not a failure. */
+const NOT_OFFERED = [400, 401, 403, 404];
 
 /** One suggested topic of a topics proposal. */
 export type TopicSuggestion = {
@@ -123,7 +138,7 @@ export function parseTopicsProposal(raw: unknown): TopicsProposal | null {
 }
 
 /**
- * Read whether an agent has enough conversations for topic suggestions.
+ * Read whether an agent's topic suggestions are offered.
  *
  * Args:
  *   agentId: The agent.
@@ -131,30 +146,35 @@ export function parseTopicsProposal(raw: unknown): TopicsProposal | null {
  *   signal: Aborts the request.
  *
  * Returns:
- *   The status, or null when it can't be read (no edit access, an older
- *   server): suggestions then stay hidden.
+ *   The status, or null when the suggestions aren't for this caller (no edit
+ *   access, an older server): they then stay hidden.
+ *
+ * Throws:
+ *   When the status can't be read (a server error, no answer, an aborted
+ *   request), so the caller can offer Retry.
  */
 export async function getTopicsStatus(
   agentId: string,
   token: string | null,
   signal?: AbortSignal,
 ): Promise<TopicsStatus | null> {
-  try {
-    const response: Response = await apiClient.get(
-      `${TOPICS_STATUS_ENDPOINT}?agent_id=${encodeURIComponent(agentId)}`,
-      token,
-      {},
-      signal,
-    );
-    if (!response?.ok) return null;
-    const data = (await response.json()) as Partial<TopicsStatus>;
-    if (typeof data.available !== 'boolean') return null;
-    return {
-      available: data.available,
-      conversations: num(data.conversations) ?? 0,
-      needed: num(data.needed) ?? 0,
-    };
-  } catch {
-    return null;
-  }
+  const response: Response = await apiClient.get(
+    `${TOPICS_STATUS_ENDPOINT}?agent_id=${encodeURIComponent(agentId)}`,
+    token,
+    {},
+    signal,
+  );
+  if (NOT_OFFERED.includes(response.status)) return null;
+  if (!response.ok)
+    throw new Error(`topics status: ${String(response.status)}`);
+  const data = (await response.json()) as Record<string, unknown>;
+  if (typeof data.available !== 'boolean')
+    throw new Error('topics status: unreadable');
+  const reason = STATUS_REASONS.find((value) => value === data.reason);
+  return {
+    available: data.available,
+    conversations: num(data.conversations) ?? 0,
+    needed: num(data.needed) ?? 0,
+    reason: reason ?? null,
+  };
 }

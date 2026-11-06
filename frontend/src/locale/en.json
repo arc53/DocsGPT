@@ -4700,7 +4700,8 @@
       "errors": {
         "invalid_output": "The model's answer couldn't be used. No topics were added.",
         "model_error": "Something went wrong while suggesting topics. No topics were added."
-      }
+      },
+      "statusFailed": "Couldn't check whether suggestions from conversations are available."
     },
     "lookedAtWorkspaceCounts": "Looked at your workspace: {{counts}}",
     "filled_one": "Filled {{count}} field",

@@ -4643,7 +4643,8 @@
       "errors": {
         "invalid_output": "无法使用模型的回答。没有添加任何主题。",
         "model_error": "建议主题时出了问题。没有添加任何主题。"
-      }
+      },
+      "statusFailed": "无法检查是否可以根据对话建议主题。"
     },
     "lookedAtWorkspaceCounts": "已查看你的工作区：{{counts}}",
     "filled_one": "已填写 {{count}} 个字段",

@@ -4645,7 +4645,8 @@
       "errors": {
         "invalid_output": "無法使用模型的回答。沒有加入任何主題。",
         "model_error": "建議主題時發生問題。沒有加入任何主題。"
-      }
+      },
+      "statusFailed": "無法檢查是否能根據對話建議主題。"
     },
     "lookedAtWorkspaceCounts": "已查看你的工作區：{{counts}}",
     "filled_one": "已填寫 {{count}} 個欄位",

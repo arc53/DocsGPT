@@ -4831,7 +4831,8 @@
       "errors": {
         "invalid_output": "No se pudo usar la respuesta del modelo. No se añadió ningún tema.",
         "model_error": "Algo salió mal al sugerir temas. No se añadió ningún tema."
-      }
+      },
+      "statusFailed": "No se pudo comprobar si hay sugerencias a partir de conversaciones."
     },
     "lookedAtWorkspaceCounts": "Revisó tu espacio de trabajo: {{counts}}",
     "filled_one": "Se rellenó {{count}} campo",

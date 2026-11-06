@@ -33,6 +33,7 @@ vi.mock('../../api/services/userService', () => ({
 const mocks = vi.hoisted(() => ({
   drafterEnabled: true,
   status: null as TopicsStatus | null,
+  statusFails: false,
   statusCalls: [] as string[],
   scripts: [] as DrafterEvent[][],
   requests: [] as DrafterRequest[],
@@ -49,7 +50,9 @@ vi.mock('../../drafter/topicsDraft', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../drafter/topicsDraft')>()),
   getTopicsStatus: (agentId: string) => {
     mocks.statusCalls.push(agentId);
-    return Promise.resolve(mocks.status);
+    return mocks.statusFails
+      ? Promise.reject(new Error('500'))
+      : Promise.resolve(mocks.status);
   },
 }));
 vi.mock('../../drafter/drafterApi', async (importOriginal) => ({
@@ -156,7 +159,13 @@ describe('topic suggestions in the Insights settings', () => {
   beforeEach(() => {
     latest = undefined;
     mocks.drafterEnabled = true;
-    mocks.status = { available: true, conversations: 42, needed: 10 };
+    mocks.status = {
+      available: true,
+      conversations: 42,
+      needed: 10,
+      reason: null,
+    };
+    mocks.statusFails = false;
     mocks.statusCalls = [];
     mocks.scripts = [];
     mocks.requests = [];
@@ -205,7 +214,12 @@ describe('topic suggestions in the Insights settings', () => {
   });
 
   it('explains instead while there are too few conversations', async () => {
-    mocks.status = { available: false, conversations: 3, needed: 10 };
+    mocks.status = {
+      available: false,
+      conversations: 3,
+      needed: 10,
+      reason: null,
+    };
     await render();
     expect(button(`${T}.suggest`)).toBeUndefined();
     expect(container.textContent).toContain(
@@ -219,11 +233,38 @@ describe('topic suggestions in the Insights settings', () => {
     ['the agent is not saved', {}, { agentId: '' }],
   ])('stays hidden when %s', async (_name, flags, props) => {
     Object.assign(mocks, flags);
-    mocks.status = { available: false, conversations: 3, needed: 10 };
+    mocks.status = {
+      available: false,
+      conversations: 3,
+      needed: 10,
+      reason: null,
+    };
     await render(props);
     expect(button(`${T}.suggest`)).toBeUndefined();
     expect(container.textContent).not.toContain(`${T}.hold`);
     if (!('drafterEnabled' in flags)) expect(mocks.statusCalls).toEqual([]);
+  });
+
+  it.each(['off_on_this_instance', 'turned_off_for_this_agent'] as const)(
+    'shows neither the button nor the count while Insights is off (%s)',
+    async (reason) => {
+      mocks.status = { available: false, conversations: 0, needed: 10, reason };
+      await render();
+      expect(button(`${T}.suggest`)).toBeUndefined();
+      expect(container.textContent).not.toContain(`${T}.hold`);
+    },
+  );
+
+  it('says when the status could not be read, and retries it', async () => {
+    mocks.statusFails = true;
+    await render();
+    expect(button(`${T}.suggest`)).toBeUndefined();
+    expect(container.textContent).toContain(`${T}.statusFailed`);
+    mocks.statusFails = false;
+    await act(async () => button('retry')!.click());
+    expect(mocks.statusCalls).toEqual(['a1', 'a1']);
+    expect(container.textContent).not.toContain(`${T}.statusFailed`);
+    expect(button(`${T}.suggest`)).toBeTruthy();
   });
 
   it('runs one topics turn and adds the picked suggestions as new topics', async () => {
