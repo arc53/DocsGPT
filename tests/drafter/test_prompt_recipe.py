@@ -335,3 +335,14 @@ class TestTurn:
         fake, events = self._run(bad, good, req=req)
         assert "parse" in fake.calls[1]["messages"][-1]["content"]
         assert events[-1]["proposal"]["content"] == "Hi there"
+
+
+@pytest.mark.unit
+def test_an_edits_replacement_loses_invisible_characters_but_keeps_its_line_breaks():
+    from docsgpt.drafter.prompt_recipe import apply_edits
+
+    edits, result = apply_edits("You help.", [
+        {"find": "You help.", "replace": "You help.\n- Be​ kind\x07.‮", "reason": "Adds a rule."},
+    ])
+    assert result == "You help.\n- Be kind."
+    assert edits[0]["replace"] == "You help.\n- Be kind."

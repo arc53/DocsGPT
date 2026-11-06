@@ -273,6 +273,7 @@ PROPOSAL_SCHEMA: dict = {
 
 
 def _has_boundaries(text: str) -> bool:
+    """Whether a prompt's text holds the Boundaries section, or the lines it adds about treating data as data."""
     lowered = text.lower()
     return any(marker in lowered for marker in _BOUNDARY_MARKERS)
 
@@ -312,10 +313,12 @@ def _texts(args: dict, key: str, chars: int, most: int) -> list[str]:
 
 
 def _warnings(args: dict) -> list[str]:
+    """The proposal's warnings, cleaned and capped (:func:`_texts`)."""
     return _texts(args, "warnings", WARNING_MAX, MAX_WARNINGS)
 
 
 def _suggestions(args: dict) -> list[str]:
+    """The proposal's follow-up suggestions, cleaned and capped (:func:`_texts`)."""
     return _texts(args, "suggestions", SUGGESTION_MAX, MAX_SUGGESTIONS)
 
 
@@ -327,6 +330,18 @@ def _occurrences(content: str, find: str) -> list[int]:
         starts.append(index)
         index = content.find(find, index + 1)
     return starts
+
+
+def _clean_replacement(text: str) -> str:
+    """An edit's ``replace`` cleaned as :func:`clean_text` cleans text, keeping the spaces and line breaks around
+    it, which place the change in the prompt."""
+    core = text.strip()
+    if not core:
+        return "".join(ch for ch in text if ch in " \t\n")
+    start = text.index(core[0])
+    lead = "".join(ch for ch in text[:start] if ch in " \t\n")
+    trail = "".join(ch for ch in text[start + len(core):] if ch in " \t\n")
+    return lead + clean_text(core, len(core)) + trail
 
 
 def apply_edits(content: str, edits: list[dict]) -> tuple[list[dict], str]:
@@ -350,7 +365,7 @@ def apply_edits(content: str, edits: list[dict]) -> tuple[list[dict], str]:
     spans: list[tuple[int, int, dict]] = []
     for number, edit in enumerate(edits, start=1):
         find = str(edit.get("find") or "").replace("\r\n", "\n")
-        replace = str(edit.get("replace") or "").replace("\r\n", "\n")
+        replace = _clean_replacement(str(edit.get("replace") or "").replace("\r\n", "\n"))
         if find == replace:
             continue
         label = f"Edit {number} ({find[:60]!r})"
