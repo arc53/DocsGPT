@@ -118,6 +118,8 @@ class AgentWorkspace(Workspace):
             only): each is already an option of the agent's topic question.
         topics_from_conversations: The saved agent has enough recent conversations for Suggest from conversations
             (safety step only), so the step leaves topics to it rather than guessing them.
+        editable_prompt_text: The whole saved text of the prompt edits may change (``prompt_texts`` holds a copy
+            cut for the model), or None when the form has none or its unsaved text is open in the prompt view.
     """
 
     guardrail_menu: list[str] = field(default_factory=list)
@@ -125,6 +127,7 @@ class AgentWorkspace(Workspace):
     max_topics: int = 15
     folders: list[dict] = field(default_factory=list)
     topics_from_conversations: bool = False
+    editable_prompt_text: Optional[str] = None
 
 
 def _ids(value: Any) -> list[str]:
@@ -273,7 +276,24 @@ def source_folders(source_ids: list[str]) -> list[dict]:
     return analytics_topics.folders(rows)
 
 
+def saved_prompt_text(user_id: str, prompt_id: str) -> Optional[str]:
+    """The whole text of the caller's own saved prompt, cleaned as the model reads it but not cut; None if not theirs."""
+    from docsgpt.storage.db.repositories.prompts import PromptsRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    with db_readonly() as conn:
+        row = PromptsRepository(conn).get(prompt_id, user_id)
+    content = (row or {}).get("content")
+    return clean_text(content, len(content)) if isinstance(content, str) and content else None
+
+
 def _load(user_id: str, context: dict) -> AgentWorkspace:
+    """The caller's workspace plus what this request's step needs.
+
+    Every step reads the whole text of the prompt edits may change. The safety step also reads the instance's
+    guardrail menu and Insights switch, the folders of the agent's sources, and whether a saved agent has enough
+    conversations for Suggest from conversations.
+    """
     ws = load_workspace(user_id, agent_id=context.get("agent_id"))
     out = AgentWorkspace(
         **vars(ws),
@@ -281,6 +301,10 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
         insights=insights_available(),
         max_topics=int(settings.ANALYTICS_MAX_TOPICS),
     )
+    form = context.get("form") or {}
+    editable = _editable_prompt(form, ws)
+    if editable and not form.get("prompt_draft"):
+        out.editable_prompt_text = saved_prompt_text(user_id, editable)
     if context.get("step") == "safety" and out.insights:
         from docsgpt.drafter import topics_recipe
 
@@ -300,6 +324,9 @@ def _current_prompt(form: dict, ws: Workspace) -> tuple[Optional[str], str]:
     if draft:
         return None, draft.get("content") or ""
     prompt_id = form.get("prompt_id") or "default"
+    whole = getattr(ws, "editable_prompt_text", None)
+    if whole is not None and prompt_id == _editable_prompt(form, ws):
+        return prompt_id, whole
     return prompt_id, ws.prompt_texts.get(prompt_id, "")
 
 
@@ -763,7 +790,7 @@ def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict
     problem = tool_variables_problem(result, current, req)
     if problem:
         raise ProposalInvalid([problem])
-    # The form applies the edits to the prompt's saved text, not to the capped copy the model read.
+    # The edits fit the prompt's whole saved text (or the view's unsaved text), the text the form applies them to.
     return {"kind": "edit", "id": target, "edits": edits, "checks": checks_for(current, result)}
 
 

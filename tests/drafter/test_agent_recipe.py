@@ -274,6 +274,39 @@ class TestAvailability:
             read.assert_not_called()
 
 
+    def test_the_agents_own_saved_prompt_is_read_whole(self, monkeypatch):
+        loaded = _ws()
+        context = {"agent_id": None, "step": "prompt", "form": {"prompt_id": PROMPT_ID}}
+        with patch.object(agent_recipe, "load_workspace", return_value=Workspace(**{
+            k: getattr(loaded, k) for k in ("sources", "tools", "prompts", "prompt_texts")
+        })), patch.object(agent_recipe, "saved_prompt_text", return_value="The whole text.") as read:
+            assert AGENT_RECIPE.load_workspace("alice", context).editable_prompt_text == "The whole text."
+            read.assert_called_once_with("alice", PROMPT_ID)
+            read.reset_mock()
+            # Unsaved text in the prompt view is the text edits fit; a built-in has nothing to read.
+            draft = {**context["form"], "prompt_draft": {"id": PROMPT_ID, "name": "S", "content": "Unsaved."}}
+            assert AGENT_RECIPE.load_workspace("alice", {**context, "form": draft}).editable_prompt_text is None
+            AGENT_RECIPE.load_workspace("alice", {**context, "form": {"prompt_id": "strict"}})
+            read.assert_not_called()
+
+
+def test_saved_prompt_text_reads_the_callers_prompt_uncut(pg_conn):
+    from contextlib import contextmanager
+
+    from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+    long = "You help.\n" + "y" * 30000
+    prompt = PromptsRepository(pg_conn).create("alice", "Long", long)
+
+    @contextmanager
+    def _same():
+        yield pg_conn
+
+    with patch("docsgpt.storage.db.session.db_readonly", _same):
+        assert agent_recipe.saved_prompt_text("alice", str(prompt["id"])) == long
+        assert agent_recipe.saved_prompt_text("mallory", str(prompt["id"])) is None
+
+
 @pytest.mark.unit
 class TestInstructions:
     def test_key_rules_are_stated(self):
@@ -542,6 +575,25 @@ class TestPromptEdits:
         proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}},
                              form={"prompt_id": PROMPT_ID}, step=step, asked=True)
         assert "prompt" not in proposal["fields"]
+
+    def test_edits_are_checked_against_the_whole_saved_prompt(self):
+        from docsgpt.drafter.catalog import PROMPT_CHARS
+
+        whole = ("{{ system.date }} You help customers.\n" + "x" * PROMPT_CHARS
+                 + "\nYou help customers.\n## Boundaries\nStay on topic.")
+        ws = _ws(prompt_texts={PROMPT_ID: whole[:PROMPT_CHARS - 1] + "…"}, editable_prompt_text=whole)
+        form = {"prompt_id": PROMPT_ID}
+        # The find is there twice once the part past the model's copy counts.
+        with pytest.raises(ProposalInvalid, match="occurs 2 times"):
+            _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}}, form=form, ws=ws)
+        # The cut marker isn't in the saved text.
+        cut = {"find": "xx…", "replace": "x", "reason": "r"}
+        with pytest.raises(ProposalInvalid, match="not found"):
+            _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [cut]}}, form=form, ws=ws)
+        # Checks see what lies past the cut.
+        drop = {"find": "## Boundaries\nStay on topic.", "replace": "", "reason": "r"}
+        proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [drop]}}, form=form, ws=ws)
+        assert proposal["fields"]["prompt"]["checks"] == ["boundaries_removed"]
 
     def test_the_model_is_told_to_edit_the_editable_prompt(self):
         text = instructions(_req({"prompt_id": PROMPT_ID}), _ws())
