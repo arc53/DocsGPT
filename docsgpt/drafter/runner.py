@@ -28,6 +28,8 @@ from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.fencing import clean_text, DATA_GUARD, fence
 from docsgpt.drafter.output import (
+    echo_length,
+    EVENT_CHARS,
     MAX_QUESTIONS,
     normalize_questions,
     parse_arguments,
@@ -285,6 +287,21 @@ class _Turn:
 
     def finish(self, name: str, arguments: Any) -> list[dict]:
         """Validate a terminal answer and return its events.
+
+        The ``questions`` or ``proposal`` event must fit :data:`EVENT_CHARS`:
+        the panel sends it back as the next request's assistant message.
+
+        Raises:
+            ProposalInvalid: The answer breaks a rule the model can fix.
+        """
+        events = self._terminal_events(name, arguments)
+        if echo_length(events[-1]) > EVENT_CHARS:
+            raise ProposalInvalid(["The answer is too long to hand over. Send it shorter: fewer and smaller edits, "
+                                   "less text."])
+        return events
+
+    def _terminal_events(self, name: str, arguments: Any) -> list[dict]:
+        """A terminal answer's events: ``message`` and ``questions``, or ``proposal``.
 
         Raises:
             ProposalInvalid: The answer breaks a rule the model can fix.

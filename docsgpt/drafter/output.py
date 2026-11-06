@@ -18,6 +18,12 @@ OPTION_CHARS = 150
 PLACEHOLDER_CHARS = 100
 MESSAGE_CHARS = 1000
 
+#: Most characters of a ``questions`` or ``proposal`` event as the panel sends it back as an assistant message
+#: (``JSON.stringify``). The largest a recipe builds is a near-total rewrite of a prompt at its 20000-character
+#: cap: the result plus every edit's find and replace (60000 together) and the reasons, at worst doubled by JSON
+#: escaping. The runner sends a longer event back to the model, so whatever the server emits comes back whole.
+EVENT_CHARS = 160_000
+
 #: Arguments of the ``ask_user`` terminal tool.
 QUESTIONS_SCHEMA: dict = {
     "type": "object",
@@ -91,6 +97,16 @@ def parse_json_object(raw: Any) -> Optional[dict]:
             return value
         start = text.find("{", start + 1)
     return None
+
+
+def echo_length(event: dict) -> int:
+    """The characters ``event`` takes once the panel sends it back with ``JSON.stringify``.
+
+    That is the compact JSON with non-ASCII text kept; a lone surrogate, which
+    ``JSON.stringify`` writes as a six-character escape, is counted as one.
+    """
+    body = json.dumps(event, ensure_ascii=False, separators=(",", ":"), default=str)
+    return len(body) + 5 * sum(1 for ch in body if "\ud800" <= ch <= "\udfff")
 
 
 def parse_arguments(arguments: Any) -> Optional[dict]:

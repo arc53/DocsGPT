@@ -10,14 +10,16 @@ from typing import Any, Optional
 from docsgpt.core.settings import settings
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.model import drafter_model
+from docsgpt.drafter.output import EVENT_CHARS
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, get_recipe, Recipe
 
 logger = logging.getLogger(__name__)
 
-#: Most messages a conversation sends back, and characters of one user / assistant message.
+#: Most messages a conversation sends back, and characters of one user / assistant message. An assistant
+#: message is an event the server sent, echoed back; the runner keeps every event within the limit.
 MAX_MESSAGES = 24
 USER_MESSAGE_CHARS = 8000
-ASSISTANT_MESSAGE_CHARS = 60000
+ASSISTANT_MESSAGE_CHARS = EVENT_CHARS
 
 #: The rate-limit scope in Redis (``monitors:<scope>:rate:<user>:<minute>``).
 RATE_SCOPE = "drafter"
@@ -31,6 +33,7 @@ class Refusal:
     message: str
 
     def event(self) -> dict:
+        """The refusal as the stream's ``error`` event."""
         return {"type": "error", "code": self.code, "message": self.message}
 
 
@@ -83,7 +86,9 @@ def parse_messages(raw: Any) -> list[dict]:
 
 def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftRequest], Optional[Recipe],
                                               Optional[dict]]:
-    """Every check a draft passes before it streams, in order: enabled, request shape, model, rate, quota.
+    """Every check a draft passes before it streams, in order: enabled, request shape, model, quota, rate.
+
+    The quota comes before the rate limit so a refused request doesn't use up the minute's budget.
 
     Args:
         user_id: The caller.
@@ -111,6 +116,11 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
     model = drafter_model(user_id)
     if model is None:
         return Refusal("no_model", "No model is set up to draft with."), None, None, None
+    from docsgpt.quotas.service import QuotaService
+
+    exceeded = QuotaService.check(user_id, "direct")
+    if exceeded is not None:
+        return Refusal("quota", exceeded.to_payload().get("message") or "Usage quota reached."), None, None, None
     limit = int(settings.DRAFTER_RATE_LIMIT_PER_MINUTE or 0)
     if limit > 0:
         from docsgpt.monitors.triggers import rate_limited
@@ -118,11 +128,6 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
         if rate_limited(RATE_SCOPE, user_id, limit):
             return Refusal("rate_limited", "Too many drafts in a minute. Wait a moment and try again."), \
                 None, None, None
-    from docsgpt.quotas.service import QuotaService
-
-    exceeded = QuotaService.check(user_id, "direct")
-    if exceeded is not None:
-        return Refusal("quota", exceeded.to_payload().get("message") or "Usage quota reached."), None, None, None
     request = DraftRequest(
         user_id=user_id,
         recipe=recipe.id,

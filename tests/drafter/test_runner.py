@@ -9,7 +9,7 @@ import pytest
 
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.fencing import clean_text, DATA_GUARD, fence
-from docsgpt.drafter.output import normalize_questions, parse_json_object
+from docsgpt.drafter.output import EVENT_CHARS, normalize_questions, parse_json_object
 from docsgpt.drafter.recipe import DraftRequest, get_recipe, ProposalInvalid
 from docsgpt.drafter.runner import MAX_LLM_CALLS, MAX_READ_CALLS, question_rounds, run_draft
 from tests.drafter.fakes import calls, FakeLLM, PROPOSAL, QUESTIONS, text, tool_call
@@ -124,6 +124,14 @@ class TestLoop:
         assert len(fake.calls) == MAX_LLM_CALLS
         final_tools = [t["function"]["name"] for t in fake.calls[-1]["tools"]]
         assert final_tools == ["ask_user", "submit_proposal"]
+
+    def test_a_proposal_too_long_to_send_back_goes_back_to_the_model(self):
+        _, agent = _request()
+        recipe = dataclasses.replace(agent, validate=lambda args, req, ws: {"text": "x" * EVENT_CHARS})
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)), calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake, recipe=recipe)
+        assert events[-1]["code"] == "invalid_output"
+        assert "too long" in fake.calls[1]["messages"][-1]["content"]
 
     def test_a_rejected_proposal_is_logged_with_its_problems(self, caplog):
         bad = calls(tool_call("submit_proposal", {"message": "x", "fields": {"agent_type": "workflow"}}))
