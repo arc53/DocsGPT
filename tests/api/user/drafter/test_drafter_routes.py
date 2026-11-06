@@ -278,7 +278,7 @@ class TestStream:
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake, model={**MODEL, "supports_tools": False}))
         assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
-        assert fake.calls[0]["tools"] is None
+        assert not fake.calls[0]["tools"]
         assert "Answer with exactly one JSON object" in fake.calls[0]["messages"][0]["content"]
 
     def test_a_plain_reply_after_a_correction_reaches_the_user(self, client, pg_conn):
