@@ -2571,6 +2571,35 @@ describe('NewAgent drafter', () => {
     expect(wand()).toBeDefined();
   });
 
+  it('reads Improve on a saved agent with an empty form, as its drawer runs', async () => {
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      name: '',
+      description: '',
+    });
+    expect(wand()!.textContent).toContain('drafter.improve');
+    await act(async () => wand()!.click());
+    expect(panel()!.textContent).not.toContain('drafter.agent.build.intro');
+  });
+
+  it('loads an agent without its switch settings as off, with no warning', async () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    // The Advanced panel draws the switch once open.
+    await act(async () =>
+      buttonByText('agents.form.sections.advanced')!.click(),
+    );
+    expect(
+      [...error.mock.calls, ...warn.mock.calls].filter((call) =>
+        /uncontrolled/i.test(String(call[0])),
+      ),
+    ).toEqual([]);
+    error.mockRestore();
+    warn.mockRestore();
+  });
+
   it('offers Improve on a filled agent, left of Preview', async () => {
     await renderEdit(['edit', 'publish', 'use', 'view']);
     expect(wand()!.textContent).toContain('drafter.improve');
@@ -3467,6 +3496,62 @@ describe('NewAgent drafter', () => {
         document.querySelector('[data-testid="confirm-delete"]'),
       ).not.toBeNull();
       expect(view()).not.toBeNull();
+    });
+
+    it("keeps the page's history state when Back asks about unsaved text", async () => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          description: 'Researches deals',
+          status: 'draft',
+          prompt_id: 'p1',
+          access: 'owner',
+        }),
+      );
+      await act(async () => {
+        root.render(
+          <MemoryRouter
+            initialEntries={[
+              { pathname: '/agents/edit/agent-1', state: { from: 'list' } },
+            ]}
+          >
+            <Routes>
+              <Route
+                path="/agents/edit/:agentId"
+                element={<NewAgent mode="edit" />}
+              />
+            </Routes>
+            <RouterProbe />
+          </MemoryRouter>,
+        );
+      });
+      await openFromRow('p1');
+      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      await act(async () => probe.navigate!(-1));
+      // Put back while it asks, with what the entry held.
+      expect(view()).not.toBeNull();
+      expect(probe.state).toEqual({ from: 'list', promptView: true });
+    });
+
+    it('stays on the prompt, without scrolling the form, when Show in agent asks first', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      drafter.scripts = [
+        [proposal({ starters: ['Where is my deal?'] }), { type: 'end' }],
+      ];
+      await ask('Add a starter');
+      const scroll = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => undefined);
+      await act(async () =>
+        buttonByText('drafter.agent.showInAgent', panel()!)!.click(),
+      );
+      await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+      expect(view()).not.toBeNull();
+      expect(scroll).not.toHaveBeenCalled();
+      scroll.mockRestore();
     });
 
     it('improves an own prompt with the drawer, filling the view instead of creating one', async () => {

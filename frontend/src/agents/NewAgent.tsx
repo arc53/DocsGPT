@@ -157,6 +157,7 @@ import {
   type AgentDraftField,
   type AgentDraftForm,
   type AgentLimitsValue,
+  type AgentProposal,
   type PromptDraft,
   agentDraftContext,
   agentDraftValues,
@@ -658,25 +659,37 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   /**
    * Back to the form (the crumb, or browser Back with `popped`): the
    * drafter's prompt stays in the step unsaved; unsaved text of the
-   * picker's asks first.
+   * picker's asks first. Returns whether the view closed (false while it
+   * asks).
    */
-  const leavePromptView = (popped = false) => {
+  const leavePromptView = (popped = false): boolean => {
     if (promptOrigin === 'drafter') {
       setPromptDraft(promptValues);
       closePromptView();
-    } else if (promptDetail.dirty) {
-      // Browser Back already left the entry: put it back while asking.
-      if (popped)
+      return true;
+    }
+    if (promptDetail.dirty) {
+      // Browser Back already left the entry: put it back while asking, with
+      // the rest of what the entry held.
+      if (popped) {
+        const state =
+          location.state && typeof location.state === 'object'
+            ? location.state
+            : {};
         navigate(
           {
             pathname: location.pathname,
             search: location.search,
             hash: location.hash,
           },
-          { state: { promptView: true } },
+          { state: { ...state, promptView: true } },
         );
+      }
       setLeavingPrompt(true);
-    } else closePromptView();
+      return false;
+    }
+    closePromptView();
+    return true;
   };
 
   const wasInHistoryRef = useRef(viewInHistory);
@@ -1151,6 +1164,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [rawUserTools, attachedTools],
   );
 
+  // Each proposal read once: the drawer draws every one on each render.
+  const parsedRef = useRef(new WeakMap<object, AgentProposal | null>());
+  const proposalOf = (raw: unknown): AgentProposal | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const cached = parsedRef.current.get(raw);
+    if (cached !== undefined) return cached;
+    const parsed = parseAgentProposal(raw);
+    parsedRef.current.set(raw, parsed);
+    return parsed;
+  };
   // The fields each proposal changed when it was applied, so its summary
   // gives reasons only for those and notes a later edit by hand (keyed by
   // the session's proposal object).
@@ -1173,7 +1196,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   /** Fill the form from a proposal, marking every field it changed. */
   const applyDraft = (raw: unknown) => {
-    const proposal = parseAgentProposal(raw);
+    const proposal = proposalOf(raw);
     if (!proposal) return;
     const changes = planAgentPatch(
       proposal.fields,
@@ -1373,7 +1396,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const renderAgentProposal = (raw: unknown, latest: boolean) => {
-    const proposal = parseAgentProposal(raw);
+    const proposal = proposalOf(raw);
     if (!proposal) return null;
     const { rows, dropped } = agentProposalSummary(
       proposal,
@@ -1408,8 +1431,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           size="sm"
           shape="pill"
           onClick={() => {
-            leavePromptView();
-            scrollToDrafted();
+            // Not while it asks about the prompt's unsaved text.
+            if (leavePromptView()) scrollToDrafted();
           }}
         >
           {t('drafter.agent.showInAgent')}
@@ -1665,8 +1688,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     steppedAsideRef.current = last.id;
     const changed = appliedFields(last.proposal);
     // A prompt it wrote is in the view, which the sheet would cover.
-    const wrote =
-      parseAgentProposal(last.proposal)?.fields.prompt?.kind === 'new';
+    const wrote = proposalOf(last.proposal)?.fields.prompt?.kind === 'new';
     if (wrote || (build.guided ? build.ready : (changed?.length ?? 0) > 0))
       setDrafterOpen(false);
   }, [
@@ -2129,6 +2151,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             ? data.default_model_id
             : agentModels[0] || '',
           config: data.config || {},
+          // The switches stay controlled when an older agent lacks these.
+          limited_token_mode: Boolean(data.limited_token_mode),
+          limited_request_mode: Boolean(data.limited_request_mode),
+          allow_system_prompt_override: Boolean(
+            data.allow_system_prompt_override,
+          ),
         };
         setAgent(normalized);
         initialAgentRef.current = normalized;
@@ -2317,10 +2345,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // across it there.
   // The drawer's entry, on the toolbar and on the prompt view's crumb row.
   const wandProps = {
+    // Draft only where the drawer would build (a new agent's empty form).
     mode:
       build.guided && !build.done
         ? ('resume' as const)
-        : formEmpty
+        : formEmpty && !agent.id
           ? ('draft' as const)
           : ('improve' as const),
     label:
