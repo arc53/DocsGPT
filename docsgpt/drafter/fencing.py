@@ -11,6 +11,7 @@ it, the same way the monitor judge fences what it reads
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from typing import Any
 
@@ -23,9 +24,40 @@ DATA_GUARD = (
 
 _KEEP_CONTROLS = frozenset("\n\t")
 
+#: Invisible format characters that hide or reorder text: bidi embeddings, overrides and isolates, zero-width
+#: space, word joiner and invisible operators, deprecated format controls, byte order mark, interlinear
+#: annotation marks. Joiners (U+200C, U+200D), direction marks and variation selectors stay: scripts and emoji
+#: sequences need them.
+_INVISIBLE = frozenset(
+    "\u200b\u202a\u202b\u202c\u202d\u202e\u2060\u2061\u2062\u2063\u2064"
+    "\u2066\u2067\u2068\u2069\u206a\u206b\u206c\u206d\u206e\u206f\ufeff\ufff9\ufffa\ufffb"
+)
+
+#: Unicode tag characters, which spell invisible ASCII; only a subdivision flag (England, Scotland, Wales) keeps
+#: its short tag sequence.
+_TAG = re.compile("[\U000E0000-\U000E007F]")
+_TAG_FLAG = re.compile("\U0001F3F4[\U000E0030-\U000E0039\U000E0061-\U000E007A]{3,6}\U000E007F")
+
+
+def _drop_tags(text: str) -> str:
+    """``text`` without tag characters, except the tag sequence of a subdivision flag emoji."""
+    if not _TAG.search(text):
+        return text
+    parts: list[str] = []
+    cursor = 0
+    for flag in _TAG_FLAG.finditer(text):
+        parts.append(_TAG.sub("", text[cursor:flag.start()]))
+        parts.append(flag.group())
+        cursor = flag.end()
+    parts.append(_TAG.sub("", text[cursor:]))
+    return "".join(parts)
+
 
 def clean_text(value: Any, limit: int) -> str:
-    """A string with control characters and unpaired surrogates removed, cut to ``limit`` characters.
+    """A string cleaned of control, surrogate and invisible format characters, cut to ``limit`` characters.
+
+    Invisible characters are what lets text read differently by a person and
+    by the model (a reordered line, a hidden instruction in tag characters).
 
     Args:
         value: Any value; non-strings become ``""``.
@@ -38,8 +70,9 @@ def clean_text(value: Any, limit: int) -> str:
         return ""
     text = "".join(
         ch for ch in value
-        if not (unicodedata.category(ch) in ("Cc", "Cs") and ch not in _KEEP_CONTROLS)
+        if not (unicodedata.category(ch) in ("Cc", "Cs") and ch not in _KEEP_CONTROLS) and ch not in _INVISIBLE
     )
+    text = _drop_tags(text)
     text = text.replace("\r\n", "\n").strip()
     if len(text) > limit:
         text = text[: max(limit - 1, 0)].rstrip() + "…"
