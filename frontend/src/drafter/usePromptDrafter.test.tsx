@@ -72,6 +72,23 @@ describe('usePromptDrafter', () => {
 
   afterEach(() => act(() => root.unmount()));
 
+  it('starts over with the text as it stands and its Drafted marks kept', async () => {
+    stream.scripts = [
+      [{ type: 'proposal', proposal: IMPROVE }, { type: 'end' }],
+    ];
+    await act(async () => current.drafter!.session.send('Tighten it'));
+    await act(async () => current.drafter!.decide('e1', 'accepted'));
+    await act(async () => current.drafter!.startOver());
+    expect(current.drafter!.session.items).toEqual([]);
+    expect(current.drafter!.review).toBeNull();
+    expect(current.content).toBe('Hi.\nBe brief.');
+    expect(current.drafter!.drafted.isDrafted('content')).toBe(true);
+    await act(async () => current.drafter!.session.send('Be formal'));
+    expect(stream.requests[1].messages).toEqual([
+      { role: 'user', content: 'Be formal' },
+    ]);
+  });
+
   // The drawer's ask bar stays open during a review.
   it('ends an open review with the choices so far on a new request', async () => {
     stream.scripts = [

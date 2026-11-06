@@ -4556,7 +4556,8 @@
       },
       "bad_request": {
         "title": "Senden nicht möglich",
-        "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut."
+        "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut.",
+        "startOver": "DocsGPT konnte diese Unterhaltung nicht annehmen. Beginne neu, um weiterzumachen – was du entworfen hast, bleibt."
       }
     },
     "agent": {
@@ -4703,6 +4704,11 @@
       }
     },
     "footerPrompt": "Verwendet {{model}} · liest nur diesen Prompt.",
-    "footerPromptNoModel": "Liest nur diesen Prompt."
+    "footerPromptNoModel": "Liest nur diesen Prompt.",
+    "startOver": "Neu beginnen",
+    "full": {
+      "title": "Diese Unterhaltung ist voll",
+      "description": "Länger kann eine Entwurfsunterhaltung nicht werden. Beginne neu, um weiterzumachen – was du entworfen hast, bleibt."
+    }
   }
 }

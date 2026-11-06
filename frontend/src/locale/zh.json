@@ -4529,7 +4529,8 @@
       },
       "bad_request": {
         "title": "无法发送",
-        "description": "无法读取该请求。请刷新页面后重试。"
+        "description": "无法读取该请求。请刷新页面后重试。",
+        "startOver": "DocsGPT 无法接收此对话。重新开始即可继续，已起草的内容会保留。"
       }
     },
     "agent": {
@@ -4667,6 +4668,11 @@
       }
     },
     "footerPrompt": "使用 {{model}} · 只读取此提示词。",
-    "footerPromptNoModel": "只读取此提示词。"
+    "footerPromptNoModel": "只读取此提示词。",
+    "startOver": "重新开始",
+    "full": {
+      "title": "此对话已满",
+      "description": "起草对话已达到最大长度。重新开始即可继续，已起草的内容会保留。"
+    }
   }
 }

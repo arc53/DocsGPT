@@ -4531,7 +4531,8 @@
       },
       "bad_request": {
         "title": "無法送出",
-        "description": "無法讀取該請求。請重新整理頁面後重試。"
+        "description": "無法讀取該請求。請重新整理頁面後重試。",
+        "startOver": "DocsGPT 無法接收此對話。重新開始即可繼續，已草擬的內容會保留。"
       }
     },
     "agent": {
@@ -4669,6 +4670,11 @@
       }
     },
     "footerPrompt": "使用 {{model}} · 只讀取此提示詞。",
-    "footerPromptNoModel": "只讀取此提示詞。"
+    "footerPromptNoModel": "只讀取此提示詞。",
+    "startOver": "重新開始",
+    "full": {
+      "title": "此對話已滿",
+      "description": "草擬對話已達最大長度。重新開始即可繼續，已草擬的內容會保留。"
+    }
   }
 }

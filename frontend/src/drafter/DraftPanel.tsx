@@ -1,4 +1,4 @@
-import { ArrowUp, ScanSearch, WandSparkles } from 'lucide-react';
+import { ArrowUp, RotateCcw, ScanSearch, WandSparkles } from 'lucide-react';
 import {
   type MouseEvent,
   type ReactNode,
@@ -27,7 +27,8 @@ import StreamingStatusLine from '../conversation/StreamingStatusLine';
 import SuggestionRows from '../hero/SuggestionRows';
 import { useMediaQuery } from '../hooks';
 
-import type { DrafterCounts, DrafterErrorCode } from './drafterApi';
+import { type DrafterCounts, DRAFTER_USER_MESSAGE_CHARS } from './drafterApi';
+import { DrafterErrorAlert } from './DrafterErrorAlert';
 import { DrafterQuestions } from './DrafterQuestions';
 import type { DrafterItem, DrafterSession } from './useDrafterSession';
 
@@ -37,12 +38,7 @@ export const TASK_MODEL_SETTINGS_PATH = '/settings/general';
 // The order the "Looked at your workspace" line lists counts in.
 const COUNT_KEYS = ['sources', 'tools', 'prompts', 'models', 'agents'] as const;
 
-// Errors a second try can fix; the others need a setting changed first.
-export const RETRYABLE: DrafterErrorCode[] = [
-  'rate_limited',
-  'invalid_output',
-  'model_error',
-];
+export { RETRYABLE } from './DrafterErrorAlert';
 
 /**
  * A first-screen suggestion: a click sends its text, or runs `onSelect`
@@ -118,6 +114,13 @@ export type DraftPanelProps = {
    * end of a turn of its own (the saved prompt's Filled rows and Next).
    */
   after?: ReactNode;
+  /**
+   * Starts the conversation over (the host's own reset). Given, the header
+   * offers Start over once anything was sent; a full or refused
+   * conversation offers it either way, with the session's reset when left
+   * out.
+   */
+  onStartOver?: () => void;
 };
 
 /**
@@ -126,10 +129,11 @@ export type DraftPanelProps = {
  * conversation (the user's bubbles, the workspace line, the model's
  * messages, its questions, each proposal through `renderProposal`), the
  * running step on the chat's status line, errors with Retry, and the chat
- * composer's frame with Send or Stop. A guided build adds its progress to the
- * header, its finished steps above the conversation, its way on after a Stop
- * or an error, and its own turn ends after it. On a phone the docked panel
- * is a sheet.
+ * composer's frame with Send or Stop. A conversation as long as the server
+ * takes, or one it refused, offers Start over. A guided build adds its
+ * progress to the header, its finished steps above the conversation, its way
+ * on after a Stop or an error, and its own turn ends after it. On a phone the
+ * docked panel is a sheet.
  */
 export function DraftPanel({
   open,
@@ -148,6 +152,7 @@ export function DraftPanel({
   announceProposal,
   continueAction,
   after,
+  onStartOver,
 }: DraftPanelProps) {
   const { t } = useTranslation();
   const { isDesktop } = useMediaQuery();
@@ -161,7 +166,22 @@ export function DraftPanel({
       inputRef.current?.focus();
     },
   };
-  const { items, step, streaming } = session;
+  const { items, step, streaming, full } = session;
+  const startOver = () => {
+    setStopped(false);
+    (onStartOver ?? session.reset)();
+  };
+  const startOverButton = (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      shape="pill"
+      onClick={startOver}
+    >
+      {t('drafter.startOver')}
+    </Button>
+  );
   // The latest turn was stopped here: the way on shows until the next one.
   const [stopped, setStopped] = useState(false);
   useEffect(() => {
@@ -229,32 +249,30 @@ export function DraftPanel({
             {renderProposal(item.proposal, index === lastProposal, helpers)}
           </div>
         );
-      case 'error':
+      case 'error': {
+        // A refused request (the history too long, say) fails again as it
+        // is: only a fresh conversation goes on.
+        const refused = item.code === 'bad_request';
+        const latest = index === items.length - 1;
         return (
-          <Alert key={item.id} variant="destructive" data-item="error">
-            <AlertTitle>{t(`drafter.errors.${item.code}.title`)}</AlertTitle>
-            <AlertDescription>
-              <p>{t(`drafter.errors.${item.code}.description`)}</p>
-              {index === items.length - 1 &&
-                (RETRYABLE.includes(item.code) || continueAction) && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {RETRYABLE.includes(item.code) && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        shape="pill"
-                        onClick={session.retry}
-                      >
-                        {t('drafter.retry')}
-                      </Button>
-                    )}
-                    {continueAction}
-                  </div>
-                )}
-            </AlertDescription>
-          </Alert>
+          <DrafterErrorAlert
+            key={item.id}
+            code={item.code}
+            description={
+              refused ? t('drafter.errors.bad_request.startOver') : undefined
+            }
+            onRetry={latest ? session.retry : undefined}
+            actions={
+              latest && (refused || continueAction) ? (
+                <>
+                  {refused && startOverButton}
+                  {continueAction}
+                </>
+              ) : undefined
+            }
+          />
         );
+      }
     }
   };
 
@@ -268,6 +286,18 @@ export function DraftPanel({
             className="text-link mt-0.5 size-5 shrink-0"
             aria-hidden="true"
           />
+        }
+        actions={
+          onStartOver && items.length > 0 ? (
+            <IconButton
+              variant="ghost-muted"
+              size="icon-sm"
+              side="bottom"
+              label={t('drafter.startOver')}
+              icon={RotateCcw}
+              onClick={startOver}
+            />
+          ) : undefined
         }
       >
         {progress && (
@@ -307,6 +337,17 @@ export function DraftPanel({
             </div>
           )}
           {!streaming && after}
+          {full && !streaming && (
+            <Alert variant="info" data-slot="drafter-full">
+              <AlertTitle>{t('drafter.full.title')}</AlertTitle>
+              <AlertDescription>
+                <p>{t('drafter.full.description')}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {startOverButton}
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
           {step && <StreamingStatusLine label={t(`drafter.steps.${step}`)} />}
           {/* The status line announces the step; this announces each
               applied draft, not the whole conversation as it grows. */}
@@ -326,6 +367,7 @@ export function DraftPanel({
             draft={draft}
             setDraft={setDraft}
             streaming={streaming}
+            disabled={full}
             placeholder={placeholder ?? t('drafter.askPlaceholder')}
             onSend={(text) => session.send(text)}
             onStop={() => {
@@ -365,7 +407,8 @@ export function DraftPanel({
  * The ask bar in the chat composer's frame (MessageInput's): a borderless
  * textarea that grows from one line to six, and the composer's round button
  * in the corner, grey while empty, Send with text, Stop (a filled square)
- * while a turn runs. Enter sends, Shift+Enter breaks the line. Kept here
+ * while a turn runs. Enter sends, Shift+Enter breaks the line; a message
+ * stops at the server's length, and a full conversation takes none. Kept here
  * rather than shared: MessageInput's frame also carries attachments, voice
  * and the source and tool pickers.
  */
@@ -374,6 +417,7 @@ function Composer({
   draft,
   setDraft,
   streaming,
+  disabled,
   placeholder,
   onSend,
   onStop,
@@ -383,12 +427,14 @@ function Composer({
   draft: string;
   setDraft: (draft: string) => void;
   streaming: boolean;
+  /** No message can go (the conversation is full). */
+  disabled: boolean;
   placeholder: string;
   onSend: (text: string) => void;
   onStop: () => void;
 }) {
   const { t } = useTranslation();
-  const empty = !draft.trim();
+  const empty = !draft.trim() || disabled;
 
   // Grow with the text; max-h-36 (six lines) caps it, then it scrolls.
   useLayoutEffect(() => {
@@ -410,6 +456,8 @@ function Composer({
         ref={inputRef}
         rows={1}
         value={draft}
+        maxLength={DRAFTER_USER_MESSAGE_CHARS}
+        disabled={disabled}
         aria-label={t('drafter.askLabel')}
         placeholder={placeholder}
         className="text-foreground placeholder:text-muted-foreground max-h-36 w-full resize-none overflow-y-auto rounded-t-3xl bg-transparent px-4 pt-3 text-sm leading-6 outline-none"

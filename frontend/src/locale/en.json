@@ -4577,7 +4577,8 @@
       },
       "bad_request": {
         "title": "Couldn't send that",
-        "description": "The request couldn't be read. Reload the page and try again."
+        "description": "The request couldn't be read. Reload the page and try again.",
+        "startOver": "DocsGPT couldn't take this conversation. Start over to keep going: what you've drafted stays."
       }
     },
     "agent": {
@@ -4724,6 +4725,11 @@
       }
     },
     "footerPrompt": "Uses {{model}} · reads only this prompt.",
-    "footerPromptNoModel": "Reads only this prompt."
+    "footerPromptNoModel": "Reads only this prompt.",
+    "startOver": "Start over",
+    "full": {
+      "title": "This conversation is full",
+      "description": "It's as long as a draft conversation can get. Start over to keep going: what you've drafted stays."
+    }
   }
 }

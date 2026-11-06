@@ -36,6 +36,11 @@ export type PromptDrafter = {
   reviewOneByOne: () => void;
   /** Leave the review with the text as it was. */
   discard: () => void;
+  /**
+   * A fresh conversation (the drawer's Start over): an open review ends with
+   * the choices so far, and the text and its Drafted marks stay.
+   */
+  startOver: () => void;
   /** Forget the conversation, the review and the marks. */
   reset: () => void;
 };
@@ -142,6 +147,12 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   );
 
   const resetSession = session.reset;
+  const startOver = useCallback(() => {
+    starter.current = null;
+    skipped.current = false;
+    resetSession();
+    reviewsRef.current.finish(latest.current.content);
+  }, [resetSession]);
   const reset = useCallback(() => {
     starter.current = null;
     skipped.current = false;
@@ -160,6 +171,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     acceptAll: reviews.acceptAll,
     reviewOneByOne: reviews.reviewOneByOne,
     discard: reviews.discard,
+    startOver,
     reset,
   };
 }

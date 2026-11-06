@@ -4690,7 +4690,8 @@
       },
       "bad_request": {
         "title": "No se pudo enviar",
-        "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo."
+        "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo.",
+        "startOver": "DocsGPT no pudo aceptar esta conversación. Empieza de nuevo para continuar: lo que has redactado se mantiene."
       }
     },
     "agent": {
@@ -4856,6 +4857,11 @@
       }
     },
     "footerPrompt": "Usa {{model}} · solo lee este prompt.",
-    "footerPromptNoModel": "Solo lee este prompt."
+    "footerPromptNoModel": "Solo lee este prompt.",
+    "startOver": "Empezar de nuevo",
+    "full": {
+      "title": "Esta conversación está llena",
+      "description": "Una conversación de borrador no puede ser más larga. Empieza de nuevo para continuar: lo que has redactado se mantiene."
+    }
   }
 }

@@ -4690,7 +4690,8 @@
       },
       "bad_request": {
         "title": "Envoi impossible",
-        "description": "La requête n’a pas pu être lue. Rechargez la page et réessayez."
+        "description": "La requête n’a pas pu être lue. Rechargez la page et réessayez.",
+        "startOver": "DocsGPT n’a pas pu accepter cette conversation. Recommencez pour continuer : ce que vous avez rédigé reste."
       }
     },
     "agent": {
@@ -4856,6 +4857,11 @@
       }
     },
     "footerPrompt": "Utilise {{model}} · ne lit que ce prompt.",
-    "footerPromptNoModel": "Ne lit que ce prompt."
+    "footerPromptNoModel": "Ne lit que ce prompt.",
+    "startOver": "Recommencer",
+    "full": {
+      "title": "Cette conversation est pleine",
+      "description": "Une conversation de brouillon ne peut pas être plus longue. Recommencez pour continuer : ce que vous avez rédigé reste."
+    }
   }
 }

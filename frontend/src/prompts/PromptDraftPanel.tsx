@@ -59,7 +59,9 @@ type PromptDraftPanelProps = {
  * latest written prompt asks to be read and offers Save prompt, and the
  * latest improvement under review gets Accept all, Review one by one and
  * Discard. The per-change Accept and Reject stay inline in the editor's
- * review. The latest result ends with the model's next changes as rows.
+ * review. The latest result ends with the model's next changes as rows, and
+ * the header's Start over begins a fresh conversation on the text as it
+ * stands.
  */
 export function PromptDraftPanel({
   open,
@@ -205,6 +207,7 @@ export function PromptDraftPanel({
           : undefined
       }
       announceProposal={(raw) => readPromptProposal(raw)?.message || null}
+      onStartOver={drafter.startOver}
     />
   );
 }

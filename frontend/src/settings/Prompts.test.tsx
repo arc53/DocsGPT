@@ -1150,6 +1150,31 @@ describe('Prompts page', () => {
     expect(textArea()!.value).toBe('You check vendors.');
   });
 
+  it('starts the drawer over from its header', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      [{ type: 'message', text: 'It reads well.' }, { type: 'end' }],
+    ];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    const startOver = () =>
+      panel()!.querySelector<HTMLButtonElement>(
+        'button[aria-label="drafter.startOver"]',
+      );
+    expect(startOver()).toBeNull();
+    await click(
+      panel()!.querySelector<HTMLButtonElement>(
+        '[data-suggestion="lookOver"]',
+      )!,
+    );
+    expect(panel()!.textContent).toContain('It reads well.');
+    await click(startOver()!);
+    expect(panel()!.textContent).not.toContain('It reads well.');
+    expect(panel()!.textContent).toContain('drafter.prompt.introImprove');
+  });
+
   it('improves a built-in prompt as a copy, with the drawer open on it', async () => {
     drafter.config = { enabled: true };
     withText('You are DocsGPT.');

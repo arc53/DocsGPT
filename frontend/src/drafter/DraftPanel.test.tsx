@@ -81,6 +81,7 @@ function Host({
     | 'after'
     | 'reads'
     | 'modelName'
+    | 'onStartOver'
   >
 >) {
   const session = useDrafterSession({
@@ -337,6 +338,48 @@ describe('DraftPanel', () => {
     await ask('Draft it');
     expect(container.textContent).toContain('drafter.errors.no_model.title');
     expect(button('drafter.retry')).toBeUndefined();
+  });
+
+  it('says a conversation the server refused needs a fresh start, and offers one', async () => {
+    stream.scripts = [
+      [{ type: 'error', code: 'bad_request' }, { type: 'end' }],
+    ];
+    await ask('Draft it');
+    const alert = container.querySelector('[data-item="error"]')!;
+    expect(alert.textContent).toContain('drafter.errors.bad_request.startOver');
+    expect(button('drafter.retry')).toBeUndefined();
+    await act(async () => button('drafter.startOver')!.click());
+    expect(container.querySelector('[data-item]')).toBeNull();
+    expect(container.textContent).toContain('Tell me');
+  });
+
+  it("caps the ask bar at the server's message length", () => {
+    expect(askBar().maxLength).toBe(8000);
+  });
+
+  it('offers to start over once the conversation is full, and the host can start over any time', async () => {
+    const onStartOver = vi.fn();
+    await act(async () => root.render(<Host onStartOver={onStartOver} />));
+    // Nothing to start over from yet.
+    expect(button('drafter.startOver')).toBeUndefined();
+    for (let turn = 0; turn < 12; turn += 1) {
+      stream.scripts = [proposalTurn({ message: `Turn ${turn}` })];
+      await ask(`Change ${turn}`);
+    }
+    const full = container.querySelector('[data-slot="drafter-full"]')!;
+    expect(full.textContent).toContain('drafter.full.title');
+    expect(askBar().disabled).toBe(true);
+    // The header's Start over and the notice's both run the host's.
+    const startOvers = Array.from(container.querySelectorAll('button')).filter(
+      (b) =>
+        b.textContent?.trim() === 'drafter.startOver' ||
+        b.getAttribute('aria-label') === 'drafter.startOver',
+    );
+    expect(startOvers).toHaveLength(2);
+    expect(full.contains(startOvers[1])).toBe(true);
+    await act(async () => startOvers[0].click());
+    await act(async () => startOvers[1].click());
+    expect(onStartOver).toHaveBeenCalledTimes(2);
   });
 
   it('shows the running step on the status line and stops the turn', async () => {
