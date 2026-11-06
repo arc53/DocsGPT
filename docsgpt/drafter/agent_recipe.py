@@ -36,7 +36,7 @@ from docsgpt.drafter.prompt_rules import (
     template_parses,
     tool_variables_problem,
 )
-from docsgpt.drafter.prompt_recipe import apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE
+from docsgpt.drafter.prompt_recipe import apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE, READ_MAX
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
 from docsgpt.drafter import topics_recipe
@@ -118,8 +118,10 @@ class AgentWorkspace(Workspace):
             only): each is already an option of the agent's topic question.
         topics_from_conversations: The saved agent has enough recent conversations for Suggest from conversations
             (safety step only), so the step leaves topics to it rather than guessing them.
-        editable_prompt_text: The whole saved text of the prompt edits may change (``prompt_texts`` holds a copy
-            cut for the model), or None when the form has none or its unsaved text is open in the prompt view.
+        editable_prompt_text: The whole saved text of the prompt edits may change (``prompt_texts`` holds it whole
+            too, for the model), or None when the form has none or its unsaved text is open in the prompt view.
+        long_prompt: The caller's own saved prompt the form uses when it is over :data:`READ_MAX` characters: the
+            model reads only its start, so it takes no edits.
     """
 
     guardrail_menu: list[str] = field(default_factory=list)
@@ -128,6 +130,7 @@ class AgentWorkspace(Workspace):
     folders: list[dict] = field(default_factory=list)
     topics_from_conversations: bool = False
     editable_prompt_text: Optional[str] = None
+    long_prompt: Optional[str] = None
 
 
 def _ids(value: Any) -> list[str]:
@@ -209,10 +212,12 @@ def parse_context(raw: Any) -> dict:
     """Clean the agent form's values: ``{agent_id, step, starter?, earlier, form: {...}}``.
 
     Wrong-typed values are left out rather than refused; only a ``form`` that
-    isn't an object, or an unknown ``step``, is.
+    isn't an object, or an unknown ``step``, is. The prompt view's unsaved
+    text is cleaned but never cut, since edits must fit it.
 
     Raises:
-        BadDraftRequest: ``form`` is present but not an object, or ``step`` is not one of :data:`STEPS` or null.
+        BadDraftRequest: ``form`` is present but not an object, ``step`` is not one of :data:`STEPS` or null, or
+            the prompt view's text is over :data:`READ_MAX` characters.
     """
     raw = raw if isinstance(raw, dict) else {}
     form_raw = raw.get("form")
@@ -231,10 +236,10 @@ def parse_context(raw: Any) -> dict:
     draft = form_raw.get("prompt_draft")
     form["prompt_draft"] = None
     if isinstance(draft, dict) and isinstance(draft.get("content"), str):
-        form["prompt_draft"] = {
-            "name": clean_text(draft.get("name"), PROMPT_NAME_MAX),
-            "content": clean_text(draft.get("content"), PROMPT_CONTENT_MAX),
-        }
+        content = clean_text(draft["content"], len(draft["content"]))
+        if len(content) > READ_MAX:
+            raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
+        form["prompt_draft"] = {"name": clean_text(draft.get("name"), PROMPT_NAME_MAX), "content": content}
         # The saved prompt whose unsaved changes the view holds; none for a new prompt.
         draft_id = draft.get("id")
         if isinstance(draft_id, str) and draft_id.strip():
@@ -334,7 +339,12 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
                              max_topics=int(settings.ANALYTICS_MAX_TOPICS))
         editable = _editable_prompt(form, ws)
         if editable and not form.get("prompt_draft"):
-            out.editable_prompt_text = saved_prompt_text(conn, user_id, editable)
+            text = saved_prompt_text(conn, user_id, editable)
+            if text is not None and len(text) > READ_MAX:
+                out.long_prompt = editable
+            elif text is not None:
+                # The model reads the prompt it may edit whole, not the catalog's cut copy.
+                out.editable_prompt_text = out.prompt_texts[editable] = text
         if context.get("step") == "safety" and out.insights:
             agent = editable_saved_agent(conn, user_id, ws.agent["id"]) if ws.agent else None
             # The form's sources the caller may attach, and those already on the saved agent.
@@ -369,7 +379,8 @@ def _editable_prompt(form: dict, ws: Workspace) -> Optional[str]:
     target = draft.get("id") if draft else form.get("prompt_id")
     # The caller's own prompts over the workspace cap aren't shown to the model, but are still theirs to edit.
     own = {str(p["id"]) for p in ws.prompts if p.get("kind") == "own"} | ws.own_prompts
-    return target if target in own else None
+    # One too long to read whole would be edited from a cut copy.
+    return target if target in own and target != getattr(ws, "long_prompt", None) else None
 
 
 def _checks_on(guardrails: dict) -> set[str]:
@@ -472,6 +483,9 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
     data["prompt"]["mode"] = "template" if is_template(current) else "persona"
     if _editable_prompt(form, ws):
         data["prompt"]["editable"] = True
+    elif data["prompt"].get("id") and data["prompt"]["id"] == getattr(ws, "long_prompt", None):
+        data["prompt"]["note"] = (f"Over {READ_MAX:,} characters, too long to change here: you read only its start. "
+                                  "Leave it as it is.")
     if step == "safety":
         data.update({key: form[key] for key in SAFETY_FIELDS})
         guardrails = form["guardrails"]

@@ -151,6 +151,15 @@ class TestContext:
         with pytest.raises(BadDraftRequest):
             parse_context(raw)
 
+    def test_the_prompt_views_unsaved_text_is_kept_whole_up_to_the_read_cap(self):
+        from docsgpt.drafter.prompt_recipe import READ_MAX
+
+        long = "You help.\n" + "y" * 30000
+        draft = parse_context({"form": {"prompt_draft": {"name": "P", "content": long}}})["form"]["prompt_draft"]
+        assert draft["content"] == long
+        with pytest.raises(BadDraftRequest, match="too long"):
+            parse_context({"form": {"prompt_draft": {"name": "P", "content": "y" * (READ_MAX + 1)}}})
+
     def test_ids_equal_once_cut_are_kept_once(self):
         long = "s" * 150
         assert parse_context({"form": {"sources": [long + "a", long + "b"]}})["form"]["sources"] == [long[:100]]
@@ -422,6 +431,44 @@ class TestAvailability:
             assert AGENT_RECIPE.load_workspace("alice", {**context, "form": draft}).editable_prompt_text is None
             AGENT_RECIPE.load_workspace("alice", {**context, "form": {"prompt_id": "strict"}})
             read.assert_not_called()
+
+
+@pytest.mark.unit
+class TestEditablePromptText:
+    def _load(self, saved_text: str, form=None):
+        from docsgpt.drafter.catalog import PROMPT_CHARS
+
+        loaded = Workspace(prompts=[{"id": PROMPT_ID, "name": "Support", "kind": "own"}],
+                           prompt_texts={PROMPT_ID: saved_text[:PROMPT_CHARS - 1] + "…"})
+        context = {"agent_id": None, "step": "prompt", "form": form or {"prompt_id": PROMPT_ID}}
+        with patch.object(agent_recipe, "read_workspace", return_value=loaded), patch.object(
+            agent_recipe, "saved_prompt_text", return_value=saved_text
+        ):
+            return AGENT_RECIPE.load_workspace("alice", context)
+
+    def test_the_agents_own_prompt_is_shown_to_the_model_whole(self, one_conn):
+        from docsgpt.drafter.read_tools import run_read_tool
+
+        whole = "You help customers.\n" + "x" * 15000 + "\nThe end."
+        ws = self._load(whole)
+        assert context_data(_req({"prompt_id": PROMPT_ID}), ws)["prompt"]["content"] == whole
+        assert run_read_tool("get_prompt", ws, {"prompt_id": PROMPT_ID})["content"] == whole
+        # So the model can change its end, which a cut copy hid.
+        end = {"find": "The end.", "replace": "Goodbye.", "reason": "r"}
+        proposal = validate({"message": "m", "fields": {"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [end]}}},
+                            _req({"prompt_id": PROMPT_ID}, step="prompt"), ws)
+        assert proposal["fields"]["prompt"]["edits"][0]["find"] == "The end."
+
+    def test_a_saved_prompt_over_the_read_cap_is_not_edited(self, one_conn):
+        from docsgpt.drafter.prompt_recipe import READ_MAX
+
+        ws = self._load("You help customers.\n" + "x" * READ_MAX)
+        assert ws.editable_prompt_text is None
+        data = context_data(_req({"prompt_id": PROMPT_ID}), ws)["prompt"]
+        assert "editable" not in data and "too long" in data["note"]
+        with pytest.raises(ProposalInvalid, match="own prompt"):
+            validate({"message": "m", "fields": {"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}}},
+                     _req({"prompt_id": PROMPT_ID}, step="prompt"), ws)
 
 
 def test_saved_source_ids_are_the_agents(pg_conn):
