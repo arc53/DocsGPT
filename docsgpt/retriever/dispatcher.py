@@ -575,6 +575,15 @@ class CompressingRetriever(BaseRetriever):
                 or ""
             )
         docs = self._inner.search(*args, **kwargs)
+        # Integrate SuperCompress into the retrieval-to-generation path when available
+        try:
+            from supercompress import Compressor
+
+            compressor = Compressor()
+            return compressor.compress(docs, query or "")
+        except (ImportError, Exception):
+            pass
+
         from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
 
         return prune_boilerplate(docs, query=query or "")

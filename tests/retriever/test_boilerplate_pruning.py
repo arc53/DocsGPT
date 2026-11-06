@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -525,3 +525,30 @@ class TestCompressingRetrieverIntegration:
         monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
         docs_pruned = engine._retrieve_node_sources(mock_config)
         assert docs_pruned[0]["text"] == "Factual chunk."
+
+    def test_supercompress_integration_delegates_to_compressor(self):
+        """Integrate SuperCompress into the retrieval-to-generation path when available."""
+        mock_compressor = Mock()
+        expected = [{"id": "doc1", "text": "SuperCompressed context"}]
+        mock_compressor.compress.return_value = expected
+
+        mock_module = Mock(Compressor=Mock(return_value=mock_compressor))
+        mock_inner = Mock()
+        mock_inner.search.return_value = [{"id": "doc1", "text": "Raw context"}]
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="API auth")
+
+            assert result == expected
+            mock_compressor.compress.assert_called_once_with([{"id": "doc1", "text": "Raw context"}], "API auth")
+
+    def test_supercompress_fallback_to_boilerplate_pruning(self):
+        """Falls back gracefully to in-tree boilerplate pruning when SuperCompress is not installed."""
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Home > API\nFactual documentation content."}
+        ]
+        retriever = CompressingRetriever(mock_inner)
+        result = retriever.search(query="content")
+        assert result[0]["text"] == "Factual documentation content."
