@@ -2890,6 +2890,26 @@ describe('NewAgent drafter', () => {
     expect(panel()!.textContent).toContain('drafter.agent.build.allFilled');
   });
 
+  it('starts the build over from the drawer, back at its plan', async () => {
+    drafter.scripts = [
+      [
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    expect(panel()!.textContent).toContain('drafter.agent.build.progress');
+    await act(async () =>
+      buttonByLabel('drafter.startOver', panel()!)!.click(),
+    );
+    // No step, no progress: the next message is free-form again.
+    expect(panel()!.textContent).not.toContain('drafter.agent.build.progress');
+    expect(panel()!.querySelector('[data-item="proposal"]')).toBeNull();
+    await ask('Shorter name');
+    expect(lastRequest().context.step).toBeNull();
+  });
+
   it('reads Resume while a build is unfinished', async () => {
     drafter.scripts = [
       [

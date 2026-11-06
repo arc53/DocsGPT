@@ -1286,6 +1286,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       drafterSession.send(text, options);
     },
   };
+  /**
+   * The drawer's Start over: a new conversation, with the build and its
+   * folded steps forgotten; the form keeps its values and marks.
+   */
+  const startDrafterOver = () => {
+    drafterSession.reset();
+    build.reset();
+    buildRowsRef.current.clear();
+    setPromptUsed(false);
+  };
+
   /** The step's Next: the saved prompt's turn end goes with the step. */
   const goNext = () => {
     setPromptUsed(false);
@@ -3389,6 +3400,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           open={drafterOpen}
           onOpenChange={setDrafterOpen}
           session={panelSession}
+          onStartOver={startDrafterOver}
           modelName={drafterConfig?.model?.display_name ?? null}
           announceProposal={announceAgentProposal}
           intro={drafterIntro}
