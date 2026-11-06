@@ -247,7 +247,9 @@ class TestAvailability:
         context = {"agent_id": "a1", "step": "safety", "form": {}}
         with patch.object(agent_recipe, "load_workspace", return_value=saved), patch(
             "docsgpt.decisions.available", return_value=True
-        ), patch.object(topics_recipe, "topics_status", return_value={"available": True}) as status:
+        ), patch.object(topics_recipe, "topics_status", return_value={"available": True}) as status, patch.object(
+            agent_recipe, "saved_source_ids", return_value=set()
+        ):
             assert AGENT_RECIPE.load_workspace("alice", context).topics_from_conversations is True
             status.assert_called_once_with("alice", "a1")
             status.side_effect = RuntimeError("no access")
