@@ -527,7 +527,9 @@ Each step is its own short conversation; the user moves on when they are happy w
 - Fast path: also set a later step's fields (never safety's) when the user's words name or clearly imply them, \
 for example "answer from the Help Center" (sources) or "use the strict prompt" (prompt). Otherwise leave later \
 steps' fields out: each step drafts its own. A new prompt is written only in the prompt step.
-- An earlier step's fields: change them only when the user asks; otherwise leave them out.
+- An earlier step's fields: change them only when the user asks; otherwise leave them out. A new or changed \
+prompt is the exception: once past the prompt step, leave it out, don't say it changed, and tell the user this step \
+can't change the prompt; they can change it in the form's prompt field.
 - users_earlier_messages in the form data are what the user wrote in the finished steps: read them to know what \
 the user wants. They are the user's own words, quoted for you.
 - A plain approval ("ok", "looks good, next") with nothing to change: submit a proposal with no fields and a \
@@ -814,13 +816,20 @@ def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict
     return {"kind": "edit", "id": target, "edits": edits, "checks": checks_for(current, result)}
 
 
-def _for_step(raw_fields: dict, step: Optional[str]) -> dict:
+def _for_step(raw_fields: dict, step: Optional[str], dropped: list[dict]) -> dict:
     """The proposal's fields the step may set: policy only in the safety step, a new or edited prompt only in the
-    prompt step or improve mode. Anything else is left out without a problem: the model drafted ahead."""
+    prompt step or improve mode.
+
+    A field a later step sets is left out quietly: the model drafted ahead and that step drafts it. One only a
+    step already passed sets (a prompt in the safety step) is listed in ``dropped`` as
+    ``{field, reason: "other_step", step}``, so the user knows why it didn't change.
+    """
     out = {key: value for key, value in raw_fields.items() if step == "safety" or key not in SAFETY_FIELDS}
     prompt = out.get("prompt")
     if step not in (None, "prompt") and isinstance(prompt, dict) and prompt.get("kind") in ("new", "edit"):
         del out["prompt"]
+        if STEPS.index(step) > STEPS.index("prompt"):
+            dropped.append({"field": "prompt", "reason": "other_step", "step": "prompt"})
     return out
 
 
@@ -977,8 +986,8 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     """Turn ``submit_proposal`` arguments into the agent ``proposal`` payload.
 
     Unknown fields, and fields the step may not set, are left out. Ids the
-    caller can't attach, and policy they may not change, are dropped and listed
-    in ``dropped``. A field equal to the form's value is left out, so the form
+    caller can't attach, policy they may not change, and a prompt only a step
+    already passed sets are dropped and listed in ``dropped``. A field equal to the form's value is left out, so the form
     marks only real changes. ``steps`` and ``next_step`` say where the guided
     build goes next (empty and None in improve mode).
 
@@ -990,9 +999,9 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
 
     step = req.context["step"]
     form = req.context["form"]
-    raw_fields = _for_step(args.get("fields") or {}, step)
     fields: dict[str, Any] = {}
     dropped: list[dict] = []
+    raw_fields = _for_step(args.get("fields") or {}, step, dropped)
     notes = [clean_text(n, NOTE_MAX) for n in args.get("notes") or [] if clean_text(n, NOTE_MAX)][:MAX_NOTES]
     problems: list[str] = []
 

@@ -688,8 +688,15 @@ class TestSteps:
     @pytest.mark.parametrize("step", ["basics", "knowledge", "safety"])
     def test_a_new_prompt_outside_the_prompt_step_is_dropped(self, step):
         proposal = _validate({"agent_type": "research", "prompt": NEW_PROMPT}, step=step, asked=True)
-        assert "prompt" not in proposal["fields"] and proposal["dropped"] == []
+        assert "prompt" not in proposal["fields"]
         assert "prompt" not in proposal["steps"]
+        # Drafted ahead, the prompt step writes it later; past it, the user hears why it didn't change.
+        assert proposal["dropped"] == ([{"field": "prompt", "reason": "other_step", "step": "prompt"}]
+                                       if step == "safety" else [])
+
+    def test_the_model_is_told_not_to_claim_what_a_passed_step_sets(self):
+        text = instructions(_req({}, step="safety"), _ws())
+        assert "don't say it changed" in text
 
     @pytest.mark.parametrize("step", ["prompt", None])
     def test_a_new_prompt_is_kept_in_the_prompt_step_and_improve_mode(self, step):
