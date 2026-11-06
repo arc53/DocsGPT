@@ -25,6 +25,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -97,6 +99,7 @@ jobs:
           git checkout -b "$BRANCH"
           git add package.json package-lock.json
           git commit -m "chore: bump npm libraries to v${{ steps.version_docsgpt.outputs.version }}"
+          gh auth setup-git
           git push origin "$BRANCH"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
