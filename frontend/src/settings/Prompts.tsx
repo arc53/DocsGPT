@@ -654,11 +654,8 @@ function PromptDetailPage({
           onNavigate={leaveGuard.onNavigate()}
           save={{
             onSave: () => void detail.save(),
-            disabled:
-              !detail.canSave ||
-              !detail.dirty ||
-              streaming ||
-              drafter.review !== null,
+            // The header's Save, under the written draft.
+            disabled: !detail.canSave || streaming || drafter.review !== null,
             saving: detail.saving,
           }}
         />

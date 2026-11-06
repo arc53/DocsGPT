@@ -254,8 +254,8 @@ function PromptResult({
           <AlertTitle>{t('drafter.prompt.warningsTitle')}</AlertTitle>
           <AlertDescription>
             <ul className="flex list-disc flex-col gap-1 pl-4">
-              {warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
+              {warnings.map((warning, index) => (
+                <li key={index}>{warning}</li>
               ))}
             </ul>
           </AlertDescription>
@@ -270,8 +270,8 @@ function PromptResult({
             {t('drafter.prompt.assumptionsTitle')}
           </p>
           <ul className="flex list-disc flex-col gap-1 pl-4 text-sm">
-            {assumptions.map((assumption) => (
-              <li key={assumption} className="wrap-break-word">
+            {assumptions.map((assumption, index) => (
+              <li key={index} className="wrap-break-word">
                 {assumption}{' '}
                 <Button
                   type="button"
