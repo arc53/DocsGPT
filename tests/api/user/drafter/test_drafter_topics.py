@@ -146,6 +146,21 @@ class TestStatus:
         # Access is checked first.
         assert _status(client, pg_conn, "stranger", on["id"]).status_code == 404
 
+    def test_is_unavailable_while_the_drafter_is_off(self, client, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        agent = _busy_agent(pg_conn)
+        monkeypatch.setattr(settings, "DRAFTER_ENABLED", False)
+        with patch.object(ConversationLabelsRepository, "agent_question_counts") as count:
+            status = _status(client, pg_conn, "owner", agent["id"]).get_json()
+            count.assert_not_called()
+        assert status["available"] is False and status["reason"] == "disabled"
+
+    def test_an_unexpected_failure_is_a_server_error(self, client, pg_conn):
+        agent = _busy_agent(pg_conn)
+        with patch.object(ConversationLabelsRepository, "agent_question_counts", side_effect=RuntimeError("db")):
+            assert _status(client, pg_conn, "owner", agent["id"]).status_code == 500
+
     def test_needs_edit_access(self, client, pg_conn):
         agent = _busy_agent(pg_conn)
         assert _status(client, pg_conn, "stranger", agent["id"]).status_code == 404

@@ -15,12 +15,13 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Iterator
+from typing import Iterator, Optional
 
 from flask import jsonify, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
+from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
@@ -35,6 +36,7 @@ _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
 def _frame(event: dict) -> str:
+    """One server-sent event frame carrying ``event`` as JSON."""
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
@@ -45,7 +47,8 @@ def _closed(*events: dict) -> Iterator[str]:
     yield _frame({"type": "end"})
 
 
-def _user_id():
+def _user_id() -> Optional[str]:
+    """The signed-in caller's id from the request's decoded token, or None without one."""
     token = getattr(request, "decoded_token", None)
     return token.get("sub") if isinstance(token, dict) else None
 
@@ -141,18 +144,18 @@ class DrafterTopicsStatus(Resource):
         description=(
             "Whether Draft with DocsGPT suggests Insights topics for an agent from its conversations: Insights "
             "sorts them (on this server and for the agent) and it had enough in the last 30 days. Returns "
-            "{\"available\", \"conversations\", \"needed\", \"reason\"}; reason is off_on_this_instance or "
-            "turned_off_for_this_agent while Insights is off (conversations then 0, uncounted), else null. Needs "
-            "edit access to the agent: the suggestions read its users' questions."
+            "{\"available\", \"conversations\", \"needed\", \"reason\"}; reason is disabled (the drafter is "
+            "off), off_on_this_instance or turned_off_for_this_agent (Insights is off), with conversations 0 and "
+            "uncounted, else null. Needs edit access to the agent: the suggestions read its users' questions."
         ),
         params={"agent_id": "Agent id"},
         responses={200: "The agent's status", 400: "No agent_id", 401: "Not signed in",
-                   403: "No edit access", 404: "Agent not found"},
+                   403: "No edit access", 404: "Agent not found", 500: "The status could not be read"},
     )
     def get(self) -> Response:
         """Report whether topic suggestions are available for an agent."""
         from docsgpt.api.user.resource_access import AccessDenied
-        from docsgpt.drafter.topics_recipe import topics_status
+        from docsgpt.drafter.topics_recipe import MIN_CONVERSATIONS, topics_status
 
         user_id = _user_id()
         if not user_id:
@@ -160,13 +163,16 @@ class DrafterTopicsStatus(Resource):
         agent_id = (request.args.get("agent_id") or "").strip()
         if not agent_id:
             return make_response(jsonify({"success": False, "message": "agent_id is required"}), 400)
+        if not settings.DRAFTER_ENABLED:
+            return make_response(jsonify({"available": False, "conversations": 0, "needed": MIN_CONVERSATIONS,
+                                          "reason": "disabled"}), 200)
         try:
             status = topics_status(user_id, agent_id)
         except AccessDenied as denied:
             return make_response(jsonify({"success": False, "message": denied.message}), denied.status)
         except Exception:
             logger.exception("drafter: could not read the topics status")
-            return make_response(jsonify({"success": False}), 400)
+            return make_response(jsonify({"success": False}), 500)
         return make_response(jsonify(status), 200)
 
 

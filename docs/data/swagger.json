@@ -4188,7 +4188,7 @@
     },
     "/api/drafter/topics/status": {
       "get": {
-        "description": "Whether Draft with DocsGPT suggests Insights topics for an agent from its conversations: Insights sorts them (on this server and for the agent) and it had enough in the last 30 days. Returns {\"available\", \"conversations\", \"needed\", \"reason\"}; reason is off_on_this_instance or turned_off_for_this_agent while Insights is off (conversations then 0, uncounted), else null. Needs edit access to the agent: the suggestions read its users' questions.",
+        "description": "Whether Draft with DocsGPT suggests Insights topics for an agent from its conversations: Insights sorts them (on this server and for the agent) and it had enough in the last 30 days. Returns {\"available\", \"conversations\", \"needed\", \"reason\"}; reason is disabled (the drafter is off), off_on_this_instance or turned_off_for_this_agent (Insights is off), with conversations 0 and uncounted, else null. Needs edit access to the agent: the suggestions read its users' questions.",
         "operationId": "get_drafter_topics_status",
         "parameters": [
           {
@@ -4213,6 +4213,9 @@
           },
           "404": {
             "description": "Agent not found"
+          },
+          "500": {
+            "description": "The status could not be read"
           }
         },
         "summary": "Report whether topic suggestions are available for an agent",
