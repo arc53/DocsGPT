@@ -1,7 +1,7 @@
 ---
 title: Analytics and Logs
 description: Read the Analytics charts, the Insights figures and docs gaps, filter the Logs list by label and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -199,7 +199,7 @@ Topics are what people ask about. The list starts with the folders of the agent'
 
 - **Folders**, marked **From sources**: a topic is the first folder of a page's path, skipping `docs`, `content`, `src` and `en`, with pages at the root under **overview**. The folder name is tidied (leading numbers dropped, dashes and underscores turned into spaces, lower case) and described as "Pages such as: " followed by up to five page titles taken from the file names. The model was trained on topics in that form; folder names alone sorted far worse. When an agent has several sources whose pages all sit at the root, each source is one topic, named after it. A name longer than 60 characters, such as a long uploaded file's, is cut to fit and ends in "…"; two that would cut to the same name get " 2", " 3" and so on. A folder's ⋯ menu edits it, which makes it your own topic that no longer follows the folder's pages, or hides it. **Show**, in the note under the list, brings hidden folders back. The folders appear once the agent is saved.
 - **Your own topics**: **Add topic** adds one, with a name (up to 60 characters, not used twice) and an optional description. A description makes sorting more accurate: name a few pages, features or words users write. Each topic's ⋯ menu edits or removes it.
-- **Suggested topics**: **Suggest from conversations**, beside **Add topic**, reads up to 300 of the agent's recent questions and suggests topics for what they ask that the list doesn't cover, each with its kind and its share of the questions. It shows once the agent has 10 conversations in the last 30 days. The questions go to your [task model](/Using/web-app#task-model). See [Draft with DocsGPT](/Agents/draft-with-docsgpt#insights-topics).
+- **Suggested topics**: **Suggest from conversations**, beside **Add topic**, reads up to 300 of the agent's recent questions and suggests topics for what they ask that the list doesn't cover, each with its kind and its share of the questions. It shows once the agent has 10 conversations in the last 30 days, and not while insights are off for the instance or for the saved agent; when DocsGPT can't check whether it is available, a note says so with **Retry**. The questions go to your [task model](/Using/web-app#task-model). See [Draft with DocsGPT](/Agents/draft-with-docsgpt#insights-topics).
 
 Each topic either sorts questions or can overlap:
 
