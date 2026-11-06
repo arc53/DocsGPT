@@ -12,8 +12,10 @@ import { joinList } from '../settings/insights/format';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { newTopicId } from './analyticsConfig';
 import {
+  ACTION_KEYS,
   DEFAULT_GUARDRAILS,
   defaultControlSettings,
+  STAGE_KEYS,
 } from './components/GuardrailsSection';
 import { cleanStarters } from './starters';
 import type {
@@ -74,24 +76,14 @@ export const AGENT_STEP_FIELDS: Record<
   safety: ['limits', 'guardrails', 'analytics'],
 };
 
-/**
- * The guardrail checks the safety step offers and the controls each adds
- * (GUARDRAIL_MENU in agent_recipe.py).
- */
-const GUARDRAIL_MENU: Record<
-  string,
-  readonly (readonly [GuardrailStage, GuardrailAction])[]
-> = {
-  pii: [
-    ['input', 'redact'],
-    ['output', 'redact'],
-  ],
-  injection: [['input', 'block']],
-  groundedness: [['output', 'flag']],
-  secrets: [['output', 'redact']],
-};
-
 const AGENT_TYPES = ['classic', 'research'];
+
+/** A guardrail control a draft adds: which check runs where, and what it does. */
+export type GuardrailControlToAdd = {
+  check: string;
+  stage: GuardrailStage;
+  action: GuardrailAction;
+};
 
 /** `proposal.fields` of an agent draft (an omitted field is unchanged). */
 export type AgentProposalFields = {
@@ -109,8 +101,11 @@ export type AgentProposalFields = {
   starters?: string[];
   /** Request and token limits are either-or; `none` turns both off. */
   limits?: { mode: 'requests' | 'tokens'; value: number } | { mode: 'none' };
-  /** GUARDRAIL_MENU checks to add. */
-  guardrails?: { checks: string[] };
+  /**
+   * The controls of the menu checks to add, as the server reads them from
+   * GUARDRAIL_MENU in agent_recipe.py.
+   */
+  guardrails?: { controls: GuardrailControlToAdd[] };
   /** Insights topics to add. */
   analytics?: { topics: { name: string; description: string }[] };
 };
@@ -169,6 +164,28 @@ function parseLimits(raw: unknown): AgentProposalFields['limits'] {
   )
     return { mode: limits.mode, value: limits.value as number };
   return undefined;
+}
+
+function parseGuardrails(raw: unknown): AgentProposalFields['guardrails'] {
+  const controls = (raw as { controls?: unknown } | undefined)?.controls;
+  if (!Array.isArray(controls)) return undefined;
+  const parsed = controls.filter(
+    (control): control is GuardrailControlToAdd =>
+      !!control &&
+      isString(control.check) &&
+      !!control.check &&
+      control.stage in STAGE_KEYS &&
+      control.action in ACTION_KEYS,
+  );
+  return parsed.length > 0
+    ? {
+        controls: parsed.map(({ check, stage, action }) => ({
+          check,
+          stage,
+          action,
+        })),
+      }
+    : undefined;
 }
 
 function parseTopics(raw: unknown): AgentProposalFields['analytics'] {
@@ -246,10 +263,8 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
   }
   const limits = parseLimits(rawFields.limits);
   if (limits) fields.limits = limits;
-  const checks = stringList(
-    (rawFields.guardrails as { checks?: unknown } | undefined)?.checks,
-  )?.filter((check) => check in GUARDRAIL_MENU);
-  if (checks?.length) fields.guardrails = { checks };
+  const guardrails = parseGuardrails(rawFields.guardrails);
+  if (guardrails) fields.guardrails = guardrails;
   const analytics = parseTopics(rawFields.analytics);
   if (analytics) fields.analytics = analytics;
   const list = (value: unknown) => (Array.isArray(value) ? value : []);
@@ -342,37 +357,34 @@ function limitsOf(
 }
 
 /**
- * The guardrails with a proposal's checks added: each check's controls from
- * GUARDRAIL_MENU, switching on one the check has at that stage but switched
- * off (the form shows its stage picked either way) and keeping one it runs,
- * guardrails on, and Monitor only unless the agent already enforces
- * everywhere.
+ * The guardrails with a proposal's controls added: switching on one the
+ * check has at that stage but switched off (the form shows its stage picked
+ * either way) and keeping one it runs, guardrails on, and Monitor only
+ * unless the agent already enforces everywhere.
  */
 function guardrailsWith(
-  checks: string[],
+  added: GuardrailControlToAdd[],
   now: GuardrailsConfig | undefined,
 ): GuardrailsConfig {
   const base = now ?? DEFAULT_GUARDRAILS;
   const controls: GuardrailControl[] = [...base.controls];
-  checks.forEach((check) =>
-    GUARDRAIL_MENU[check].forEach(([stage, action]) => {
-      const at = controls.findIndex(
-        (c) => c.check === check && c.stage === stage,
-      );
-      if (at >= 0) {
-        if (controls[at].enabled === false)
-          controls[at] = { ...controls[at], enabled: true };
-        return;
-      }
-      controls.push({
-        check,
-        stage,
-        action,
-        enabled: true,
-        settings: defaultControlSettings(check, null),
-      });
-    }),
-  );
+  added.forEach(({ check, stage, action }) => {
+    const at = controls.findIndex(
+      (c) => c.check.toLowerCase() === check && c.stage === stage,
+    );
+    if (at >= 0) {
+      if (controls[at].enabled === false)
+        controls[at] = { ...controls[at], enabled: true };
+      return;
+    }
+    controls.push({
+      check,
+      stage,
+      action,
+      enabled: true,
+      settings: defaultControlSettings(check, null),
+    });
+  });
   return {
     ...base,
     enabled: true,
@@ -440,7 +452,10 @@ export function planAgentPatch(
   if (fields.prompt?.kind === 'existing') next.prompt = fields.prompt.id;
   if (fields.limits) next.limits = limitsOf(fields.limits, form.limits);
   if (fields.guardrails)
-    next.guardrails = guardrailsWith(fields.guardrails.checks, form.guardrails);
+    next.guardrails = guardrailsWith(
+      fields.guardrails.controls,
+      form.guardrails,
+    );
   if (fields.analytics)
     next.analytics = analyticsWith(fields.analytics.topics, form.analytics);
 
@@ -575,14 +590,11 @@ export function agentDraftContext(
       guardrails: {
         enabled: guardrails.enabled,
         mode: guardrails.mode,
-        // A control switched off runs nothing: the recipe may offer it.
-        checks: [
-          ...new Set(
-            guardrails.controls
-              .filter((c) => c.enabled !== false)
-              .map((c) => c.check.toLowerCase()),
-          ),
-        ],
+        // The controls it runs, by stage: one switched off runs nothing, and
+        // a check on at some stages only may still get the others.
+        controls: guardrails.controls
+          .filter((c) => c.enabled !== false)
+          .map((c) => ({ check: c.check.toLowerCase(), stage: c.stage })),
       },
       analytics: {
         enabled: form.analytics.enabled,

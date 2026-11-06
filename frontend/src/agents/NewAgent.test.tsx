@@ -2866,7 +2866,13 @@ describe('NewAgent drafter', () => {
         proposal(
           {
             limits: { mode: 'requests', value: 500 },
-            guardrails: { checks: ['pii', 'injection'] },
+            guardrails: {
+              controls: [
+                { check: 'pii', stage: 'input', action: 'redact' },
+                { check: 'pii', stage: 'output', action: 'redact' },
+                { check: 'injection', stage: 'input', action: 'block' },
+              ],
+            },
           },
           { steps: ['safety'] },
         ),
@@ -2928,7 +2934,17 @@ describe('NewAgent drafter', () => {
 
   it('reads an agent as unchanged once its drafted guardrails are undone', async () => {
     drafter.scripts = [
-      [proposal({ guardrails: { checks: ['pii'] } }), { type: 'end' }],
+      [
+        proposal({
+          guardrails: {
+            controls: [
+              { check: 'pii', stage: 'input', action: 'redact' },
+              { check: 'pii', stage: 'output', action: 'redact' },
+            ],
+          },
+        }),
+        { type: 'end' },
+      ],
     ];
     await renderEdit(['edit', 'publish', 'use', 'view', 'edit_policy']);
     await ask('Screen for personal data');

@@ -155,6 +155,27 @@ def _names(value: Any, limit: int, *, lower: bool = False) -> list[str]:
     return out
 
 
+def _guardrail_controls(guardrails: dict) -> list[dict]:
+    """The controls the form runs, ``{check, stage}`` each once, lowercased.
+
+    The form sends only the controls switched on. An older form sent ``checks``, the checks with any control on:
+    each is read as on at every stage the menu gives it.
+    """
+    out: list[dict] = []
+    raw = guardrails.get("controls")
+    for item in raw[:_FORM_MAX_NAMES] if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        control = {"check": clean_text(item.get("check"), 40).lower(), "stage": clean_text(item.get("stage"), 40)}
+        if control["check"] and control["stage"] and control not in out:
+            out.append(control)
+    for check in _names(guardrails.get("checks"), 40, lower=True):
+        for stage, _ in GUARDRAIL_MENU.get(check, ()):
+            if {"check": check, "stage": stage} not in out:
+                out.append({"check": check, "stage": stage})
+    return out
+
+
 def _parse_policy(form_raw: dict) -> dict:
     """The form's limits, guardrails and Insights values, with defaults for what is missing or wrong."""
     limits = form_raw.get("limits") if isinstance(form_raw.get("limits"), dict) else {}
@@ -172,7 +193,7 @@ def _parse_policy(form_raw: dict) -> dict:
         "guardrails": {
             "enabled": guardrails.get("enabled") is True,
             "mode": guardrails.get("mode") if guardrails.get("mode") in GUARDRAIL_MODES else "monitor_only",
-            "checks": _names(guardrails.get("checks"), 40, lower=True),
+            "controls": _guardrail_controls(guardrails),
         },
         # Collecting insights is on by default for an agent.
         "analytics": {
@@ -362,6 +383,23 @@ def _editable_prompt(form: dict, ws: Workspace) -> Optional[str]:
     return target if target in own else None
 
 
+def _checks_on(guardrails: dict) -> set[str]:
+    """The menu checks the form runs at every stage the menu gives them (one on at some stages only is not)."""
+    on = {(c["check"], c["stage"]) for c in guardrails["controls"]}
+    return {check for check, controls in GUARDRAIL_MENU.items() if all((check, stage) in on for stage, _ in controls)}
+
+
+def _checks_view(guardrails: dict) -> list[str]:
+    """The form's checks as the model reads them: a menu check on at some of its stages says which, as
+    ``pii (input only)``, so the model may add the rest."""
+    stages: dict[str, list[str]] = {}
+    for control in guardrails["controls"]:
+        stages.setdefault(control["check"], []).append(control["stage"])
+    full = _checks_on(guardrails)
+    return [check if check in full or check not in GUARDRAIL_MENU else f"{check} ({' and '.join(on)} only)"
+            for check, on in stages.items()]
+
+
 def _topic_view(form: dict, ws: AgentWorkspace) -> TopicsWorkspace:
     """The form's topics and the sources' folders, for the topics recipe's room rules."""
     analytics = form["analytics"]
@@ -447,6 +485,9 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
         data["prompt"]["editable"] = True
     if step == "safety":
         data.update({key: form[key] for key in SAFETY_FIELDS})
+        guardrails = form["guardrails"]
+        data["guardrails"] = {"enabled": guardrails["enabled"], "mode": guardrails["mode"],
+                              "checks": _checks_view(guardrails)}
         data["analytics"] = {key: form["analytics"][key] for key in ("enabled", "topics")}
         data["safety_options"] = _safety_options(form, ws)
     return data
@@ -603,9 +644,10 @@ user declines stays out of the proposal.
 - limits: one budget shared by everyone using the agent, counted over the last 24 hours: either a request limit \
 or a token limit, never both. Recommend {limits["request_limit"]:,} requests (or {limits["token_limit"]:,} tokens \
 when the user thinks in cost). mode "none" turns limits off.
-- guardrails: checks from the menu in safety_options, added to the agent's own. Unless the agent already enforces \
-its guardrails (mode scan_all), they run in monitor-only mode: they record what they would have done, and the \
-owner turns enforcement on later. pii hides personal data (emails, \
+- guardrails: checks from the menu in safety_options, added to the agent's own. A check the agent runs at some \
+stages only is listed with them, as "pii (input only)": adding it from the menu adds its other stages. Unless the \
+agent already enforces its guardrails (mode scan_all), they run in monitor-only mode: they record what they would \
+have done, and the owner turns enforcement on later. pii hides personal data (emails, \
 phone numbers, card numbers) in questions and answers; injection blocks messages that try to override the agent's \
 instructions; groundedness flags answers its knowledge doesn't back; secrets hides keys and passwords in answers. \
 Recommend pii and injection for an agent that faces the public.
@@ -865,18 +907,23 @@ def _limits(raw: Any) -> dict:
     return {"mode": mode, "value": value}
 
 
-def _checks(raw: Any, form: dict, ws: AgentWorkspace) -> list[str]:
-    """The menu checks to add, in the model's order: available here, and not already on (an agent whose
-    guardrails are off gets a check it has again, since adding it turns them on)."""
+def _checks(raw: Any, form: dict, ws: AgentWorkspace) -> list[dict]:
+    """The controls of the menu checks to add, ``{check, stage, action}``, in the model's order.
+
+    A check is added when it is available here and not already on at every stage the menu gives it (an agent whose
+    guardrails are off gets a check it has again, since adding it turns them on). Each brings all its menu
+    controls: the form keeps one it already runs at that stage.
+    """
     checks = raw.get("checks") if isinstance(raw, dict) else None
     guardrails = form["guardrails"]
-    present = set(guardrails["checks"]) if guardrails["enabled"] else set()
-    out: list[str] = []
+    present = _checks_on(guardrails) if guardrails["enabled"] else set()
+    picked: list[str] = []
     for check in checks if isinstance(checks, list) else []:
         key = str(check).strip().lower()
-        if key in ws.guardrail_menu and key not in present and key not in out:
-            out.append(key)
-    return out
+        if key in ws.guardrail_menu and key not in present and key not in picked:
+            picked.append(key)
+    return [{"check": check, "stage": stage, "action": action}
+            for check in picked for stage, action in GUARDRAIL_MENU[check]]
 
 
 def _topics(raw: Any, form: dict, ws: AgentWorkspace, notes: list[str]) -> list[dict]:
@@ -959,9 +1006,9 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
     if "limits" in wanted:
         fields["limits"] = _limits(raw_fields["limits"])
     if "guardrails" in wanted:
-        checks = _checks(raw_fields["guardrails"], form, ws)
-        if checks:
-            fields["guardrails"] = {"checks": checks}
+        controls = _checks(raw_fields["guardrails"], form, ws)
+        if controls:
+            fields["guardrails"] = {"controls": controls}
     if "analytics" in wanted:
         topics = _topics(raw_fields["analytics"], form, ws, notes)
         if topics:

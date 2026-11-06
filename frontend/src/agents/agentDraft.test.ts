@@ -3,6 +3,7 @@ import i18next from 'i18next';
 import { DEFAULT_ANALYTICS } from './analyticsConfig';
 import {
   type AgentDraftForm,
+  type GuardrailControlToAdd,
   agentDraftContext,
   agentDraftValues,
   agentProposalSummary,
@@ -91,10 +92,22 @@ describe('agentDraft', () => {
     });
     expect(read({ limits: { mode: 'tokens', value: -1 } })).toEqual({});
     expect(read({ limits: { mode: 'tokens', value: 1.5 } })).toEqual({});
+    const pii = { check: 'pii', stage: 'input', action: 'redact' };
     expect(
-      read({ guardrails: { checks: ['pii', 'denylist', 7, 'injection'] } }),
-    ).toEqual({ guardrails: { checks: ['pii', 'injection'] } });
-    expect(read({ guardrails: { checks: ['policy'] } })).toEqual({});
+      read({
+        guardrails: {
+          controls: [
+            pii,
+            { check: 'pii', stage: 'later', action: 'redact' },
+            { check: 'pii', stage: 'output', action: 'erase' },
+            { stage: 'input', action: 'block' },
+            7,
+          ],
+        },
+      }),
+    ).toEqual({ guardrails: { controls: [pii] } });
+    // An older server sent check names only: the form can't tell their controls.
+    expect(read({ guardrails: { checks: ['pii'] } })).toEqual({});
     expect(
       read({
         analytics: {
@@ -224,11 +237,19 @@ describe('agentDraft', () => {
   });
 
   it('adds guardrail checks once per stage, on and in Monitor only', () => {
-    const [fresh] = planAgentPatch(
-      { guardrails: { checks: ['pii', 'injection'] } },
-      form(),
-      [],
-    );
+    const pii: { controls: GuardrailControlToAdd[] } = {
+      controls: [
+        { check: 'pii', stage: 'input', action: 'redact' },
+        { check: 'pii', stage: 'output', action: 'redact' },
+      ],
+    };
+    const piiAndInjection: { controls: GuardrailControlToAdd[] } = {
+      controls: [
+        ...pii.controls,
+        { check: 'injection', stage: 'input', action: 'block' },
+      ],
+    };
+    const [fresh] = planAgentPatch({ guardrails: piiAndInjection }, form(), []);
     const added = fresh.next as GuardrailsConfig;
     expect(added).toMatchObject({
       enabled: true,
@@ -260,7 +281,7 @@ describe('agentDraft', () => {
       ],
     };
     const [onto] = planAgentPatch(
-      { guardrails: { checks: ['pii'] } },
+      { guardrails: pii },
       form({ guardrails: existing }),
       [],
     );
@@ -275,7 +296,7 @@ describe('agentDraft', () => {
     // A control the agent has switched off is switched on, not left off
     // while the form shows its stage as picked.
     const [enabled] = planAgentPatch(
-      { guardrails: { checks: ['pii'] } },
+      { guardrails: pii },
       form({
         guardrails: {
           ...existing,
@@ -498,7 +519,14 @@ describe('agentDraft', () => {
         prompt_draft: { name: 'P', content: 'C' },
         starters: ['Hi'],
         limits: { mode: 'tokens', value: 50000 },
-        guardrails: { enabled: true, mode: 'monitor_only', checks: ['pii'] },
+        guardrails: {
+          enabled: true,
+          mode: 'monitor_only',
+          controls: [
+            { check: 'pii', stage: 'input' },
+            { check: 'pii', stage: 'output' },
+          ],
+        },
         // Folders and overlapping topics change how many topics fit.
         analytics: {
           enabled: true,
@@ -520,9 +548,10 @@ describe('agentDraft', () => {
     ).toMatchObject({
       prompt_draft: null,
       limits: { mode: 'none', value: null },
-      guardrails: { enabled: false, mode: 'monitor_only', checks: [] },
+      guardrails: { enabled: false, mode: 'monitor_only', controls: [] },
     });
-    // A control switched off runs no check: the recipe may offer it again.
+    // A control switched off runs no check: the recipe may offer it again,
+    // and a check on at one stage only can get its other stage.
     expect(
       agentDraftContext(
         'a1',
@@ -550,8 +579,8 @@ describe('agentDraft', () => {
         }),
         { step: 'safety', earlier: [] },
         null,
-      ).form.guardrails.checks,
-    ).toEqual(['injection']);
+      ).form.guardrails.controls,
+    ).toEqual([{ check: 'injection', stage: 'input' }]);
   });
 
   it('gives a reason row only for the fields the draft changed', () => {

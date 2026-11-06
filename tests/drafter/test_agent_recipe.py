@@ -47,6 +47,17 @@ def _ws(**kwargs) -> AgentWorkspace:
     return ws
 
 
+def _on(check: str, stage: str) -> dict:
+    """A control the form runs, as the context sends it."""
+    return {"check": check, "stage": stage}
+
+
+def _added(*checks: str) -> dict:
+    """The guardrails field a proposal adding these menu checks carries: every control of each."""
+    return {"controls": [{"check": check, "stage": stage, "action": action}
+                         for check in checks for stage, action in agent_recipe.GUARDRAIL_MENU[check]]}
+
+
 def _req(form=None, *user_messages, step=None, earlier=None, asked=False) -> DraftRequest:
     messages = [{"role": "user", "content": m} for m in (user_messages or ("Build me a support agent",))]
     if asked:
@@ -84,18 +95,25 @@ class TestContext:
     def test_policy_values_get_defaults_and_wrong_values_are_left_out(self):
         form = parse_context({"form": {}})["form"]
         assert form["limits"] == {"mode": "none", "value": None}
-        assert form["guardrails"] == {"enabled": False, "mode": "monitor_only", "checks": []}
+        assert form["guardrails"] == {"enabled": False, "mode": "monitor_only", "controls": []}
         assert form["analytics"] == {"enabled": True, "topics": [], "overlapping": [], "hidden_folders": []}
         form = parse_context({"form": {
             "limits": {"mode": "tokens", "value": 50000},
-            "guardrails": {"enabled": True, "mode": "scan_all", "checks": ["PII", "pii", 3]},
+            "guardrails": {"enabled": True, "mode": "scan_all", "controls": [
+                {"check": "PII", "stage": "input"}, {"check": "pii", "stage": "input"}, {"check": "pii"}, 3,
+            ]},
             "analytics": {"enabled": False, "topics": ["Billing", "", 4]},
         }})["form"]
         assert form["limits"] == {"mode": "tokens", "value": 50000}
-        assert form["guardrails"] == {"enabled": True, "mode": "scan_all", "checks": ["pii"]}
+        assert form["guardrails"] == {"enabled": True, "mode": "scan_all", "controls": [_on("pii", "input")]}
         assert form["analytics"] == {"enabled": False, "topics": ["Billing"], "overlapping": [], "hidden_folders": []}
         form = parse_context({"form": {"limits": {"mode": "forever", "value": True}}})["form"]
         assert form["limits"] == {"mode": "none", "value": None}
+
+    def test_an_older_clients_checks_count_as_on_at_every_menu_stage(self):
+        guardrails = parse_context({"form": {"guardrails": {"enabled": True, "checks": ["PII", 3]}}})["form"][
+            "guardrails"]
+        assert guardrails["controls"] == [_on("pii", "input"), _on("pii", "output")]
 
     def test_topics_may_say_whether_they_overlap_and_folders_may_be_hidden(self):
         analytics = parse_context({"form": {"analytics": {
@@ -198,6 +216,14 @@ class TestContext:
         full = {"analytics": {"topics": [f"T{i}" for i in range(15)]}}
         options = context_data(_req(full, step="safety"), _ws(folders=FOLDERS))["safety_options"]
         assert options["insights_topics"] == {"available": False, "why": "no_room"}
+
+    def test_the_model_reads_which_stages_a_check_runs_at(self):
+        form = {"guardrails": {"enabled": True, "controls": [_on("pii", "input"), _on("injection", "input"),
+                                                              _on("moderation", "output")]}}
+        data = context_data(_req(form, step="safety"), _ws())
+        assert data["guardrails"] == {"enabled": True, "mode": "monitor_only",
+                                      "checks": ["pii (input only)", "injection", "moderation"]}
+        assert "(input only)" in instructions(_req(form, step="safety"), _ws())
 
     def test_a_saved_agent_with_enough_conversations_gets_topics_from_them(self):
         ws = _ws(topics_from_conversations=True)
@@ -821,14 +847,27 @@ class TestSafety:
 
     def test_guardrails_add_menu_checks_the_agent_lacks(self):
         proposal = _validate({"guardrails": {"checks": ["pii", "pii", "secrets", "moderation", "injection"]}},
-                             form={"guardrails": {"enabled": True, "checks": ["secrets"]}},
+                             form={"guardrails": {"enabled": True, "controls": [_on("secrets", "output")]}},
                              ws=_ws(guardrail_menu=["pii", "injection", "secrets"]), step="safety", asked=True)
-        assert proposal["fields"] == {"guardrails": {"checks": ["pii", "injection"]}}
+        assert proposal["fields"] == {"guardrails": _added("pii", "injection")}
+        assert proposal["fields"]["guardrails"]["controls"][:2] == [
+            {"check": "pii", "stage": "input", "action": "redact"},
+            {"check": "pii", "stage": "output", "action": "redact"},
+        ]
+
+    def test_a_check_on_at_one_stage_only_can_still_get_its_other_stage(self):
+        partial = {"guardrails": {"enabled": True, "controls": [_on("pii", "input")]}}
+        proposal = _validate({"guardrails": {"checks": ["pii"]}}, form=partial, step="safety", asked=True)
+        assert proposal["fields"] == {"guardrails": _added("pii")}
+        whole = {"guardrails": {"enabled": True, "controls": [_on("pii", "input"), _on("pii", "output")]}}
+        assert _validate({"guardrails": {"checks": ["pii"]}}, form=whole, step="safety", asked=True)["fields"] == {}
 
     def test_a_check_the_agent_has_switched_off_is_proposed_again(self):
         proposal = _validate({"guardrails": {"checks": ["pii"]}},
-                             form={"guardrails": {"enabled": False, "checks": ["pii"]}}, step="safety", asked=True)
-        assert proposal["fields"] == {"guardrails": {"checks": ["pii"]}}
+                             form={"guardrails": {"enabled": False, "controls": [_on("pii", "input"),
+                                                                                 _on("pii", "output")]}},
+                             step="safety", asked=True)
+        assert proposal["fields"] == {"guardrails": _added("pii")}
 
     def test_guardrails_off_on_the_instance_are_left_out(self):
         proposal = _validate({"guardrails": {"checks": ["pii"]}}, ws=_ws(guardrail_menu=[]),
