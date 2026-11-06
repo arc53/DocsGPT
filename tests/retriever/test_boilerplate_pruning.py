@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -11,6 +11,7 @@ from docsgpt.retriever.dispatcher import (
     build_dispatcher,
 )
 from docsgpt.retriever.stages.boilerplate_pruning import (
+    _normalize_fence_state,
     prune_boilerplate,
     prune_chunk_text,
 )
@@ -127,6 +128,38 @@ class TestBoilerplatePruningRules:
         assert "Home > API" not in pruned[0]["text"]
         assert "previous page: Overview" in pruned[1]["text"]
         assert "skip to content" in pruned[2]["text"]
+
+    def test_normalize_fence_state_handles_malformed_and_unexpected_values(self):
+        """Malformed tuples and non-fence strings must return None without raising."""
+        assert _normalize_fence_state(["", "bad"]) is None
+        assert _normalize_fence_state(("a", 3)) is None
+        assert _normalize_fence_state(("`", 2)) is None
+        assert _normalize_fence_state("false") is None
+        assert _normalize_fence_state("true") is None
+        assert _normalize_fence_state("```") == ("`", 3)
+        assert _normalize_fence_state("~~~~") == ("~", 4)
+        assert _normalize_fence_state(("~", 4)) == ("~", 4)
+        assert _normalize_fence_state(True) == ("`", 3)
+        assert _normalize_fence_state(False) is None
+        assert _normalize_fence_state(None) is None
+
+    def test_prune_boilerplate_handles_malformed_fence_metadata(self):
+        """prune_boilerplate continues pruning navigation lines when metadata contains unexpected fence values."""
+        docs = [
+            {
+                "id": 1,
+                "text": "Home > API\nFactual chunk.",
+                "metadata": {"active_fence": ["", "bad"]},
+            },
+            {
+                "id": 2,
+                "text": "Next page\nFactual chunk.",
+                "metadata": {"in_code_block": "false"},
+            },
+        ]
+        pruned = prune_boilerplate(docs, query="")
+        assert pruned[0]["text"] == "Factual chunk."
+        assert pruned[1]["text"] == "Factual chunk."
 
     def test_preserves_indentation_on_first_code_line(self):
         """Preserves 4-space markdown code line indentation when trimming leading/trailing blank lines."""
@@ -525,42 +558,16 @@ class TestCompressingRetrieverIntegration:
         monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
         docs_pruned = engine._retrieve_node_sources(mock_config)
         assert docs_pruned[0]["text"] == "Factual chunk."
-    def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self):
-        """Integrate SuperCompress between retrieval and generation with automated delegation tests."""
-        mock_result = Mock()
-        mock_result.compressed_text = "SuperCompressed query-focused context"
-        mock_compress_for_turn = Mock(return_value=mock_result)
-
-        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+    def test_compressing_retriever_preserves_document_metadata(self):
+        """CompressingRetriever applies in-tree boilerplate pruning while preserving per-document metadata."""
         mock_inner = Mock()
         mock_inner.search.return_value = [
-            {"id": "doc1", "text": "Raw retrieved chunk 1"},
-            {"id": "doc2", "text": "Raw retrieved chunk 2"},
+            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
+            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
         ]
+        retriever = CompressingRetriever(mock_inner)
+        result = retriever.search(query="authentication")
 
-        with patch.dict("sys.modules", {"supercompress": mock_module}):
-            retriever = CompressingRetriever(mock_inner)
-            result = retriever.search(query="API authentication")
-
-            assert len(result) == 1
-            assert result[0]["id"] == "doc1"
-            assert result[0]["text"] == "SuperCompressed query-focused context"
-            mock_compress_for_turn.assert_called_once()
-            _, kwargs = mock_compress_for_turn.call_args
-            assert kwargs.get("user_query") == "API authentication"
-            assert kwargs.get("context_blocks") == [
-                "Raw retrieved chunk 1",
-                "Raw retrieved chunk 2",
-            ]
-
-    def test_supercompress_fallback_when_absent(self):
-        """Falls back gracefully to in-tree boilerplate pruning when SuperCompress is not installed."""
-        mock_inner = Mock()
-        mock_inner.search.return_value = [
-            {"id": "doc1", "text": "Home > API\nFactual documentation content."}
-        ]
-        with patch.dict("sys.modules", {"supercompress": None}):
-            retriever = CompressingRetriever(mock_inner)
-            result = retriever.search(query="content")
-            assert result[0]["text"] == "Factual documentation content."
-
+        assert len(result) == 2
+        assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
+        assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}

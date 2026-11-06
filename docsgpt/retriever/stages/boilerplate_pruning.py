@@ -218,12 +218,19 @@ def _is_boilerplate_candidate(line: str) -> bool:
 
 def _normalize_fence_state(fence_state: Any) -> Optional[Tuple[str, int]]:
     """Normalizes chunk metadata representations of active code fences into (fence_char, fence_length)."""
-    if isinstance(fence_state, (list, tuple)) and len(fence_state) == 2:
-        return (str(fence_state[0]), int(fence_state[1]))
-    if isinstance(fence_state, str) and fence_state:
-        return (fence_state[0], len(fence_state))
     if fence_state is True:
         return ("`", 3)
+    if isinstance(fence_state, (list, tuple)) and len(fence_state) == 2:
+        try:
+            char = str(fence_state[0])
+            length = int(fence_state[1])
+            if char in {"`", "~"} and length >= 3:
+                return (char, length)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(fence_state, str) and len(fence_state) >= 3:
+        if fence_state[0] in {"`", "~"} and all(c == fence_state[0] for c in fence_state):
+            return (fence_state[0], len(fence_state))
     return None
 
 
