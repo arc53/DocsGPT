@@ -146,19 +146,19 @@ cyclopts==5.3.3
     # via fastmcp-slim
 dataclasses-json==0.6.7
     # via docsgpt
-daytona==0.226.1
+daytona==0.227.0
     # via docsgpt
-daytona-analytics-api-client==0.226.1
+daytona-analytics-api-client==0.227.0
     # via daytona
-daytona-analytics-api-client-async==0.226.1
+daytona-analytics-api-client-async==0.227.0
     # via daytona
-daytona-api-client==0.226.1
+daytona-api-client==0.227.0
     # via daytona
-daytona-api-client-async==0.226.1
+daytona-api-client-async==0.227.0
     # via daytona
-daytona-toolbox-api-client==0.226.1
+daytona-toolbox-api-client==0.227.0
     # via daytona
-daytona-toolbox-api-client-async==0.226.1
+daytona-toolbox-api-client-async==0.227.0
     # via daytona
 ddgs==9.16.1
     # via docsgpt
