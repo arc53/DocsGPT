@@ -172,6 +172,9 @@ export default function Conversation() {
   // Keeps the last content on screen while the phone sheet slides out.
   const [shownCompanion, setShownCompanion] = useState(companion);
   if (companion && companion !== shownCompanion) setShownCompanion(companion);
+  // Until the docked panel has shrunk out, so the columns widen with it.
+  const [companionPresent, setCompanionPresent] = useState(false);
+  if (companion && !companionPresent) setCompanionPresent(true);
 
   // The first prompt sent while the chat had no id. The id the server then
   // assigns belongs to that chat; a chat opened from the sidebar while the
@@ -460,7 +463,7 @@ export default function Conversation() {
     [openArtifactId, openArtifactVersion, openArtifactListKey],
   );
 
-  const isCompanionDocked = !isMobile && companion !== null;
+  const isCompanionDocked = !isMobile && companionPresent;
 
   const companionPanel =
     shownCompanion?.kind === 'artifact' ? (
@@ -589,6 +592,7 @@ export default function Conversation() {
           onOpenChange={(open) => {
             if (!open) setCompanion(null);
           }}
+          onClosed={() => setCompanionPresent(false)}
           expandable={
             shownCompanion?.kind === 'artifact' ||
             shownCompanion?.kind === 'artifacts'

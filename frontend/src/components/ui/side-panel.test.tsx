@@ -224,6 +224,22 @@ describe('SidePanel variant="docked"', () => {
       expect(content()).toContain('min-w-120');
     });
 
+    it('tells the page once it has shrunk out', async () => {
+      const onClosed = vi.fn();
+      await render(panel({ variant: 'docked', onClosed }));
+      await render(panel({ variant: 'docked', open: false, onClosed }));
+      await act(async () => vi.advanceTimersByTime(200));
+      // A page render mid-exit, with a new callback, doesn't restart it.
+      const latest = vi.fn();
+      await render(panel({ variant: 'docked', open: false, onClosed: latest }));
+      await act(async () => vi.advanceTimersByTime(99));
+      expect(latest).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(aside()).toBeNull();
+      expect(latest).toHaveBeenCalledTimes(1);
+      expect(onClosed).not.toHaveBeenCalled();
+    });
+
     it('unmounts without the shrink under reduced motion', async () => {
       vi.stubGlobal('matchMedia', (query: string) => ({
         matches: query === '(prefers-reduced-motion: reduce)',

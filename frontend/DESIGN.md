@@ -1713,7 +1713,9 @@ it?
   widens with it; while it moves the content keeps the compact width, pinned
   right, and slides with the edge (at rest it fills the panel, so a host
   narrower than 480px never clips it), and while closing the panel is inert
-  and keeps what it last showed. Full width fades instead. Never a transform: a panel translated
+  and keeps what it last showed. A page that lays itself out differently
+  beside the panel (the chat's columns) switches back in `onClosed`, once
+  the panel has shrunk out, not when it starts to. Full width fades instead. Never a transform: a panel translated
   off the edge overflows the host, which jumps sideways when the panel
   focuses a field. The host is a `relative flex overflow-hidden` row with the page
   as a `min-w-0 flex-1` sibling. While open it covers the app's floating Share

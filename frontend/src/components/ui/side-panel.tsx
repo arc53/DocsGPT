@@ -92,6 +92,12 @@ function useSidePanel() {
 type SidePanelBaseProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Called once a closed panel has finished closing: for a page whose
+   * layout beside a docked panel must change with it, not when it starts
+   * to shrink.
+   */
+  onClosed?: () => void;
   /** Layout only. */
   className?: string;
   children: React.ReactNode;
@@ -140,6 +146,7 @@ type SidePanelProps = SidePanelBaseProps &
 function SidePanel({
   open,
   onOpenChange,
+  onClosed,
   variant = 'modal',
   size = 'default',
   expandable,
@@ -183,10 +190,19 @@ function SidePanel({
   // than compact (or the panel's own border) would otherwise clip.
   const [settled, setSettled] = React.useState(false);
   if (!open && settled) setSettled(false);
+  // The page's latest callback, without restarting the timer on each render.
+  const finish = React.useEffectEvent(() => {
+    if (open) {
+      setSettled(true);
+      return;
+    }
+    setPresent(false);
+    onClosed?.();
+  });
   React.useEffect(() => {
     if (open ? settled : !present) return;
     const timer = window.setTimeout(
-      () => (open ? setSettled(true) : setPresent(false)),
+      finish,
       prefersReducedMotion() ? 0 : DOCKED_MS,
     );
     return () => window.clearTimeout(timer);
