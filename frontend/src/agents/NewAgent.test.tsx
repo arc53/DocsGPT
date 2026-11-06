@@ -3302,6 +3302,29 @@ describe('NewAgent drafter', () => {
       });
     });
 
+    it('keeps the id of the used prompt on an update left unsaved', async () => {
+      mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
+      drafter.scripts = [writes()];
+      await render();
+      await ask('A shipping agent');
+      await act(async () => use().click());
+      mockState.preference.prompts = [
+        { id: 'default', name: 'default', type: 'public' },
+        { id: 'np1', name: 'Shipping support', type: 'private' },
+      ] as never[];
+      drafter.scripts = [writes('Shorter text.')];
+      await ask('Shorter');
+      await act(async () => crumb().click());
+      expect(view()).toBeNull();
+      // The parked update still names the prompt it changes.
+      await ask('Anything else?');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'np1',
+        name: 'Shipping support',
+        content: 'Shorter text.',
+      });
+    });
+
     it('returns to the form on browser Back', async () => {
       drafter.scripts = [writes()];
       await render();

@@ -664,7 +664,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    */
   const leavePromptView = (popped = false): boolean => {
     if (promptOrigin === 'drafter') {
-      setPromptDraft(promptValues);
+      // An update of the prompt Use this prompt saved keeps its id.
+      setPromptDraft(draftOfPrompt ?? promptValues);
       closePromptView();
       return true;
     }
