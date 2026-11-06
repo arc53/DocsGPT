@@ -392,8 +392,16 @@ function Suggestions({
   );
   const onePick = chosen.filter((topic) => !topic.overlap);
   const overlapping = chosen.filter((topic) => topic.overlap);
-  const onePickRoom = maxTopics - topicsOfKind(config, false).length;
-  const overlapRoom = maxOverlapping - topicsOfKind(config, true).length;
+  // A limit lowered below the topics the agent has leaves no room (the
+  // server keeps those it has), not less than none.
+  const onePickRoom = Math.max(
+    0,
+    maxTopics - topicsOfKind(config, false).length,
+  );
+  const overlapRoom = Math.max(
+    0,
+    maxOverlapping - topicsOfKind(config, true).length,
+  );
 
   // What the picked topics push out of the topic question: worked out from
   // the folders when they are loaded, else from the server's list.
@@ -455,16 +463,16 @@ function Suggestions({
     notes.push({
       key: 'tooManyOnePick',
       text: t('drafter.topics.tooManyOnePick', {
-        count: Math.max(0, onePickRoom),
-        formatted: formatCount(Math.max(0, onePickRoom)),
+        count: onePickRoom,
+        formatted: formatCount(onePickRoom),
       }),
     });
   if (overOverlap)
     notes.push({
       key: 'tooManyOverlap',
       text: t('drafter.topics.tooManyOverlap', {
-        count: Math.max(0, overlapRoom),
-        formatted: formatCount(Math.max(0, overlapRoom)),
+        count: overlapRoom,
+        formatted: formatCount(overlapRoom),
       }),
     });
 

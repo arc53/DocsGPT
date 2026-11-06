@@ -350,6 +350,40 @@ describe('topic suggestions in the Insights settings', () => {
     expect(button(`${T}.suggest`)).toBeTruthy();
   });
 
+  it('adds a tag while the agent keeps more topics than a lowered limit', async () => {
+    const topic = (name: string) => ({
+      id: name.toLowerCase(),
+      name,
+      description: `${name} questions.`,
+      overlap: false,
+    });
+    await render({
+      maxTopics: 2,
+      initial: {
+        enabled: true,
+        topics: [topic('Billing'), topic('Login'), topic('Plans')],
+        hidden_folders: [],
+        digest: false,
+      },
+    });
+    await run(proposal());
+    for (const id of ['t1', 't2'])
+      await act(async () =>
+        suggestion(id).querySelector<HTMLButtonElement>('button')!.click(),
+      );
+    expect(card()!.querySelector('[data-note="tooManyOnePick"]')).toBeNull();
+    const add = button(`${T}.add`)!;
+    expect(add.disabled).toBe(false);
+    // A topic that sorts questions has no room, so picking one blocks Add.
+    await act(async () =>
+      suggestion('t1').querySelector<HTMLButtonElement>('button')!.click(),
+    );
+    expect(
+      card()!.querySelector('[data-note="tooManyOnePick"]'),
+    ).not.toBeNull();
+    expect(button(`${T}.add`)!.disabled).toBe(true);
+  });
+
   it('discards without touching the topics', async () => {
     await render();
     await run(proposal());
