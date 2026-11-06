@@ -10,9 +10,11 @@ const userService = {
     apiClient.get(endpoints.USER.QUOTA, token),
   /**
    * `{success, chat_prompt_id, chat_prompt_set, task_model_id,
-   * instance_task_model_id}`: the prompt chats without an agent use, whether
-   * one was ever stored, the model DocsGPT's own jobs run on for the caller
-   * (null: none picked) and the one that runs without a pick.
+   * task_model_unavailable, instance_task_model_id}`: the prompt chats
+   * without an agent use, whether one was ever stored, the model DocsGPT's
+   * own jobs run on for the caller (null: none picked, or the pick can't
+   * run, which `task_model_unavailable` tells apart) and the one that runs
+   * without a usable pick.
    */
   getPreferences: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.PREFERENCES, token),

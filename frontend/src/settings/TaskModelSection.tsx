@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { EmptyState } from '../components/ui/empty-state';
 import { SectionHeader } from '../components/ui/section-header';
 import { Skeleton } from '../components/ui/skeleton';
@@ -24,9 +25,16 @@ import { selectToken } from '../preferences/preferenceSlice';
 
 /** The Select value of "Use instance default": no pick of the user's own (saved as null). */
 const INSTANCE_DEFAULT = '__instance__';
+/**
+ * A stored pick that can't run (a disabled or deleted model): the instance
+ * default runs meanwhile, and the stored one again if it comes back. No
+ * option shows it, so picking any one, Use instance default included,
+ * replaces it.
+ */
+const UNAVAILABLE = '__unavailable__';
 
 type Loaded = {
-  /** The caller's pick, else `INSTANCE_DEFAULT`. */
+  /** The caller's pick, `UNAVAILABLE`, else `INSTANCE_DEFAULT`. */
   value: string;
   models: Model[];
   /** What runs without a pick: the admin's, TASK_MODEL_ID or the default model; null when none can. */
@@ -38,6 +46,8 @@ type Loaded = {
  * (the drafter, graph extraction, monitor checks) for this user. "Use
  * instance default" (the first option, picked while the user has none)
  * follows whatever the admin sets; a named model is the user's own pick.
+ * A stored pick that can no longer run shows no option and a note saying
+ * the instance default runs; picking any option replaces it.
  * Saved to the server on change, one save at a time: a pick made while one
  * is in flight waits, and only the latest such pick goes out. A failed save
  * puts the last saved pick back. A skeleton row stands in while it loads and
@@ -81,7 +91,9 @@ export default function TaskModelSection() {
           typeof prefs.task_model_id === 'string' &&
           models.some((m) => m.id === prefs.task_model_id)
             ? prefs.task_model_id
-            : INSTANCE_DEFAULT;
+            : prefs.task_model_unavailable === true
+              ? UNAVAILABLE
+              : INSTANCE_DEFAULT;
         const instanceModelId =
           typeof prefs.instance_task_model_id === 'string' &&
           prefs.instance_task_model_id
@@ -194,15 +206,29 @@ export default function TaskModelSection() {
           description={t('settings.general.taskModelDescription')}
           htmlFor={id}
           stack
+          after={
+            loaded.value === UNAVAILABLE ? (
+              <Alert variant="warning">
+                <AlertDescription>
+                  {t('settings.general.taskModelUnavailable')}
+                </AlertDescription>
+              </Alert>
+            ) : undefined
+          }
         >
-          <Select value={loaded.value} onValueChange={change}>
+          <Select
+            value={loaded.value === UNAVAILABLE ? '' : loaded.value}
+            onValueChange={change}
+          >
             <SelectTrigger
               id={id}
               className="w-full sm:w-56"
               size="field"
               shape="pill"
             >
-              <SelectValue />
+              <SelectValue
+                placeholder={t('settings.general.taskModelUnavailableValue')}
+              />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={INSTANCE_DEFAULT}>

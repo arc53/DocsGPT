@@ -166,7 +166,9 @@
       "default": "Par défaut",
       "taskModelLoadError": "Impossible de charger le modèle de tâches.",
       "taskModelInstanceDefault": "Utiliser la valeur par défaut de l’instance ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Utiliser la valeur par défaut de l’instance"
+      "taskModelInstanceDefaultUnnamed": "Utiliser la valeur par défaut de l’instance",
+      "taskModelUnavailable": "Votre modèle de tâches ne peut plus s’exécuter (il a été désactivé ou supprimé) ; la valeur par défaut de l’instance est donc utilisée. Si le modèle revient, il sera de nouveau utilisé ; choisissez une option ici pour le remplacer.",
+      "taskModelUnavailableValue": "Modèle indisponible"
     },
     "sources": {
       "title": "Gérez ici tous les fichiers sources auxquels vous avez accès et ceux que vous avez importés.",

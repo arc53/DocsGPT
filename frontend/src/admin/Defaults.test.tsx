@@ -100,10 +100,14 @@ const agentsBody = (guardrails = agentGuardrails, over = {}) => ({
   }),
 });
 
-const modelsBody = (taskModelId: string | null = null) => ({
+const modelsBody = (
+  taskModelId: string | null = null,
+  unavailable = false,
+) => ({
   json: async () => ({
     success: true,
     task_model_id: taskModelId,
+    task_model_unavailable: unavailable,
     fallback_model_id: 'gpt-b',
     models: [
       { id: 'gpt-a', display_name: 'GPT A', provider: 'openai' },
@@ -331,6 +335,38 @@ describe('Admin Defaults', () => {
     expect(resetDrafterConfigCache).toHaveBeenCalledTimes(1);
     expect(admin.setSourceDefaults).not.toHaveBeenCalled();
     expect(admin.setAgentDefaults).not.toHaveBeenCalled();
+    expect(save().disabled).toBe(true);
+  });
+
+  it('says when the stored task model can no longer run, and Not set clears it', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    admin.getModelDefaults.mockResolvedValue(modelsBody(null, true));
+    admin.setModelDefaults.mockResolvedValue(modelsBody(null));
+    await render();
+    const trigger = container.querySelector<HTMLElement>(
+      '#defaults-task-model',
+    )!;
+    expect(trigger.textContent).toContain('Unavailable model');
+    expect(text()).toContain("can't run");
+    expect(save().disabled).toBe(true);
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const options = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    );
+    await act(async () => options[0].click());
+    expect(save().disabled).toBe(false);
+    await act(async () => save().click());
+    expect(admin.setModelDefaults).toHaveBeenCalledWith(null, 'tok');
+    expect(trigger.textContent).toContain('Not set (GPT B)');
+    expect(text()).not.toContain("can't run");
     expect(save().disabled).toBe(true);
   });
 

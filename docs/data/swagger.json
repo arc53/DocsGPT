@@ -2109,6 +2109,7 @@
     },
     "/api/admin/defaults/models": {
       "get": {
+        "description": "`task_model_id` is null when none is stored or the stored one can't run; `task_model_unavailable`\nis then true for the latter, and a PUT with null clears it.",
         "operationId": "get_admin_model_defaults_resource",
         "responses": {
           "200": {
@@ -7470,14 +7471,14 @@
     },
     "/api/user/preferences": {
       "get": {
-        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default. task_model_id is the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; instance_task_model_id is the one that runs then, null when no model can. A token gets the chat prompt fields with prompts:read (never when restricted to specific prompts) and the task model fields with models:read.\nA token reads only the parts its scopes cover: the chat prompt with\n``prompts:read`` and no prompt allowlist (the stored id can't be\nproven inside one), the task model with ``models:read``.\n\nReturns:\n    Response: The preferences the caller may read.",
+        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, task_model_unavailable, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default. task_model_id is the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; task_model_unavailable is true when a choice is stored that can no longer run (a disabled or deleted model): the instance's runs meanwhile, the stored one again if it comes back, until a PUT with task_model_id null clears it. instance_task_model_id is the one that runs without a usable choice, null when no model can. A token gets the chat prompt fields with prompts:read (never when restricted to specific prompts) and the task model fields with models:read.\nA token reads only the parts its scopes cover: the chat prompt with\n``prompts:read`` and no prompt allowlist (the stored id can't be\nproven inside one), the task model with ``models:read``.\n\nReturns:\n    Response: The preferences the caller may read.",
         "operationId": "get_preferences_resource",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Return ``{success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}``",
+        "summary": "Return the chat prompt and the task model fields the caller may read",
         "tags": [
           "me"
         ],

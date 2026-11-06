@@ -287,6 +287,55 @@ describe('Task model row', () => {
     );
   });
 
+  it('says when the stored pick can no longer run, and Use instance default clears it', async () => {
+    updatePreferences.mockResolvedValue(json({ success: true }));
+    await render({
+      task_model_id: null,
+      task_model_unavailable: true,
+      instance_task_model_id: 'gpt-b',
+    });
+    // No option is picked: the stored model is in none of them.
+    expect(select()?.dataset.value).toBe('');
+    expect(container.textContent).toContain(
+      'settings.general.taskModelUnavailable',
+    );
+    await act(async () => item(INSTANCE).click());
+    expect(updatePreferences).toHaveBeenLastCalledWith(
+      { task_model_id: null },
+      'token',
+    );
+    expect(select()?.dataset.value).toBe(INSTANCE);
+    expect(container.textContent).not.toContain(
+      'settings.general.taskModelUnavailable',
+    );
+  });
+
+  it('keeps the unavailable note when clearing it fails', async () => {
+    updatePreferences.mockResolvedValue(json({ success: false }, false));
+    await render({
+      task_model_id: null,
+      task_model_unavailable: true,
+      instance_task_model_id: 'gpt-b',
+    });
+    await act(async () => item(INSTANCE).click());
+    expect(select()?.dataset.value).toBe('');
+    expect(container.textContent).toContain(
+      'settings.general.taskModelUnavailable',
+    );
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no unavailable note for a pick that runs', async () => {
+    await render({
+      task_model_id: 'gpt-a',
+      task_model_unavailable: false,
+      instance_task_model_id: 'gpt-b',
+    });
+    expect(container.textContent).not.toContain(
+      'settings.general.taskModelUnavailable',
+    );
+  });
+
   it('stays hidden on a server without the setting', async () => {
     await render({ chat_prompt_id: 'default' });
     expect(container.innerHTML).toBe('');

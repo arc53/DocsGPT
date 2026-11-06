@@ -298,9 +298,24 @@ class TestTaskModel:
         monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
         assert _call(app, pg_conn, "get").json["instance_task_model_id"] is None
 
-    def test_a_stale_choice_reads_as_null(self, app, pg_conn):
-        UsersRepository(pg_conn).set_task_model_id(ALICE, "gone-model")
-        assert _call(app, pg_conn, "get").json["task_model_id"] is None
+    @pytest.mark.parametrize("stale", ["gone-model", "gpt-off"])
+    def test_a_stale_choice_reads_as_null_and_unavailable(self, app, pg_conn, stale):
+        UsersRepository(pg_conn).set_task_model_id(ALICE, stale)
+        body = _call(app, pg_conn, "get").json
+        assert body["task_model_id"] is None
+        assert body["task_model_unavailable"] is True
+
+    def test_a_usable_or_unset_choice_is_not_unavailable(self, app, pg_conn):
+        assert _call(app, pg_conn, "get").json["task_model_unavailable"] is False
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        assert _call(app, pg_conn, "get").json["task_model_unavailable"] is False
+
+    def test_null_clears_a_stale_choice(self, app, pg_conn):
+        UsersRepository(pg_conn).set_task_model_id(ALICE, "gpt-off")
+        resp = _call(app, pg_conn, "put", json={"task_model_id": None})
+        assert resp.status_code == 200
+        assert "task_model_id" not in UsersRepository(pg_conn).get(ALICE)["tool_preferences"]
+        assert _call(app, pg_conn, "get").json["task_model_unavailable"] is False
 
     def test_keeps_the_chat_prompt(self, app, pg_conn):
         _call(app, pg_conn, "put", json={"chat_prompt_id": "strict"})
@@ -353,7 +368,12 @@ class TestTaskModel:
     def test_a_token_reads_only_the_parts_its_scopes_cover(self, app, pg_conn):
         _call(app, pg_conn, "put", json={"chat_prompt_id": "strict", "task_model_id": "gpt-a"})
         models_only = self._get_as_token(app, pg_conn, ["models:read"]).json
-        assert models_only == {"success": True, "task_model_id": "gpt-a", "instance_task_model_id": "gpt-default"}
+        assert models_only == {
+            "success": True,
+            "task_model_id": "gpt-a",
+            "task_model_unavailable": False,
+            "instance_task_model_id": "gpt-default",
+        }
         prompts_only = self._get_as_token(app, pg_conn, ["prompts:read"]).json
         assert prompts_only == {"success": True, "chat_prompt_id": "strict", "chat_prompt_set": True}
         both = self._get_as_token(app, pg_conn, ["models:read", "prompts:read"]).json
@@ -364,4 +384,9 @@ class TestTaskModel:
         body = self._get_as_token(
             app, pg_conn, ["models:read", "prompts:read"], {"prompts": [str(uuid.uuid4())]}
         ).json
-        assert body == {"success": True, "task_model_id": "gpt-a", "instance_task_model_id": "gpt-default"}
+        assert body == {
+            "success": True,
+            "task_model_id": "gpt-a",
+            "task_model_unavailable": False,
+            "instance_task_model_id": "gpt-default",
+        }

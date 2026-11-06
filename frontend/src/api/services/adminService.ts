@@ -136,7 +136,11 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.put(endpoints.ADMIN.AGENT_DEFAULTS, { guardrails }, token),
-  /** `{success, task_model_id, fallback_model_id, models}`: built-in models only. */
+  /**
+   * `{success, task_model_id, task_model_unavailable, fallback_model_id,
+   * models}`: built-in models only; `task_model_unavailable` when the stored
+   * one can't run (null clears it).
+   */
   getModelDefaults: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.MODEL_DEFAULTS, token),
   /** Store the instance task model; null clears it. */

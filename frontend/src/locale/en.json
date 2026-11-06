@@ -165,7 +165,9 @@
       "default": "Default",
       "taskModelLoadError": "Could not load the task model.",
       "taskModelInstanceDefault": "Use instance default ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Use instance default"
+      "taskModelInstanceDefaultUnnamed": "Use instance default",
+      "taskModelUnavailable": "Your task model can't run any more (it was disabled or removed), so the instance default runs. If the model comes back, it runs again; pick an option here to replace it.",
+      "taskModelUnavailableValue": "Unavailable model"
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",

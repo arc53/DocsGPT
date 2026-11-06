@@ -165,7 +165,9 @@
       "default": "Standard",
       "taskModelLoadError": "Das Aufgabenmodell konnte nicht geladen werden.",
       "taskModelInstanceDefault": "Instanz-Standard verwenden ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Instanz-Standard verwenden"
+      "taskModelInstanceDefaultUnnamed": "Instanz-Standard verwenden",
+      "taskModelUnavailable": "Ihr Aufgabenmodell kann nicht mehr ausgeführt werden (es wurde deaktiviert oder entfernt), daher läuft der Instanz-Standard. Ist das Modell wieder verfügbar, läuft es erneut; wählen Sie hier eine Option, um es zu ersetzen.",
+      "taskModelUnavailableValue": "Modell nicht verfügbar"
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",

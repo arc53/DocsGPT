@@ -142,12 +142,16 @@ def _task_models(conn: Connection, user_id: str) -> dict:
 
     Returns:
         dict: ``task_model_id``, the caller's choice while they can still run
-        it (else ``None``), and ``instance_task_model_id``, what runs without
+        it (else ``None``); ``task_model_unavailable``, whether a choice is
+        stored that can't run (a disabled or deleted model), which only a
+        null ``PUT`` clears; and ``instance_task_model_id``, what runs without
         one (the admin's, ``TASK_MODEL_ID`` or the default model).
     """
     user_choice, instance_choice = model_defaults.stored_task_models(conn, user_id)
+    usable = model_is_usable(user_choice, user_id)
     return {
-        "task_model_id": user_choice if model_is_usable(user_choice, user_id) else None,
+        "task_model_id": user_choice if usable else None,
+        "task_model_unavailable": user_choice is not None and not usable,
         "instance_task_model_id": resolve_task_model_id(None, None, instance_choice),
     }
 
@@ -192,17 +196,20 @@ class PreferencesResource(Resource):
     @api.doc(
         description=(
             "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, "
-            "instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was "
+            "task_model_unavailable, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was "
             "deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was "
             "ever stored, default included, even when it now reads as default. task_model_id is the model the "
             "caller's DocsGPT jobs run on, null when they picked none or can no longer use it; "
-            "instance_task_model_id is the one that runs then, null when no model can. A token gets the chat "
+            "task_model_unavailable is true when a choice is stored that can no longer run (a disabled or "
+            "deleted model): the instance's runs meanwhile, the stored one again if it comes back, until a PUT "
+            "with task_model_id null clears it. instance_task_model_id is the one that runs without a usable "
+            "choice, null when no model can. A token gets the chat "
             "prompt fields with prompts:read (never when restricted to specific prompts) and the task model "
             "fields with models:read."
         )
     )
     def get(self):
-        """Return ``{success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}``.
+        """Return the chat prompt and the task model fields the caller may read.
 
         A token reads only the parts its scopes cover: the chat prompt with
         ``prompts:read`` and no prompt allowlist (the stored id can't be

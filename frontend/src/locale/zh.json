@@ -164,7 +164,9 @@
       "default": "默认",
       "taskModelLoadError": "无法加载任务模型。",
       "taskModelInstanceDefault": "使用实例默认值（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "使用实例默认值"
+      "taskModelInstanceDefaultUnnamed": "使用实例默认值",
+      "taskModelUnavailable": "你的任务模型已无法运行（已被停用或移除），因此改用实例默认值。如果该模型恢复，会再次使用它；在此选择一个选项即可替换它。",
+      "taskModelUnavailableValue": "模型不可用"
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",

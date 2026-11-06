@@ -152,11 +152,18 @@ def _builtin_models() -> list[dict]:
 
 
 def _models_body(conn) -> dict:
-    """``task_model_id`` (the stored one while it can still run, else ``None``), what runs without one, the choices."""
+    """The Models panel: the stored task model, whether it can run, what runs without one, the choices.
+
+    ``task_model_id`` is the stored model while it can still run, else
+    ``None``; ``task_model_unavailable`` is true when a model is stored that
+    can't run (disabled or removed), which only a null ``PUT`` clears.
+    """
     stored = model_defaults.stored_task_model(conn)
+    usable = model_is_usable(stored)
     return {
         "success": True,
-        "task_model_id": stored if model_is_usable(stored) else None,
+        "task_model_id": stored if usable else None,
+        "task_model_unavailable": stored is not None and not usable,
         "fallback_model_id": resolve_task_model_id(None, None, None),
         "models": _builtin_models(),
     }
@@ -166,7 +173,11 @@ def _models_body(conn) -> dict:
 class AdminModelDefaultsResource(Resource):
     @admin_required
     def get(self):
-        """The instance task model, what runs when it is unset (TASK_MODEL_ID or the default), the built-ins."""
+        """The instance task model, what runs when it is unset (TASK_MODEL_ID or the default), the built-ins.
+
+        `task_model_id` is null when none is stored or the stored one can't run; `task_model_unavailable`
+        is then true for the latter, and a PUT with null clears it.
+        """
         with db_readonly() as conn:
             body = _models_body(conn)
         return make_response(jsonify(body), 200)

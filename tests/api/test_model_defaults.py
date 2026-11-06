@@ -171,10 +171,30 @@ class TestAdminModelDefaults:
         assert resp.status_code == 400 and resp.json["success"] is False
         assert model_defaults.stored_task_model(db) is None
 
-    def test_a_stale_stored_model_reads_as_none(self, client, db):
+    @pytest.mark.parametrize("stale", ["gone-model", "gpt-off"])
+    def test_a_stale_stored_model_reads_as_none_and_unavailable(self, client, db, stale):
+        model_defaults.save_task_model(db, stale)
+        BUILTINS.append(_model("gpt-off", enabled=False))
+        try:
+            with _admin():
+                body = client.get(URL).json
+        finally:
+            BUILTINS.pop()
+        assert body["task_model_id"] is None
+        assert body["task_model_unavailable"] is True
+
+    def test_a_usable_or_unset_model_is_not_unavailable(self, client, db):
+        with _admin():
+            assert client.get(URL).json["task_model_unavailable"] is False
+            client.put(URL, json={"task_model_id": "gpt-a"})
+            assert client.get(URL).json["task_model_unavailable"] is False
+
+    def test_null_clears_a_stale_model(self, client, db):
         model_defaults.save_task_model(db, "gone-model")
         with _admin():
-            assert client.get(URL).json["task_model_id"] is None
+            resp = client.put(URL, json={"task_model_id": None})
+        assert resp.status_code == 200 and resp.json["task_model_unavailable"] is False
+        assert model_defaults.stored_task_model(db) is None
 
     def test_tokens_are_refused(self):
         from docsgpt.api.pat.rules import is_denied

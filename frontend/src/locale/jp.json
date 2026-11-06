@@ -164,7 +164,9 @@
       "default": "デフォルト",
       "taskModelLoadError": "タスクモデルを読み込めませんでした。",
       "taskModelInstanceDefault": "インスタンスのデフォルトを使用（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルトを使用"
+      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルトを使用",
+      "taskModelUnavailable": "タスクモデルを実行できなくなりました（無効化または削除されました）。そのため、インスタンスのデフォルトが使われます。モデルが戻ると再び使われます。置き換えるには、ここでオプションを選んでください。",
+      "taskModelUnavailableValue": "利用できないモデル"
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",

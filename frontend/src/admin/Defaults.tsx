@@ -63,8 +63,10 @@ type BuiltinModel = { id: string; display_name: string; provider: string };
 
 type ModelDefaultsBody = {
   success: boolean;
-  /** The stored instance task model, null when unset. */
+  /** The stored instance task model, null when unset or it can't run. */
   task_model_id: string | null;
+  /** A model is stored that can't run (disabled or removed): the fallback runs until it is replaced. */
+  task_model_unavailable?: boolean;
   /** What runs while it is unset: TASK_MODEL_ID or the default model. */
   fallback_model_id: string | null;
   models: BuiltinModel[];
@@ -72,6 +74,8 @@ type ModelDefaultsBody = {
 
 /** The Select value for "no instance task model". */
 export const TASK_MODEL_UNSET = '__unset__';
+/** A stored task model that can't run: no option shows it, so any pick replaces it. */
+const TASK_MODEL_UNAVAILABLE = '__unavailable__';
 
 /** The form: the retrieval options, the new-agent guardrails and the task model. */
 type Values = {
@@ -86,7 +90,8 @@ const guardrailsOf = (body: AgentDefaultsBody): GuardrailsConfig => ({
 });
 
 const taskModelOf = (body: ModelDefaultsBody): string =>
-  body.task_model_id ?? TASK_MODEL_UNSET;
+  body.task_model_id ??
+  (body.task_model_unavailable ? TASK_MODEL_UNAVAILABLE : TASK_MODEL_UNSET);
 
 const valuesOf = (
   sources: SourceDefaultsBody,
@@ -394,9 +399,24 @@ export default function Defaults() {
               description="Drafts forms, builds knowledge graphs and checks monitors. Built-in models only. Chats use the agent's model."
               htmlFor="defaults-task-model"
               stack
+              after={
+                value.taskModel === TASK_MODEL_UNAVAILABLE ? (
+                  <Alert variant="warning">
+                    <AlertDescription>
+                      {
+                        "The stored task model can't run (it was disabled or removed), so the fallback runs. It runs again if it comes back: pick Not set or another model and save to replace it."
+                      }
+                    </AlertDescription>
+                  </Alert>
+                ) : undefined
+              }
             >
               <Select
-                value={value.taskModel}
+                value={
+                  value.taskModel === TASK_MODEL_UNAVAILABLE
+                    ? ''
+                    : value.taskModel
+                }
                 onValueChange={(taskModel) => setValue({ ...value, taskModel })}
               >
                 <SelectTrigger
@@ -405,7 +425,7 @@ export default function Defaults() {
                   size="field"
                   shape="pill"
                 >
-                  <SelectValue />
+                  <SelectValue placeholder="Unavailable model" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={TASK_MODEL_UNSET}>
