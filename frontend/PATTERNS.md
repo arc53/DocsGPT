@@ -34,9 +34,12 @@ under the title is `components/PageToolbar`: `intro`, then the page `search`
 (left, `max-w-md`) and the page `action` (right, `Button size="field"
 shape="pill"`, text only: no `Plus`, a dropdown keeps its `ChevronDown`), then `children` (notices that belong to the action, such as
 a limit warning), then `divider` (a `Separator`). With no `search` the intro
-moves into the row's left slot (`max-w-2xl`) beside the action. The row
-stacks below `sm` (the action under the intro, spanning it); `stack={false}`
-keeps a small action, such as a lone ⋯, beside the intro there. A page search
+moves into the row's left slot (`max-w-2xl`) beside the action. The toolbar
+is a container (`@container`) and the row stacks while it is narrower than
+`@2xl` (the action under the intro, spanning it), so a docked side panel that
+narrows a wide page stacks it too; a full-width action button takes
+`w-full @2xl:w-auto`, never the viewport's `sm:`. `stack={false}` keeps a
+small action, such as a lone ⋯, beside the intro there. A page search
 is `components/SearchInput`: the 38px pill (one size everywhere) with a
 search icon and a floating `label` on `labelSurface="background"` (its
 default); a placeholder-only search is named by its placeholder. A source
@@ -68,7 +71,7 @@ field grid, then Advanced, Guardrails and Insights. Schedules shows a
 `StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Agent pages).
 
-A detail page inside a list section (an open team, tool or remote device)
+A detail page inside a list section (an open team, tool, prompt or remote device)
 swaps the list's `PageToolbar` for a crumb row at the 38px field height
 (`min-h-9.5`): `DetailBreadcrumb` on the left; on the right the page's
 buttons (`field` pills: the tool's Save) and the object's ⋯ (`ActionMenu
@@ -97,9 +100,9 @@ field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
   published (before that the preview only says "Publish to preview"); each
   item has its icon (`Link`, `Users`, `Play`), and the ⋯ isn't drawn with no
   items. So the row never holds more than three buttons and the ⋯, and fits a
-  phone, where the main one stretches across it (`flex-1 sm:flex-none`;
-  `PageToolbar`'s action slot spans the stacked row below `sm`, the ⋯ at its
-  end). The workflow builder's toolbar keeps its ⋯ at the row's end too, holding Edit details, Access
+  phone, where the main one stretches across it (`flex-1 @2xl:flex-none`;
+  `PageToolbar`'s action slot spans the row while it stacks, below the
+  toolbar's own `@2xl` width, the ⋯ at its end). The workflow builder's toolbar keeps its ⋯ at the row's end too, holding Edit details, Access
   details, Share with team and Delete (see Workflow builder). Delete is the
   agent ⋯'s last item on both, a `destructive` item after a rule
   (`separatorBefore`) that opens the confirm. The menu comes from

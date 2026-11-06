@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { FormFieldControlProvider } from '@/components/ui/form-field';
 import { Label } from '@/components/ui/label';
+import { DraftedBadge } from '@/drafter/DraftedBadge';
 import { cn } from '@/lib/utils';
 
 /** A group of SettingRows, split by faint dividers. Layout classes only. */
@@ -39,6 +40,13 @@ type SettingRowProps = {
   as?: 'label' | 'h2' | 'h3';
   /** A field under the row that belongs to it (a limit Input under a Switch). */
   after?: React.ReactNode;
+  /**
+   * The drafter set this row's control: a DraftedBadge follows the title,
+   * its undo button named after `fieldLabel` (the title when it is text).
+   */
+  drafted?: boolean;
+  onUndo?: () => void;
+  fieldLabel?: string;
   /** Layout only. */
   className?: string;
   /** The control on the right: a Switch, a small Input, a Select. */
@@ -48,6 +56,7 @@ type SettingRowProps = {
 /**
  * A settings row: title and muted description on the left, a control on the
  * right, 12px of padding above and below (none at the ends of its group).
+ * A drafted row carries the DraftedBadge after its title.
  * Like FormField it wires the control through context: the control gets the
  * row's id (`htmlFor`, or a generated one) and `aria-describedby` pointing at
  * the description. The `after` field is not wired.
@@ -60,6 +69,9 @@ function SettingRow({
   stack = false,
   as = 'label',
   after,
+  drafted = false,
+  onUndo,
+  fieldLabel,
   className,
   children,
 }: SettingRowProps) {
@@ -70,9 +82,22 @@ function SettingRow({
   // the control must not land on the description.
   const generatedDescriptionId = React.useId();
   const descriptionId = description ? generatedDescriptionId : undefined;
+  const title = Heading ? (
+    <Heading className="text-foreground text-sm leading-none font-medium">
+      {label}
+    </Heading>
+  ) : (
+    <Label
+      htmlFor={controlId}
+      className="text-foreground w-fit text-sm font-medium"
+    >
+      {label}
+    </Label>
+  );
   return (
     <div
       data-slot="setting-row"
+      data-drafted={onUndo && drafted ? true : undefined}
       className={cn('py-3 first:pt-0 last:pb-0', className)}
     >
       <div
@@ -87,17 +112,18 @@ function SettingRow({
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {Heading ? (
-            <Heading className="text-foreground text-sm leading-none font-medium">
-              {label}
-            </Heading>
+          {onUndo && drafted ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {title}
+              <DraftedBadge
+                onUndo={onUndo}
+                fieldLabel={
+                  fieldLabel ?? (typeof label === 'string' ? label : '')
+                }
+              />
+            </div>
           ) : (
-            <Label
-              htmlFor={controlId}
-              className="text-foreground w-fit text-sm font-medium"
-            >
-              {label}
-            </Label>
+            title
           )}
           {description ? (
             <p id={descriptionId} className="text-muted-foreground text-xs">

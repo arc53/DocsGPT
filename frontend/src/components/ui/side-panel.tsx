@@ -20,21 +20,34 @@ const NEXT_WIDTH: Record<SidePanelWidth, SidePanelWidth> = {
   full: 'compact',
 };
 
-// The compact width of a docked panel: the 480px default role (wide is a
-// modal-only size).
-const DOCKED_SIZE = 'w-120';
+// The panel grows its width from the host's right edge and shrinks back on
+// close, so the page beside it narrows with it, like the sidebar. Never a
+// transform: a panel translated off the edge overflows the host, and the
+// host (overflow-hidden, still scrollable by focus) jumps sideways when the
+// panel focuses a field.
+const DOCKED_MS = 300;
 
-// Half of the host, never narrower than the compact size on a small screen.
-const DOCKED_HALF = 'w-1/2 min-w-120';
-
-// Slides in like the modal Sheet; it closes at once (an exit slide would
-// snap back for a frame before the panel unmounts).
-const DOCKED_ENTER =
-  'animate-in slide-in-from-right motion-reduce:animate-none';
-
-// The host is `relative`; the panel covers it and the page keeps its scroll
-// position underneath.
+// Per width, open and closing. Compact is the 480px default role (wide is a
+// modal-only size); half is half of the host, never narrower than compact;
+// full covers the `relative` host, the page keeping its scroll underneath,
+// and fades, as `auto` can't animate.
 const DOCKED_FULL = 'absolute inset-0 z-20 w-auto border-l-0';
+const DOCKED_WIDTH: Record<SidePanelWidth, { open: string; closing: string }> =
+  {
+    compact: { open: 'w-120 starting:w-0', closing: 'w-0' },
+    half: {
+      open: 'w-1/2 min-w-120 starting:w-0 starting:min-w-0',
+      closing: 'w-0 min-w-0',
+    },
+    full: {
+      open: `${DOCKED_FULL} starting:opacity-0`,
+      closing: `${DOCKED_FULL} opacity-0`,
+    },
+  };
+
+const prefersReducedMotion = () =>
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const storageKey = (surface: string) => `docsgpt-side-panel:${surface}`;
 
@@ -79,6 +92,12 @@ function useSidePanel() {
 type SidePanelBaseProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Called once a closed panel has finished closing: for a page whose
+   * layout beside a docked panel must change with it, not when it starts
+   * to shrink.
+   */
+  onClosed?: () => void;
   /** Layout only. */
   className?: string;
   children: React.ReactNode;
@@ -127,6 +146,7 @@ type SidePanelProps = SidePanelBaseProps &
 function SidePanel({
   open,
   onOpenChange,
+  onClosed,
   variant = 'modal',
   size = 'default',
   expandable,
@@ -155,6 +175,42 @@ function SidePanel({
       return { ...current, width: nextWidth };
     });
   }, []);
+
+  // A docked panel stays mounted while it shrinks out, showing what it held
+  // when it closed (callers often drop the content with the open flag).
+  const [present, setPresent] = React.useState(open);
+  if (open && !present) setPresent(true);
+  const closing = present && !open;
+  // A ref, not state: the content is a new element on most page renders,
+  // and state would render the panel twice each time to remember it. Kept
+  // after each open commit, so the closing render shows what was last on
+  // screen.
+  const lastChildren = React.useRef(children);
+  React.useLayoutEffect(() => {
+    if (open) lastChildren.current = children;
+  });
+  // Settled once it has grown in. Only while it moves does the content keep
+  // the compact width; at rest it fills the panel, which a host narrower
+  // than compact (or the panel's own border) would otherwise clip.
+  const [settled, setSettled] = React.useState(false);
+  if (!open && settled) setSettled(false);
+  // The page's latest callback, without restarting the timer on each render.
+  const finish = React.useEffectEvent(() => {
+    if (open) {
+      setSettled(true);
+      return;
+    }
+    setPresent(false);
+    onClosed?.();
+  });
+  React.useEffect(() => {
+    if (open ? settled : !present) return;
+    const timer = window.setTimeout(
+      finish,
+      prefersReducedMotion() ? 0 : DOCKED_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [open, present, settled]);
 
   const dialog = variant === 'modal' || isMobile;
   const context = React.useMemo<SidePanelContextValue>(
@@ -192,28 +248,36 @@ function SidePanel({
     );
   }
 
-  if (!open) return null;
+  if (!present) return null;
   const current = expandable ? width : 'compact';
   return (
     <SidePanelContext.Provider value={context}>
       <aside
         data-slot="side-panel"
         data-width={current}
+        data-state={closing ? 'closed' : 'open'}
         aria-labelledby={titleId}
+        inert={closing}
         className={cn(
           // z-20: above the app's floating top actions (Share, account, z-10),
           // which the open panel covers.
-          'bg-background border-border relative z-20 flex max-w-full shrink-0 flex-col border-l transition-[width] duration-300 ease-in-out',
-          DOCKED_ENTER,
-          current === 'full'
-            ? DOCKED_FULL
-            : current === 'half'
-              ? DOCKED_HALF
-              : DOCKED_SIZE,
+          'bg-background border-border relative z-20 flex max-w-full shrink-0 flex-col overflow-clip border-l transition-[width,min-width,opacity] duration-300 ease-in-out motion-reduce:transition-none',
+          DOCKED_WIDTH[current][closing ? 'closing' : 'open'],
           className,
         )}
       >
-        {children}
+        {/* Pinned right and, while the panel moves, at least the compact
+            width, so the content slides with the edge instead of
+            reflowing. */}
+        <div
+          data-slot="side-panel-content"
+          className={cn(
+            'absolute inset-y-0 right-0 flex w-full flex-col',
+            !settled && 'min-w-120',
+          )}
+        >
+          {closing ? lastChildren.current : children}
+        </div>
       </aside>
     </SidePanelContext.Provider>
   );

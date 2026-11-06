@@ -117,12 +117,26 @@ class PromptsRepository:
         return [row_to_dict(r) for r in result.fetchall()]
 
     def update_by_id(
-        self, prompt_id: str, name: str, content: str, expected_updated_at=None
-    ) -> Optional[bool]:
+        self, prompt_id: str, name: str, content: str, expected_updated_at: Optional[str] = None
+    ) -> Optional[str | bool]:
         """Update a prompt by id WITHOUT user scoping (team ``editor`` write path).
 
-        Caller must have verified an ``editor`` grant first. Returns None on an
-        optimistic-lock version mismatch so the route can answer 409.
+        Caller must have verified an ``editor`` grant first. The new version
+        comes back with the write, so a client saves at it next without
+        reading it again (a read could see a later save by someone else).
+
+        Args:
+            prompt_id: The prompt's id.
+            name: Its new name.
+            content: Its new text.
+            expected_updated_at: The version the caller read; the write only
+                goes through while the prompt is still at it. None writes
+                unconditionally.
+
+        Returns:
+            The new ``updated_at`` (ISO-8601) when it was written, None on a
+            version mismatch (the route answers 409), False when there is no
+            such prompt.
         """
         sql = (
             "UPDATE prompts SET name = :name, content = :content, updated_at = now() "
@@ -132,9 +146,9 @@ class PromptsRepository:
         if expected_updated_at is not None:
             sql += " AND updated_at = CAST(:expected AS timestamptz)"
             params["expected"] = expected_updated_at
-        result = self._conn.execute(text(sql), params)
-        if result.rowcount > 0:
-            return True
+        row = self._conn.execute(text(sql + " RETURNING updated_at"), params).fetchone()
+        if row is not None:
+            return row_to_dict(row)["updated_at"]
         if expected_updated_at is not None and self.get_for_rendering(str(prompt_id)) is not None:
             return None
         return False

@@ -3,8 +3,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const media = { isMobile: false, isDesktop: true };
+// Counts the panel's renders: it reads the media query once per render.
+const mediaReads = { count: 0 };
 vi.mock('../../hooks', () => ({
-  useMediaQuery: () => media,
+  useMediaQuery: () => {
+    mediaReads.count += 1;
+    return media;
+  },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -158,16 +163,125 @@ describe('SidePanel variant="docked"', () => {
     expect(classes).not.toContain('w-[800px]');
   });
 
-  it('slides in from the right', async () => {
+  it('grows in from the right edge without overflowing its host', async () => {
     await render(panel({ variant: 'docked' }));
-    expect(aside()!.className).toContain('slide-in-from-right');
-    expect(aside()!.className).not.toContain('slide-out');
+    const classes = aside()!.className.split(' ');
+    // Width, not a transform: an offscreen transform overflows the host,
+    // which then scrolls sideways when the panel focuses a field.
+    expect(classes).toEqual(
+      expect.arrayContaining(['starting:w-0', 'overflow-clip']),
+    );
+    expect(aside()!.className).not.toContain('slide-in');
+    const content = aside()!.querySelector<HTMLElement>(
+      '[data-slot="side-panel-content"]',
+    )!;
+    // The content keeps its width, pinned right, so it slides rather than
+    // reflowing while the panel grows.
+    expect(content.className.split(' ')).toEqual(
+      expect.arrayContaining(['absolute', 'right-0', 'min-w-120']),
+    );
   });
 
-  it('disappears at once when it closes, with no exit animation', async () => {
-    await render(panel({ variant: 'docked' }));
-    await render(panel({ variant: 'docked', open: false }));
-    expect(aside()).toBeNull();
+  describe('closing', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('shrinks out, inert, then unmounts', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(panel({ variant: 'docked', open: false }));
+      const el = aside()!;
+      expect(el.dataset.state).toBe('closed');
+      expect(el.className.split(' ')).toContain('w-0');
+      expect(el.hasAttribute('inert')).toBe(true);
+      await act(async () => vi.advanceTimersByTime(300));
+      expect(aside()).toBeNull();
+    });
+
+    it('keeps its last content while it shrinks out', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(
+        <SidePanel variant="docked" open={false} onOpenChange={() => {}}>
+          {null}
+        </SidePanel>,
+      );
+      expect(aside()!.textContent).toContain('renewal-note.md');
+    });
+
+    it('keeps the content it last showed open, not what it first opened with', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(panel({ variant: 'docked' }, { title: 'later-note.md' }));
+      await render(
+        <SidePanel variant="docked" open={false} onOpenChange={() => {}}>
+          {null}
+        </SidePanel>,
+      );
+      expect(aside()!.textContent).toContain('later-note.md');
+    });
+
+    it('fills itself once grown in, so a narrow host never clips it', async () => {
+      const content = () =>
+        aside()!
+          .querySelector<HTMLElement>('[data-slot="side-panel-content"]')!
+          .className.split(' ');
+      await render(panel({ variant: 'docked' }));
+      // While it moves the content keeps the compact width and slides.
+      expect(content()).toContain('min-w-120');
+      await act(async () => vi.advanceTimersByTime(300));
+      // At rest it is the panel's width: a host narrower than 480px, or the
+      // panel's own border, would clip its left side.
+      expect(content()).toContain('w-full');
+      expect(content()).not.toContain('min-w-120');
+      await render(panel({ variant: 'docked', open: false }));
+      expect(content()).toContain('min-w-120');
+    });
+
+    it('tells the page once it has shrunk out', async () => {
+      const onClosed = vi.fn();
+      await render(panel({ variant: 'docked', onClosed }));
+      await render(panel({ variant: 'docked', open: false, onClosed }));
+      await act(async () => vi.advanceTimersByTime(200));
+      // A page render mid-exit, with a new callback, doesn't restart it.
+      const latest = vi.fn();
+      await render(panel({ variant: 'docked', open: false, onClosed: latest }));
+      await act(async () => vi.advanceTimersByTime(99));
+      expect(latest).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(aside()).toBeNull();
+      expect(latest).toHaveBeenCalledTimes(1);
+      expect(onClosed).not.toHaveBeenCalled();
+    });
+
+    it('unmounts without the shrink under reduced motion', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+      }));
+      try {
+        await render(panel({ variant: 'docked' }));
+        await render(panel({ variant: 'docked', open: false }));
+        await act(async () => vi.advanceTimersByTime(0));
+        expect(aside()).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('renders once per page render while open', async () => {
+      // A new content element on every page render must not re-render the
+      // panel a second time to remember it.
+      await render(panel({ variant: 'docked' }));
+      mediaReads.count = 0;
+      await render(panel({ variant: 'docked' }));
+      expect(mediaReads.count).toBe(1);
+    });
+
+    it('stays open when reopened mid-exit', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(panel({ variant: 'docked', open: false }));
+      await render(panel({ variant: 'docked' }));
+      await act(async () => vi.advanceTimersByTime(300));
+      expect(aside()!.dataset.state).toBe('open');
+      expect(aside()!.hasAttribute('inert')).toBe(false);
+    });
   });
 
   it('has no Expand unless expandable', async () => {

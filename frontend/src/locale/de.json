@@ -137,11 +137,15 @@
     "label": "Einstellungen",
     "general": {
       "label": "Allgemein",
-      "subtitle": "Legen Sie fest, wie DocsGPT aussieht und welche Sprache es verwendet.",
+      "subtitle": "Legen Sie fest, wie DocsGPT aussieht, welche Sprache es verwendet und welches Modell seine eigenen Aufgaben ausführt.",
       "sections": {
         "appearance": "Darstellung",
+        "models": "Modelle",
         "dangerZone": "Gefahrenzone"
       },
+      "taskModel": "Aufgabenmodell",
+      "taskModelDescription": "Entwirft Formulare, erstellt Wissensgraphen und prüft Monitore. Chats verwenden das Modell des Agenten.",
+      "taskModelSaveFailed": "Das Aufgabenmodell konnte nicht gespeichert werden. Versuchen Sie es erneut.",
       "theme": "Design",
       "themeDescription": "Helle oder dunkle Oberfläche.",
       "language": "Sprache",
@@ -158,7 +162,12 @@
       "medium": "Mittel",
       "high": "Hoch",
       "unlimited": "Unbegrenzt",
-      "default": "Standard"
+      "default": "Standard",
+      "taskModelLoadError": "Das Aufgabenmodell konnte nicht geladen werden.",
+      "taskModelInstanceDefault": "Instanz-Standard verwenden ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Instanz-Standard verwenden",
+      "taskModelUnavailable": "Ihr Aufgabenmodell kann nicht mehr ausgeführt werden (es wurde deaktiviert oder entfernt), daher läuft der Instanz-Standard. Ist das Modell wieder verfügbar, läuft es erneut; wählen Sie hier eine Option, um es zu ersetzen.",
+      "taskModelUnavailableValue": "Modell nicht verfügbar"
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
@@ -1661,7 +1670,18 @@
       },
       "kindFilterLabel": "Nach Art filtern",
       "chatPromptOn": "In Chats ohne Agenten verwendet",
-      "chatPromptOff": "In Chats ohne Agenten verwenden"
+      "chatPromptOff": "In Chats ohne Agenten verwenden",
+      "loadPromptError": "Dieser Prompt konnte nicht geladen werden.",
+      "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
+      "saveAndLeave": "Speichern und verlassen",
+      "leaveWithoutSaving": "Ohne Speichern verlassen",
+      "editNamed": "{{name}} bearbeiten",
+      "viewNamed": "{{name}} ansehen",
+      "saveBlocked": {
+        "review": "Schließe zuerst die Prüfung ab: „Alle übernehmen“ oder „Verwerfen“ im Seitenbereich.",
+        "name": "Gib dem Prompt einen Namen, um ihn zu speichern.",
+        "content": "Schreib den Text des Prompts, um ihn zu speichern."
+      }
     },
     "devices": {
       "label": "Geräte",
@@ -1738,7 +1758,8 @@
       "actionsMenuAria": "Aktionen für {{modelName}}",
       "modelsGroup": {
         "builtin": "Integriert",
-        "user": "Meine Modelle"
+        "user": "Meine Modelle",
+        "owner": "Modelle des Eigentümers"
       },
       "actions": {
         "edit": "Bearbeiten",
@@ -2459,10 +2480,6 @@
     },
     "prompts": {
       "addPrompt": "Prompt hinzufügen",
-      "addDescription": "Füge deinen benutzerdefinierten Prompt hinzu und speichere ihn in DocsGPT",
-      "editPrompt": "Prompt bearbeiten",
-      "editDescription": "Bearbeite deinen benutzerdefinierten Prompt und speichere ihn in DocsGPT",
-      "viewPrompt": "Prompt ansehen",
       "viewDescription": "Integrierte Prompts können nicht bearbeitet werden. Dupliziere ihn, um eine eigene bearbeitbare Kopie zu erstellen.",
       "duplicate": "Duplizieren",
       "duplicatePrompt": "Prompt duplizieren",
@@ -2470,15 +2487,10 @@
       "promptName": "Prompt-Name",
       "promptText": "Prompt-Text",
       "save": "Speichern",
-      "cancel": "Abbrechen",
       "nameExists": "Name existiert bereits",
       "deleteConfirmation": "\"{{name}}\" löschen?",
-      "placeholderText": "Gib hier deinen Prompt-Text ein...",
-      "addExamplePlaceholder": "Bitte fasse diesen Text zusammen:",
       "variablesLabel": "Variablen",
-      "variablesSubtext": "Klicken zum Einfügen in den Prompt",
       "variablesDescription": "Klicken zum Einfügen in den Prompt",
-      "systemVariables": "Klicken zum Einfügen in den Prompt",
       "toolVariables": "Werkzeug-Variablen",
       "systemVariablesDropdownLabel": "System-Variablen",
       "systemVariableOptions": {
@@ -2494,10 +2506,7 @@
         "systemUserId": "Aktuelle Benutzer-ID",
         "artifactsLookup": "Artefakt-Metadaten nach ID"
       },
-      "learnAboutPrompts": "Mehr über Prompts erfahren →",
-      "publicPromptEditDisabled": "Öffentliche Prompts können nicht bearbeitet werden",
-      "promptTypePublic": "öffentlich",
-      "promptTypePrivate": "privat"
+      "templateBroken": "Diese Vorlage lässt sich nicht ausführen: Ein Tag oder eine Variable ist nicht geschlossen, oder Block-Tags wie {% if %} und {% endif %} passen nicht zusammen. Chats damit würden fehlschlagen, korrigiere sie also vor dem Speichern."
     },
     "chunk": {
       "add": "Chunk hinzufügen",
@@ -4470,6 +4479,270 @@
       "period_one": "Letzter {{formatted}} Tag",
       "period_other": "Letzte {{formatted}} Tage",
       "periodFilter": "Zeitraum"
+    }
+  },
+  "drafter": {
+    "prompt": {
+      "write": "Schreiben",
+      "improvePlaceholder": "Sag, was sich ändern soll, z. B. keine Preise nennen…",
+      "writePlaceholder": "Beschreibe, wofür er ist und wer ihn nutzt…",
+      "warningsTitle": "Vor dem Speichern prüfen",
+      "checks": {
+        "to_template": "Damit kommen Vorlagenvariablen hinzu: DocsGPT verwendet den Prompt dann genau wie geschrieben und fügt seine eigenen Abschnitte nicht mehr hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
+        "to_persona": "Damit fallen alle Vorlagenvariablen weg: DocsGPT behandelt den Prompt dann als reinen Text und fügt seine eigenen Abschnitte hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
+        "boundaries_removed": "Der Abschnitt „Boundaries“ fehlt. Ohne ihn folgt der Agent womöglich Anweisungen, die in Dokumenten oder Tool-Ergebnissen versteckt sind.",
+        "citations_removed": "Die Variable für die Zitierregeln (source.citation_rules) fehlt, daher nennen Antworten ihre Quellen nicht mehr als [1], [2]."
+      },
+      "reviewLabel": "Vorgeschlagene Änderungen",
+      "removedText": "Entfernt: ",
+      "addedText": "Hinzugefügt: ",
+      "accept": "Übernehmen",
+      "reject": "Ablehnen",
+      "acceptChange": "Änderung {{number}} übernehmen",
+      "rejectChange": "Änderung {{number}} ablehnen",
+      "accepted": "Übernommen",
+      "rejected": "Abgelehnt",
+      "undoChoice": "Rückgängig",
+      "undoChoiceLabel": "Deine Wahl bei Änderung {{number}} rückgängig machen",
+      "acceptAll": "Alle übernehmen",
+      "reviewOneByOne": "Einzeln prüfen",
+      "discard": "Verwerfen",
+      "introImprove": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. Gespeichert wird erst, wenn du speicherst.",
+      "introImproveUsedBy_one": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agent nutzt ihn, eine gespeicherte Änderung gilt also auch dort.",
+      "introImproveUsedBy_other": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agenten nutzen ihn, eine gespeicherte Änderung gilt also für alle.",
+      "introWrite": "Wofür ist dieser Prompt? Wähle einen Ausgangspunkt oder beschreibe ihn, und ich frage nach, was ich brauche, bevor ich schreibe. Gespeichert wird erst, wenn du speicherst.",
+      "suggestions": {
+        "lookOver": "Durchsehen und Verbesserungen vorschlagen",
+        "clearer": "Mach ihn klarer und kürzer",
+        "unsure": "Ergänze, was er tun soll, wenn er etwas nicht weiß"
+      },
+      "skipMessage": "Entwirf ihn mit dem, was du weißt.",
+      "assumptionsTitle": "Meine Annahmen",
+      "changeAssumption": "Ändern",
+      "changeAssumptionLabel": "Ändern: {{assumption}}",
+      "changeAssumptionPrefill": "Zu „{{assumption}}“: ",
+      "readAndSave": "Lies ihn im Editor durch, dann speichere ihn oder sag mir, was ich ändern soll.",
+      "savePrompt": "Prompt speichern",
+      "nextTitle": "Du könntest auch"
+    },
+    "title": "Mit DocsGPT entwerfen",
+    "draft": "Entwerfen",
+    "improve": "Verbessern",
+    "drafted": "Entworfen",
+    "undoField": "{{field}} rückgängig machen",
+    "somethingElse": "Etwas anderes…",
+    "somethingElseLabel": "Deine Antwort",
+    "somethingElsePlaceholder": "Eigene Antwort eingeben",
+    "sendAnswers": "Antworten senden",
+    "droppedTitle": "Weggelassen",
+    "retry": "Erneut versuchen",
+    "steps": {
+      "thinking": "Denkt nach…",
+      "reading": "Sieht sich deinen Arbeitsbereich an…",
+      "drafting": "Entwirft…"
+    },
+    "askLabel": "Nachricht an DocsGPT",
+    "askPlaceholder": "Um eine Änderung bitten…",
+    "stop": "Stoppen",
+    "send": "Senden",
+    "footer": "Verwendet {{model}} · kann deine Agenten, Wissensquellen, Tools und Prompts lesen.",
+    "footerNoModel": "Kann deine Agenten, Wissensquellen, Tools und Prompts lesen.",
+    "changeModel": "Modell ändern",
+    "lookedAtWorkspace": "Deinen Arbeitsbereich angesehen",
+    "counts": {
+      "sources_one": "{{count}} Wissensquelle",
+      "sources_other": "{{count}} Wissensquellen",
+      "tools_one": "{{count}} Tool",
+      "tools_other": "{{count}} Tools",
+      "prompts_one": "{{count}} Prompt",
+      "prompts_other": "{{count}} Prompts",
+      "models_one": "{{count}} Modell",
+      "models_other": "{{count}} Modelle",
+      "agents_one": "{{count}} Agent",
+      "agents_other": "{{count}} Agenten"
+    },
+    "errors": {
+      "disabled": {
+        "title": "Entwerfen ist aus",
+        "description": "Ein Admin hat das Entwerfen mit DocsGPT auf dieser Instanz ausgeschaltet."
+      },
+      "no_model": {
+        "title": "Kein Modell zum Entwerfen",
+        "description": "Wähle unter Einstellungen › Allgemein ein Aufgabenmodell und versuche es erneut."
+      },
+      "rate_limited": {
+        "title": "Zu viele Anfragen",
+        "description": "Warte einen Moment und versuche es dann erneut."
+      },
+      "quota": {
+        "title": "Nutzungslimit erreicht",
+        "description": "Dein Kontingent ist vorerst aufgebraucht. Nach dem Zurücksetzen funktioniert das Entwerfen wieder."
+      },
+      "invalid_output": {
+        "title": "Der Entwurf ist nicht gelungen",
+        "description": "Die Antwort des Modells war nicht verwendbar. Im Formular hat sich nichts geändert."
+      },
+      "model_error": {
+        "title": "Das Modell hat nicht geantwortet",
+        "description": "Beim Entwerfen ist etwas schiefgelaufen. Im Formular hat sich nichts geändert."
+      },
+      "bad_request": {
+        "title": "Senden nicht möglich",
+        "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut.",
+        "startOver": "DocsGPT konnte diese Unterhaltung nicht annehmen. Beginne neu, um weiterzumachen – was du entworfen hast, bleibt."
+      }
+    },
+    "agent": {
+      "draftedCount_one": "{{count}} Feld entworfen. Prüfe es vor dem Speichern.",
+      "draftedCount_other": "{{count}} Felder entworfen. Prüfe sie vor dem Speichern.",
+      "droppedLine": "{{field}}: {{reason}}",
+      "droppedReasons": {
+        "not_found": "ein Element, das nicht existiert",
+        "no_access": "ein Element, das du nicht öffnen kannst",
+        "invalid": "ein ungültiges Element",
+        "other": "ein Element, das nicht verwendet werden konnte",
+        "not_allowed": "eine Einstellung, die deine Rolle nicht ändern darf",
+        "other_step": "eine Änderung für einen anderen Schritt"
+      },
+      "build": {
+        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen und Tools, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle einen Ausgangspunkt oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
+        "describePlaceholder": "Beschreibe den Agenten…",
+        "changePlaceholder": "Oder sag mir, was ich ändern soll…",
+        "steps": {
+          "basics": "Grundlagen",
+          "knowledge": "Wissen und Tools",
+          "prompt": "Prompt und Einstiegsfragen",
+          "safety": "Limits und Sicherheit"
+        },
+        "progress": "Schritt {{number}} von {{total}} · {{step}}",
+        "filledAtOnce_one": "{{count}} Schritt auf einmal",
+        "filledAtOnce_other": "{{count}} Schritte auf einmal",
+        "allFilled": "Alle Schritte ausgefüllt",
+        "continue": "Weiter mit {{step}}.",
+        "next": "Weiter: {{step}}",
+        "nextShort": "Weiter",
+        "finish": "Fertigstellen",
+        "checkForm": "Erst das Formular prüfen",
+        "check": "{{step}} prüfen",
+        "folded": "{{step}}: {{result}}",
+        "skipped": "{{step}}: hier gibt es nichts einzustellen",
+        "done": "Das waren alle Schritte. Am Agenten ist noch nichts gespeichert: Veröffentliche ihn und probiere ihn in der Vorschau aus, oder speichere einen Entwurf, um später weiterzumachen.",
+        "resume": "Fortsetzen",
+        "resumeLabel": "Entwurf fortsetzen: Schritt {{number}} von {{total}}",
+        "result": {
+          "none": "nichts festgelegt",
+          "noLimit": "kein Limit",
+          "starters_one": "{{count}} Einstiegsfrage",
+          "starters_other": "{{count}} Einstiegsfragen",
+          "requests_one": "{{count, number}} Anfrage pro 24 Stunden",
+          "requests_other": "{{count, number}} Anfragen pro 24 Stunden",
+          "tokens_one": "{{count, number}} Token pro 24 Stunden",
+          "tokens_other": "{{count, number}} Token pro 24 Stunden",
+          "checks_one": "{{count}} Prüfung im Modus {{mode}}",
+          "checks_other": "{{count}} Prüfungen im Modus {{mode}}",
+          "topics_one": "{{count}} Thema für Einblicke",
+          "topics_other": "{{count}} Themen für Einblicke"
+        },
+        "continueStep": "Fortsetzen: {{step}}"
+      },
+      "improve": {
+        "intro": "Was soll sich an {{name}} ändern?",
+        "introPublished": "Was soll sich an {{name}} ändern? Der Agent ist veröffentlicht, eine gespeicherte Änderung erreicht also alle, die ihn nutzen.",
+        "introShared": "Was soll sich an {{name}} ändern? Der Agent ist geteilt, eine gespeicherte Änderung erreicht also alle, die ihn nutzen.",
+        "finishSetup": "Einrichtung abschließen: Limits und Sicherheit",
+        "shorter": "Die Beschreibung kürzen",
+        "tightenPrompt": "Den Prompt straffen",
+        "starters": "Gesprächseinstiege vorschlagen",
+        "knowledge": "Wissen anhängen, aus dem er antwortet",
+        "writePrompt": "Einen Prompt für diesen Agenten schreiben"
+      },
+      "fields": {
+        "limits": "Nutzungslimit"
+      },
+      "prompt": {
+        "wrote_one": "Neuen Prompt geschrieben · {{count}} Wort",
+        "wrote_other": "Neuen Prompt geschrieben · {{count}} Wörter",
+        "viewHint": "Prüfe ihn in der Prompt-Ansicht: Ändere ihn dort oder sag es mir hier, dann klick auf Diesen Prompt verwenden. Erst dann wird er bei deinen Prompts gespeichert.",
+        "newPrompt": "Neuer Prompt",
+        "use": "Diesen Prompt verwenden",
+        "saved_one": "Prompt gespeichert und gesetzt. Ich habe daraus {{count}} Einstiegsfrage geschrieben: Prüfe sie unter Einstiegsfragen.",
+        "saved_other": "Prompt gespeichert und gesetzt. Ich habe daraus {{count}} Einstiegsfragen geschrieben: Prüfe sie unter Einstiegsfragen.",
+        "savedOnly": "Prompt gespeichert und gesetzt.",
+        "parked": "Der Prompt, den ich geschrieben habe, ist noch offen und nicht gespeichert.",
+        "open": "Prompt öffnen",
+        "keep": "Stattdessen {{name}} behalten",
+        "changePlaceholder": "Oder sag mir, was ich am Prompt ändern soll…",
+        "changes_one": "{{count}} Änderung zu prüfen",
+        "changes_other": "{{count}} Änderungen zu prüfen",
+        "reviewHint": "Übernimm oder verwirf jede Änderung in der Prompt-Ansicht und speichere dann den Prompt. Jeder Agent, der ihn verwendet, erhält den gespeicherten Text.",
+        "editsStale": "Keine meiner Änderungen passt mehr zum gespeicherten Text des Prompts. Frag mich noch einmal, dann gehe ich von ihm aus.",
+        "unfit_one": "{{count}} Änderung passt nicht mehr zum Text des Prompts",
+        "unfit_other": "{{count}} Änderungen passen nicht mehr zum Text des Prompts"
+      },
+      "formEdited": "Du hast {{fields}} im Formular geändert.",
+      "showInAgent": "Im Agenten zeigen"
+    },
+    "topics": {
+      "suggest": "Aus Gesprächen vorschlagen",
+      "request": "Schlage Themen aus den letzten Gesprächen dieses Agenten vor.",
+      "hold_one": "Vorschläge aus Gesprächen gibt es, sobald dieser Agent {{needed}} aktuelles Gespräch hat (bisher {{formatted}}).",
+      "hold_other": "Vorschläge aus Gesprächen gibt es, sobald dieser Agent {{needed}} aktuelle Gespräche hat (bisher {{formatted}}).",
+      "reading": "Aktuelle Fragen werden gelesen…",
+      "read_one": "{{formatted}} Frage aus den letzten {{days}} Tagen gelesen",
+      "read_other": "{{formatted}} Fragen aus den letzten {{days}} Tagen gelesen",
+      "tried_one": "Vorschläge an {{formatted}} Frage getestet: {{after}} passen zu keinem Thema, vorher {{before}}.",
+      "tried_other": "Vorschläge an {{formatted}} Fragen getestet: {{after}} passen zu keinem Thema, vorher {{before}}.",
+      "triedAfter_one": "Vorschläge an {{formatted}} Frage getestet: {{after}} passen zu keinem Thema.",
+      "triedAfter_other": "Vorschläge an {{formatted}} Fragen getestet: {{after}} passen zu keinem Thema.",
+      "share": "{{share}} der Fragen",
+      "estimate": "Schätzung",
+      "estimateHint": "Eine Schätzung des Entwurfsmodells: An den Fragen ließ sie sich nicht messen.",
+      "taken": "Bereits ein Thema",
+      "similar": "Ähnlich wie „{{name}}“.",
+      "leftOut": "Nicht vorgeschlagen: {{items}}",
+      "leftOutItem": "{{name}} ({{reason}})",
+      "pushesOut_one": "Dadurch fällt {{count}} Ordner heraus, seine Fragen landen unter Keines dieser Themen: {{names}}",
+      "pushesOut_other": "Dadurch fallen {{count}} Ordner heraus, ihre Fragen landen unter Keines dieser Themen: {{names}}",
+      "tooManyOnePick_one": "Es passt nur noch {{formatted}} Thema, das Fragen einsortiert. Wähle vor dem Hinzufügen einige ab.",
+      "tooManyOnePick_other": "Es passen nur noch {{formatted}} Themen, die Fragen einsortieren. Wähle vor dem Hinzufügen einige ab.",
+      "tooManyOverlap_one": "Es passt nur noch {{formatted}} Thema, das sich überschneiden kann. Wähle vor dem Hinzufügen einige ab.",
+      "tooManyOverlap_other": "Es passen nur noch {{formatted}} Themen, die sich überschneiden können. Wähle vor dem Hinzufügen einige ab.",
+      "none": "Nichts hinzuzufügen: Deine Themen und Ordner decken die aktuellen Fragen bereits ab.",
+      "discard": "Verwerfen",
+      "add_one": "{{formatted}} Thema hinzufügen",
+      "add_other": "{{formatted}} Themen hinzufügen",
+      "errors": {
+        "invalid_output": "Die Antwort des Modells war nicht verwendbar. Es wurden keine Themen hinzugefügt.",
+        "model_error": "Beim Vorschlagen von Themen ist etwas schiefgelaufen. Es wurden keine Themen hinzugefügt."
+      },
+      "statusFailed": "Es ließ sich nicht prüfen, ob Vorschläge aus Gesprächen verfügbar sind."
+    },
+    "lookedAtWorkspaceCounts": "Deinen Arbeitsbereich angesehen: {{counts}}",
+    "filled_one": "{{count}} Feld ausgefüllt",
+    "filled_other": "{{count}} Felder ausgefüllt",
+    "notAnswered": "Nicht beantwortet",
+    "suggestionsLabel": "Möglichkeiten zum Einstieg",
+    "skipQuestions": "Überspringen und entwerfen",
+    "starters": {
+      "website": {
+        "title": "Website-Chat für Kunden",
+        "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit"
+      },
+      "helpdesk": {
+        "title": "Interner Helpdesk",
+        "description": "HR-, IT- und Richtlinienfragen deines Teams"
+      },
+      "research": {
+        "title": "Rechercheassistent",
+        "description": "Durchsucht deine Dokumente und zitiert sie"
+      }
+    },
+    "footerPrompt": "Verwendet {{model}} · liest nur diesen Prompt.",
+    "footerPromptNoModel": "Liest nur diesen Prompt.",
+    "startOver": "Neu beginnen",
+    "full": {
+      "title": "Diese Unterhaltung ist voll",
+      "description": "Länger kann eine Entwurfsunterhaltung nicht werden. Beginne neu, um weiterzumachen – was du entworfen hast, bleibt."
     }
   }
 }

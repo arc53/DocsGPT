@@ -134,6 +134,7 @@ const EVENT_LABELS: Record<string, string> = {
   connector_policy_set: 'Connector policy changed',
   source_defaults_set: 'Source defaults changed',
   agent_defaults_set: 'Agent defaults changed',
+  model_defaults_set: 'Model defaults changed',
   guardrails_settings_set: 'Guardrails changed',
   pat_created: 'Token created',
   pat_revoked: 'Token revoked',

@@ -4,6 +4,8 @@ import { cn } from '../lib/utils';
 
 type StreamingStatusLineProps = {
   hasAnswerText?: boolean;
+  /** The text in place of Thinking / Generating (the drafter's step). */
+  label?: string;
   className?: string;
 };
 
@@ -13,6 +15,7 @@ type StreamingStatusLineProps = {
  */
 export default function StreamingStatusLine({
   hasAnswerText = false,
+  label,
   className,
 }: StreamingStatusLineProps) {
   const { t } = useTranslation();
@@ -29,9 +32,10 @@ export default function StreamingStatusLine({
         <span className="bg-muted-foreground/50 size-1.5 animate-pulse rounded-full" />
       </span>
       <span className="shimmer-text max-w-[70vw] truncate text-sm lg:max-w-md">
-        {hasAnswerText
-          ? t('conversation.streamingStatus.generating')
-          : t('conversation.streamingStatus.thinking')}
+        {label ??
+          (hasAnswerText
+            ? t('conversation.streamingStatus.generating')
+            : t('conversation.streamingStatus.thinking'))}
       </span>
     </div>
   );

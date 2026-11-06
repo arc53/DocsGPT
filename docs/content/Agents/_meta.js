@@ -1,5 +1,6 @@
 export default {
   "basics": "🤖 Agent Basics",
+  "draft-with-docsgpt": "🪄 Draft with DocsGPT",
   "nodes": "🧩 Workflow Nodes",
   "schedules": "⏰ Schedules",
   "guardrails": "🛡️ Guardrails",

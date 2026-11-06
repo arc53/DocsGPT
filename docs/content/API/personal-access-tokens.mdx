@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-06
 ---
 
 # Personal Access Tokens
@@ -159,7 +159,7 @@ A `write` scope includes the matching `read` scope.
 | `sources:write` | Upload, ingest, sync, edit and delete sources and chunks |
 | `prompts:read` / `prompts:write` | View / create, update and delete prompts |
 | `tools:read` / `tools:write` | View / create, update and delete tools and MCP servers |
-| `models:read` / `models:write` | View models / manage custom models |
+| `models:read` / `models:write` | View models and your [task model](/Using/web-app#task-model) / manage custom models and set your task model |
 | `workflows:read` / `workflows:write` | View / create, update and delete workflows |
 | `schedules:read` / `schedules:write` | View / create, update, run and delete agent schedules |
 | `conversations:read` / `conversations:write` | View / rename, delete and rate conversations |
@@ -181,6 +181,7 @@ Some parts of the API are never available to a token, whatever its scopes:
 - conversation sharing and shared links, and file download;
 - the OpenAI-compatible `/v1` API (use an [agent API key](/API/agent-keys)) and the live event stream `/api/events`;
 - [Activity](/Using/activity#over-the-api) (`/api/activity/now`, `/api/activity/planned`, `/api/activity/history`) and stopping a running answer (`POST /api/messages/<message_id>/cancel`), because they span every chat and agent of the account;
+- [Draft with DocsGPT](/Agents/draft-with-docsgpt#over-the-api) (`/api/drafter/config`, `/api/drafter/stream`, `/api/drafter/topics/status`), because a draft reads the whole workspace and runs the model on it;
 - the agent webhook trigger, whose URL is its own credential.
 
 The [REST API reference](/API/reference) shows, for each endpoint, the scope a token needs or that tokens can't call it. A token also never carries the `admin` role, even when its owner is an admin.
@@ -211,7 +212,7 @@ For a restricted family the token:
   - **Workflow writes** are closed to tokens restricted on sources, tools or prompts, because a workflow graph names those inside its nodes. Such a token also cannot attach a workflow to an agent unless it is restricted on workflows too, in which case only the listed workflows can be attached.
   - **Workflow runs** belong to the agent that ran them. A token restricted to agents lists and reads only those agents' runs and downloads only their files; any other run, and a run started from the workflow builder's preview, answers `404`. Runs and their files are closed to tokens restricted on another family, and the `/api/artifacts` routes are closed to every restricted token.
   - `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
-  - **The chat prompt** (`/api/user/preferences`): a token restricted on prompts can't read it, since the stored pick may be outside its list. It can set it to a preset (`default`, `creative`, `strict`) or a prompt on its list. Sending `only_if_unset` is refused (`403`, `resource_not_allowed`), since the answer could carry a stored pick outside its list.
+  - **The chat prompt** (`/api/user/preferences`): a token restricted on prompts never reads it, since the stored pick may be outside its list. With `models:read` it still reads the [task model](/Using/web-app#task-model) fields from the same route, and the answer leaves the chat prompt fields out; without `models:read` the read is refused. It can set the chat prompt to a preset (`default`, `creative`, `strict`) or a prompt on its list. Sending `only_if_unset` is refused (`403`, `resource_not_allowed`), since the answer could carry a stored pick outside its list. Setting the [task model](/Using/web-app#task-model) through the same route (`task_model_id`) needs `models:write` instead of `prompts:write`, and names no prompt, so the prompt list doesn't limit it.
 
 A restriction covers what the token *asks for*, not what an allowed resource already contains: an agent on the list runs with its own sources, prompt and tools even when the token is also restricted on those families. List an agent only if you are happy for the token to use everything that agent uses.
 

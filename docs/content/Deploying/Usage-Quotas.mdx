@@ -1,7 +1,7 @@
 ---
 title: Usage Quotas
 description: Cap how many tokens or dollars each user may spend per day, week or month, with an instance default, per-team allowances and per-user overrides.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-11-01
 ---
 
 import { Callout } from 'nextra/components'
@@ -61,7 +61,7 @@ The quota is checked **before** a request starts. The request that crosses a lim
 }
 ```
 
-The response carries a `Retry-After` header with the seconds until the reset, and `x-should-retry: false` so the OpenAI SDKs don't retry with backoff. `dimension` is `tokens` or `cost`; for `cost`, `usage` and `limit` are in USD. The check covers chat, the agent and OpenAI-compatible APIs, scheduled runs (recorded as `budget_exceeded`) and webhook runs. If the quota check itself fails, the request is allowed.
+The response carries a `Retry-After` header with the seconds until the reset, and `x-should-retry: false` so the OpenAI SDKs don't retry with backoff. `dimension` is `tokens` or `cost`; for `cost`, `usage` and `limit` are in USD. The check covers chat, the agent and OpenAI-compatible APIs, scheduled runs (recorded as `budget_exceeded`), webhook runs and [Draft with DocsGPT](/Agents/draft-with-docsgpt#model-and-usage). If the quota check itself fails, the request is allowed.
 
 Who is charged:
 
@@ -70,6 +70,7 @@ Who is charged:
 | Chat without an agent | The user |
 | A user's own agent, its API key, webhooks and schedules | The agent's owner |
 | An agent shared with the user | The user |
+| [Draft with DocsGPT](/Agents/draft-with-docsgpt) | The user, as chat without an agent |
 
 Per-agent token and request limits still apply on top of the owner's quota.
 

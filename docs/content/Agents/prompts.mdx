@@ -1,7 +1,7 @@
 ---
 title: Customizing Prompts
 description: Write the prompts your chats and agents use - the Prompts page in Settings, picking the prompt for chats without an agent, the Jinja2 template variables (system, source, passthrough, tools, artifacts, attachments), how a prompt is assembled, and the built-in presets.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-06
 ---
 
 import Image from 'next/image'
@@ -40,9 +40,17 @@ Over the API, `GET /api/user/preferences` returns the pick as `chat_prompt_id` (
 2. To change a prompt you can edit, click its card, or choose **Edit** from its **⋯** menu. The included prompts, and shared prompts you can only view, open read-only (**View**); **Duplicate** makes an editable copy.
 3. The **⋯** menu also has **Share with team** and **Delete** when your access allows them; by default only the owner shares or deletes.
 
+A template prompt (one with `{{ }}`) that won't run shows an error under the text, and **Save** stays off until you fix it: a tag, variable or comment left open (`{{ variable }`, `{% if x %`), or block tags that don't pair up, such as an `{% if %}` without its `{% endif %}`. Chats with such a prompt would fail. Accepting only some of a DocsGPT review's changes can leave a template this way.
+
+Leaving a prompt with unsaved changes asks first: **Save and leave** or **Leave without saving**. When the prompt can't be saved yet (it has no name, another prompt has that name, it has no text, its template won't run, or a DocsGPT review is still open), the dialog stays open and says why.
+
 **N agents** on a card counts the agents that use the prompt; click it for a list with a link to each agent you can open, and a count of your teammates' agents. Deleting a prompt says which agents, and whether your chats, use it: they go back to the default prompt.
 
 In the agent form, the **Prompt** field lists the same three groups. Its footer has **Go to Prompts**, which opens this page, and **Add prompt**.
+
+### Improve or write a prompt with DocsGPT
+
+A prompt opens as a page of its own, with **Improve** next to **Save** (**Write** on a prompt with no text yet, new or saved), which opens Draft with DocsGPT in a panel beside it. On a prompt with text, it proposes edits, each with its reason, that you accept or reject one by one; on a prompt with no text, it starts from one of three starting points or your description, asks what it needs to know (such as the company and where to send people it can't help), and drafts the name and text. On a prompt you can't edit, **Improve** makes a copy first. DocsGPT keeps prompts plain text unless you ask for template variables, and warns before a change turns a plain-text prompt into a template or back, or removes the boundaries or citation rules. It adds `{{ tools… }}` variables only when you name them in your message. **Start over** in the panel's header begins a new conversation and keeps the text. Nothing is saved until you choose **Save**. See [Draft with DocsGPT](/Agents/draft-with-docsgpt#prompts).
 
 ### Video Demo
 
@@ -635,7 +643,7 @@ An action that raises (for example, because a parameter has no saved value or de
 empty; one that returns an error message renders that message.
 
 ### Problem: Syntax Errors
-**Solution:** Validate template syntax. Common issues:
+**Solution:** Validate template syntax. The prompt page catches the faults below, shows an error under the text and won't save the prompt until they are fixed. Common issues:
 ```jinja
 ❌ {{ variable }     # Missing closing brace
 ❌ {% if x %         # Missing closing %}

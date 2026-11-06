@@ -425,7 +425,21 @@ function WorkflowBuilderInner() {
   // laid over the saved config with the next save; null when none changed.
   const [pendingConfig, setPendingConfig] = useState<AgentConfig | null>(null);
   const analyticsAvailability = useAnalyticsAvailability();
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const [listedModels, setListedModels] = useState<Model[]>([]);
+  // A node's model resolves in the owner's account, so a team editor picks
+  // from the owner's custom models, not their own (the save refuses those).
+  // Null for the owner.
+  const [ownerModels, setOwnerModels] = useState<Model[] | null>(null);
+  const availableModels = useMemo(
+    () =>
+      ownerModels
+        ? [
+            ...listedModels.filter((model) => model.source !== 'user'),
+            ...ownerModels,
+          ]
+        : listedModels,
+    [listedModels, ownerModels],
+  );
   const modelNames = useMemo(
     () =>
       Object.fromEntries(
@@ -1165,7 +1179,7 @@ function WorkflowBuilderInner() {
           const transformedModels = modelService.transformModels(
             modelsData.models || [],
           );
-          setAvailableModels(transformedModels);
+          setListedModels(transformedModels);
           const preferredDefaultModel =
             transformedModels.find(
               (model) => model.id === modelsData.default_model_id,
@@ -1382,6 +1396,11 @@ function WorkflowBuilderInner() {
           ref_details: refDetails,
         } = responseData.data;
         applyResourceDetails(responseData.data);
+        setOwnerModels(
+          responseData.data.owner_models
+            ? modelService.transformModels(responseData.data.owner_models)
+            : null,
+        );
         setNodeRefNames({
           tools: (refDetails?.tools ?? []).map(
             (tool: { id: string; name?: string; display_name?: string }) => ({
@@ -2605,6 +2624,7 @@ function WorkflowBuilderInner() {
                   nodes={nodes}
                   edges={edges}
                   availableModels={availableModels}
+                  modelsFromOwner={ownerModels !== null}
                   availableTools={availableTools}
                   attachedTools={nodeRefNames.tools}
                   attachedSources={nodeRefNames.sources}

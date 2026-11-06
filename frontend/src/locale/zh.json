@@ -136,11 +136,15 @@
     "label": "设置",
     "general": {
       "label": "一般",
-      "subtitle": "选择 DocsGPT 的外观和界面语言。",
+      "subtitle": "选择 DocsGPT 的外观、界面语言以及执行其自身任务的模型。",
       "sections": {
         "appearance": "外观",
+        "models": "模型",
         "dangerZone": "危险操作"
       },
+      "taskModel": "任务模型",
+      "taskModelDescription": "用于起草表单、构建知识图谱和检查监控。对话使用智能体的模型。",
+      "taskModelSaveFailed": "无法保存任务模型，请重试。",
       "theme": "主题",
       "themeDescription": "浅色或深色界面。",
       "language": "语言",
@@ -157,7 +161,12 @@
       "medium": "中",
       "high": "高",
       "unlimited": "无限",
-      "default": "默认"
+      "default": "默认",
+      "taskModelLoadError": "无法加载任务模型。",
+      "taskModelInstanceDefault": "使用实例默认值（{{model}}）",
+      "taskModelInstanceDefaultUnnamed": "使用实例默认值",
+      "taskModelUnavailable": "你的任务模型已无法运行（已被停用或移除），因此改用实例默认值。如果该模型恢复，会再次使用它；在此选择一个选项即可替换它。",
+      "taskModelUnavailableValue": "模型不可用"
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
@@ -1657,7 +1666,18 @@
       },
       "kindFilterLabel": "按类型筛选",
       "chatPromptOn": "用于无智能体的聊天",
-      "chatPromptOff": "在无智能体的聊天中使用"
+      "chatPromptOff": "在无智能体的聊天中使用",
+      "loadPromptError": "无法加载这个提示词。",
+      "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
+      "saveAndLeave": "保存并离开",
+      "leaveWithoutSaving": "不保存离开",
+      "editNamed": "编辑 {{name}}",
+      "viewNamed": "查看 {{name}}",
+      "saveBlocked": {
+        "review": "请先完成审阅：在侧边面板中选择“全部接受”或“放弃”。",
+        "name": "请为提示词命名后再保存。",
+        "content": "请填写提示词文本后再保存。"
+      }
     },
     "devices": {
       "label": "设备",
@@ -1734,7 +1754,8 @@
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
         "builtin": "内置",
-        "user": "我的模型"
+        "user": "我的模型",
+        "owner": "所有者的模型"
       },
       "actions": {
         "edit": "编辑",
@@ -2449,10 +2470,6 @@
     },
     "prompts": {
       "addPrompt": "添加提示",
-      "addDescription": "添加自定义提示并保存到 DocsGPT",
-      "editPrompt": "编辑提示",
-      "editDescription": "编辑自定义提示并保存到 DocsGPT",
-      "viewPrompt": "查看提示",
       "viewDescription": "内置提示无法编辑。复制后可创建您自己的可编辑副本。",
       "duplicate": "创建副本",
       "duplicatePrompt": "创建提示副本",
@@ -2460,17 +2477,12 @@
       "promptName": "提示名称",
       "promptText": "提示文本",
       "save": "保存",
-      "cancel": "取消",
       "nameExists": "名称已存在",
       "deleteConfirmation": "删除“{{name}}”？",
-      "placeholderText": "在此輸入提示內容...",
-      "addExamplePlaceholder": "請總結此文本：",
       "variablesLabel": "變數",
-      "variablesSubtext": "點擊以插入提示中",
       "variablesDescription": "點擊以插入到提示中",
-      "systemVariables": "點擊以插入提示中",
-      "toolVariables": "工具變數",
-      "systemVariablesDropdownLabel": "系統變數",
+      "toolVariables": "工具变量",
+      "systemVariablesDropdownLabel": "系统变量",
       "systemVariableOptions": {
         "sourceContent": "來源內容",
         "sourceSummaries": "內容別名（向後相容）",
@@ -2484,10 +2496,7 @@
         "systemUserId": "目前使用者 ID",
         "artifactsLookup": "按 ID 查询工件元数据"
       },
-      "learnAboutPrompts": "了解提示 →",
-      "publicPromptEditDisabled": "公共提示無法編輯",
-      "promptTypePublic": "公共",
-      "promptTypePrivate": "私人"
+      "templateBroken": "此模板无法运行：某个标签或变量未闭合，或 {% if %} 与 {% endif %} 等块标签未成对。使用它的对话会出错，请在保存前修正。"
     },
     "chunk": {
       "add": "添加块",
@@ -4448,6 +4457,256 @@
       "period_one": "最近 {{formatted}} 天",
       "period_other": "最近 {{formatted}} 天",
       "periodFilter": "时间段"
+    }
+  },
+  "drafter": {
+    "prompt": {
+      "write": "撰写",
+      "improvePlaceholder": "说明要改什么，例如：不要报价…",
+      "writePlaceholder": "描述它的用途和使用者…",
+      "warningsTitle": "保存前请检查",
+      "checks": {
+        "to_template": "这会加入模板变量，DocsGPT 将完全按原文使用提示词，不再添加自己的部分：日期、回答规则、引用、格式和边界。",
+        "to_persona": "这会删除所有模板变量，DocsGPT 将把提示词当作纯文本，并在其外加上自己的部分：日期、回答规则、引用、格式和边界。",
+        "boundaries_removed": "Boundaries 部分已被删除。没有它，智能体可能会执行文档或工具结果中隐藏的指令。",
+        "citations_removed": "引用规则变量（source.citation_rules）已被删除，回答将不再以 [1]、[2] 的形式引用来源。"
+      },
+      "reviewLabel": "建议的修改",
+      "removedText": "已删除：",
+      "addedText": "已添加：",
+      "accept": "接受",
+      "reject": "拒绝",
+      "acceptChange": "接受修改 {{number}}",
+      "rejectChange": "拒绝修改 {{number}}",
+      "accepted": "已接受",
+      "rejected": "已拒绝",
+      "undoChoice": "撤销",
+      "undoChoiceLabel": "撤销对修改 {{number}} 的选择",
+      "acceptAll": "全部接受",
+      "reviewOneByOne": "逐条查看",
+      "discard": "放弃",
+      "introImprove": "我可以检查这个提示词，或修改某个具体的地方。在你保存之前不会保存任何内容。",
+      "introImproveUsedBy_one": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改也会作用于它。",
+      "introImproveUsedBy_other": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改会作用于所有这些智能体。",
+      "introWrite": "这个提示词是做什么用的？选择一个起点或描述一下，我会在写之前问清需要的信息。在你保存之前不会保存任何内容。",
+      "suggestions": {
+        "lookOver": "检查一下并提出修改建议",
+        "clearer": "写得更清楚、更简短",
+        "unsure": "补充不知道答案时该怎么做"
+      },
+      "skipMessage": "就用你已知的信息起草吧。",
+      "assumptionsTitle": "我的假设",
+      "changeAssumption": "修改",
+      "changeAssumptionLabel": "修改：{{assumption}}",
+      "changeAssumptionPrefill": "关于“{{assumption}}”：",
+      "readAndSave": "请在编辑器中通读，然后保存，或告诉我要改什么。",
+      "savePrompt": "保存提示词",
+      "nextTitle": "你还可以"
+    },
+    "title": "用 DocsGPT 起草",
+    "draft": "起草",
+    "improve": "改进",
+    "drafted": "已起草",
+    "undoField": "撤销{{field}}",
+    "somethingElse": "其他…",
+    "somethingElseLabel": "你的回答",
+    "somethingElsePlaceholder": "输入你自己的回答",
+    "sendAnswers": "发送回答",
+    "droppedTitle": "已省略",
+    "retry": "重试",
+    "steps": {
+      "thinking": "正在思考…",
+      "reading": "正在查看你的工作区…",
+      "drafting": "正在起草…"
+    },
+    "askLabel": "发给 DocsGPT 的消息",
+    "askPlaceholder": "提出修改…",
+    "stop": "停止",
+    "send": "发送",
+    "footer": "使用 {{model}} · 可读取你的智能体、知识、工具和提示词。",
+    "footerNoModel": "可读取你的智能体、知识、工具和提示词。",
+    "changeModel": "更换模型",
+    "lookedAtWorkspace": "已查看你的工作区",
+    "counts": {
+      "sources_other": "{{count}} 个知识源",
+      "tools_other": "{{count}} 个工具",
+      "prompts_other": "{{count}} 个提示词",
+      "models_other": "{{count}} 个模型",
+      "agents_other": "{{count}} 个智能体"
+    },
+    "errors": {
+      "disabled": {
+        "title": "起草已关闭",
+        "description": "管理员已在此实例上关闭 DocsGPT 起草功能。"
+      },
+      "no_model": {
+        "title": "没有用于起草的模型",
+        "description": "请在设置 › 通用中选择任务模型，然后重试。"
+      },
+      "rate_limited": {
+        "title": "请求过多",
+        "description": "请稍等片刻再试。"
+      },
+      "quota": {
+        "title": "已达到使用上限",
+        "description": "你暂时用完了额度。额度重置后即可再次起草。"
+      },
+      "invalid_output": {
+        "title": "草稿生成失败",
+        "description": "无法使用模型的回答。表单没有变化。"
+      },
+      "model_error": {
+        "title": "模型没有回应",
+        "description": "起草时出了问题。表单没有变化。"
+      },
+      "bad_request": {
+        "title": "无法发送",
+        "description": "无法读取该请求。请刷新页面后重试。",
+        "startOver": "DocsGPT 无法接收此对话。重新开始即可继续，已起草的内容会保留。"
+      }
+    },
+    "agent": {
+      "draftedCount_other": "已起草 {{count}} 个字段。保存前请检查。",
+      "droppedLine": "{{field}}：{{reason}}",
+      "droppedReasons": {
+        "not_found": "一个不存在的项目",
+        "no_access": "一个你无法打开的项目",
+        "invalid": "一个无效的项目",
+        "other": "一个无法使用的项目",
+        "not_allowed": "你的角色无法更改的设置",
+        "other_step": "属于其他步骤的更改"
+      },
+      "build": {
+        "intro": "我们一起一步步搭建这个智能体：基本信息、知识与工具、提示词与开场问题，最后是限制与安全。\n\n选择一个起点，或告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
+        "describePlaceholder": "描述这个智能体…",
+        "changePlaceholder": "或告诉我要改什么…",
+        "steps": {
+          "basics": "基本信息",
+          "knowledge": "知识与工具",
+          "prompt": "提示词与开场问题",
+          "safety": "限制与安全"
+        },
+        "progress": "第 {{number}} 步，共 {{total}} 步 · {{step}}",
+        "filledAtOnce_one": "一次填写了 {{count}} 步",
+        "filledAtOnce_other": "一次填写了 {{count}} 步",
+        "allFilled": "所有步骤已填写",
+        "continue": "继续：{{step}}。",
+        "next": "下一步：{{step}}",
+        "nextShort": "下一步",
+        "finish": "完成",
+        "checkForm": "先检查表单",
+        "check": "检查{{step}}",
+        "folded": "{{step}}：{{result}}",
+        "skipped": "{{step}}：这里没有可设置的内容",
+        "done": "所有部分都完成了。智能体还没有保存：发布后在预览中试用，或保存草稿稍后继续。",
+        "resume": "继续",
+        "resumeLabel": "继续起草：第 {{number}} 步，共 {{total}} 步",
+        "result": {
+          "none": "未设置",
+          "noLimit": "不限制",
+          "starters_one": "{{count}} 个开场问题",
+          "starters_other": "{{count}} 个开场问题",
+          "requests_one": "每 24 小时 {{count, number}} 次请求",
+          "requests_other": "每 24 小时 {{count, number}} 次请求",
+          "tokens_one": "每 24 小时 {{count, number}} 个令牌",
+          "tokens_other": "每 24 小时 {{count, number}} 个令牌",
+          "checks_one": "{{count}} 项检查（{{mode}}）",
+          "checks_other": "{{count}} 项检查（{{mode}}）",
+          "topics_one": "{{count}} 个洞察主题",
+          "topics_other": "{{count}} 个洞察主题"
+        },
+        "continueStep": "继续：{{step}}"
+      },
+      "improve": {
+        "intro": "{{name}} 需要改什么？",
+        "introPublished": "{{name}} 需要改什么？它已发布，保存的修改会影响所有使用它的人。",
+        "introShared": "{{name}} 需要改什么？它已共享，保存的修改会影响所有使用它的人。",
+        "finishSetup": "完成设置：限制与安全",
+        "shorter": "把描述写短一些",
+        "tightenPrompt": "精简提示词",
+        "starters": "建议开场问题",
+        "knowledge": "添加它可以据此回答的知识",
+        "writePrompt": "为这个智能体写一个提示词"
+      },
+      "fields": {
+        "limits": "使用限制"
+      },
+      "prompt": {
+        "wrote_one": "写了一个新提示词 · {{count}} 个词",
+        "wrote_other": "写了一个新提示词 · {{count}} 个词",
+        "viewHint": "在提示词视图中查看：在那里修改，或在这里告诉我，然后点击“使用此提示词”。点击后它会保存到你的提示词中。",
+        "newPrompt": "新提示词",
+        "use": "使用此提示词",
+        "saved_one": "提示词已保存并设置。我据此写了 {{count}} 个开场问题：请在“开场问题”中查看。",
+        "saved_other": "提示词已保存并设置。我据此写了 {{count}} 个开场问题：请在“开场问题”中查看。",
+        "savedOnly": "提示词已保存并设置。",
+        "parked": "我写的提示词仍处于打开状态，尚未保存。",
+        "open": "打开提示词",
+        "keep": "改为保留 {{name}}",
+        "changePlaceholder": "或告诉我提示词要改什么…",
+        "changes_one": "{{count}} 处修改待审阅",
+        "changes_other": "{{count}} 处修改待审阅",
+        "reviewHint": "在提示词视图中接受或拒绝每处修改，然后保存提示词。所有使用它的智能体都会获得保存后的文本。",
+        "editsStale": "我的修改都已不再适用于提示词保存的文本。请再告诉我一次，我会基于它来修改。",
+        "unfit_one": "{{count}} 处修改已与提示词文本不符",
+        "unfit_other": "{{count}} 处修改已与提示词文本不符"
+      },
+      "formEdited": "你在表单中更改了 {{fields}}。",
+      "showInAgent": "在智能体中查看"
+    },
+    "topics": {
+      "suggest": "根据对话建议",
+      "request": "根据此智能体最近的对话建议主题。",
+      "hold_other": "此智能体的近期对话达到 {{needed}} 个后，即可根据对话建议主题（目前 {{formatted}} 个）。",
+      "reading": "正在读取近期问题…",
+      "read_other": "已读取最近 {{days}} 天的 {{formatted}} 个问题",
+      "tried_other": "已用 {{formatted}} 个问题试用这些建议：不属于任何主题的问题从 {{before}} 降至 {{after}}。",
+      "triedAfter_other": "已用 {{formatted}} 个问题试用这些建议：{{after}} 的问题不属于任何主题。",
+      "share": "占问题的 {{share}}",
+      "estimate": "估计值",
+      "estimateHint": "起草模型的估计：无法在实际问题上测量。",
+      "taken": "已是主题",
+      "similar": "与“{{name}}”相似。",
+      "leftOut": "未建议：{{items}}",
+      "leftOutItem": "{{name}}（{{reason}}）",
+      "pushesOut_other": "添加后会挤出 {{count}} 个文件夹，其问题会归入“不属于这些主题”：{{names}}",
+      "tooManyOnePick_other": "只能再添加 {{formatted}} 个用于归类问题的主题。添加前请取消勾选一些。",
+      "tooManyOverlap_other": "只能再添加 {{formatted}} 个可重叠的主题。添加前请取消勾选一些。",
+      "none": "没有可添加的内容：你的主题和文件夹已覆盖近期问题。",
+      "discard": "放弃",
+      "add_other": "添加 {{formatted}} 个主题",
+      "errors": {
+        "invalid_output": "无法使用模型的回答。没有添加任何主题。",
+        "model_error": "建议主题时出了问题。没有添加任何主题。"
+      },
+      "statusFailed": "无法检查是否可以根据对话建议主题。"
+    },
+    "lookedAtWorkspaceCounts": "已查看你的工作区：{{counts}}",
+    "filled_one": "已填写 {{count}} 个字段",
+    "filled_other": "已填写 {{count}} 个字段",
+    "notAnswered": "未回答",
+    "suggestionsLabel": "开始方式",
+    "skipQuestions": "跳过并起草",
+    "starters": {
+      "website": {
+        "title": "面向客户的网站聊天",
+        "description": "回答访客问题，不确定时转人工"
+      },
+      "helpdesk": {
+        "title": "内部服务台",
+        "description": "团队的人事、IT 和制度问题"
+      },
+      "research": {
+        "title": "研究助手",
+        "description": "检索你的文档并注明出处"
+      }
+    },
+    "footerPrompt": "使用 {{model}} · 只读取此提示词。",
+    "footerPromptNoModel": "只读取此提示词。",
+    "startOver": "重新开始",
+    "full": {
+      "title": "此对话已满",
+      "description": "起草对话已达到最大长度。重新开始即可继续，已起草的内容会保留。"
     }
   }
 }

@@ -492,9 +492,20 @@ class GoogleLLM(BaseLLM):
         return bool(match) and int(match.group(1)) >= 3
 
     def _clean_schema(self, schema_obj):
-        """
-        Recursively remove unsupported fields from schema objects
-        and validate required properties.
+        """Convert a JSON schema to the subset Gemini's ``types.Schema`` takes.
+
+        Unsupported keywords are dropped at every depth. ``properties`` maps
+        names to schemas, so each value is cleaned and every name kept;
+        ``items`` and each ``anyOf``/``oneOf`` branch are cleaned as schemas.
+        A JSON-schema type list becomes one type, or an ``anyOf`` of types,
+        with ``"null"`` read as ``nullable``. ``required`` keeps only names
+        that are in ``properties``.
+
+        Args:
+            schema_obj: A JSON schema, or any value inside one.
+
+        Returns:
+            The cleaned schema; a non-dict value is returned unchanged.
         """
         if not isinstance(schema_obj, dict):
             return schema_obj
@@ -514,10 +525,27 @@ class GoogleLLM(BaseLLM):
 
         cleaned = {}
         for key, value in schema_obj.items():
-            if key not in allowed_fields:
+            if key in ("anyOf", "oneOf") and isinstance(value, list):
+                branches = [self._clean_schema(branch) for branch in value]
+                branches = [branch for branch in branches if branch]
+                if branches:
+                    cleaned["anyOf"] = cleaned.get("anyOf", []) + branches
+            elif key not in allowed_fields:
                 continue
             elif key == "type" and isinstance(value, str):
                 cleaned[key] = value.upper()
+            elif key == "type" and isinstance(value, list):
+                types_ = [str(t).upper() for t in value if t != "null"]
+                if "null" in value:
+                    cleaned["nullable"] = True
+                if len(types_) == 1:
+                    cleaned["type"] = types_[0]
+                elif types_:
+                    cleaned["anyOf"] = [{"type": t} for t in types_]
+            elif key == "properties" and isinstance(value, dict):
+                cleaned[key] = {name: self._clean_schema(sub) for name, sub in value.items()}
+            elif key in ("enum", "required"):
+                cleaned[key] = value
             elif isinstance(value, dict):
                 cleaned[key] = self._clean_schema(value)
             elif isinstance(value, list):

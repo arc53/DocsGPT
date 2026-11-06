@@ -22,12 +22,16 @@ class TestPromptsSharing:
         p = repo.create("alice", "P", "c")
         pid = str(p["id"])
         ts = repo.get_for_rendering(pid)["updated_at"]
-        assert repo.update_by_id(pid, "P2", "c2", expected_updated_at=ts) is True
-        assert repo.get_for_rendering(pid)["content"] == "c2"
+        # The new version comes back with the write.
+        saved = repo.update_by_id(pid, "P2", "c2", expected_updated_at=ts)
+        row = repo.get_for_rendering(pid)
+        assert row["content"] == "c2" and saved == row["updated_at"]
         # Stale version → None (route answers 409).
         assert repo.update_by_id(pid, "P3", "c3", expected_updated_at="2000-01-01T00:00:00+00:00") is None
         # No version → unconditional.
-        assert repo.update_by_id(pid, "P4", "c4") is True
+        assert repo.update_by_id(pid, "P4", "c4") == repo.get_for_rendering(pid)["updated_at"]
+        # No such prompt → False.
+        assert repo.update_by_id("00000000-0000-0000-0000-000000000000", "P", "c") is False
 
 
 class TestSourcesSharing:

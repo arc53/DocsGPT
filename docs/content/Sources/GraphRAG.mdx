@@ -1,7 +1,7 @@
 ---
 title: GraphRAG
 description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-11-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -19,7 +19,7 @@ GraphRAG is **flag-gated** and currently **pgvector-only**. It is available only
 
 - A PostgreSQL database with the `pgvector` extension (`VECTOR_STORE=pgvector`). See [PostgreSQL for User Data](/Deploying/Postgres-Migration).
 - `GRAPHRAG_ENABLED=true` in your environment.
-- An LLM configured for extraction. Without an override, extraction uses `LLM_NAME`, so set `GRAPHRAG_EXTRACTION_MODEL` explicitly (see [Configuration](#configuration)).
+- A model for extraction. Without an override, extraction uses the source owner's [task model](/Using/web-app#task-model) (see [Configuration](#configuration)).
 
 ```env
 GRAPHRAG_ENABLED=true
@@ -98,7 +98,7 @@ A sync re-reads the whole source and stores every chunk again, but the graph fol
 A sync rebuilds the whole graph instead, once, when:
 
 - the graph was built before DocsGPT recorded content hashes;
-- the source's `graph.extraction_model` or `graph.gleanings` changed since the graph was built. A change to the instance default model (`GRAPHRAG_EXTRACTION_MODEL`, `LLM_NAME`) does not rebuild existing graphs; use **Enable GraphRAG** for that;
+- the source's `graph.extraction_model` or `graph.gleanings` changed since the graph was built. A change to `GRAPHRAG_EXTRACTION_MODEL` or to the task model does not rebuild existing graphs; use **Enable GraphRAG** for that;
 - the embeddings model (`EMBEDDINGS_NAME`) changed, since the graph's node and fact embeddings come from it.
 
 A re-ingest or **Enable GraphRAG** always rebuilds the whole graph and extracts every chunk again.
@@ -110,15 +110,18 @@ Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
 | Setting | Default | Description |
 | --- | --- | --- |
 | `GRAPHRAG_ENABLED` | `false` | Master switch for the feature. |
-| `GRAPHRAG_EXTRACTION_MODEL` | `null` | Model used for extraction. `null` falls back to `LLM_NAME`. |
+| `GRAPHRAG_EXTRACTION_MODEL` | `null` | Model used for extraction. `null` uses the source owner's task model. |
 | `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on how many chunks are extracted per source (cost control). `0` extracts nothing. |
 | `GRAPHRAG_EXTRACTION_WORKERS` | `8` | Concurrent extraction calls during ingest (1–32). Model calls run in parallel while graph writes stay serial; `1` is fully serial. |
 
 The extraction model is resolved in this order: the source's `graph.extraction_model`, then
-`GRAPHRAG_EXTRACTION_MODEL`, then `LLM_NAME`. The call goes to the provider that serves that model in the model
-registry, or to `LLM_PROVIDER` when the registry doesn't know it. This is not necessarily the model chat uses:
-chat can default to another model or provider, and with `LLM_NAME` unset extraction runs on `LLM_PROVIDER` with no
-model id. Set `GRAPHRAG_EXTRACTION_MODEL` explicitly so you know which model builds, and pays for, the graph.
+`GRAPHRAG_EXTRACTION_MODEL`, then the source owner's [task model](/Using/web-app#task-model): their pick in
+**Settings → General**, else the one an admin set under **Admin → Defaults**, else `TASK_MODEL_ID`, else the
+instance's default model unless it is disabled. A source model or `GRAPHRAG_EXTRACTION_MODEL` that is disabled in the
+model registry is skipped. The call goes to the provider that serves that model in the model registry, or to
+`LLM_PROVIDER` when the registry doesn't know it. When none of these models can run, the build fails with *No model is
+available: no extraction model can run* rather than falling back to another model. This is not necessarily the model chat uses, so check the task
+model, or set `GRAPHRAG_EXTRACTION_MODEL`, to know which model builds, and pays for, the graph.
 
 Per-source extraction knobs live under the source config's `graph` object and override the instance defaults:
 

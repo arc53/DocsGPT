@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 
+import { DraftedBadge } from '../../drafter/DraftedBadge';
 import { analyticsOf, isDefaultAnalytics } from '../analyticsConfig';
 import type { AnalyticsConfig } from '../types';
 import InsightsSettingsBody from './InsightsSettingsBody';
@@ -23,6 +24,14 @@ type AnalyticsSectionProps = {
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
   token: string | null;
+  /** Insights are on in the agent as saved. */
+  savedEnabled?: boolean;
+  /**
+   * The drafter added topics: the section opens and its title carries the
+   * Drafted badge with `onUndo`.
+   */
+  drafted?: boolean;
+  onUndo?: () => void;
 };
 
 /**
@@ -42,10 +51,18 @@ export default function AnalyticsSection({
   maxOverlapping,
   disabled = false,
   token,
+  savedEnabled,
+  drafted = false,
+  onUndo,
 }: AnalyticsSectionProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
   const bodyId = React.useId();
+
+  // Drafted topics open the section, so they show without a click.
+  React.useEffect(() => {
+    if (drafted) setExpanded(true);
+  }, [drafted]);
 
   if (!available && isDefaultAnalytics(value)) return null;
   const enabled = analyticsOf(value).enabled;
@@ -78,6 +95,12 @@ export default function AnalyticsSection({
               {t('agents.form.analytics.off')}
             </Badge>
           )}
+          {drafted && onUndo && (
+            <DraftedBadge
+              onUndo={onUndo}
+              fieldLabel={t('agents.form.sections.analytics')}
+            />
+          )}
         </div>
 
         <Collapsible open={expanded} id={bodyId}>
@@ -98,6 +121,7 @@ export default function AnalyticsSection({
               maxOverlapping={maxOverlapping}
               disabled={disabled}
               token={token}
+              savedEnabled={savedEnabled}
               // The source folders load once the section opens, with the
               // server's switch off too: hidden ones can still come back.
               active={expanded}

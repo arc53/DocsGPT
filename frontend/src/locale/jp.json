@@ -136,11 +136,15 @@
     "label": "設定",
     "general": {
       "label": "一般",
-      "subtitle": "DocsGPTの外観と表示言語を選択します。",
+      "subtitle": "DocsGPTの外観、表示言語、独自のタスクを実行するモデルを選択します。",
       "sections": {
         "appearance": "外観",
+        "models": "モデル",
         "dangerZone": "危険な操作"
       },
+      "taskModel": "タスクモデル",
+      "taskModelDescription": "フォームの下書き、ナレッジグラフの構築、モニターのチェックを行います。チャットではエージェントのモデルを使用します。",
+      "taskModelSaveFailed": "タスクモデルを保存できませんでした。もう一度お試しください。",
       "theme": "テーマ",
       "themeDescription": "ライトまたはダークのインターフェース。",
       "language": "言語",
@@ -157,7 +161,12 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無制限",
-      "default": "デフォルト"
+      "default": "デフォルト",
+      "taskModelLoadError": "タスクモデルを読み込めませんでした。",
+      "taskModelInstanceDefault": "インスタンスのデフォルトを使用（{{model}}）",
+      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルトを使用",
+      "taskModelUnavailable": "タスクモデルを実行できなくなりました（無効化または削除されました）。そのため、インスタンスのデフォルトが使われます。モデルが戻ると再び使われます。置き換えるには、ここでオプションを選んでください。",
+      "taskModelUnavailableValue": "利用できないモデル"
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
@@ -1657,7 +1666,18 @@
       },
       "kindFilterLabel": "種類で絞り込む",
       "chatPromptOn": "エージェントなしのチャットで使用中",
-      "chatPromptOff": "エージェントなしのチャットで使用"
+      "chatPromptOff": "エージェントなしのチャットで使用",
+      "loadPromptError": "このプロンプトを読み込めませんでした。",
+      "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
+      "saveAndLeave": "保存して離れる",
+      "leaveWithoutSaving": "保存せずに離れる",
+      "editNamed": "{{name}} を編集",
+      "viewNamed": "{{name}} を表示",
+      "saveBlocked": {
+        "review": "先にレビューを終えてください。パネルで「すべて採用」または「破棄」を選びます。",
+        "name": "保存するにはプロンプトに名前を付けてください。",
+        "content": "保存するにはプロンプトの本文を入力してください。"
+      }
     },
     "devices": {
       "label": "デバイス",
@@ -1734,7 +1754,8 @@
       "actionsMenuAria": "{{modelName}} のアクション",
       "modelsGroup": {
         "builtin": "組み込み",
-        "user": "マイモデル"
+        "user": "マイモデル",
+        "owner": "所有者のモデル"
       },
       "actions": {
         "edit": "編集",
@@ -2450,10 +2471,6 @@
     },
     "prompts": {
       "addPrompt": "プロンプトを追加",
-      "addDescription": "カスタムプロンプトを追加して DocsGPT に保存します",
-      "editPrompt": "プロンプトを編集",
-      "editDescription": "カスタムプロンプトを編集して DocsGPT に保存します",
-      "viewPrompt": "プロンプトを表示",
       "viewDescription": "組み込みプロンプトは編集できません。複製して編集可能なコピーを作成してください。",
       "duplicate": "複製",
       "duplicatePrompt": "プロンプトを複製",
@@ -2461,15 +2478,10 @@
       "promptName": "プロンプト名",
       "promptText": "プロンプトのテキスト",
       "save": "保存",
-      "cancel": "キャンセル",
       "nameExists": "この名前はすでに存在します",
       "deleteConfirmation": "「{{name}}」を削除しますか？",
-      "placeholderText": "ここにプロンプトのテキストを入力してください…",
-      "addExamplePlaceholder": "このテキストを要約してください：",
       "variablesLabel": "変数",
-      "variablesSubtext": "クリックしてプロンプトに挿入",
       "variablesDescription": "クリックしてプロンプトに挿入",
-      "systemVariables": "システム変数",
       "toolVariables": "ツール変数",
       "systemVariablesDropdownLabel": "システム変数",
       "systemVariableOptions": {
@@ -2485,10 +2497,7 @@
         "systemUserId": "現在のユーザー ID",
         "artifactsLookup": "IDによるアーティファクトメタデータ"
       },
-      "learnAboutPrompts": "プロンプトについて学ぶ →",
-      "publicPromptEditDisabled": "公開プロンプトは編集できません",
-      "promptTypePublic": "公開",
-      "promptTypePrivate": "非公開"
+      "templateBroken": "このテンプレートは実行できません。タグや変数が閉じていないか、{% if %} と {% endif %} などのブロックタグが対応していません。このままではチャットが失敗するため、保存する前に修正してください。"
     },
     "chunk": {
       "add": "チャンクを追加",
@@ -4450,6 +4459,256 @@
       "period_one": "過去 {{formatted}} 日",
       "period_other": "過去 {{formatted}} 日",
       "periodFilter": "期間"
+    }
+  },
+  "drafter": {
+    "prompt": {
+      "write": "作成",
+      "improvePlaceholder": "変更内容を入力（例: 価格を答えないようにする）…",
+      "writePlaceholder": "用途と使う人を説明してください…",
+      "warningsTitle": "保存前に確認してください",
+      "checks": {
+        "to_template": "テンプレート変数が追加されるため、DocsGPT はプロンプトを書かれたとおりに使用し、独自のセクション（日付、回答ルール、引用、書式、境界）を追加しなくなります。",
+        "to_persona": "テンプレート変数がすべて削除されるため、DocsGPT はプロンプトをプレーンテキストとして扱い、独自のセクション（日付、回答ルール、引用、書式、境界）を周りに追加します。",
+        "boundaries_removed": "Boundaries セクションがなくなりました。これがないと、エージェントがドキュメントやツールの結果に隠された指示に従うおそれがあります。",
+        "citations_removed": "引用ルールの変数（source.citation_rules）がなくなったため、回答は [1]、[2] の形で出典を示さなくなります。"
+      },
+      "reviewLabel": "提案された変更",
+      "removedText": "削除: ",
+      "addedText": "追加: ",
+      "accept": "採用",
+      "reject": "却下",
+      "acceptChange": "変更 {{number}} を採用",
+      "rejectChange": "変更 {{number}} を却下",
+      "accepted": "採用済み",
+      "rejected": "却下済み",
+      "undoChoice": "元に戻す",
+      "undoChoiceLabel": "変更 {{number}} の選択を元に戻す",
+      "acceptAll": "すべて採用",
+      "reviewOneByOne": "1 件ずつ確認",
+      "discard": "破棄",
+      "introImprove": "このプロンプトを見直したり、特定の箇所を変更したりできます。保存するまで何も保存されません。",
+      "introImproveUsedBy_one": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はそちらにも反映されます。",
+      "introImproveUsedBy_other": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はすべてに反映されます。",
+      "introWrite": "このプロンプトの用途は？ 出発点を選ぶか説明してください。書く前に必要なことを質問します。保存するまで何も保存されません。",
+      "suggestions": {
+        "lookOver": "見直して修正点を提案して",
+        "clearer": "もっと明確で短くして",
+        "unsure": "わからない時の対応を追加して"
+      },
+      "skipMessage": "わかっている内容で下書きしてください。",
+      "assumptionsTitle": "想定したこと",
+      "changeAssumption": "変更",
+      "changeAssumptionLabel": "変更: {{assumption}}",
+      "changeAssumptionPrefill": "「{{assumption}}」について: ",
+      "readAndSave": "エディターで内容を確認し、保存するか、変更点を教えてください。",
+      "savePrompt": "プロンプトを保存",
+      "nextTitle": "ほかにも"
+    },
+    "title": "DocsGPT で下書き",
+    "draft": "下書き",
+    "improve": "改善",
+    "drafted": "下書き済み",
+    "undoField": "{{field}} を元に戻す",
+    "somethingElse": "その他…",
+    "somethingElseLabel": "あなたの回答",
+    "somethingElsePlaceholder": "回答を入力",
+    "sendAnswers": "回答を送信",
+    "droppedTitle": "除外した項目",
+    "retry": "再試行",
+    "steps": {
+      "thinking": "考えています…",
+      "reading": "ワークスペースを確認しています…",
+      "drafting": "下書きしています…"
+    },
+    "askLabel": "DocsGPT へのメッセージ",
+    "askPlaceholder": "変更を依頼…",
+    "stop": "停止",
+    "send": "送信",
+    "footer": "{{model}} を使用 · エージェント、ナレッジ、ツール、プロンプトを読み取れます。",
+    "footerNoModel": "エージェント、ナレッジ、ツール、プロンプトを読み取れます。",
+    "changeModel": "モデルを変更",
+    "lookedAtWorkspace": "ワークスペースを確認しました",
+    "counts": {
+      "sources_other": "ナレッジ {{count}} 件",
+      "tools_other": "ツール {{count}} 件",
+      "prompts_other": "プロンプト {{count}} 件",
+      "models_other": "モデル {{count}} 件",
+      "agents_other": "エージェント {{count}} 件"
+    },
+    "errors": {
+      "disabled": {
+        "title": "下書き機能はオフです",
+        "description": "このインスタンスでは管理者が DocsGPT による下書きをオフにしています。"
+      },
+      "no_model": {
+        "title": "下書き用のモデルがありません",
+        "description": "設定 › 一般 でタスクモデルを選んでから、もう一度お試しください。"
+      },
+      "rate_limited": {
+        "title": "リクエストが多すぎます",
+        "description": "少し待ってから、もう一度お試しください。"
+      },
+      "quota": {
+        "title": "利用上限に達しました",
+        "description": "現在の利用枠を使い切りました。リセット後に再び下書きできます。"
+      },
+      "invalid_output": {
+        "title": "下書きをうまく作れませんでした",
+        "description": "モデルの回答を使えませんでした。フォームは変更されていません。"
+      },
+      "model_error": {
+        "title": "モデルが応答しませんでした",
+        "description": "下書き中に問題が発生しました。フォームは変更されていません。"
+      },
+      "bad_request": {
+        "title": "送信できませんでした",
+        "description": "リクエストを読み取れませんでした。ページを再読み込みして、もう一度お試しください。",
+        "startOver": "DocsGPT はこの会話を受け付けられませんでした。続けるには最初からやり直してください。下書きした内容はそのまま残ります。"
+      }
+    },
+    "agent": {
+      "draftedCount_other": "{{count}} 個のフィールドを下書きしました。保存する前に確認してください。",
+      "droppedLine": "{{field}}: {{reason}}",
+      "droppedReasons": {
+        "not_found": "存在しない項目",
+        "no_access": "開けない項目",
+        "invalid": "無効な項目",
+        "other": "使用できない項目",
+        "not_allowed": "あなたのロールでは変更できない設定",
+        "other_step": "別のステップで行う変更"
+      },
+      "build": {
+        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジとツール、プロンプトと最初の質問、最後に制限と安全性です。\n\n出発点を選ぶか、何をするエージェントで誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
+        "describePlaceholder": "エージェントについて説明…",
+        "changePlaceholder": "または変更点を教えてください…",
+        "steps": {
+          "basics": "基本情報",
+          "knowledge": "ナレッジとツール",
+          "prompt": "プロンプトと最初の質問",
+          "safety": "制限と安全性"
+        },
+        "progress": "ステップ {{number}}/{{total}} · {{step}}",
+        "filledAtOnce_one": "{{count}} ステップをまとめて入力",
+        "filledAtOnce_other": "{{count}} ステップをまとめて入力",
+        "allFilled": "すべてのステップを入力しました",
+        "continue": "{{step}} に進んでください。",
+        "next": "次へ: {{step}}",
+        "nextShort": "次へ",
+        "finish": "完了",
+        "checkForm": "先にフォームを確認",
+        "check": "{{step}} を確認",
+        "folded": "{{step}}: {{result}}",
+        "skipped": "{{step}}: ここで設定する項目はありません",
+        "done": "これですべてのステップが終わりました。エージェントはまだ保存されていません。公開してプレビューで試すか、下書きを保存して後で続けてください。",
+        "resume": "再開",
+        "resumeLabel": "下書きを再開: ステップ {{number}}/{{total}}",
+        "result": {
+          "none": "設定なし",
+          "noLimit": "制限なし",
+          "starters_one": "最初の質問 {{count}} 件",
+          "starters_other": "最初の質問 {{count}} 件",
+          "requests_one": "24 時間あたり {{count, number}} リクエスト",
+          "requests_other": "24 時間あたり {{count, number}} リクエスト",
+          "tokens_one": "24 時間あたり {{count, number}} トークン",
+          "tokens_other": "24 時間あたり {{count, number}} トークン",
+          "checks_one": "{{count}} 件のチェック（{{mode}}）",
+          "checks_other": "{{count}} 件のチェック（{{mode}}）",
+          "topics_one": "インサイトのトピック {{count}} 件",
+          "topics_other": "インサイトのトピック {{count}} 件"
+        },
+        "continueStep": "続ける: {{step}}"
+      },
+      "improve": {
+        "intro": "{{name}} の何を変更しますか？",
+        "introPublished": "{{name}} の何を変更しますか？公開済みのため、保存した変更は利用している全員に反映されます。",
+        "introShared": "{{name}} の何を変更しますか？共有されているため、保存した変更は利用している全員に反映されます。",
+        "finishSetup": "設定を完了: 制限と安全性",
+        "shorter": "説明を短くして",
+        "tightenPrompt": "プロンプトを引き締めて",
+        "starters": "会話のきっかけを提案して",
+        "knowledge": "回答のもとになるナレッジを追加して",
+        "writePrompt": "このエージェント用のプロンプトを書いて"
+      },
+      "fields": {
+        "limits": "利用制限"
+      },
+      "prompt": {
+        "wrote_one": "新しいプロンプトを作成しました · {{count}} 語",
+        "wrote_other": "新しいプロンプトを作成しました · {{count}} 語",
+        "viewHint": "プロンプトビューで確認してください。そこで変更するか、ここで教えてください。その後「このプロンプトを使用」を押すと、プロンプトに保存されます。",
+        "newPrompt": "新しいプロンプト",
+        "use": "このプロンプトを使用",
+        "saved_one": "プロンプトを保存して設定しました。ここから最初の質問を {{count}} 件作成しました。「最初の質問」で確認してください。",
+        "saved_other": "プロンプトを保存して設定しました。ここから最初の質問を {{count}} 件作成しました。「最初の質問」で確認してください。",
+        "savedOnly": "プロンプトを保存して設定しました。",
+        "parked": "作成したプロンプトはまだ開いたままで、保存されていません。",
+        "open": "プロンプトを開く",
+        "keep": "代わりに {{name}} のままにする",
+        "changePlaceholder": "またはプロンプトの変更点を教えてください…",
+        "changes_one": "確認する変更 {{count}} 件",
+        "changes_other": "確認する変更 {{count}} 件",
+        "reviewHint": "プロンプトビューで各変更を採用または却下してから、プロンプトを保存してください。このプロンプトを使うすべてのエージェントに保存後のテキストが反映されます。",
+        "editsStale": "どの変更も、保存されているプロンプトのテキストに合わなくなりました。もう一度依頼してください。そのテキストをもとに作業します。",
+        "unfit_one": "{{count}} 件の変更がプロンプトの本文と合わなくなりました",
+        "unfit_other": "{{count}} 件の変更がプロンプトの本文と合わなくなりました"
+      },
+      "formEdited": "フォームで {{fields}} を変更しました。",
+      "showInAgent": "エージェントで表示"
+    },
+    "topics": {
+      "suggest": "会話から提案",
+      "request": "このエージェントの最近の会話からトピックを提案してください。",
+      "hold_other": "最近の会話が {{needed}} 件になると、会話からの提案を使えます（現在 {{formatted}} 件）。",
+      "reading": "最近の質問を読んでいます…",
+      "read_other": "過去 {{days}} 日間の質問 {{formatted}} 件を読みました",
+      "tried_other": "{{formatted}} 件の質問で提案を試しました：どのトピックにも該当しない質問は {{before}} から {{after}} になります。",
+      "triedAfter_other": "{{formatted}} 件の質問で提案を試しました：どのトピックにも該当しない質問は {{after}} です。",
+      "share": "質問の {{share}}",
+      "estimate": "推定",
+      "estimateHint": "下書きモデルによる推定です。実際の質問では測定できませんでした。",
+      "taken": "既存のトピック",
+      "similar": "「{{name}}」と似ています。",
+      "leftOut": "提案しなかったもの：{{items}}",
+      "leftOutItem": "{{name}}（{{reason}}）",
+      "pushesOut_other": "追加すると {{count}} 個のフォルダーが外れ、その質問は「どのトピックにも該当しない」になります：{{names}}",
+      "tooManyOnePick_other": "質問を分類するトピックはあと {{formatted}} 個しか追加できません。追加する前にいくつかのチェックを外してください。",
+      "tooManyOverlap_other": "重複可のトピックはあと {{formatted}} 個しか追加できません。追加する前にいくつかのチェックを外してください。",
+      "none": "追加するものはありません。今のトピックとフォルダーで最近の質問をカバーできています。",
+      "discard": "破棄",
+      "add_other": "{{formatted}} 件のトピックを追加",
+      "errors": {
+        "invalid_output": "モデルの回答を使用できませんでした。トピックは追加されていません。",
+        "model_error": "トピックの提案中に問題が発生しました。トピックは追加されていません。"
+      },
+      "statusFailed": "会話からの提案を使えるか確認できませんでした。"
+    },
+    "lookedAtWorkspaceCounts": "ワークスペースを確認しました: {{counts}}",
+    "filled_one": "{{count}} 個のフィールドを入力しました",
+    "filled_other": "{{count}} 個のフィールドを入力しました",
+    "notAnswered": "未回答",
+    "suggestionsLabel": "始め方の例",
+    "skipQuestions": "スキップして下書き",
+    "starters": {
+      "website": {
+        "title": "顧客向けウェブサイトチャット",
+        "description": "訪問者に回答し、不明な時は引き継ぎ"
+      },
+      "helpdesk": {
+        "title": "社内ヘルプデスク",
+        "description": "チームからの人事・IT・規程の質問"
+      },
+      "research": {
+        "title": "リサーチアシスタント",
+        "description": "ドキュメントを調べて出典を示す"
+      }
+    },
+    "footerPrompt": "{{model}} を使用 · このプロンプトだけを読み取ります。",
+    "footerPromptNoModel": "このプロンプトだけを読み取ります。",
+    "startOver": "最初からやり直す",
+    "full": {
+      "title": "この会話は上限に達しました",
+      "description": "下書きの会話はこれ以上長くできません。続けるには最初からやり直してください。下書きした内容はそのまま残ります。"
     }
   }
 }

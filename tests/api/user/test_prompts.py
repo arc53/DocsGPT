@@ -198,6 +198,11 @@ class TestCreatePromptHappyPath:
 
         assert response.status_code == 200
         assert "id" in response.json
+        # The version a save over it goes back with, read with the row it created.
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+        row = PromptsRepository(pg_conn).get_for_rendering(response.json["id"])
+        assert response.json["updated_at"] == row["updated_at"]
 
     def test_create_error_returns_400(self, app, pg_conn):
         from docsgpt.api.user.prompts.routes import CreatePrompt

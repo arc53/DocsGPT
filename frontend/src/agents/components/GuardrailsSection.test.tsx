@@ -148,6 +148,30 @@ describe('GuardrailsSection', () => {
     });
   };
 
+  it('opens itself when drafted and marks the on/off row', async () => {
+    const onUndo = vi.fn();
+    await act(async () => {
+      root.render(
+        <GuardrailsSection
+          value={config}
+          onChange={() => undefined}
+          token="tok"
+          drafted
+          onUndo={onUndo}
+        />,
+      );
+    });
+    expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('true');
+    const row = q('guardrails-enabled')!.closest('[data-slot="setting-row"]')!;
+    expect(row.getAttribute('data-drafted')).toBe('true');
+    await act(async () =>
+      row
+        .querySelector<HTMLButtonElement>('[data-slot="drafted-badge"] button')!
+        .click(),
+    );
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
   it('announces whether the section is open with aria-expanded', async () => {
     await render();
     expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('true');

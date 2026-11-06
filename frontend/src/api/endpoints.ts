@@ -62,6 +62,11 @@ const endpoints = {
       `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
     RESOURCE_SETTINGS: '/api/resource_settings',
     ALL_TEAMS: '/api/admin/teams',
+    // The drafter's routes (session-only on the server; access tokens get 403).
+    DRAFTER_CONFIG: '/api/drafter/config',
+    DRAFTER_STREAM: '/api/drafter/stream',
+    DRAFTER_TURN_CANCEL: (turnId: string) =>
+      `/api/drafter/turns/${encodeURIComponent(turnId)}/cancel`,
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',
@@ -300,6 +305,7 @@ const endpoints = {
       `/api/admin/quotas/users/${encodeURIComponent(id)}`,
     SOURCE_DEFAULTS: '/api/admin/defaults/sources',
     AGENT_DEFAULTS: '/api/admin/defaults/agents',
+    MODEL_DEFAULTS: '/api/admin/defaults/models',
     GUARDRAILS: '/api/admin/guardrails',
   },
   CONVERSATION: {

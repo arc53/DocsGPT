@@ -32,10 +32,14 @@ function Harness({
   initial,
   available = true,
   disabled = false,
+  drafted = false,
+  onUndo,
 }: {
   initial?: AnalyticsConfig;
   available?: boolean;
   disabled?: boolean;
+  drafted?: boolean;
+  onUndo?: () => void;
 }) {
   const [value, setValue] = useState<AnalyticsConfig | undefined>(initial);
   return (
@@ -48,6 +52,8 @@ function Harness({
       maxOverlapping={20}
       disabled={disabled}
       token="token"
+      drafted={drafted}
+      onUndo={onUndo}
     />
   );
 }
@@ -112,6 +118,16 @@ describe('AnalyticsSection', () => {
     // Beside the heading, not inside the toggle.
     expect(toggle().contains(badge)).toBe(false);
     expect(badge.parentElement).toBe(toggle().closest('h2')!.parentElement);
+  });
+
+  it('opens itself for drafted topics, with the Drafted badge beside the title', async () => {
+    const onUndo = vi.fn();
+    await render({ drafted: true, onUndo });
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    const badge = section()!.querySelector('[data-slot="drafted-badge"]')!;
+    expect(badge.parentElement).toBe(toggle().closest('h2')!.parentElement);
+    await act(async () => badge.querySelector('button')!.click());
+    expect(onUndo).toHaveBeenCalledTimes(1);
   });
 
   it('is hidden while the server has labelling off and the agent has nothing set', async () => {

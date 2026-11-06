@@ -1,4 +1,19 @@
-import { CircleCheck, CircleX, Play, SquarePen } from 'lucide-react';
+import {
+  ArrowRight,
+  BookOpen,
+  CircleCheck,
+  CircleMinus,
+  CircleX,
+  Eye,
+  MessageSquare,
+  Pencil,
+  PencilLine,
+  Play,
+  Scissors,
+  ShieldCheck,
+  SquarePen,
+  type LucideIcon,
+} from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -7,13 +22,20 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import isEqual from 'lodash/isEqual';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { MetaLine } from '@/components/ui/meta-line';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -46,6 +68,7 @@ import connectorsService from '../api/services/connectorsService';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
   selectAgentFolders,
@@ -57,10 +80,29 @@ import {
   setSelectedAgent,
   setPrompts,
 } from '../preferences/preferenceSlice';
-import PromptsModal from '../preferences/PromptsModal';
+import { canEditPrompt } from '../prompts/promptAccess';
+import { PromptView } from '../prompts/PromptView';
+import { usePromptDetail } from '../prompts/usePromptDetail';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
+import { useMediaQuery } from '../hooks';
+import { DraftPanel } from '../drafter/DraftPanel';
+import { suggestionIconClass } from '../hero/SuggestionRows';
+import { DraftedField } from '../drafter/DraftedBadge';
+import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
+import { DRAFTER_STARTERS } from '../drafter/starters';
+import {
+  ProposalSummary,
+  type ProposalReasonRow,
+} from '../drafter/ProposalSummary';
+import { useDraftedFields } from '../drafter/useDraftedFields';
+import { useDrafterConfig } from '../drafter/useDrafterConfig';
+import { useDrafterSession } from '../drafter/useDrafterSession';
+import { usePromptReview } from '../drafter/usePromptReview';
+import type { PromptEdit } from '../drafter/promptDraft';
+import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
+import { joinList } from '../settings/insights/format';
 import { can } from '../utils/accessUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import {
@@ -94,6 +136,7 @@ import AllowedOriginsSetting, {
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
+import { BuildStepStrip } from './components/BuildStepStrip';
 import KnowledgePicker from './components/KnowledgePicker';
 import ToolsPicker from './components/ToolsPicker';
 import SectionShell from '../navigation/SectionShell';
@@ -107,6 +150,29 @@ import { useAttachAddedTools } from './hooks/useAttachAddedTools';
 import { useBuilderDirtyState } from './hooks/useBuilderDirtyState';
 import { useSponsoredSave } from './hooks/useSponsoredSave';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
+import {
+  AGENT_BUILD_STEPS,
+  AGENT_FIELD_LABEL_KEYS,
+  AGENT_STEP_FIELDS,
+  type AgentBuildStep,
+  type AgentDraftField,
+  type AgentDraftForm,
+  type AgentLimitsValue,
+  type AgentProposal,
+  type PromptDraft,
+  agentDraftContext,
+  agentDraftValues,
+  agentProposalSummary,
+  agentStepResult,
+  draftValueOf,
+  isAgentFormEmpty,
+  improveSuggestions,
+  type ImproveSuggestion,
+  isSafetyUnset,
+  parseAgentProposal,
+  planAgentPatch,
+} from './agentDraft';
+import { useAgentBuild } from './useAgentBuild';
 
 import type { Model } from '../models/types';
 
@@ -121,6 +187,31 @@ type PromptKind = (typeof PROMPT_KINDS)[number];
 const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
   kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
 const PROMPT_PRESETS = ['default', 'creative', 'strict'];
+const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
+  safety: ShieldCheck,
+  knowledge: BookOpen,
+  writePrompt: SquarePen,
+  starters: MessageSquare,
+  shorter: PencilLine,
+  tightenPrompt: Scissors,
+};
+
+/** What the prompt view's Save and leave says when it can't save, by reason. */
+const LEAVE_ERRORS: Record<string, string> = {
+  conflict: 'settings.prompts.editConflict',
+  review: 'settings.prompts.saveBlocked.review',
+  name: 'settings.prompts.saveBlocked.name',
+  nameExists: 'modals.prompts.nameExists',
+  content: 'settings.prompts.saveBlocked.content',
+  template: 'modals.prompts.templateBroken',
+};
+
+/** A field a proposal changed: what it held before and what the draft set. */
+type AppliedChange = {
+  field: AgentDraftField;
+  previous: unknown;
+  applied: unknown;
+};
 
 /**
  * What a save sends, in a shape two copies compare by: the unsaved-changes
@@ -245,7 +336,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
   // Access details opened from Share to allow changes: its allowlist unfolds.
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
-  const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -472,6 +562,347 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     ? { value: pickedPromptId, label: pickedPromptLabel }
     : undefined;
 
+  /** Load the prompts the pickers read again (after a prompt is saved). */
+  const reloadPrompts = () =>
+    userService
+      .getPrompts(token)
+      .then((response: Response) => (response.ok ? response.json() : null))
+      .then((list: Prompt[] | null) => {
+        if (Array.isArray(list)) dispatch(setPrompts(list));
+      })
+      .catch((error: unknown) => console.error(error));
+
+  // The prompt view (decision 64): a prompt shown in place of the form, the
+  // form kept as it is under it. The drafter opens a prompt it wrote there
+  // (`drafter`: Use this prompt saves it and sets it on the agent); the
+  // picker's Add prompt and each row's Edit or View open one too (`picker`:
+  // Save). A history entry makes browser Back return to the form.
+  const location = useLocation();
+  const [promptOrigin, setPromptOrigin] = useState<'drafter' | 'picker'>(
+    'picker',
+  );
+  // The prompt the drafter wrote and the user hasn't used or turned down
+  // yet: kept while the view is closed, so the drawer can open it again.
+  const [promptDraft, setPromptDraft] = useState<PromptDraft | null>(null);
+  // The prompt Use this prompt saved, with its text: a later draft while the
+  // agent still uses it updates it instead of creating another.
+  const usedPromptRef = useRef<{ prompt: Prompt; content: string } | null>(
+    null,
+  );
+  // Use this prompt went through and nothing was sent since: the drawer
+  // ends that turn with what it set and the step's Next.
+  const [promptUsed, setPromptUsed] = useState(false);
+  // Leaving the picker's view with unsaved text asks first.
+  const [leavingPrompt, setLeavingPrompt] = useState(false);
+  const promptDetail = usePromptDetail({
+    prompts,
+    onSaved: (saved) => handlePromptSaved(saved),
+  });
+  const promptViewOpen = promptDetail.target !== null;
+  const promptValues = useMemo(
+    () => ({ name: promptDetail.name, content: promptDetail.content }),
+    [promptDetail.name, promptDetail.content],
+  );
+  const { setName: setPromptName, setContent: setPromptContent } = promptDetail;
+  const promptDrafted = useDraftedFields<'name' | 'content'>(
+    promptValues,
+    (field, previous) =>
+      (field === 'name' ? setPromptName : setPromptContent)(
+        typeof previous === 'string' ? previous : '',
+      ),
+  );
+  // The drafter's changes to a saved prompt, under review in the view.
+  const promptReview = usePromptReview(setPromptContent, promptDrafted);
+  // The prompt text the drafter reads: the open view's once loaded, with the
+  // id of the saved prompt it shows (opened from a picker row, it needn't be
+  // the agent's), else the drafter's unused prompt.
+  const viewTargetId =
+    promptDetail.target?.kind === 'edit' ? promptDetail.target.prompt.id : null;
+  const draftOfPrompt: PromptDraft | null =
+    promptViewOpen && promptDetail.status === 'ready'
+      ? viewTargetId
+        ? { ...promptValues, id: viewTargetId }
+        : promptValues
+      : promptDraft;
+
+  const viewInHistory =
+    (location.state as { promptView?: boolean } | null)?.promptView === true;
+  // Each opening pushes the history entry Back pops, unless one is there.
+  useEffect(() => {
+    if (!promptViewOpen || viewInHistory) return;
+    const state =
+      location.state && typeof location.state === 'object'
+        ? location.state
+        : {};
+    navigate(
+      {
+        pathname: location.pathname,
+        search: location.search,
+        hash: location.hash,
+      },
+      { state: { ...state, promptView: true } },
+    );
+  }, [promptDetail.key]);
+
+  /** Close the view and drop its history entry. */
+  const closePromptView = () => {
+    promptReview.clear();
+    promptDetail.close();
+    if (viewInHistory) navigate(-1);
+    // Back on the form where the prompt is picked.
+    requestAnimationFrame(() =>
+      document
+        .getElementById(promptPickerId)
+        ?.scrollIntoView?.({ block: 'center' }),
+    );
+  };
+
+  /**
+   * Back to the form (the crumb, or browser Back with `popped`): the
+   * drafter's prompt stays in the step unsaved; unsaved text of the
+   * picker's asks first. Returns whether the view closed (false while it
+   * asks).
+   */
+  const leavePromptView = (popped = false): boolean => {
+    if (promptOrigin === 'drafter') {
+      // An update of the prompt Use this prompt saved keeps its id.
+      setPromptDraft(draftOfPrompt ?? promptValues);
+      closePromptView();
+      return true;
+    }
+    if (promptDetail.dirty) {
+      // Browser Back already left the entry: put it back while asking, with
+      // the rest of what the entry held.
+      if (popped) {
+        const state =
+          location.state && typeof location.state === 'object'
+            ? location.state
+            : {};
+        navigate(
+          {
+            pathname: location.pathname,
+            search: location.search,
+            hash: location.hash,
+          },
+          { state: { ...state, promptView: true } },
+        );
+      }
+      setLeavingPrompt(true);
+      return false;
+    }
+    closePromptView();
+    return true;
+  };
+
+  const wasInHistoryRef = useRef(viewInHistory);
+  useEffect(() => {
+    const was = wasInHistoryRef.current;
+    wasInHistoryRef.current = viewInHistory;
+    if (was && !viewInHistory && promptViewOpen) leavePromptView(true);
+  }, [viewInHistory]);
+
+  /** Open a prompt from the picker: to edit, or to read when the role can't. */
+  const openPickerPrompt = (prompt: Prompt) => {
+    setPromptOrigin('picker');
+    promptDrafted.clear();
+    promptDetail.open(prompt);
+  };
+  /** The picker's Add prompt. */
+  const addPickerPrompt = () => {
+    setPromptOrigin('picker');
+    promptDrafted.clear();
+    promptDetail.add();
+  };
+  /** A copy of a prompt the caller can't change, with the drawer open on it. */
+  const improvePromptCopy = (prompt: Prompt) => {
+    setPromptOrigin('picker');
+    promptDrafted.clear();
+    setDrafterOpen(true);
+    void promptDetail.duplicate(prompt, { draft: true });
+  };
+
+  /**
+   * Which prompt the open view shows, so a turn's answer can tell it is
+   * still the one the turn read: the drafter's own (new, or the update of
+   * the prompt it used), a saved prompt, or one opening of a new prompt.
+   */
+  const promptViewIdentity = (): string | null => {
+    if (!promptDetail.target) return null;
+    if (promptOrigin === 'drafter') return 'drafter';
+    return promptDetail.target.kind === 'edit'
+      ? `edit:${promptDetail.target.prompt.id}`
+      : `new:${promptDetail.key}`;
+  };
+  // The prompt the running turn read (its prompt_draft): the open view's
+  // once loaded, else the drafter's own.
+  const sentPromptRef = useRef<string | null>('drafter');
+
+  /**
+   * Put a prompt the drafter wrote in the view: into the open one when it
+   * is still the prompt the turn read (a saved prompt opened from the
+   * picker keeps its name), or a new view, which updates the prompt this
+   * conversation already used while the agent still has it. A prompt the
+   * caller can only read is never written into (it has no Save): the new
+   * view takes its place. Another prompt opened since, with unsaved text,
+   * stays: the written one waits in the step. Each changed field is marked
+   * Drafted with undo.
+   */
+  const showWrittenPrompt = (written: PromptDraft) => {
+    if (
+      promptViewOpen &&
+      !promptDetail.readOnly &&
+      promptViewIdentity() === sentPromptRef.current
+    ) {
+      const keepsName =
+        promptOrigin === 'picker' && promptDetail.target?.kind === 'edit';
+      if (!keepsName && written.name && written.name !== promptDetail.name) {
+        promptDrafted.mark('name', promptDetail.name, written.name);
+        setPromptName(written.name);
+      }
+      if (written.content !== promptDetail.content) {
+        promptDrafted.mark('content', promptDetail.content, written.content);
+        setPromptContent(written.content);
+      }
+      return;
+    }
+    if (promptViewOpen && promptOrigin === 'picker' && promptDetail.dirty) {
+      setPromptDraft(written);
+      return;
+    }
+    const used = usedPromptRef.current;
+    const updates =
+      used && draftFormRef.current.prompt === used.prompt.id ? used : null;
+    const previous =
+      promptDraft ??
+      (updates
+        ? { name: updates.prompt.name, content: updates.content }
+        : { name: '', content: '' });
+    setPromptOrigin('drafter');
+    promptDetail.openWith(written, updates?.prompt);
+    if (written.name !== previous.name)
+      promptDrafted.mark('name', previous.name, written.name);
+    if (written.content !== previous.content)
+      promptDrafted.mark('content', previous.content, written.content);
+    setPromptDraft(written);
+  };
+
+  // Changes to a saved prompt wait for its text when the view loads it
+  // (`raw`: the proposal they came in).
+  const [pendingEdits, setPendingEdits] = useState<{
+    raw: object;
+    id: string;
+    edits: PromptEdit[];
+  } | null>(null);
+  // How many of a proposal's changes fit the text, for its summary.
+  const fittingRef = useRef(new WeakMap<object, number>());
+  /**
+   * Review the drafter's changes on the open prompt's text, those that fit
+   * it as the server reads it; the characters outside a change stay.
+   */
+  const reviewPromptEdits = (raw: object, edits: PromptEdit[]) => {
+    const fitting = promptReview.start(edits, promptDetail.content);
+    fittingRef.current.set(raw, fitting);
+    if (fitting === 0)
+      drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
+  };
+  // They belong to that opening: a view closed or showing another prompt
+  // drops them, so opening the prompt later shows no stale review. A load
+  // error keeps them for the view's Retry.
+  useEffect(() => {
+    if (!pendingEdits) return;
+    if (viewTargetId !== pendingEdits.id) setPendingEdits(null);
+    else if (promptDetail.status === 'ready') {
+      setPendingEdits(null);
+      reviewPromptEdits(pendingEdits.raw, pendingEdits.edits);
+    }
+  }, [pendingEdits, promptDetail.status, promptDetail.key, viewTargetId]);
+
+  /**
+   * Show the drafter's changes to the agent's own saved prompt: in its view
+   * when that is open, else it opens (loading its saved text and version)
+   * and the review starts once the text is in. The drawer stays the
+   * agent's; nothing is saved until the view's Save.
+   */
+  const showPromptEdits = (raw: object, id: string, edits: PromptEdit[]) => {
+    if (viewTargetId === id && promptDetail.status === 'ready') {
+      reviewPromptEdits(raw, edits);
+      return;
+    }
+    const prompt = prompts.find((item) => item.id === id);
+    if (!prompt) {
+      drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
+      return;
+    }
+    setPendingEdits({ raw, id, edits });
+    setPromptOrigin('picker');
+    promptDrafted.clear();
+    promptDetail.open(prompt);
+  };
+
+  /** Turn the drafter's unused prompt down: the agent keeps its prompt. */
+  const dropPromptDraft = () => {
+    if (promptViewOpen && promptOrigin === 'drafter') closePromptView();
+    setPromptDraft(null);
+    promptDrafted.clear();
+  };
+
+  /** Open the drafter's unused prompt again (the drawer's Open prompt). */
+  const reopenPromptDraft = () => {
+    if (!promptDraft) return;
+    const used = usedPromptRef.current;
+    setPromptOrigin('drafter');
+    promptDetail.openWith(
+      promptDraft,
+      used && draftFormRef.current.prompt === used.prompt.id
+        ? used.prompt
+        : undefined,
+    );
+  };
+
+  /**
+   * A save in the view went through: the pickers' list has it at once.
+   * The drafter's prompt is set on the agent (marked Drafted, undo puts the
+   * old one back) and the drawer says so; a prompt added from the picker is
+   * picked.
+   */
+  const handlePromptSaved = ({ id, name }: { id: string; name: string }) => {
+    const created = promptDetail.target?.kind === 'new';
+    const listed = prompts.find((prompt) => prompt.id === id);
+    dispatch(
+      setPrompts(
+        listed
+          ? prompts.map((prompt) =>
+              prompt.id === id ? { ...prompt, name } : prompt,
+            )
+          : [...prompts, { id, name, type: 'private' }],
+      ),
+    );
+    void reloadPrompts();
+    if (promptOrigin === 'drafter') {
+      usedPromptRef.current = {
+        prompt: listed ? { ...listed, name } : { id, name, type: 'private' },
+        content: promptDetail.content,
+      };
+      const previous = draftFormRef.current.prompt;
+      if (previous !== id) {
+        writeDraftField('prompt', id);
+        drafted.mark('prompt', previous, id);
+      }
+      setPromptDraft(null);
+      setPromptUsed(true);
+      const starters = drafted.isDrafted('starters')
+        ? cleanStarters(draftFormRef.current.starters).length
+        : 0;
+      drafterSession.addMessage(
+        starters > 0
+          ? t('drafter.agent.prompt.saved', { count: starters })
+          : t('drafter.agent.prompt.savedOnly'),
+      );
+    } else if (created) setAgent((prev) => ({ ...prev, prompt_id: id }));
+    promptDrafted.clear();
+    closePromptView();
+  };
+
   // Who added a source or tool, joined to its picker row's line.
   const sourceAddedBy = useCallback(
     (id: string) => addedByLabel('source', id),
@@ -654,9 +1085,681 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     );
   };
 
+  // The drafter ("Draft with DocsGPT"): it reads the form, and each proposal
+  // fills it as unsaved edits, every changed field marked Drafted with undo.
+  // On an empty new agent it builds the agent step by step (useAgentBuild).
+  const drafterConfig = useDrafterConfig();
+  const { isMobile } = useMediaQuery();
+  const [drafterOpen, setDrafterOpen] = useState(false);
+  const formColumnRef = useRef<HTMLDivElement>(null);
+  // Hidden while the server says it is off, and from anyone who can't edit.
+  // A saved agent's form holds a stub with no access fields (read as the
+  // owner's) until the agent loads: nothing shows before then.
+  const accessKnown = mode === 'new' || initialAgentRef.current !== null;
+  const drafterEnabled =
+    drafterConfig?.enabled === true && accessKnown && can(agent, 'edit');
+
+  const draftForm = useMemo<AgentDraftForm>(
+    () => ({
+      name: agent.name ?? '',
+      description: agent.description ?? '',
+      agent_type: agent.agent_type ?? '',
+      sources: Array.from(selectedSourceIds),
+      tools: selectedTools,
+      starters: agent.starters ?? [],
+      prompt: agent.prompt_id || 'default',
+      limits: {
+        limited_request_mode: Boolean(agent.limited_request_mode),
+        request_limit: agent.request_limit,
+        limited_token_mode: Boolean(agent.limited_token_mode),
+        token_limit: agent.token_limit,
+      },
+      guardrails: agent.config?.guardrails,
+      analytics: analyticsOf(agent.config?.analytics),
+    }),
+    [
+      agent.name,
+      agent.description,
+      agent.agent_type,
+      agent.starters,
+      agent.prompt_id,
+      agent.limited_request_mode,
+      agent.request_limit,
+      agent.limited_token_mode,
+      agent.token_limit,
+      agent.config?.guardrails,
+      agent.config?.analytics,
+      selectedSourceIds,
+      selectedTools,
+    ],
+  );
+  // What each message sends and each proposal applies onto: the form now.
+  const draftFormRef = useRef(draftForm);
+  draftFormRef.current = draftForm;
+  const draftValues = useMemo(() => agentDraftValues(draftForm), [draftForm]);
+
+  /** Write one drafted field (a draft's value, or undo's previous one). */
+  const writeDraftField = useCallback(
+    (field: AgentDraftField, value: unknown) => {
+      switch (field) {
+        case 'sources':
+          setSelectedSourceIds(new Set(value as string[]));
+          return;
+        case 'tools':
+          setSelectedTools(value as ToolSummary[]);
+          return;
+        case 'prompt':
+          setAgent((prev) => ({ ...prev, prompt_id: value as string }));
+          return;
+        case 'starters':
+          setAgent((prev) => ({ ...prev, starters: value as string[] }));
+          return;
+        case 'limits':
+          setAgent((prev) => ({ ...prev, ...(value as AgentLimitsValue) }));
+          return;
+        case 'guardrails':
+        case 'analytics':
+          // Undo to none drops the key, so the form reads as saved again.
+          setAgent((prev) => {
+            const config = { ...(prev.config ?? {}), [field]: value };
+            if (value === undefined) delete config[field];
+            return { ...prev, config };
+          });
+          return;
+        default:
+          setAgent((prev) => ({ ...prev, [field]: value as string }));
+      }
+    },
+    [],
+  );
+  const drafted = useDraftedFields<AgentDraftField>(
+    draftValues,
+    writeDraftField,
+  );
+
+  // Tools a draft can name: the caller's, and those already on the agent.
+  const draftToolOptions = useMemo<ToolSummary[]>(
+    () => [
+      ...rawUserTools.map((tool) => ({
+        id: tool.id,
+        name: tool.name,
+        display_name: getToolDisplayName(tool),
+      })),
+      ...attachedTools,
+    ],
+    [rawUserTools, attachedTools],
+  );
+
+  // Each proposal read once: the drawer draws every one on each render.
+  const parsedRef = useRef(new WeakMap<object, AgentProposal | null>());
+  const proposalOf = (raw: unknown): AgentProposal | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const cached = parsedRef.current.get(raw);
+    if (cached !== undefined) return cached;
+    const parsed = parseAgentProposal(raw);
+    parsedRef.current.set(raw, parsed);
+    return parsed;
+  };
+  // The fields each proposal changed when it was applied, so its summary
+  // gives reasons only for those and notes a later edit by hand (keyed by
+  // the session's proposal object).
+  const appliedRef = useRef(new WeakMap<object, AppliedChange[]>());
+  const appliedFields = (raw: unknown): AgentDraftField[] | undefined =>
+    raw && typeof raw === 'object'
+      ? appliedRef.current.get(raw)?.map((change) => change.field)
+      : undefined;
+  // The latest reason for each field a build drafted: a finished step's
+  // folded line opens them.
+  const buildRowsRef = useRef(new Map<AgentDraftField, ProposalReasonRow>());
+
+  /** Bring the first drafted field into view, after the form has drawn it. */
+  const scrollToDrafted = () =>
+    requestAnimationFrame(() =>
+      formColumnRef.current
+        ?.querySelector('[data-drafted]')
+        ?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }),
+    );
+
+  /** Fill the form from a proposal, marking every field it changed. */
+  const applyDraft = (raw: unknown) => {
+    const proposal = proposalOf(raw);
+    if (!proposal) return;
+    const changes = planAgentPatch(
+      proposal.fields,
+      draftFormRef.current,
+      draftToolOptions,
+    );
+    const changed = changes.map((change) => change.field);
+    appliedRef.current.set(
+      raw as object,
+      changes.map((change) => ({
+        field: change.field,
+        previous: draftValueOf(change.field, change.previous),
+        applied: draftValueOf(change.field, change.next),
+      })),
+    );
+    changes.forEach((change) => {
+      writeDraftField(change.field, change.next);
+      drafted.mark(
+        change.field,
+        change.previous,
+        draftValueOf(change.field, change.next),
+      );
+    });
+    proposal.reasons.forEach((reason) => {
+      const field = reason.field as AgentDraftField;
+      if (changed.includes(field))
+        buildRowsRef.current.set(field, {
+          key: field,
+          label: t(AGENT_FIELD_LABEL_KEYS[field]),
+          summary: reason.summary,
+        });
+    });
+    // A prompt it wrote opens in the prompt view; one of the caller's picked
+    // instead turns a written one down. A drafted limit shows in Advanced.
+    const prompt = proposal.fields.prompt;
+    if (prompt?.kind === 'new')
+      showWrittenPrompt({ name: prompt.name, content: prompt.content });
+    else if (prompt?.kind === 'edit')
+      showPromptEdits(raw as object, prompt.id, prompt.edits);
+    else if (prompt?.kind === 'existing') dropPromptDraft();
+    if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
+    if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
+    // An approval while the prompt it wrote is unused isn't the step's
+    // Next: the prompt waits for Use this prompt or Keep. (One with parts
+    // the server dropped is no approval.)
+    const approval =
+      Object.keys(proposal.fields).length === 0 &&
+      proposal.dropped.length === 0;
+    if (approval && promptDraft) return;
+    buildRef.current.onProposal(proposal);
+  };
+
+  // Turns run so far (each send and retry), so a save can tell one began
+  // while it was out, even after a Start over emptied the drawer.
+  const turnsRef = useRef(0);
+  const drafterSession = useDrafterSession({
+    recipe: 'agent',
+    getContext: () => {
+      // A new request ends an open review with the choices so far.
+      promptReview.finish(promptDetail.content);
+      sentPromptRef.current =
+        promptViewOpen && promptDetail.status === 'ready'
+          ? promptViewIdentity()
+          : 'drafter';
+      turnsRef.current += 1;
+      return agentDraftContext(
+        agent.id || null,
+        draftFormRef.current,
+        buildRef.current.context(),
+        draftOfPrompt,
+      );
+    },
+    onProposal: applyDraft,
+  });
+  // The session as it is now, for a save that ends after a turn began.
+  const drafterSessionRef = useRef(drafterSession);
+  drafterSessionRef.current = drafterSession;
+
+  // A step can't be drafted when nothing in it is the caller's to set: the
+  // limits and guardrails need policy access, the topics need Insights.
+  const skippedSteps = useMemo<AgentBuildStep[]>(
+    () =>
+      !can(agent, 'edit_policy') && !analyticsAvailability.enabled
+        ? ['safety']
+        : [],
+    [agent, analyticsAvailability.enabled],
+  );
+  const stepName = (step: AgentBuildStep) =>
+    t(`drafter.agent.build.steps.${step}`);
+  const build = useAgentBuild({
+    session: drafterSession,
+    skipped: skippedSteps,
+    continueText: (step) =>
+      t('drafter.agent.build.continue', {
+        step: stepName(step),
+        interpolation: { escapeValue: false },
+      }),
+    doneText: t('drafter.agent.build.done'),
+    // Changes to a prompt under review, or on their way to it, come first.
+    hold: promptReview.review !== null || pendingEdits !== null,
+  });
+  const buildRef = useRef(build);
+  buildRef.current = build;
+
+  const formEmpty = isAgentFormEmpty(draftForm);
+  // Draft on an empty new agent builds it step by step; anything else is
+  // improve mode, free-form.
+  const buildable = formEmpty && !agent.id && !build.guided;
+  const finishSetupText = t('drafter.agent.improve.finishSetup');
+  // What the panel sends: the first message on an empty new agent starts the
+  // build, and Finish setup asks for limits and safety alone.
+  const panelSession = {
+    ...drafterSession,
+    send: (text: string, options?: { hidden?: boolean }) => {
+      if (text === finishSetupText) build.focus('safety');
+      else if (buildable && drafterSession.items.length === 0) build.start();
+      setPromptUsed(false);
+      drafterSession.send(text, options);
+    },
+  };
+  /**
+   * The drawer's Start over: a new conversation, with the build and its
+   * folded steps forgotten; the form keeps its values and marks.
+   */
+  const startDrafterOver = () => {
+    drafterSession.reset();
+    build.reset();
+    buildRowsRef.current.clear();
+    setPromptUsed(false);
+  };
+
+  /** The step's Next: the saved prompt's turn end goes with the step. */
+  const goNext = () => {
+    setPromptUsed(false);
+    build.next();
+  };
+
+  const draftedProps = (field: AgentDraftField) => ({
+    drafted: drafted.isDrafted(field),
+    onUndo: () => drafted.undo(field),
+    fieldLabel: t(AGENT_FIELD_LABEL_KEYS[field]),
+  });
+
+  /** Close the drawer and bring the first drafted field into view. */
+  const checkForm = () => {
+    setDrafterOpen(false);
+    scrollToDrafted();
+  };
+
+  const nextLabel = build.nextStep
+    ? t('drafter.agent.build.next', {
+        step: stepName(build.nextStep),
+        interpolation: { escapeValue: false },
+      })
+    : t('drafter.agent.build.finish');
+
+  // The step's Next, and Check the form first when it filled steps ahead.
+  const nextActions = (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        shape="pill"
+        disabled={drafterSession.streaming}
+        onClick={goNext}
+      >
+        {nextLabel}
+        {build.nextStep && <ArrowRight />}
+      </Button>
+      {build.filledAhead && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          shape="pill"
+          onClick={checkForm}
+        >
+          {t('drafter.agent.build.checkForm')}
+        </Button>
+      )}
+    </>
+  );
+  // Next waits while the prompt the drafter wrote is unused or its changes
+  // are undecided (under review, or waiting for the saved text), and moves
+  // to the end of the turn once Use this prompt saved it.
+  const nextOnProposal =
+    build.ready &&
+    !promptDraft &&
+    !promptUsed &&
+    !promptReview.review &&
+    !pendingEdits;
+
+  /** "You changed Name in the form.": fields the proposal set, edited since. */
+  const editedSince = (raw: unknown) => {
+    const changes =
+      raw && typeof raw === 'object' ? appliedRef.current.get(raw) : undefined;
+    const edited = (changes ?? []).filter(
+      ({ field, previous, applied }) =>
+        !isEqual(draftValues[field], applied) &&
+        !isEqual(draftValues[field], previous),
+    );
+    return edited.length > 0
+      ? t('drafter.agent.formEdited', {
+          fields: joinList(
+            edited.map(({ field }) => t(AGENT_FIELD_LABEL_KEYS[field])),
+          ),
+          interpolation: { escapeValue: false },
+        })
+      : undefined;
+  };
+
+  const renderAgentProposal = (raw: unknown, latest: boolean) => {
+    const proposal = proposalOf(raw);
+    if (!proposal) return null;
+    const { rows, dropped } = agentProposalSummary(
+      proposal,
+      t,
+      appliedFields(raw),
+      raw && typeof raw === 'object' ? fittingRef.current.get(raw) : undefined,
+    );
+    const written = proposal.fields.prompt;
+    // What a written or changed prompt does to the one it replaces first.
+    const notes =
+      written?.kind === 'new' || written?.kind === 'edit'
+        ? [
+            ...written.checks.map((code) => t(`drafter.prompt.checks.${code}`)),
+            ...proposal.notes,
+            t(
+              written.kind === 'new'
+                ? 'drafter.agent.prompt.viewHint'
+                : 'drafter.agent.prompt.reviewHint',
+            ),
+          ]
+        : proposal.notes;
+    const review = promptReview.review;
+    // The latest turn ends a review open from its own changes, or from
+    // those that waited for the prompt to load.
+    const reviewing = latest && review !== null;
+    // Fields it changed on the form behind the prompt view.
+    const showInAgent =
+      latest && promptViewOpen && (appliedFields(raw) ?? []).length > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          shape="pill"
+          onClick={() => {
+            // Not while it asks about the prompt's unsaved text.
+            if (leavePromptView()) scrollToDrafted();
+          }}
+        >
+          {t('drafter.agent.showInAgent')}
+        </Button>
+      ) : null;
+    return (
+      <ProposalSummary
+        message={proposal.message}
+        rows={rows}
+        notes={notes}
+        dropped={dropped}
+        footnote={
+          latest && !drafterSession.streaming ? editedSince(raw) : undefined
+        }
+        actions={
+          reviewing ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                shape="pill"
+                onClick={promptReview.acceptAll}
+              >
+                {t('drafter.prompt.acceptAll')}
+              </Button>
+              {review.current === null && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={promptReview.reviewOneByOne}
+                >
+                  {t('drafter.prompt.reviewOneByOne')}
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                shape="pill"
+                onClick={promptReview.discard}
+              >
+                {t('drafter.prompt.discard')}
+              </Button>
+              {showInAgent}
+            </>
+          ) : latest && nextOnProposal ? (
+            <>
+              {nextActions}
+              {showInAgent}
+            </>
+          ) : (
+            (showInAgent ?? undefined)
+          )
+        }
+      />
+    );
+  };
+
+  // What the drawer adds after the conversation: the saved prompt's turn
+  // end (what it set, and the step's Next), or the prompt it wrote waiting
+  // unsaved while the form shows (Open prompt, or keep the agent's prompt).
+  const drawerAfter = promptUsed ? (
+    <ProposalSummary
+      rows={[
+        {
+          key: 'prompt',
+          label: t(AGENT_FIELD_LABEL_KEYS.prompt),
+          summary: pickedPromptLabel,
+        },
+        ...(drafted.isDrafted('starters')
+          ? [
+              {
+                key: 'starters',
+                label: t(AGENT_FIELD_LABEL_KEYS.starters),
+                summary: t('drafter.agent.build.result.starters', {
+                  count: cleanStarters(agent.starters).length,
+                }),
+              },
+            ]
+          : []),
+      ]}
+      actions={build.ready ? nextActions : undefined}
+    />
+  ) : promptDraft && !promptViewOpen ? (
+    <ProposalSummary
+      message={t('drafter.agent.prompt.parked')}
+      rows={[]}
+      actions={
+        <>
+          <Button
+            type="button"
+            size="sm"
+            shape="pill"
+            onClick={reopenPromptDraft}
+          >
+            {t('drafter.agent.prompt.open')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            shape="pill"
+            onClick={dropPromptDraft}
+          >
+            {t('drafter.agent.prompt.keep', {
+              name: pickedPromptLabel,
+              interpolation: { escapeValue: false },
+            })}
+          </Button>
+        </>
+      }
+    />
+  ) : undefined;
+
+  // After a Stop or an error the step goes on from where it stands.
+  const continueAction =
+    build.guided && build.step ? (
+      <Button
+        type="button"
+        size="sm"
+        shape="pill"
+        onClick={() =>
+          panelSession.send(
+            t('drafter.agent.build.continue', {
+              step: stepName(build.step!),
+              interpolation: { escapeValue: false },
+            }),
+            { hidden: true },
+          )
+        }
+      >
+        {t('drafter.agent.build.continueStep', {
+          step: stepName(build.step),
+          interpolation: { escapeValue: false },
+        })}
+        <ArrowRight />
+      </Button>
+    ) : undefined;
+
+  const progressLabel = build.done
+    ? t('drafter.agent.build.allFilled')
+    : [
+        t('drafter.agent.build.progress', {
+          number: build.number,
+          total: build.total,
+          step: build.step ? stepName(build.step) : '',
+          interpolation: { escapeValue: false },
+        }),
+        build.filledAtOnce > 0 &&
+          t('drafter.agent.build.filledAtOnce', { count: build.filledAtOnce }),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+  const progress = build.guided
+    ? {
+        label: progressLabel,
+        value: build.done
+          ? 100
+          : (build.finished.filter((step) => !build.skipped.includes(step))
+              .length /
+              build.total) *
+            100,
+      }
+    : null;
+
+  /** A finished step's folded line opens the reasons for its fields. */
+  const stepRows = (step: AgentBuildStep) =>
+    AGENT_STEP_FIELDS[step].flatMap((field) => {
+      const row = buildRowsRef.current.get(field);
+      return row ? [row] : [];
+    });
+  const stepResult = (step: AgentBuildStep) =>
+    agentStepResult(step, draftForm, t, pickedPromptLabel);
+  // Skipped steps the build has passed, each one line.
+  const passedSkips = build.skipped.filter(
+    (step) =>
+      build.done ||
+      (build.step &&
+        AGENT_BUILD_STEPS.indexOf(step) <
+          AGENT_BUILD_STEPS.indexOf(build.step)),
+  );
+  const foldedSteps =
+    build.guided && (build.finished.length > 0 || passedSkips.length > 0) ? (
+      <div className="flex flex-col" data-slot="build-finished">
+        {!build.done && build.finished.length >= 3 ? (
+          // Three or more steps fold into one line that opens a row each.
+          <DrafterStepRow
+            icon={CircleCheck}
+            label={joinList(build.finished.map(stepName))}
+          >
+            {build.finished.map((step) => (
+              <FilledRow
+                key={step}
+                label={stepName(step)}
+                value={stepResult(step)}
+              />
+            ))}
+          </DrafterStepRow>
+        ) : (
+          build.finished.map((step) => {
+            const rows = stepRows(step);
+            return (
+              <DrafterStepRow
+                key={step}
+                icon={CircleCheck}
+                label={t('drafter.agent.build.folded', {
+                  step: stepName(step),
+                  result: stepResult(step),
+                  interpolation: { escapeValue: false },
+                })}
+              >
+                {rows.length > 0
+                  ? rows.map((row) => (
+                      <FilledRow
+                        key={row.key}
+                        label={row.label}
+                        value={row.summary}
+                      />
+                    ))
+                  : undefined}
+              </DrafterStepRow>
+            );
+          })
+        )}
+        {passedSkips.map((step) => (
+          <DrafterStepRow
+            key={step}
+            icon={CircleMinus}
+            label={t('drafter.agent.build.skipped', {
+              step: stepName(step),
+              interpolation: { escapeValue: false },
+            })}
+          />
+        ))}
+      </div>
+    ) : undefined;
+
+  // A phone's sheet covers the form: when a turn ends on a proposal the
+  // sheet steps aside (once per proposal), and a step's Next waits in the
+  // strip.
+  const steppedAsideRef = useRef<number | null>(null);
+  useEffect(() => {
+    const last = drafterSession.items.at(-1);
+    if (
+      !isMobile ||
+      drafterSession.streaming ||
+      last?.kind !== 'proposal' ||
+      steppedAsideRef.current === last.id
+    )
+      return;
+    steppedAsideRef.current = last.id;
+    const changed = appliedFields(last.proposal);
+    // A prompt it wrote is in the view, which the sheet would cover.
+    const wrote = proposalOf(last.proposal)?.fields.prompt?.kind === 'new';
+    if (wrote || (build.guided ? build.ready : (changed?.length ?? 0) > 0))
+      setDrafterOpen(false);
+  }, [
+    drafterSession.streaming,
+    drafterSession.items,
+    isMobile,
+    build.guided,
+    build.ready,
+  ]);
+  // Like the desktop Next, the strip waits while changes to the prompt are
+  // under review or on their way to it: Next would drop them.
+  const showStepStrip =
+    isMobile &&
+    !drafterOpen &&
+    build.ready &&
+    !promptDraft &&
+    !promptReview.review &&
+    !pendingEdits &&
+    !drafterSession.streaming;
+
+  /** "Drafted 3 fields…" for a screen reader once a draft is applied. */
+  const announceAgentProposal = (raw: unknown) => {
+    const count = appliedFields(raw)?.length ?? 0;
+    return count > 0 ? t('drafter.agent.draftedCount', { count }) : null;
+  };
+
   const handleSaveDraft = async () => {
     if (savingRef.current) return;
     const saving = savePayload;
+    // Drafted values that go with the save lose their marks; a draft that
+    // lands while it is out keeps its.
+    const savedValues = draftValues;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -742,6 +1845,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       // What was sent is saved: the avatar went with it.
       markSaved(saving);
       setImageFile(null);
+      drafted.clear(savedValues);
 
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
@@ -756,6 +1860,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const handlePublish = async () => {
     if (savingRef.current) return;
     const saving = savePayload;
+    const savedValues = draftValues;
+    const turnsAtSave = turnsRef.current;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -838,6 +1944,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const updatedAgent = { ...agent, ...saved };
       initialAgentRef.current = updatedAgent;
       markSaved(saving);
+      drafted.clear(savedValues);
+      // Publishing ends a drafting session, unless a turn began while it
+      // was out: that conversation and what it drafted stay.
+      const session = drafterSessionRef.current;
+      if (!session.streaming && turnsRef.current === turnsAtSave) {
+        session.reset();
+        build.reset();
+        buildRowsRef.current.clear();
+        setPromptDraft(null);
+        setPromptUsed(false);
+        usedPromptRef.current = null;
+        promptDrafted.clear();
+      }
       setAttachedTools(selectedTools);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
@@ -1075,6 +2194,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             ? data.default_model_id
             : agentModels[0] || '',
           config: data.config || {},
+          // The switches stay controlled when an older agent lacks these.
+          limited_token_mode: Boolean(data.limited_token_mode),
+          limited_request_mode: Boolean(data.limited_request_mode),
+          allow_system_prompt_override: Boolean(
+            data.allow_system_prompt_override,
+          ),
         };
         setAgent(normalized);
         initialAgentRef.current = normalized;
@@ -1146,7 +2271,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   // The builder's own exits (a picker's Go to link, Upload's Browse
   // connectors) ask first while the form has unsaved changes.
-  const leaveGuard = useLeaveGuard(hasChanges);
+  // The prompt view's unsaved text counts too.
+  const leaveGuard = useLeaveGuard(
+    hasChanges ||
+      promptDraft !== null ||
+      (promptViewOpen && promptDetail.dirty),
+  );
   // A broken connection signs in again in place, or on its connector page,
   // which is an exit like any other.
   const signInAgain = useSignInAgain({
@@ -1166,6 +2296,61 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const canSubmit = can(agent, effectiveMode === 'edit' ? 'edit' : 'publish');
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
+
+  // A drafted limit marks the row it switched on, or both rows when it
+  // turned limits off.
+  const limitRowDrafted = (row: 'request' | 'token') =>
+    drafted.isDrafted('limits') &&
+    (row === 'request'
+      ? !!agent.limited_request_mode || !agent.limited_token_mode
+      : !!agent.limited_token_mode || !agent.limited_request_mode);
+
+  // The drawer's greeting: the build's plan on an empty new agent; on a
+  // filled one what to change, and who a saved change reaches.
+  const drafterIntro = buildable
+    ? t('drafter.agent.build.intro')
+    : t(
+        isPublished
+          ? 'drafter.agent.improve.introPublished'
+          : agent.shared || agent.ownership === 'team'
+            ? 'drafter.agent.improve.introShared'
+            : 'drafter.agent.improve.intro',
+        { name: agentDisplayName, interpolation: { escapeValue: false } },
+      );
+  const drafterSuggestions = (
+    buildable
+      ? // Starting points: each sends its title and begins the build from
+        // its id, so every step gets that kind of agent's brief.
+        DRAFTER_STARTERS.map(({ key, Icon }) => {
+          const text = t(`drafter.starters.${key}.title`);
+          return {
+            key,
+            Icon,
+            text,
+            description: t(`drafter.starters.${key}.description`),
+            onSelect: () => {
+              build.start(key);
+              panelSession.send(text);
+            },
+          };
+        })
+      : // What the agent lacks first, then what fits it; Finish setup is
+        // offered until limits and safety were ever set.
+        improveSuggestions(draftForm, {
+          safety: isSafetyUnset(draftForm) && !skippedSteps.includes('safety'),
+          promptDraft: !!draftOfPrompt,
+        }).map((key) => ({
+          key,
+          Icon: IMPROVE_ICONS[key],
+          text:
+            key === 'safety'
+              ? finishSetupText
+              : t(`drafter.agent.improve.${key}`),
+        }))
+  ).map(({ Icon, ...suggestion }) => ({
+    ...suggestion,
+    icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
+  }));
 
   // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
@@ -1201,6 +2386,125 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   // At most three buttons, so the row fits a phone; the main one stretches
   // across it there.
+  // The drawer's entry, on the toolbar and on the prompt view's crumb row.
+  const wandProps = {
+    // Draft only where the drawer would build (a new agent's empty form).
+    mode:
+      build.guided && !build.done
+        ? ('resume' as const)
+        : formEmpty && !agent.id
+          ? ('draft' as const)
+          : ('improve' as const),
+    label:
+      build.guided && !build.done
+        ? t('drafter.agent.build.resumeLabel', {
+            number: build.number,
+            total: build.total,
+          })
+        : undefined,
+    open: drafterOpen,
+    compactOnPhone: true,
+  };
+
+  // The open prompt as the list has it (a built-in says so in the byline).
+  const viewTarget = promptDetail.target;
+  const viewSaved = viewTarget?.kind === 'edit' ? viewTarget.prompt : null;
+  const viewBuiltIn = viewSaved?.type === 'public';
+  // A prompt the caller can't change is improved as a copy, when they may
+  // copy it.
+  const viewImprovable =
+    !promptDetail.readOnly || (!!viewSaved && can(viewSaved, 'duplicate'));
+  const promptViewByline =
+    promptOrigin === 'picker'
+      ? viewBuiltIn
+        ? t('modals.prompts.viewDescription')
+        : viewTarget?.kind === 'new' && viewTarget.copyOf
+          ? t('modals.prompts.duplicateDescription', {
+              name: viewTarget.copyOf,
+              interpolation: { escapeValue: false },
+            })
+          : null
+      : null;
+  const promptView = viewTarget ? (
+    <PromptView
+      parent={{
+        label: agent.name?.trim() || t('agents.newAgent'),
+        onClick: () => leavePromptView(),
+      }}
+      label={
+        viewSaved
+          ? viewSaved.name
+          : promptOrigin === 'drafter'
+            ? t('drafter.agent.prompt.newPrompt')
+            : viewTarget.kind === 'new' && viewTarget.copyOf
+              ? t('modals.prompts.duplicatePrompt')
+              : t('modals.prompts.addPrompt')
+      }
+      actions={
+        <>
+          {drafterEnabled && viewImprovable && (
+            <WandButton
+              {...wandProps}
+              open={promptDetail.readOnly ? undefined : drafterOpen}
+              onClick={() =>
+                // A prompt the caller can't change is improved as a copy.
+                promptDetail.readOnly && viewSaved
+                  ? improvePromptCopy(viewSaved)
+                  : setDrafterOpen((open) => !open)
+              }
+            />
+          )}
+          {!promptDetail.readOnly && (
+            <Button
+              type="button"
+              size="field"
+              shape="pill"
+              onClick={() => void promptDetail.save()}
+              // Mid-review the text holds only the changes chosen so far:
+              // the drawer's Accept all or Discard ends it first.
+              disabled={
+                !promptDetail.canSave ||
+                drafterSession.streaming ||
+                promptReview.review !== null
+              }
+              loading={promptDetail.saving}
+            >
+              {promptOrigin === 'drafter'
+                ? t('drafter.agent.prompt.use')
+                : t('modals.prompts.save')}
+            </Button>
+          )}
+        </>
+      }
+      byline={promptViewByline ? <MetaLine>{promptViewByline}</MetaLine> : null}
+      loading={promptDetail.status === 'loading'}
+      onRetry={promptDetail.status === 'error' ? promptDetail.retry : undefined}
+      idPrefix="agent-prompt"
+      name={promptDetail.name}
+      setName={setPromptName}
+      content={promptDetail.content}
+      setContent={setPromptContent}
+      isReadOnly={promptDetail.readOnly}
+      showViewOnlyNotice={promptDetail.readOnly && !viewBuiltIn}
+      review={promptReview.review}
+      onDecide={promptReview.decide}
+      draftedName={{
+        drafted: promptDrafted.isDrafted('name'),
+        onUndo: () => promptDrafted.undo('name'),
+      }}
+      draftedContent={{
+        drafted: promptDrafted.isDrafted('content'),
+        onUndo: () => promptDrafted.undo('content'),
+      }}
+      nameError={
+        promptDetail.nameExists && promptDetail.name
+          ? t('modals.prompts.nameExists')
+          : undefined
+      }
+      locked={drafterSession.streaming}
+    />
+  ) : null;
+
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
       {hasChanges && (
@@ -1213,6 +2517,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         >
           {t('agents.form.buttons.cancel')}
         </Button>
+      )}
+      {drafterEnabled && (
+        <WandButton
+          {...wandProps}
+          onClick={() => setDrafterOpen((open) => !open)}
+        />
       )}
       {modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit') && (
         <Button
@@ -1253,7 +2563,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }
           loading={publishLoading}
           onClick={handlePublish}
-          className="flex-1 sm:flex-none"
+          // Stretched while the toolbar's row is stacked (by its width, so
+          // also beside the docked drawer).
+          className="flex-1 @2xl:flex-none"
         >
           {modeConfig[effectiveMode].buttonText}
         </Button>
@@ -1262,418 +2574,498 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   );
 
   return (
-    <SectionShell
-      title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
-    >
-      {signInAgain.modals}
-      {leaveGuard.dialog}
-      <AgentPageToolbar
-        intro={agent.id ? undefined : t('agents.form.byline.new')}
-        name={agentDisplayName}
-        status={
-          isPublished ? (
-            <Badge variant="success">{t('agents.form.status.published')}</Badge>
-          ) : (
-            <Badge variant="neutral">{t('agents.card.draft')}</Badge>
-          )
-        }
-        meta={
-          effectiveMode === 'edit' ? (
-            <LastUsedMeta lastUsedAt={agent.last_used_at} />
-          ) : undefined
-        }
-        actions={headerActions}
-        menu={agentMenu.menu}
-      >
-        {submitError && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertDescription>{submitError}</AlertDescription>
-          </Alert>
-        )}
-      </AgentPageToolbar>
-      <div className="flex flex-col gap-5">
-        <Card variant="subtle" padding="lg" className="gap-5">
-          <SectionHeader title={t('agents.form.sections.basics')} />
-          {/* Phone: the avatar beside Name, Description across the row.
-              From sm: the avatar spans both rows beside the fields. */}
-          <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-5 sm:items-start">
-            <FileUpload
-              showPreview
-              size="tile"
-              currentImage={agent.image || undefined}
-              onUpload={handleUpload}
-              onRemove={() => setImageFile(null)}
-              uploadText={t('agents.form.labels.avatar')}
-              className="sm:row-span-2"
-            />
-            <FormField
-              labelSurface="background"
-              label={t('agents.form.labels.name')}
-            >
-              <Input
-                type="text"
-                value={agent.name}
-                placeholder={t('agents.form.placeholders.agentName')}
-                onChange={(e) => setAgent({ ...agent, name: e.target.value })}
-              />
-            </FormField>
-            <FormField
-              labelSurface="background"
-              label={t('agents.form.labels.description')}
-              className="col-span-2 sm:col-span-1 sm:col-start-2"
-            >
-              <Textarea
-                className="h-32 sm:h-24"
-                placeholder={t('agents.form.placeholders.describeAgent')}
-                value={agent.description}
-                onChange={(e) =>
-                  setAgent({ ...agent, description: e.target.value })
-                }
-              />
-            </FormField>
-          </div>
-        </Card>
-        <Card variant="subtle" padding="lg" className="gap-5">
-          <SectionHeader title={t('agents.form.sections.knowledge')} />
-          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
-            <FormField
-              id={sourcesPickerId}
-              labelSurface="background"
-              label={t('agents.form.labels.sources')}
-              hint={
-                selectedSourceIds.size === 0
-                  ? t('agents.form.sourcePopup.noSourceHint')
-                  : undefined
+    // The drafter's docked panel sits beside the page's scroller, not in it.
+    <div className="relative flex h-full overflow-hidden">
+      <div className="h-full min-w-0 flex-1">
+        <SectionShell
+          title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
+        >
+          {signInAgain.modals}
+          {leaveGuard.dialog}
+          {promptView}
+          {/* Hidden, not unmounted, under the prompt view: the form keeps
+          every unsaved part of itself. */}
+          <div className={promptViewOpen ? 'hidden' : 'contents'}>
+            <AgentPageToolbar
+              intro={agent.id ? undefined : t('agents.form.byline.new')}
+              name={agentDisplayName}
+              status={
+                isPublished ? (
+                  <Badge variant="success">
+                    {t('agents.form.status.published')}
+                  </Badge>
+                ) : (
+                  <Badge variant="neutral">{t('agents.card.draft')}</Badge>
+                )
               }
+              meta={
+                effectiveMode === 'edit' ? (
+                  <LastUsedMeta lastUsedAt={agent.last_used_at} />
+                ) : undefined
+              }
+              actions={headerActions}
+              menu={agentMenu.menu}
             >
-              <KnowledgePicker
-                open={isSourcePopupOpen}
-                onOpenChange={setIsSourcePopupOpen}
-                docs={sourceDocs ?? []}
-                selectedIds={Array.from(selectedSourceIds)}
-                onToggle={(id) => {
-                  const next = new Set(selectedSourceIds);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  setSelectedSourceIds(next);
-                }}
-                connections={toolContext.connections}
-                unlistedLabel={resolveSourceLabel}
-                unlistedLine={sourceAddedBy}
-                addedBy={sourceAddedBy}
-                onNavigate={leaveGuard.onNavigate()}
-                onUploaded={handleUploadedSource}
-                onBrowseConnectors={() =>
-                  leaveGuard.leaveTo('/settings/connectors?capability=sync')
-                }
-                onLeaveTo={leaveGuard.leaveTo}
-                trigger={
-                  <Button
-                    type="button"
-                    variant="combobox"
-                    size="field"
-                    role="combobox"
-                    id={sourcesPickerId}
-                    ref={sourceAnchorButtonRef}
-                    data-placeholder={
-                      selectedSourceIds.size > 0 ? undefined : ''
-                    }
-                    className="w-full justify-start text-left"
-                  >
-                    <span
-                      className="truncate"
-                      title={selectedSourceNames.join(', ')}
-                    >
-                      {sourceTriggerLabel}
-                    </span>
-                  </Button>
-                }
-              />
-            </FormField>
-            <FormField
-              id={toolsPickerId}
-              labelSurface="background"
-              label={t('agents.form.sections.tools')}
-            >
-              <ToolsPicker
-                open={isToolsPopupOpen}
-                onOpenChange={setIsToolsPopupOpen}
-                tools={rawUserTools}
-                filter={isAgentPickerToolVisible}
-                // What was on the agent when it loaded or last saved: the
-                // owner's private tools don't come back in the caller's list.
-                attached={attachedTools}
-                attachedLine={t('agents.form.toolsPopup.attachedHint')}
-                selectedIds={selectedTools.map((tool) => tool.id)}
-                onToggle={(id) => {
-                  if (selectedTools.some((tool) => tool.id === id)) {
-                    setSelectedTools(
-                      selectedTools.filter((tool) => tool.id !== id),
-                    );
-                    return;
-                  }
-                  const attached = attachedTools.find((tool) => tool.id === id);
-                  const raw = rawUserTools.find((tool) => tool.id === id);
-                  if (!attached && !raw) return;
-                  setSelectedTools([
-                    ...selectedTools,
-                    attached ?? {
-                      id,
-                      name: raw!.name,
-                      display_name: getToolDisplayName(raw!),
-                    },
-                  ]);
-                }}
-                connections={toolContext.connections}
-                catalog={toolContext.catalog}
-                addedBy={toolAddedBy}
-                onReconnect={(connection, mcpToolId) =>
-                  signInAgain.reconnect(connection, mcpToolId)
-                }
-                onNavigate={leaveGuard.onNavigate()}
-                onReloadTools={() => setToolsReloadKey((key) => key + 1)}
-                onToolsCreated={(toolIds) => void handleToolsCreated(toolIds)}
-                onLeaveTo={leaveGuard.leaveTo}
-                trigger={
-                  <Button
-                    type="button"
-                    variant="combobox"
-                    size="field"
-                    role="combobox"
-                    id={toolsPickerId}
-                    ref={toolAnchorButtonRef}
-                    data-placeholder={selectedTools.length > 0 ? undefined : ''}
-                    className="w-full justify-start text-left"
-                  >
-                    <span className="truncate">
-                      {selectedTools.length > 0
-                        ? selectedTools
-                            .map((tool) => getToolDisplayName(tool))
-                            .filter(Boolean)
-                            .join(', ')
-                        : t('agents.form.placeholders.selectTools')}
-                    </span>
-                  </Button>
-                }
-              />
-            </FormField>
-            <div className="flex flex-col sm:col-span-2">
-              <FormField
-                id={promptPickerId}
-                label={t('agents.form.sections.prompt')}
-                labelSurface="background"
-              >
-                <Combobox
-                  open={isPromptPickerOpen}
-                  onOpenChange={setIsPromptPickerOpen}
-                  title={t('agents.form.sections.prompt')}
-                  mobileSheet
-                  filters={promptKinds.filters}
-                  groups={promptGroups}
-                  value={agent.prompt_id || 'default'}
-                  valueOption={promptValueOption}
-                  onValueChange={(id) =>
-                    setAgent((prev) => ({ ...prev, prompt_id: id }))
-                  }
-                  placeholder={t('settings.prompts.select')}
-                  searchPlaceholder={t('settings.prompts.searchPlaceholder')}
-                  emptyText={t('settings.prompts.noPromptsFound')}
-                  footer={({ close }) => (
-                    <PickerFooter
-                      to="/settings/prompts"
-                      linkLabel={t('settings.prompts.manage')}
-                      onNavigate={leaveGuard.onNavigate(close)}
-                      actionLabel={t('settings.prompts.addPrompt')}
-                      onAction={() => {
-                        close();
-                        setAddPromptModal('ACTIVE');
-                      }}
-                    />
-                  )}
-                />
-              </FormField>
-              {/* The mark of the picked prompt running with an editor's
-                  access is a hint under the picker, seen without opening it. */}
-              {promptAddedBy && (
-                <p className="text-muted-foreground mt-1.5 text-xs">
-                  {promptAddedBy}
-                </p>
+              {submitError && (
+                <Alert variant="destructive" className="mb-6">
+                  <AlertDescription>{submitError}</AlertDescription>
+                </Alert>
               )}
-            </div>
-            <ResourceStatusNotice
-              agent={agent}
-              readerId={readerId}
-              stopped={stoppedResources}
-              resolveName={resolveSponsoredName}
-              takeovers={takeovers}
-              onTakeOver={(item) => void takeOverResource(item)}
-              onUndoTakeover={undoTakeover}
-              onRemove={removeResource}
-              onReconnect={reconnectResource}
-            />
-          </div>
-        </Card>
-        <Card variant="subtle" padding="lg" className="gap-5">
-          <SectionHeader title={t('agents.form.sections.model')} />
-          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
-            <FormField
-              labelSurface="background"
-              label={t('agents.form.sections.agentType')}
-            >
-              <Select
-                value={agent.agent_type || undefined}
-                onValueChange={(value) =>
-                  setAgent({ ...agent, agent_type: value })
-                }
-              >
-                <SelectTrigger className="w-full" size="field">
-                  <SelectValue
-                    placeholder={t('agents.form.placeholders.selectType')}
+            </AgentPageToolbar>
+            <div ref={formColumnRef} className="flex flex-col gap-5">
+              <Card variant="subtle" padding="lg" className="gap-5">
+                <SectionHeader title={t('agents.form.sections.basics')} />
+                {/* Phone: the avatar beside Name, Description across the row.
+              From sm: the avatar spans both rows beside the fields. */}
+                <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-5 sm:items-start">
+                  <FileUpload
+                    showPreview
+                    size="tile"
+                    currentImage={agent.image || undefined}
+                    onUpload={handleUpload}
+                    onRemove={() => setImageFile(null)}
+                    uploadText={t('agents.form.labels.avatar')}
+                    className="sm:row-span-2"
                   />
-                </SelectTrigger>
-                <SelectContent>
-                  {agentTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormField>
-            <FormField
-              id={modelsPickerId}
-              labelSurface="background"
-              label={t('agents.form.sections.models')}
-            >
-              <MultiSelectPopover
-                open={isModelsPopupOpen}
-                onOpenChange={setIsModelsPopupOpen}
-                title={t('agents.form.modelsPopup.title')}
-                items={(() => {
-                  const builtinLabel = t(
-                    'settings.customModels.modelsGroup.builtin',
-                  );
-                  const userLabel = t('settings.customModels.modelsGroup.user');
-                  const builtin: MultiSelectPopoverItem[] = [];
-                  const user: MultiSelectPopoverItem[] = [];
-                  availableModels.forEach((model) => {
-                    const opt: MultiSelectPopoverItem = {
-                      id: model.id,
-                      label: model.display_name,
-                      group: model.source === 'user' ? userLabel : builtinLabel,
-                    };
-                    if (model.source === 'user') user.push(opt);
-                    else builtin.push(opt);
-                  });
-                  return [...builtin, ...user];
-                })()}
-                selectedIds={Array.from(selectedModelIds)}
-                onToggle={(id) => {
-                  const next = new Set(selectedModelIds);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  setSelectedModelIds(next);
-                }}
-                searchPlaceholder={t(
-                  'agents.form.modelsPopup.searchPlaceholder',
-                )}
-                emptyMessage={t('agents.form.modelsPopup.noOptionsMessage')}
-                trigger={
-                  <Button
-                    type="button"
-                    variant="combobox"
-                    size="field"
-                    role="combobox"
-                    id={modelsPickerId}
-                    ref={modelAnchorButtonRef}
-                    data-placeholder={
-                      selectedModelIds.size > 0 ? undefined : ''
-                    }
-                    className="w-full justify-start text-left"
+                  <DraftedField {...draftedProps('name')}>
+                    <FormField
+                      labelSurface="background"
+                      label={t('agents.form.labels.name')}
+                    >
+                      <Input
+                        type="text"
+                        value={agent.name}
+                        placeholder={t('agents.form.placeholders.agentName')}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          setAgent((prev) => ({ ...prev, name }));
+                        }}
+                      />
+                    </FormField>
+                  </DraftedField>
+                  <DraftedField
+                    {...draftedProps('description')}
+                    className="col-span-2 sm:col-span-1 sm:col-start-2"
                   >
-                    <span className="truncate">
-                      {selectedModelIds.size > 0
-                        ? availableModels
-                            .filter((m) => selectedModelIds.has(m.id))
-                            .map((m) => m.display_name)
-                            .join(', ')
-                        : t('agents.form.placeholders.selectModels')}
-                    </span>
-                  </Button>
-                }
-              />
-            </FormField>
-            {selectedModelIds.size > 0 && (
-              <FormField
-                labelSurface="background"
-                label={t('agents.form.labels.defaultModel')}
-              >
-                <Select
-                  value={agent.default_model_id || undefined}
-                  onValueChange={(value) =>
-                    setAgent({ ...agent, default_model_id: value })
-                  }
-                >
-                  <SelectTrigger className="w-full" size="field">
-                    <SelectValue
-                      placeholder={t(
-                        'agents.form.placeholders.selectDefaultModel',
+                    <FormField
+                      labelSurface="background"
+                      label={t('agents.form.labels.description')}
+                    >
+                      <Textarea
+                        className="h-32 sm:h-24"
+                        placeholder={t(
+                          'agents.form.placeholders.describeAgent',
+                        )}
+                        value={agent.description}
+                        onChange={(e) => {
+                          const description = e.target.value;
+                          setAgent((prev) => ({ ...prev, description }));
+                        }}
+                      />
+                    </FormField>
+                  </DraftedField>
+                </div>
+              </Card>
+              <Card variant="subtle" padding="lg" className="gap-5">
+                <SectionHeader title={t('agents.form.sections.knowledge')} />
+                <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+                  <DraftedField {...draftedProps('sources')}>
+                    <FormField
+                      id={sourcesPickerId}
+                      labelSurface="background"
+                      label={t('agents.form.labels.sources')}
+                      hint={
+                        selectedSourceIds.size === 0
+                          ? t('agents.form.sourcePopup.noSourceHint')
+                          : undefined
+                      }
+                    >
+                      <KnowledgePicker
+                        open={isSourcePopupOpen}
+                        onOpenChange={setIsSourcePopupOpen}
+                        docs={sourceDocs ?? []}
+                        selectedIds={Array.from(selectedSourceIds)}
+                        onToggle={(id) => {
+                          const next = new Set(selectedSourceIds);
+                          if (next.has(id)) next.delete(id);
+                          else next.add(id);
+                          setSelectedSourceIds(next);
+                        }}
+                        connections={toolContext.connections}
+                        unlistedLabel={resolveSourceLabel}
+                        unlistedLine={sourceAddedBy}
+                        addedBy={sourceAddedBy}
+                        onNavigate={leaveGuard.onNavigate()}
+                        onUploaded={handleUploadedSource}
+                        onBrowseConnectors={() =>
+                          leaveGuard.leaveTo(
+                            '/settings/connectors?capability=sync',
+                          )
+                        }
+                        onLeaveTo={leaveGuard.leaveTo}
+                        trigger={
+                          <Button
+                            type="button"
+                            variant="combobox"
+                            size="field"
+                            role="combobox"
+                            id={sourcesPickerId}
+                            ref={sourceAnchorButtonRef}
+                            data-placeholder={
+                              selectedSourceIds.size > 0 ? undefined : ''
+                            }
+                            className="w-full justify-start text-left"
+                          >
+                            <span
+                              className="truncate"
+                              title={selectedSourceNames.join(', ')}
+                            >
+                              {sourceTriggerLabel}
+                            </span>
+                          </Button>
+                        }
+                      />
+                    </FormField>
+                  </DraftedField>
+                  <DraftedField {...draftedProps('tools')}>
+                    <FormField
+                      id={toolsPickerId}
+                      labelSurface="background"
+                      label={t('agents.form.sections.tools')}
+                    >
+                      <ToolsPicker
+                        open={isToolsPopupOpen}
+                        onOpenChange={setIsToolsPopupOpen}
+                        tools={rawUserTools}
+                        filter={isAgentPickerToolVisible}
+                        // What was on the agent when it loaded or last saved: the
+                        // owner's private tools don't come back in the caller's list.
+                        attached={attachedTools}
+                        attachedLine={t('agents.form.toolsPopup.attachedHint')}
+                        selectedIds={selectedTools.map((tool) => tool.id)}
+                        onToggle={(id) => {
+                          if (selectedTools.some((tool) => tool.id === id)) {
+                            setSelectedTools(
+                              selectedTools.filter((tool) => tool.id !== id),
+                            );
+                            return;
+                          }
+                          const attached = attachedTools.find(
+                            (tool) => tool.id === id,
+                          );
+                          const raw = rawUserTools.find(
+                            (tool) => tool.id === id,
+                          );
+                          if (!attached && !raw) return;
+                          setSelectedTools([
+                            ...selectedTools,
+                            attached ?? {
+                              id,
+                              name: raw!.name,
+                              display_name: getToolDisplayName(raw!),
+                            },
+                          ]);
+                        }}
+                        connections={toolContext.connections}
+                        catalog={toolContext.catalog}
+                        addedBy={toolAddedBy}
+                        onReconnect={(connection, mcpToolId) =>
+                          signInAgain.reconnect(connection, mcpToolId)
+                        }
+                        onNavigate={leaveGuard.onNavigate()}
+                        onReloadTools={() =>
+                          setToolsReloadKey((key) => key + 1)
+                        }
+                        onToolsCreated={(toolIds) =>
+                          void handleToolsCreated(toolIds)
+                        }
+                        onLeaveTo={leaveGuard.leaveTo}
+                        trigger={
+                          <Button
+                            type="button"
+                            variant="combobox"
+                            size="field"
+                            role="combobox"
+                            id={toolsPickerId}
+                            ref={toolAnchorButtonRef}
+                            data-placeholder={
+                              selectedTools.length > 0 ? undefined : ''
+                            }
+                            className="w-full justify-start text-left"
+                          >
+                            <span className="truncate">
+                              {selectedTools.length > 0
+                                ? selectedTools
+                                    .map((tool) => getToolDisplayName(tool))
+                                    .filter(Boolean)
+                                    .join(', ')
+                                : t('agents.form.placeholders.selectTools')}
+                            </span>
+                          </Button>
+                        }
+                      />
+                    </FormField>
+                  </DraftedField>
+                  <div className="flex flex-col">
+                    <DraftedField {...draftedProps('prompt')}>
+                      <FormField
+                        id={promptPickerId}
+                        label={t('agents.form.sections.prompt')}
+                        labelSurface="background"
+                      >
+                        <Combobox
+                          open={isPromptPickerOpen}
+                          onOpenChange={setIsPromptPickerOpen}
+                          title={t('agents.form.sections.prompt')}
+                          mobileSheet
+                          filters={promptKinds.filters}
+                          groups={promptGroups}
+                          value={agent.prompt_id || 'default'}
+                          valueOption={promptValueOption}
+                          onValueChange={(id) =>
+                            setAgent((prev) => ({ ...prev, prompt_id: id }))
+                          }
+                          // Any listed prompt opens in the prompt view
+                          // from its row, without picking it.
+                          rowAction={(option) => {
+                            const prompt = prompts.find(
+                              (item) => item.id === option.value,
+                            );
+                            if (!prompt) return undefined;
+                            const editable = canEditPrompt(prompt);
+                            return {
+                              label: t(
+                                editable
+                                  ? 'settings.prompts.editNamed'
+                                  : 'settings.prompts.viewNamed',
+                                {
+                                  name: prompt.name,
+                                  interpolation: { escapeValue: false },
+                                },
+                              ),
+                              icon: editable ? <Pencil /> : <Eye />,
+                              onSelect: () => openPickerPrompt(prompt),
+                            };
+                          }}
+                          placeholder={t('settings.prompts.select')}
+                          searchPlaceholder={t(
+                            'settings.prompts.searchPlaceholder',
+                          )}
+                          emptyText={t('settings.prompts.noPromptsFound')}
+                          footer={({ close }) => (
+                            <PickerFooter
+                              to="/settings/prompts"
+                              linkLabel={t('settings.prompts.manage')}
+                              onNavigate={leaveGuard.onNavigate(close)}
+                              actionLabel={t('settings.prompts.addPrompt')}
+                              onAction={() => {
+                                close();
+                                addPickerPrompt();
+                              }}
+                            />
+                          )}
+                        />
+                      </FormField>
+                    </DraftedField>
+                    {/* The mark of the prompt running with an editor's
+                  access is a hint, seen without opening the picker. */}
+                    {promptAddedBy && (
+                      <p className="text-muted-foreground mt-1.5 text-xs">
+                        {promptAddedBy}
+                      </p>
+                    )}
+                  </div>
+                  <ResourceStatusNotice
+                    agent={agent}
+                    readerId={readerId}
+                    stopped={stoppedResources}
+                    resolveName={resolveSponsoredName}
+                    takeovers={takeovers}
+                    onTakeOver={(item) => void takeOverResource(item)}
+                    onUndoTakeover={undoTakeover}
+                    onRemove={removeResource}
+                    onReconnect={reconnectResource}
+                  />
+                </div>
+              </Card>
+              <Card variant="subtle" padding="lg" className="gap-5">
+                <SectionHeader title={t('agents.form.sections.model')} />
+                <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+                  <DraftedField {...draftedProps('agent_type')}>
+                    <FormField
+                      labelSurface="background"
+                      label={t('agents.form.sections.agentType')}
+                    >
+                      <Select
+                        value={agent.agent_type || undefined}
+                        onValueChange={(value) =>
+                          setAgent((prev) => ({ ...prev, agent_type: value }))
+                        }
+                      >
+                        <SelectTrigger className="w-full" size="field">
+                          <SelectValue
+                            placeholder={t(
+                              'agents.form.placeholders.selectType',
+                            )}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {agentTypes.map((type) => (
+                            <SelectItem key={type.value} value={type.value}>
+                              {type.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                  </DraftedField>
+                  <FormField
+                    id={modelsPickerId}
+                    labelSurface="background"
+                    label={t('agents.form.sections.models')}
+                  >
+                    <MultiSelectPopover
+                      open={isModelsPopupOpen}
+                      onOpenChange={setIsModelsPopupOpen}
+                      title={t('agents.form.modelsPopup.title')}
+                      items={(() => {
+                        const builtinLabel = t(
+                          'settings.customModels.modelsGroup.builtin',
+                        );
+                        const userLabel = t(
+                          'settings.customModels.modelsGroup.user',
+                        );
+                        const builtin: MultiSelectPopoverItem[] = [];
+                        const user: MultiSelectPopoverItem[] = [];
+                        availableModels.forEach((model) => {
+                          const opt: MultiSelectPopoverItem = {
+                            id: model.id,
+                            label: model.display_name,
+                            group:
+                              model.source === 'user'
+                                ? userLabel
+                                : builtinLabel,
+                          };
+                          if (model.source === 'user') user.push(opt);
+                          else builtin.push(opt);
+                        });
+                        return [...builtin, ...user];
+                      })()}
+                      selectedIds={Array.from(selectedModelIds)}
+                      onToggle={(id) => {
+                        const next = new Set(selectedModelIds);
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        setSelectedModelIds(next);
+                      }}
+                      searchPlaceholder={t(
+                        'agents.form.modelsPopup.searchPlaceholder',
                       )}
+                      emptyMessage={t(
+                        'agents.form.modelsPopup.noOptionsMessage',
+                      )}
+                      trigger={
+                        <Button
+                          type="button"
+                          variant="combobox"
+                          size="field"
+                          role="combobox"
+                          id={modelsPickerId}
+                          ref={modelAnchorButtonRef}
+                          data-placeholder={
+                            selectedModelIds.size > 0 ? undefined : ''
+                          }
+                          className="w-full justify-start text-left"
+                        >
+                          <span className="truncate">
+                            {selectedModelIds.size > 0
+                              ? availableModels
+                                  .filter((m) => selectedModelIds.has(m.id))
+                                  .map((m) => m.display_name)
+                                  .join(', ')
+                              : t('agents.form.placeholders.selectModels')}
+                          </span>
+                        </Button>
+                      }
                     />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.display_name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </FormField>
-            )}
-          </div>
-        </Card>
-        <Card variant="subtle" padding="lg" className="gap-5">
-          <SectionHeader
-            title={t('agents.form.sections.starters')}
-            description={t('agents.form.starters.description')}
-          />
-          <StartersFields
-            starters={agent.starters ?? []}
-            onChange={(starters) => setAgent({ ...agent, starters })}
-          />
-        </Card>
-        <Card variant="subtle" padding="lg" className="gap-5">
-          {/* The heading wraps the toggle: a button's children are
+                  </FormField>
+                  {selectedModelIds.size > 0 && (
+                    <FormField
+                      labelSurface="background"
+                      label={t('agents.form.labels.defaultModel')}
+                    >
+                      <Select
+                        value={agent.default_model_id || undefined}
+                        onValueChange={(value) =>
+                          setAgent({ ...agent, default_model_id: value })
+                        }
+                      >
+                        <SelectTrigger className="w-full" size="field">
+                          <SelectValue
+                            placeholder={t(
+                              'agents.form.placeholders.selectDefaultModel',
+                            )}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableModels
+                            .filter((m) => selectedModelIds.has(m.id))
+                            .map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.display_name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                  )}
+                </div>
+              </Card>
+              <Card variant="subtle" padding="lg" className="gap-5">
+                <SectionHeader
+                  title={t('agents.form.sections.starters')}
+                  description={t('agents.form.starters.description')}
+                />
+                <DraftedField {...draftedProps('starters')}>
+                  <StartersFields
+                    starters={agent.starters ?? []}
+                    onChange={(starters) =>
+                      setAgent((prev) => ({ ...prev, starters }))
+                    }
+                  />
+                </DraftedField>
+              </Card>
+              <Card variant="subtle" padding="lg" className="gap-5">
+                {/* The heading wraps the toggle: a button's children are
               presentational, so a heading inside it is lost to screen readers.
               The card's gap-5 sits inside the body, so it folds away with it. */}
-          <div>
-            <h2>
-              <CollapsibleTrigger
-                look="section"
-                open={isAdvancedSectionExpanded}
-                onOpenChange={setIsAdvancedSectionExpanded}
-                controls={advancedSectionId}
-              >
-                {t('agents.form.sections.advanced')}
-              </CollapsibleTrigger>
-            </h2>
-            <Collapsible
-              open={isAdvancedSectionExpanded}
-              id={advancedSectionId}
-            >
-              <div className="pt-5">
-                <FormField
-                  labelSurface="background"
-                  label={t('agents.form.advanced.jsonSchema')}
-                  hint={t('agents.form.advanced.jsonSchemaDescription')}
-                >
-                  <Textarea
-                    value={jsonSchemaText}
-                    onChange={(e) => validateAndSetJsonSchema(e.target.value)}
-                    placeholder={`{
+                <div>
+                  <h2>
+                    <CollapsibleTrigger
+                      look="section"
+                      open={isAdvancedSectionExpanded}
+                      onOpenChange={setIsAdvancedSectionExpanded}
+                      controls={advancedSectionId}
+                    >
+                      {t('agents.form.sections.advanced')}
+                    </CollapsibleTrigger>
+                  </h2>
+                  <Collapsible
+                    open={isAdvancedSectionExpanded}
+                    id={advancedSectionId}
+                  >
+                    <div className="pt-5">
+                      <FormField
+                        labelSurface="background"
+                        label={t('agents.form.advanced.jsonSchema')}
+                        hint={t('agents.form.advanced.jsonSchemaDescription')}
+                      >
+                        <Textarea
+                          value={jsonSchemaText}
+                          onChange={(e) =>
+                            validateAndSetJsonSchema(e.target.value)
+                          }
+                          placeholder={`{
 "type": "object",
 "properties": {
   "name": {"type": "string"},
@@ -1682,382 +3074,434 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 "required": ["name", "email"],
 "additionalProperties": false
 }`}
-                    rows={9}
-                    className="font-mono"
-                  />
-                </FormField>
-                {jsonSchemaText.trim() !== '' && (
-                  <div
-                    className={cn(
-                      'mt-2 flex items-center gap-2 text-sm',
-                      jsonSchemaValid ? 'text-success' : 'text-destructive',
-                    )}
-                  >
-                    {jsonSchemaValid ? (
-                      <CircleCheck className="size-4" aria-hidden="true" />
-                    ) : (
-                      <CircleX className="size-4" aria-hidden="true" />
-                    )}
-                    {jsonSchemaValid
-                      ? t('agents.form.advanced.validJson')
-                      : t('agents.form.advanced.invalidJson')}
+                          rows={9}
+                          className="font-mono"
+                        />
+                      </FormField>
+                      {jsonSchemaText.trim() !== '' && (
+                        <div
+                          className={cn(
+                            'mt-2 flex items-center gap-2 text-sm',
+                            jsonSchemaValid
+                              ? 'text-success'
+                              : 'text-destructive',
+                          )}
+                        >
+                          {jsonSchemaValid ? (
+                            <CircleCheck
+                              className="size-4"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <CircleX className="size-4" aria-hidden="true" />
+                          )}
+                          {jsonSchemaValid
+                            ? t('agents.form.advanced.validJson')
+                            : t('agents.form.advanced.invalidJson')}
+                        </div>
+                      )}
+
+                      <SettingRows className="mt-6">
+                        <ContextLimitRows
+                          contextLimit={agent.config?.context_window_limit}
+                          historyLimit={agent.config?.history_token_limit}
+                          window={modelWindow}
+                          disabled={!canEditPolicy}
+                          onContextLimitChange={(limit) =>
+                            setAgent((prev) => ({
+                              ...prev,
+                              config: {
+                                ...(prev.config ?? {}),
+                                context_window_limit: limit,
+                              },
+                            }))
+                          }
+                          onHistoryLimitChange={(limit) =>
+                            setAgent((prev) => ({
+                              ...prev,
+                              config: {
+                                ...(prev.config ?? {}),
+                                history_token_limit: limit,
+                              },
+                            }))
+                          }
+                        />
+                        <SettingRow
+                          label={t('agents.form.advanced.tokenLimiting')}
+                          description={t(
+                            'agents.form.advanced.tokenLimitingDescription',
+                          )}
+                          htmlFor={tokenLimitSwitchId}
+                          drafted={limitRowDrafted('token')}
+                          onUndo={() => drafted.undo('limits')}
+                          after={
+                            <DraftedField
+                              {...draftedProps('limits')}
+                              drafted={
+                                limitRowDrafted('token') &&
+                                !!agent.limited_token_mode
+                              }
+                            >
+                              <Input
+                                type="number"
+                                min="0"
+                                value={agent.token_limit || ''}
+                                onChange={(e) =>
+                                  setAgent({
+                                    ...agent,
+                                    token_limit: e.target.value
+                                      ? parseInt(e.target.value)
+                                      : undefined,
+                                  })
+                                }
+                                disabled={
+                                  !agent.limited_token_mode || !canEditPolicy
+                                }
+                                placeholder={t(
+                                  'agents.form.placeholders.enterTokenLimit',
+                                )}
+                                aria-label={t(
+                                  'agents.form.advanced.tokenLimit',
+                                )}
+                              />
+                            </DraftedField>
+                          }
+                        >
+                          <Switch
+                            id={tokenLimitSwitchId}
+                            checked={agent.limited_token_mode}
+                            disabled={!canEditPolicy}
+                            onCheckedChange={(checked) => {
+                              setAgent({
+                                ...agent,
+                                limited_token_mode: checked,
+                                limited_request_mode: checked
+                                  ? false
+                                  : agent.limited_request_mode,
+                              });
+                            }}
+                          />
+                        </SettingRow>
+                        <SettingRow
+                          label={t('agents.form.advanced.requestLimiting')}
+                          description={t(
+                            'agents.form.advanced.requestLimitingDescription',
+                          )}
+                          htmlFor={requestLimitSwitchId}
+                          drafted={limitRowDrafted('request')}
+                          onUndo={() => drafted.undo('limits')}
+                          after={
+                            <DraftedField
+                              {...draftedProps('limits')}
+                              drafted={
+                                limitRowDrafted('request') &&
+                                !!agent.limited_request_mode
+                              }
+                            >
+                              <Input
+                                type="number"
+                                min="0"
+                                value={agent.request_limit || ''}
+                                onChange={(e) =>
+                                  setAgent({
+                                    ...agent,
+                                    request_limit: e.target.value
+                                      ? parseInt(e.target.value)
+                                      : undefined,
+                                  })
+                                }
+                                disabled={
+                                  !agent.limited_request_mode || !canEditPolicy
+                                }
+                                placeholder={t(
+                                  'agents.form.placeholders.enterRequestLimit',
+                                )}
+                                aria-label={t(
+                                  'agents.form.advanced.requestLimit',
+                                )}
+                              />
+                            </DraftedField>
+                          }
+                        >
+                          <Switch
+                            id={requestLimitSwitchId}
+                            checked={agent.limited_request_mode}
+                            disabled={!canEditPolicy}
+                            onCheckedChange={(checked) => {
+                              setAgent({
+                                ...agent,
+                                limited_request_mode: checked,
+                                limited_token_mode: checked
+                                  ? false
+                                  : agent.limited_token_mode,
+                              });
+                            }}
+                          />
+                        </SettingRow>
+                        <AllowedOriginsSetting
+                          config={agent.config}
+                          disabled={!canEditPolicy}
+                          onChange={(origins) =>
+                            setAgent({
+                              ...agent,
+                              config: { ...(agent.config ?? {}), ...origins },
+                            })
+                          }
+                        />
+                        <SettingRow
+                          label={t('agents.form.advanced.systemPromptOverride')}
+                          description={t(
+                            'agents.form.advanced.systemPromptOverrideDescription',
+                          )}
+                          htmlFor={promptOverrideSwitchId}
+                        >
+                          <Switch
+                            id={promptOverrideSwitchId}
+                            checked={agent.allow_system_prompt_override}
+                            onCheckedChange={(checked) =>
+                              setAgent({
+                                ...agent,
+                                allow_system_prompt_override: checked,
+                              })
+                            }
+                          />
+                        </SettingRow>
+                      </SettingRows>
+                    </div>
+                  </Collapsible>
+                </div>
+              </Card>
+              <GuardrailsSection
+                value={agent.config?.guardrails}
+                token={token}
+                // Guardrails are policy (`edit_policy`): editors and the owner
+                // change them; anyone else sees them read-only.
+                disabled={!canEditPolicy}
+                drafted={drafted.isDrafted('guardrails')}
+                onUndo={() => drafted.undo('guardrails')}
+                onChange={(guardrails) =>
+                  setAgent({
+                    ...agent,
+                    config: { ...(agent.config ?? {}), guardrails },
+                  })
+                }
+              />
+              <AnalyticsSection
+                value={agent.config?.analytics}
+                token={token}
+                savedEnabled={
+                  analyticsOf(initialAgentRef.current?.config?.analytics)
+                    .enabled
+                }
+                agentId={agent.id || undefined}
+                available={analyticsAvailability.enabled}
+                maxTopics={analyticsAvailability.maxTopics}
+                maxOverlapping={analyticsAvailability.maxOverlapping}
+                // Not policy: anyone who can save the agent changes it.
+                disabled={!canSubmit}
+                drafted={drafted.isDrafted('analytics')}
+                onUndo={() => drafted.undo('analytics')}
+                onChange={(analytics) =>
+                  setAgent((prev) => ({
+                    ...prev,
+                    config: { ...(prev.config ?? {}), analytics },
+                  }))
+                }
+              />
+              {/* Room for the phone's step strip under the last section. */}
+              {showStepStrip && <div aria-hidden="true" className="h-20" />}
+            </div>
+            {showStepStrip && build.step && (
+              <BuildStepStrip
+                title={t('drafter.agent.build.check', {
+                  step: stepName(build.step),
+                  interpolation: { escapeValue: false },
+                })}
+                line={progressLabel}
+                nextLabel={
+                  build.nextStep
+                    ? t('drafter.agent.build.nextShort')
+                    : t('drafter.agent.build.finish')
+                }
+                onOpen={() => setDrafterOpen(true)}
+                onNext={goNext}
+              />
+            )}
+          </div>
+          {leavingPrompt && (
+            <ConfirmationModal
+              message={t('settings.prompts.unsavedChanges')}
+              modalState="ACTIVE"
+              setModalState={(state) => setLeavingPrompt(state === 'ACTIVE')}
+              submitLabel={t('settings.prompts.saveAndLeave')}
+              // Pending while the save runs; a refused save rejects, so its
+              // error stays in this dialog and the view stays. A prompt that
+              // can't be saved yet (no name) just stays.
+              handleSubmit={async () => {
+                // What stops the save (a review, a missing name or text)
+                // stays in the dialog, as a refused save does.
+                const blocker =
+                  promptReview.review !== null
+                    ? 'review'
+                    : promptDetail.saveBlocker;
+                if (blocker) throw new Error(blocker);
+                const result = await promptDetail.save({ quiet: true });
+                if (result !== 'saved') throw new Error(result);
+                setLeavingPrompt(false);
+              }}
+              error={(reason) =>
+                t(
+                  LEAVE_ERRORS[
+                    reason instanceof Error ? reason.message : 'failed'
+                  ] ?? 'settings.prompts.saveFailed',
+                )
+              }
+              cancelLabel={t('settings.prompts.leaveWithoutSaving')}
+              handleCancel={() => {
+                setLeavingPrompt(false);
+                promptDrafted.clear();
+                closePromptView();
+              }}
+            />
+          )}
+          {sponsoredSave.modal}
+          {agentMenu.modals}
+          <AgentDetailsModal
+            agent={agent}
+            mode={effectiveMode}
+            modalState={agentDetails}
+            setModalState={(state) => {
+              setAgentDetails(state);
+              if (state === 'INACTIVE') setDetailsOnApiWrites(false);
+            }}
+            openApiWrites={detailsOnApiWrites}
+            onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
+            onConfigChange={(config, updatedAt) => {
+              // The allowlist is saved already: record it on the saved snapshot
+              // too, and keep any unsaved form edits to the rest of the config.
+              // The save moved the stamp the next save sends.
+              if (initialAgentRef.current)
+                initialAgentRef.current = {
+                  ...initialAgentRef.current,
+                  config,
+                  updated_at: updatedAt ?? initialAgentRef.current.updated_at,
+                };
+              markSaved((base) => ({
+                ...base,
+                config: {
+                  ...base.config,
+                  api_write_allowlist: config.api_write_allowlist,
+                },
+              }));
+              setAgent((prev) => ({
+                ...prev,
+                updated_at: updatedAt ?? prev.updated_at,
+                config: {
+                  ...(prev.config ?? {}),
+                  api_write_allowlist: config.api_write_allowlist,
+                },
+              }));
+            }}
+            getSavedConfig={
+              mode === 'new'
+                ? readCreatedConfig
+                : () => initialAgentRef.current?.config ?? agent.config
+            }
+          />
+          <AgentPreviewSheet
+            open={previewOpen}
+            onOpenChange={setPreviewOpen}
+            title={t('agents.form.sections.preview')}
+            description={`${agentDisplayName} · ${
+              isPublished
+                ? t('agents.form.preview.savedVersion')
+                : t('agents.card.draft')
+            }`}
+            running={previewStatus === 'loading'}
+            actions={
+              isPublished ? (
+                <Button
+                  type="button"
+                  variant="ghost-muted"
+                  size="sm"
+                  shape="pill"
+                  onClick={() => dispatch(resetPreview())}
+                >
+                  <SquarePen />
+                  {t('newChat')}
+                </Button>
+              ) : undefined
+            }
+          >
+            {isPublished ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {effectiveMode === 'edit' && hasChanges && (
+                  <div className="px-4 pt-4">
+                    <Alert variant="info" role="note">
+                      <AlertDescription>
+                        {t('agents.form.preview.unsavedChanges')}
+                      </AlertDescription>
+                    </Alert>
                   </div>
                 )}
-
-                <SettingRows className="mt-6">
-                  <ContextLimitRows
-                    contextLimit={agent.config?.context_window_limit}
-                    historyLimit={agent.config?.history_token_limit}
-                    window={modelWindow}
-                    disabled={!canEditPolicy}
-                    onContextLimitChange={(limit) =>
-                      setAgent((prev) => ({
-                        ...prev,
-                        config: {
-                          ...(prev.config ?? {}),
-                          context_window_limit: limit,
-                        },
-                      }))
-                    }
-                    onHistoryLimitChange={(limit) =>
-                      setAgent((prev) => ({
-                        ...prev,
-                        config: {
-                          ...(prev.config ?? {}),
-                          history_token_limit: limit,
-                        },
-                      }))
-                    }
-                  />
-                  <SettingRow
-                    label={t('agents.form.advanced.tokenLimiting')}
-                    description={t(
-                      'agents.form.advanced.tokenLimitingDescription',
-                    )}
-                    htmlFor={tokenLimitSwitchId}
-                    after={
-                      <Input
-                        type="number"
-                        min="0"
-                        value={agent.token_limit || ''}
-                        onChange={(e) =>
-                          setAgent({
-                            ...agent,
-                            token_limit: e.target.value
-                              ? parseInt(e.target.value)
-                              : undefined,
-                          })
-                        }
-                        disabled={!agent.limited_token_mode || !canEditPolicy}
-                        placeholder={t(
-                          'agents.form.placeholders.enterTokenLimit',
-                        )}
-                        aria-label={t('agents.form.advanced.tokenLimit')}
-                      />
-                    }
-                  >
-                    <Switch
-                      id={tokenLimitSwitchId}
-                      checked={agent.limited_token_mode}
-                      disabled={!canEditPolicy}
-                      onCheckedChange={(checked) => {
-                        setAgent({
-                          ...agent,
-                          limited_token_mode: checked,
-                          limited_request_mode: checked
-                            ? false
-                            : agent.limited_request_mode,
-                        });
-                      }}
-                    />
-                  </SettingRow>
-                  <SettingRow
-                    label={t('agents.form.advanced.requestLimiting')}
-                    description={t(
-                      'agents.form.advanced.requestLimitingDescription',
-                    )}
-                    htmlFor={requestLimitSwitchId}
-                    after={
-                      <Input
-                        type="number"
-                        min="0"
-                        value={agent.request_limit || ''}
-                        onChange={(e) =>
-                          setAgent({
-                            ...agent,
-                            request_limit: e.target.value
-                              ? parseInt(e.target.value)
-                              : undefined,
-                          })
-                        }
-                        disabled={!agent.limited_request_mode || !canEditPolicy}
-                        placeholder={t(
-                          'agents.form.placeholders.enterRequestLimit',
-                        )}
-                        aria-label={t('agents.form.advanced.requestLimit')}
-                      />
-                    }
-                  >
-                    <Switch
-                      id={requestLimitSwitchId}
-                      checked={agent.limited_request_mode}
-                      disabled={!canEditPolicy}
-                      onCheckedChange={(checked) => {
-                        setAgent({
-                          ...agent,
-                          limited_request_mode: checked,
-                          limited_token_mode: checked
-                            ? false
-                            : agent.limited_token_mode,
-                        });
-                      }}
-                    />
-                  </SettingRow>
-                  <AllowedOriginsSetting
-                    config={agent.config}
-                    disabled={!canEditPolicy}
-                    onChange={(origins) =>
-                      setAgent({
-                        ...agent,
-                        config: { ...(agent.config ?? {}), ...origins },
-                      })
-                    }
-                  />
-                  <SettingRow
-                    label={t('agents.form.advanced.systemPromptOverride')}
-                    description={t(
-                      'agents.form.advanced.systemPromptOverrideDescription',
-                    )}
-                    htmlFor={promptOverrideSwitchId}
-                  >
-                    <Switch
-                      id={promptOverrideSwitchId}
-                      checked={agent.allow_system_prompt_override}
-                      onCheckedChange={(checked) =>
-                        setAgent({
-                          ...agent,
-                          allow_system_prompt_override: checked,
-                        })
-                      }
-                    />
-                  </SettingRow>
-                </SettingRows>
+                <div className="relative min-h-0 flex-1">
+                  <AgentPreview />
+                </div>
               </div>
-            </Collapsible>
-          </div>
-        </Card>
-        <GuardrailsSection
-          value={agent.config?.guardrails}
-          token={token}
-          // Guardrails are policy (`edit_policy`): editors and the owner
-          // change them; anyone else sees them read-only.
-          disabled={!canEditPolicy}
-          onChange={(guardrails) =>
-            setAgent({
-              ...agent,
-              config: { ...(agent.config ?? {}), guardrails },
-            })
-          }
-        />
-        <AnalyticsSection
-          value={agent.config?.analytics}
-          token={token}
-          agentId={agent.id || undefined}
-          available={analyticsAvailability.enabled}
-          maxTopics={analyticsAvailability.maxTopics}
-          maxOverlapping={analyticsAvailability.maxOverlapping}
-          // Not policy: anyone who can save the agent changes it.
-          disabled={!canSubmit}
-          onChange={(analytics) =>
-            setAgent((prev) => ({
-              ...prev,
-              config: { ...(prev.config ?? {}), analytics },
-            }))
-          }
-        />
-      </div>
-      {sponsoredSave.modal}
-      {agentMenu.modals}
-      <AgentDetailsModal
-        agent={agent}
-        mode={effectiveMode}
-        modalState={agentDetails}
-        setModalState={(state) => {
-          setAgentDetails(state);
-          if (state === 'INACTIVE') setDetailsOnApiWrites(false);
-        }}
-        openApiWrites={detailsOnApiWrites}
-        onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
-        onConfigChange={(config, updatedAt) => {
-          // The allowlist is saved already: record it on the saved snapshot
-          // too, and keep any unsaved form edits to the rest of the config.
-          // The save moved the stamp the next save sends.
-          if (initialAgentRef.current)
-            initialAgentRef.current = {
-              ...initialAgentRef.current,
-              config,
-              updated_at: updatedAt ?? initialAgentRef.current.updated_at,
-            };
-          markSaved((base) => ({
-            ...base,
-            config: {
-              ...base.config,
-              api_write_allowlist: config.api_write_allowlist,
-            },
-          }));
-          setAgent((prev) => ({
-            ...prev,
-            updated_at: updatedAt ?? prev.updated_at,
-            config: {
-              ...(prev.config ?? {}),
-              api_write_allowlist: config.api_write_allowlist,
-            },
-          }));
-        }}
-        getSavedConfig={
-          mode === 'new'
-            ? readCreatedConfig
-            : () => initialAgentRef.current?.config ?? agent.config
-        }
-      />
-      <AddPromptModal
-        prompts={prompts}
-        isOpen={addPromptModal}
-        onClose={() => setAddPromptModal('INACTIVE')}
-        onSelect={(name: string, id: string) => {
-          setAgent({ ...agent, prompt_id: id });
-        }}
-      />
-      <AgentPreviewSheet
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        title={t('agents.form.sections.preview')}
-        description={`${agentDisplayName} · ${
-          isPublished
-            ? t('agents.form.preview.savedVersion')
-            : t('agents.card.draft')
-        }`}
-        running={previewStatus === 'loading'}
-        actions={
-          isPublished ? (
-            <Button
-              type="button"
-              variant="ghost-muted"
-              size="sm"
-              shape="pill"
-              onClick={() => dispatch(resetPreview())}
-            >
-              <SquarePen />
-              {t('newChat')}
-            </Button>
-          ) : undefined
-        }
-      >
-        {isPublished ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {effectiveMode === 'edit' && hasChanges && (
-              <div className="px-4 pt-4">
-                <Alert variant="info" role="note">
-                  <AlertDescription>
-                    {t('agents.form.preview.unsavedChanges')}
-                  </AlertDescription>
-                </Alert>
+            ) : (
+              <div className="flex flex-1 items-center justify-center px-6">
+                <EmptyState
+                  size="sm"
+                  illustration="none"
+                  title={t('agents.form.preview.publishTitle')}
+                  description={t('agents.form.preview.publishDescription')}
+                  action={
+                    can(agent, 'publish') ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        shape="pill"
+                        disabled={!isPublishable()}
+                        loading={publishLoading}
+                        onClick={handlePublish}
+                      >
+                        {t('agents.form.buttons.publish')}
+                      </Button>
+                    ) : undefined
+                  }
+                />
               </div>
             )}
-            <div className="relative min-h-0 flex-1">
-              <AgentPreview />
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-1 items-center justify-center px-6">
-            <EmptyState
-              size="sm"
-              illustration="none"
-              title={t('agents.form.preview.publishTitle')}
-              description={t('agents.form.preview.publishDescription')}
-              action={
-                can(agent, 'publish') ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    shape="pill"
-                    disabled={!isPublishable()}
-                    loading={publishLoading}
-                    onClick={handlePublish}
-                  >
-                    {t('agents.form.buttons.publish')}
-                  </Button>
-                ) : undefined
-              }
-            />
-          </div>
-        )}
-      </AgentPreviewSheet>
-    </SectionShell>
-  );
-}
-
-function AddPromptModal({
-  prompts,
-  isOpen,
-  onClose,
-  onSelect,
-}: {
-  prompts: Prompt[];
-  isOpen: ActiveState;
-  onClose: () => void;
-  onSelect?: (name: string, id: string, type: string) => void;
-}) {
-  const dispatch = useDispatch();
-  const token = useSelector(selectToken);
-
-  const [newPromptName, setNewPromptName] = useState('');
-  const [newPromptContent, setNewPromptContent] = useState('');
-
-  const handleAddPrompt = async () => {
-    try {
-      const response = await userService.createPrompt(
-        {
-          name: newPromptName,
-          content: newPromptContent,
-        },
-        token,
-      );
-      if (!response.ok) {
-        throw new Error('Failed to add prompt');
-      }
-      const newPrompt = await response.json();
-      // Update Redux store with new prompt
-      dispatch(
-        setPrompts([
-          ...prompts,
-          { name: newPromptName, id: newPrompt.id, type: 'private' },
-        ]),
-      );
-      onClose();
-      setNewPromptName('');
-      setNewPromptContent('');
-      onSelect?.(newPromptName, newPrompt.id, 'private');
-    } catch (error) {
-      console.error('Error adding prompt:', error);
-    }
-  };
-  return (
-    <PromptsModal
-      modalState={isOpen}
-      setModalState={onClose}
-      type="ADD"
-      existingPrompts={prompts}
-      newPromptName={newPromptName}
-      setNewPromptName={setNewPromptName}
-      newPromptContent={newPromptContent}
-      setNewPromptContent={setNewPromptContent}
-      editPromptName={''}
-      setEditPromptName={() => undefined}
-      editPromptContent={''}
-      setEditPromptContent={() => undefined}
-      currentPromptEdit={{ id: '', name: '', type: '' }}
-      handleAddPrompt={handleAddPrompt}
-    />
+          </AgentPreviewSheet>
+        </SectionShell>
+      </div>
+      {drafterEnabled && (
+        <DraftPanel
+          open={drafterOpen}
+          onOpenChange={setDrafterOpen}
+          session={panelSession}
+          onStartOver={startDrafterOver}
+          modelName={drafterConfig?.model?.display_name ?? null}
+          announceProposal={announceAgentProposal}
+          intro={drafterIntro}
+          placeholder={
+            buildable
+              ? t('drafter.agent.build.describePlaceholder')
+              : promptViewOpen
+                ? t('drafter.agent.prompt.changePlaceholder')
+                : build.guided && !build.done
+                  ? t('drafter.agent.build.changePlaceholder')
+                  : undefined
+          }
+          progress={progress}
+          before={foldedSteps}
+          suggestions={drafterSuggestions}
+          renderProposal={renderAgentProposal}
+          continueAction={continueAction}
+          after={drawerAfter}
+          onNavigate={leaveGuard.onNavigate()}
+        />
+      )}
+    </div>
   );
 }

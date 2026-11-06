@@ -278,7 +278,9 @@ size="xs"`. It is the same tint as a pressed toggle; the difference is that
   beside it. The agent form's pickers are `combobox field`, each labelled by
   a `FormField`; the Prompt picker is a `Combobox` with the pickers' `title`,
   row lines, kind track and phone sheet, whose footer goes to Prompts or adds
-  one, like the tool and knowledge pickers. Their footers'
+  one, like the tool and knowledge pickers. It takes one column, as Default
+  model does, with nothing under it: a row's Edit or View opens a prompt,
+  and the agent's Improve changes the one it uses. Their footers'
   Add is the only `outline-primary` on the agent pages themselves (the Access
   details modal they open has its own).
 - **Shape by place.** Form controls (Input, SelectTrigger, a combobox Button,
@@ -767,8 +769,16 @@ labels and wires it (see FormField).
 - A server-searched list passes `shouldFilter={false}` with `search` /
   `onSearchChange`, and `valueOption` when the picked option isn't in the
   current results.
-- Rows carry no actions: what you do to an item (a prompt's Edit, Share or
-  Delete) is on its page, and the picker's footer links there.
+- A row's only action opens the item (`rowAction`: the agent form's Prompt
+  picker has Edit, `Pencil`, or View, `Eye`, for a prompt the role can't
+  change). It is a `ghost icon-sm` at the row's end, shown while the row is
+  hovered or highlighted and always on touch (`pointer-coarse:`, as
+  SuggestionRows), follows a `renderItem` body too, closes the picker and
+  doesn't pick the row. Only the
+  highlighted row's button is a tab stop (cmdk's `useCommandState`), so Tab
+  from the search reaches it in one step, and its Enter stops before cmdk's
+  root, which would pick the row. What else you do to an item (Duplicate,
+  Share, Delete) is on its page, and the picker's footer links there.
 - `mode="add"` is a picker that adds something (Share's "Add people or
   teams"): the trigger always shows the placeholder and no row is marked.
 - `footer` pins a row under the list, the same `PickerFooter` row as the
@@ -864,7 +874,11 @@ descriptions. `stack` puts a control too wide for a phone row (a 224px
 picker) under the title below `sm` at full width; give the picker
 `w-full sm:w-56`. `after` holds a field that belongs to the row, 8px under it
 (the agent form's limit Inputs); it isn't wired, so it names itself
-(`aria-label`, or a FormField of its own). Settings → General is the page-level example:
+(`aria-label`, or a FormField of its own). A row whose control the drafter
+set takes `drafted` + `onUndo` (+ `fieldLabel` when the title isn't plain
+text) and renders the `DraftedBadge` inline after its title, since
+`DraftedField` frames only inputs, textareas and pickers; a field in its
+`after` keeps its own `DraftedField`. Settings → General is the page-level example:
 `PageToolbar` intro and rule, then `SectionHeader`ed groups of SettingRows in a
 `max-w-3xl` column. Inline "switch + label" pairs (a filter
 toggle) are not SettingRows.
@@ -1694,9 +1708,17 @@ it?
 - **`variant="docked"`** (yes): what you read or tweak beside a live page
   (the chat's artifact or an answer's sources, a workflow node's settings, a
   graph entity). An `<aside>` in the page: no scrim, `border-l` on
-  `bg-background`, the full height of its host. It slides in like the modal
-  one and closes at once (an exit slide snaps back for a frame before it
-  unmounts). The host is a `relative flex overflow-hidden` row with the page
+  `bg-background`, the full height of its host. It opens by growing its
+  width from the host's right edge and closes by shrinking back
+  (`duration-300 ease-in-out`, like the sidebar), so the page narrows and
+  widens with it; while it moves the content keeps the compact width, pinned
+  right, and slides with the edge (at rest it fills the panel, so a host
+  narrower than 480px never clips it), and while closing the panel is inert
+  and keeps what it last showed. A page that lays itself out differently
+  beside the panel (the chat's columns) switches back in `onClosed`, once
+  the panel has shrunk out, not when it starts to. Full width fades instead. Never a transform: a panel translated
+  off the edge overflows the host, which jumps sideways when the panel
+  focuses a field. The host is a `relative flex overflow-hidden` row with the page
   as a `min-w-0 flex-1` sibling. While open it covers the app's floating Share
   and account menu in the top-right corner (`ActionButtons`, `z-10` under the
   panel's `z-20`); they come back when it closes. One docked slot per page:
