@@ -207,6 +207,23 @@ describe('SidePanel variant="docked"', () => {
       expect(aside()!.textContent).toContain('renewal-note.md');
     });
 
+    it('fills itself once grown in, so a narrow host never clips it', async () => {
+      const content = () =>
+        aside()!
+          .querySelector<HTMLElement>('[data-slot="side-panel-content"]')!
+          .className.split(' ');
+      await render(panel({ variant: 'docked' }));
+      // While it moves the content keeps the compact width and slides.
+      expect(content()).toContain('min-w-120');
+      await act(async () => vi.advanceTimersByTime(300));
+      // At rest it is the panel's width: a host narrower than 480px, or the
+      // panel's own border, would clip its left side.
+      expect(content()).toContain('w-full');
+      expect(content()).not.toContain('min-w-120');
+      await render(panel({ variant: 'docked', open: false }));
+      expect(content()).toContain('min-w-120');
+    });
+
     it('renders once per page render while open', async () => {
       // A new content element on every page render must not re-render the
       // panel a second time to remember it.

@@ -178,14 +178,19 @@ function SidePanel({
   // and state would render the panel twice each time to remember it.
   const lastChildren = React.useRef(children);
   if (open) lastChildren.current = children;
+  // Settled once it has grown in. Only while it moves does the content keep
+  // the compact width; at rest it fills the panel, which a host narrower
+  // than compact (or the panel's own border) would otherwise clip.
+  const [settled, setSettled] = React.useState(false);
+  if (!open && settled) setSettled(false);
   React.useEffect(() => {
-    if (!closing) return;
+    if (open ? settled : !present) return;
     const timer = window.setTimeout(
-      () => setPresent(false),
+      () => (open ? setSettled(true) : setPresent(false)),
       prefersReducedMotion() ? 0 : DOCKED_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [closing]);
+  }, [open, present, settled]);
 
   const dialog = variant === 'modal' || isMobile;
   const context = React.useMemo<SidePanelContextValue>(
@@ -241,11 +246,15 @@ function SidePanel({
           className,
         )}
       >
-        {/* At least the compact width and pinned right, so the content
-            slides in with the edge instead of reflowing as the panel grows. */}
+        {/* Pinned right and, while the panel moves, at least the compact
+            width, so the content slides with the edge instead of
+            reflowing. */}
         <div
           data-slot="side-panel-content"
-          className="absolute inset-y-0 right-0 flex w-full min-w-120 flex-col"
+          className={cn(
+            'absolute inset-y-0 right-0 flex w-full flex-col',
+            !settled && 'min-w-120',
+          )}
         >
           {closing ? lastChildren.current : children}
         </div>

@@ -1710,9 +1710,10 @@ it?
   `bg-background`, the full height of its host. It opens by growing its
   width from the host's right edge and closes by shrinking back
   (`duration-300 ease-in-out`, like the sidebar), so the page narrows and
-  widens with it; the content keeps its width, pinned right, and slides with
-  the edge, and while closing the panel is inert and keeps what it last
-  showed. Full width fades instead. Never a transform: a panel translated
+  widens with it; while it moves the content keeps the compact width, pinned
+  right, and slides with the edge (at rest it fills the panel, so a host
+  narrower than 480px never clips it), and while closing the panel is inert
+  and keeps what it last showed. Full width fades instead. Never a transform: a panel translated
   off the edge overflows the host, which jumps sideways when the panel
   focuses a field. The host is a `relative flex overflow-hidden` row with the page
   as a `min-w-0 flex-1` sibling. While open it covers the app's floating Share
