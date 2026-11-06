@@ -46,6 +46,9 @@ class Rule:
     in_route: bool = False
     blocked_by: tuple[str, ...] = ()
     check: Optional[Callable[[Any, dict, Optional[str]], Optional[str]]] = None
+    #: Scopes that let a token restricted on ``family`` through anyway: with one, the route answers
+    #: such a token with nothing from the family (``allowed_ids``), so there is nothing to prove.
+    family_exempt_with: tuple[str, ...] = ()
 
 
 def _rule(scope: Optional[str] = None, *ids: Locator, any_of: tuple[str, ...] = (), **kwargs) -> Rule:
@@ -310,11 +313,15 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_prompts", "GET"): _rule("prompts:read", listing=True),
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
-    # The caller's chat prompt and task model. The stored prompt id can't be proven from the request,
-    # so the read is closed to prompt-restricted tokens; a write names the prompt it picks (a preset
-    # always passes), and may not ask for only_if_unset, whose answer carries the stored id. The route
-    # asks for prompts:write to set the chat prompt and models:write to set the task model.
-    ("/api/user/preferences", "GET"): _rule("prompts:read"),
+    # The caller's chat prompt and task model. The read answers with the parts the token's scopes
+    # cover: the chat prompt for prompts:read, the task model for models:read. The stored prompt id
+    # can't be proven from the request, so a prompt-restricted token never reads it (and needs
+    # models:read to read anything); a write names the prompt it picks (a preset always passes), and
+    # may not ask for only_if_unset, whose answer carries the stored id. The route asks for
+    # prompts:write to set the chat prompt and models:write to set the task model.
+    ("/api/user/preferences", "GET"): _rule(
+        any_of=("prompts:read", "models:read"), family="prompts", family_exempt_with=("models:read",)
+    ),
     ("/api/user/preferences", "PUT"): _rule(
         any_of=("prompts:write", "models:write"), family="prompts", in_route=True, check=_chat_prompt_check
     ),
@@ -592,6 +599,8 @@ def authorize(request, decoded_token: dict) -> Optional[tuple[dict, int]]:
             403,
         )
     resource_filter = decoded_token.get("resource_filter") or {}
+    if rule.family in resource_filter and granted.intersection(rule.family_exempt_with):
+        resource_filter = {family: ids for family, ids in resource_filter.items() if family != rule.family}
     if not resource_filter:
         return None
     reason = _check_resources(request, rule, resource_filter, decoded_token.get("sub"))

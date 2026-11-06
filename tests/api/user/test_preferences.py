@@ -331,3 +331,37 @@ class TestTaskModel:
             request.decoded_token = token
             resp = PreferencesResource().put()
         assert resp.status_code == 403 and resp.json["required_scope"] == "models:write"
+
+    @staticmethod
+    def _get_as_token(app, conn, scopes, resource_filter=None):
+        from docsgpt.api.pat.tokens import AUTH_METHOD_PAT
+
+        token = {
+            "sub": ALICE,
+            "auth_method": AUTH_METHOD_PAT,
+            "scopes": scopes,
+            "resource_filter": resource_filter or {},
+        }
+        with _patch_db(conn), app.test_request_context("/api/user/preferences", method="GET"):
+            from flask import request
+
+            from docsgpt.api.user.me.routes import PreferencesResource
+
+            request.decoded_token = token
+            return PreferencesResource().get()
+
+    def test_a_token_reads_only_the_parts_its_scopes_cover(self, app, pg_conn):
+        _call(app, pg_conn, "put", json={"chat_prompt_id": "strict", "task_model_id": "gpt-a"})
+        models_only = self._get_as_token(app, pg_conn, ["models:read"]).json
+        assert models_only == {"success": True, "task_model_id": "gpt-a", "instance_task_model_id": "gpt-default"}
+        prompts_only = self._get_as_token(app, pg_conn, ["prompts:read"]).json
+        assert prompts_only == {"success": True, "chat_prompt_id": "strict", "chat_prompt_set": True}
+        both = self._get_as_token(app, pg_conn, ["models:read", "prompts:read"]).json
+        assert both["chat_prompt_id"] == "strict" and both["task_model_id"] == "gpt-a"
+
+    def test_a_prompt_restricted_token_never_reads_the_chat_prompt(self, app, pg_conn):
+        _call(app, pg_conn, "put", json={"chat_prompt_id": "strict", "task_model_id": "gpt-a"})
+        body = self._get_as_token(
+            app, pg_conn, ["models:read", "prompts:read"], {"prompts": [str(uuid.uuid4())]}
+        ).json
+        assert body == {"success": True, "task_model_id": "gpt-a", "instance_task_model_id": "gpt-default"}

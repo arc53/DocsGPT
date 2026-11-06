@@ -28,7 +28,7 @@ from flask_restx import Namespace, Resource, fields
 from sqlalchemy import Connection
 
 from docsgpt.api import api
-from docsgpt.api.pat.rules import missing_scope_response
+from docsgpt.api.pat.rules import allowed_ids, missing_scope_response
 from docsgpt.api.pat.tokens import is_pat
 from docsgpt.api.user.prompts.routes import PRESET_PROMPTS
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
@@ -196,32 +196,44 @@ class PreferencesResource(Resource):
             "deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was "
             "ever stored, default included, even when it now reads as default. task_model_id is the model the "
             "caller's DocsGPT jobs run on, null when they picked none or can no longer use it; "
-            "instance_task_model_id is the one that runs then."
+            "instance_task_model_id is the one that runs then, null when no model can. A token gets the chat "
+            "prompt fields with prompts:read (never when restricted to specific prompts) and the task model "
+            "fields with models:read."
         )
     )
     def get(self):
-        """Return ``{success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}``."""
+        """Return ``{success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}``.
+
+        A token reads only the parts its scopes cover: the chat prompt with
+        ``prompts:read`` and no prompt allowlist (the stored id can't be
+        proven inside one), the task model with ``models:read``.
+
+        Returns:
+            Response: The preferences the caller may read.
+        """
         decoded_token = getattr(request, "decoded_token", None)
         user_id = decoded_token.get("sub") if decoded_token else None
         if not user_id:
             return make_response(jsonify({"success": False}), 401)
+        reads_prompt = (
+            missing_scope_response(request, "prompts:read") is None and allowed_ids(request, "prompts") is None
+        )
+        reads_task_model = missing_scope_response(request, "models:read") is None
+        body: dict = {"success": True}
         try:
             with db_readonly() as conn:
-                user_doc = UsersRepository(conn).get(user_id) or {}
-                prefs = user_doc.get("tool_preferences") or {}
-                stored = prefs.get("chat_prompt_id") if isinstance(prefs, dict) else None
-                chat_prompt_id = _readable_chat_prompt(conn, user_id, stored)
-                task_models = _task_models(conn, user_id)
+                if reads_prompt:
+                    user_doc = UsersRepository(conn).get(user_id) or {}
+                    prefs = user_doc.get("tool_preferences") or {}
+                    stored = prefs.get("chat_prompt_id") if isinstance(prefs, dict) else None
+                    body["chat_prompt_id"] = _readable_chat_prompt(conn, user_id, stored)
+                    # A stored default, or a prompt since deleted or unshared, is still a choice.
+                    body["chat_prompt_set"] = isinstance(stored, str) and bool(stored)
+                if reads_task_model:
+                    body.update(_task_models(conn, user_id))
         except Exception as err:
             current_app.logger.error(f"Error reading preferences: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
-        body = {
-            "success": True,
-            "chat_prompt_id": chat_prompt_id,
-            # A stored default, or a prompt since deleted or unshared, is still a choice.
-            "chat_prompt_set": isinstance(stored, str) and bool(stored),
-            **task_models,
-        }
         return make_response(jsonify(body), 200)
 
     @api.expect(preferences_model)

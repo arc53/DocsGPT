@@ -259,6 +259,17 @@ class TestResourceRestrictions:
         both = self._put_preferences(client, claims, {"task_model_id": "gpt-a", "chat_prompt_id": SOURCE_B})
         assert _denied(both) == "resource_not_allowed"
 
+    def test_task_model_preference_is_readable_with_models_read(self, client):
+        # The route answers such a token with the task model alone; the rules only let it in.
+        with patch("docsgpt.api.user.me.routes.db_readonly", side_effect=RuntimeError("no database here")):
+            for claims in (
+                _claims(["models:read"]),
+                self._restricted(["models:read", "prompts:read"], prompts=[SOURCE_A]),
+            ):
+                assert _denied(_call(client, "GET", "/api/user/preferences", claims)) is None
+            refused = _call(client, "GET", "/api/user/preferences", _claims(["agents:read"]))
+        assert _denied(refused) == "insufficient_scope"
+
     def test_chat_prompt_only_if_unset_stays_open_to_other_tokens(self, client):
         for claims in (
             _claims(["prompts:write"]),
