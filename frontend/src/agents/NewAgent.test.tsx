@@ -3061,6 +3061,44 @@ describe('NewAgent drafter', () => {
     ).toHaveLength(2);
   });
 
+  it('keeps a draft started over and asked again while Publish is out', async () => {
+    let answer: (value: {
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }) => void = () => undefined;
+    mocks.createAgent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    drafter.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help', description: 'Answers shipping.' },
+          { steps: ['basics'] },
+        ),
+        { type: 'end' },
+      ],
+      [proposal({ starters: ['Where is my parcel?'] }), { type: 'end' }],
+    ];
+    await render();
+    await ask('Shipping agent');
+    await act(async () => buttonByText('agents.form.buttons.publish')!.click());
+    await act(async () =>
+      buttonByLabel('drafter.startOver', panel()!)!.click(),
+    );
+    // As many items as before the Start over: still a newer conversation.
+    await ask('Add a starter');
+    await act(async () =>
+      answer({ ok: true, json: () => Promise.resolve({ id: 'new-1' }) }),
+    );
+    expect(drafted()).toEqual(['agents.form.starters.label']);
+    expect(
+      panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+    ).toHaveLength(1);
+  });
+
   it('drops the mark of a field edited by hand', async () => {
     drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
     await render();

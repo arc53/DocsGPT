@@ -1275,6 +1275,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     buildRef.current.onProposal(proposal);
   };
 
+  // Turns run so far (each send and retry), so a save can tell one began
+  // while it was out, even after a Start over emptied the drawer.
+  const turnsRef = useRef(0);
   const drafterSession = useDrafterSession({
     recipe: 'agent',
     getContext: () => {
@@ -1284,6 +1287,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         promptViewOpen && promptDetail.status === 'ready'
           ? promptViewIdentity()
           : 'drafter';
+      turnsRef.current += 1;
       return agentDraftContext(
         agent.id || null,
         draftFormRef.current,
@@ -1848,7 +1852,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (savingRef.current) return;
     const saving = savePayload;
     const savedValues = draftValues;
-    const turnsAtSave = drafterSession.items.length;
+    const turnsAtSave = turnsRef.current;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -1935,7 +1939,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       // Publishing ends a drafting session, unless a turn began while it
       // was out: that conversation and what it drafted stay.
       const session = drafterSessionRef.current;
-      if (!session.streaming && session.items.length === turnsAtSave) {
+      if (!session.streaming && turnsRef.current === turnsAtSave) {
         session.reset();
         build.reset();
         buildRowsRef.current.clear();
