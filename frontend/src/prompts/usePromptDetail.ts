@@ -228,20 +228,18 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     !!target && !readOnly && status === 'ready' && saveBlocker === null;
 
   /**
-   * Read the version a save left (the save routes don't return it); a view
-   * still open on the prompt saves at it next.
+   * Keep the version a save left, as its response gave it (a read after
+   * the save could see someone else's later save, and saving at it would
+   * overwrite theirs); a view still open on the prompt saves at it next.
    */
-  const rememberVersion = (id: string) => {
-    versions.current.delete(id);
-    const current = opening.current;
+  const rememberVersion = (
+    id: string,
+    version: string | null,
+    current: number,
+  ) => {
+    versions.current.set(id, version);
     const stillOpen = target?.kind === 'edit' && target.prompt.id === id;
-    fetchText(id)
-      .then((loaded) => {
-        versions.current.set(id, loaded.updated_at ?? null);
-        if (stillOpen && opening.current === current)
-          setUpdatedAt(loaded.updated_at ?? null);
-      })
-      .catch((error: unknown) => console.error(error));
+    if (stillOpen && opening.current === current) setUpdatedAt(version);
   };
 
   /**
@@ -252,8 +250,10 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
   const save = async ({ quiet = false } = {}): Promise<PromptSaveResult> => {
     if (!target || !canSave || saving) return 'failed';
     setSaving(true);
+    const current = opening.current;
     let result: PromptSaveResult = 'failed';
     let savedId: string | null = null;
+    let version: string | null = null;
     try {
       if (target.kind === 'new') {
         const response = await userService.createPrompt(
@@ -261,8 +261,12 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
           token,
         );
         if (response.ok) {
-          const created = (await response.json()) as { id?: string } | null;
+          const created = (await response.json()) as {
+            id?: string;
+            updated_at?: string | null;
+          } | null;
           savedId = created?.id ?? null;
+          version = created?.updated_at ?? null;
           result = savedId ? 'saved' : 'failed';
         }
       } else {
@@ -276,7 +280,11 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
           token,
         );
         if (response.ok) {
+          const saved = (await response.json()) as {
+            updated_at?: string | null;
+          } | null;
           savedId = target.prompt.id;
+          version = saved?.updated_at ?? null;
           result = 'saved';
         } else if (response.status === 409) result = 'conflict';
       }
@@ -287,7 +295,7 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     }
     if (result === 'saved' && savedId) {
       setBaseline({ name, content });
-      rememberVersion(savedId);
+      rememberVersion(savedId, version, current);
       onSaved({ id: savedId, name });
     } else if (!quiet) {
       showError(

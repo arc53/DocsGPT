@@ -83,21 +83,70 @@ describe('usePromptDetail', () => {
     service.getSinglePrompt.mockImplementation(() =>
       response({ content: 'Hello.', updated_at: 'v1' }),
     );
-    service.updatePrompt.mockImplementation(() => response({ success: true }));
+    service.updatePrompt.mockImplementation(() =>
+      response({ success: true, updated_at: 'v2' }),
+    );
     await act(async () => detail().open(own));
     await act(async () => detail().setContent('Hello there.'));
-    // The save moves the prompt on to v2; reopening with the drafter's text
-    // saves over v2, so someone else's later edit is still refused.
+    // Someone else saves right after: a read now would see their v3.
     service.getSinglePrompt.mockImplementation(() =>
-      response({ content: 'Hello there.', updated_at: 'v2' }),
+      response({ content: 'Theirs.', updated_at: 'v3' }),
     );
+    service.getSinglePrompt.mockClear();
     await act(async () => void (await detail().save()));
+    // The save's own version: the next save is refused over their edit.
+    expect(service.getSinglePrompt).not.toHaveBeenCalled();
+    await act(async () => detail().setContent('Hello again.'));
+    await act(async () => void (await detail().save()));
+    expect(service.updatePrompt).toHaveBeenLastCalledWith(
+      {
+        id: 'p1',
+        name: own.name,
+        content: 'Hello again.',
+        expected_updated_at: 'v2',
+      },
+      'tok',
+    );
+    service.updatePrompt.mockImplementation(() =>
+      response({ success: true, updated_at: 'v4' }),
+    );
     await act(async () =>
       detail().openWith({ name: own.name, content: 'Hi.' }, own),
     );
     await act(async () => void (await detail().save()));
     expect(service.updatePrompt).toHaveBeenLastCalledWith(
       { id: 'p1', name: own.name, content: 'Hi.', expected_updated_at: 'v2' },
+      'tok',
+    );
+    expect(service.getSinglePrompt).not.toHaveBeenCalled();
+  });
+
+  it('saves over a prompt it created at the version the create returned', async () => {
+    service.createPrompt.mockImplementation(() =>
+      response({ id: 'p9', updated_at: 'v1' }),
+    );
+    service.updatePrompt.mockImplementation(() =>
+      response({ success: true, updated_at: 'v2' }),
+    );
+    await act(async () => detail().add());
+    await act(async () => {
+      detail().setName('Fresh');
+      detail().setContent('New text.');
+    });
+    await act(async () => void (await detail().save()));
+    const created: Prompt = { ...own, id: 'p9', name: 'Fresh' };
+    await act(async () =>
+      detail().openWith({ name: 'Fresh', content: 'Drafted.' }, created),
+    );
+    await act(async () => void (await detail().save()));
+    expect(service.getSinglePrompt).not.toHaveBeenCalled();
+    expect(service.updatePrompt).toHaveBeenCalledWith(
+      {
+        id: 'p9',
+        name: 'Fresh',
+        content: 'Drafted.',
+        expected_updated_at: 'v1',
+      },
       'tok',
     );
   });

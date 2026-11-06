@@ -69,7 +69,10 @@ class CreatePrompt(Resource):
     )
 
     @api.expect(create_prompt_model)
-    @api.doc(description="Create a new prompt")
+    @api.doc(
+        description="Create a new prompt",
+        responses={200: "The new prompt's id and updated_at (the version a save over it sends back)"},
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -87,7 +90,7 @@ class CreatePrompt(Resource):
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"id": new_id}), 200)
+        return make_response(jsonify({"id": new_id, "updated_at": _iso(prompt.get("updated_at"))}), 200)
 
 
 @prompts_ns.route("/get_prompts")
@@ -234,11 +237,22 @@ class UpdatePrompt(Resource):
             "content": fields.String(
                 required=True, description="New content of the prompt"
             ),
+            "expected_updated_at": fields.String(
+                required=False,
+                description="The prompt's updated_at as last read or saved; the save is refused (409) "
+                "when someone saved it since",
+            ),
         },
     )
 
     @api.expect(update_prompt_model)
-    @api.doc(description="Update an existing prompt")
+    @api.doc(
+        description="Update an existing prompt",
+        responses={
+            200: "Saved: success and the new updated_at, the version the next save sends back",
+            409: "Someone saved the prompt since expected_updated_at (code stale_write)",
+        },
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -274,4 +288,6 @@ class UpdatePrompt(Resource):
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True}), 200)
+        return make_response(
+            jsonify({"success": True, "updated_at": _iso(result) if isinstance(result, str) else None}), 200
+        )

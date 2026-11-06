@@ -1608,6 +1608,10 @@
           "description": "New content of the prompt",
           "type": "string"
         },
+        "expected_updated_at": {
+          "description": "The prompt's updated_at as last read or saved; the save is refused (409) when someone saved it since",
+          "type": "string"
+        },
         "id": {
           "description": "Prompt ID to update",
           "type": "string"
@@ -3899,7 +3903,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "The new prompt's id and updated_at (the version a save over it sends back)"
           }
         },
         "tags": [
@@ -7177,7 +7181,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Saved: success and the new updated_at, the version the next save sends back"
+          },
+          "409": {
+            "description": "Someone saved the prompt since expected_updated_at (code stale_write)"
           }
         },
         "tags": [
