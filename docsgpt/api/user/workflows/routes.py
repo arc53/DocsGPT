@@ -21,6 +21,7 @@ from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
 )
+from docsgpt.api.pat.rules import missing_scope_response
 from docsgpt.api.user import resource_access
 from docsgpt.api.user.resource_access import (
     AccessDenied,
@@ -643,24 +644,30 @@ def _editor_only_model(model_id: Any, owner_id: str | None, editor_id: str | Non
     )
 
 
+#: What a team editor's node model picker reads of the owner's custom models: what
+#: it shows (name, provider) and checks (structured output for a node with a schema).
+_OWNER_MODEL_FIELDS = ("id", "display_name", "provider", "source", "supports_structured_output")
+
+
 def _owner_models(owner_id: str) -> List[Dict]:
     """The owner's enabled custom models, for a team editor's node model picker.
 
     A node's model resolves in the owner's account, so these are the custom
-    models an editor can set (their own are refused on save). The endpoint
-    URL is left out: it is the owner's, and the picker doesn't need it.
+    models an editor can set (their own are refused on save). Only the fields
+    the picker needs are sent: the owner's endpoint, description and other
+    settings stay theirs.
 
     Args:
         owner_id: The workflow's owner.
 
     Returns:
-        The models as ``/api/models`` lists them, without ``base_url``.
+        Each model's ``_OWNER_MODEL_FIELDS``, as ``/api/models`` names them.
     """
     from docsgpt.core.model_registry import ModelRegistry
 
     models = ModelRegistry.get_instance().get_enabled_models(user_id=owner_id)
     return [
-        {k: v for k, v in model.to_dict().items() if k != "base_url"}
+        {k: v for k, v in model.to_dict().items() if k in _OWNER_MODEL_FIELDS}
         for model in models
         if model.source == "user"
     ]
@@ -1113,7 +1120,8 @@ class WorkflowDetail(Resource):
                 visible: Optional[Set[str]] = None
                 with cached_resolves():
                     if resource_access.holder_editable_by(conn, "workflow", workflow, user_id):
-                        if workflow["user_id"] != user_id:
+                        # A token reads them only with the scope /api/models asks for.
+                        if workflow["user_id"] != user_id and missing_scope_response(request, "models:read") is None:
                             owner_models = best_effort(
                                 conn, "the owner's custom models", lambda: _owner_models(workflow["user_id"]), [],
                             )
