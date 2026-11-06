@@ -2401,6 +2401,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const viewTarget = promptDetail.target;
   const viewSaved = viewTarget?.kind === 'edit' ? viewTarget.prompt : null;
   const viewBuiltIn = viewSaved?.type === 'public';
+  // A prompt the caller can't change is improved as a copy, when they may
+  // copy it.
+  const viewImprovable =
+    !promptDetail.readOnly || (!!viewSaved && can(viewSaved, 'duplicate'));
   const promptViewByline =
     promptOrigin === 'picker'
       ? viewBuiltIn
@@ -2429,7 +2433,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       }
       actions={
         <>
-          {drafterEnabled && (
+          {drafterEnabled && viewImprovable && (
             <WandButton
               {...wandProps}
               open={promptDetail.readOnly ? undefined : drafterOpen}

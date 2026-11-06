@@ -4007,6 +4007,23 @@ describe('NewAgent drafter', () => {
       expect(panel()).not.toBeNull();
     });
 
+    it("offers no Improve on a prompt the caller can't change or copy", async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        {
+          id: 'p4',
+          name: 'Locked tone',
+          type: 'team',
+          access: 'viewer',
+          allowed_actions: ['use'],
+        },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p4');
+      expect(viewText().readOnly).toBe(true);
+      expect(viewWand()).toBeNull();
+    });
+
     it('improves a copy of a built-in, and saving picks the copy', async () => {
       mockState.preference.prompts = [
         ...PROMPTS,
