@@ -70,4 +70,52 @@ describe('templateBroken', () => {
     expect(templateBroken('{{ a }}{% if(x) %}y')).toBe(true);
     expect(templateBroken('{{ a }}{% endif+%}')).toBe(true);
   });
+
+  it('opens a set block with a filter, whose arguments may hold an =', () => {
+    // Each of these parses in the chat's Jinja environment.
+    for (const text of [
+      '{% set note | wordwrap(width=80) %}Hi {{ x }}{% endset %}{{ note }}',
+      '{% set note|upper %}{{ x }}{% endset %}',
+      '{% set note | replace("=", "-") %}{{ x }}{% endset %}',
+      '{% set x = a | default(b=1) %}{{ x }}',
+      '{% set x = "a|b" %}{{ x }}',
+      '{% set ns = namespace(n=0) %}{% set ns.n = 1 %}{{ ns.n }}',
+      '{% set a, b = 1, 2 %}{{ a }}',
+      '{% set (a, b) = (1, 2) %}{{ a }}',
+    ]) {
+      expect(templateBroken(text)).toBe(false);
+    }
+    expect(templateBroken('{{ a }}{% set note | upper %}Hi')).toBe(true);
+    expect(templateBroken('{{ a }}{% set x = a | f(b=1) %}{% endset %}')).toBe(
+      true,
+    );
+  });
+
+  it('reads past a delimiter inside a quoted string', () => {
+    // Each of these parses in the chat's Jinja environment.
+    for (const text of [
+      '{{ "}} {% if x %}" }}',
+      "{{ '}} {% if x %}' }}",
+      '{{ "a \\" }} {% if %}" }}',
+      "{{ 'it\\'s {% if %}' }}",
+      '{% if x == "%}" %}{{ y }}{% endif %}',
+      '{{ x }}{% if y %}{{ "{% endif %}" }}{% endif %}',
+      '{{ x }}{% if y %}{{ "{{" }}{% endif %}',
+      // A comment holds no strings.
+      '{{ x }}{# a "comment #}{{ y }}',
+      // Nor does the text around the tags.
+      '"{{ x }}" isn\'t {{ y }}',
+      // A closer inside brackets is part of the expression.
+      "{{ {'a': {'b': 1}} }}",
+      "{{ {'a': 1}}}",
+      "{% set d = {'a': 1}%}{{ d }}",
+    ]) {
+      expect(templateBroken(text)).toBe(false);
+    }
+    // A block closed only inside a string is still open.
+    expect(templateBroken('{{ x }}{% if y %}{{ "{% endif %}" }}')).toBe(true);
+    // A string that never closes takes the rest of the text with it.
+    expect(templateBroken('{{ "abc }}')).toBe(true);
+    expect(templateBroken('{{ x }}{% if x == "a %}{% endif %}')).toBe(true);
+  });
 });
