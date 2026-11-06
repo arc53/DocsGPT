@@ -142,9 +142,74 @@ export function readPromptProposal(raw: unknown): PromptProposal | null {
   return null;
 }
 
+// What the server's clean_text (docsgpt/drafter/fencing.py) drops before the
+// model reads the text, kept in step with it: control characters but \n and
+// \t, lone surrogates, invisible format characters, and tag characters
+// outside a subdivision flag.
+const INVISIBLE = new Set(
+  '\u200b\u202a\u202b\u202c\u202d\u202e\u2060\u2061\u2062\u2063\u2064' +
+    '\u2066\u2067\u2068\u2069\u206a\u206b\u206c\u206d\u206e\u206f\ufeff\ufff9\ufffa\ufffb',
+);
+const FLAG = '\u{1F3F4}';
+const FLAG_END = '\u{E007F}';
+
+const dropped = (ch: string): boolean => {
+  const code = ch.codePointAt(0) ?? 0;
+  const control =
+    (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) &&
+    ch !== '\n' &&
+    ch !== '\t';
+  return control || (code >= 0xd800 && code <= 0xdfff) || INVISIBLE.has(ch);
+};
+const isTag = (ch: string): boolean => {
+  const code = ch.codePointAt(0) ?? 0;
+  return code >= 0xe0000 && code <= 0xe007f;
+};
+const isFlagLetter = (ch: string | undefined): boolean => {
+  const code = ch?.codePointAt(0) ?? 0;
+  return (
+    (code >= 0xe0030 && code <= 0xe0039) || (code >= 0xe0061 && code <= 0xe007a)
+  );
+};
+
+/** The text as the server reads it, and where each of its code units sits in the text as it is. */
+type ReadText = { text: string; at: number[] };
+
+function readText(content: string): ReadText {
+  const chars: [string, number][] = [];
+  let offset = 0;
+  for (const ch of content) {
+    if (!dropped(ch)) chars.push([ch, offset]);
+    offset += ch.length;
+  }
+  // A subdivision flag (England, Scotland, Wales) keeps its tag sequence.
+  const flagged = new Set<number>();
+  chars.forEach(([ch], index) => {
+    if (ch !== FLAG) return;
+    let end = index + 1;
+    while (end - index <= 6 && isFlagLetter(chars[end]?.[0])) end += 1;
+    if (end - index - 1 < 3 || chars[end]?.[0] !== FLAG_END) return;
+    for (let at = index + 1; at <= end; at += 1) flagged.add(at);
+  });
+  const kept = chars.filter(([ch], index) => !isTag(ch) || flagged.has(index));
+  // Trimmed, as the server strips it.
+  let from = 0;
+  let to = kept.length;
+  while (from < to && /\s/u.test(kept[from][0])) from += 1;
+  while (to > from && /\s/u.test(kept[to - 1][0])) to -= 1;
+  const read: ReadText = { text: '', at: [] };
+  kept.slice(from, to).forEach(([ch, at]) => {
+    read.text += ch;
+    for (let unit = 0; unit < ch.length; unit += 1) read.at.push(at + unit);
+  });
+  return read;
+}
+
 /**
- * The text as the server reads it for its edits: carriage returns dropped
- * (a Windows line end is a plain `\n` there).
+ * The text as the server reads it for its edits: cleaned of control and
+ * invisible characters (a Windows line end is a plain `\n` there) and
+ * trimmed. The edits' text is in this form; the functions below map it back
+ * onto the text as it is.
  *
  * Args:
  *   content: The prompt's text.
@@ -152,27 +217,45 @@ export function readPromptProposal(raw: unknown): PromptProposal | null {
  * Returns:
  *   The text the server's edits fit.
  */
-export const promptAsRead = (content: string): string =>
-  content.replace(/\r/g, '');
+export const promptAsRead = (content: string): string => readText(content).text;
 
 type Located = { edit: PromptEdit; start: number; end: number };
 
+/**
+ * Each edit's place in `content`, in edit order: where its text occurs in
+ * the text as read, as a span of `content` (taking in the characters the
+ * reading dropped inside it). `once` is whether it occurs only there.
+ */
+function placeEdits(
+  content: string,
+  edits: PromptEdit[],
+): (Located & { once: boolean })[] {
+  const { text, at } = readText(content);
+  return edits.flatMap((edit) => {
+    const found = edit.find ? text.indexOf(edit.find) : -1;
+    if (found < 0) return [];
+    const last = found + edit.find.length - 1;
+    return [
+      {
+        edit,
+        start: at[found],
+        end: at[last] + 1,
+        once: text.indexOf(edit.find, found + 1) < 0,
+      },
+    ];
+  });
+}
+
 /** Each edit's place in `content`, in text order; an edit whose text is gone is left out. */
 function locate(content: string, edits: PromptEdit[]): Located[] {
-  return edits
-    .map((edit) => {
-      const start = content.indexOf(edit.find);
-      return { edit, start, end: start + edit.find.length };
-    })
-    .filter((item) => item.start >= 0)
-    .sort((a, b) => a.start - b.start);
+  return placeEdits(content, edits).sort((a, b) => a.start - b.start);
 }
 
 /**
  * The edits that still fit `content`: each one's text occurs there exactly
- * once and overlaps no edit kept before it. The server checked them against
- * the copy the model read; the saved text can differ (a long prompt is
- * read cut short).
+ * once (as the server reads it) and overlaps no edit kept before it. The
+ * server checked them against the copy the model read; the saved text can
+ * differ (a long prompt is read cut short).
  *
  * Args:
  *   content: The text the review will run on.
@@ -186,15 +269,14 @@ export function fittingEdits(
   edits: PromptEdit[],
 ): PromptEdit[] {
   const taken: [number, number][] = [];
-  return edits.filter((edit) => {
-    const start = content.indexOf(edit.find);
-    if (!edit.find || start < 0 || content.indexOf(edit.find, start + 1) >= 0)
-      return false;
-    const end = start + edit.find.length;
-    if (taken.some(([from, to]) => start < to && from < end)) return false;
-    taken.push([start, end]);
-    return true;
-  });
+  return placeEdits(content, edits)
+    .filter(({ start, end, once }) => {
+      if (!once || taken.some(([from, to]) => start < to && from < end))
+        return false;
+      taken.push([start, end]);
+      return true;
+    })
+    .map(({ edit }) => edit);
 }
 
 /**
@@ -219,7 +301,7 @@ export function applyPromptEdits(
   for (const { edit, start, end } of locate(content, edits)) {
     if (start < cursor) continue;
     out += content.slice(cursor, start);
-    out += accepted(edit.id) ? edit.replace : edit.find;
+    out += accepted(edit.id) ? edit.replace : content.slice(start, end);
     cursor = end;
   }
   return out + content.slice(cursor);

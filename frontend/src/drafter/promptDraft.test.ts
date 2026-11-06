@@ -2,6 +2,7 @@ import {
   applyPromptEdits,
   fittingEdits,
   type PromptEdit,
+  promptAsRead,
   promptDiffSegments,
   promptDrafterMode,
   readPromptProposal,
@@ -118,5 +119,60 @@ describe('promptDiffSegments', () => {
       { kind: 'change', edit: EDITS[0], number: 1 },
       { kind: 'change', edit: EDITS[1], number: 2 },
     ]);
+  });
+});
+
+// The server reads the text cleaned of invisible and control characters, so
+// its edits' text has none; they map back onto the text as it is.
+describe('edits on a text with invisible characters', () => {
+  const ZWSP = '\u200b';
+  const TEXT = `Be${ZWSP} brief.\r\nAlways cite.${ZWSP}\u0007 Thanks.`;
+  const edit = (find: string, replace: string): PromptEdit => ({
+    id: 'e1',
+    find,
+    replace,
+    reason: 'r',
+  });
+
+  it('reads the text as the server does', () => {
+    expect(promptAsRead(TEXT)).toBe('Be brief.\nAlways cite. Thanks.');
+    expect(promptAsRead(`  ${ZWSP}Hi\u202e there\ufeff \n`)).toBe('Hi there');
+    // Tag characters go, except a subdivision flag's; joiners stay.
+    const wales =
+      '\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}';
+    const family = '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}';
+    expect(promptAsRead(`a\u{E0041}\u{E0042}b ${wales} ${family}`)).toBe(
+      `ab ${wales} ${family}`,
+    );
+  });
+
+  it('applies an edit whose text spans one, replacing it with the passage', () => {
+    const edits = [edit('Be brief.', 'Be short.')];
+    expect(fittingEdits(TEXT, edits)).toEqual(edits);
+    expect(applyPromptEdits(TEXT, edits, () => true)).toBe(
+      `Be short.\r\nAlways cite.${ZWSP}\u0007 Thanks.`,
+    );
+    // Rejected, the passage stays exactly as it was.
+    expect(applyPromptEdits(TEXT, edits, () => false)).toBe(TEXT);
+  });
+
+  it('keeps the ones outside an edit, line ends included', () => {
+    const edits = [edit('Always cite.', 'Cite sources.')];
+    expect(fittingEdits(TEXT, edits)).toEqual(edits);
+    expect(applyPromptEdits(TEXT, edits, () => true)).toBe(
+      `Be${ZWSP} brief.\r\nCite sources.${ZWSP}\u0007 Thanks.`,
+    );
+    expect(promptDiffSegments(TEXT, edits)).toEqual([
+      { kind: 'text', text: `Be${ZWSP} brief.\r\n` },
+      { kind: 'change', edit: edits[0], number: 1 },
+      { kind: 'text', text: `${ZWSP}\u0007 Thanks.` },
+    ]);
+  });
+
+  it('applies an edit across a line end the server read as \\n', () => {
+    const edits = [edit('brief.\nAlways', 'brief. Always')];
+    expect(applyPromptEdits(TEXT, edits, () => true)).toBe(
+      `Be${ZWSP} brief. Always cite.${ZWSP}\u0007 Thanks.`,
+    );
   });
 });

@@ -119,10 +119,21 @@ describe('usePromptDrafter', () => {
       improve([{ id: 'e1', find: 'Hello.\nBe', replace: 'Hi.\nBe' }]),
     ];
     await act(async () => current.drafter!.session.send('Tighten it'));
-    expect(current.drafter!.review!.original).toBe('Hello.\nBe brief.');
+    expect(current.drafter!.review!.proposal.edits).toHaveLength(1);
     await act(async () => current.drafter!.acceptAll());
     expect(current.drafter!.review).toBeNull();
     expect(current.content).toBe('Hi.\nBe brief.');
+  });
+
+  // The server reads it without invisible characters; those outside a
+  // change stay.
+  it('reviews a text with a zero-width space as the server read it', async () => {
+    await act(async () => current.setContent('Hel\u200blo.\nBe brief.\u200b'));
+    stream.scripts = [improve([{ id: 'e1', find: 'Hello.', replace: 'Hi.' }])];
+    await act(async () => current.drafter!.session.send('Tighten it'));
+    expect(current.drafter!.review!.proposal.edits).toHaveLength(1);
+    await act(async () => current.drafter!.acceptAll());
+    expect(current.content).toBe('Hi.\nBe brief.\u200b');
   });
 
   it('leaves a text with Windows line ends as it was when nothing is accepted', async () => {

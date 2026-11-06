@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { promptAsRead, readPromptProposal } from './promptDraft';
+import { readPromptProposal } from './promptDraft';
 import type { DrafterStarter } from './starters';
 import { type DraftedFields, useDraftedFields } from './useDraftedFields';
 import { type DrafterSession, useDrafterSession } from './useDrafterSession';
@@ -129,11 +129,9 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     if (proposal.edits.length === 0) return;
     // The text is read-only while a turn runs, so it is still what was sent.
     const sentText = sent.current;
-    const reviewed = reviewsRef.current.start(
-      proposal.edits,
-      promptAsRead(sentText),
-      sentText,
-    );
+    // Reviewed on the text as it is; the edits map onto it as the server
+    // read it (invisible characters and \r outside a change stay).
+    const reviewed = reviewsRef.current.start(proposal.edits, sentText);
     if (reviewed === 0)
       sessionRef.current?.addMessage(
         tRef.current('drafter.agent.prompt.editsStale'),
