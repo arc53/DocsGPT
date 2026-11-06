@@ -630,6 +630,27 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
+    def purge_index(self, batch_size: int = 1000) -> int:
+        """Delete every chunk of this source, one short transaction per ``batch_size`` rows.
+
+        Args:
+            batch_size: Rows per delete.
+
+        Returns:
+            The number of chunks deleted.
+        """
+        size = max(1, int(batch_size))
+        total = 0
+        while True:
+            deleted = self._run_statement(
+                f"DELETE FROM {self._table_name} WHERE id IN "
+                f"(SELECT id FROM {self._table_name} WHERE source_id = %s LIMIT %s);",
+                (self._source_id, size),
+            )
+            total += deleted
+            if deleted < size:
+                return total
+
     def save_local(self, *args, **kwargs):
         """No-op for PostgreSQL - data is already persisted"""
         pass
@@ -953,3 +974,31 @@ class PGVectorStore(BaseVectorStore):
         except Exception:
             # Interpreter teardown can null out module globals; never raise here.
             pass
+
+
+def chunk_counts_by_source(*, connection_string: Optional[str] = None) -> Dict[str, int]:
+    """Count the chunks of every source in the vectors table, without building a store.
+
+    One ``GROUP BY`` over the whole ``documents`` table (the store's default,
+    the only one ``VectorCreator`` builds): meant for an operator's report,
+    not a request path.
+
+    Args:
+        connection_string: The vectors database; defaults like ``PGVectorStore``.
+
+    Returns:
+        ``{source_id: chunk count}``.
+    """
+    dsn = connection_string or settings.PGVECTOR_CONNECTION_STRING
+    if not dsn and settings.POSTGRES_URI:
+        from docsgpt.core.db_uri import normalize_pgvector_connection_string
+
+        dsn = normalize_pgvector_connection_string(settings.POSTGRES_URI)
+    if not dsn:
+        raise ValueError("Set PGVECTOR_CONNECTION_STRING or POSTGRES_URI to count pgvector chunks.")
+    import psycopg
+
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT source_id, count(*) FROM documents GROUP BY source_id;")
+            return {str(source_id): int(count) for source_id, count in cursor.fetchall()}

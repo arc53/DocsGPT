@@ -15,7 +15,7 @@ pillow==13.0.0
 requests==2.34.2
 beautifulsoup4==4.15.0
 PyYAML==6.0.3
-pypdf==6.21.2
+pypdf==6.21.4
 pdfplumber==0.11.10
 pdfminer.six==20260107
 pypdfium2==5.14.0

@@ -1143,6 +1143,11 @@ ingest_chunk_progress_table = Table(
     # Added in ``0008_ingest_progress_status``. The reconciler flips
     # this to 'stalled'; ``init_progress`` resets it to 'active'.
     Column("status", Text, nullable=False, server_default="active"),
+    # Added in ``0062_ingest_resume``: the chunk set's hash, the task to
+    # queue again after a restart, and how often the reconciler has.
+    Column("chunk_fingerprint", Text),
+    Column("dispatch", JSONB),
+    Column("resume_attempts", Integer, nullable=False, server_default="0"),
 )
 
 

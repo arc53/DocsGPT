@@ -1990,6 +1990,7 @@
         "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",
         "mcp_twelvedata": "查詢股票、外匯、加密貨幣和 ETF 的報價、歷史價格、技術指標和基本面資料。",
         "mcp_cloudflare": "透過 Cloudflare API 管理 Workers、DNS、R2 等。",
+        "mcp_excalidraw": "繪製圖表並取得可在 Excalidraw 中編輯的連結。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
@@ -2330,7 +2331,9 @@
         "dismiss": "關閉上傳通知",
         "uploadProgress": "上傳進度 {{progress}}%",
         "clear": "清除",
-        "ingestionFailed": "匯入失敗。"
+        "ingestionFailed": "匯入失敗。",
+        "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
+        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。"
       },
       "ingestors": {
         "local_file": {
@@ -2831,6 +2834,24 @@
       "notRun": "未執行",
       "notRunMovedOn": "未執行：在核准之前，對話已繼續。",
       "notRunExpired": "未執行：核准請求已過期。"
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "正在載入應用程式…",
+        "ready": "可互動",
+        "failed": "失敗"
+      },
+      "loading": "正在載入應用程式…",
+      "allow": "允許",
+      "allowForView": "在此應用程式中允許",
+      "deny": "拒絕",
+      "reload": "重新載入應用程式",
+      "approvalAsk": "應用程式想要執行 {{tool}}。要允許嗎？",
+      "failedTitle": "無法載入應用程式",
+      "failedDescription": "其 MCP 伺服器沒有回應，或檢視無法啟動。",
+      "frameTitle": "{{name}}（互動式應用程式）",
+      "callFailed": "工具呼叫失敗",
+      "resultUnavailable": "結果已無法使用"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",

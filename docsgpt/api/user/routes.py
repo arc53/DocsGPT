@@ -20,6 +20,7 @@ from .attachments import attachments_ns
 from .background_jobs import background_jobs_ns
 from .conversations import conversations_ns
 from .drafter import drafter_ns
+from .mcp_apps import mcp_apps_ns
 from .me import me_ns
 from .models import models_ns
 from .monitors import approvals_ns, monitors_ns, triggers_ns
@@ -64,6 +65,9 @@ api.add_namespace(drafter_ns)
 
 # Current user (identity + roles)
 api.add_namespace(me_ns)
+
+# MCP Apps (interactive tool views in chat)
+api.add_namespace(mcp_apps_ns)
 
 # Models
 api.add_namespace(models_ns)

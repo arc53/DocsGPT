@@ -918,6 +918,21 @@ a `w-full min-w-0` wrapper with its margins on an inner div, because the
 answer bubble is a wrapping flex column and would let a one-line preview widen
 the card past the column.
 
+An MCP App view (`conversation/McpAppView`: a call whose MCP server ships an
+interactive `ui://` view, such as Excalidraw's canvas) is the same
+`ToolCallCard`, with the view as its body: the step's icon and label, a state
+Badge (`neutral` Loading, `success` Interactive, `destructive` Failed, `info`
+Needs approval while the view asks to run a tool) and Reload as a
+`ghost-muted icon-xs pill` in the actions row. The view is a sandboxed iframe
+on the sandbox origin, never the app's, at the height it reports (capped at
+1200px and `70svh`), hidden under a `LoadingState fill="parent"` until it
+starts. A tool the view calls that needs approval asks in the card as the
+approval card does: Allow, Deny and the Details chevron in the actions row,
+the one-line arguments preview as the meta. A view that fails to load is the
+destructive `EmptyState` with Retry; with MCP Apps off, or a sandbox the page
+can't use, the ordinary step row shows instead. Like the approval card, it
+ends a step group.
+
 ## Activity (`activity/`)
 
 A section like Settings: `activity/index.tsx` puts Now, Calendar and History,

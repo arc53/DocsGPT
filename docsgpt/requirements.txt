@@ -31,7 +31,7 @@ aiosignal==1.4.0
     # via aiohttp
 alembic==1.20.1
     # via docsgpt
-amqp==5.4.1
+amqp==5.4.2
     # via kombu
 aniso8601==10.0.1
     # via flask-restx
@@ -39,9 +39,9 @@ annotated-doc==0.0.5
     # via typer
 annotated-types==0.8.0
     # via pydantic
-anthropic==2.3.0
+anthropic==2.6.0
     # via docsgpt
-anyio==4.15.1
+anyio==4.16.0
     # via
     #   anthropic
     #   google-genai
@@ -63,7 +63,7 @@ attrs==26.1.0
     #   jsonschema
     #   jsonschema-path
     #   referencing
-authlib==1.9.1
+authlib==1.9.5
     # via fastmcp-slim
 beartype==0.23.1
     # via
@@ -75,17 +75,17 @@ beautifulsoup4==4.15.0
     #   markdownify
 bidict==0.24.1
     # via python-socketio
-billiard==4.3.1
+billiard==4.3.2
     # via celery
 blinker==1.9.0
     # via flask
-boto3==1.43.120
+boto3==1.43.125
     # via docsgpt
-botocore==1.43.120
+botocore==1.43.125
     # via
     #   boto3
     #   s3transfer
-cachetools==7.2.6
+cachetools==7.3.0
     # via py-key-value-aio
 caio==0.12.10
     # via aiofile
@@ -142,7 +142,7 @@ cryptography==50.0.2
     #   py-vapid
     #   pyjwt
     #   pywebpush
-cyclopts==5.3.2
+cyclopts==5.3.3
     # via fastmcp-slim
 dataclasses-json==0.6.7
     # via docsgpt
@@ -172,7 +172,7 @@ deprecated==1.3.1
     # via daytona
 distro==1.9.0
     # via google-genai
-dnspython==2.9.0
+dnspython==2.9.2
     # via email-validator
 docstring-parser==0.18.0
     # via
@@ -180,7 +180,7 @@ docstring-parser==0.18.0
     #   cyclopts
 docx2txt==0.9
     # via docsgpt
-elevenlabs==2.75.0
+elevenlabs==2.76.0
     # via docsgpt
 email-validator==2.3.0
     # via pydantic
@@ -194,11 +194,11 @@ fast-ebook==0.2.0
     # via docsgpt
 fastembed==0.9.1
     # via docsgpt
-fastmcp==4.1.4
+fastmcp==4.1.6
     # via docsgpt
-fastmcp-slim==4.1.4
+fastmcp-slim==4.1.6
     # via fastmcp
-filelock==4.2.4
+filelock==4.2.9
     # via
     #   huggingface-hub
     #   tldextract
@@ -218,11 +218,11 @@ frozenlist==1.8.0
     #   aiosignal
 fsspec==2026.9.0
     # via huggingface-hub
-google-api-core==2.43.0
+google-api-core==2.44.0
     # via google-api-python-client
 google-api-python-client==2.201.0
     # via docsgpt
-google-auth==2.62.0
+google-auth==2.62.1
     # via
     #   google-api-core
     #   google-api-python-client
@@ -233,7 +233,7 @@ google-auth-httplib2==0.4.4
     # via google-api-python-client
 google-auth-oauthlib==1.5.0
     # via docsgpt
-google-genai==2.33.0
+google-genai==2.34.0
     # via docsgpt
 google-re2==1.1.20251105
     # via cel-python
@@ -244,7 +244,7 @@ googleapis-common-protos==1.76.0
     #   opentelemetry-exporter-otlp-proto-http
 griffelib==2.4.1
     # via fastmcp-slim
-grpcio==1.85.0
+grpcio==1.85.1
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   qdrant-client
@@ -262,7 +262,7 @@ h11==0.16.0
     #   wsproto
 h2==4.4.1
     # via httpx
-hf-xet==1.7.1 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+hf-xet==1.8.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via huggingface-hub
 hpack==4.2.0
     # via h2
@@ -332,7 +332,7 @@ jmespath==1.1.0
     #   boto3
     #   botocore
     #   cel-python
-joserfc==1.7.7
+joserfc==1.8.0
     # via
     #   authlib
     #   fastmcp-slim
@@ -346,7 +346,7 @@ jsonschema-path==0.5.0
     # via fastmcp-slim
 jsonschema-specifications==2025.9.1
     # via jsonschema
-kombu==5.6.2
+kombu==5.7.0
     # via
     #   celery
     #   docsgpt
@@ -388,7 +388,7 @@ multidict==7.2.1
     # via
     #   aiohttp
     #   yarl
-mypy-extensions==1.1.0
+mypy-extensions==1.2.0
     # via typing-inspect
 networkx==3.7
     # via docsgpt
@@ -400,7 +400,7 @@ numpy==2.5.4
     #   onnxruntime
     #   pandas
     #   qdrant-client
-oauthlib==4.0.0
+oauthlib==4.0.1
     # via requests-oauthlib
 obstore==0.11.1
     # via daytona
@@ -408,7 +408,7 @@ onnxruntime==1.31.1
     # via
     #   docsgpt
     #   fastembed
-openai==3.40.0
+openai==3.46.0
     # via docsgpt
 openapi-pydantic==0.6.0
     # via fastmcp-slim
@@ -416,7 +416,7 @@ openapi3-parser==2.0.0
     # via docsgpt
 openpyxl==3.1.5
     # via docsgpt
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
     # via
     #   anthropic
     #   daytona
@@ -443,27 +443,27 @@ opentelemetry-api==1.45.1
     #   opentelemetry-instrumentation-wsgi
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-distro==0.66b1
+opentelemetry-distro==0.66b2
     # via docsgpt
-opentelemetry-exporter-http-transport==0.66b1
+opentelemetry-exporter-http-transport==0.66b2
     # via opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp==1.45.1
+opentelemetry-exporter-otlp==1.45.2
     # via docsgpt
-opentelemetry-exporter-otlp-common==0.66b1
+opentelemetry-exporter-otlp-common==0.66b2
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-common==1.45.1
+opentelemetry-exporter-otlp-proto-common==1.45.2
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-grpc==1.45.1
+opentelemetry-exporter-otlp-proto-grpc==1.45.2
     # via opentelemetry-exporter-otlp
-opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.2
     # via
     #   daytona
     #   opentelemetry-exporter-otlp
-opentelemetry-instrumentation==0.66b1
+opentelemetry-instrumentation==0.66b2
     # via
     #   opentelemetry-distro
     #   opentelemetry-instrumentation-aiohttp-client
@@ -478,43 +478,43 @@ opentelemetry-instrumentation==0.66b1
     #   opentelemetry-instrumentation-sqlalchemy
     #   opentelemetry-instrumentation-starlette
     #   opentelemetry-instrumentation-wsgi
-opentelemetry-instrumentation-aiohttp-client==0.66b1
+opentelemetry-instrumentation-aiohttp-client==0.66b2
     # via daytona
-opentelemetry-instrumentation-asgi==0.66b1
+opentelemetry-instrumentation-asgi==0.66b2
     # via opentelemetry-instrumentation-starlette
-opentelemetry-instrumentation-celery==0.66b1
+opentelemetry-instrumentation-celery==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-dbapi==0.66b1
+opentelemetry-instrumentation-dbapi==0.66b2
     # via opentelemetry-instrumentation-psycopg
-opentelemetry-instrumentation-flask==0.66b1
+opentelemetry-instrumentation-flask==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-logging==0.66b1
+opentelemetry-instrumentation-logging==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-psycopg==0.66b1
+opentelemetry-instrumentation-psycopg==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-redis==0.66b1
+opentelemetry-instrumentation-redis==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-requests==0.66b1
+opentelemetry-instrumentation-requests==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-sqlalchemy==0.66b1
+opentelemetry-instrumentation-sqlalchemy==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-starlette==0.66b1
+opentelemetry-instrumentation-starlette==0.66b2
     # via docsgpt
-opentelemetry-instrumentation-wsgi==0.66b1
+opentelemetry-instrumentation-wsgi==0.66b2
     # via opentelemetry-instrumentation-flask
-opentelemetry-proto==1.45.1
+opentelemetry-proto==1.45.2
     # via
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.45.1
+opentelemetry-sdk==1.45.2
     # via
     #   daytona
     #   opentelemetry-distro
     #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-semantic-conventions==0.66b1
+opentelemetry-semantic-conventions==0.66b2
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-aiohttp-client
@@ -529,7 +529,7 @@ opentelemetry-semantic-conventions==0.66b1
     #   opentelemetry-instrumentation-starlette
     #   opentelemetry-instrumentation-wsgi
     #   opentelemetry-sdk
-opentelemetry-util-http==0.66b1
+opentelemetry-util-http==0.66b2
     # via
     #   opentelemetry-instrumentation-aiohttp-client
     #   opentelemetry-instrumentation-asgi
@@ -542,13 +542,12 @@ packaging==26.3
     #   faiss-cpu
     #   fastmcp-slim
     #   huggingface-hub
-    #   kombu
     #   marshmallow
     #   onnxruntime
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-flask
     #   opentelemetry-instrumentation-sqlalchemy
-pandas==3.1.0
+pandas==3.1.1
     # via docsgpt
 pathable==0.6.0
     # via jsonschema-path
@@ -564,7 +563,7 @@ pillow==13.0.0
     #   fastembed
     #   pdf2image
     #   python-pptx
-platformdirs==4.13.7
+platformdirs==4.14.5
     # via fastmcp-slim
 portalocker==4.4.2
     # via qdrant-client
@@ -590,9 +589,9 @@ protobuf==7.36.2
     #   opentelemetry-proto
     #   proto-plus
     #   qdrant-client
-psycopg==3.3.6
+psycopg==3.3.8
     # via docsgpt
-psycopg-binary==3.3.6 ; implementation_name != 'pypy'
+psycopg-binary==3.3.8 ; implementation_name != 'pypy'
     # via psycopg
 psycopg-pool==3.3.3
     # via psycopg
@@ -610,7 +609,7 @@ pyasn1-modules==0.4.2
     # via google-auth
 pycparser==3.12 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
-pydantic==2.14.1
+pydantic==2.14.3
     # via
     #   anthropic
     #   daytona
@@ -631,7 +630,7 @@ pydantic==2.14.1
     #   openapi3-parser
     #   pydantic-settings
     #   qdrant-client
-pydantic-core==2.50.1
+pydantic-core==2.50.4
     # via
     #   elevenlabs
     #   pydantic
@@ -678,16 +677,16 @@ python-dotenv==1.2.4
     #   fastmcp-slim
     #   pydantic-settings
     #   uvicorn
-python-engineio==4.15.0
+python-engineio==4.15.1
     # via python-socketio
-python-multipart==0.0.32
+python-multipart==0.0.33
     # via
     #   daytona
     #   fastmcp-slim
     #   mcp
 python-pptx==1.0.2
     # via docsgpt
-python-socketio==5.17.0
+python-socketio==5.18.1
     # via daytona
 pywebpush==2.5.0
     # via docsgpt
@@ -771,9 +770,9 @@ sniffio==1.3.1
     #   anthropic
     #   google-genai
     #   openai
-soupsieve==3.0.4
+soupsieve==4.0.1
     # via beautifulsoup4
-sqlalchemy==2.1.6
+sqlalchemy==2.1.8
     # via
     #   alembic
     #   docsgpt
@@ -856,7 +855,7 @@ typing-extensions==4.16.0
     #   typing-inspection
 typing-inspect==0.9.0
     # via dataclasses-json
-typing-inspection==0.4.4
+typing-inspection==0.4.5
     # via
     #   mcp
     #   pydantic
@@ -870,7 +869,7 @@ tzdata==2026.6
     #   tzlocal
 tzlocal==5.4.5
     # via celery
-uncalled-for==0.4.1
+uncalled-for==0.6.0
     # via fastmcp-slim
 update-checker==1.0.1
     # via praw
@@ -911,7 +910,7 @@ websocket-client==1.9.2
     #   docsgpt
     #   praw
     #   python-socketio
-websockets==17.3
+websockets==17.4
     # via
     #   elevenlabs
     #   fastmcp-slim
@@ -924,7 +923,7 @@ werkzeug==3.1.9
     #   flask-restx
 win32-setctime==1.2.1 ; sys_platform == 'win32'
     # via loguru
-wrapt==2.5.1
+wrapt==2.5.2
     # via
     #   deprecated
     #   opentelemetry-instrumentation
@@ -937,7 +936,7 @@ wsproto==1.3.2
     #   daytona
     #   httpx-ws
     #   simple-websocket
-xlsxwriter==3.3.0
+xlsxwriter==3.3.1
     # via python-pptx
 yarl==1.25.1
     # via aiohttp

@@ -550,6 +550,18 @@ class BaseVectorStore(ABC):
         """Delete the entire index/collection"""
         pass
 
+    def purge_index(self, batch_size: int = 1000) -> Optional[int]:
+        """Delete every chunk of this source; a store that can, does it ``batch_size`` rows at a time.
+
+        Args:
+            batch_size: Rows per delete, for stores that batch.
+
+        Returns:
+            The number of chunks deleted, or ``None`` when the store cannot say.
+        """
+        self.delete_index()
+        return None
+
     def save_local(self, *args, **kwargs):
         """Save vectorstore to local storage"""
         pass

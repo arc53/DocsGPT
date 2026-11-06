@@ -2054,6 +2054,7 @@
         "mcp_stripe": "Consultez les clients, paiements et abonnements dans Stripe.",
         "mcp_drawio": "Créez des organigrammes modifiables et d’autres diagrammes avec draw.io.",
         "mcp_coingecko": "Consultez en direct les cours des cryptos, capitalisations, volumes, tendances et historiques de prix.",
+        "mcp_excalidraw": "Dessinez des diagrammes et obtenez un lien Excalidraw modifiable.",
         "mcp_clickup": "Recherchez, lisez et modifiez les tâches, documents et listes ClickUp, et ajoutez des commentaires.",
         "mcp_zapier": "Utilisez les actions activées dans votre compte Zapier MCP pour lire ou modifier les applications connectées.",
         "mcp_trello": "Trouvez des tableaux et cartes Trello, et créez ou modifiez des cartes.",
@@ -2424,7 +2425,9 @@
         "dismiss": "Fermer la notification d’import",
         "uploadProgress": "Progression de l’import {{progress}} %",
         "clear": "Effacer",
-        "ingestionFailed": "Échec de l’ingestion."
+        "ingestionFailed": "Échec de l’ingestion.",
+        "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
+        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites."
       },
       "ingestors": {
         "local_file": {
@@ -2936,6 +2939,24 @@
       "notRun": "non exécuté",
       "notRunMovedOn": "Non exécuté : la conversation a continué avant l’approbation.",
       "notRunExpired": "Non exécuté : la demande d’approbation a expiré."
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "Chargement de l’app…",
+        "ready": "Interactive",
+        "failed": "Échec"
+      },
+      "loading": "Chargement de l’app…",
+      "allow": "Autoriser",
+      "allowForView": "Autoriser pour cette app",
+      "deny": "Refuser",
+      "reload": "Recharger l’app",
+      "approvalAsk": "L’app veut exécuter {{tool}}. L’autoriser ?",
+      "failedTitle": "Impossible de charger l’app",
+      "failedDescription": "Son serveur MCP n’a pas répondu, ou la vue n’a pas pu démarrer.",
+      "frameTitle": "{{name}} (app interactive)",
+      "callFailed": "L’appel de l’outil a échoué",
+      "resultUnavailable": "Le résultat n’est plus disponible"
     },
     "quotaExceeded": {
       "tokens": "Vous avez utilisé {{used}} sur votre quota de {{limit}} jetons. Il sera réinitialisé le {{resetsAt}}.",

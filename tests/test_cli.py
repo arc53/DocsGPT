@@ -630,3 +630,20 @@ class TestGrantAdmin:
             cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
         )
         assert "docsgpt grant-admin" in result.stdout
+
+
+class TestIngestOrphans:
+    def test_prints_the_report(self, monkeypatch, capsys):
+        rows = [{"source_id": "s-1", "vectors": 30, "status": "stalled", "last_updated": "2026-10-01", "swept": True}]
+        monkeypatch.setattr("docsgpt.api.user.ingest_orphans.orphan_report_now", lambda: rows)
+
+        assert cli.main(["ingest", "orphans"]) == 0
+
+        out = capsys.readouterr().out
+        assert "s-1" in out and "30" in out and "stalled" in out
+
+    def test_nothing_orphaned(self, monkeypatch, capsys):
+        monkeypatch.setattr("docsgpt.api.user.ingest_orphans.orphan_report_now", lambda: [])
+
+        assert cli.main(["ingest", "orphans"]) == 0
+        assert "no orphaned" in capsys.readouterr().err

@@ -110,7 +110,7 @@ PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "requests==2.34.2", "import": "requests", "use": "HTTP"},
     {"spec": "beautifulsoup4==4.15.0", "import": "bs4", "use": "HTML parsing"},
     {"spec": "PyYAML==6.0.3", "import": "yaml", "use": "YAML"},
-    {"spec": "pypdf==6.21.2", "import": "pypdf", "use": "read, merge and split PDFs"},
+    {"spec": "pypdf==6.21.4", "import": "pypdf", "use": "read, merge and split PDFs"},
     {"spec": "pdfplumber==0.11.10", "import": "pdfplumber", "use": "PDF text, tables and page images"},
     {"spec": "pdfminer.six==20260107", "import": "pdfminer", "use": "PDF text layout (pdfplumber's engine)"},
     {"spec": "pypdfium2==5.14.0", "import": "pypdfium2", "use": "render PDF pages to images"},

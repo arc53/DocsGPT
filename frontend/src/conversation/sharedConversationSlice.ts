@@ -168,6 +168,10 @@ export const sharedConversationSlice = createSlice({
     setIdentifier(state, action: PayloadAction<string>) {
       state.identifier = action.payload;
     },
+    // Opening another share starts empty, not on the last one's chat.
+    resetSharedConversation() {
+      return initialState;
+    },
     setFetchedData(
       state,
       action: PayloadAction<{
@@ -323,6 +327,7 @@ export const sharedConversationSlice = createSlice({
 export const {
   setStatus,
   setIdentifier,
+  resetSharedConversation,
   setFetchedData,
   setClientApiKey,
   raiseError,

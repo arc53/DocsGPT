@@ -1306,6 +1306,36 @@ Type `str`, default `ingest`.
 
 Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest worker so a long ingest cannot hold the slots that beat tasks and attachments need. The shipped Compose and Kubernetes worker commands name `ingest` in -Q: if you change this, put the new name in every worker's explicit -Q list, or nothing runs ingests.
 
+### `INGEST_MAX_FILES`
+
+Type `int`, default `10000`, must be `>= 0`.
+
+Most files one source ingest or sync may hold. Checked once the files are listed (a GitHub repo's tree, an S3 prefix, a connector's download, an upload's extracted files) and again after loading, before anything is embedded; a source over it fails with reason too_many_files. The default is the same number as UPLOAD_MAX_ARCHIVE_FILES's, but the two are separate: raise both to let a bigger zip through. 0 disables.
+
+### `INGEST_MAX_TOKENS`
+
+Type `int`, default `20000000`, must be `>= 0`.
+
+Most tokens of chunked text one source ingest or sync may embed, counted after parsing and before any embedding; a source over it fails with reason too_many_tokens. 20 million tokens is about 80 MB of plain text, several hours of embedding on a CPU model. 0 disables.
+
+### `INGEST_MAX_CONCURRENT_PER_USER`
+
+Type `int`, default `3`, must be `>= 0`.
+
+Whole-source ingests (upload, remote, connector, re-ingest, sync) one user may run at the same time. A task over it goes back on the queue for about 30 seconds without starting, so the other worker slots stay free for other users. Each running task holds a slot lease in Redis that it renews while it runs; a killed worker's slot frees itself within two minutes. 0 disables.
+
+### `INGEST_RESUME_MAX_ATTEMPTS`
+
+Type `int`, default `3`, must be `>= 0`.
+
+Times the reconciler queues an ingest again after a restart or crash killed it mid-embed. The new task resumes from the last embedded chunk when the files still chunk the same way. Past this many the ingest is marked failed. 0 turns resuming off.
+
+### `INGEST_ORPHAN_TTL_HOURS`
+
+Type `int`, default `72`, must be `>= 0`.
+
+Hours after its last progress that an ingest which ended without a source (failed, stalled past its resumes, or stopped before the source was saved) has its vectors deleted by the hourly cleanup-orphaned-ingests task. 0 keeps them.
+
 ### `DOCUMENT_PARSE_QUEUE`
 
 Type `str`, default `parsing`.
@@ -1626,6 +1656,18 @@ GitHub App URL name (github.com/apps/&lt;slug>), for the link where users choose
 Type `str`, default unset.
 
 Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE_URI.
+
+### `MCP_APPS_ENABLED`
+
+Type `bool`, default `true`.
+
+Render MCP Apps (interactive views an MCP server ships with its tools, such as Excalidraw's canvas) inline in chat. Needs a sandbox origin (MCP_APPS_SANDBOX_URL); without one the chat shows the ordinary tool step and app-only tools stay offered to the model, as with this off.
+
+### `MCP_APPS_SANDBOX_URL`
+
+Type `str`, default unset.
+
+Address of the MCP Apps sandbox page, &lt;origin>/api/mcp_apps/sandbox, on an origin other than the app's, e.g. a sandbox. subdomain pointed at this API. Unset on a loopback API_URL uses the other loopback name (localhost and 127.0.0.1 are different origins); unset elsewhere turns MCP Apps off.
 
 
 ## Server

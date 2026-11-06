@@ -1994,6 +1994,7 @@
         "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
         "mcp_twelvedata": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
         "mcp_cloudflare": "Manage Workers, DNS, R2 and more through the Cloudflare API.",
+        "mcp_excalidraw": "Draw diagrams and get an editable Excalidraw link.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -2339,7 +2340,9 @@
         "dismiss": "Dismiss upload toast",
         "uploadProgress": "Upload progress {{progress}}%",
         "clear": "Clear",
-        "ingestionFailed": "Ingestion failed."
+        "ingestionFailed": "Ingestion failed.",
+        "tooManyFiles": "This source has more than {{limit}} files, the most one source can hold. Choose a smaller folder, path or selection.",
+        "tooManyTokens": "This source has more than {{limit}} tokens of text, the most one source can hold. Split it into smaller sources."
       },
       "ingestors": {
         "local_file": {
@@ -2844,6 +2847,24 @@
       "notRun": "not run",
       "notRunMovedOn": "Not run: the conversation moved on before this was approved.",
       "notRunExpired": "Not run: the approval request expired."
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "Loading the app…",
+        "ready": "Interactive",
+        "failed": "Failed"
+      },
+      "loading": "Loading the app…",
+      "allow": "Allow",
+      "allowForView": "Allow for this app",
+      "deny": "Deny",
+      "reload": "Reload app",
+      "approvalAsk": "The app wants to run {{tool}}. Allow it?",
+      "failedTitle": "The app couldn't load",
+      "failedDescription": "Its MCP server didn't answer, or the view failed to start.",
+      "frameTitle": "{{name}} (interactive app)",
+      "callFailed": "The tool call failed",
+      "resultUnavailable": "The result is no longer available"
     },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",

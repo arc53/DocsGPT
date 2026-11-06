@@ -18,7 +18,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -31,8 +33,10 @@ jobs:
           if [ -f docsgpt/requirements.txt ]; then pip install -r docsgpt/requirements.txt; fi
 
       - name: Run Bandit scan
-        uses: PyCQA/bandit-action@v1
+        # v1.0.1 hard-codes Python 3.8, which ubuntu-26.04 doesn't ship; main adds the python-version input.
+        uses: PyCQA/bandit-action@7925d472505a4ec09ef471b22fe99c26fee47443 # main, 2026-10-27
         with:
+          python-version: '3.12'
           severity: medium
           confidence: medium
           targets: docsgpt/
