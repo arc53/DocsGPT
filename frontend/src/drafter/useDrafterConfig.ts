@@ -7,15 +7,25 @@ import { type DrafterConfig, getDrafterConfig } from './drafterApi';
 // One read per session token: every form with a wand asks the same question.
 const cache = new Map<string, Promise<DrafterConfig>>();
 
-/** Forget the cached config (tests, and after the task model changes). */
+/** Forget the cached config (tests, and after the user's or the instance's task model changes). */
 export function resetDrafterConfigCache(): void {
   cache.clear();
 }
 
 /**
+ * Whether an answer is worth keeping. `getDrafterConfig` answers a failed
+ * read as `reason: 'disabled'`, the same as a server with the drafter off,
+ * so that answer is never kept: a network blip mustn't hide the wand until
+ * a reload. A server with the drafter off is asked again by the next form.
+ */
+const keeps = (config: DrafterConfig): boolean =>
+  config.enabled || config.reason === 'no_model';
+
+/**
  * The drafter's config for a session token, read once per token and shared
  * with `useDrafterConfig`. For a component that has the token from its host
- * rather than the store.
+ * rather than the store. A read in flight is shared; an answer that may be
+ * a failed read is not kept.
  *
  * Args:
  *   token: The session token.
@@ -27,11 +37,13 @@ export function loadDrafterConfig(
   token: string | null,
 ): Promise<DrafterConfig> {
   const key = token ?? '';
-  let pending = cache.get(key);
-  if (!pending) {
-    pending = getDrafterConfig(token);
-    cache.set(key, pending);
-  }
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const pending = getDrafterConfig(token).then((config) => {
+    if (!keeps(config) && cache.get(key) === pending) cache.delete(key);
+    return config;
+  });
+  cache.set(key, pending);
   return pending;
 }
 

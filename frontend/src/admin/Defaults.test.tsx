@@ -51,6 +51,9 @@ vi.mock('../api/services/userService', () => ({
   },
 }));
 
+const resetDrafterConfigCache = vi.hoisted(() => vi.fn());
+vi.mock('../drafter/useDrafterConfig', () => ({ resetDrafterConfigCache }));
+
 import Defaults from './Defaults';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -122,6 +125,7 @@ describe('Admin Defaults', () => {
     admin.getModelDefaults.mockReset();
     admin.setModelDefaults.mockReset();
     admin.getModelDefaults.mockResolvedValue(modelsBody());
+    resetDrafterConfigCache.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -323,6 +327,8 @@ describe('Admin Defaults', () => {
     expect(save().disabled).toBe(false);
     await act(async () => save().click());
     expect(admin.setModelDefaults).toHaveBeenCalledWith('gpt-a', 'tok');
+    // The drafter's config names the task model: the next wand reads it again.
+    expect(resetDrafterConfigCache).toHaveBeenCalledTimes(1);
     expect(admin.setSourceDefaults).not.toHaveBeenCalled();
     expect(admin.setAgentDefaults).not.toHaveBeenCalled();
     expect(save().disabled).toBe(true);

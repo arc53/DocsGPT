@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
+import { resetDrafterConfigCache } from '../drafter/useDrafterConfig';
 import type { SourceRetrievalConfig } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import RetrievalOptions, {
@@ -291,6 +292,8 @@ export default function Defaults() {
           return;
         }
         setModels(body);
+        // The drafter's config names the task model, and is off with no model.
+        resetDrafterConfigCache();
         settle(
           'taskModel',
           taskModelOf(body),
