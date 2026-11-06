@@ -205,15 +205,47 @@ def _editable_agent(conn, user_id: str, agent_id: str) -> dict:
     return agent
 
 
+def insights_off(agent: dict) -> Optional[str]:
+    """Why Insights doesn't sort this agent's conversations, or None when it does.
+
+    Suggestions read the agent's users' questions only while it does.
+
+    Returns:
+        ``off_on_this_instance`` (``DECISION_ANALYTICS_ENABLED`` off, or the decision model unavailable, as
+        ``/api/config`` reports it), ``turned_off_for_this_agent`` (the agent's ``analytics.enabled``), or None.
+    """
+    from docsgpt import decisions
+    from docsgpt.core.settings import settings
+
+    try:
+        on_here = bool(settings.DECISION_ANALYTICS_ENABLED) and bool(decisions.available())
+    except Exception:
+        on_here = False
+    if not on_here:
+        return "off_on_this_instance"
+    if not AnalyticsConfig.parse((agent.get("config") or {}).get("analytics")).enabled:
+        return "turned_off_for_this_agent"
+    return None
+
+
+_OFF_MESSAGES = {
+    "off_on_this_instance": "Insights are off on this server, so suggestions don't read conversations.",
+    "turned_off_for_this_agent": "Insights are off for this agent: turn on Collect insights and save first.",
+}
+
+
 def topics_status(user_id: str, agent_id: str) -> dict:
-    """``GET /api/drafter/topics/status``: whether the agent has enough recent conversations for suggestions.
+    """``GET /api/drafter/topics/status``: whether suggestions are offered for the agent.
+
+    They are while Insights sorts its conversations and it had enough of them recently.
 
     Args:
         user_id: The caller.
         agent_id: The agent.
 
     Returns:
-        ``{"available", "conversations", "needed"}``.
+        ``{"available", "conversations", "needed", "reason"}``: ``reason`` is :func:`insights_off`'s (and
+        ``conversations`` 0, uncounted) while Insights is off, else None.
 
     Raises:
         AccessDenied: The caller can't edit the agent.
@@ -223,6 +255,9 @@ def topics_status(user_id: str, agent_id: str) -> dict:
 
     with db_readonly() as conn:
         agent = _editable_agent(conn, user_id, agent_id)
+        reason = insights_off(agent)
+        if reason:
+            return {"available": False, "conversations": 0, "needed": MIN_CONVERSATIONS, "reason": reason}
         counts = ConversationLabelsRepository(conn).agent_question_counts(
             str(agent["id"]), agent.get("key"), DAYS
         )
@@ -230,6 +265,7 @@ def topics_status(user_id: str, agent_id: str) -> dict:
         "available": counts["conversations"] >= MIN_CONVERSATIONS,
         "conversations": counts["conversations"],
         "needed": MIN_CONVERSATIONS,
+        "reason": None,
     }
 
 
@@ -260,7 +296,8 @@ def load_workspace(user_id: str, context: dict) -> TopicsWorkspace:
     """Read the agent's topics, folders, room and recent questions in one read-only transaction.
 
     Raises:
-        BadDraftRequest: The caller can't edit the agent, or it has too few recent conversations.
+        BadDraftRequest: The caller can't edit the agent, Insights is off (:func:`insights_off`), or the agent has
+            too few recent conversations.
     """
     from docsgpt.api.user.resource_access import AccessDenied
     from docsgpt.core.settings import settings
@@ -276,6 +313,9 @@ def load_workspace(user_id: str, context: dict) -> TopicsWorkspace:
             agent = _editable_agent(conn, user_id, context["agent_id"])
         except AccessDenied as denied:
             raise BadDraftRequest(denied.message) from None
+        off = insights_off(agent)
+        if off:
+            raise BadDraftRequest(_OFF_MESSAGES[off])
         repo = ConversationLabelsRepository(conn)
         agent_id, key = str(agent["id"]), agent.get("key")
         counts = repo.agent_question_counts(agent_id, key, DAYS)

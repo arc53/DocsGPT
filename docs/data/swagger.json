@@ -4188,7 +4188,7 @@
     },
     "/api/drafter/topics/status": {
       "get": {
-        "description": "Whether an agent has had enough conversations in the last 30 days for Draft with DocsGPT to suggest Insights topics from them. Returns {\"available\", \"conversations\", \"needed\"}. Needs edit access to the agent: the suggestions read its users' questions.",
+        "description": "Whether Draft with DocsGPT suggests Insights topics for an agent from its conversations: Insights sorts them (on this server and for the agent) and it had enough in the last 30 days. Returns {\"available\", \"conversations\", \"needed\", \"reason\"}; reason is off_on_this_instance or turned_off_for_this_agent while Insights is off (conversations then 0, uncounted), else null. Needs edit access to the agent: the suggestions read its users' questions.",
         "operationId": "get_drafter_topics_status",
         "parameters": [
           {
@@ -7434,7 +7434,7 @@
     },
     "/api/user/preferences": {
       "get": {
-        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default. task_model_id is the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; instance_task_model_id is the one that runs then.",
+        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default. task_model_id is the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; instance_task_model_id is the one that runs then, null when no model can. A token gets the chat prompt fields with prompts:read (never when restricted to specific prompts) and the task model fields with models:read.\nA token reads only the parts its scopes cover: the chat prompt with\n``prompts:read`` and no prompt allowlist (the stored id can't be\nproven inside one), the task model with ``models:read``.\n\nReturns:\n    Response: The preferences the caller may read.",
         "operationId": "get_preferences_resource",
         "responses": {
           "200": {
@@ -7446,6 +7446,7 @@
           "me"
         ],
         "x-pat-scopes": [
+          "models:read",
           "prompts:read"
         ]
       },

@@ -97,6 +97,17 @@ def _share(conn, agent_id, owner, member, level):
     TeamResourceGrantsRepository(conn).grant(team, "agent", agent_id, owner, owner, access_level=level)
 
 
+@pytest.fixture(autouse=True)
+def _insights_on(monkeypatch):
+    """Insights labels conversations here; shares stay the drafting model's estimates."""
+    from docsgpt.core.settings import settings
+    from docsgpt.drafter import topics_recipe
+
+    monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+    monkeypatch.setattr("docsgpt.decisions.available", lambda: True)
+    monkeypatch.setattr(topics_recipe, "measuring_available", lambda: False)
+
+
 def _status(client, conn, user, agent_id):
     query = f"?agent_id={agent_id}" if agent_id else ""
     with _db(conn), _session(user):
@@ -110,7 +121,7 @@ class TestStatus:
         response = _status(client, pg_conn, "owner", agent["id"])
         assert response.status_code == 200
         assert response.get_json() == {"available": False, "conversations": MIN_CONVERSATIONS - 1,
-                                       "needed": MIN_CONVERSATIONS}
+                                       "needed": MIN_CONVERSATIONS, "reason": None}
         _conversation(pg_conn, "late", "Customs fee?", agent_id=str(agent["id"]))
         assert _status(client, pg_conn, "owner", agent["id"]).get_json()["available"] is True
 
@@ -119,6 +130,21 @@ class TestStatus:
         _conversation(pg_conn, "u", "a", "b", "c", agent_id=str(agent["id"]))
         _conversation(pg_conn, "u", "old", agent_id=str(agent["id"]), days_ago=DAYS + 1)
         assert _status(client, pg_conn, "owner", agent["id"]).get_json()["conversations"] == 1
+
+    def test_is_unavailable_while_insights_is_off(self, client, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        agent = _busy_agent(pg_conn, enabled=False)
+        assert _status(client, pg_conn, "owner", agent["id"]).get_json() == {
+            "available": False, "conversations": 0, "needed": MIN_CONVERSATIONS,
+            "reason": "turned_off_for_this_agent",
+        }
+        on = _busy_agent(pg_conn)
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+        status = _status(client, pg_conn, "owner", on["id"]).get_json()
+        assert status["available"] is False and status["reason"] == "off_on_this_instance"
+        # Access is checked first.
+        assert _status(client, pg_conn, "stranger", on["id"]).status_code == 404
 
     def test_needs_edit_access(self, client, pg_conn):
         agent = _busy_agent(pg_conn)
@@ -181,6 +207,20 @@ class TestSampling:
         assert [q.lower().strip() for q in ws.other].count("how do i return a sofa?") == 1
         assert "Do you ship to Oslo?" in ws.other
 
+    def test_nothing_is_read_while_insights_is_off(self, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter.recipe import BadDraftRequest
+
+        off = _busy_agent(pg_conn, enabled=False)
+        on = _busy_agent(pg_conn)
+        with _db(pg_conn), patch.object(ConversationLabelsRepository, "agent_questions") as read:
+            with pytest.raises(BadDraftRequest, match="Insights are off for this agent"):
+                load_workspace("owner", {"agent_id": str(off["id"])})
+            monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+            with pytest.raises(BadDraftRequest, match="Insights are off on this server"):
+                load_workspace("owner", {"agent_id": str(on["id"])})
+            read.assert_not_called()
+
     def test_too_few_conversations_or_no_edit_access_is_refused(self, pg_conn):
         from docsgpt.drafter.recipe import BadDraftRequest
 
@@ -227,10 +267,7 @@ def _stream(client, conn, body, fake=None, user="owner"):
 
 @pytest.mark.unit
 class TestStream:
-    def test_one_turn_ends_in_suggestions(self, client, pg_conn, monkeypatch):
-        from docsgpt.core.settings import settings
-
-        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+    def test_one_turn_ends_in_suggestions(self, client, pg_conn):
         agent = _busy_agent(pg_conn)
         fake = FakeLLM(calls(tool_call("submit_proposal", {
             "message": "Most questions are about parcels.",
@@ -253,6 +290,12 @@ class TestStream:
         events = _stream(client, pg_conn, _body(str(agent["id"])))
         assert events[0]["type"] == "error" and events[0]["code"] == "bad_request"
         assert "Suggestions need" in events[0]["message"] and events[-1] == {"type": "end"}
+
+    def test_insights_off_for_the_agent_is_a_bad_request(self, client, pg_conn):
+        agent = _busy_agent(pg_conn, enabled=False)
+        events = _stream(client, pg_conn, _body(str(agent["id"])))
+        assert events[0]["code"] == "bad_request" and "Insights are off" in events[0]["message"]
+        assert "parcel" not in json.dumps(events)
 
     def test_someone_who_cant_edit_the_agent_reads_nothing(self, client, pg_conn):
         agent = _busy_agent(pg_conn)

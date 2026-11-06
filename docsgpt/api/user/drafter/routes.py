@@ -139,9 +139,11 @@ class DrafterStream(Resource):
 class DrafterTopicsStatus(Resource):
     @api.doc(
         description=(
-            "Whether an agent has had enough conversations in the last 30 days for Draft with DocsGPT to suggest "
-            "Insights topics from them. Returns {\"available\", \"conversations\", \"needed\"}. Needs edit "
-            "access to the agent: the suggestions read its users' questions."
+            "Whether Draft with DocsGPT suggests Insights topics for an agent from its conversations: Insights "
+            "sorts them (on this server and for the agent) and it had enough in the last 30 days. Returns "
+            "{\"available\", \"conversations\", \"needed\", \"reason\"}; reason is off_on_this_instance or "
+            "turned_off_for_this_agent while Insights is off (conversations then 0, uncounted), else null. Needs "
+            "edit access to the agent: the suggestions read its users' questions."
         ),
         params={"agent_id": "Agent id"},
         responses={200: "The agent's status", 400: "No agent_id", 401: "Not signed in",
