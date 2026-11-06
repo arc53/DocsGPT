@@ -16,6 +16,13 @@ export type DraftedFields<K extends string> = {
    * and the mark goes.
    */
   mark: (field: K, previous: unknown, applied: unknown) => void;
+  /**
+   * The drafter rewrote a field a step at a time (a review deciding its
+   * changes one by one): a marked field keeps its mark and undo, now
+   * holding `applied`, so the step isn't read as a hand edit. An unmarked
+   * field stays unmarked.
+   */
+  follow: (field: K, applied: unknown) => void;
   /** Put a field's previous value back and drop its mark. */
   undo: (field: K) => void;
   /**
@@ -78,6 +85,16 @@ export function useDraftedFields<K extends string>(
     });
   }, []);
 
+  const follow = useCallback((field: K, applied: unknown) => {
+    setMarkers((prev) => {
+      const earlier = prev.get(field);
+      if (!earlier) return prev;
+      const next = new Map(prev);
+      next.set(field, { previous: earlier.previous, applied });
+      return next;
+    });
+  }, []);
+
   const undo = useCallback((field: K) => {
     const marker = markersRef.current.get(field);
     if (!marker) return;
@@ -110,6 +127,7 @@ export function useDraftedFields<K extends string>(
     fields: [...markers.keys()],
     isDrafted,
     mark,
+    follow,
     undo,
     clear,
   };

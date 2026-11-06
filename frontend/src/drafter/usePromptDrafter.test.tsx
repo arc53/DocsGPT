@@ -225,4 +225,49 @@ describe('usePromptDrafter', () => {
       prompt: { content: 'Hi.\nBe brief.' },
     });
   });
+
+  const reviewTwice = async () => {
+    await act(async () => current.setContent('A B C'));
+    stream.scripts = [improve([{ id: 'e1', find: 'A', replace: 'a' }])];
+    await act(async () => current.drafter!.session.send('First'));
+    await act(async () => current.drafter!.acceptAll());
+    expect(current.content).toBe('a B C');
+    stream.scripts = [
+      improve([
+        { id: 'e2', find: 'B', replace: 'b' },
+        { id: 'e3', find: 'C', replace: 'c' },
+      ]),
+    ];
+    await act(async () => current.drafter!.session.send('Second'));
+    await act(async () => current.drafter!.reviewOneByOne());
+    await act(async () => current.drafter!.decide('e2', 'accepted'));
+    expect(current.content).toBe('a b C');
+  };
+
+  it('undoes to before the first draft after a second review decided one by one', async () => {
+    await reviewTwice();
+    await act(async () => current.drafter!.decide('e3', 'accepted'));
+    expect(current.drafter!.review).toBeNull();
+    expect(current.content).toBe('a b c');
+    expect(current.drafter!.drafted.isDrafted('content')).toBe(true);
+    await act(async () => current.drafter!.drafted.undo('content'));
+    expect(current.content).toBe('A B C');
+  });
+
+  it('keeps the first draft marked when a partly decided second review is discarded', async () => {
+    await reviewTwice();
+    await act(async () => current.drafter!.discard());
+    expect(current.content).toBe('a B C');
+    expect(current.drafter!.drafted.isDrafted('content')).toBe(true);
+    await act(async () => current.drafter!.drafted.undo('content'));
+    expect(current.content).toBe('A B C');
+  });
+
+  it('keeps the first draft marked when a second review ends on a new request', async () => {
+    await reviewTwice();
+    await act(async () => current.drafter!.session.send('Third'));
+    expect(current.content).toBe('a b C');
+    await act(async () => current.drafter!.drafted.undo('content'));
+    expect(current.content).toBe('A B C');
+  });
 });

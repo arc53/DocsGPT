@@ -108,6 +108,19 @@ describe('useDraftedFields', () => {
     expect(harness.form.name).toBe('Typed');
   });
 
+  it('keeps a mark through a step the drafter writes, and leaves an unmarked field alone', async () => {
+    await draft('name', 'New');
+    await act(async () => {
+      harness.setForm((prev) => ({ ...prev, name: 'Step', tools: ['x'] }));
+      harness.drafted!.follow('name', 'Step');
+      harness.drafted!.follow('tools', ['x']);
+    });
+    expect(harness.drafted!.fields).toEqual(['name']);
+    await draft('name', 'Newer');
+    await act(async () => harness.drafted!.undo('name'));
+    expect(harness.form.name).toBe('Old');
+  });
+
   it('clears only the marks whose values went with a save', async () => {
     await draft('name', 'New');
     await draft('tools', ['b']);

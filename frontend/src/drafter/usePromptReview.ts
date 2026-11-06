@@ -75,15 +75,15 @@ export function usePromptReview(
     const content = proposal.edits.some((edit) => accepted(edit.id))
       ? applyPromptEdits(original, proposal.edits, accepted)
       : before;
-    latest.current.setContent(content);
+    const { setContent, drafted } = latest.current;
+    setContent(content);
     const done = proposal.edits.every((edit) => decisions[edit.id]);
-    if (!done) {
-      setReview(next);
-      return;
-    }
-    setReview(null);
-    if (content !== before)
-      latest.current.drafted.mark('content', before, content);
+    if (done) setReview(null);
+    else setReview(next);
+    // A text already Drafted keeps its mark through the review's steps, so
+    // undo still goes back to before the first draft.
+    if (done && content !== before) drafted.mark('content', before, content);
+    else drafted.follow('content', content);
   }, []);
 
   const start = useCallback(
@@ -145,7 +145,9 @@ export function usePromptReview(
 
   const discard = useCallback(() => {
     if (!review) return;
-    latest.current.setContent(review.before ?? review.original);
+    const before = review.before ?? review.original;
+    latest.current.setContent(before);
+    latest.current.drafted.follow('content', before);
     setReview(null);
   }, [review]);
 
