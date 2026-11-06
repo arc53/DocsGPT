@@ -160,6 +160,10 @@ export function useTopicSuggestions({
     token,
   );
   const [open, setOpen] = React.useState(false);
+  // The panel closes for good when it stops being offered (the section folds,
+  // insights go off, a save is under way): mounting it again would start a
+  // new turn the user didn't ask for.
+  if (open && !offered) setOpen(false);
 
   const close = () => setOpen(false);
   const start = () => setOpen(true);

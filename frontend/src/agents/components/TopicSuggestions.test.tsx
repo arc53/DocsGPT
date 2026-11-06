@@ -338,6 +338,18 @@ describe('topic suggestions in the Insights settings', () => {
     expect(note.textContent).toBe(`${T}.pushesOut(count=1,names=returns)`);
   });
 
+  it('starts no new turn when the settings go away and come back', async () => {
+    await render();
+    await run(proposal());
+    expect(card()).not.toBeNull();
+    // A save in progress (or the section folding) turns the settings off.
+    await render({ disabled: true });
+    await render();
+    expect(card()).toBeNull();
+    expect(mocks.requests).toHaveLength(1);
+    expect(button(`${T}.suggest`)).toBeTruthy();
+  });
+
   it('discards without touching the topics', async () => {
     await render();
     await run(proposal());
