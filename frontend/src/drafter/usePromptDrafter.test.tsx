@@ -46,14 +46,18 @@ const IMPROVE = {
 
 const current = {
   drafter: null as PromptDrafter | null,
+  name: '',
   content: '',
-  setContent: (_content: string) => undefined as void,
+  setName: (() => undefined) as (name: string) => void,
+  setContent: (() => undefined) as (content: string) => void,
 };
 
 function Host() {
   const [name, setName] = useState('Support');
   const [content, setContent] = useState(ORIGINAL);
+  current.name = name;
   current.content = content;
+  current.setName = setName;
   current.setContent = setContent;
   current.drafter = usePromptDrafter({
     mode: 'improve',
@@ -161,6 +165,44 @@ describe('usePromptDrafter', () => {
       kind: 'message',
       text: 'drafter.agent.prompt.editsStale',
     });
+  });
+
+  const WRITE = {
+    mode: 'write',
+    message: 'A first draft.',
+    name: 'Website chat',
+    content: 'You answer visitors.',
+    reason: 'A persona.',
+    warnings: [],
+    checks: [],
+    assumptions: [],
+    suggestions: [],
+  };
+
+  it('fills a written prompt, keeping a typed name, each marked with undo', async () => {
+    stream.scripts = [[{ type: 'proposal', proposal: WRITE }, { type: 'end' }]];
+    await act(async () => current.drafter!.session.send('Write one'));
+    expect(current.drafter!.review).toBeNull();
+    expect(current.content).toBe('You answer visitors.');
+    expect(current.drafter!.drafted.isDrafted('content')).toBe(true);
+    // The name the user typed stays and isn't marked.
+    expect(current.name).toBe('Support');
+    expect(current.drafter!.drafted.isDrafted('name')).toBe(false);
+    await act(async () => current.drafter!.drafted.undo('content'));
+    expect(current.content).toBe(ORIGINAL);
+    expect(current.drafter!.drafted.isDrafted('content')).toBe(false);
+  });
+
+  it('names an unnamed prompt it writes, and undo empties the name again', async () => {
+    await act(async () => current.setName(''));
+    stream.scripts = [[{ type: 'proposal', proposal: WRITE }, { type: 'end' }]];
+    await act(async () => current.drafter!.session.send('Write one'));
+    expect(current.name).toBe('Website chat');
+    expect(current.drafter!.drafted.isDrafted('name')).toBe(true);
+    await act(async () => current.drafter!.drafted.undo('name'));
+    expect(current.name).toBe('');
+    expect(current.drafter!.drafted.isDrafted('name')).toBe(false);
+    expect(current.drafter!.drafted.isDrafted('content')).toBe(true);
   });
 
   // The drawer's ask bar stays open during a review.
