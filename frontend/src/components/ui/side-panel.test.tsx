@@ -224,6 +224,20 @@ describe('SidePanel variant="docked"', () => {
       expect(content()).toContain('min-w-120');
     });
 
+    it('unmounts without the shrink under reduced motion', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+      }));
+      try {
+        await render(panel({ variant: 'docked' }));
+        await render(panel({ variant: 'docked', open: false }));
+        await act(async () => vi.advanceTimersByTime(0));
+        expect(aside()).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('renders once per page render while open', async () => {
       // A new content element on every page render must not re-render the
       // panel a second time to remember it.
