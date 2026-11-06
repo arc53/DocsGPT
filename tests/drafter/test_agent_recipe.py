@@ -557,6 +557,14 @@ class TestValidate:
         ])
         assert proposal["reasons"] == [{"field": "sources", "summary": "Help Center · left out the wiki"}]
 
+    def test_a_reason_is_its_summary_only(self):
+        # The panel shows only summaries: the model isn't asked for a detail, and one it still sends is dropped.
+        proposal = _validate({"name": "Help"}, reasons=[{"field": "name", "summary": "Short", "detail": "Why"}])
+        assert proposal["reasons"] == [{"field": "name", "summary": "Short"}]
+        reason = agent_recipe.PROPOSAL_SCHEMA["properties"]["reasons"]["items"]
+        assert set(reason["properties"]) == {"field", "summary"}
+        assert "a detail saying why" not in instructions(_req({}), _ws())
+
     def test_notes_are_capped_at_three(self):
         proposal = _validate({"name": "Help"}, notes=[f"Note {i}" for i in range(6)])
         assert proposal["notes"] == ["Note 0", "Note 1", "Note 2"]

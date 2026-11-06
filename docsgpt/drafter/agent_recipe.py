@@ -78,7 +78,6 @@ LIMIT_MAX = 1_000_000_000
 MAX_NEW_TOPICS = 4
 MESSAGE_MAX = 600
 REASON_SUMMARY_MAX = 200
-REASON_DETAIL_MAX = 400
 MAX_REASONS = 10
 MAX_NOTES = 3
 NOTE_MAX = 300
@@ -558,7 +557,7 @@ user asked for and leave every other field out of the proposal. A field you leav
 send (sources, tools, starters) replaces the whole list, so send the full list you want.
 
 In the proposal, give one reason per field you set: a summary naming what you chose, with what you left out in a \
-few words (e.g. "Meridian service guide · left out the internal wiki"), and a detail saying why. Notes are only \
+few words (e.g. "Meridian service guide · left out the internal wiki"). Notes are only \
 for what the user must do or know that the reasons don't say (a missing tool, an item to check), at most 3. Never \
 describe the next step, or how to review or save the draft: the panel shows that."""
 
@@ -759,7 +758,6 @@ PROPOSAL_SCHEMA: dict = {
                 "properties": {
                     "field": {"type": "string", "enum": list(FIELDS)},
                     "summary": {"type": "string", "description": "What you chose, by name, and what you left out."},
-                    "detail": {"type": "string", "description": "Why, or what you left out."},
                 },
                 "required": ["field", "summary"],
             },
@@ -1125,11 +1123,8 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         summary = clean_text(reason.get("summary"), REASON_SUMMARY_MAX)
         if not summary:
             continue
-        entry = {"field": reason["field"], "summary": summary}
-        detail = clean_text(reason.get("detail"), REASON_DETAIL_MAX)
-        if detail:
-            entry["detail"] = detail
-        reasons.append(entry)
+        # Only the summary shows in the panel: a detail a model still sends is dropped.
+        reasons.append({"field": reason["field"], "summary": summary})
     steps, next_step = _progress(step, fields, form)
     return {
         "message": clean_text(args.get("message"), MESSAGE_MAX),
