@@ -19,6 +19,11 @@ from docsgpt.storage.storage_creator import StorageCreator
 _BLOCKED_FINISH_REASONS = frozenset({"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "IMAGE_SAFETY"})
 
 
+#: Gemini finish reasons in the OpenAI vocabulary the /v1 chat-completions
+#: response builder reads from ``_last_finish_reason``; anything else is "stop".
+_FINISH_REASON_MAP = {"MAX_TOKENS": "length"}
+
+
 class ContentBlockedError(RuntimeError):
     """Gemini blocked the prompt or the answer under its safety or content policy.
 
@@ -62,6 +67,7 @@ class GoogleLLM(BaseLLM):
             or (settings.API_KEY if settings.LLM_PROVIDER == "google" else None)
         )
         self.user_api_key = user_api_key
+        self._last_finish_reason = None
         check_credential_scope(self.api_key, GOOGLE_BASE_URL, self.provider_name)
 
         # Pin the client to the endpoint just checked. Left to itself the SDK
@@ -649,6 +655,14 @@ class GoogleLLM(BaseLLM):
             return bool(part.get("thought"))
         return bool(getattr(part, "thought", False))
 
+    def _set_finish_reason(self, candidate) -> None:
+        """Record a candidate's terminal reason in the OpenAI vocabulary."""
+        finish = getattr(candidate, "finish_reason", None)
+        if not finish:
+            return
+        name = str(getattr(finish, "name", finish))
+        self._last_finish_reason = _FINISH_REASON_MAP.get(name, "stop")
+
     def _raw_gen(
         self,
         baseself,
@@ -661,6 +675,7 @@ class GoogleLLM(BaseLLM):
         **kwargs,
     ):
         """Generate content using Google AI API without streaming."""
+        self._last_finish_reason = None
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages, model)
@@ -682,6 +697,9 @@ class GoogleLLM(BaseLLM):
             contents=messages,
             config=config,
         )
+
+        for candidate in getattr(response, "candidates", None) or []:
+            self._set_finish_reason(candidate)
 
         if tools:
             return response
@@ -705,6 +723,7 @@ class GoogleLLM(BaseLLM):
         **kwargs,
     ):
         """Generate content using Google AI API with streaming."""
+        self._last_finish_reason = None
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages, model)
@@ -754,6 +773,7 @@ class GoogleLLM(BaseLLM):
                 provider_event()
                 if hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:
+                        self._set_finish_reason(candidate)
                         if candidate.content and candidate.content.parts:
                             for part in candidate.content.parts:
                                 if part.function_call:
