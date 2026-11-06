@@ -13,12 +13,12 @@ def tool_call(name: str, arguments: Any, call_id: str = "call_1") -> SimpleNames
     return SimpleNamespace(id=call_id, index=0, function=SimpleNamespace(name=name, arguments=args))
 
 
-def calls(*tool_calls: SimpleNamespace, content: str | None = None) -> SimpleNamespace:
-    """A response choice that calls tools."""
-    return SimpleNamespace(
-        message=SimpleNamespace(content=content, tool_calls=list(tool_calls)),
-        finish_reason="tool_calls",
-    )
+def calls(*tool_calls: SimpleNamespace, content: str | None = None, reasoning: str | None = None) -> SimpleNamespace:
+    """A response choice that calls tools (with the ``reasoning_content`` a thinking model sends, if given)."""
+    message = SimpleNamespace(content=content, tool_calls=list(tool_calls))
+    if reasoning is not None:
+        message.reasoning_content = reasoning
+    return SimpleNamespace(message=message, finish_reason="tool_calls" if tool_calls else "stop")
 
 
 def text(content: str) -> str:

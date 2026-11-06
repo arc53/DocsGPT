@@ -55,6 +55,8 @@ MAX_CORRECTIONS = 1
 MAX_QUESTION_ROUNDS = 2
 #: Characters of a read tool's result sent back to the model.
 TOOL_RESULT_CHARS = 16000
+#: Read tool calls run from one model answer; the rest are answered "not run".
+MAX_READ_CALLS = 5
 
 COMMON_RULES = f"""You are the DocsGPT drafter. A user describes what they want, and you fill a form in the DocsGPT \
 app for them. You never save, publish or delete anything: the user reviews your draft in the form and saves it \
@@ -103,6 +105,7 @@ def _json_protocol(recipe: Recipe, allow_questions: bool) -> str:
 
 
 def _terminal_definitions(recipe: Recipe, allow_questions: bool) -> list[dict]:
+    """The terminal tools offered this turn: ``ask_user`` while questions are allowed, and ``submit_proposal``."""
     tools = []
     if allow_questions:
         tools.append({
@@ -202,7 +205,7 @@ def build_messages(
     system = "\n\n".join(filter(None, [
         COMMON_RULES,
         recipe.instructions(req, ws),
-        (TOOL_PROTOCOL if recipe.asks(req) else PROPOSAL_ONLY_PROTOCOL) if tool_mode
+        (TOOL_PROTOCOL if allow_questions else PROPOSAL_ONLY_PROTOCOL) if tool_mode
         else _json_protocol(recipe, allow_questions),
         None if allow_questions or not recipe.asks(req) else NO_MORE_QUESTIONS,
     ]))
@@ -259,6 +262,7 @@ def _parse_response(llm: Any, response: Any) -> Any:
 
 
 def _error(code: str, message: str) -> dict:
+    """An ``error`` event with a code the panel maps and a message safe to show."""
     return {"type": "error", "code": code, "message": message}
 
 
@@ -306,7 +310,17 @@ class _Turn:
         return [{"type": "proposal", "proposal": proposal}]
 
     def gen(self, final: bool) -> Any:
-        tools = None
+        """Call the model once and return its parsed answer.
+
+        Args:
+            final: The last call of the turn: only the terminal tools are offered.
+
+        Returns:
+            The handler's ``LLMResponse``.
+        """
+        # An empty list, not None: every provider sends no tools for it, and ``gen_cache`` skips any call that
+        # passes tools, so "Try again" asks the model again instead of replaying a cached failed answer.
+        tools: list[dict] = []
         if self.tool_mode:
             tools = _terminal_definitions(self.recipe, self.allow_questions)
             if not final:
@@ -318,20 +332,31 @@ class _Turn:
         )
         return _parse_response(self.llm, response)
 
-    def _correct_calls(self, assistant: dict, calls: list, problems: list[str]) -> None:
+    def _correct_calls(self, assistant: dict, problems: list[str]) -> None:
+        """Answer every call of a rejected terminal answer with the problems, for one corrected try."""
         self.messages.append(assistant)
         note = "Not accepted: " + " ".join(problems) + " Fix this and call the tool again."
         for call in assistant["tool_calls"]:
             self.messages.append({"role": "tool", "tool_call_id": call["id"], "content": note})
 
-    def _correct_text(self, text: str, problems: list[str]) -> None:
-        self.messages.append({"role": "assistant", "content": text or "(no answer)"})
+    def _correct_text(self, text: str, problems: list[str], reasoning: str) -> None:
+        """Send a rejected text answer back with its problems, for one corrected try."""
+        assistant: dict = {"role": "assistant", "content": text or "(no answer)"}
+        if reasoning:
+            assistant["reasoning_content"] = reasoning
+        self.messages.append(assistant)
         self.messages.append({"role": "user", "content": "Your answer was not accepted: " + " ".join(problems)
                               + (f" Finish by calling {_finish_hint(self.allow_questions)}." if self.tool_mode
                                  else " Answer again with one JSON object only.")})
 
     @staticmethod
-    def _assistant_for(calls: list) -> dict:
+    def _assistant_for(calls: list, reasoning: str) -> dict:
+        """The assistant message that made ``calls``, as the next request replays it.
+
+        The reasoning rides along the way the agent handler sends it
+        (``docsgpt/llm/handlers/base.py``): DeepSeek thinking mode rejects an
+        active-turn assistant message with tool calls but without it.
+        """
         tool_calls = []
         for call in calls:
             arguments = call.arguments if isinstance(call.arguments, str) else json.dumps(call.arguments or {})
@@ -343,9 +368,37 @@ class _Turn:
             if getattr(call, "thought_signature", None):
                 entry["thought_signature"] = call.thought_signature
             tool_calls.append(entry)
-        return {"role": "assistant", "content": None, "tool_calls": tool_calls}
+        assistant: dict = {"role": "assistant", "content": None, "tool_calls": tool_calls}
+        if reasoning:
+            assistant["reasoning_content"] = reasoning
+        return assistant
+
+    def _read(self, calls: list, reasoning: str) -> None:
+        """Run the read tools the model called and add their fenced results.
+
+        Only the recipe's read tools run, and at most :data:`MAX_READ_CALLS`
+        of one answer; every other call is answered without running anything.
+        """
+        assistant = self._assistant_for(calls, reasoning)
+        self.messages.append(assistant)
+        for index, (call, entry) in enumerate(zip(calls, assistant["tool_calls"])):
+            if index >= MAX_READ_CALLS:
+                content = f"Not run: at most {MAX_READ_CALLS} reads in one answer. Call it again if you still need it."
+            else:
+                result = run_read_tool(call.name, self.ws, parse_arguments(call.arguments) or {},
+                                       offered=self.recipe.read_tools)
+                content = f"{fence(f'{call.name} result', _capped(result))}\n{DATA_GUARD}"
+            self.messages.append({"role": "tool", "tool_call_id": entry["id"], "content": content})
 
     def run(self, should_stop: Callable[[], bool]) -> Iterator[dict]:
+        """The model loop: read, then finish with questions or a proposal, correcting once.
+
+        Args:
+            should_stop: Asked before each model call; True ends the turn quietly.
+
+        Yields:
+            ``message``, ``questions``, ``proposal`` or ``error`` events.
+        """
         problems: list[str] = []
         for step in range(MAX_LLM_CALLS):
             if should_stop():
@@ -362,9 +415,10 @@ class _Turn:
                 return
             calls = list(getattr(parsed, "tool_calls", None) or [])
             text = parsed.content if isinstance(getattr(parsed, "content", None), str) else ""
+            reasoning = getattr(parsed, "reasoning_content", None) or ""
             terminal = next((c for c in calls if c.name in TERMINAL_TOOLS), None)
             if terminal is not None:
-                assistant = self._assistant_for(calls)
+                assistant = self._assistant_for(calls, reasoning)
                 try:
                     yield from self.finish(terminal.name, terminal.arguments)
                     return
@@ -373,18 +427,10 @@ class _Turn:
                     if self.corrections >= MAX_CORRECTIONS:
                         break
                     self.corrections += 1
-                    self._correct_calls(assistant, calls, invalid.problems)
+                    self._correct_calls(assistant, invalid.problems)
                     continue
             if calls:
-                assistant = self._assistant_for(calls)
-                self.messages.append(assistant)
-                for call, entry in zip(calls, assistant["tool_calls"]):
-                    result = run_read_tool(call.name, self.ws, parse_arguments(call.arguments) or {})
-                    self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": entry["id"],
-                        "content": f"{fence(f'{call.name} result', _capped(result))}\n{DATA_GUARD}",
-                    })
+                self._read(calls, reasoning)
                 continue
             payload = parse_json_object(text)
             if payload is not None:
@@ -404,7 +450,7 @@ class _Turn:
                     return
                 break
             self.corrections += 1
-            self._correct_text(text, problems)
+            self._correct_text(text, problems, reasoning)
         logger.warning("drafter: %s output rejected after %d correction(s): %s", self.recipe.id, self.corrections,
                        " ".join(problems)[:1000] or "no answer")
         yield _error("invalid_output", "The draft didn't come out right. Try again, or rephrase your request.")

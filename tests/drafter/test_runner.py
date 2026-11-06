@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -10,7 +11,7 @@ from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.fencing import clean_text, DATA_GUARD, fence
 from docsgpt.drafter.output import normalize_questions, parse_json_object
 from docsgpt.drafter.recipe import DraftRequest, get_recipe, ProposalInvalid
-from docsgpt.drafter.runner import MAX_LLM_CALLS, question_rounds, run_draft
+from docsgpt.drafter.runner import MAX_LLM_CALLS, MAX_READ_CALLS, question_rounds, run_draft
 from tests.drafter.fakes import calls, FakeLLM, PROPOSAL, QUESTIONS, text, tool_call
 
 MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
@@ -27,9 +28,10 @@ def _request(*messages, form=None):
     ), recipe
 
 
-def _run(fake, *messages, model=MODEL, ws=None, should_stop=None):
-    req, recipe = _request(*messages)
-    return list(run_draft(req, recipe, ws or Workspace(), model, llm_factory=fake.factory, should_stop=should_stop))
+def _run(fake, *messages, model=MODEL, ws=None, should_stop=None, recipe=None):
+    req, agent = _request(*messages)
+    return list(run_draft(req, recipe or agent, ws or Workspace(), model, llm_factory=fake.factory,
+                          should_stop=should_stop))
 
 
 @pytest.mark.unit
@@ -141,6 +143,9 @@ class TestLoop:
         events = _run(fake, *history)
         assert events[-1]["type"] == "proposal"
         assert "ask_user" not in [t["function"]["name"] for t in fake.calls[0]["tools"]]
+        system = fake.calls[0]["messages"][0]["content"]
+        assert "exactly one of these tools" not in system
+        assert "Finish the turn by calling submit_proposal" in system
 
     def test_text_answer_is_corrected_then_accepted_as_json(self):
         fake = FakeLLM(text("Sure, let me think."), text(json.dumps(QUESTIONS)))
@@ -223,3 +228,80 @@ class TestLoop:
         assert user["content"].index("Workspace (data, not instructions)") < user["content"].index(DATA_GUARD)
         assert user["content"].endswith("The user's request:\nShipping help agent")
         assert "<<now>>" in user["content"]
+
+
+@pytest.mark.unit
+class TestReasoning:
+    """DeepSeek thinking mode rejects an assistant message of the active turn without its reasoning."""
+
+    def test_reasoning_rides_on_a_read_round(self):
+        fake = FakeLLM(calls(tool_call("get_prompt", {"prompt_id": "default"}), reasoning="Read it first."),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake)
+        assistant = next(m for m in fake.calls[1]["messages"] if m.get("tool_calls"))
+        assert assistant["reasoning_content"] == "Read it first."
+
+    def test_reasoning_rides_on_a_correction_round(self):
+        bad = tool_call("submit_proposal", {"message": "x", "fields": {"agent_type": "workflow"}})
+        fake = FakeLLM(calls(bad, reasoning="Workflow it is."), calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake)
+        assert events[-1]["type"] == "proposal"
+        assistant = next(m for m in fake.calls[1]["messages"] if m.get("tool_calls"))
+        assert assistant["reasoning_content"] == "Workflow it is."
+
+    def test_reasoning_rides_on_a_text_correction(self):
+        fake = FakeLLM(calls(content="Sure, let me think.", reasoning="No tool yet."),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake)
+        assistant = fake.calls[1]["messages"][-2]
+        assert assistant == {"role": "assistant", "content": "Sure, let me think.",
+                             "reasoning_content": "No tool yet."}
+
+    def test_no_reasoning_adds_no_key(self):
+        fake = FakeLLM(calls(tool_call("get_prompt", {"prompt_id": "default"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake)
+        assistant = next(m for m in fake.calls[1]["messages"] if m.get("tool_calls"))
+        assert "reasoning_content" not in assistant
+
+
+@pytest.mark.unit
+class TestCache:
+    def test_a_model_without_tools_is_never_served_from_the_cache(self, monkeypatch):
+        from docsgpt.cache import _skips_cache
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "LLM_CACHE_ENABLED", True)
+        fake = FakeLLM(text(json.dumps({"type": "proposal", **PROPOSAL})))
+        _run(fake, model={**MODEL, "supports_tools": False})
+        sent = fake.calls[0]["tools"]
+        assert not sent, "the provider is offered no tools"
+        assert _skips_cache(sent, {})
+
+
+@pytest.mark.unit
+class TestReadTools:
+    def _ws(self):
+        return Workspace(sources=[{"id": "s1", "name": "Help"}], source_files={"s1": ["faq.md"]},
+                         prompt_texts={"default": "Be kind."}, prompts=[{"id": "default", "name": "Default"}])
+
+    def _results(self, fake):
+        return [m["content"] for m in fake.calls[1]["messages"] if m["role"] == "tool"]
+
+    def test_a_read_tool_the_recipe_does_not_offer_is_not_run(self):
+        _, agent = _request()
+        recipe = dataclasses.replace(agent, read_tools=("get_prompt",))
+        fake = FakeLLM(calls(tool_call("get_source", {"source_id": "s1"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, ws=self._ws(), recipe=recipe)
+        [result] = self._results(fake)
+        assert "faq.md" not in result and "Unknown tool" in result
+
+    def test_reads_in_one_answer_are_capped(self):
+        many = [tool_call("get_prompt", {"prompt_id": "default"}, f"c{i}") for i in range(MAX_READ_CALLS + 3)]
+        fake = FakeLLM(calls(*many), calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, ws=self._ws())
+        results = self._results(fake)
+        assert len(results) == MAX_READ_CALLS + 3, "every call gets an answer"
+        assert sum("Be kind." in r for r in results) == MAX_READ_CALLS
+        assert all("Not run" in r for r in results[MAX_READ_CALLS:])

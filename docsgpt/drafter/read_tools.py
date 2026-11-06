@@ -8,7 +8,7 @@ effects. Results go back to the model fenced as data.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from docsgpt.drafter.catalog import Workspace
 
@@ -16,6 +16,7 @@ ReadTool = Callable[[Workspace, dict], dict]
 
 
 def _id_arg(args: dict, key: str) -> str:
+    """The id argument ``key``, stripped; ``""`` when missing or not a string."""
     value = args.get(key) if isinstance(args, dict) else None
     return value.strip() if isinstance(value, str) else ""
 
@@ -49,6 +50,7 @@ def get_tool(ws: Workspace, args: dict) -> dict:
 
 
 def _schema(name: str, description: str, param: str, param_description: str) -> dict:
+    """A read tool's definition: one required string parameter."""
     return {
         "type": "function",
         "function": {
@@ -88,9 +90,16 @@ def tool_definitions(names: tuple[str, ...]) -> list[dict]:
     return [READ_TOOLS[name][0] for name in names if name in READ_TOOLS]
 
 
-def run_read_tool(name: str, ws: Workspace, args: Any) -> dict:
-    """Run one read tool; an unknown tool or bad arguments come back as ``{"error"}``."""
+def run_read_tool(name: str, ws: Workspace, args: Any, offered: Optional[tuple[str, ...]] = None) -> dict:
+    """Run one read tool; an unknown tool or bad arguments come back as ``{"error"}``.
+
+    Args:
+        name: The tool the model called.
+        ws: The caller's workspace.
+        args: The call's arguments.
+        offered: The tools the turn offered (the recipe's ``read_tools``); any other is unknown. None allows all.
+    """
     entry = READ_TOOLS.get(name)
-    if entry is None:
+    if entry is None or (offered is not None and name not in offered):
         return {"error": f"Unknown tool {name!r}."}
     return entry[1](ws, args if isinstance(args, dict) else {})
