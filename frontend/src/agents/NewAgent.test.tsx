@@ -4028,6 +4028,28 @@ describe('NewAgent drafter', () => {
       );
     });
 
+    it('keeps the characters outside an accepted change as they were', async () => {
+      const saved = 'Be brief.\u200b Be kind.  ';
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({ content: saved, updated_at: 'v1' }),
+      );
+      await renderWithPrompt('p1');
+      drafter.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'brief.', replace: 'short.', reason: 'Plainer.' },
+        ]),
+      ];
+      await ask('Plainer');
+      await act(async () =>
+        buttonByText('drafter.prompt.acceptAll', panel()!)!.click(),
+      );
+      await act(async () => save()!.click());
+      expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
+        id: 'p1',
+        content: 'Be short.\u200b Be kind.  ',
+      });
+    });
+
     it('says so when none of the changes fit the saved text', async () => {
       await renderWithPrompt('p1');
       drafter.scripts = [

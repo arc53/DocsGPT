@@ -99,7 +99,7 @@ import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import { useDrafterSession } from '../drafter/useDrafterSession';
 import { usePromptReview } from '../drafter/usePromptReview';
-import { promptAsRead, type PromptEdit } from '../drafter/promptDraft';
+import type { PromptEdit } from '../drafter/promptDraft';
 import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
 import { joinList } from '../settings/insights/format';
@@ -797,14 +797,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const fittingRef = useRef(new WeakMap<object, number>());
   /**
    * Review the drafter's changes on the open prompt's text, those that fit
-   * it as the server reads it.
+   * it as the server reads it; the characters outside a change stay.
    */
   const reviewPromptEdits = (raw: object, edits: PromptEdit[]) => {
-    const fitting = promptReview.start(
-      edits,
-      promptAsRead(promptDetail.content),
-      promptDetail.content,
-    );
+    const fitting = promptReview.start(edits, promptDetail.content);
     fittingRef.current.set(raw, fitting);
     if (fitting === 0)
       drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
