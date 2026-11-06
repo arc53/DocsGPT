@@ -57,8 +57,12 @@ export type DrafterCounts = Partial<
   Record<'sources' | 'tools' | 'prompts' | 'models' | 'agents', number>
 >;
 
-/** One SSE frame of `POST /api/drafter/stream`. */
+/**
+ * One SSE frame of `POST /api/drafter/stream`. `turn` comes first, with the id
+ * `cancelDrafterTurn` stops; a server that can't stop turns sends none.
+ */
 export type DrafterEvent =
+  | { type: 'turn'; id: string }
   | { type: 'status'; step: 'reading'; counts?: DrafterCounts }
   | { type: 'status'; step: 'drafting' }
   | { type: 'message'; text: string }
@@ -139,9 +143,11 @@ function codeForStatus(status: number, body: unknown): DrafterErrorCode {
 /** Parse one `data:` payload into an event; null for anything unknown. */
 export function parseDrafterEvent(data: string): DrafterEvent | null {
   try {
-    const parsed = JSON.parse(data) as { type?: unknown };
+    const parsed = JSON.parse(data) as { type?: unknown; id?: unknown };
     if (!parsed || typeof parsed !== 'object') return null;
     switch (parsed.type) {
+      case 'turn':
+        return typeof parsed.id === 'string' ? (parsed as DrafterEvent) : null;
       case 'status':
       case 'message':
       case 'questions':
@@ -154,6 +160,27 @@ export function parseDrafterEvent(data: string): DrafterEvent | null {
     }
   } catch {
     return null;
+  }
+}
+
+/**
+ * Stop a running turn on the server before its next model call. Aborting the
+ * stream alone doesn't: the production server finishes a turn whose client
+ * went away. Best-effort: a failure (the turn already ended, no Redis) is
+ * ignored.
+ *
+ * Args:
+ *   turnId: The id from the turn's `turn` event.
+ *   token: The session token.
+ */
+export async function cancelDrafterTurn(
+  turnId: string,
+  token: string | null,
+): Promise<void> {
+  try {
+    await apiClient.post(endpoints.USER.DRAFTER_TURN_CANCEL(turnId), {}, token);
+  } catch {
+    // Nothing to do: the turn runs to its end.
   }
 }
 

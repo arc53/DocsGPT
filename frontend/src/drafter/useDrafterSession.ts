@@ -3,6 +3,7 @@ import { useSelector } from 'react-redux';
 
 import { selectToken } from '../preferences/preferenceSlice';
 import {
+  cancelDrafterTurn,
   DRAFTER_MAX_MESSAGES,
   DRAFTER_USER_MESSAGE_CHARS,
   type DrafterCounts,
@@ -77,7 +78,9 @@ export type DrafterSession = {
  * proposal to `onProposal`. The history holds only answered turns: a failed,
  * stopped or replaced turn's message stays on screen but is not sent again
  * (Retry runs it once more), so the server never gets two user messages in a
- * row. Unmounting stops a running turn.
+ * row. Unmounting stops a running turn. A turn given up on (Stop, Start over,
+ * a new message, unmounting, a broken stream) is also cancelled on the server,
+ * which otherwise runs it to its end.
  *
  * Args:
  *   options: The recipe, a context getter and the proposal callback.
@@ -100,6 +103,10 @@ export function useDrafterSession({
   const pending = useRef<{ user: DrafterMessage; said: string[] } | null>(null);
   const userWords = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
+  // The running turn's server id (its `turn` event), until it ends.
+  const turnId = useRef<string | null>(null);
+  // The current attempt failed: its words are no answer, and Retry runs it again.
+  const failed = useRef(false);
   const nextId = useRef(0);
   // The latest callbacks, so a running turn never calls a stale one.
   const latest = useRef({ getContext, onProposal, token });
@@ -123,13 +130,31 @@ export function useDrafterSession({
 
   /** A turn that only said something (a refusal, an explanation) is answered by it. */
   const answerWithWords = useCallback(() => {
+    if (failed.current) return;
     const said = pending.current?.said ?? [];
     if (said.length > 0) answer(said.join('\n\n'));
   }, [answer]);
 
+  /** Cancel the server's turn, which a dropped stream doesn't stop. */
+  const cancelTurn = useCallback(() => {
+    const id = turnId.current;
+    turnId.current = null;
+    if (id) void cancelDrafterTurn(id, latest.current.token);
+  }, []);
+
+  /** Give up on the running turn: drop its stream and cancel it on the server. */
+  const abort = useCallback(() => {
+    controller.current?.abort();
+    controller.current = null;
+    cancelTurn();
+  }, [cancelTurn]);
+
   const handle = useCallback(
     (event: DrafterEvent) => {
       switch (event.type) {
+        case 'turn':
+          turnId.current = event.id;
+          return;
         case 'status':
           if (event.step === 'reading') {
             setStep('reading');
@@ -159,21 +184,29 @@ export function useDrafterSession({
           latest.current.onProposal(event.proposal);
           return;
         case 'error':
+          failed.current = true;
           push({ kind: 'error', code: event.code, message: event.message });
           return;
         case 'end':
-          answerWithWords();
+          // After an error the turn stays pending for Retry. The server may still
+          // be running it (the stream broke off), so it is cancelled.
+          if (failed.current) cancelTurn();
+          else answerWithWords();
+          turnId.current = null;
           setStep(null);
           return;
       }
     },
-    [answer, answerWithWords, push],
+    [answer, answerWithWords, cancelTurn, push],
   );
 
   const run = useCallback(() => {
     const turn = pending.current;
     if (!turn) return;
-    controller.current?.abort();
+    abort();
+    // A new attempt: what a failed one said is not part of its answer.
+    failed.current = false;
+    turn.said = [];
     const current = new AbortController();
     controller.current = current;
     setStep('thinking');
@@ -194,7 +227,7 @@ export function useDrafterSession({
         setStep(null);
       }
     });
-  }, [handle, recipe]);
+  }, [abort, handle, recipe]);
 
   const send = useCallback(
     (text: string, options?: { hidden?: boolean }) => {
@@ -219,11 +252,10 @@ export function useDrafterSession({
   const userTexts = useCallback(() => [...userWords.current], []);
 
   const stop = useCallback(() => {
-    controller.current?.abort();
-    controller.current = null;
+    abort();
     answerWithWords();
     setStep(null);
-  }, [answerWithWords]);
+  }, [abort, answerWithWords]);
 
   const retry = useCallback(() => {
     // The failed turn's error goes; its message is still pending.
@@ -234,17 +266,16 @@ export function useDrafterSession({
   }, [run]);
 
   const reset = useCallback(() => {
-    controller.current?.abort();
-    controller.current = null;
+    abort();
     history.current = [];
     pending.current = null;
     setFull(false);
     userWords.current = [];
     setItems([]);
     setStep(null);
-  }, []);
+  }, [abort]);
 
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => () => abort(), [abort]);
 
   return {
     recipe,

@@ -2,6 +2,7 @@ const client = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('../api/client', () => ({ default: client }));
 
 import {
+  cancelDrafterTurn,
   type DrafterEvent,
   getDrafterConfig,
   parseDrafterEvent,
@@ -178,7 +179,24 @@ describe('drafterApi', () => {
     expect(events).toEqual([]);
   });
 
+  it('cancels a turn by its id, and shrugs off a failure', async () => {
+    client.post.mockResolvedValueOnce(new Response('{}', { status: 202 }));
+    await cancelDrafterTurn('abc', 'tok');
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/drafter/turns/abc/cancel',
+      {},
+      'tok',
+    );
+    client.post.mockRejectedValueOnce(new Error('offline'));
+    await expect(cancelDrafterTurn('abc', 'tok')).resolves.toBeUndefined();
+  });
+
   it('ignores frames it does not know', () => {
+    expect(parseDrafterEvent('{"type":"turn","id":"abc"}')).toEqual({
+      type: 'turn',
+      id: 'abc',
+    });
+    expect(parseDrafterEvent('{"type":"turn"}')).toBeNull();
     expect(parseDrafterEvent('{"type":"thought"}')).toBeNull();
     expect(parseDrafterEvent('not json')).toBeNull();
     expect(parseDrafterEvent('{"type":"end"}')).toEqual({ type: 'end' });

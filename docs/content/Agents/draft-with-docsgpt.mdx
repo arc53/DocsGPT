@@ -170,7 +170,7 @@ Tick the topics you want and choose **Add 3 topics**. They join the list as if y
 
 Draft with DocsGPT runs on your [task model](/Using/web-app#task-model), which you pick under **Settings → General**; the panel's **Change model** goes there. Without your choice, it uses the instance's task model. A model without tool calling works too: DocsGPT asks it for JSON instead. So do thinking models, such as DeepSeek's. A draft is never answered from the [LLM response cache](/Deploying/DocsGPT-Settings#llm-response-cache), so **Try again** asks the model again.
 
-Its model calls are recorded as token usage under your account with the source `drafter` (a flow of its own under **By flow** on [Analytics](/Using/analytics-and-logs#analytics)), and they count toward your [usage quota](/Deploying/Usage-Quotas) as chat without an agent. A draft leaves no conversation and no entry in Logs: the conversation lives in the open page, and leaving the page ends it.
+Its model calls are recorded as token usage under your account with the source `drafter` (a flow of its own under **By flow** on [Analytics](/Using/analytics-and-logs#analytics)), and they count toward your [usage quota](/Deploying/Usage-Quotas) as chat without an agent. A turn you give up on (**Stop**, starting over, a new message while it works, leaving the page) makes no further model calls; a call already under way still counts. A draft leaves no conversation and no entry in Logs: the conversation lives in the open page, and leaving the page ends it.
 
 When a draft can't run, the panel says why:
 

@@ -65,6 +65,8 @@ const endpoints = {
     // The drafter's routes (session-only on the server; access tokens get 403).
     DRAFTER_CONFIG: '/api/drafter/config',
     DRAFTER_STREAM: '/api/drafter/stream',
+    DRAFTER_TURN_CANCEL: (turnId: string) =>
+      `/api/drafter/turns/${encodeURIComponent(turnId)}/cancel`,
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',

@@ -14,9 +14,13 @@ const stream = vi.hoisted(() => ({
   scripts: [] as (DrafterEvent[] | 'hold')[],
   requests: [] as DrafterRequest[],
   held: [] as { emit: (event: DrafterEvent) => void; done: () => void }[],
+  cancelled: [] as [string, string | null][],
 }));
 vi.mock('./drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./drafterApi')>()),
+  cancelDrafterTurn: async (turnId: string, token: string | null) => {
+    stream.cancelled.push([turnId, token]);
+  },
   streamDrafter: async (
     request: DrafterRequest,
     _token: string | null,
@@ -67,6 +71,7 @@ describe('useDrafterSession', () => {
     stream.scripts = [];
     stream.requests = [];
     stream.held = [];
+    stream.cancelled = [];
   });
 
   const QUESTIONS: DrafterEvent = {
@@ -128,6 +133,71 @@ describe('useDrafterSession', () => {
     expect(
       session.items.filter((item) => item.kind === 'user').map((i) => i.id),
     ).toHaveLength(2);
+  });
+
+  it('runs a turn again on Retry after its stream broke off past a message', async () => {
+    stream.scripts = [
+      [
+        { type: 'message', text: 'Working on it.' },
+        { type: 'error', code: 'model_error' },
+        { type: 'end' },
+      ],
+      [{ type: 'proposal', proposal: { n: 1 } }, { type: 'end' }],
+    ];
+    await act(async () => session.send('First'));
+    expect(session.items.at(-1)).toMatchObject({ kind: 'error' });
+    await act(async () => session.retry());
+    // The failed attempt's words are not an answer: the turn is sent again.
+    expect(sent(1)).toEqual([{ role: 'user', content: 'First' }]);
+    expect(session.items.some((item) => item.kind === 'error')).toBe(false);
+    await act(async () => session.send('Shorter'));
+    expect(sent(2)).toEqual([
+      { role: 'user', content: 'First' },
+      { role: 'assistant', content: '{"type":"proposal","proposal":{"n":1}}' },
+      { role: 'user', content: 'Shorter' },
+    ]);
+  });
+
+  it('cancels the server turn it gives up on, and none that ended', async () => {
+    stream.scripts = ['hold', 'hold', 'hold', 'hold'];
+    // Stop.
+    await act(async () => session.send('One'));
+    await act(async () => stream.held[0].emit({ type: 'turn', id: 't1' }));
+    await act(async () => session.stop());
+    expect(stream.cancelled).toEqual([['t1', 'tok']]);
+    // A new message replacing a running turn.
+    await act(async () => session.send('Two'));
+    await act(async () => stream.held[1].emit({ type: 'turn', id: 't2' }));
+    await act(async () => session.send('Three'));
+    expect(stream.cancelled.at(-1)).toEqual(['t2', 'tok']);
+    // A turn that ended has nothing to cancel.
+    await act(async () => {
+      stream.held[2].emit({ type: 'turn', id: 't3' });
+      stream.held[2].emit({ type: 'proposal', proposal: {} });
+      stream.held[2].emit({ type: 'end' });
+      stream.held[2].done();
+    });
+    await act(async () => session.reset());
+    expect(stream.cancelled).toHaveLength(2);
+    // Start over, and leaving the page.
+    await act(async () => session.send('Four'));
+    await act(async () => stream.held[3].emit({ type: 'turn', id: 't4' }));
+    await act(async () => root.unmount());
+    expect(stream.cancelled.at(-1)).toEqual(['t4', 'tok']);
+    root = createRoot(container);
+  });
+
+  it('cancels a turn whose stream broke off, as it may still be running', async () => {
+    stream.scripts = [
+      [
+        { type: 'turn', id: 't1' },
+        { type: 'message', text: 'Working on it.' },
+        { type: 'error', code: 'model_error' },
+        { type: 'end' },
+      ],
+    ];
+    await act(async () => session.send('First'));
+    expect(stream.cancelled).toEqual([['t1', 'tok']]);
   });
 
   it('stops a turn, keeping what arrived, and leaves it out of the history', async () => {
