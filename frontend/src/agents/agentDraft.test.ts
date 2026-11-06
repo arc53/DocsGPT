@@ -256,6 +256,29 @@ describe('agentDraft', () => {
       ['input', 'flag'],
       ['output', 'redact'],
     ]);
+
+    // A control the agent has switched off is switched on, not left off
+    // while the form shows its stage as picked.
+    const [enabled] = planAgentPatch(
+      { guardrails: { checks: ['pii'] } },
+      form({
+        guardrails: {
+          ...existing,
+          controls: [{ ...existing.controls[0], enabled: false }],
+        },
+      }),
+      [],
+    );
+    expect(
+      (enabled.next as GuardrailsConfig).controls.map((c) => [
+        c.stage,
+        c.action,
+        c.enabled,
+      ]),
+    ).toEqual([
+      ['input', 'flag', true],
+      ['output', 'redact', true],
+    ]);
   });
 
   it('appends Insights topics, skipping a name the agent has', () => {
@@ -484,6 +507,36 @@ describe('agentDraft', () => {
       limits: { mode: 'none', value: null },
       guardrails: { enabled: false, mode: 'monitor_only', checks: [] },
     });
+    // A control switched off runs no check: the recipe may offer it again.
+    expect(
+      agentDraftContext(
+        'a1',
+        form({
+          guardrails: {
+            ...DEFAULT_GUARDRAILS,
+            enabled: true,
+            controls: [
+              {
+                check: 'pii',
+                stage: 'input',
+                action: 'redact',
+                enabled: false,
+                settings: {},
+              },
+              {
+                check: 'injection',
+                stage: 'input',
+                action: 'block',
+                enabled: true,
+                settings: {},
+              },
+            ],
+          },
+        }),
+        { step: 'safety', earlier: [] },
+        null,
+      ).form.guardrails.checks,
+    ).toEqual(['injection']);
   });
 
   it('gives a reason row only for the fields the draft changed', () => {

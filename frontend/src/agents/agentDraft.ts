@@ -340,8 +340,10 @@ function limitsOf(
 
 /**
  * The guardrails with a proposal's checks added: each check's controls from
- * GUARDRAIL_MENU, skipping a stage the check already runs at, guardrails on,
- * and Monitor only unless the agent already enforces everywhere.
+ * GUARDRAIL_MENU, switching on one the check has at that stage but switched
+ * off (the form shows its stage picked either way) and keeping one it runs,
+ * guardrails on, and Monitor only unless the agent already enforces
+ * everywhere.
  */
 function guardrailsWith(
   checks: string[],
@@ -351,7 +353,14 @@ function guardrailsWith(
   const controls: GuardrailControl[] = [...base.controls];
   checks.forEach((check) =>
     GUARDRAIL_MENU[check].forEach(([stage, action]) => {
-      if (controls.some((c) => c.check === check && c.stage === stage)) return;
+      const at = controls.findIndex(
+        (c) => c.check === check && c.stage === stage,
+      );
+      if (at >= 0) {
+        if (controls[at].enabled === false)
+          controls[at] = { ...controls[at], enabled: true };
+        return;
+      }
       controls.push({
         check,
         stage,
@@ -563,8 +572,13 @@ export function agentDraftContext(
       guardrails: {
         enabled: guardrails.enabled,
         mode: guardrails.mode,
+        // A control switched off runs nothing: the recipe may offer it.
         checks: [
-          ...new Set(guardrails.controls.map((c) => c.check.toLowerCase())),
+          ...new Set(
+            guardrails.controls
+              .filter((c) => c.enabled !== false)
+              .map((c) => c.check.toLowerCase()),
+          ),
         ],
       },
       analytics: {
