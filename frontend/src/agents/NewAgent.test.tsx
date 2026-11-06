@@ -3406,7 +3406,12 @@ describe('NewAgent drafter', () => {
         ],
       ];
       await ask('Tighten it');
-      expect(lastRequest().context.form.prompt_draft).toBeNull();
+      // The open prompt's text goes along, with the id of the prompt it is.
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Text of p1',
+      });
       // A saved prompt keeps its name; the text is drafted.
       expect(
         view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
@@ -3420,6 +3425,61 @@ describe('NewAgent drafter', () => {
         name: 'Tone',
         content: 'Tighter.',
       });
+    });
+
+    it('improves the prompt opened from a picker row, not the one the agent uses', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p3', name: 'Formal', type: 'private', access: 'owner' },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p3');
+      drafter.scripts = [
+        [
+          proposal({
+            prompt: { kind: 'new', name: 'Other', content: 'Formal, shorter.' },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Shorter');
+      // The drafter reads the prompt on screen, unchanged as it is.
+      expect(lastRequest().context.form).toMatchObject({
+        prompt_id: 'p1',
+        prompt_draft: { id: 'p3', name: 'Formal', content: 'Text of p3' },
+      });
+      expect(viewText().value).toBe('Formal, shorter.');
+      await act(async () => save()!.click());
+      expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
+        id: 'p3',
+        content: 'Formal, shorter.',
+      });
+    });
+
+    it('opens a prompt it wrote in a view of its own, never in a read-only one', async () => {
+      await renderWithPrompt('p1');
+      // The drawer open on the form, then a team prompt opened to read.
+      await act(async () => wand()!.click());
+      await openFromRow('p2');
+      drafter.scripts = [
+        [
+          proposal({
+            prompt: { kind: 'new', name: 'Warm tone', content: 'Be warm.' },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Warmer');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p2',
+        name: 'Team tone',
+        content: 'Text of p2',
+      });
+      // A new prompt to use, with its Save: the team's prompt is untouched.
+      expect(viewText().readOnly).toBe(false);
+      expect(viewText().value).toBe('Be warm.');
+      expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
+      expect(buttonByText('drafter.agent.prompt.use', view()!)).toBeDefined();
     });
 
     const promptEdits = (
@@ -3571,6 +3631,28 @@ describe('NewAgent drafter', () => {
       // Once it is decided, the approval moves on.
       expect(drafter.requests).toHaveLength(3);
       expect(lastRequest().context.step).toBe('knowledge');
+    });
+
+    it('drops changes that waited for a prompt the view never loaded', async () => {
+      await renderWithPrompt('p1');
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({}, false),
+      );
+      drafter.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      expect(review()).toBeNull();
+      await act(async () =>
+        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
+      );
+      expect(view()).toBeNull();
+      // Opened later on its own, the prompt shows no stale review.
+      await openFromRow('p1');
+      expect(viewText().value).toBe('Text of p1');
+      expect(review()).toBeNull();
     });
 
     it('says so when none of the changes fit the saved text', async () => {

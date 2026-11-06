@@ -601,15 +601,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   );
   // The drafter's changes to a saved prompt, under review in the view.
   const promptReview = usePromptReview(setPromptContent, promptDrafted);
-  // The view's text the drafter reads: the drafter's unused prompt, or an
-  // open new or changed prompt (with the id of the saved one it changes).
+  // The prompt text the drafter reads: the open view's once loaded, with the
+  // id of the saved prompt it shows (opened from a picker row, it needn't be
+  // the agent's), else the drafter's unused prompt.
   const viewTargetId =
     promptDetail.target?.kind === 'edit' ? promptDetail.target.prompt.id : null;
   const draftOfPrompt: PromptDraft | null =
-    promptViewOpen &&
-    (promptOrigin === 'drafter' ||
-      promptDetail.target?.kind === 'new' ||
-      promptDetail.dirty)
+    promptViewOpen && promptDetail.status === 'ready'
       ? viewTargetId
         ? { ...promptValues, id: viewTargetId }
         : promptValues
@@ -702,10 +700,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * Put a prompt the drafter wrote in the view: into the open one (a saved
    * prompt opened from the picker keeps its name), or a new view, which
    * updates the prompt this conversation already used while the agent
-   * still has it. Each changed field is marked Drafted with undo.
+   * still has it. A prompt the caller can only read is never written into
+   * (it has no Save): the new view takes its place. Each changed field is
+   * marked Drafted with undo.
    */
   const showWrittenPrompt = (written: PromptDraft) => {
-    if (promptViewOpen) {
+    if (promptViewOpen && !promptDetail.readOnly) {
       const keepsName =
         promptOrigin === 'picker' && promptDetail.target?.kind === 'edit';
       if (!keepsName && written.name && written.name !== promptDetail.name) {
@@ -736,9 +736,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   // Changes to a saved prompt wait for its text when the view loads it.
-  const pendingEditsRef = useRef<{ id: string; edits: PromptEdit[] } | null>(
-    null,
-  );
+  const [pendingEdits, setPendingEdits] = useState<{
+    id: string;
+    edits: PromptEdit[];
+  } | null>(null);
   /** Review the drafter's changes on the open prompt's text, those that fit it. */
   const reviewPromptEdits = (edits: PromptEdit[]) => {
     const fitting = fittingEdits(promptDetail.content, edits);
@@ -746,13 +747,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
     else promptReview.start(fitting, promptDetail.content);
   };
+  // They belong to that opening: a view closed or showing another prompt
+  // drops them, so opening the prompt later shows no stale review. A load
+  // error keeps them for the view's Retry.
   useEffect(() => {
-    const pending = pendingEditsRef.current;
-    if (!pending || promptDetail.status !== 'ready') return;
-    if (viewTargetId !== pending.id) return;
-    pendingEditsRef.current = null;
-    reviewPromptEdits(pending.edits);
-  }, [promptDetail.status, promptDetail.key, viewTargetId]);
+    if (!pendingEdits) return;
+    if (viewTargetId !== pendingEdits.id) setPendingEdits(null);
+    else if (promptDetail.status === 'ready') {
+      setPendingEdits(null);
+      reviewPromptEdits(pendingEdits.edits);
+    }
+  }, [pendingEdits, promptDetail.status, promptDetail.key, viewTargetId]);
 
   /**
    * Show the drafter's changes to the agent's own saved prompt: in its view
@@ -770,7 +775,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
       return;
     }
-    pendingEditsRef.current = { id, edits };
+    setPendingEdits({ id, edits });
     setPromptOrigin('picker');
     promptDrafted.clear();
     promptDetail.open(prompt);
@@ -1235,7 +1240,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       }),
     doneText: t('drafter.agent.build.done'),
     // Changes to a prompt under review, or on their way to it, come first.
-    hold: promptReview.review !== null || pendingEditsRef.current !== null,
+    hold: promptReview.review !== null || pendingEdits !== null,
   });
   const buildRef = useRef(build);
   buildRef.current = build;
