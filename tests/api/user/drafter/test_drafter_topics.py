@@ -222,6 +222,22 @@ class TestSampling:
         assert [q.lower().strip() for q in ws.other].count("how do i return a sofa?") == 1
         assert "Do you ship to Oslo?" in ws.other
 
+    def test_repeats_differing_only_in_spacing_are_read_once(self, pg_conn):
+        agent = _busy_agent(pg_conn)
+        _conversation(pg_conn, "a", "Where do I\n\nsend  a return?", agent_id=str(agent["id"]))
+        _conversation(pg_conn, "b", "where do i send a return?", agent_id=str(agent["id"]), days_ago=2)
+        with _db(pg_conn):
+            ws = load_workspace("owner", {"agent_id": str(agent["id"])})
+        assert [q for q in ws.other if "return" in q] == ["Where do I send a return?"]
+
+    def test_the_status_counts_up_to_what_it_needs(self, pg_conn):
+        agent = _busy_agent(pg_conn, n=MIN_CONVERSATIONS + 3)
+        repo = ConversationLabelsRepository(pg_conn)
+        assert repo.agent_question_counts(str(agent["id"]), agent["key"], DAYS, cap=MIN_CONVERSATIONS) == {
+            "conversations": MIN_CONVERSATIONS}
+        assert repo.agent_question_counts(str(agent["id"]), agent["key"], DAYS)["conversations"] == \
+            MIN_CONVERSATIONS + 3
+
     def test_nothing_is_read_while_insights_is_off(self, pg_conn, monkeypatch):
         from docsgpt.core.settings import settings
         from docsgpt.drafter.recipe import BadDraftRequest

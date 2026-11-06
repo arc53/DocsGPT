@@ -246,8 +246,8 @@ def topics_status(user_id: str, agent_id: str) -> dict:
         agent_id: The agent.
 
     Returns:
-        ``{"available", "conversations", "needed", "reason"}``: ``reason`` is :func:`insights_off`'s (and
-        ``conversations`` 0, uncounted) while Insights is off, else None.
+        ``{"available", "conversations", "needed", "reason"}``: ``conversations`` is counted up to ``needed``;
+        ``reason`` is :func:`insights_off`'s (and ``conversations`` 0, uncounted) while Insights is off, else None.
 
     Raises:
         AccessDenied: The caller can't edit the agent.
@@ -261,7 +261,7 @@ def topics_status(user_id: str, agent_id: str) -> dict:
         if reason:
             return {"available": False, "conversations": 0, "needed": MIN_CONVERSATIONS, "reason": reason}
         counts = ConversationLabelsRepository(conn).agent_question_counts(
-            str(agent["id"]), agent.get("key"), DAYS
+            str(agent["id"]), agent.get("key"), DAYS, cap=MIN_CONVERSATIONS
         )
     return {
         "available": counts["conversations"] >= MIN_CONVERSATIONS,
@@ -320,7 +320,7 @@ def load_workspace(user_id: str, context: dict) -> TopicsWorkspace:
             raise BadDraftRequest(_OFF_MESSAGES[off])
         repo = ConversationLabelsRepository(conn)
         agent_id, key = str(agent["id"]), agent.get("key")
-        counts = repo.agent_question_counts(agent_id, key, DAYS)
+        counts = repo.agent_question_counts(agent_id, key, DAYS, cap=MIN_CONVERSATIONS)
         if counts["conversations"] < MIN_CONVERSATIONS:
             raise BadDraftRequest(
                 f"Suggestions need {MIN_CONVERSATIONS} conversations from the last {DAYS} days; "
