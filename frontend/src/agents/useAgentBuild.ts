@@ -32,7 +32,10 @@ type BuildState = {
   filledAtOnce: number;
   /** The current step's latest proposal: the steps it filled and the next. */
   ready: { steps: AgentBuildStep[]; next: AgentBuildStep | null } | null;
-  /** The latest proposal changed nothing (an approval): Next runs on its own. */
+  /**
+   * The latest proposal asked for nothing and the server left nothing out
+   * (an approval): Next runs on its own.
+   */
   approved: boolean;
 };
 
@@ -55,6 +58,11 @@ export type AgentBuildOptions = {
   continueText: (step: AgentBuildStep) => string;
   /** The drawer's message once every step is done. */
   doneText: string;
+  /**
+   * Something on the form waits for the user (changes to a prompt under
+   * review): an approval's Next waits for it.
+   */
+  hold?: boolean;
 };
 
 export type AgentBuild = {
@@ -75,8 +83,6 @@ export type AgentBuild = {
   ready: boolean;
   /** The latest proposal filled more than this step. */
   filledAhead: boolean;
-  /** The latest proposal was an approval: Next is on its way. */
-  approved: boolean;
   /** Where Next goes; null when it finishes the build. */
   nextStep: AgentBuildStep | null;
   /** Start the guided build at its first step, from a starting point or none. */
@@ -128,7 +134,8 @@ function nextOf(state: BuildState, skipped: AgentBuildStep[]) {
  * The guided build of a new agent ("Draft with DocsGPT" on an empty form):
  * four steps (basics, knowledge and tools, prompt and starters, limits and
  * safety), each one conversation. A proposal readies the step's Next; an
- * empty one (the user approved) runs Next once its turn ends. Next folds the
+ * empty one with nothing dropped (the user approved) runs Next once its
+ * turn ends and nothing on the form holds it. Next folds the
  * step and those its proposal filled ahead, keeps the user's words for
  * `earlier`, starts the session over and opens the next step with a hidden
  * message, or finishes. Steps with nothing to set are passed over and
@@ -148,6 +155,7 @@ export function useAgentBuild({
   skipped,
   continueText,
   doneText,
+  hold = false,
 }: AgentBuildOptions): AgentBuild {
   const [state, setRendered] = useState<BuildState>(IDLE);
   const stateRef = useRef(state);
@@ -190,7 +198,11 @@ export function useAgentBuild({
           steps: proposal.steps.length ? proposal.steps : [current.step],
           next: proposal.next_step,
         },
-        approved: Object.keys(proposal.fields).length === 0,
+        // Parts the server dropped (a source that doesn't exist, a setting
+        // the role can't change) were asked for: no approval.
+        approved:
+          Object.keys(proposal.fields).length === 0 &&
+          proposal.dropped.length === 0,
       });
     },
     [setState],
@@ -235,11 +247,11 @@ export function useAgentBuild({
     [],
   );
 
-  // An approval moves on once its turn is over.
+  // An approval moves on once its turn is over and nothing holds it.
   const { streaming } = session;
   useEffect(() => {
-    if (!streaming && state.approved) next();
-  }, [streaming, state.approved, next]);
+    if (!streaming && !hold && state.approved) next();
+  }, [streaming, hold, state.approved, next]);
 
   const guided = state.mode === 'guided';
   const counted = AGENT_BUILD_STEPS.filter((step) => !skipped.includes(step));
@@ -254,7 +266,6 @@ export function useAgentBuild({
     filledAtOnce: state.filledAtOnce,
     ready: guided && !!state.ready && !state.approved,
     filledAhead: (state.ready?.steps.length ?? 0) > 1,
-    approved: state.approved,
     nextStep: nextOf(state, skipped),
     start,
     focus,

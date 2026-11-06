@@ -39,6 +39,7 @@ describe('useAgentBuild', () => {
   let skipped: AgentBuildStep[];
   // The step each context read sees, as a message sent right after reads it.
   let contexts: (AgentBuildStep | null)[];
+  let hold: boolean;
 
   function Host() {
     build = useAgentBuild({
@@ -46,6 +47,7 @@ describe('useAgentBuild', () => {
       skipped,
       continueText: (step) => `Continue with ${step}.`,
       doneText: 'All done.',
+      hold,
     });
     return null;
   }
@@ -58,6 +60,7 @@ describe('useAgentBuild', () => {
     fake = fakeSession();
     skipped = [];
     contexts = [];
+    hold = false;
     fake.session.send.mockImplementation((text, options) => {
       contexts.push(build.context().step);
       fake.calls.push(`send:${text}:${options?.hidden ? 'hidden' : 'shown'}`);
@@ -165,7 +168,6 @@ describe('useAgentBuild', () => {
     await act(async () =>
       build.onProposal(proposal({}, ['basics'], 'knowledge')),
     );
-    expect(build.approved).toBe(true);
     expect(build.ready).toBe(false);
     expect(fake.calls).toEqual([]);
     fake.session.streaming = false;
@@ -174,6 +176,41 @@ describe('useAgentBuild', () => {
       'reset',
       'send:Continue with knowledge.:hidden',
     ]);
+    expect(build.step).toBe('knowledge');
+  });
+
+  it("doesn't take a proposal whose every part was dropped as an approval", async () => {
+    await act(async () => build.start());
+    fake.session.streaming = true;
+    await render();
+    await act(async () =>
+      build.onProposal(
+        parseAgentProposal({
+          fields: {},
+          dropped: [{ field: 'sources', id: 'made-up', reason: 'not_found' }],
+          steps: ['basics'],
+          next_step: 'knowledge',
+        })!,
+      ),
+    );
+    fake.session.streaming = false;
+    await render();
+    // The step stays, its Next for the user to press.
+    expect(fake.calls).toEqual([]);
+    expect(build.step).toBe('basics');
+    expect(build.ready).toBe(true);
+  });
+
+  it("runs an approval's Next only once nothing on the form holds it", async () => {
+    await act(async () => build.start());
+    hold = true;
+    await render();
+    await act(async () =>
+      build.onProposal(proposal({}, ['basics'], 'knowledge')),
+    );
+    expect(fake.calls).toEqual([]);
+    hold = false;
+    await render();
     expect(build.step).toBe('knowledge');
   });
 

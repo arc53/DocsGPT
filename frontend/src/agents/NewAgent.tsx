@@ -1186,8 +1186,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
     if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
     // An approval while the prompt it wrote is unused isn't the step's
-    // Next: the prompt waits for Use this prompt or Keep.
-    const approval = Object.keys(proposal.fields).length === 0;
+    // Next: the prompt waits for Use this prompt or Keep. (One with parts
+    // the server dropped is no approval.)
+    const approval =
+      Object.keys(proposal.fields).length === 0 &&
+      proposal.dropped.length === 0;
     if (approval && promptDraft) return;
     buildRef.current.onProposal(proposal);
   };
@@ -1227,6 +1230,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         interpolation: { escapeValue: false },
       }),
     doneText: t('drafter.agent.build.done'),
+    // Changes to a prompt under review, or on their way to it, come first.
+    hold: promptReview.review !== null || pendingEditsRef.current !== null,
   });
   const buildRef = useRef(build);
   buildRef.current = build;
@@ -1345,7 +1350,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ]
         : proposal.notes;
     const review = promptReview.review;
-    const reviewing = latest && written?.kind === 'edit' && review !== null;
+    // The latest turn ends a review open from its own changes, or from
+    // those that waited for the prompt to load.
+    const reviewing = latest && review !== null;
     // Fields it changed on the form behind the prompt view.
     const showInAgent =
       latest && promptViewOpen && (appliedFields(raw) ?? []).length > 0 ? (

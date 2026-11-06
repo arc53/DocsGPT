@@ -2714,6 +2714,36 @@ describe('NewAgent drafter', () => {
     ]);
   });
 
+  it("doesn't move on when every part of a proposal was dropped", async () => {
+    drafter.scripts = [
+      [
+        proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+      [
+        {
+          type: 'proposal',
+          proposal: {
+            message: 'Added your handbook.',
+            fields: {},
+            reasons: [],
+            notes: [],
+            dropped: [{ field: 'sources', id: 'made-up', reason: 'not_found' }],
+            steps: ['basics'],
+            next_step: 'knowledge',
+          },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    await ask('Use the handbook');
+    expect(drafter.requests).toHaveLength(2);
+    expect(panel()!.textContent).toContain('drafter.agent.droppedLine');
+    expect(next()).toBeDefined();
+  });
+
   it('jumps past the steps one description covered', async () => {
     drafter.scripts = [
       [
@@ -3465,6 +3495,39 @@ describe('NewAgent drafter', () => {
       expect(
         buttonByText('drafter.agent.showInAgent', panel()!),
       ).toBeUndefined();
+    });
+
+    it('waits for an open review before an approval moves the build on', async () => {
+      await render();
+      drafter.scripts = [
+        [
+          proposal(
+            { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
+            { steps: ['basics'] },
+          ),
+          { type: 'end' },
+        ],
+        [
+          ...promptEdits([
+            { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          ]).slice(0, 1),
+          // The same turn approves the step while the review is open.
+          proposal({}, { steps: ['basics'], next_step: 'knowledge' }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('A deal desk on my Tone prompt');
+      await ask('Plainer prompt, then go on');
+      expect(review()).not.toBeNull();
+      expect(drafter.requests).toHaveLength(2);
+      // The drawer's latest turn offers the review's actions.
+      await act(async () =>
+        buttonByText('drafter.prompt.acceptAll', panel()!)!.click(),
+      );
+      expect(viewText().value).toBe('Words of p1');
+      // Once it is decided, the approval moves on.
+      expect(drafter.requests).toHaveLength(3);
+      expect(lastRequest().context.step).toBe('knowledge');
     });
 
     it('says so when none of the changes fit the saved text', async () => {
