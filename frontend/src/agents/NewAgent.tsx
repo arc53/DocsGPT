@@ -1732,11 +1732,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     build.guided,
     build.ready,
   ]);
+  // Like the desktop Next, the strip waits while changes to the prompt are
+  // under review or on their way to it: Next would drop them.
   const showStepStrip =
     isMobile &&
     !drafterOpen &&
     build.ready &&
     !promptDraft &&
+    !promptReview.review &&
+    !pendingEdits &&
     !drafterSession.streaming;
 
   /** "Drafted 3 fields…" for a screen reader once a draft is applied. */

@@ -3971,6 +3971,60 @@ describe('NewAgent drafter', () => {
       expect(lastRequest().context.step).toBe('knowledge');
     });
 
+    describe("a phone's step Next", () => {
+      const strip = () =>
+        container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
+      /** A guided build on a phone, its basics on the Tone prompt. */
+      const startOnPhone = async () => {
+        media.isMobile = true;
+        media.isDesktop = false;
+        await render();
+        drafter.scripts = [
+          [
+            proposal(
+              { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
+              { steps: ['basics'] },
+            ),
+            { type: 'end' },
+          ],
+          promptEdits([
+            { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          ]),
+        ];
+        await ask('A deal desk on my Tone prompt');
+        expect(strip()).not.toBeNull();
+      };
+
+      it('waits while changes to the prompt are under review', async () => {
+        await startOnPhone();
+        await ask('Plainer prompt');
+        expect(review()).not.toBeNull();
+        // Next would drop the undecided changes.
+        expect(strip()).toBeNull();
+        await act(async () =>
+          review()!
+            .querySelector<HTMLButtonElement>(
+              '[data-change-id="e1"] [data-action="accept"]',
+            )!
+            .click(),
+        );
+        expect(review()).toBeNull();
+        expect(strip()).not.toBeNull();
+      });
+
+      it("waits while changes wait for the saved prompt's text", async () => {
+        await startOnPhone();
+        // The load fails; the changes stay for the view's Retry.
+        mocks.getSinglePrompt.mockImplementationOnce(() =>
+          jsonResponse({}, false),
+        );
+        await ask('Plainer prompt');
+        expect(view()).not.toBeNull();
+        expect(review()).toBeNull();
+        expect(strip()).toBeNull();
+      });
+    });
+
     it('drops changes that waited for a prompt the view never loaded', async () => {
       await renderWithPrompt('p1');
       mocks.getSinglePrompt.mockImplementationOnce(() =>
