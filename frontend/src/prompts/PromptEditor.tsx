@@ -115,6 +115,7 @@ type VariableMenuProps = {
   textareaId: string;
   content: string;
   setContent: (content: string) => void;
+  disabled?: boolean;
 };
 
 function VariableMenu({
@@ -123,6 +124,7 @@ function VariableMenu({
   textareaId,
   content,
   setContent,
+  disabled = false,
 }: VariableMenuProps) {
   const handleSelect = (value: string) => {
     const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -152,7 +154,7 @@ function VariableMenu({
   // An insert menu on a Select that never keeps a value: the placeholder
   // stands in for the label, and every pick inserts and resets to "".
   return (
-    <Select value="" onValueChange={handleSelect}>
+    <Select value="" onValueChange={handleSelect} disabled={disabled}>
       <SelectTrigger
         // Sized to the label; a phone stacks the two menus full width.
         className="w-full sm:w-fit"
@@ -327,7 +329,11 @@ export type PromptEditorProps = {
   draftedContent?: DraftedSlot;
   /** Under the name field, in red ("Name already exists"). */
   nameError?: string;
-  /** The name and text are read-only while a draft runs. */
+  /**
+   * A draft is running: the name and text are read-only, and the variable
+   * menus and the Drafted undos are off, since the draft's changes are made
+   * for the text it was sent with.
+   */
   locked?: boolean;
 };
 
@@ -370,6 +376,7 @@ export function PromptEditor({
         <DraftedField
           drafted={draftedName?.drafted ?? false}
           onUndo={draftedName?.onUndo ?? (() => undefined)}
+          undoDisabled={locked}
           fieldLabel={t('modals.prompts.promptName')}
         >
           <FormField
@@ -393,6 +400,7 @@ export function PromptEditor({
           <DraftedField
             drafted={draftedContent?.drafted ?? false}
             onUndo={draftedContent?.onUndo ?? (() => undefined)}
+            undoDisabled={locked}
             fieldLabel={t('modals.prompts.promptText')}
           >
             <FormField
@@ -426,6 +434,7 @@ export function PromptEditor({
               textareaId={textareaId}
               content={content}
               setContent={setContent}
+              disabled={locked}
             />
 
             <VariableMenu
@@ -434,6 +443,7 @@ export function PromptEditor({
               textareaId={textareaId}
               content={content}
               setContent={setContent}
+              disabled={locked}
             />
           </div>
         </div>

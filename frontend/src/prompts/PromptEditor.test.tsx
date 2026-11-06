@@ -121,4 +121,28 @@ describe('PromptEditor', () => {
     await act(async () => undo!.click());
     expect(onUndo).toHaveBeenCalled();
   });
+
+  // The review of a running draft is built from the text it was sent with:
+  // nothing may change the text until it lands.
+  it('changes nothing while a draft runs: no menus, no undo', async () => {
+    const onUndo = vi.fn();
+    await render({
+      locked: true,
+      draftedName: { drafted: true, onUndo },
+      draftedContent: { drafted: true, onUndo },
+    });
+    expect(container.querySelector('input')!.readOnly).toBe(true);
+    expect(container.querySelector('textarea')!.readOnly).toBe(true);
+    for (const menu of menus())
+      expect((menu as HTMLButtonElement).disabled).toBe(true);
+    const undos = container.querySelectorAll<HTMLButtonElement>(
+      '[aria-label="drafter.undoField"]',
+    );
+    expect(undos).toHaveLength(2);
+    for (const undo of undos) {
+      expect(undo.disabled).toBe(true);
+      await act(async () => undo.click());
+    }
+    expect(onUndo).not.toHaveBeenCalled();
+  });
 });

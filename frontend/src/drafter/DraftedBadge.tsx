@@ -18,15 +18,18 @@ import { cn, focusRing } from '@/lib/utils';
  * Args:
  *   onUndo: Puts the field's previous value back.
  *   fieldLabel: The field's name, for the undo button's accessible name.
+ *   undoDisabled: The field can't change now (a draft is running).
  *   className: Layout only (placement on the field).
  */
 export function DraftedBadge({
   onUndo,
   fieldLabel,
+  undoDisabled = false,
   className,
 }: {
   onUndo: () => void;
   fieldLabel: string;
+  undoDisabled?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -47,9 +50,10 @@ export function DraftedBadge({
               type="button"
               aria-label={label}
               onClick={onUndo}
+              disabled={undoDisabled}
               className={cn(
                 focusRing,
-                'hover:bg-background relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none after:absolute after:-inset-1',
+                'hover:bg-background relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none after:absolute after:-inset-1 disabled:pointer-events-none disabled:opacity-50',
               )}
             >
               <Undo2 className="size-3" aria-hidden="true" />
@@ -76,6 +80,7 @@ const DRAFTED_FRAME =
  *   drafted: Whether the field holds a drafted value.
  *   onUndo: Undo for the badge.
  *   fieldLabel: The field's name, for the undo button.
+ *   undoDisabled: The badge's undo is off (a draft is running).
  *   className: Layout only (grid placement).
  *   children: The FormField (or a group of fields).
  */
@@ -83,12 +88,14 @@ export function DraftedField({
   drafted,
   onUndo,
   fieldLabel,
+  undoDisabled,
   className,
   children,
 }: {
   drafted: boolean;
   onUndo: () => void;
   fieldLabel: string;
+  undoDisabled?: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -103,6 +110,7 @@ export function DraftedField({
         <DraftedBadge
           onUndo={onUndo}
           fieldLabel={fieldLabel}
+          undoDisabled={undoDisabled}
           className="absolute -top-2.5 right-3 z-10"
         />
       )}
