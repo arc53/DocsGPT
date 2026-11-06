@@ -1,0 +1,752 @@
+from __future__ import annotations
+
+from unittest.mock import Mock, patch
+
+import pytest
+
+from docsgpt.retriever.dispatcher import (
+    CompressingDispatcher,
+    CompressingRetriever,
+    Dispatcher,
+    build_dispatcher,
+)
+from docsgpt.retriever.stages.boilerplate_pruning import (
+    _normalize_fence_state,
+    prune_boilerplate,
+    prune_chunk_text,
+)
+
+
+@pytest.mark.unit
+class TestBoilerplatePruningRules:
+    def test_prunes_breadcrumbs_and_nav_headers(self):
+        raw = (
+            "Home > Documentation > API Reference > Endpoints\n"
+            "# Table of Contents\n"
+            "This service provides real-time transaction processing for payment requests.\n"
+            "On this page\n"
+            "Next page: Authentication\n"
+            "Edit this page on GitHub"
+        )
+        cleaned = prune_chunk_text(raw, query="payment")
+        expected = "This service provides real-time transaction processing for payment requests."
+        assert cleaned == expected
+
+    def test_preserves_blank_lines_inside_fenced_code(self):
+        raw = (
+            "Home > Guides\n"
+            "Here is the example code:\n"
+            "```python\n"
+            "def foo():\n"
+            "\n"
+            "\n"
+            "    return 42\n"
+            "```\n"
+            "\n"
+            "\n"
+            "Summary text after code block."
+        )
+        cleaned = prune_chunk_text(raw, query="example")
+        # Blank lines inside fence should be preserved
+        assert "def foo():\n\n\n    return 42" in cleaned
+        # Blank lines outside fence should be collapsed
+        assert "\n\n\nSummary" not in cleaned
+        assert "\n\nSummary text after code block." in cleaned
+
+    def test_preserves_numeric_comparison_expressions(self):
+        raw = (
+            "Home > Security > Guidelines\n"
+            "Password length > 8 characters\n"
+            "Operating temperature >= -20 C\n"
+            "Threshold offset <= +5 ms\n"
+            "Error code != -1\n"
+            "Other text here."
+        )
+        cleaned = prune_chunk_text(raw, query="How long should my passphrase be?")
+        assert "Password length > 8 characters" in cleaned
+        assert "Operating temperature >= -20 C" in cleaned
+        assert "Threshold offset <= +5 ms" in cleaned
+        assert "Error code != -1" in cleaned
+        assert "Other text here." in cleaned
+        assert "Home > Security > Guidelines" not in cleaned
+
+    def test_preserves_prose_containing_slash_and_greater_than(self):
+        """Prose containing ' / ' or ' > ' with or without terminal punctuation must not be pruned."""
+        cases = [
+            "Read / write access is controlled by roles.",
+            "Read / write access is controlled by roles",
+            "Input > Output mapping is shown below.",
+            "Input > Output mapping is shown below",
+            "A / B testing evaluates model variants.",
+            "A / B testing evaluates model variants",
+        ]
+        for line in cases:
+            cleaned = prune_chunk_text(line, query="database configuration")
+            assert cleaned == line, f"Prose was pruned: {line!r}"
+
+    def test_preserves_fenced_code_context_across_chunk_boundaries_via_initial_fence(self):
+        """Preserves unindented code lines in continuation chunks carrying active fence state."""
+        continuation_chunk = (
+            "Next page: Authentication\n"
+            "```\n"
+            "Home > API\n"
+            "Factual prose outside code fence."
+        )
+        # Without initial_active_fence, 'Next page: Authentication' would be treated as nav and pruned
+        without_fence = prune_chunk_text(continuation_chunk, query="")
+        assert "Next page: Authentication" not in without_fence
+        assert "Factual prose outside code fence." in without_fence
+
+        # With initial_active_fence, the code line inside the active fence is preserved regardless of nav match
+        with_fence = prune_chunk_text(continuation_chunk, query="", initial_active_fence=("`", 3))
+        assert "Next page: Authentication" in with_fence
+        assert "```" in with_fence
+        assert "Home > API" not in with_fence
+        assert "Factual prose outside code fence." in with_fence
+
+    def test_prune_boilerplate_carries_active_fence_from_metadata(self):
+        """prune_boilerplate inspects chunk metadata to preserve continuation code blocks."""
+        docs = [
+            {
+                "id": 1,
+                "text": "Next page: Authentication\n```\nHome > API\nFactual content.",
+                "metadata": {"active_fence": ("`", 3)},
+            },
+            {
+                "id": 2,
+                "text": "previous page: Overview\n~~~\nFactual text.",
+                "metadata": {"fenced_code": "~~~"},
+            },
+            {
+                "id": 3,
+                "text": "skip to content\n```\nFactual text.",
+                "extra_info": {"in_code_fence": True},
+            },
+        ]
+        pruned = prune_boilerplate(docs, query="")
+        assert "Next page: Authentication" in pruned[0]["text"]
+        assert "Home > API" not in pruned[0]["text"]
+        assert "previous page: Overview" in pruned[1]["text"]
+        assert "skip to content" in pruned[2]["text"]
+
+    def test_normalize_fence_state_handles_malformed_and_unexpected_values(self):
+        """Malformed tuples and non-fence strings must return None without raising."""
+        assert _normalize_fence_state(["", "bad"]) is None
+        assert _normalize_fence_state(("a", 3)) is None
+        assert _normalize_fence_state(("`", 2)) is None
+        assert _normalize_fence_state("false") is None
+        assert _normalize_fence_state("true") is None
+        assert _normalize_fence_state("```") == ("`", 3)
+        assert _normalize_fence_state("~~~~") == ("~", 4)
+        assert _normalize_fence_state(("~", 4)) == ("~", 4)
+        assert _normalize_fence_state(True) == ("`", 3)
+        assert _normalize_fence_state(False) is None
+        assert _normalize_fence_state(None) is None
+
+    def test_prune_boilerplate_handles_malformed_fence_metadata(self):
+        """prune_boilerplate continues pruning navigation lines when metadata contains unexpected fence values."""
+        docs = [
+            {
+                "id": 1,
+                "text": "Home > API\nFactual chunk.",
+                "metadata": {"active_fence": ["", "bad"]},
+            },
+            {
+                "id": 2,
+                "text": "Next page\nFactual chunk.",
+                "metadata": {"in_code_block": "false"},
+            },
+        ]
+        pruned = prune_boilerplate(docs, query="")
+        assert pruned[0]["text"] == "Factual chunk."
+        assert pruned[1]["text"] == "Factual chunk."
+
+    def test_preserves_indentation_on_first_code_line(self):
+        """Preserves 4-space markdown code line indentation when trimming leading/trailing blank lines."""
+        raw = "\n\n    def hello_world():\n        return True\n\n"
+        cleaned = prune_chunk_text(raw, query="")
+        assert cleaned == "    def hello_world():\n        return True"
+
+        indented_nav = "    Next page: The API returns 401"
+        assert prune_chunk_text(indented_nav, query="") == indented_nav
+
+    def test_breadcrumb_matching_variations_and_non_breadcrumbs(self):
+        # Breadcrumbs should be pruned when they are purely navigation boilerplate
+        assert prune_chunk_text("Home > API", query="database configuration") == ""
+        assert prune_chunk_text("Home / Guides / Setup", query="database configuration") == ""
+        assert prune_chunk_text("Docs » Reference", query="database configuration") == ""
+
+        # Non-breadcrumbs (HTTP methods and tables) must be preserved
+        assert "GET /api/v1/users" in prune_chunk_text("GET /api/v1/users", query="users")
+        assert "POST /v1/chat/completions" in prune_chunk_text("POST /v1/chat/completions", query="chat")
+        assert "| col1 | col2 |" in prune_chunk_text("| col1 | col2 |", query="col1")
+
+    def test_preserves_code_blocks_and_inline_code(self):
+        raw = (
+            "Home / Guides / Setup\n"
+            "To install the package, run:\n"
+            "```bash\n"
+            "npm install docsgpt-sdk\n"
+            "```\n"
+            "Use the `Client` class to configure authentication.\n"
+            "Next page: Usage"
+        )
+        cleaned = prune_chunk_text(raw, query="install")
+        assert "```bash\nnpm install docsgpt-sdk\n```" in cleaned
+        assert "`Client`" in cleaned
+        assert "Home / Guides / Setup" not in cleaned
+        assert "Next page: Usage" not in cleaned
+
+    def test_preserves_tables_and_factual_prose(self):
+        raw = (
+            "Docs > Tables\n"
+            "| Parameter | Type | Required |\n"
+            "| --- | --- | --- |\n"
+            "| api_key | string | true |\n"
+            "| timeout | integer | false |\n"
+            "The client raises a TimeoutException if no response arrives within 30 seconds."
+        )
+        cleaned = prune_chunk_text(raw, query="timeout")
+        assert "| Parameter | Type | Required |" in cleaned
+        assert "| api_key | string | true |" in cleaned
+        assert "The client raises a TimeoutException if no response arrives within 30 seconds." in cleaned
+        assert "Docs > Tables" not in cleaned
+
+    def test_preserves_apostrophe_negations_before_nav_pruning(self):
+        """Straight and typographic apostrophe contractions must survive navigation pruning.
+
+        ``_NAV_CONTROL_RE`` matches ``"next page:?.*"``, so a line such as
+        ``"Next page: Don't disable TLS verification"`` would be discarded
+        unless the contraction is detected before the navigation check fires.
+        Both straight apostrophe (U+0027) and typographic/curly (U+2019) forms
+        are covered because the tokenizer normalizes before matching.
+        """
+        # Straight apostrophe form
+        straight_cases = [
+            ("Next page: Don't disable TLS verification", "database"),
+            ("Don't use plain HTTP in production.", "security"),
+            ("Won't retry on 4xx errors.", "config"),
+            ("Can't authenticate without a token.", "auth"),
+        ]
+        for text, query in straight_cases:
+            result = prune_chunk_text(text, query=query)
+            assert result == text, (
+                f"Straight-apostrophe negation incorrectly pruned.\n"
+                f"  Input: {text!r}\n  Query: {query!r}\n  Got: {result!r}"
+            )
+
+        # Typographic / curly apostrophe (U+2019) — same words, different codepoint
+        typographic_cases = [
+            ("Next page: Don\u2019t disable TLS verification", "database"),
+            ("Don\u2019t use plain HTTP in production.", "security"),
+            ("Won\u2019t retry on 4xx errors.", "config"),
+        ]
+        for text, query in typographic_cases:
+            result = prune_chunk_text(text, query=query)
+            assert result == text, (
+                f"Typographic-apostrophe negation incorrectly pruned.\n"
+                f"  Input: {text!r}\n  Query: {query!r}\n  Got: {result!r}"
+            )
+
+    def test_preserves_possessives_matching_query_terms(self):
+        """Possessives such as "user's" must still match a query token "user".
+
+        The shared term tokenizer splits ``user's`` into ``user`` (the ``s``
+        fragment is discarded as < 2 chars).  The line tokenizer emits the
+        same tokens so ``user's`` in a line matches the ``user`` query token
+        and the line is preserved.
+        """
+        # Nav regex matches "next page:?.*", but "user" in query should protect
+        # the line via query-term overlap on the possessive stem.
+        result = prune_chunk_text(
+            "Next page: user's credentials expired", query="user login"
+        )
+        assert result == "Next page: user's credentials expired", (
+            f"Possessive 'user's' did not match query token 'user'; line removed.\n"
+            f"  Got: {result!r}"
+        )
+
+    def test_preserves_punctuation_bearing_query_terms(self):
+        """Terms containing compounds or symbols like C++, C#, F# must survive navigation pruning."""
+        cases = [
+            ("Next page: C++ memory model", "C++", "Next page: C++ memory model"),
+            ("Next page: C++20 memory model", "C++", "Next page: C++20 memory model"),
+            ("Next page: C# async programming", "C#", "Next page: C# async programming"),
+            ("Next page: F# pattern matching", "F#", "Next page: F# pattern matching"),
+            ("Next page: Notepad++ configuration", "notepad++", "Next page: Notepad++ configuration"),
+        ]
+        for line, query, expected in cases:
+            cleaned = prune_chunk_text(line, query=query)
+            assert cleaned == expected, f"Failed for query {query!r}: got {cleaned!r}, expected {expected!r}"
+
+    def test_preserves_one_character_query_terms(self):
+        """Single-letter queries like 'C' or 'R' must protect matching navigation-like lines."""
+        raw = "Next page: C memory model"
+        cleaned = prune_chunk_text(raw, query="C")
+        assert cleaned == raw
+
+    def test_preserves_factual_sentences_with_nav_prefixes(self):
+        """Lines starting with 'Next page:' containing full factual sentences or punctuation must not be pruned."""
+        cases = [
+            "Next page: The API returns 401 for expired credentials.",
+            "Next page: What is the default timeout?",
+            "Previous page: This requires administrative privileges!",
+            "Next page: The API returns 401",
+            "Next page The API returns 401",
+            "Next page: [Administrators can access all records.]",
+            "Next page [Administrators can access all records.]",
+            "Next page token expires after 24 hours",
+            "Next page: token expires after 24 hours",
+        ]
+        for line in cases:
+            cleaned = prune_chunk_text(line, query="")
+            assert cleaned == line, f"Factual line was pruned: {line!r}"
+
+    def test_prunes_navigation_labels_with_or_without_colon_and_bracketed(self):
+        cases = [
+            "Next page Authentication",
+            "previous page Overview",
+            "Next page: API Reference Guide and Setup Overview",
+            "Next page API Reference Guide and Setup Overview",
+            "Next page: [Getting Started]",
+            "Next page [Getting Started]",
+            "Next page: [Getting Started](https://docs.example.com/start)",
+        ]
+        for line in cases:
+            assert prune_chunk_text(line, query="") == "", f"Navigation line was not pruned: {line!r}"
+
+    def test_preserves_indented_markdown_code_and_pipe_tables(self):
+        """Four-space indented lines and tables without edge pipes must survive pruning."""
+        raw = (
+            "Example code block:\n"
+            "    Next page: Authentication\n"
+            "Summary text."
+        )
+        cleaned = prune_chunk_text(raw, query="")
+        assert "    Next page: Authentication" in cleaned
+
+        table_row = "Next page: Authentication | Description"
+        assert prune_chunk_text(table_row, query="") == table_row
+
+    def test_preserves_negations_and_qualifiers(self):
+        raw = (
+            "Quick Links\n"
+            "Users must not share authentication keys with third parties.\n"
+            "This endpoint is deprecated and should never be used in production.\n"
+            "Only valid admin tokens are accepted; invalid tokens will be rejected."
+        )
+        cleaned = prune_chunk_text(raw, query="tokens")
+        assert "Users must not share authentication keys with third parties." in cleaned
+        assert "This endpoint is deprecated and should never be used in production." in cleaned
+        assert "Only valid admin tokens are accepted; invalid tokens will be rejected." in cleaned
+        assert "Quick Links" not in cleaned
+
+    def test_deduplicates_boilerplate_across_chunks(self):
+        docs = [
+            {"id": "doc1", "text": "DocsGPT Documentation v2.4\nFactual chunk 1 content."},
+            {"id": "doc2", "text": "DocsGPT Documentation v2.4\nFactual chunk 2 content."},
+        ]
+        pruned = prune_boilerplate(docs, query="content")
+        assert "DocsGPT Documentation v2.4" in pruned[0]["text"]
+        assert "DocsGPT Documentation v2.4" not in pruned[1]["text"]
+        assert "Factual chunk 2 content." in pruned[1]["text"]
+
+    def test_preserves_repeated_subheadings_within_same_chunk(self):
+        text = (
+            "# Authentication\n"
+            "## Examples\n"
+            "Auth example code here.\n"
+            "# Authorization\n"
+            "## Examples\n"
+            "Rbac example code here."
+        )
+        cleaned = prune_chunk_text(text, query="")
+        assert cleaned.count("## Examples") == 2
+
+    def test_preserves_repeated_section_headings_across_chunks(self):
+        docs = [
+            {"id": "doc1", "text": "## Examples\ncurl https://api.docsgpt.cloud"},
+            {"id": "doc2", "text": "## Examples\npython -m docsgpt"},
+        ]
+        pruned = prune_boilerplate(docs, query="")
+        assert "## Examples" in pruned[0]["text"]
+        assert "## Examples" in pruned[1]["text"]
+
+    def test_preserves_repeated_factual_prose_across_chunks(self):
+        docs = [
+            {
+                "id": "doc1",
+                "text": (
+                    "The primary service runs on port 8080.\n"
+                    "API returns HTTP 401 for expired credentials.\n"
+                    "Default timeout 30 seconds\n"
+                    "Other details."
+                ),
+            },
+            {
+                "id": "doc2",
+                "text": (
+                    "The primary service runs on port 8080.\n"
+                    "API returns HTTP 401 for expired credentials.\n"
+                    "Default timeout 30 seconds\n"
+                    "More information."
+                ),
+            },
+        ]
+        # Query does not contain keywords from those factual sentences
+        pruned = prune_boilerplate(docs, query="Why do logins fail?")
+        assert "The primary service runs on port 8080." in pruned[0]["text"]
+        assert "The primary service runs on port 8080." in pruned[1]["text"]
+        assert "API returns HTTP 401 for expired credentials." in pruned[0]["text"]
+        assert "API returns HTTP 401 for expired credentials." in pruned[1]["text"]
+        assert "Default timeout 30 seconds" in pruned[0]["text"]
+        assert "Default timeout 30 seconds" in pruned[1]["text"]
+
+    def test_prune_boilerplate_preserves_document_identity(self):
+        doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1 content."}
+        doc2 = {"id": "doc2", "text": "Home > API\nFactual chunk 2 content."}
+        docs = [doc1, doc2]
+        pruned = prune_boilerplate(docs, query="content")
+        assert pruned is docs
+        assert pruned[0] is doc1
+        assert pruned[1] is doc2
+        assert "Home > API" not in doc1["text"]
+        assert "Factual chunk 1 content." in doc1["text"]
+
+    def test_prune_boilerplate_skips_duplicate_document_references(self):
+        doc = {"id": "doc1", "text": "Server uses TLS."}
+        docs = [doc, doc]
+        pruned = prune_boilerplate(docs, query="TLS")
+        assert pruned[0]["text"] == "Server uses TLS."
+        assert pruned[1]["text"] == "Server uses TLS."
+
+    def test_prune_boilerplate_does_not_leak_raw_text_attribute(self):
+        doc = {"id": "doc1", "text": "Home > API\nFactual chunk."}
+        prune_boilerplate([doc], query="Factual")
+        assert "_raw_text" not in doc
+        assert doc["text"] == "Factual chunk."
+
+
+@pytest.mark.unit
+class TestCompressingRetrieverIntegration:
+    def test_positional_and_keyword_query_handling(self):
+        mock_inner = Mock()
+        mock_inner.search.side_effect = lambda *args, **kwargs: [{"id": "d1", "text": "Home > API\nThe primary endpoint is /v1/chat."}]
+        retriever = CompressingRetriever(mock_inner)
+
+        # Test positional query invocation (e.g. from headless_runner / internal_search)
+        res_pos = retriever.search("endpoint")
+        mock_inner.search.assert_called_with("endpoint")
+        assert res_pos[0]["text"] == "The primary endpoint is /v1/chat."
+
+        # Test keyword query invocation
+        res_kw = retriever.search(query="endpoint")
+        assert res_kw[0]["text"] == "The primary endpoint is /v1/chat."
+
+        # Test stored question fallback when search() receives no query argument
+        mock_inner.original_question = "API"
+        res_stored = retriever.search()
+        mock_inner.search.assert_called_with()
+        assert "Home > API" in res_stored[0]["text"]
+
+    def test_build_dispatcher_disabled_returns_raw_retriever(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
+        # Test ClassicRAG path
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
+        sentinel = object()
+        retriever_classic = build_dispatcher(lambda: sentinel)
+        assert retriever_classic is sentinel
+        assert not isinstance(retriever_classic, CompressingRetriever)
+
+        # Test Dispatcher path
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+        retriever_disp = build_dispatcher(lambda: object(), source={"question": "q"})
+        assert not isinstance(retriever_disp, CompressingRetriever)
+
+    def test_compressing_dispatcher_preserves_dispatcher_isinstance(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
+        retriever = build_dispatcher(
+            lambda: object(),
+            source={"question": "q", "active_docs": ["a"]},
+            sources=[],
+        )
+        assert isinstance(retriever, Dispatcher)
+        assert isinstance(retriever, CompressingDispatcher)
+        assert isinstance(retriever, CompressingRetriever)
+
+    def test_build_dispatcher_enabled_wraps_in_compressing_retriever(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
+        inner = Mock()
+        inner.search.return_value = [{"id": "d1", "text": "Home > Guides\nSetup guide."}]
+        retriever = build_dispatcher(lambda: inner)
+        assert isinstance(retriever, CompressingRetriever)
+        res = retriever.search("setup")
+        assert res[0]["text"] == "Setup guide."
+
+    def test_candidate_snapshot_preserves_pre_pruning_text_and_identity(self):
+        doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1."}
+        mock_inner = Mock()
+        mock_inner.search.return_value = [doc1]
+        mock_inner.last_candidates = [
+            {"doc": doc1, "snapshot": dict(doc1), "base": True, "relevance": 0.9}
+        ]
+        retriever = CompressingRetriever(mock_inner)
+        res = retriever.search("chunk")
+        assert res[0] is doc1
+        assert res[0]["text"] == "Factual chunk 1."
+        assert retriever.last_candidates[0]["doc"] is doc1
+        assert retriever.last_candidates[0]["snapshot"]["text"] == "Home > API\nFactual chunk 1."
+
+    def test_compressing_retriever_delegates_last_outcome(self):
+        """CompressingRetriever and CompressingDispatcher must expose inner last_outcome."""
+        from unittest.mock import MagicMock
+        from docsgpt.retriever.base import SearchOutcome, search_outcome_of
+        from docsgpt.retriever.dispatcher import CompressingRetriever, CompressingDispatcher
+
+        mock_inner = MagicMock()
+        mock_outcome = SearchOutcome.of(["s1", "s2"], failed=["s2"])
+        mock_inner.last_outcome = mock_outcome
+
+        wrapper = CompressingRetriever(mock_inner)
+        assert wrapper.last_outcome == mock_outcome
+        assert search_outcome_of(wrapper, ["s1", "s2"]) == mock_outcome
+
+        dispatcher_wrapper = CompressingDispatcher(mock_inner)
+        assert dispatcher_wrapper.last_outcome == mock_outcome
+        assert search_outcome_of(dispatcher_wrapper, ["s1", "s2"]) == mock_outcome
+
+        # When inner has no outcome
+        mock_inner.last_outcome = None
+        assert wrapper.last_outcome is None
+
+    def test_workflow_node_sources_compression(self, monkeypatch):
+        pytest.importorskip("celpy")
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+
+        engine = object.__new__(WorkflowEngine)
+        engine.state = {"query": "authentication"}
+        engine._loop_item = None
+        engine.agent = Mock()
+        engine.agent.decoded_token = {}
+
+        mock_doc = {"id": "d1", "text": "Home > API\nFactual chunk."}
+        mock_retriever = Mock()
+        mock_retriever.search.return_value = [mock_doc]
+
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: mock_retriever,
+        )
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources", lambda self, s: list(s or [])
+        )
+        monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
+
+        mock_config = Mock()
+        mock_config.sources = ["s1"]
+        mock_config.retriever = "classic"
+        mock_config.chunks = 6
+
+        # When CHUNK_COMPRESSION_ENABLED is False: unpruned
+        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", False)
+        docs_raw = engine._retrieve_node_sources(mock_config)
+        assert docs_raw[0]["text"] == "Home > API\nFactual chunk."
+
+        # When CHUNK_COMPRESSION_ENABLED is True: pruned
+        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
+        docs_pruned = engine._retrieve_node_sources(mock_config)
+        assert docs_pruned[0]["text"] == "Factual chunk."
+    def test_workflow_node_sources_supercompress_delegation(self, monkeypatch):
+        """Workflow retrieval-to-generation path delegates to SuperCompress when available."""
+        pytest.importorskip("celpy")
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+
+        engine = object.__new__(WorkflowEngine)
+        engine.state = {"query": "authentication"}
+        engine._loop_item = None
+        engine.agent = Mock()
+        engine.agent.decoded_token = {}
+
+        mock_doc = {"id": "d1", "text": "Raw retrieved chunk", "source": "s1"}
+        mock_retriever = Mock()
+        mock_retriever.search.return_value = [mock_doc]
+
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: mock_retriever,
+        )
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources", lambda self, s: list(s or [])
+        )
+        monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
+        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
+
+        mock_result = ("SuperCompressed workflow text", Mock())
+        mock_compress_for_turn = Mock(return_value=mock_result)
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+
+        mock_config = Mock()
+        mock_config.sources = ["s1"]
+        mock_config.retriever = "classic"
+        mock_config.chunks = 6
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            docs = engine._retrieve_node_sources(mock_config)
+            assert docs[0]["text"] == "SuperCompressed workflow text"
+            mock_compress_for_turn.assert_called_once()
+    def test_compressing_retriever_preserves_document_metadata(self):
+        """CompressingRetriever applies in-tree boilerplate pruning while preserving per-document metadata."""
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
+            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
+        ]
+        retriever = CompressingRetriever(mock_inner)
+        result = retriever.search(query="authentication")
+
+        assert len(result) == 2
+        assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
+        assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
+    def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self):
+        """Integrate SuperCompress between retrieval and generation with automated delegation tests."""
+        mock_result_1 = ("SuperCompressed chunk 1", Mock())
+        mock_result_2 = ("SuperCompressed chunk 2", Mock())
+        mock_compress_for_turn = Mock(side_effect=[mock_result_1, mock_result_2])
+
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Raw retrieved chunk 1", "source": "s1"},
+            {"id": "doc2", "text": "Raw retrieved chunk 2", "source": "s2"},
+        ]
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            retriever = CompressingRetriever(mock_inner)
+            raw_docs = mock_inner.search.return_value
+            result = retriever.search(query="API authentication")
+
+            assert len(result) == 2
+            assert result is raw_docs
+            assert result[0] is raw_docs[0]
+            assert result[1] is raw_docs[1]
+            assert result[0] == {"id": "doc1", "text": "SuperCompressed chunk 1", "source": "s1"}
+            assert result[1] == {"id": "doc2", "text": "SuperCompressed chunk 2", "source": "s2"}
+            assert mock_compress_for_turn.call_count == 2
+            call1_kwargs = mock_compress_for_turn.call_args_list[0][1]
+            assert call1_kwargs.get("user_query") == "API authentication"
+            assert call1_kwargs.get("context_blocks") == ["Raw retrieved chunk 1"]
+
+    def test_supercompress_avoids_partial_updates_on_failure(self):
+        """When compression raises midway, documents must not be partially modified and fallback is used."""
+        mock_result_1 = ("SuperCompressed chunk 1", Mock())
+        mock_compress_for_turn = Mock(side_effect=[mock_result_1, RuntimeError("compression failed")])
+
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+        doc1 = {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"}
+        doc2 = {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"}
+        mock_inner = Mock()
+        mock_inner.search.return_value = [doc1, doc2]
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="authentication")
+
+            # Documents preserved without partial SuperCompress mutation
+            assert result[0] is doc1
+            assert result[1] is doc2
+            assert result[0]["text"] == "Factual chunk 1."
+            assert result[1]["text"] == "Factual chunk 2."
+
+    def test_supercompress_fallback_when_absent(self):
+        """Falls back gracefully to in-tree boilerplate pruning when SuperCompress is not installed."""
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
+            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
+        ]
+        with patch.dict("sys.modules", {"supercompress": None}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="authentication")
+            assert len(result) == 2
+            assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
+            assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
+
+    def test_compress_retrieved_chunks_handles_tuple_and_object_returns(self):
+        """SuperCompress 0.5.0 returns a tuple (compressed_text, CompressResult); text must be extracted."""
+        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+
+        # Tuple return (SuperCompress 0.5.0 API)
+        mock_compress_for_turn = Mock(return_value=("Compressed text from tuple", Mock()))
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+        docs = [{"id": "1", "text": "Some text"}]
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            out = compress_retrieved_chunks(docs, query="test")
+            assert out[0]["text"] == "Compressed text from tuple"
+            assert not out[0]["text"].startswith("(")
+
+        # Object return (.compressed_text attribute)
+        mock_compress_for_turn.return_value = Mock(compressed_text="Compressed text from object")
+        docs2 = [{"id": "2", "text": "Some text 2"}]
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            out2 = compress_retrieved_chunks(docs2, query="test")
+            assert out2[0]["text"] == "Compressed text from object"
+
+    def test_supercompress_macos_faiss_collision_uses_intree_pruning(self, monkeypatch):
+        """On macOS, torch and FAISS must never share a process; falls back to in-tree pruning."""
+        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+
+        mock_compress_for_turn = Mock(return_value=("SuperCompressed text", Mock()))
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+
+        docs = [{"id": "doc1", "text": "Home > Guides\nFactual chunk.", "source": "s1"}]
+
+        # On macOS with faiss loaded: uses in-tree pruning without invoking SuperCompress
+        monkeypatch.setattr("sys.platform", "darwin")
+        with patch.dict("sys.modules", {"supercompress": mock_module, "faiss": Mock()}):
+            res = compress_retrieved_chunks(docs, query="query")
+            assert res[0]["text"] == "Factual chunk."
+            mock_compress_for_turn.assert_not_called()
+
+        # On non-macOS (e.g. linux), SuperCompress is used even if faiss is present
+        monkeypatch.setattr("sys.platform", "linux")
+        with patch.dict("sys.modules", {"supercompress": mock_module, "faiss": Mock()}):
+            res2 = compress_retrieved_chunks(docs, query="query")
+            assert res2[0]["text"] == "SuperCompressed text"
+            mock_compress_for_turn.assert_called_once()
+
+
+
+    def test_token_reduction_and_oracle_recall_on_evaluation_set(self):
+        """Measures token reduction and oracle recall on a representative evaluation set."""
+        corpus = [
+            {
+                "id": "doc1",
+                "text": "Home > Guides > Settings\nUse Bearer token for auth.\nNext page: Config",
+                "target": "Use Bearer token for auth.",
+            },
+            {
+                "id": "doc2",
+                "text": "Skip to content\nAPI limits: 60 req/min.\nPrevious page: Overview",
+                "target": "API limits: 60 req/min.",
+            },
+        ]
+        # Measure baseline tokens before in-place pruning
+        orig_chars = sum(len(d["text"]) for d in corpus)
+        mock_inner = Mock()
+        mock_inner.search.return_value = corpus
+        retriever = CompressingRetriever(mock_inner)
+        pruned = retriever.search(query="Bearer")
+
+        # 1. Oracle Recall: All key targets must be preserved
+        preserved_targets = sum(
+            1 for c, p in zip(corpus, pruned) if c["target"] in p["text"]
+        )
+        oracle_recall = preserved_targets / len(corpus)
+        assert oracle_recall == 1.0
+
+        # 2. Token Reduction: Non-essential navigation lines must be stripped
+        pruned_chars = sum(len(d["text"]) for d in pruned)
+        assert pruned_chars < orig_chars
+

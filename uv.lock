@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'linux'",
@@ -1532,6 +1532,11 @@ milvus = [
     { name = "milvus-lite", marker = "sys_platform != 'win32'" },
     { name = "pymilvus" },
 ]
+supercompress = [
+    { name = "supercompress" },
+    { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1631,13 +1636,16 @@ requires-dist = [
     { name = "retry", specifier = ">=0.9.2,<0.10" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
     { name = "starlette", specifier = ">=1.0,<2" },
+    { name = "supercompress", marker = "extra == 'supercompress'", specifier = ">=0.5.0" },
     { name = "tiktoken", specifier = ">=0.14.0,<0.15" },
     { name = "tldextract", specifier = ">=5.4.0,<6" },
     { name = "tokenizers", specifier = ">=0.23.2,<0.24" },
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'decisions-torch'", specifier = ">=2.14.1,<3", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'docling'", specifier = ">=2.14.1,<3", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torch", marker = "sys_platform == 'linux' and extra == 'supercompress'", specifier = ">=2.0.0,<3", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "sys_platform != 'linux' and extra == 'decisions-torch'", specifier = ">=2.14.1,<3" },
     { name = "torch", marker = "sys_platform != 'linux' and extra == 'docling'", specifier = ">=2.14.1,<3" },
+    { name = "torch", marker = "sys_platform != 'linux' and extra == 'supercompress'", specifier = ">=2.0.0,<3" },
     { name = "torchvision", marker = "sys_platform == 'linux' and extra == 'docling'", specifier = ">=0.29.1,<0.30", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "sys_platform != 'linux' and extra == 'docling'", specifier = ">=0.29.1,<0.30" },
     { name = "tqdm", specifier = ">=4.67.3,<5" },
@@ -1648,7 +1656,7 @@ requires-dist = [
     { name = "websocket-client", specifier = ">=1.9.0,<2" },
     { name = "werkzeug", specifier = ">=3.1.9,<4" },
 ]
-provides-extras = ["decisions-torch", "docling", "milvus"]
+provides-extras = ["decisions-torch", "docling", "milvus", "supercompress"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -6458,6 +6466,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/48/bb/3d8757f21e9a53d9035c9eb039a777047139a16bfdbedfc7a58241c3d914/starlette-1.10.0.tar.gz", hash = "sha256:b8399098d4c1e3522734f7235dc79b1fc967f96cf139c81e0fa30479e0685f9b", size = 2734356, upload-time = "2026-10-24T15:04:12.342Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/2e/947cfe02def9371c07cd5bf5b6b61c829e9aecb9904db02a66cfafbc1eec/starlette-1.10.0-py3-none-any.whl", hash = "sha256:478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4", size = 80571, upload-time = "2026-10-24T15:04:10.371Z" },
+]
+
+[[package]]
+name = "supercompress"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/7f/5dc0b0414852917f98ddc39f331e7652f71a0d6ca7594e4901a0b3ead198/supercompress-0.5.0.tar.gz", hash = "sha256:df0eac3b8593c3d8fdb1e1832af3b2204b593f2bcd21f232af9677a02ecb3aca", size = 36258, upload-time = "2026-06-26T19:34:08.676Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/64/6186e86ffd983c9e3033ebc0c82b6da86b47da490173a4173399fc3261af/supercompress-0.5.0-py3-none-any.whl", hash = "sha256:5e423876eb416c5e833dd2e0fb39aa72d5fff5c5352836d073b027a5b78b525b", size = 33290, upload-time = "2026-06-26T19:34:07.496Z" },
 ]
 
 [[package]]

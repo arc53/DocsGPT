@@ -77,3 +77,9 @@ export_file docsgpt/requirements-milvus.txt \
 embedded milvus-lite server, which pulls pyarrow.
 Docker: --build-arg EXTRAS=milvus" \
   --extra milvus
+
+INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-supercompress.txt \
+"Core runtime plus the supercompress extra: query-aware context compression
+between retrieval and generation.
+Docker: --build-arg EXTRAS=supercompress" \
+  --extra supercompress

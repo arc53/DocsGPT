@@ -24,6 +24,10 @@ class RetrievalSettings(SettingsGroup):
         default=True,
         description="Kill-switch for per-source retrieval dispatch; False collapses to a single retriever.",
     )
+    CHUNK_COMPRESSION_ENABLED: bool = Field(
+        default=False,
+        description="Enable post-retrieval extractive pruning of navigation and duplicate boilerplate from chunks.",
+    )
     GRAPHRAG_ENABLED: bool = Field(default=False, description="Gates graph-aware ingestion and retrieval.")
     GRAPHRAG_EXTRACTION_MODEL: Optional[str] = Field(
         default=None, description="Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME."

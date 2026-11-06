@@ -33,7 +33,7 @@ from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.core.model_utils import get_default_model_id
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record
-from docsgpt.retriever.dispatcher import Dispatcher
+from docsgpt.retriever.dispatcher import CompressingDispatcher, Dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.retriever.stages.relevance import relevance_enabled
 from docsgpt.storage.db.session import db_readonly
@@ -248,6 +248,8 @@ class SourceSearch(Resource):
                 record_candidates=compare,
                 **dispatcher_kwargs,
             )
+            if getattr(settings, "CHUNK_COMPRESSION_ENABLED", False):
+                retriever = CompressingDispatcher(retriever)
             with record.activate(decisions_seen):
                 docs = retriever.search(query) or []
             latency_ms = int((time.monotonic() - started) * 1000)
@@ -272,7 +274,7 @@ class SourceSearch(Resource):
             ranks = {id(d): idx for idx, d in enumerate(docs, start=1)}
             payload["candidates"] = [
                 {
-                    **_chunk(c["doc"], rank=ranks.get(id(c["doc"]))),
+                    **_chunk(c.get("snapshot", c["doc"]), rank=ranks.get(id(c["doc"]))),
                     "rank_before": idx,
                     "relevance": c["relevance"],
                     "kept": id(c["doc"]) in ranks,

@@ -40,7 +40,7 @@ RUN apt-get update && \
 
 # Build context is the repository root (see .dockerignore there):
 #   docker build -f docsgpt/Dockerfile .
-COPY docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requirements-milvus.txt ./
+COPY docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requirements-milvus.txt docsgpt/requirements-supercompress.txt ./
 
 RUN python3.12 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
