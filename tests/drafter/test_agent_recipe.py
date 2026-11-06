@@ -110,6 +110,10 @@ class TestContext:
         with pytest.raises(BadDraftRequest):
             parse_context(raw)
 
+    def test_ids_equal_once_cut_are_kept_once(self):
+        long = "s" * 150
+        assert parse_context({"form": {"sources": [long + "a", long + "b"]}})["form"]["sources"] == [long[:100]]
+
     def test_a_starter_is_kept_and_an_unknown_one_dropped(self):
         assert parse_context({"step": "basics", "starter": "website"})["starter"] == "website"
         assert parse_context({"step": "basics", "starter": "pirate"})["starter"] is None
@@ -791,6 +795,21 @@ class TestSafety:
         ]}}, ws=_ws(folders=FOLDERS), step="safety", asked=True)
         assert proposal["fields"] == {"analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}}
         assert proposal["notes"] == []
+
+    def test_the_notes_cap_leaves_room_for_the_servers_own(self):
+        form = {"analytics": {"topics": [f"T{i}" for i in range(8)]}}
+        two = [{"name": "A", "description": "a"}, {"name": "B", "description": "b"}]
+        proposal = _validate({"analytics": {"topics": two}}, form=form, ws=_ws(folders=FOLDERS), step="safety",
+                             asked=True, notes=["One", "Two", "Three"])
+        assert len(proposal["notes"]) == agent_recipe.MAX_NOTES
+        assert proposal["notes"][:2] == ["One", "Two"] and "leave out the folder agents" in proposal["notes"][-1]
+
+    def test_a_hidden_folders_name_can_come_back_as_a_topic(self):
+        form = {"analytics": {"hidden_folders": ["deploying"]}}
+        topic = {"name": "Deploying", "description": "Docker, Kubernetes"}
+        proposal = _validate({"analytics": {"topics": [topic]}}, form=form, ws=_ws(folders=FOLDERS),
+                             step="safety", asked=True)
+        assert proposal["fields"] == {"analytics": {"topics": [topic]}}
 
     def test_topics_past_the_free_room_say_which_folders_they_push_out(self):
         form = {"analytics": {"topics": [f"T{i}" for i in range(8)]}}

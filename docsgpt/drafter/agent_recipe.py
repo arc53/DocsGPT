@@ -131,12 +131,14 @@ class AgentWorkspace(Workspace):
 
 
 def _ids(value: Any) -> list[str]:
+    """Distinct non-empty ids of a form list, each cut to ``_ID_CHARS``, at most ``_FORM_MAX_REFS`` read."""
     if not isinstance(value, list):
         return []
     out: list[str] = []
     for item in value[:_FORM_MAX_REFS]:
-        if isinstance(item, str) and item.strip() and item.strip() not in out:
-            out.append(item.strip()[:_ID_CHARS])
+        ref = item.strip()[:_ID_CHARS] if isinstance(item, str) else ""
+        if ref and ref not in out:
+            out.append(ref)
     return out
 
 
@@ -587,6 +589,7 @@ picking one, and names the document an answer comes from. A hand-off is often no
 - safety: recommend groundedness and pii.""",
 }
 
+
 def _safety_guide() -> str:
     """The safety step's section: ask first, then the three parts, with the instance's default limits."""
     limits = settings.DEFAULT_AGENT_LIMITS
@@ -869,7 +872,8 @@ def _checks(raw: Any, form: dict, ws: AgentWorkspace) -> list[str]:
 def _topics(raw: Any, form: dict, ws: AgentWorkspace, notes: list[str]) -> list[dict]:
     """The Insights topics to add, checked with the rules the agent's analytics config applies on save.
 
-    A name the agent, one of its source folders (or an earlier topic of the proposal) already has is left out.
+    A name the agent, one of its offered or cut source folders (or an earlier topic of the proposal) already has
+    is left out.
     Topics that push folders out of the topic question add a note naming them.
 
     Raises:
@@ -880,7 +884,11 @@ def _topics(raw: Any, form: dict, ws: AgentWorkspace, notes: list[str]) -> list[
     items = [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
     if len(items) > MAX_NEW_TOPICS:
         raise ProposalInvalid([f"Suggest at most {MAX_NEW_TOPICS} topics."])
-    taken = {name.lower() for name in form["analytics"]["topics"]} | {f["name"].lower() for f in ws.folders}
+    # A hidden folder's name is free: the owner can bring that subject back as a topic of their own.
+    hidden = {name.lower() for name in form["analytics"]["hidden_folders"]}
+    taken = {name.lower() for name in form["analytics"]["topics"]} | {
+        f["name"].lower() for f in ws.folders if f["name"].lower() not in hidden
+    }
     out: list[dict] = []
     problems: list[str] = []
     for item in items:
@@ -1002,7 +1010,9 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     fields: dict[str, Any] = {}
     dropped: list[dict] = []
     raw_fields = _for_step(args.get("fields") or {}, step, dropped)
-    notes = [clean_text(n, NOTE_MAX) for n in args.get("notes") or [] if clean_text(n, NOTE_MAX)][:MAX_NOTES]
+    # The model's notes, and the server's own (folders pushed out), which go last and always fit the cap.
+    notes = [clean_text(n, NOTE_MAX) for n in args.get("notes") or [] if clean_text(n, NOTE_MAX)]
+    server_notes: list[str] = []
     problems: list[str] = []
 
     if "name" in raw_fields:
@@ -1048,7 +1058,8 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             else:
                 dropped.append({"field": "prompt", "id": prompt_id[:_ID_CHARS], "reason": "not_found"})
     if step == "safety":
-        _policy(raw_fields, req, ws, fields, dropped, notes)
+        _policy(raw_fields, req, ws, fields, dropped, server_notes)
+    notes = notes[:max(0, MAX_NOTES - len(server_notes))] + server_notes[:MAX_NOTES]
 
     _drop_unchanged(fields, form)
     reasons = []

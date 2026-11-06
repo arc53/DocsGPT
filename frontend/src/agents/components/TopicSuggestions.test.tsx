@@ -384,6 +384,31 @@ describe('topic suggestions in the Insights settings', () => {
     expect(button(`${T}.add`)!.disabled).toBe(true);
   });
 
+  it("lets a suggestion take a hidden folder's name", async () => {
+    // Refunds is a folder the owner hid: a topic of their own may take its name.
+    getTopicFolders.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          success: true,
+          folders: [...FOLDERS, { name: 'refunds', description: 'Pages' }],
+        }),
+    });
+    await render({
+      initial: {
+        enabled: true,
+        topics: [],
+        hidden_folders: ['refunds'],
+        digest: false,
+      },
+    });
+    await run(proposal());
+    expect(suggestion('t2').textContent).not.toContain(`${T}.taken`);
+    expect(
+      suggestion('t2').querySelector('button')!.hasAttribute('disabled'),
+    ).toBe(false);
+  });
+
   it('discards without touching the topics', async () => {
     await render();
     await run(proposal());

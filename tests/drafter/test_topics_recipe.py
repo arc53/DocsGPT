@@ -108,11 +108,19 @@ class TestSampling:
         assert ws.measure[0] == "newest question" and len(ws.measure) == 3
 
 
+def test_questions_the_same_once_cut_are_read_once():
+    ws = TopicsWorkspace()
+    stem = "Where is my parcel " * 20
+    _sample([{"prompt": stem + "A?", "conversation_id": "c1"}, {"prompt": stem.upper() + "B?",
+                                                                  "conversation_id": "c2"}], ws)
+    assert len(ws.other) == 1 and ws.conversations == 1
+
+
 @pytest.mark.unit
 class TestValidate:
     def test_ids_kinds_and_estimates(self):
         out = _validate([
-            _topic(share=31, similar_to="billing", note="Not about invoices."),
+            _topic(share=0.31, similar_to="billing", note="Not about invoices."),
             _topic("Bug report", "The user reports something broken: errors, crashes, wrong results.",
                    overlap=True, share=0.12, similar_to="Nope"),
         ], left_out=[{"name": "Packaging", "reason": "Your shipping folder covers it."}])
@@ -124,6 +132,15 @@ class TestValidate:
         assert out["left_out"] == [{"name": "Packaging", "reason": "Your shipping folder covers it."}]
         assert out["sample"] == {"questions": 2, "conversations": 12, "days": 30}
         assert out["capacity"] == {"one_per_question_free": 11, "overlapping_free": 20, "pushes_out": []}
+
+    @pytest.mark.parametrize("share,read", [(0, 0.0), (0.5, 0.5), (1, 1.0), (1.5, None), (31, None), (-0.1, None),
+                                            ("0.4", None), (True, None)])
+    def test_a_share_is_a_fraction_and_anything_else_is_unknown(self, share, read):
+        assert _validate([_topic(share=share)])["topics"][0]["share"] == read
+
+    def test_a_hidden_folders_name_can_come_back_as_a_topic(self):
+        out = _validate([_topic("Returns", "Labels and refunds.")], ws=_ws(hidden_folders=["returns"]))
+        assert out["topics"][0]["name"] == "Returns"
 
     @pytest.mark.parametrize("topic,problem", [
         (_topic(""), "needs a name"),

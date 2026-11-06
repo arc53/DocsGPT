@@ -374,11 +374,14 @@ function Suggestions({
   const baseId = React.useId();
   const { sample, topics } = proposal;
 
-  // A name taken since the suggestions came (a topic added by hand) can't be added.
+  // A name taken since the suggestions came (a topic added by hand) can't be
+  // added. A hidden folder's name is free: its subject can come back as a topic.
   const view = visibleFolders(folders ?? [], config, maxTopics);
   const taken = [
     ...config.topics.map((topic) => topic.name),
-    ...(folders ?? []).map((folder) => folder.name),
+    ...(folders ?? [])
+      .map((folder) => folder.name)
+      .filter((name) => !nameTaken(name, config.hidden_folders)),
   ];
   const isTaken = (topic: TopicSuggestion) => nameTaken(topic.name, taken);
   const [picked, setPicked] = React.useState<Set<string>>(

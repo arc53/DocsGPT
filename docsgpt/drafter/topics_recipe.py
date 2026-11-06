@@ -167,8 +167,13 @@ class TopicsWorkspace(Workspace):
         return [folder["name"] for folder in self.offered_folders() if folder["name"] not in after]
 
     def taken_names(self) -> dict[str, str]:
-        """Every name a suggestion may not take or may be similar to, lowercased -> as shown."""
-        names = {folder["name"].lower(): folder["name"] for folder in self.folders}
+        """Every name a suggestion may not take or may be similar to, lowercased -> as shown.
+
+        A hidden folder's name is free: the owner can bring that subject back as a topic of their own.
+        """
+        hidden = {name.lower() for name in self.hidden_folders}
+        names = {folder["name"].lower(): folder["name"] for folder in self.folders
+                 if folder["name"].lower() not in hidden}
         names.update({t["name"].lower(): t["name"] for t in self.own})
         return names
 
@@ -192,7 +197,7 @@ def parse_context(raw: Any) -> dict:
 
 
 def editable_agent(conn: Connection, user_id: str, agent_id: str) -> dict:
-    """The agent row, when the caller may edit it.
+    """The agent row, when the caller may edit it (read through ``conn``).
 
     Raises:
         AccessDenied: 404 when the caller can't see it, 403 when they can't edit it.
@@ -277,12 +282,15 @@ def _sample(rows: list[dict], ws: TopicsWorkspace) -> None:
     picked: list[tuple[bool, str, str]] = []
     flagged = [r.get("p_none") is not None and float(r["p_none"]) >= UNMATCHED_P for r in rows]
     ordered = [(True, r) for r, f in zip(rows, flagged) if f] + [(False, r) for r, f in zip(rows, flagged) if not f]
+    seen: set[str] = set()
     for is_unmatched, row in ordered:
         if len(picked) >= MAX_QUESTIONS:
             break
         text = clean_text(" ".join(str(row.get("prompt") or "").split()), QUESTION_CHARS)
-        if not text:
+        # The database drops exact repeats; questions the same once cut are read once too.
+        if not text or text.casefold() in seen:
             continue
+        seen.add(text.casefold())
         if len(text) > budget:
             break
         budget -= len(text)
@@ -338,6 +346,7 @@ def load_workspace(user_id: str, context: dict) -> TopicsWorkspace:
 
 
 def _load(user_id: str, context: dict) -> Workspace:
+    """The recipe's ``load_workspace`` hook: :func:`load_workspace`."""
     return load_workspace(user_id, context)
 
 
@@ -452,12 +461,13 @@ PROPOSAL_SCHEMA: dict = {
 
 
 def _share(value: Any) -> Optional[float]:
-    """An estimate as a fraction: a percentage over 1 is read as one; anything else unusable is None."""
+    """The model's estimate as the schema asks for it, a fraction from 0 to 1; anything else is unknown (None).
+
+    A number over 1 is not read as a percentage: 1 itself would then be ambiguous (all, or 1%).
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     share = float(value)
-    if 1 < share <= 100:
-        share /= 100
     if not 0 <= share <= 1:
         return None
     return round(share, 4)
@@ -578,6 +588,7 @@ def measuring_available() -> bool:
 
 
 def _mean(values: list[float]) -> Optional[float]:
+    """The mean of ``values`` to four places, or None for none."""
     return round(sum(values) / len(values), 4) if values else None
 
 
