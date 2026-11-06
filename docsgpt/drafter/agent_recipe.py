@@ -882,18 +882,35 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
             fields["analytics"] = {"topics": topics}
 
 
-def _progress(step: Optional[str], fields: dict) -> tuple[list[str], Optional[str]]:
+def _drafted_ahead(step: str, fields: dict, form: dict) -> bool:
+    """Whether a proposal from an earlier step drafted what ``step`` is for, so the build may pass over it.
+
+    Knowledge needs sources or tools (a type alone leaves them to pick); the prompt step a prompt with starters,
+    drafted or already on the form (a prompt alone leaves them to write, starters alone the prompt). Safety is
+    never drafted ahead.
+    """
+    if step == "knowledge":
+        return "sources" in fields or "tools" in fields
+    if step == "prompt":
+        return "prompt" in fields and bool(fields.get("starters") or form["starters"])
+    return False
+
+
+def _progress(step: Optional[str], fields: dict, form: dict) -> tuple[list[str], Optional[str]]:
     """The steps a proposal fills (the current one and the later ones it drafted ahead) and the next step to run.
 
-    The prompt step counts as filled only with a prompt: starters alone leave it to write one.
+    Args:
+        step: The current step; None in improve mode.
+        fields: The proposal's checked fields, unchanged ones left out.
+        form: The form's values.
+
+    Returns:
+        ``(steps, next_step)``: empty and None in improve mode.
     """
     if step is None:
         return [], None
     later = STEPS[STEPS.index(step) + 1:]
-    filled = [step] + [
-        s for s in later
-        if ("prompt" in fields if s == "prompt" else any(key in fields for key in STEP_FIELDS[s]))
-    ]
+    filled = [step] + [s for s in later if _drafted_ahead(s, fields, form)]
     return filled, next((s for s in later if s not in filled), None)
 
 
@@ -977,7 +994,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         if detail:
             entry["detail"] = detail
         reasons.append(entry)
-    steps, next_step = _progress(step, fields)
+    steps, next_step = _progress(step, fields, form)
     return {
         "message": clean_text(args.get("message"), MESSAGE_MAX),
         "fields": fields,

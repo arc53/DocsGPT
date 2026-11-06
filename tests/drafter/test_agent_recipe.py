@@ -551,9 +551,22 @@ class TestSteps:
         assert proposal["steps"] == ["basics"] and proposal["next_step"] == "knowledge"
 
     def test_the_fast_path_fills_later_steps(self):
-        proposal = _validate({"name": "Help desk", "sources": [SOURCE_ID],
+        proposal = _validate({"name": "Help desk", "sources": [SOURCE_ID], "starters": ["Where is my parcel?"],
                               "prompt": {"kind": "existing", "id": "strict"}}, step="basics")
         assert proposal["steps"] == ["basics", "knowledge", "prompt"] and proposal["next_step"] == "safety"
+
+    def test_a_later_step_counts_only_when_its_main_part_is_drafted(self):
+        # A type alone leaves the sources and tools to pick; a prompt without starters leaves them to write.
+        proposal = _validate({"name": "Help desk", "agent_type": "research",
+                              "prompt": {"kind": "existing", "id": "strict"}}, step="basics")
+        assert proposal["steps"] == ["basics"] and proposal["next_step"] == "knowledge"
+        proposal = _validate({"tools": [TOOL_ID], "prompt": {"kind": "existing", "id": "strict"}}, step="basics")
+        assert proposal["steps"] == ["basics", "knowledge"] and proposal["next_step"] == "prompt"
+
+    def test_a_prompt_picked_ahead_fills_its_step_when_the_form_has_starters(self):
+        proposal = _validate({"prompt": {"kind": "existing", "id": "strict"}}, form={"starters": ["Hi?"]},
+                             step="knowledge")
+        assert proposal["steps"] == ["knowledge", "prompt"] and proposal["next_step"] == "safety"
 
     def test_starters_alone_leave_the_prompt_step_to_run(self):
         proposal = _validate({"name": "Help desk", "starters": ["Where is my parcel?"]}, step="basics")
