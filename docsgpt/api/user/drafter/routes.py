@@ -2,6 +2,7 @@
 
 - ``GET /api/drafter/config`` -- whether the drafter is offered, and its model.
 - ``POST /api/drafter/stream`` -- one draft turn as server-sent events.
+- ``POST /api/drafter/turns/<turn_id>/cancel`` -- stop the caller's running turn.
 - ``GET /api/drafter/topics/status`` -- whether an agent has enough conversations for topic suggestions.
 
 All are session-only: ``docsgpt/api/pat/rules.py`` lists them in ``DENIED``,
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from typing import Iterator, Optional
 
@@ -25,7 +27,7 @@ from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
-from docsgpt.drafter.service import drafter_config, prepare
+from docsgpt.drafter.service import cancel_turn, drafter_config, end_turn, prepare, start_turn, turn_cancelled
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,8 @@ logger = logging.getLogger(__name__)
 drafter_ns = Namespace("drafter", description="Draft with DocsGPT", path="/api")
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+_TURN_ID = re.compile(r"[0-9a-f]{32}")
 
 
 def _frame(event: dict) -> str:
@@ -99,9 +103,10 @@ class DrafterStream(Resource):
     @api.expect(stream_model)
     @api.doc(
         description=(
-            "Run one draft turn and stream it as server-sent events (data: <json>). Events: status, message, "
-            "questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, "
-            "bad_request) arrive as an error event in a 200 stream. Nothing is saved."
+            "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, "
+            "{\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops; absent when the server can't stop turns), "
+            "status, message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, "
+            "rate_limited, quota, bad_request) arrive as an error event in a 200 stream. Nothing is saved."
         ),
         responses={200: "text/event-stream of draft events", 401: "Not signed in"},
     )
@@ -130,12 +135,49 @@ class DrafterStream(Resource):
                 mimetype="text/event-stream",
                 headers=_SSE_HEADERS,
             )
+        # Under Werkzeug a disconnect closes the stream early (``stopped``); the production ASGI adapter drains
+        # it first, so the panel stops a turn it gives up on through the turn id instead.
         stopped = threading.Event()
+        turn_id = start_turn(user_id)
         return Response(
-            with_sse_keepalive(_stream(draft, recipe, workspace, model, stopped), on_disconnect=stopped.set),
+            with_sse_keepalive(_stream(draft, recipe, workspace, model, stopped, turn_id), on_disconnect=stopped.set),
             mimetype="text/event-stream",
             headers=_SSE_HEADERS,
         )
+
+
+@drafter_ns.route("/drafter/turns/<string:turn_id>/cancel")
+class DrafterTurnCancel(Resource):
+    @api.doc(
+        description=(
+            "Stop the caller's running draft turn: it makes no further model calls and its stream ends with "
+            "end. The id is the stream's first event (turn). Answers 202 once the request is stored."
+        ),
+        responses={202: "The stop was requested", 401: "Not signed in",
+                   404: "The caller has no such turn (unknown, ended, or someone else's)",
+                   503: "Stopping is unavailable right now"},
+    )
+    def post(self, turn_id: str) -> Response:
+        """Ask a running draft turn to stop.
+
+        Args:
+            turn_id: The id from the turn's ``turn`` event.
+
+        Returns:
+            202 when the stop was requested, 404 when the caller has no such
+            turn, 503 without Redis.
+        """
+        user_id = _user_id()
+        if not user_id:
+            return make_response(jsonify({"success": False}), 401)
+        if not _TURN_ID.fullmatch(turn_id):
+            return make_response(jsonify({"success": False, "message": "Turn not found"}), 404)
+        cancelled = cancel_turn(user_id, turn_id)
+        if cancelled is None:
+            return make_response(jsonify({"success": False, "message": "Stopping is unavailable right now"}), 503)
+        if not cancelled:
+            return make_response(jsonify({"success": False, "message": "Turn not found"}), 404)
+        return make_response(jsonify({"success": True}), 202)
 
 
 @drafter_ns.route("/drafter/topics/status")
@@ -177,12 +219,32 @@ class DrafterTopicsStatus(Resource):
 
 
 def _stream(draft: DraftRequest, recipe: Recipe, workspace: Workspace, model: dict,
-            stopped: threading.Event) -> Iterator[str]:
-    """The turn's frames, always closed by ``end``; an unexpected failure becomes a ``model_error`` event."""
+            stopped: threading.Event, turn_id: Optional[str] = None) -> Iterator[str]:
+    """The turn's frames, always closed by ``end``; an unexpected failure becomes a ``model_error`` event.
+
+    Args:
+        draft: The checked request.
+        recipe: Its recipe.
+        workspace: The caller's workspace, read in the request.
+        model: The drafter model.
+        stopped: Set when the server closes the stream early (the client went away).
+        turn_id: The turn's id for a stop from another request; its ``turn`` event comes first. None when
+            turns can't be stopped that way.
+
+    Yields:
+        SSE frames.
+    """
+    def should_stop() -> bool:
+        return stopped.is_set() or turn_cancelled(turn_id)
+
     try:
-        for event in run_draft(draft, recipe, workspace, model, should_stop=stopped.is_set):
+        if turn_id:
+            yield _frame({"type": "turn", "id": turn_id})
+        for event in run_draft(draft, recipe, workspace, model, should_stop=should_stop):
             yield _frame(event)
     except Exception:
         logger.exception("drafter: the draft failed")
         yield _frame({"type": "error", "code": "model_error", "message": "The draft failed. Try again."})
+    finally:
+        end_turn(turn_id)
     yield _frame({"type": "end"})

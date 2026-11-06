@@ -1,4 +1,6 @@
-"""The drafter's entry points for the routes: its config, and checking a draft request before it streams."""
+"""The drafter's entry points for the routes: its config, checking a draft request before it streams, and
+stopping a turn from another request.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +25,11 @@ ASSISTANT_MESSAGE_CHARS = EVENT_CHARS
 
 #: The rate-limit scope in Redis (``monitors:<scope>:rate:<user>:<minute>``).
 RATE_SCOPE = "drafter"
+
+#: How long a turn's owner and stop request live in Redis: longer than any turn runs.
+TURN_TTL_SECONDS = 30 * 60
+#: ``<prefix><turn id>`` holds the turn's owner; ``<prefix><turn id>:stop`` asks the turn to stop.
+_TURN_PREFIX = "drafter:turn:"
 
 
 @dataclass
@@ -136,3 +143,90 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
         request_id=f"drafter:{uuid.uuid4()}",
     )
     return None, request, recipe, model
+
+
+def _turn_store() -> Any:
+    """The Redis client for turn stops (the chat Stop's client: reads time out), or None without Redis."""
+    from docsgpt.activity.flags import _stop_redis
+
+    return _stop_redis()
+
+
+def start_turn(user_id: str) -> Optional[str]:
+    """Register a turn so another request can stop it (``POST /api/drafter/turns/<id>/cancel``).
+
+    A turn only learns that its client went away when the server closes its
+    response early. The production ASGI adapter drains the response first, so
+    the panel stops a turn it gives up on (Stop, Start over, closing the panel)
+    through this id instead.
+
+    Args:
+        user_id: The turn's owner, the only caller who may stop it.
+
+    Returns:
+        The turn id, or None when Redis is unavailable (the turn then runs to its end).
+    """
+    client = _turn_store()
+    if client is None:
+        return None
+    turn_id = uuid.uuid4().hex
+    try:
+        client.set(f"{_TURN_PREFIX}{turn_id}", user_id, ex=TURN_TTL_SECONDS)
+    except Exception:
+        logger.warning("drafter: could not register a turn", exc_info=True)
+        return None
+    return turn_id
+
+
+def cancel_turn(user_id: str, turn_id: str) -> Optional[bool]:
+    """Ask the caller's running turn to stop before its next model call.
+
+    Args:
+        user_id: The caller.
+        turn_id: The id the turn's ``turn`` event carried.
+
+    Returns:
+        True when the request was stored, False when the caller has no such
+        turn (unknown, ended, or someone else's), None when Redis is unavailable.
+    """
+    client = _turn_store()
+    if client is None:
+        return None
+    key = f"{_TURN_PREFIX}{turn_id}"
+    try:
+        owner = client.get(key)
+        if owner is None:
+            return False
+        if (owner.decode() if isinstance(owner, bytes) else str(owner)) != user_id:
+            return False
+        client.set(f"{key}:stop", "1", ex=TURN_TTL_SECONDS)
+    except Exception:
+        logger.warning("drafter: could not store a turn stop", exc_info=True)
+        return None
+    return True
+
+
+def turn_cancelled(turn_id: Optional[str]) -> bool:
+    """Whether someone stopped the turn; False without an id or when Redis can't be read."""
+    if not turn_id:
+        return False
+    client = _turn_store()
+    if client is None:
+        return False
+    try:
+        return bool(client.exists(f"{_TURN_PREFIX}{turn_id}:stop"))
+    except Exception:
+        return False
+
+
+def end_turn(turn_id: Optional[str]) -> None:
+    """Forget an ended turn's owner and stop request (best-effort; they expire anyway)."""
+    if not turn_id:
+        return
+    client = _turn_store()
+    if client is None:
+        return
+    try:
+        client.delete(f"{_TURN_PREFIX}{turn_id}", f"{_TURN_PREFIX}{turn_id}:stop")
+    except Exception:
+        pass

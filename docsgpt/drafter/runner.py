@@ -415,7 +415,8 @@ class _Turn:
         """The model loop: read, then finish with questions or a proposal, correcting once.
 
         Args:
-            should_stop: Asked before each model call; True ends the turn quietly.
+            should_stop: Asked before each model call and again when it returns (before any read or
+                correction); True ends the turn quietly.
 
         Yields:
             ``message``, ``questions``, ``proposal`` or ``error`` events.
@@ -433,6 +434,8 @@ class _Turn:
             except Exception as exc:
                 logger.warning("drafter: model call failed: %s", type(exc).__name__, exc_info=True)
                 yield _error("model_error", "The model could not be reached. Try again in a moment.")
+                return
+            if should_stop():
                 return
             calls = list(getattr(parsed, "tool_calls", None) or [])
             text = parsed.content if isinstance(getattr(parsed, "content", None), str) else ""
@@ -503,7 +506,8 @@ def run_draft(
         ws: The caller's workspace, already loaded.
         model: ``drafter_model`` output: ``{"id", "display_name", "supports_tools"}``.
         llm_factory: Builds the LLM; :func:`build_llm` when None.
-        should_stop: Asked between model calls; True ends the turn quietly (the client went away).
+        should_stop: Asked before and after each model call; True ends the turn quietly (the client went
+            away or cancelled the turn).
 
     Yields:
         Event dicts.

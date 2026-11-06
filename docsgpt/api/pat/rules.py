@@ -461,6 +461,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/drafter/config": ("*",),
     "/api/drafter/stream": ("*",),
     "/api/drafter/topics/status": ("*",),
+    "/api/drafter/turns/<string:turn_id>/cancel": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),
     "/api/approvals/<string:token>": ("*",),

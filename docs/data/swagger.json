@@ -4159,7 +4159,7 @@
     },
     "/api/drafter/stream": {
       "post": {
-        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: status, message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream. Nothing is saved.",
+        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, {\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops; absent when the server can't stop turns), status, message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream. Nothing is saved.",
         "operationId": "post_drafter_stream",
         "parameters": [
           {
@@ -4219,6 +4219,39 @@
           }
         },
         "summary": "Report whether topic suggestions are available for an agent",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/drafter/turns/{turn_id}/cancel": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "turn_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Stop the caller's running draft turn: it makes no further model calls and its stream ends with end. The id is the stream's first event (turn). Answers 202 once the request is stored.\nArgs:\n    turn_id: The id from the turn's ``turn`` event.\n\nReturns:\n    202 when the stop was requested, 404 when the caller has no such\n    turn, 503 without Redis.",
+        "operationId": "post_drafter_turn_cancel",
+        "responses": {
+          "202": {
+            "description": "The stop was requested"
+          },
+          "401": {
+            "description": "Not signed in"
+          },
+          "404": {
+            "description": "The caller has no such turn (unknown, ended, or someone else's)"
+          },
+          "503": {
+            "description": "Stopping is unavailable right now"
+          }
+        },
+        "summary": "Ask a running draft turn to stop",
         "tags": [
           "drafter"
         ],

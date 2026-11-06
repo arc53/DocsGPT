@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from docsgpt.drafter.fencing import DATA_GUARD
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
+from tests.activity.conftest import FakeRedis
 from tests.drafter.fakes import calls, FakeLLM, PROPOSAL, QUESTIONS, text as plain, tool_call
 
 MODEL = {"id": "task-model", "display_name": "Task Model", "supports_tools": True}
@@ -79,15 +80,19 @@ def _types(events):
     return [e["type"] if e["type"] != "status" else f"status:{e['step']}" for e in events]
 
 
+_ROUTES = [("GET", "/api/drafter/config"), ("POST", "/api/drafter/stream"),
+           ("POST", f"/api/drafter/turns/{'a' * 32}/cancel")]
+
+
 @pytest.mark.unit
 class TestAccess:
-    @pytest.mark.parametrize("method,path", [("GET", "/api/drafter/config"), ("POST", "/api/drafter/stream")])
+    @pytest.mark.parametrize("method,path", _ROUTES)
     def test_an_access_token_is_refused(self, client, method, path):
         with patch("docsgpt.app.handle_auth", return_value=_pat_claims()):
             response = client.open(path, method=method, json=_body())
         assert response.status_code == 403
 
-    @pytest.mark.parametrize("method,path", [("GET", "/api/drafter/config"), ("POST", "/api/drafter/stream")])
+    @pytest.mark.parametrize("method,path", _ROUTES)
     def test_no_session_is_401(self, client, method, path):
         with patch("docsgpt.app.handle_auth", return_value=None):
             response = client.open(path, method=method, json=_body())
@@ -299,3 +304,94 @@ class TestStream:
             _events(_stream(client, _body(), fake))
         writer.assert_not_called()
         assert counts() == before
+
+
+class _Redis(FakeRedis):
+    """The Activity tests' fake Redis, with ``get``."""
+
+    def get(self, key):
+        return self.kv.get(key) if self._alive(key) else None
+
+
+@pytest.fixture
+def redis(monkeypatch):
+    fake = _Redis()
+    monkeypatch.setattr("docsgpt.drafter.service._turn_store", lambda: fake)
+    return fake
+
+
+def _turn_ids(redis) -> list[str]:
+    return [key.split(":")[2] for key in redis.kv if key.count(":") == 2]
+
+
+@pytest.mark.unit
+class TestCancel:
+    def _cancel(self, client, turn_id, user="alice"):
+        with _session(user):
+            return client.post(f"/api/drafter/turns/{turn_id}/cancel")
+
+    def test_the_turn_id_comes_first_and_is_forgotten_at_the_end(self, client, pg_conn, redis):
+        seen = []
+
+        class Recording(FakeLLM):
+            def gen(self, *args, **kwargs):
+                seen.extend(_turn_ids(redis))
+                return super().gen(*args, **kwargs)
+
+        fake = Recording(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, _body(), fake))
+        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+        assert seen == [events[0]["id"]] and redis.kv == {}
+
+    def test_a_cancelled_turn_makes_no_further_model_calls(self, client, pg_conn, redis):
+        from docsgpt.drafter.service import cancel_turn
+
+        class Cancelling(FakeLLM):
+            def gen(self, *args, **kwargs):
+                [turn_id] = _turn_ids(redis)
+                assert cancel_turn("alice", turn_id) is True
+                return super().gen(*args, **kwargs)
+
+        fake = Cancelling(calls(tool_call("get_prompt", {"prompt_id": "default"})),
+                          calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, _body(), fake))
+        assert _types(events) == ["turn", "status:reading", "status:drafting", "end"]
+        assert len(fake.calls) == 1
+
+    def test_the_owner_cancels_their_turn(self, client, redis):
+        from docsgpt.drafter.service import start_turn, turn_cancelled
+
+        turn_id = start_turn("alice")
+        response = self._cancel(client, turn_id)
+        assert response.status_code == 202 and turn_cancelled(turn_id)
+
+    def test_another_users_turn_is_not_found(self, client, redis):
+        from docsgpt.drafter.service import start_turn, turn_cancelled
+
+        turn_id = start_turn("alice")
+        response = self._cancel(client, turn_id, user="bob")
+        assert response.status_code == 404 and not turn_cancelled(turn_id)
+
+    @pytest.mark.parametrize("turn_id", ["b" * 32, "not-a-turn"])
+    def test_an_unknown_turn_is_not_found(self, client, redis, turn_id):
+        assert self._cancel(client, turn_id).status_code == 404
+
+    def test_without_redis_the_turn_runs_and_cancel_is_unavailable(self, client, pg_conn):
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, _body(), fake))
+        assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
+        assert self._cancel(client, "c" * 32).status_code == 503
+
+    def test_a_cancel_store_that_fails_never_fails_the_turn(self, client, pg_conn, redis, monkeypatch):
+        def broken(*args, **kwargs):
+            raise ConnectionError("redis went away")
+
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            monkeypatch.setattr(redis, "exists", broken)
+            monkeypatch.setattr(redis, "delete", broken)
+            events = _events(_stream(client, _body(), fake))
+        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
