@@ -23,10 +23,10 @@ def _registry(default="gpt-default"):
     def get_model(model_id, user_id=None):
         if user_id and model_id in CUSTOM.get(user_id, set()):
             return SimpleNamespace(id=model_id, enabled=True, source="user")
-        if model_id in BUILTIN or model_id == default:
-            return SimpleNamespace(id=model_id, enabled=True, source="builtin")
         if model_id in DISABLED:
             return SimpleNamespace(id=model_id, enabled=False, source="builtin")
+        if model_id in BUILTIN or model_id == default:
+            return SimpleNamespace(id=model_id, enabled=True, source="builtin")
         return None
 
     return SimpleNamespace(
@@ -115,6 +115,28 @@ class TestFallthrough:
 
         monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", broken)
         assert model_utils.get_task_model_id("alice") == "gpt-env"
+
+    def test_a_disabled_default_model_is_none(self, monkeypatch):
+        # The default model gets the same check as every other step: a disabled one never runs.
+        monkeypatch.setattr(
+            "docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: _registry(default="gpt-off")
+        )
+        with _stored():
+            assert model_utils.get_task_model_id("alice") is None
+            assert model_utils.resolve_task_model_id(None, None, None) is None
+
+    def test_a_misconfigured_env_model_warns_once_per_value(self, monkeypatch, caplog):
+        monkeypatch.setattr(model_utils, "_warned_task_model_ids", set())
+        monkeypatch.setattr(settings, "TASK_MODEL_ID", "not-in-the-catalog")
+        with _stored(), caplog.at_level("WARNING", logger=model_utils.logger.name):
+            for _ in range(3):
+                assert model_utils.get_task_model_id("alice") == "gpt-default"
+            monkeypatch.setattr(settings, "TASK_MODEL_ID", "gpt-off")
+            model_utils.get_task_model_id("alice")
+            model_utils.get_task_model_id("alice")
+        warnings = [r.getMessage() for r in caplog.records if "TASK_MODEL_ID" in r.getMessage()]
+        assert len(warnings) == 2
+        assert "not-in-the-catalog" in warnings[0] and "gpt-off" in warnings[1]
 
     def test_no_model_at_all_is_none(self, monkeypatch):
         monkeypatch.setattr(

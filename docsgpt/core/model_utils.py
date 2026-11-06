@@ -164,6 +164,10 @@ def _stored_task_models(user_id: Optional[str]) -> Tuple[Optional[str], Optional
         return None, None
 
 
+#: ``TASK_MODEL_ID`` values already warned about, so a misconfigured one logs once, not on every job.
+_warned_task_model_ids: set[str] = set()
+
+
 def resolve_task_model_id(
     user_id: Optional[str],
     user_choice: Optional[str],
@@ -173,8 +177,10 @@ def resolve_task_model_id(
 
     Each choice must name a model that can run (:func:`model_is_usable`), or
     it is skipped without an error: a model removed from the catalog, a
-    disabled or deleted custom model. The user's may be one of their own
-    custom models; the instance's and ``TASK_MODEL_ID`` are built-in only.
+    disabled or deleted custom model. The default model is held to the same
+    rule. The user's may be one of their own custom models; the instance's
+    and ``TASK_MODEL_ID`` are built-in only. A ``TASK_MODEL_ID`` that can't
+    run is logged once per value.
 
     Args:
         user_id: The user the job runs as; ``None`` skips ``user_choice``.
@@ -182,7 +188,7 @@ def resolve_task_model_id(
         instance_choice: The admin's stored instance task model.
 
     Returns:
-        A model id, or ``None`` when the registry has no model at all.
+        A model id, or ``None`` when no step names a model that can run.
     """
     from docsgpt.core.settings import settings
 
@@ -194,8 +200,11 @@ def resolve_task_model_id(
     if configured:
         if model_is_usable(configured):
             return configured
-        logger.warning("TASK_MODEL_ID %r is not an enabled built-in model; using the default model", configured)
-    return get_default_model_id()
+        if configured not in _warned_task_model_ids:
+            _warned_task_model_ids.add(configured)
+            logger.warning("TASK_MODEL_ID %r is not an enabled built-in model; using the default model", configured)
+    default = get_default_model_id()
+    return default if model_is_usable(default) else None
 
 
 def get_task_model_id(user_id: Optional[str]) -> Optional[str]:
@@ -212,7 +221,7 @@ def get_task_model_id(user_id: Optional[str]) -> Optional[str]:
             monitor's owner); ``None`` for the instance's task model.
 
     Returns:
-        A model id, or ``None`` when the registry has no model at all.
+        A model id, or ``None`` when no step names a model that can run.
     """
     user_choice, instance_choice = _stored_task_models(user_id)
     return resolve_task_model_id(user_id, user_choice, instance_choice)
