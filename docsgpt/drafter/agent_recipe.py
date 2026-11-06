@@ -357,7 +357,8 @@ def _editable_prompt(form: dict, ws: Workspace) -> Optional[str]:
     one whose unsaved changes the prompt view holds. None for a built-in, a shared or a new prompt."""
     draft = form.get("prompt_draft")
     target = draft.get("id") if draft else form.get("prompt_id")
-    own = {str(p["id"]) for p in ws.prompts if p.get("kind") == "own"}
+    # The caller's own prompts over the workspace cap aren't shown to the model, but are still theirs to edit.
+    own = {str(p["id"]) for p in ws.prompts if p.get("kind") == "own"} | ws.own_prompts
     return target if target in own else None
 
 

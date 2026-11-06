@@ -86,6 +86,21 @@ class TestScoping:
         set_settings(pg_conn, "tool", str(tool["id"]), {"viewers_can_use_in_agents": False}, BOB)
         assert str(tool["id"]) not in _load(pg_conn).ids("tools")
 
+    def test_rows_over_the_caps_are_not_shown_but_still_count_as_the_callers(self, pg_conn, monkeypatch):
+        from docsgpt.drafter import catalog
+
+        monkeypatch.setattr(catalog, "MAX_PROMPTS", 1)
+        monkeypatch.setattr(catalog, "MAX_SOURCES", 1)
+        prompts = [PromptsRepository(pg_conn).create(ALICE, f"P{i}", "Be kind.") for i in range(2)]
+        sources = [_source(pg_conn, f"S{i}", ALICE) for i in range(2)]
+        shared = PromptsRepository(pg_conn).create(BOB, "Team voice", "Be kind.")
+        _share(pg_conn, "prompt", shared["id"], ALICE)
+        ws = _load(pg_conn)
+        assert len(ws.prompts) == 4 and len(ws.sources) == 1 and ws.hidden == {"prompts": 2, "sources": 1}
+        assert ws.ids("sources") == {str(s["id"]) for s in sources}
+        assert {str(p["id"]) for p in prompts + [shared]} <= ws.ids("prompts")
+        assert ws.own_prompts == {str(p["id"]) for p in prompts}
+
     def test_builtin_prompts_and_default_tools_are_offered_without_workflow_only_or_server_tools(self, pg_conn):
         ws = _load(pg_conn)
         assert [p["id"] for p in ws.prompts[:3]] == ["default", "creative", "strict"]

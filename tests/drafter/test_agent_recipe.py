@@ -643,6 +643,13 @@ class TestPromptEdits:
         with pytest.raises(ProposalInvalid, match="not found"):
             _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [gone]}}, form=form)
 
+    def test_an_own_prompt_over_the_workspace_cap_still_takes_edits(self):
+        newer = "44444444-4444-4444-4444-444444444444"
+        ws = _ws(own_prompts={PROMPT_ID, newer}, prompt_texts={newer: "You help customers."})
+        proposal = _validate({"prompt": {"kind": "edit", "id": newer, "edits": [EDIT]}},
+                             form={"prompt_id": newer}, ws=ws)
+        assert proposal["fields"]["prompt"]["id"] == newer
+
     @pytest.mark.parametrize("form,prompt_id", [
         ({}, "default"),
         ({"prompt_id": PROMPT_ID}, "someone-elses"),

@@ -63,6 +63,8 @@ class Workspace:
         source_files: Source id -> file paths (capped), for ``get_source``.
         tool_details: Tool id -> actions with full descriptions, for ``get_tool``.
         hidden: Kind -> rows left out over the caps.
+        over_cap: Kind -> ids of the rows left out over the caps: not shown to the model, still the caller's.
+        own_prompts: Ids of all the caller's own prompts, those over the cap too.
     """
 
     sources: list[dict] = field(default_factory=list)
@@ -75,6 +77,8 @@ class Workspace:
     source_files: dict[str, list[str]] = field(default_factory=dict)
     tool_details: dict[str, dict] = field(default_factory=dict)
     hidden: dict[str, int] = field(default_factory=dict)
+    over_cap: dict[str, set[str]] = field(default_factory=dict)
+    own_prompts: set[str] = field(default_factory=set)
 
     def counts(self) -> dict[str, int]:
         """How many of each kind the drafter looked at (the ``reading`` status event)."""
@@ -86,8 +90,8 @@ class Workspace:
         }
 
     def ids(self, kind: str) -> set[str]:
-        """The ids of one kind (``sources``, ``tools``, ``prompts``) the caller may attach."""
-        return {str(row["id"]) for row in getattr(self, kind)}
+        """The ids of one kind (``sources``, ``tools``, ``prompts``) the caller may attach, those over the cap too."""
+        return {str(row["id"]) for row in getattr(self, kind)} | self.over_cap.get(kind, set())
 
     def summary(self) -> dict[str, Any]:
         """The compact catalog that goes into the prompt."""
@@ -104,10 +108,12 @@ class Workspace:
         return out
 
 
-def _cap(rows: list, limit: int, kind: str, hidden: dict[str, int]) -> list:
-    """The first ``limit`` rows; how many were left out is counted in ``hidden[kind]``."""
+def _cap(rows: list, limit: int, kind: str, ws: Workspace) -> list:
+    """The first ``limit`` rows; how many were left out is counted in ``ws.hidden[kind]``, their ids kept in
+    ``ws.over_cap[kind]``."""
     if len(rows) > limit:
-        hidden[kind] = len(rows) - limit
+        ws.hidden[kind] = len(rows) - limit
+        ws.over_cap[kind] = {str(row["id"]) for row in rows[limit:]}
         return rows[:limit]
     return rows
 
@@ -159,7 +165,7 @@ def load_sources(conn, user_id: str, ws: Workspace) -> None:
         if row.get("ingest_status"):
             entry["status"] = str(row.get("ingest_status"))
         out.append(entry)
-    ws.sources = _cap(out, MAX_SOURCES, "sources", ws.hidden)
+    ws.sources = _cap(out, MAX_SOURCES, "sources", ws)
 
 
 def _injection_flagged(action: dict) -> bool:
@@ -261,7 +267,7 @@ def load_tools(conn, user_id: str, ws: Workspace) -> None:
         entry["actions"] = [a["name"] for a in actions]
         ws.tool_details[entry["id"]] = {**entry, "actions": actions}
         out.append(entry)
-    ws.tools = _cap(out, MAX_TOOLS, "tools", ws.hidden)
+    ws.tools = _cap(out, MAX_TOOLS, "tools", ws)
 
 
 def is_template(content: str) -> bool:
@@ -289,6 +295,7 @@ def load_prompts(conn, user_id: str, ws: Workspace) -> None:
     repo = PromptsRepository(conn)
     own = repo.list_for_user(user_id)
     own_ids = {str(p["id"]) for p in own}
+    ws.own_prompts = own_ids
     team = visible_with_access(conn, user_id, "prompt")
     shared = repo.list_by_ids([pid for pid in team if pid not in own_ids])
     switches = settings_many(conn, "prompt", [str(p["id"]) for p in shared])
@@ -307,7 +314,7 @@ def load_prompts(conn, user_id: str, ws: Workspace) -> None:
             entry["template"] = True
         ws.prompt_texts[pid] = clean_text(content, PROMPT_CHARS)
         out.append(entry)
-    ws.prompts = _cap(out, MAX_PROMPTS + len(PRESET_PROMPTS), "prompts", ws.hidden)
+    ws.prompts = _cap(out, MAX_PROMPTS + len(PRESET_PROMPTS), "prompts", ws)
 
 
 def load_models(user_id: str, ws: Workspace) -> None:
@@ -320,7 +327,7 @@ def load_models(user_id: str, ws: Workspace) -> None:
         logger.warning("drafter: could not list models", exc_info=True)
         models = []
     rows = [{"id": str(m.id), "name": clean_text(m.display_name or m.id, NAME_CHARS)} for m in models]
-    ws.models = _cap(rows, MAX_MODELS, "models", ws.hidden)
+    ws.models = _cap(rows, MAX_MODELS, "models", ws)
 
 
 def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> None:
