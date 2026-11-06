@@ -583,7 +583,7 @@ class TestCompressingRetrieverIntegration:
         monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
         monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
 
-        mock_result = Mock(compressed_text="SuperCompressed workflow text")
+        mock_result = ("SuperCompressed workflow text", Mock())
         mock_compress_for_turn = Mock(return_value=mock_result)
         mock_module = Mock(compress_for_turn=mock_compress_for_turn)
 
@@ -611,8 +611,8 @@ class TestCompressingRetrieverIntegration:
         assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
     def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self):
         """Integrate SuperCompress between retrieval and generation with automated delegation tests."""
-        mock_result_1 = Mock(compressed_text="SuperCompressed chunk 1")
-        mock_result_2 = Mock(compressed_text="SuperCompressed chunk 2")
+        mock_result_1 = ("SuperCompressed chunk 1", Mock())
+        mock_result_2 = ("SuperCompressed chunk 2", Mock())
         mock_compress_for_turn = Mock(side_effect=[mock_result_1, mock_result_2])
 
         mock_module = Mock(compress_for_turn=mock_compress_for_turn)
@@ -640,7 +640,7 @@ class TestCompressingRetrieverIntegration:
 
     def test_supercompress_avoids_partial_updates_on_failure(self):
         """When compression raises midway, documents must not be partially modified and fallback is used."""
-        mock_result_1 = Mock(compressed_text="SuperCompressed chunk 1")
+        mock_result_1 = ("SuperCompressed chunk 1", Mock())
         mock_compress_for_turn = Mock(side_effect=[mock_result_1, RuntimeError("compression failed")])
 
         mock_module = Mock(compress_for_turn=mock_compress_for_turn)
@@ -672,6 +672,27 @@ class TestCompressingRetrieverIntegration:
             assert len(result) == 2
             assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
             assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
+
+    def test_compress_retrieved_chunks_handles_tuple_and_object_returns(self):
+        """SuperCompress 0.5.0 returns a tuple (compressed_text, CompressResult); text must be extracted."""
+        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+
+        # Tuple return (SuperCompress 0.5.0 API)
+        mock_compress_for_turn = Mock(return_value=("Compressed text from tuple", Mock()))
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+        docs = [{"id": "1", "text": "Some text"}]
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            out = compress_retrieved_chunks(docs, query="test")
+            assert out[0]["text"] == "Compressed text from tuple"
+            assert not out[0]["text"].startswith("(")
+
+        # Object return (.compressed_text attribute)
+        mock_compress_for_turn.return_value = Mock(compressed_text="Compressed text from object")
+        docs2 = [{"id": "2", "text": "Some text 2"}]
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            out2 = compress_retrieved_chunks(docs2, query="test")
+            assert out2[0]["text"] == "Compressed text from object"
+
 
     def test_token_reduction_and_oracle_recall_on_evaluation_set(self):
         """Measures token reduction and oracle recall on a representative evaluation set."""

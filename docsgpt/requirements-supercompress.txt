@@ -940,5 +940,5 @@ xlsxwriter==3.3.0
     # via python-pptx
 yarl==1.25.1
     # via aiohttp
-supercompress==0.1.0
+supercompress==0.5.0
     # via docsgpt

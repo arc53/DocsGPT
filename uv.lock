@@ -7589,6 +7589,9 @@ wheels = [
 
 [[package]]
 name = "supercompress"
-version = "0.1.0"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/source/s/supercompress/supercompress-0.1.0.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/7f/5dc0b0414852917f98ddc39f331e7652f71a0d6ca7594e4901a0b3ead198/supercompress-0.5.0.tar.gz", hash = "sha256:df0eac3b8593c3d8fdb1e1832af3b2204b593f2bcd21f232af9677a02ecb3aca", size = 36258, upload-time = "2026-06-26T19:34:08.676Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/64/6186e86ffd983c9e3033ebc0c82b6da86b47da490173a4173399fc3261af/supercompress-0.5.0-py3-none-any.whl", hash = "sha256:5e423876eb416c5e833dd2e0fb39aa72d5fff5c5352836d073b027a5b78b525b", size = 33290, upload-time = "2026-06-26T19:34:07.496Z" },
+]

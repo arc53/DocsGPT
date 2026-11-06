@@ -368,11 +368,18 @@ def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> Li
             text = doc.get("text", "")
             if text:
                 res = compress_for_turn(
-                    context=text,
-                    user_query=query or "",
                     context_blocks=[text],
+                    user_query=query or "",
                 )
-                compressed_texts.append(getattr(res, "compressed_text", str(res)))
+                if isinstance(res, (tuple, list)) and res:
+                    comp_text = res[0]
+                elif hasattr(res, "compressed_text"):
+                    comp_text = res.compressed_text
+                elif isinstance(res, str):
+                    comp_text = res
+                else:
+                    comp_text = str(res)
+                compressed_texts.append(comp_text)
             else:
                 compressed_texts.append(None)
 

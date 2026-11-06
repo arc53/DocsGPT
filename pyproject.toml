@@ -164,7 +164,7 @@ milvus = [
 ]
 # SuperCompress: query-aware context compression between retrieval and generation
 supercompress = [
-  "supercompress>=0.1.0",
+  "supercompress>=0.5.0",
 ]
 
 [project.scripts]
