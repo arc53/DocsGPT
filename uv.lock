@@ -1532,6 +1532,9 @@ milvus = [
     { name = "milvus-lite", marker = "sys_platform != 'win32'" },
     { name = "pymilvus" },
 ]
+supercompress = [
+    { name = "supercompress" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -7583,3 +7586,9 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/88/91/41e284ca2cf5211e05dae031d126a3668aea88fa759df56e7e35c6ad25ba/yarl-1.25.1-cp315-cp315t-win_arm64.whl", hash = "sha256:783dd1467083f4d3f7722ad6a313f24c173e7571372738fcb7a6e6d1ba48df25", size = 101804, upload-time = "2026-09-15T19:34:57.231Z" },
     { url = "https://files.pythonhosted.org/packages/54/22/318c7980066769c6bcd9221ed2248294f5698811da099013098c670565ed/yarl-1.25.1-py3-none-any.whl", hash = "sha256:681c758b0490f9e96b78e5fa8e8dc6e648e9185bb6eaebe73183c33ea0c445f3", size = 63617, upload-time = "2026-09-15T19:34:59.616Z" },
 ]
+
+[[package]]
+name = "supercompress"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/source/s/supercompress/supercompress-0.1.0.tar.gz" }

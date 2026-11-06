@@ -354,3 +354,34 @@ def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[
             )
 
     return docs
+
+def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
+    """Compresses retrieved chunks using SuperCompress when available, falling back to in-tree boilerplate pruning."""
+    if not docs:
+        return docs
+
+    try:
+        from supercompress import compress_for_turn
+
+        compressed_texts = []
+        for doc in docs:
+            text = doc.get("text", "")
+            if text:
+                res = compress_for_turn(
+                    context=text,
+                    user_query=query or "",
+                    context_blocks=[text],
+                )
+                compressed_texts.append(getattr(res, "compressed_text", str(res)))
+            else:
+                compressed_texts.append(None)
+
+        for doc, comp_text in zip(docs, compressed_texts):
+            if comp_text is not None:
+                doc["text"] = comp_text
+        return docs
+    except (ImportError, Exception):
+        pass
+
+    return prune_boilerplate(docs, query=query or "")
+

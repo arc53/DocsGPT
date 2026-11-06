@@ -558,6 +558,44 @@ class TestCompressingRetrieverIntegration:
         monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
         docs_pruned = engine._retrieve_node_sources(mock_config)
         assert docs_pruned[0]["text"] == "Factual chunk."
+    def test_workflow_node_sources_supercompress_delegation(self, monkeypatch):
+        """Workflow retrieval-to-generation path delegates to SuperCompress when available."""
+        pytest.importorskip("celpy")
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+
+        engine = object.__new__(WorkflowEngine)
+        engine.state = {"query": "authentication"}
+        engine._loop_item = None
+        engine.agent = Mock()
+        engine.agent.decoded_token = {}
+
+        mock_doc = {"id": "d1", "text": "Raw retrieved chunk", "source": "s1"}
+        mock_retriever = Mock()
+        mock_retriever.search.return_value = [mock_doc]
+
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: mock_retriever,
+        )
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources", lambda self, s: list(s or [])
+        )
+        monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
+        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
+
+        mock_result = Mock(compressed_text="SuperCompressed workflow text")
+        mock_compress_for_turn = Mock(return_value=mock_result)
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+
+        mock_config = Mock()
+        mock_config.sources = ["s1"]
+        mock_config.retriever = "classic"
+        mock_config.chunks = 6
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            docs = engine._retrieve_node_sources(mock_config)
+            assert docs[0]["text"] == "SuperCompressed workflow text"
+            mock_compress_for_turn.assert_called_once()
     def test_compressing_retriever_preserves_document_metadata(self):
         """CompressingRetriever applies in-tree boilerplate pruning while preserving per-document metadata."""
         mock_inner = Mock()

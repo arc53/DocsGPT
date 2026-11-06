@@ -162,6 +162,10 @@ milvus = [
   "pymilvus>=3.0.2,<4",
   "milvus-lite>=3.2.0,<4; sys_platform != 'win32'",
 ]
+# SuperCompress: query-aware context compression between retrieval and generation
+supercompress = [
+  "supercompress>=0.1.0",
+]
 
 [project.scripts]
 docsgpt = "docsgpt.cli:main"
