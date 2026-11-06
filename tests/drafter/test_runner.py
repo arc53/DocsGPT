@@ -198,6 +198,30 @@ class TestLoop:
         assert sent[3]["tool_call_id"] == ask["id"] and sent[6]["tool_call_id"] == submit["id"]
         assert ask["id"] != submit["id"]
 
+    def test_a_question_round_replays_with_the_line_before_it(self):
+        asked = {"type": "questions", "message": "Two things first:", "questions": [
+            {"id": "q1", "text": "Tone?", "options": [{"id": "a", "label": "Warm"}, {"id": "b", "label": "Formal"}]},
+        ]}
+        history = [
+            {"role": "user", "content": "x"}, {"role": "assistant", "content": json.dumps(asked)},
+            {"role": "user", "content": "y"},
+        ]
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, *history)
+        ask = fake.calls[0]["messages"][2]["tool_calls"][0]
+        assert json.loads(ask["function"]["arguments"]) == {
+            "message": "Two things first:", "questions": [{"text": "Tone?", "options": ["Warm", "Formal"]}],
+        }
+
+    def test_a_plain_text_reply_replays_as_text(self):
+        history = [
+            {"role": "user", "content": "x"}, {"role": "assistant", "content": "I can only draft agents."},
+            {"role": "user", "content": "y"},
+        ]
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, *history)
+        assert fake.calls[0]["messages"][2] == {"role": "assistant", "content": "I can only draft agents."}
+
     def test_without_tools_earlier_turns_replay_in_the_json_protocol(self):
         history = [
             {"role": "user", "content": "x"},

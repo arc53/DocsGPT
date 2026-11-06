@@ -31,6 +31,7 @@ from docsgpt.drafter.output import (
     echo_length,
     EVENT_CHARS,
     MAX_QUESTIONS,
+    MESSAGE_CHARS,
     normalize_questions,
     parse_arguments,
     parse_json_object,
@@ -146,7 +147,8 @@ def _replayed_turn(recipe: Recipe, content: Any) -> Optional[tuple[str, dict]]:
 
     The event carries what the server built (ids, option objects, checks); the
     model is shown only the arguments it could have sent, so it has no event
-    shape to copy into its next answer.
+    shape to copy into its next answer. A question round keeps the line the
+    model wrote above its questions (the panel stores it as ``message``).
 
     Returns:
         ``(tool name, arguments)``, or None when the content is no such event.
@@ -163,7 +165,8 @@ def _replayed_turn(recipe: Recipe, content: Any) -> Optional[tuple[str, dict]]:
             args["options"] = [o["label"] for o in question.get("options") or []
                                if isinstance(o, dict) and isinstance(o.get("label"), str)]
             questions.append(args)
-        return ASK_USER, {"questions": questions}
+        message = clean_text(event.get("message"), MESSAGE_CHARS)
+        return ASK_USER, {"message": message, "questions": questions} if message else {"questions": questions}
     if event.get("type") == "proposal" and isinstance(event.get("proposal"), dict):
         fields = recipe.proposal_schema.get("properties", {})
         return SUBMIT_PROPOSAL, {k: v for k, v in event["proposal"].items() if k in fields}
