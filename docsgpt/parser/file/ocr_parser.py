@@ -24,6 +24,7 @@ the docling extra gets working OCR from the tesseract binary alone, and one
 that does install it keeps today's behaviour unchanged.
 """
 import base64
+import copy
 import functools
 import io
 import json
@@ -580,6 +581,7 @@ class DeepseekOcrEngine:
         prompt: Optional[str] = None,
         max_tokens: int = _DEEPSEEK_MAX_TOKENS,
         endpoint: Optional[DeepseekEndpoint] = None,
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> None:
         resolved = endpoint or resolve_deepseek_endpoint()
         self.endpoint = resolved
@@ -590,9 +592,14 @@ class DeepseekOcrEngine:
         self.max_retries = resolved.max_retries
         self.prompt = prompt or resolved.prompt
         self.max_tokens = max_tokens
-        # An explicit URL and model mean the caller configured the endpoint itself;
-        # a malformed extra body is still a configuration error worth failing on.
-        self._problem = resolved.extra_body_problem or (None if (url and model) else resolved.problem)
+        # An explicit extra body is the caller's own, so a malformed setting no
+        # longer applies; an explicit URL and model likewise mean the caller
+        # configured the endpoint itself. Every other problem is reported, and
+        # both are named when both are set.
+        extra_body_problem = None if extra_body is not None else resolved.extra_body_problem
+        endpoint_problem = None if (url and model) else resolved.problem
+        self._problem = " ".join(p for p in (extra_body_problem, endpoint_problem) if p) or None
+        self.extra_body: Dict[str, Any] = copy.deepcopy(extra_body if extra_body is not None else resolved.extra_body)
         self._usage_lock = threading.Lock()
         self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
@@ -605,7 +612,7 @@ class DeepseekOcrEngine:
         cannot redirect the request.
         """
         data_url = "data:image/png;base64," + base64.b64encode(_png_bytes(image)).decode("ascii")
-        body: Dict[str, Any] = dict(self.endpoint.extra_body)
+        body: Dict[str, Any] = copy.deepcopy(self.extra_body)
         body.update(
             {
                 "model": self.model,

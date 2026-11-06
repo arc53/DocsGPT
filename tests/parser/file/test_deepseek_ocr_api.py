@@ -244,6 +244,25 @@ class TestResolveEndpoint:
         settings.OCR_DEEPSEEK_EXTRA_BODY = '{"mm_processor_kwargs": {}}'
         assert "extra_body=mm_processor_kwargs" in op.resolve_deepseek_endpoint().describe()
 
+    @pytest.mark.parametrize("value", ["", "   ", "none"])
+    def test_blank_and_none_extra_body_mean_unset(self, settings, value):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = value
+        endpoint = op.resolve_deepseek_endpoint()
+        assert endpoint.extra_body == {}
+        assert endpoint.extra_body_problem is None
+
+    def test_a_broken_endpoint_and_a_broken_extra_body_are_both_named(self, settings, monkeypatch):
+        settings.OCR_DEEPSEEK_PROVIDER = "novita"  # hosted: needs a key
+        settings.OCR_DEEPSEEK_EXTRA_BODY = "{not json"
+        post = FakePost()
+        monkeypatch.setattr("requests.post", post)
+        with pytest.raises(op.OcrUnavailableError) as excinfo:
+            op.DeepseekOcrEngine().ocr_image(_image())
+        message = str(excinfo.value)
+        assert "OCR_DEEPSEEK_API_KEY" in message
+        assert "OCR_DEEPSEEK_EXTRA_BODY" in message
+        assert post.calls == []
+
 
 # ---------------------------------------------------------------------------
 # Engine: auth, errors, retries, usage
@@ -289,6 +308,33 @@ class TestEngineRequests:
         with pytest.raises(op.OcrUnavailableError, match="OCR_DEEPSEEK_EXTRA_BODY"):
             op.DeepseekOcrEngine().ocr_image(_image())
         assert post.calls == []
+
+    def test_a_malformed_setting_still_fails_with_an_explicit_endpoint(self, settings, monkeypatch):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = "{not json"
+        post = FakePost()
+        monkeypatch.setattr("requests.post", post)
+        engine = op.DeepseekOcrEngine(
+            url="http://127.0.0.1:8000/v1/chat/completions", model="minicpm-ocr"
+        )
+        with pytest.raises(op.OcrUnavailableError, match="OCR_DEEPSEEK_EXTRA_BODY"):
+            engine.ocr_image(_image())
+        assert post.calls == []
+
+    def test_an_explicit_extra_body_wins_over_the_setting(self, settings):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = "{not json"
+        engine = op.DeepseekOcrEngine(
+            url="http://127.0.0.1:8000/v1/chat/completions",
+            model="minicpm-ocr",
+            extra_body={"mm_processor_kwargs": {"max_slice_nums": 4}},
+        )
+        assert engine.payload(_image())["mm_processor_kwargs"] == {"max_slice_nums": 4}
+
+    def test_payloads_do_not_share_the_extra_body(self, settings):
+        settings.OCR_DEEPSEEK_EXTRA_BODY = '{"mm_processor_kwargs": {"max_slice_nums": 9}}'
+        engine = op.DeepseekOcrEngine()
+        first = engine.payload(_image())
+        first["mm_processor_kwargs"]["max_slice_nums"] = 3
+        assert engine.payload(_image())["mm_processor_kwargs"]["max_slice_nums"] == 9
 
     def test_sends_the_bearer_token(self, settings, monkeypatch):
         settings.OCR_DEEPSEEK_PROVIDER = "deepinfra"
