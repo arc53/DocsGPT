@@ -70,6 +70,7 @@ _PLACEHOLDER_USER_TEXT = "(no user message provided)"
 _STOP_REASON_MAP = {
     "tool_use": "tool_calls",
     "max_tokens": "length",
+    "model_context_window_exceeded": "length",
     "end_turn": "stop",
     "stop_sequence": "stop",
     "pause_turn": "stop",

@@ -628,6 +628,14 @@ class TestRawGen:
         llm._raw_gen(llm, model="m", messages=[{"role": "user", "content": "hi"}])
         assert llm._last_finish_reason == "length"
 
+    def test_context_window_exceeded_maps_to_length(self, llm):
+        llm.anthropic.messages.response = fake_message(
+            [text_block("partial")], stop_reason="model_context_window_exceeded"
+        )
+        text = llm._raw_gen(llm, model="m", messages=[{"role": "user", "content": "hi"}])
+        assert text == "partial"
+        assert llm._last_finish_reason == "length"
+
 
 # ---------------------------------------------------------------------------
 # OpenAI-shaped request params (docsgpt/api/v1/translator.py forwards the
@@ -919,6 +927,15 @@ class TestRawGenStream:
         list(gen)
         assert llm._stream_reached_finish is True
         assert llm._last_finish_reason == "stop"
+
+    def test_stream_context_window_exceeded_maps_to_length(self, llm):
+        llm.anthropic.messages.stream_events = [
+            ev_text_delta(0, "partial"),
+            ev_message_delta("model_context_window_exceeded"),
+        ]
+        chunks = list(llm._raw_gen_stream(llm, model="m", messages=[{"role": "user", "content": "q"}]))
+        assert chunks == ["partial"]
+        assert llm._last_finish_reason == "length"
 
     def test_tool_stream_sets_tool_calls_finish_reason(self, llm):
         llm.anthropic.messages.stream_events = [
