@@ -106,5 +106,10 @@
   "bugs": {
     "url": "https://github.com/arc53/DocsGPT/issues"
   },
-  "homepage": "https://github.com/arc53/DocsGPT#readme"
+  "homepage": "https://github.com/arc53/DocsGPT#readme",
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    }
+  }
 }
