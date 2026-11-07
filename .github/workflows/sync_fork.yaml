@@ -22,7 +22,7 @@ jobs:
       # Step 2: run the sync action
       - name: Sync upstream changes
         id: sync
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
+        uses: aormsby/Fork-Sync-With-Upstream-action@83d78e8c4bf524e79b091cf257deba4dee9e60df # v3.4.3
         with:
           # set your upstream repo and branch
           upstream_sync_repo: arc53/DocsGPT
