@@ -163,6 +163,6 @@ class TestDetails:
         assert folder_details(pg_conn, [mine, theirs, gone], OWNER) == [
             {"id": mine, "name": "Mine", "source_count": 1},
             {"id": theirs, "name": "Theirs", "source_count": 0, "owner_name": "mate@example.com"},
-            {"id": gone, "name": None, "source_count": 0},
+            {"id": gone, "name": None, "source_count": 0, "stopped": True, "reason": "deleted"},
         ]
         assert folder_details(pg_conn, [], OWNER) == []

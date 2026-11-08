@@ -175,7 +175,10 @@ def _node_folder_refs(nodes: List[Dict]) -> List[str]:
 
 
 def _node_ref_details(
-    nodes: List[Dict], visible: Optional[Set[str]] = None, viewer: Optional[str] = None
+    nodes: List[Dict],
+    visible: Optional[Set[str]] = None,
+    viewer: Optional[str] = None,
+    workflow: Optional[Dict] = None,
 ) -> Dict[str, List[Dict]]:
     """Names of the tools and sources the graph's agent nodes reference.
 
@@ -192,6 +195,7 @@ def _node_ref_details(
         nodes: Nodes in builder shape.
         visible: Keys whose names may be read; None allows every id.
         viewer: Who reads the folder details (``owner_name`` names other owners).
+        workflow: The workflow row the nodes belong to (a teammate's folder stops with their edit access).
 
     Returns:
         dict: ``tools`` as ``[{id, name, display_name}]``, ``sources`` as
@@ -218,7 +222,9 @@ def _node_ref_details(
     return {
         "tools": resolve_tool_details(tool_ids),
         "sources": resolve_source_details(source_ids),
-        "folders": resolve_folder_details(_node_folder_refs(nodes), viewer),
+        "folders": resolve_folder_details(
+            _node_folder_refs(nodes), viewer, "workflow" if workflow else None, workflow
+        ),
     }
 
 
@@ -1153,7 +1159,7 @@ class WorkflowDetail(Resource):
                         )
                         visible = named_ref_keys(states)
             ref_details = (
-                _node_ref_details(serialized_nodes, visible, user_id)
+                _node_ref_details(serialized_nodes, visible, user_id, workflow)
                 if visible is not None
                 else {"tools": [], "sources": [], "folders": []}
             )

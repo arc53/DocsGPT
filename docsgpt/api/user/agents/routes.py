@@ -548,7 +548,7 @@ def _format_agent_output(
         out["source_details"] = resolve_source_details(
             ([source_id] if source_id else []) + list(extra_source_ids)
         )
-        out["folder_details"] = resolve_folder_details(out["folders"], viewer)
+        out["folder_details"] = resolve_folder_details(out["folders"], viewer, "agent", agent)
     # The public ``shared_token`` and the (masked) agent ``key`` are access
     # details: only a caller who may manage them sees them.
     if "manage_access_details" not in allowed:

@@ -266,7 +266,7 @@ def search(
 
             seen = {str(sid).lower() for sid in source_ids}
             source_ids += [
-                sid for sid in folder_source_ids(conn, agent.get("knowledge_folder_ids")) if sid not in seen
+                sid for sid in folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent) if sid not in seen
             ]
     except InvalidAPIKey:
         raise

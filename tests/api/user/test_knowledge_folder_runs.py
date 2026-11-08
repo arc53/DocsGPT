@@ -74,7 +74,11 @@ class TestAgentRuns:
         folder = _folder(pg_conn, owner=EDITOR)
         sid = _source(pg_conn, owner=EDITOR)
         _file(pg_conn, sid, folder, owner=EDITOR)
-        _, rows = authorized_agent_sources(pg_conn, _agent(pg_conn, knowledge_folder_ids=[folder]))
+        agent = _agent(pg_conn, knowledge_folder_ids=[folder])
+        # Only while the folder's owner edits the agent (see TestTeammateFolders).
+        assert authorized_agent_sources(pg_conn, agent)[1] == []
+        _grant(pg_conn, "agent", str(agent["id"]), OWNER, EDITOR, "editor")
+        _, rows = authorized_agent_sources(pg_conn, agent)
         assert [str(r["id"]) for r in rows] == [sid]
 
     def test_agent_search_covers_its_folders(self, pg_conn):
@@ -262,3 +266,101 @@ class TestAgentlessChat:
     def test_malformed_values_add_nothing(self, pg_conn, raw):
         sp = self._configure(pg_conn, self._processor({"active_folders": raw}))
         assert sp.source == {}
+
+
+def _grant(conn, resource_type, resource_id, owner, member, level):
+    import uuid
+
+    from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+    from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+    team = TeamsRepository(conn).create("T", f"t-{uuid.uuid4().hex[:8]}", owner)
+    TeamMembersRepository(conn).add_member(str(team["id"]), member)
+    TeamResourceGrantsRepository(conn).grant(
+        str(team["id"]), resource_type, resource_id, owner, owner, access_level=level, target_user_id=member
+    )
+
+
+class TestTeammateFolders:
+    """A folder its holder's owner doesn't own feeds only what its owner could sponsor, while they edit the holder."""
+
+    def _setup(self, pg_conn):
+        from tests.api.user.test_resource_sponsors import _agent as _shared_agent
+
+        agent_id, team_id = _shared_agent(pg_conn)
+        folder = _folder(pg_conn, owner=EDITOR, name="Editor's")
+        own = _source(pg_conn, owner=EDITOR, name="a-own")
+        viewed = _source(pg_conn, owner=OTHER, name="b-viewed")
+        edited = _source(pg_conn, owner=OTHER, name="c-edited")
+        owners = _source(pg_conn, owner=OWNER, name="d-owners")
+        _grant(pg_conn, "source", viewed, OTHER, EDITOR, "viewer")
+        _grant(pg_conn, "source", edited, OTHER, EDITOR, "editor")
+        _grant(pg_conn, "source", owners, OWNER, EDITOR, "viewer")
+        for sid in (own, viewed, edited, owners):
+            _file(pg_conn, sid, folder, owner=EDITOR)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"knowledge_folder_ids": [folder]})
+        agent = AgentsRepository(pg_conn).get_by_id(agent_id)
+        return agent, team_id, folder, own, viewed, edited, owners
+
+    def test_feeds_only_what_the_folder_owner_could_sponsor(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import authorized_agent_sources
+        from docsgpt.api.user.folder_knowledge import folder_details
+
+        agent, _, folder, own, viewed, edited, owners = self._setup(pg_conn)
+        _, rows = authorized_agent_sources(pg_conn, agent)
+        # A source the editor only views is not theirs to extend; one the owner can use always runs.
+        assert [str(r["id"]) for r in rows] == [own, edited, owners]
+        details = folder_details(pg_conn, [folder], EDITOR, holder_type="agent", holder=agent)
+        assert details == [{"id": folder, "name": "Editor's", "source_count": 3}]
+
+    def test_feeds_nothing_once_the_folder_owner_cannot_edit_the_agent(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import authorized_agent_sources
+        from docsgpt.api.user.folder_knowledge import folder_details
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+
+        agent, team_id, folder, *_ = self._setup(pg_conn)
+        TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", str(agent["id"]), target_user_id=EDITOR)
+        _, rows = authorized_agent_sources(pg_conn, agent)
+        assert rows == []
+        assert folder_details(pg_conn, [folder], OWNER, holder_type="agent", holder=agent) == [
+            {"id": folder, "name": "Editor's", "source_count": 0, "stopped": True,
+             "reason": "sponsor_cannot_edit_agent"}
+        ]
+
+    def test_the_owners_own_folder_is_unchanged(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import authorized_agent_sources
+
+        folder = _folder(pg_conn)
+        viewed = _source(pg_conn, owner=OTHER, name="viewed")
+        _grant(pg_conn, "source", viewed, OTHER, OWNER, "viewer")
+        _file(pg_conn, viewed, folder)
+        _, rows = authorized_agent_sources(pg_conn, _agent(pg_conn, knowledge_folder_ids=[folder]))
+        assert [str(r["id"]) for r in rows] == [viewed]
+
+    def test_a_missing_folder_reads_stopped(self, pg_conn):
+        import uuid
+
+        from docsgpt.api.user.folder_knowledge import folder_details
+
+        gone = str(uuid.uuid4())
+        assert folder_details(pg_conn, [gone], OWNER) == [
+            {"id": gone, "name": None, "source_count": 0, "stopped": True, "reason": "deleted"}
+        ]
+
+    def test_a_workflow_node_folder_of_an_editor_who_left(self, pg_conn):
+        from docsgpt.agents.workflows.schemas import AgentNodeConfig
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from tests.api.user.test_resource_sponsors import _agent as _shared_agent
+
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id, team_id = _shared_agent(pg_conn, agent_type="workflow", workflow_id=str(wf["id"]))
+        folder = _folder(pg_conn, owner=EDITOR)
+        sid = _source(pg_conn, owner=EDITOR)
+        _file(pg_conn, sid, folder, owner=EDITOR)
+        engine = TestWorkflowNodes()._engine(pg_conn)
+        engine.agent.workflow_row = WorkflowsRepository(pg_conn).get_by_id(str(wf["id"]))
+        with _patch_db(pg_conn):
+            assert engine._node_source_ids(AgentNodeConfig(folders=[folder])) == [sid]
+            TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
+            assert engine._node_source_ids(AgentNodeConfig(folders=[folder])) == []

@@ -10,6 +10,12 @@ filed anywhere in its subtree, each one the owner may still use
 (:func:`docsgpt.api.user.resource_access.can_use_ref`). A folder that no longer
 exists adds nothing. Only a folder's owner may attach it to something; one
 already attached stays when someone else saves the holder.
+
+On an agent or a workflow owned by someone else (a teammate attached their own
+folder), the folder's owner stands in like a sponsor: it feeds a source only
+when the holder's owner may use it or the folder's owner may sponsor it
+(``can_sponsor_ref``: owns or edits it), and nothing at all once the folder's
+owner can no longer edit the holder (``sponsor_cannot_edit_agent``).
 """
 
 from __future__ import annotations
@@ -18,7 +24,13 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.api.user.resource_access import can_use_ref
+from docsgpt.api.user.resource_access import (
+    REASON_CANNOT_EDIT_HOLDER,
+    REASON_DELETED,
+    can_sponsor_ref,
+    can_use_ref,
+    holder_editable_by,
+)
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.session import db_readonly
 
@@ -141,47 +153,101 @@ def unattachable_folder(
     return None
 
 
-def expand_folders(conn: Connection, folder_ids: Optional[Iterable[Any]]) -> dict[str, list[str]]:
+def _expand(
+    conn: Connection,
+    folder_ids: Optional[Iterable[Any]],
+    holder_type: Optional[str] = None,
+    holder: Optional[dict] = None,
+) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Each existing folder's sources, and why each stopped folder feeds none.
+
+    Returns:
+        tuple: ``(folder_id -> [source_id], folder_id -> reason)``.
+    """
+    ids = _ids(folder_ids)
+    if not ids:
+        return {}, {}
+    owners = {r[0].lower(): r[2] for r in conn.execute(text(_FOLDERS_SQL), {"ids": ids}).fetchall()}
+    out: dict[str, list[str]] = {fid: [] for fid in ids if fid in owners}
+    holder_owner = (holder or {}).get("user_id") if holder_type else None
+    stopped: dict[str, str] = {}
+    if holder_owner:
+        editors: dict[str, bool] = {}
+        for fid, owner in owners.items():
+            if owner == holder_owner:
+                continue
+            if owner not in editors:
+                editors[owner] = holder_editable_by(conn, holder_type, holder, owner)
+            if not editors[owner]:
+                stopped[fid] = REASON_CANNOT_EDIT_HOLDER
+    usable: dict[tuple[str, str], bool] = {}
+
+    def _feeds(owner: str, source_id: str, source_owner: str) -> bool:
+        if not (source_owner == owner or can_use_ref(conn, "source", source_id, owner)):
+            return False
+        if not holder_owner or owner == holder_owner:
+            return True
+        # A teammate's folder extends their sources to the owner's holder: like a sponsor.
+        return can_use_ref(conn, "source", source_id, holder_owner) or can_sponsor_ref(
+            conn, "source", source_id, owner
+        )
+
+    for root, owner, source_id, source_owner, _level, _name in conn.execute(text(_EXPAND_SQL), {"ids": ids}):
+        root, source_id = root.lower(), source_id.lower()
+        if root in stopped:
+            continue
+        key = (owner, source_id)
+        if key not in usable:
+            usable[key] = _feeds(owner, source_id, source_owner)
+        bucket = out.setdefault(root, [])
+        if usable[key] and source_id not in bucket:
+            bucket.append(source_id)
+    return out, stopped
+
+
+def expand_folders(
+    conn: Connection,
+    folder_ids: Optional[Iterable[Any]],
+    holder_type: Optional[str] = None,
+    holder: Optional[dict] = None,
+) -> dict[str, list[str]]:
     """Each existing source folder's sources: its owner's filings across its subtree, usable by the owner.
 
     Args:
         conn: Open connection.
         folder_ids: Folder ids; ones that don't exist (or aren't source folders) are left out.
+        holder_type: ``agent`` or ``workflow`` when a holder reads them; None for the folder owner's own
+            chat (no holder rules).
+        holder: The holder row (its ``user_id`` is the holder's owner).
 
     Returns:
         dict[str, list[str]]: ``folder_id -> [source_id, ...]`` (lower-case), in
-        folder order, shallower filings first, then by source name.
+        folder order, shallower filings first, then by source name. A stopped
+        teammate's folder maps to ``[]``.
     """
-    ids = _ids(folder_ids)
-    if not ids:
-        return {}
-    existing = {r[0].lower() for r in conn.execute(text(_FOLDERS_SQL), {"ids": ids}).fetchall()}
-    out: dict[str, list[str]] = {fid: [] for fid in ids if fid in existing}
-    usable: dict[tuple[str, str], bool] = {}
-    for root, owner, source_id, source_owner, _level, _name in conn.execute(text(_EXPAND_SQL), {"ids": ids}):
-        root, source_id = root.lower(), source_id.lower()
-        key = (owner, source_id)
-        if key not in usable:
-            usable[key] = source_owner == owner or can_use_ref(conn, "source", source_id, owner)
-        bucket = out.setdefault(root, [])
-        if usable[key] and source_id not in bucket:
-            bucket.append(source_id)
-    return out
+    return _expand(conn, folder_ids, holder_type, holder)[0]
 
 
-def folder_source_ids(conn: Connection, folder_ids: Optional[Iterable[Any]]) -> list[str]:
-    """Every source the folders hold (see :func:`expand_folders`), each once, in folder order.
+def folder_source_ids(
+    conn: Connection,
+    folder_ids: Optional[Iterable[Any]],
+    holder_type: Optional[str] = None,
+    holder: Optional[dict] = None,
+) -> list[str]:
+    """Every source the folders feed (see :func:`expand_folders`), each once, in folder order.
 
     Args:
         conn: Open connection.
         folder_ids: Folder ids.
+        holder_type: ``agent`` or ``workflow`` when a holder reads them.
+        holder: The holder row.
 
     Returns:
         list[str]: Lower-case source ids.
     """
     out: list[str] = []
     seen: set[str] = set()
-    for sources in expand_folders(conn, folder_ids).values():
+    for sources in expand_folders(conn, folder_ids, holder_type, holder).values():
         for sid in sources:
             if sid not in seen:
                 seen.add(sid)
@@ -214,18 +280,29 @@ def _owner_labels(conn: Connection, owners: Iterable[str]) -> dict[str, str]:
     return {r[0]: r[1] for r in rows}
 
 
-def folder_details(conn: Connection, folder_ids: Optional[Iterable[Any]], viewer: Optional[str]) -> list[dict]:
-    """``[{id, name, owner_name?, source_count}]`` for a holder's folders, in order.
+def folder_details(
+    conn: Connection,
+    folder_ids: Optional[Iterable[Any]],
+    viewer: Optional[str],
+    holder_type: Optional[str] = None,
+    holder: Optional[dict] = None,
+) -> list[dict]:
+    """``[{id, name, owner_name?, source_count, stopped?, reason?}]`` for a holder's folders, in order.
 
     Looked up whoever owns them, so an editor sees (and may remove) a teammate's
     folder. ``owner_name`` (the owner's email) is set when the owner is not
-    ``viewer`` and has one on file. A folder that no longer exists reads
-    ``name: None`` and ``source_count: 0``.
+    ``viewer`` and has one on file. ``source_count`` counts what the folder
+    feeds the holder. A folder that feeds nothing because it is gone, or its
+    owner no longer edits the holder, reads ``stopped: True`` with a
+    ``reason`` (``deleted`` or ``sponsor_cannot_edit_agent``, as in
+    ``resource_states``); a gone one also reads ``name: None``.
 
     Args:
         conn: Open connection.
         folder_ids: The folder ids.
         viewer: Who reads them.
+        holder_type: ``agent`` or ``workflow`` when the folders sit on a holder.
+        holder: The holder row.
 
     Returns:
         list[dict]: One entry per id.
@@ -234,7 +311,7 @@ def folder_details(conn: Connection, folder_ids: Optional[Iterable[Any]], viewer
     if not ids:
         return []
     rows = {r[0].lower(): (r[1], r[2]) for r in conn.execute(text(_FOLDERS_SQL), {"ids": ids}).fetchall()}
-    expanded = expand_folders(conn, ids)
+    expanded, stopped = _expand(conn, ids, holder_type, holder)
     labels = _owner_labels(conn, [owner for _, owner in rows.values() if owner != viewer])
     out = []
     for fid in ids:
@@ -242,16 +319,27 @@ def folder_details(conn: Connection, folder_ids: Optional[Iterable[Any]], viewer
         entry: dict[str, Any] = {"id": fid, "name": name, "source_count": len(expanded.get(fid, []))}
         if owner and owner != viewer and labels.get(owner):
             entry["owner_name"] = labels[owner]
+        reason = REASON_DELETED if fid not in rows else stopped.get(fid)
+        if reason:
+            entry["stopped"] = True
+            entry["reason"] = reason
         out.append(entry)
     return out
 
 
-def resolve_folder_details(folder_ids: Optional[Iterable[Any]], viewer: Optional[str]) -> list[dict]:
+def resolve_folder_details(
+    folder_ids: Optional[Iterable[Any]],
+    viewer: Optional[str],
+    holder_type: Optional[str] = None,
+    holder: Optional[dict] = None,
+) -> list[dict]:
     """:func:`folder_details` on its own read connection (for response shaping).
 
     Args:
         folder_ids: The folder ids.
         viewer: Who reads them.
+        holder_type: ``agent`` or ``workflow`` when the folders sit on a holder.
+        holder: The holder row.
 
     Returns:
         list[dict]: One entry per id.
@@ -259,4 +347,4 @@ def resolve_folder_details(folder_ids: Optional[Iterable[Any]], viewer: Optional
     if not _ids(folder_ids):
         return []
     with db_readonly() as conn:
-        return folder_details(conn, folder_ids, viewer)
+        return folder_details(conn, folder_ids, viewer, holder_type, holder)

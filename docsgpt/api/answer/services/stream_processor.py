@@ -259,7 +259,7 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
     rows: List[dict] = []
     seen: set = set()
     authorized = authorized_holder_sources(conn, "agent", agent, refs)
-    authorized += folder_source_ids(conn, agent.get("knowledge_folder_ids"))
+    authorized += folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
     for sid in authorized:
         source_doc = sources_repo.get_by_id(str(sid))
         if not source_doc or str(source_doc["id"]) in seen:
