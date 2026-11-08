@@ -3,6 +3,7 @@
 import base64
 import json
 import re
+import time
 import urllib.parse
 from typing import Iterator, List, Optional, Tuple
 
@@ -16,6 +17,8 @@ TTS_URL = "https://translate.google.com/_/TranslateWebserverUi/data/batchexecute
 RPC_ID = "jQ1olc"
 MAX_CHARS = 100
 TIMEOUT_SECONDS = 30
+#: Upper bound on one synthesis, so a slow or throttling upstream can't hold a request thread for long.
+DEADLINE_SECONDS = 90
 HEADERS = {
     "Referer": "https://translate.google.com/",
     "User-Agent": (
@@ -26,13 +29,15 @@ HEADERS = {
 }
 
 # A long answer is many sequential chunks; a transient 429 or 5xx on one would
-# otherwise throw away the audio already made.
+# otherwise throw away the audio already made. Retry-After is ignored so the
+# waits stay at the short backoff (0.5s, 1s, 2s).
 RETRY = Retry(
     total=3,
     backoff_factor=0.5,
+    backoff_max=4,
     status_forcelist=(429, 500, 502, 503, 504),
     allowed_methods=frozenset({"POST"}),
-    respect_retry_after_header=True,
+    respect_retry_after_header=False,
 )
 
 _SENTENCE_END = re.compile(r"(?<=[.!?;:。！？])\s+|\n+")
@@ -86,11 +91,18 @@ class GoogleTTS(BaseTTS):
         if not chunks:
             raise ValueError("No text to speak")
         audio = bytearray()
+        deadline = time.monotonic() + DEADLINE_SECONDS
         with requests.Session() as session:
             session.mount("https://", HTTPAdapter(max_retries=RETRY))
             for chunk in chunks:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(f"Google TTS took longer than {DEADLINE_SECONDS}s")
                 response = session.post(
-                    TTS_URL, data=_rpc_body(chunk, lang), headers=HEADERS, timeout=TIMEOUT_SECONDS
+                    TTS_URL,
+                    data=_rpc_body(chunk, lang),
+                    headers=HEADERS,
+                    timeout=min(TIMEOUT_SECONDS, remaining),
                 )
                 response.raise_for_status()
                 part = _audio_from_lines(response.iter_lines())

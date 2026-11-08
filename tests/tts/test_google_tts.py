@@ -102,6 +102,17 @@ def test_session_retries_rate_limits_and_server_errors(monkeypatch):
     assert retry.total == 3
     assert 429 in retry.status_forcelist and 503 in retry.status_forcelist
     assert "POST" in retry.allowed_methods
+    assert retry.respect_retry_after_header is False
+    assert retry.backoff_max <= 4
+
+
+def test_text_to_speech_stops_at_the_deadline(monkeypatch):
+    clock = iter([0.0, 1.0, google_tts.DEADLINE_SECONDS + 1])
+    monkeypatch.setattr(google_tts.time, "monotonic", lambda: next(clock))
+    _patch_post(monkeypatch, lambda *a, **k: _Response([_audio_line(b"part")]))
+
+    with pytest.raises(TimeoutError):
+        GoogleTTS().text_to_speech("First sentence here.\n" + "word " * 18)
 
 
 def test_text_to_speech_raises_on_empty_text():
