@@ -4014,8 +4014,8 @@
       "hintMany_other": "{{names}} are folders: their {{formatted}} sources today, and any added to them later.",
       "stopped": "{{name}} stopped: it's {{person}}'s folder, and they can no longer edit this agent.",
       "stoppedOther": "{{name}} stopped: its owner can no longer edit this agent.",
-      "deleted_one": "A folder on this agent was deleted. Take it off in the list.",
-      "deleted_other": "{{formatted}} folders on this agent were deleted. Take them off in the list."
+      "deleted_one": "A picked folder was deleted. Take it off in the list.",
+      "deleted_other": "{{formatted}} picked folders were deleted. Take them off in the list."
     }
   },
   "components": {

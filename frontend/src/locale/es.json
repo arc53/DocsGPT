@@ -4135,9 +4135,9 @@
       "hintMany_other": "{{names}} son carpetas: hoy {{formatted}} fuentes, y las que se añadan después.",
       "stopped": "{{name}} se detuvo: es la carpeta de {{person}}, que ya no puede editar este agente.",
       "stoppedOther": "{{name}} se detuvo: su propietario ya no puede editar este agente.",
-      "deleted_one": "Se eliminó una carpeta de este agente. Quítala de la lista.",
-      "deleted_many": "Se eliminaron {{formatted}} carpetas de este agente. Quítalas de la lista.",
-      "deleted_other": "Se eliminaron {{formatted}} carpetas de este agente. Quítalas de la lista."
+      "deleted_one": "Se eliminó una carpeta seleccionada. Quítala de la lista.",
+      "deleted_many": "Se eliminaron {{formatted}} carpetas seleccionadas. Quítalas de la lista.",
+      "deleted_other": "Se eliminaron {{formatted}} carpetas seleccionadas. Quítalas de la lista."
     }
   },
   "components": {

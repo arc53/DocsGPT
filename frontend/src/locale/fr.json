@@ -4135,9 +4135,9 @@
       "hintMany_other": "{{names}} sont des dossiers : {{formatted}} sources aujourd’hui, et toutes celles ajoutées plus tard.",
       "stopped": "{{name}} est arrêté : c’est le dossier de {{person}}, qui ne peut plus modifier cet agent.",
       "stoppedOther": "{{name}} est arrêté : son propriétaire ne peut plus modifier cet agent.",
-      "deleted_one": "Un dossier de cet agent a été supprimé. Retirez-le de la liste.",
-      "deleted_many": "{{formatted}} dossiers de cet agent ont été supprimés. Retirez-les de la liste.",
-      "deleted_other": "{{formatted}} dossiers de cet agent ont été supprimés. Retirez-les de la liste."
+      "deleted_one": "Un dossier sélectionné a été supprimé. Retirez-le de la liste.",
+      "deleted_many": "{{formatted}} dossiers sélectionnés ont été supprimés. Retirez-les de la liste.",
+      "deleted_other": "{{formatted}} dossiers sélectionnés ont été supprimés. Retirez-les de la liste."
     }
   },
   "components": {

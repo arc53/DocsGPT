@@ -4014,8 +4014,8 @@
       "hintMany_other": "{{names}} sind Ordner: heute {{formatted}} Quellen und alle, die später hinzukommen.",
       "stopped": "{{name}} ist gestoppt: Der Ordner gehört {{person}}, und diese Person kann den Agenten nicht mehr bearbeiten.",
       "stoppedOther": "{{name}} ist gestoppt: Der Besitzer kann den Agenten nicht mehr bearbeiten.",
-      "deleted_one": "Ein Ordner dieses Agenten wurde gelöscht. Entferne ihn in der Liste.",
-      "deleted_other": "{{formatted}} Ordner dieses Agenten wurden gelöscht. Entferne sie in der Liste."
+      "deleted_one": "Ein ausgewählter Ordner wurde gelöscht. Entferne ihn in der Liste.",
+      "deleted_other": "{{formatted}} ausgewählte Ordner wurden gelöscht. Entferne sie in der Liste."
     }
   },
   "components": {

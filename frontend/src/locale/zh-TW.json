@@ -3994,8 +3994,8 @@
       "hintMany_other": "{{names}} 是資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
       "stopped": "{{name}} 已停止：這是 {{person}} 的資料夾，而該使用者已無法編輯此代理。",
       "stoppedOther": "{{name}} 已停止：其擁有者已無法編輯此代理。",
-      "deleted_one": "此代理的一個資料夾已被刪除。請在清單中移除它。",
-      "deleted_other": "此代理的 {{formatted}} 個資料夾已被刪除。請在清單中移除它們。"
+      "deleted_one": "一個已選資料夾已被刪除。請在清單中移除它。",
+      "deleted_other": "{{formatted}} 個已選資料夾已被刪除。請在清單中移除它們。"
     }
   },
   "components": {
