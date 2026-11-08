@@ -6,7 +6,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
-import { Agent, AgentFolder } from '../agents/types';
+import { Agent } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
 import {
@@ -57,7 +57,6 @@ export interface Preference {
   selectedModel: Model | null;
   availableModels: Model[];
   modelsLoading: boolean;
-  agentFolders: AgentFolder[] | null;
   // RBAC roles for the current principal, fetched fresh from /api/user/me each
   // session (DB-authoritative — deliberately NOT persisted to localStorage, so
   // a demotion can't survive a reload). ``rolesResolved`` gates UI that must
@@ -109,7 +108,6 @@ const initialState: Preference = {
   selectedModel: null,
   availableModels: [],
   modelsLoading: false,
-  agentFolders: null,
   roles: [],
   rolesResolved: false,
   ttsAvailable: true,
@@ -273,9 +271,6 @@ export const prefSlice = createSlice({
     setModelsLoading: (state, action: PayloadAction<boolean>) => {
       state.modelsLoading = action.payload;
     },
-    setAgentFolders: (state, action: PayloadAction<AgentFolder[] | null>) => {
-      state.agentFolders = action.payload;
-    },
     setRoles: (state, action: PayloadAction<string[]>) => {
       state.roles = action.payload;
       state.rolesResolved = true;
@@ -337,7 +332,6 @@ export const {
   setSelectedModel,
   setAvailableModels,
   setModelsLoading,
-  setAgentFolders,
   setRoles,
   clearRoles,
   setSpeechAvailability,
@@ -477,8 +471,6 @@ export const selectAvailableModels = (state: RootState) =>
   state.preference.availableModels;
 export const selectModelsLoading = (state: RootState) =>
   state.preference.modelsLoading;
-export const selectAgentFolders = (state: RootState) =>
-  state.preference.agentFolders;
 export const selectRoles = (state: RootState) => state.preference.roles;
 export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;

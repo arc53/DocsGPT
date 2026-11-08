@@ -3085,7 +3085,7 @@
       "actions": "Acciones del agente"
     },
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
-    "newAgent": "Nuevo Agente",
+    "newAgent": "Nuevo agente",
     "importAgent": "Importar",
     "exportAgent": "Exportar como YAML",
     "exportAgentFailed": "No se pudo exportar el agente",
@@ -3714,25 +3714,7 @@
     },
     "deleteConfirmation": "¿Eliminar \"{{name}}\"?",
     "folders": {
-      "newFolder": "Nueva carpeta",
-      "createFolder": "Crear carpeta",
-      "folderName": "Nombre de la carpeta",
-      "rename": "Renombrar",
-      "delete": "Eliminar",
-      "deleteConfirm": "¿Eliminar \"{{name}}\"?",
-      "empty": "Esta carpeta está vacía",
-      "moveToFolder": "Mover a carpeta",
-      "moveTo": "Mover",
-      "move": "Mover",
-      "noFolder": "Sin carpeta (raíz)",
-      "backToRoot": "Volver",
-      "currentFolder": "Esta carpeta",
-      "noSubfolders": "Sin subcarpetas",
-      "openFolder": "Abrir carpeta",
-      "noFolders": "No hay carpetas todavía",
-      "moveTitle": "Mover «{{name}}» a",
-      "menuAriaLabel": "Acciones para {{folderName}}",
-      "deleteConsequence": "Los agentes que contiene salen de la carpeta; no se eliminan."
+      "emptyHint": "Crea un agente aquí o mueve uno desde su menú ⋯."
     },
     "guardrailEvents": {
       "heading": "Actividad de las barreras de protección",

@@ -24,7 +24,6 @@ const mockState = {
     sourceDocs: [],
     selectedAgent: null,
     prompts: [],
-    agentFolders: [],
   },
   agentPreview: { queries: [], status: 'idle' },
 };
@@ -90,7 +89,7 @@ vi.mock('../api/services/userService', () => ({
           },
         ],
       }),
-    getAgentFolders: () => jsonResponse({ folders: [] }),
+    getFolders: () => jsonResponse({ folders: [] }),
     getAgent: mocks.getAgent,
     getAgentDefaults: mocks.getAgentDefaults,
     createAgent: mocks.createAgent,

@@ -3588,25 +3588,7 @@
     },
     "deleteConfirmation": "要刪除「{{name}}」嗎？",
     "folders": {
-      "newFolder": "新建資料夾",
-      "createFolder": "建立資料夾",
-      "folderName": "資料夾名稱",
-      "rename": "重新命名",
-      "delete": "刪除",
-      "deleteConfirm": "要刪除「{{name}}」嗎？",
-      "empty": "此資料夾為空",
-      "moveToFolder": "移動到資料夾",
-      "moveTo": "移動",
-      "move": "移動",
-      "noFolder": "無資料夾 (根目錄)",
-      "backToRoot": "返回",
-      "currentFolder": "此資料夾",
-      "noSubfolders": "沒有子資料夾",
-      "openFolder": "開啟資料夾",
-      "noFolders": "暫無資料夾",
-      "moveTitle": "將「{{name}}」移動到",
-      "menuAriaLabel": "{{folderName}} 的操作",
-      "deleteConsequence": "其中的代理會移出資料夾，不會被刪除。"
+      "emptyHint": "在此建立代理，或透過代理的 ⋯ 選單將其移入。"
     },
     "guardrailEvents": {
       "heading": "防護機制活動",

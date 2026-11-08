@@ -23,7 +23,7 @@ interface UseAgentSearchResult {
   isDataLoaded: Record<AgentSectionId, boolean>;
 }
 
-const filterAgentsByQuery = (
+export const filterAgentsByQuery = (
   agents: Agent[] | null,
   query: string,
 ): Agent[] => {

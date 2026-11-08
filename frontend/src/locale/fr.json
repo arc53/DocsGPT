@@ -3714,25 +3714,7 @@
     },
     "deleteConfirmation": "Supprimer « {{name}} » ?",
     "folders": {
-      "newFolder": "Nouveau dossier",
-      "createFolder": "Créer un dossier",
-      "folderName": "Nom du dossier",
-      "rename": "Renommer",
-      "delete": "Supprimer",
-      "deleteConfirm": "Supprimer « {{name}} » ?",
-      "empty": "Ce dossier est vide",
-      "moveToFolder": "Déplacer vers un dossier",
-      "moveTo": "Déplacer",
-      "move": "Déplacer",
-      "noFolder": "Aucun dossier (racine)",
-      "backToRoot": "Retour",
-      "currentFolder": "Ce dossier",
-      "noSubfolders": "Aucun sous-dossier",
-      "openFolder": "Ouvrir le dossier",
-      "noFolders": "Aucun dossier pour l’instant",
-      "moveTitle": "Déplacer « {{name}} » vers",
-      "menuAriaLabel": "Actions pour {{folderName}}",
-      "deleteConsequence": "Les agents qu’il contient sont retirés du dossier ; ils ne sont pas supprimés."
+      "emptyHint": "Créez un agent ici ou déplacez-en un depuis son menu ⋯."
     },
     "guardrailEvents": {
       "heading": "Activité des garde-fous",

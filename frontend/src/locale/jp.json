@@ -3588,25 +3588,7 @@
     },
     "deleteConfirmation": "「{{name}}」を削除しますか？",
     "folders": {
-      "newFolder": "新しいフォルダ",
-      "createFolder": "フォルダを作成",
-      "folderName": "フォルダ名",
-      "rename": "名前を変更",
-      "delete": "削除",
-      "deleteConfirm": "「{{name}}」を削除しますか？",
-      "empty": "このフォルダは空です",
-      "moveToFolder": "フォルダに移動",
-      "moveTo": "移動",
-      "move": "移動",
-      "noFolder": "フォルダなし (ルート)",
-      "backToRoot": "戻る",
-      "currentFolder": "このフォルダ",
-      "noSubfolders": "サブフォルダなし",
-      "openFolder": "フォルダーを開く",
-      "noFolders": "フォルダがありません",
-      "moveTitle": "「{{name}}」の移動先",
-      "menuAriaLabel": "{{folderName}} の操作",
-      "deleteConsequence": "中のエージェントはフォルダーの外に移動され、削除されません。"
+      "emptyHint": "ここでエージェントを作成するか、エージェントの⋯メニューからここに移動してください。"
     },
     "guardrailEvents": {
       "heading": "ガードレールのアクティビティ",

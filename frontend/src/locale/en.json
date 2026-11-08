@@ -2988,7 +2988,7 @@
       "actions": "Agent actions"
     },
     "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
-    "newAgent": "New Agent",
+    "newAgent": "New agent",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
     "exportAgentFailed": "Failed to export agent",
@@ -3607,25 +3607,7 @@
     },
     "deleteConfirmation": "Delete \"{{name}}\"?",
     "folders": {
-      "newFolder": "New Folder",
-      "createFolder": "Create Folder",
-      "folderName": "Folder name",
-      "rename": "Rename",
-      "delete": "Delete",
-      "deleteConfirm": "Delete \"{{name}}\"?",
-      "empty": "This folder is empty",
-      "moveToFolder": "Move to folder",
-      "moveTo": "Move",
-      "move": "Move",
-      "noFolder": "No folder (root)",
-      "backToRoot": "Back",
-      "currentFolder": "This folder",
-      "noSubfolders": "No subfolders",
-      "openFolder": "Open folder",
-      "noFolders": "No folders yet",
-      "moveTitle": "Move \"{{name}}\" to",
-      "menuAriaLabel": "Actions for {{folderName}}",
-      "deleteConsequence": "The agents inside move out of the folder; they aren't deleted."
+      "emptyHint": "Create an agent here, or move one in from its ⋯ menu."
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",

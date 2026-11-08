@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
+import { loadFolders } from '../../components/folders/foldersSlice';
 import {
   selectToken,
-  setAgentFolders,
   setAgents,
   setSharedAgents,
   setTemplateAgents,
 } from '../../preferences/preferenceSlice';
+import type { AppDispatch } from '../../store';
 import { AgentSectionId } from '../agents.config';
 
 interface UseAgentsFetchResult {
@@ -19,7 +20,7 @@ interface UseAgentsFetchResult {
 }
 
 export function useAgentsFetch(): UseAgentsFetchResult {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
 
   const [isLoading, setIsLoading] = useState<Record<AgentSectionId, boolean>>({
@@ -70,15 +71,10 @@ export function useAgentsFetch(): UseAgentsFetchResult {
     }
   }, [token, dispatch]);
 
+  // Agent folders live in the shared folders slice: a failed load shows as
+  // an error on the page (`selectFolderList('agent').failed`), not as none.
   const fetchFolders = useCallback(async () => {
-    try {
-      const response = await userService.getAgentFolders(token);
-      if (!response.ok) throw new Error('Failed to fetch folders');
-      const data = await response.json();
-      dispatch(setAgentFolders(data.folders || []));
-    } catch (error) {
-      dispatch(setAgentFolders([]));
-    }
+    await dispatch(loadFolders({ type: 'agent', token }));
   }, [token, dispatch]);
 
   useEffect(() => {

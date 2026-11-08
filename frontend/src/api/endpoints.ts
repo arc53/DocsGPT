@@ -203,9 +203,6 @@ const endpoints = {
     MCP_SAVE_SERVER: '/api/mcp_server/save',
     MCP_OAUTH_CANCEL: '/api/mcp_server/oauth_cancel',
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
-    AGENT_FOLDERS: '/api/agents/folders/',
-    AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
-    MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
     FOLDERS: (type: 'agent' | 'source') =>
       `/api/folders?type=${encodeURIComponent(type)}`,
     FOLDERS_CREATE: '/api/folders',

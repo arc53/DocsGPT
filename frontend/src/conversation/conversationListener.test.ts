@@ -92,7 +92,6 @@ const makeStore = (
     selectedModel: null,
     availableModels: [],
     modelsLoading: false,
-    agentFolders: null,
     roles: [],
     rolesResolved: false,
     ttsAvailable: true,

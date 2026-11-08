@@ -3586,25 +3586,7 @@
     },
     "deleteConfirmation": "删除“{{name}}”？",
     "folders": {
-      "newFolder": "新建文件夹",
-      "createFolder": "创建文件夹",
-      "folderName": "文件夹名称",
-      "rename": "重命名",
-      "delete": "删除",
-      "deleteConfirm": "删除“{{name}}”？",
-      "empty": "此文件夹为空",
-      "moveToFolder": "移动到文件夹",
-      "moveTo": "移动",
-      "move": "移动",
-      "noFolder": "无文件夹 (根目录)",
-      "backToRoot": "返回",
-      "currentFolder": "此文件夹",
-      "noSubfolders": "没有子文件夹",
-      "openFolder": "打开文件夹",
-      "noFolders": "暂无文件夹",
-      "moveTitle": "将“{{name}}”移动到",
-      "menuAriaLabel": "{{folderName}} 的操作",
-      "deleteConsequence": "其中的智能体会移出文件夹，不会被删除。"
+      "emptyHint": "在此创建智能体，或通过智能体的 ⋯ 菜单将其移入。"
     },
     "guardrailEvents": {
       "heading": "防护栏活动",

@@ -3182,7 +3182,7 @@
       "actions": "Действия с агентом"
     },
     "description": "Откройте и создайте пользовательские версии DocsGPT, которые объединяют инструкции, дополнительные знания и любую комбинацию навыков",
-    "newAgent": "Новый Агент",
+    "newAgent": "Новый агент",
     "importAgent": "Импорт",
     "exportAgent": "Экспортировать в YAML",
     "exportAgentFailed": "Не удалось экспортировать агента",
@@ -3821,25 +3821,7 @@
     },
     "deleteConfirmation": "Удалить «{{name}}»?",
     "folders": {
-      "newFolder": "Новая папка",
-      "createFolder": "Создать папку",
-      "folderName": "Имя папки",
-      "rename": "Переименовать",
-      "delete": "Удалить",
-      "deleteConfirm": "Удалить «{{name}}»?",
-      "empty": "Эта папка пуста",
-      "moveToFolder": "Переместить в папку",
-      "moveTo": "Переместить",
-      "move": "Переместить",
-      "noFolder": "Без папки (корень)",
-      "backToRoot": "Назад",
-      "currentFolder": "Эта папка",
-      "noSubfolders": "Нет подпапок",
-      "openFolder": "Открыть папку",
-      "noFolders": "Пока нет папок",
-      "moveTitle": "Переместить «{{name}}» в",
-      "menuAriaLabel": "Действия для {{folderName}}",
-      "deleteConsequence": "Агенты из папки будут перемещены из неё, но не удалены."
+      "emptyHint": "Создайте агента здесь или переместите сюда существующего через его меню ⋯."
     },
     "guardrailEvents": {
       "heading": "Активность ограничителей",

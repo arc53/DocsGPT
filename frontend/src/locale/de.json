@@ -3607,25 +3607,7 @@
     },
     "deleteConfirmation": "\"{{name}}\" löschen?",
     "folders": {
-      "newFolder": "Neuer Ordner",
-      "createFolder": "Ordner erstellen",
-      "folderName": "Ordnername",
-      "rename": "Umbenennen",
-      "delete": "Löschen",
-      "deleteConfirm": "\"{{name}}\" löschen?",
-      "empty": "Dieser Ordner ist leer",
-      "moveToFolder": "In Ordner verschieben",
-      "moveTo": "Verschieben",
-      "move": "Verschieben",
-      "noFolder": "Kein Ordner (Stammverzeichnis)",
-      "backToRoot": "Zurück",
-      "currentFolder": "Dieser Ordner",
-      "noSubfolders": "Keine Unterordner",
-      "openFolder": "Ordner öffnen",
-      "noFolders": "Noch keine Ordner",
-      "moveTitle": "„{{name}}“ verschieben nach",
-      "menuAriaLabel": "Aktionen für {{folderName}}",
-      "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht."
+      "emptyHint": "Erstelle hier einen Agenten oder verschiebe einen über sein ⋯-Menü hierher."
     },
     "guardrailEvents": {
       "heading": "Guardrail-Aktivität",

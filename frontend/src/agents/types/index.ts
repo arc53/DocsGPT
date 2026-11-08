@@ -157,6 +157,7 @@ export type Agent = {
   request_limit?: number;
   models?: string[];
   default_model_id?: string;
+  /** The caller's own folder for the agent (folders are personal). */
   folder_id?: string;
   workflow?: string;
   allow_system_prompt_override?: boolean;
@@ -261,14 +262,6 @@ export type GuardrailCatalog = {
   pii_entities: string[];
   default_pii_entities: string[];
   floor: GuardrailsConfig | null;
-};
-
-export type AgentFolder = {
-  id: string;
-  name: string;
-  parent_id?: string | null;
-  created_at?: string;
-  updated_at?: string;
 };
 
 export * from './schedule';

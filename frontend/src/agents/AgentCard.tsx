@@ -8,6 +8,7 @@ import {
   Download,
   Eye,
   Folder,
+  FolderInput,
   Pencil,
   Pin,
   PinOff,
@@ -17,7 +18,8 @@ import {
 
 import userService from '../api/services/userService';
 import RoleMeta from '../components/RoleMeta';
-import { MetaLine } from '../components/ui/meta-line';
+import MoveToFolderModal from '../components/folders/MoveToFolderModal';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
 import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -30,7 +32,6 @@ import {
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
 import { useSidebarLevel } from '../navigation/SidebarLevelProvider';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
@@ -57,6 +58,11 @@ type AgentCardProps = {
   agents: Agent[];
   updateAgents?: (agents: Agent[]) => void;
   section: string;
+  /**
+   * The caller's folder trail for the agent ("Customer-facing › EU"), shown
+   * as a meta item where the list is flat (a search across folders).
+   */
+  folderLabel?: string;
 };
 
 export default function AgentCard({
@@ -64,6 +70,7 @@ export default function AgentCard({
   agents,
   updateAgents,
   section,
+  folderLabel,
 }: AgentCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -77,7 +84,7 @@ export default function AgentCard({
 
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
-  const [moveModalState, setMoveModalState] = useState<ActiveState>('INACTIVE');
+  const [moveOpen, setMoveOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string>();
@@ -136,9 +143,9 @@ export default function AgentCard({
     ...(can(agent, 'move_folder')
       ? [
           {
-            icon: Folder,
-            label: t('agents.folders.moveToFolder'),
-            onClick: () => setMoveModalState('ACTIVE'),
+            icon: FolderInput,
+            label: t('folders.moveToFolder'),
+            onClick: () => setMoveOpen(true),
           },
         ]
       : []),
@@ -149,6 +156,7 @@ export default function AgentCard({
             label: t('agents.form.buttons.delete'),
             onClick: () => setDeleteConfirmation('ACTIVE'),
             variant: 'destructive' as const,
+            separatorBefore: true,
           },
         ]
       : []),
@@ -305,8 +313,9 @@ export default function AgentCard({
     ((section === 'user' || section === 'team') &&
       agent.status === 'published');
   const shared = !isOwner(agent);
+  const hasMeta = shared || Boolean(folderLabel);
   const title = (
-    <CardTitle title={agent.name} className="truncate capitalize">
+    <CardTitle title={agent.name} className="truncate">
       {agent.name}
     </CardTitle>
   );
@@ -346,17 +355,22 @@ export default function AgentCard({
       )}
       <CardDescription
         size="xs"
-        // A shared agent's meta line takes the third line.
-        className={cn('mx-1', shared ? 'line-clamp-2' : 'line-clamp-3')}
+        // A meta line (a shared agent's role, its folder) takes the third line.
+        className={cn('mx-1', hasMeta ? 'line-clamp-2' : 'line-clamp-3')}
       >
         {agent.description}
       </CardDescription>
-      {/* The reader's role is a fact about the agent: the meta line, not a
-          pill. */}
-      {shared ? (
+      {/* The reader's role and the agent's folder are facts about it: the
+          meta line, not pills. */}
+      {hasMeta ? (
         <CardFooter className="mx-1 mt-auto">
           <MetaLine>
-            <RoleMeta item={agent} />
+            {shared ? <RoleMeta item={agent} /> : null}
+            {folderLabel ? (
+              <MetaItem icon={<Folder />} title={folderLabel}>
+                {folderLabel}
+              </MetaItem>
+            ) : null}
           </MetaLine>
         </CardFooter>
       ) : null}
@@ -405,14 +419,20 @@ export default function AgentCard({
       >
         <p className="text-muted-foreground text-sm">{exportError}</p>
       </Modal>
-      <MoveToFolderModal
-        modalState={moveModalState}
-        setModalState={setMoveModalState}
-        agentName={agent.name}
-        agentId={agent.id ?? ''}
-        currentFolderId={agent.folder_id}
-        onMoveSuccess={handleMoveSuccess}
-      />
+      {moveOpen && agent.id ? (
+        <MoveToFolderModal
+          open
+          onOpenChange={setMoveOpen}
+          type="agent"
+          subject={{
+            kind: 'items',
+            ids: [agent.id],
+            name: agent.name,
+            folderId: agent.folder_id ?? null,
+          }}
+          onMoved={handleMoveSuccess}
+        />
+      ) : null}
       {shareModalOpen && agent.id && (
         <ShareToTeamModal
           resourceType="agent"

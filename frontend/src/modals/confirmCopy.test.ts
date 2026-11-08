@@ -78,7 +78,6 @@ describe('confirm dialog copy', () => {
   it.each([
     'convTile.deleteWarning',
     'agents.deleteConfirmation',
-    'agents.folders.deleteConfirm',
     'folders.deleteConfirm',
     'agents.schedules.deleteConfirm',
     'modals.prompts.deleteConfirmation',

@@ -48,16 +48,19 @@ import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
-  selectAgentFolders,
+  loadFolders,
+  selectFolderList,
+} from '../components/folders/foldersSlice';
+import {
   selectSelectedAgent,
   selectSourceDocs,
   selectToken,
   selectPrompts,
-  setAgentFolders,
   setSelectedAgent,
   setPrompts,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
+import type { AppDispatch } from '../store';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { UserToolType } from '../settings/types';
@@ -166,7 +169,7 @@ const toolIdsOf = (tools: ToolSummary[]): string[] =>
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { agentId } = useParams();
 
   const [searchParams] = useSearchParams();
@@ -178,7 +181,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
-  const agentFolders = useSelector(selectAgentFolders);
+  const agentFolders = useSelector(selectFolderList('agent'));
 
   const [validatedFolderId, setValidatedFolderId] = useState<string | null>(
     null,
@@ -957,34 +960,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getModels();
   }, [token, mode, markSaved]);
 
-  // Validate folder_id from URL against user's folders
+  // Validate folder_id from the URL against the caller's agent folders: a
+  // new agent is filed there only when the folder is theirs.
   useEffect(() => {
-    const validateAndSetFolder = async () => {
-      if (!folderIdFromUrl) {
-        setValidatedFolderId(null);
-        return;
-      }
-
-      let folders = agentFolders;
-      if (!folders) {
-        try {
-          const response = await userService.getAgentFolders(token);
-          if (response.ok) {
-            const data = await response.json();
-            folders = data.folders || [];
-            dispatch(setAgentFolders(folders));
-          }
-        } catch {
-          setValidatedFolderId(null);
-          return;
-        }
-      }
-
-      const folderExists = folders?.some((f) => f.id === folderIdFromUrl);
-      setValidatedFolderId(folderExists ? folderIdFromUrl : null);
-    };
-
-    validateAndSetFolder();
+    if (!folderIdFromUrl || agentFolders.failed) {
+      setValidatedFolderId(null);
+      return;
+    }
+    if (!agentFolders.loaded) {
+      if (!agentFolders.loading)
+        dispatch(loadFolders({ type: 'agent', token }));
+      return;
+    }
+    const folderExists = agentFolders.items.some(
+      (f) => f.id === folderIdFromUrl,
+    );
+    setValidatedFolderId(folderExists ? folderIdFromUrl : null);
   }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
   // A new agent starts from the guardrails an admin set for new agents

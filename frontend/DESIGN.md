@@ -286,8 +286,7 @@ size="xs"`. It is the same tint as a pressed toggle; the difference is that
   in forms, modals and sheets. Pill is for page chrome: header and toolbar
   actions, `SearchInput`, page filters (Logs, Analytics, GuardrailEvents,
   the admin Audit log toolbar, whose CSV / NDJSON exports are `outline field
-pill`), and a field that takes a pill header button's place (AgentsList's
-  new-folder field). Modal footers (`ModalActions`) stay `lg pill`.
+pill`). Modal footers (`ModalActions`) stay `lg pill`.
 - Buttons on the agent pages (Overview, Schedules, Analytics, Insights, Logs, the
   workflow builder's toolbar): see PATTERNS.md › Agent pages.
 - Rows in the navigation sidebar (`hover:bg-sidebar-accent … pl-3 gap-2.5
@@ -409,7 +408,7 @@ marks structure.
 
 Recipes by role:
 
-- Tiles are `filled`, `lg` (a folder row `default`), `interactive` only when a
+- Tiles are `filled`, `lg` (a folder tile `default`, see Folders), `interactive` only when a
   click navigates (a draft agent is not). The Add tool picker tiles are
   choices: `outline interactive lg` with `asChild` around a `<button>`.
 - Chart panels are `subtle lg` with fixed heights passed as layout; a chart
@@ -539,7 +538,7 @@ are `size="xs"`, `as="h3"` under a section heading and `as="h2"` for a panel
 straight under the page's title (`ChartPanel` on Analytics and Insights, and
 Insights' share-bar panels); a title row that also holds a legend or a
 "Resets" line keeps its wrapper and swaps only the heading. Disclosure
-headers (`CollapsibleTrigger look="section"`) and the Agents breadcrumb are not
+headers (`CollapsibleTrigger look="section"`) and a folder's crumb row are not
 SectionHeaders.
 
 ### OptionCard (`ui/option-card.tsx`)
@@ -1366,8 +1365,8 @@ Pages pass nothing to the breadcrumb parts; the primitive does the layout.
 `BreadcrumbList` stays on one line (`flex-nowrap`), every crumb gives way
 (`min-w-0`) except the first, which stays whole (`shrink-0`), a
 `BreadcrumbLink` truncates at `16ch`, and `BreadcrumbPage`, the current crumb,
-at `32ch`, with a `title` set from string children. The one trail that wraps
-is AgentsList's folder trail (see Approved exceptions). `BreadcrumbPage`
+at `32ch`, with a `title` set from string children. No trail wraps, a
+folder's included (see Folders). `BreadcrumbPage`
 carries the link's focus ring: after a crumb step, PathHeader moves focus to
 the new current crumb (`tabIndex={-1}`) so keyboard focus never drops to the
 page. A crumb that runs a handler instead of navigating is `BreadcrumbLink
@@ -1378,6 +1377,67 @@ the cap by hand), never a disabled button, and the current crumb is never a
 disabled button either. The header of every source view is
 `components/tree/PathHeader` (see PATTERNS.md › Source views); don't hand-roll a
 `/`-separated path.
+
+### Folders (`components/folders/`)
+
+Agents and Knowledge share one folder system: personal folders (each user files
+what they can see into their own), three levels deep, one set of parts. A page
+never hand-draws a folder.
+
+- **Tile**: `FolderTile` (`folder`, `type` `agent | source`, `onOpen`,
+  `menuOptions`), a compact `filled` Card at `default` padding: the 24px muted
+  `Folder` icon, the name on one line (`truncate`, its `title`), and a count
+  line in `CardFooter` counted on the server, so a search doesn't change it
+  ("3 sources · 1 folder", "2 agents", "Empty"; `folderCountLine`). A source
+  folder agents read adds `UsedByAgents` to that line. The name is a stretched
+  button that is the Card's direct child (see A clickable card that holds a
+  link); the ⋯ is `ActionMenu size="row"`. Folder tiles lead the item tiles,
+  in their own grid with the same columns.
+- **Menu**: `useFolderMenu(type)` gives every folder's ⋯ (Rename, Move to
+  folder, then Delete after a rule) and draws its dialogs once per page. The
+  tile and the crumb row use the same items.
+- **Inside a folder**: `FolderCrumbRow` replaces the section heading:
+  `My agents › Customer-facing` (`Knowledge › Carriers`) on one line (parents
+  truncate, the root stays whole), the count line under it as the byline, the
+  page's buttons on the right and the folder's ⋯ (`ActionMenu size="toolbar"`)
+  last on the row. On a phone the ⋯ stays at the end of the crumb line and the
+  buttons take their own row under the count line. Nothing from outside the
+  folder renders (no other sections), the page search says "Search in
+  <folder>…" and covers the folder and its subfolders, and an empty folder is
+  `EmptyState size="sm" icon={FolderOpen}` ("This folder is empty", a hint that
+  names the item's ⋯, and the page's create action, which files into the
+  folder).
+- **URL**: `useFolderParam(type)` keeps the open folder in `?folder=`; the trail
+  comes from the folder list's `parent_id` chain, so a link to a nested folder
+  shows every parent. An unknown id returns to the root with a destructive
+  toast; a folder deleted here steps up to its parent silently.
+- **Search** at the root is flat: folders whose name matches first (any
+  depth), then every matching item wherever it is filed, each tile naming its
+  folder trail in a `Folder` `MetaItem`.
+- **Create and rename**: `FolderNameModal` (`Modal sm`, one labelled field,
+  pending submit, closes only once the server saved it; `folder_name_taken`,
+  `folder_too_deep` and a failed request stay under the field). New folder is
+  `NewFolderButton`: a text-only `outline field pill` on a page, and at the
+  third level it is disabled with a "Folders go 3 levels deep" tooltip.
+- **Move**: `MoveToFolderModal` (`type`, `subject` items or a folder) is the
+  one Move dialog: `Move "<name>"`, a `CommandInput variant="field"` search
+  over every level (a match shows its trail), the root ("My agents" /
+  "Knowledge", no folder) as the first row, folder rows with their count and
+  a chevron into subfolders, the current place a disabled row with a neutral
+  Current Badge, targets a folder move would push past three levels disabled
+  as Too deep (a folder's own subtree isn't listed), New folder (ghost, with
+  `FolderPlus`) first in the footer, and a failure as an Alert in the body.
+  Move to folder sits in an item's ⋯ for anything the caller can see
+  (`move_folder`), before the rule and Delete.
+- **Delete** confirms with what moves where, never a loss: `Delete
+"<name>"?` / "Its 2 agents and 1 folder move to My agents. Nothing is
+  deleted.", submit "Delete folder"; for a source folder agents read, a warning
+  Alert names them ("2 agents use this folder and will lose its sources: A, B.").
+- **State**: one Redux copy per type (`folders.agent`, `folders.source`,
+  `loadFolders`); every change reloads it, so counts stay the server's. A failed
+  load is `EmptyState tone="destructive"` with Retry where the folders would be,
+  never an empty list. Requests go through `useFolderActions(type)`, whose
+  errors carry the server's code (`folderErrorMessage` maps it).
 
 ### ListRow and DescriptionList (`ui/list-row.tsx`, `ui/description-list.tsx`)
 
@@ -1583,8 +1643,8 @@ named opt-outs (sponsor confirm, Disconnect and Remove connection, Export
 failed, Convert to wiki, Enable GraphRAG). A sheet never autofocuses a field
 on a phone, where it would pop the keyboard up: the phone sheet skips Radix's
 open autofocus, and a field's own `autoFocus` would bypass that, so a field
-shown when a Modal opens doesn't take it (one that appears on a tap inside
-it, Move to folder's new-folder field, may).
+shown when a Modal opens doesn't take it there (Move to folder focuses its
+search on desktop only).
 
 The width comes from `size` only: `sm` 384, `md` 512 (the default), `lg` 672
 (a form or a one-column list: Move to folder), `xl` 896 (a grid of
@@ -1593,7 +1653,7 @@ pass the default `size="md"`. Never add a width or height class. The dialog caps
 its body is the one scroller, so the header and footer stay put; don't cap
 the body with `contentClassName`. `contentClassName="overflow-visible"`
 (`cn` drops the body's `overflow-y-auto` for it) is only for a body whose popover must escape it (Share
-conversation, Move to folder). A Select's list is portaled and needs no escape. `className` is placement
+conversation). A Select's list is portaled and needs no escape. `className` is placement
 only.
 
 A modal's body is `flex flex-col gap-5` when it stacks floating fields,
@@ -1850,7 +1910,7 @@ tables scroll sideways; a narrow one inside a panel passes
 `TooltipContent` and `Modal` accept `p-0` for edge-to-edge content; Modal
 merges it after its own `p-8`, so no `!` is needed. A modal that needs a
 full-bleed band under its title keeps the padding and bleeds the band out
-with negative margin (Move to folder's breadcrumb band). Everything else on these components is layout only.
+with negative margin. Everything else on these components is layout only.
 `MessageScrollerViewport` and `MessageScrollerContent` accept layout and
 spacing: the primitive measures Content's padding-block for its scroll and
 spacer math, and the Viewport's top gap must scroll with the messages, so
@@ -2081,7 +2141,6 @@ list stays reviewable.
 | `components/ui/calendar.tsx`                          | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
 | `navigation/SidebarLevel.tsx`                         | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
 | `components/MessageInput.tsx`                         | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
-| `agents/AgentsList.tsx`                               | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                         |
 | `lib/markdown.tsx`                                    | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable, in `markdownCode`, which every markdown fence goes through.                                                                                                                                                                                                                                     |
 | `agents/workflow/WorkflowPreview.tsx`                 | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
 | `agents/schedules/ScheduleFormModal.tsx`              | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle` (see Modal › Steps). One disable.                                                                                                                                                                                                                                                                                                                |

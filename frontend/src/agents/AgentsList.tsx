@@ -1,91 +1,114 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { ArrowRight } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowRight, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
-import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
+import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
-import { Input } from '../components/ui/input';
+import { folderCountLine } from '../components/folders/folderCopy';
+import FolderCrumbRow from '../components/folders/FolderCrumbRow';
+import FolderNameModal from '../components/folders/FolderNameModal';
+import { selectFolderList } from '../components/folders/foldersSlice';
+import FolderTile from '../components/folders/FolderTile';
+import {
+  canCreateIn,
+  childFolders,
+  folderPath,
+  formatFolderPath,
+  subtreeIds,
+  type FolderTree,
+} from '../components/folders/folderTree';
+import NewFolderButton from '../components/folders/NewFolderButton';
+import type { Folder } from '../components/folders/types';
+import {
+  type FolderMenu,
+  useFolderMenu,
+} from '../components/folders/useFolderMenu';
+import { useFolderParam } from '../components/folders/useFolderParam';
 import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
 import ImportAgentModal from '../modals/ImportAgentModal';
 import {
-  selectAgentFolders,
+  selectAgents,
   selectSelectedAgent,
-  selectToken,
-  setAgentFolders,
+  setAgents,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import AgentCard from './AgentCard';
 import { AgentSectionId, agentSectionsConfig } from './agents.config';
 import AgentTypeModal from './components/AgentTypeModal';
-import FolderCard from './FolderCard';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
 import SectionShell from '../navigation/SectionShell';
 import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
 import SectionPills from '../navigation/SectionPills';
-import { useAgentSearch } from './hooks/useAgentSearch';
-import { agentsFilterPath, agentsListPath, filterFromPath } from './paths';
+import { filterAgentsByQuery, useAgentSearch } from './hooks/useAgentSearch';
+import { agentsFilterPath, filterFromPath } from './paths';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import { useGridColumns } from '../hooks/useGridColumns';
 import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import { formatCount } from '../utils/dateTimeUtils';
 import { useAgentsFetch } from './hooks/useAgentsFetch';
-import { Agent, AgentFolder } from './types';
+import { Agent } from './types';
+
+const TILE_GRID =
+  'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+
+/**
+ * Folders whose name matches a search, nested ones included, by trail, so
+ * a search shows the folders it found before the flat list of agents.
+ */
+const matchingFolders = (
+  tree: FolderTree,
+  query: string,
+  within?: Set<string>,
+): Folder[] => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  return [...tree.byId.values()]
+    .filter((folder) => !within || within.has(folder.id))
+    .filter((folder) => folder.name.toLowerCase().includes(needle))
+    .map((folder) => ({
+      folder,
+      path: formatFolderPath(folderPath(tree, folder.id)),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map(({ folder }) => folder);
+};
+
+/** "Customer-facing › EU" for an agent filed in a folder the list knows. */
+const folderLabelOf = (tree: FolderTree, agent: Agent): string | undefined =>
+  agent.folder_id && tree.byId.has(agent.folder_id)
+    ? formatFolderPath(folderPath(tree, agent.folder_id))
+    : undefined;
 
 export default function AgentsList() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const token = useSelector(selectToken);
+  const location = useLocation();
   const selectedAgent = useSelector(selectSelectedAgent);
-  const folders = useSelector(selectAgentFolders);
-  const [folderPath, setFolderPath] = useState<string[]>(() => {
-    const folderIdFromUrl = searchParams.get('folder');
-    return folderIdFromUrl ? [folderIdFromUrl] : [];
-  });
+  const folderList = useSelector(selectFolderList('agent'));
+  const { folderId, folder, trail, tree, openFolder } = useFolderParam('agent');
   const [showAgentTypeModal, setShowAgentTypeModal] = useState(false);
   const [modalFolderId, setModalFolderId] = useState<string | null>(null);
+  const [newFolderParent, setNewFolderParent] = useState<
+    string | null | undefined
+  >(undefined);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // The list's filter is a route, so it is linkable and survives a reload;
   // the sidebar nav (and the pill row below `lg`) does the navigating.
   const activeFilter = filterFromPath(location.pathname);
 
-  // Sync folder path with URL
-  useEffect(() => {
-    const currentFolderInUrl = searchParams.get('folder');
-    const currentFolderId =
-      folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
-
-    if (currentFolderId !== currentFolderInUrl) {
-      navigate(agentsListPath(currentFolderId, activeFilter), {
-        replace: true,
-      });
-    }
-  }, [folderPath, searchParams, navigate, activeFilter]);
-
   const { isLoading, refetchFolders, refetchUserAgents } = useAgentsFetch();
+  const folderMenu = useFolderMenu('agent', () => {
+    // The folder's agents moved to its parent: their filings changed.
+    refetchUserAgents();
+  });
 
   const {
     searchQuery,
@@ -107,56 +130,17 @@ export default function AgentsList() {
     if (selectedAgent) dispatch(setSelectedAgent(null));
   }, []);
 
-  const handleCreateFolder = useCallback(
-    async (name: string, parentId?: string) => {
-      const response = await userService.createAgentFolder(
-        { name, parent_id: parentId },
-        token,
-      );
-      if (response.ok) {
-        await refetchFolders();
-        return true;
-      }
-      return false;
-    },
-    [token, refetchFolders],
-  );
+  // Opening a folder (or leaving one) starts a fresh search there.
+  useEffect(() => {
+    setSearchQuery('');
+  }, [folderId, setSearchQuery]);
 
-  const handleDeleteFolder = useCallback(
-    async (folderId: string) => {
-      const response = await userService.deleteAgentFolder(folderId, token);
-      if (response.ok) {
-        await Promise.all([refetchFolders(), refetchUserAgents()]);
-        return true;
-      }
-      return false;
-    },
-    [token, refetchFolders, refetchUserAgents],
-  );
-
-  const handleRenameFolder = useCallback(
-    async (folderId: string, newName: string) => {
-      const response = await userService.updateAgentFolder(
-        folderId,
-        { name: newName },
-        token,
-      );
-      if (response.ok) {
-        dispatch(
-          setAgentFolders(
-            (folders || []).map((f) =>
-              f.id === folderId ? { ...f, name: newName } : f,
-            ),
-          ),
-        );
-      }
-    },
-    [token, folders, dispatch],
-  );
-
-  const handleSubmitNewFolder = async (name: string, parentId?: string) => {
-    await handleCreateFolder(name, parentId);
+  const openNewAgent = (targetFolderId: string | null) => {
+    setModalFolderId(targetFolderId);
+    setShowAgentTypeModal(true);
   };
+
+  const inFolder = folderId !== null;
 
   const visibleSections = agentSectionsConfig.filter((config) => {
     if (activeFilter !== 'all') {
@@ -168,7 +152,14 @@ export default function AgentsList() {
     const sectionDataLoaded = isDataLoaded[sectionId];
 
     if (!sectionDataLoaded) return true;
-    if (searchQuery) return hasFilteredAgents;
+    if (searchQuery) {
+      // A folder whose name matches keeps My agents on screen.
+      if (config.id === 'user')
+        return (
+          hasFilteredAgents || matchingFolders(tree, searchQuery).length > 0
+        );
+      return hasFilteredAgents;
+    }
     if (config.id === 'user') return true;
     return hasAgentsInSection;
   });
@@ -177,7 +168,14 @@ export default function AgentsList() {
     searchQuery &&
     hasAnyAgents &&
     !hasFilteredResults &&
+    matchingFolders(tree, searchQuery).length === 0 &&
     activeFilter === 'all';
+
+  const sectionActions = {
+    onNewFolder: (parentId: string | null) => setNewFolderParent(parentId),
+    onImport: () => setShowImportModal(true),
+    onNewAgent: openNewAgent,
+  };
 
   return (
     <SectionShell>
@@ -193,38 +191,72 @@ export default function AgentsList() {
             <SearchInput
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              label={t('agents.searchPlaceholder')}
+              label={
+                folder
+                  ? t('folders.searchIn', {
+                      name: folder.name,
+                      interpolation: { escapeValue: false },
+                    })
+                  : t('agents.searchPlaceholder')
+              }
             />
           }
         />
       </div>
 
-      {visibleSections.map((sectionConfig) => (
-        <AgentSection
-          key={sectionConfig.id}
-          config={sectionConfig}
-          filteredAgents={
-            filteredAgentsBySection[sectionConfig.id as AgentSectionId]
-          }
-          totalAgents={totalAgentsBySection[sectionConfig.id as AgentSectionId]}
+      {inFolder ? (
+        <AgentFolderView
+          folderId={folderId}
+          folder={folder}
+          trail={trail}
+          tree={tree}
+          foldersLoaded={folderList.loaded}
+          foldersFailed={folderList.failed}
+          agentsLoading={isLoading.user}
           searchQuery={searchQuery}
-          isFilteredView={activeFilter !== 'all'}
-          isLoading={isLoading[sectionConfig.id as AgentSectionId]}
-          folders={sectionConfig.id === 'user' ? folders : null}
-          folderPath={sectionConfig.id === 'user' ? folderPath : []}
-          onFolderPathChange={
-            sectionConfig.id === 'user' ? setFolderPath : undefined
-          }
-          onCreateFolder={handleSubmitNewFolder}
-          onDeleteFolder={handleDeleteFolder}
-          onRenameFolder={handleRenameFolder}
-          setModalFolderId={setModalFolderId}
-          setShowAgentTypeModal={setShowAgentTypeModal}
+          openFolder={openFolder}
+          folderMenu={folderMenu}
+          onRetryFolders={refetchFolders}
+          {...sectionActions}
         />
-      ))}
+      ) : (
+        visibleSections.map((sectionConfig) => (
+          <AgentSection
+            key={sectionConfig.id}
+            config={sectionConfig}
+            filteredAgents={
+              filteredAgentsBySection[sectionConfig.id as AgentSectionId]
+            }
+            totalAgents={
+              totalAgentsBySection[sectionConfig.id as AgentSectionId]
+            }
+            searchQuery={searchQuery}
+            isFilteredView={activeFilter !== 'all'}
+            isLoading={isLoading[sectionConfig.id as AgentSectionId]}
+            tree={tree}
+            foldersFailed={folderList.failed && !folderList.loaded}
+            onRetryFolders={refetchFolders}
+            openFolder={openFolder}
+            folderMenu={folderMenu}
+            {...sectionActions}
+          />
+        ))
+      )}
 
-      {showSearchEmptyState && <NoSearchResults />}
+      {!inFolder && showSearchEmptyState && <NoSearchResults />}
 
+      {folderMenu.dialogs}
+      <FolderNameModal
+        open={newFolderParent !== undefined}
+        onOpenChange={(open) => !open && setNewFolderParent(undefined)}
+        type="agent"
+        mode="create"
+        parentId={newFolderParent ?? null}
+      />
+      <ImportAgentModal
+        modalState={showImportModal ? 'ACTIVE' : 'INACTIVE'}
+        setModalState={(state) => setShowImportModal(state === 'ACTIVE')}
+      />
       <AgentTypeModal
         isOpen={showAgentTypeModal}
         onClose={() => setShowAgentTypeModal(false)}
@@ -247,22 +279,267 @@ function NoSearchResults() {
   );
 }
 
-interface AgentSectionProps {
+/** The folder list failed to load: in place of the folder tiles. */
+function FoldersLoadError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <EmptyState
+      size="sm"
+      illustration="none"
+      tone="destructive"
+      title={t('folders.errors.loadFailed')}
+      onRetry={onRetry}
+    />
+  );
+}
+
+type SectionActions = {
+  onNewFolder: (parentId: string | null) => void;
+  onImport: () => void;
+  onNewAgent: (folderId: string | null) => void;
+};
+
+/** The My agents buttons: New folder · Import · New agent. */
+function UserSectionButtons({
+  folderId,
+  atDepthLimit = false,
+  onNewFolder,
+  onImport,
+  onNewAgent,
+}: SectionActions & { folderId: string | null; atDepthLimit?: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <NewFolderButton
+        atDepthLimit={atDepthLimit}
+        onClick={() => onNewFolder(folderId)}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="field"
+        shape="pill"
+        onClick={onImport}
+      >
+        {t('agents.importAgent')}
+      </Button>
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
+        onClick={() => onNewAgent(folderId)}
+      >
+        {t('agents.newAgent')}
+      </Button>
+    </>
+  );
+}
+
+/** A grid of folder tiles that open the folder, each with its ⋯. */
+function FolderGrid({
+  folders,
+  openFolder,
+  folderMenu,
+}: {
+  folders: Folder[];
+  openFolder: (id: string) => void;
+  folderMenu: FolderMenu;
+}) {
+  if (folders.length === 0) return null;
+  return (
+    <div className={TILE_GRID}>
+      {folders.map((folder) => (
+        <FolderTile
+          key={folder.id}
+          folder={folder}
+          type="agent"
+          onOpen={(f) => openFolder(f.id)}
+          menuOptions={folderMenu.menuOptions(folder)}
+        />
+      ))}
+    </div>
+  );
+}
+
+type AgentFolderViewProps = SectionActions & {
+  folderId: string;
+  folder: Folder | null;
+  trail: Folder[];
+  tree: FolderTree;
+  foldersLoaded: boolean;
+  foldersFailed: boolean;
+  agentsLoading: boolean;
+  searchQuery: string;
+  openFolder: (id: string | null) => void;
+  folderMenu: FolderMenu;
+  onRetryFolders: () => void;
+};
+
+/**
+ * An open agent folder: the crumb row (My agents › … › folder, the buttons,
+ * the folder's ⋯ last) and its count line, then its folders and its agents,
+ * own and team-shared alike (filing is personal). Nothing else from the page
+ * renders. A search covers the folder and its subfolders, flat, folders
+ * first.
+ */
+function AgentFolderView({
+  folderId,
+  folder,
+  trail,
+  tree,
+  foldersLoaded,
+  foldersFailed,
+  agentsLoading,
+  searchQuery,
+  openFolder,
+  folderMenu,
+  onRetryFolders,
+  onNewFolder,
+  onImport,
+  onNewAgent,
+}: AgentFolderViewProps) {
+  const { t } = useTranslation();
+  const dispatch = useDispatch();
+  const allAgents = useSelector(selectAgents);
+
+  const query = searchQuery.trim();
+  const subtree = useMemo(() => subtreeIds(tree, folderId), [tree, folderId]);
+  const folders = query
+    ? matchingFolders(tree, query, subtree).filter((f) => f.id !== folderId)
+    : childFolders(tree, folderId);
+  const agents = useMemo(() => {
+    const list = allAgents ?? [];
+    if (query)
+      return filterAgentsByQuery(list, query).filter(
+        (agent) => agent.folder_id && subtree.has(agent.folder_id),
+      );
+    return list.filter((agent) => agent.folder_id === folderId);
+  }, [allAgents, query, subtree, folderId]);
+
+  const {
+    page,
+    setPage,
+    pageItems: pagedAgents,
+  } = useClientPage(agents, SHORT_LIST_PAGE_SIZE, `${query}|${folderId}`);
+
+  if (!foldersLoaded) {
+    return (
+      <div className="mt-8 flex flex-col gap-4">
+        {foldersFailed ? (
+          <FoldersLoadError onRetry={onRetryFolders} />
+        ) : (
+          <div className={TILE_GRID}>
+            <SkeletonLoader component="agentCards" count={4} />
+          </div>
+        )}
+      </div>
+    );
+  }
+  // An unknown folder: useFolderParam sends the page back to the root.
+  if (!folder) return null;
+
+  const empty = !query && folders.length === 0 && agents.length === 0;
+
+  return (
+    <div className="mt-8 flex flex-col gap-4">
+      <FolderCrumbRow
+        type="agent"
+        trail={trail}
+        onNavigate={openFolder}
+        meta={folderCountLine(t, folder, 'agent')}
+        actions={
+          <UserSectionButtons
+            folderId={folderId}
+            atDepthLimit={!canCreateIn(tree, folderId)}
+            onNewFolder={onNewFolder}
+            onImport={onImport}
+            onNewAgent={onNewAgent}
+          />
+        }
+        menu={
+          <ActionMenu
+            size="toolbar"
+            options={folderMenu.menuOptions(folder)}
+            triggerLabel={t('folders.menuLabel', {
+              name: folder.name,
+              interpolation: { escapeValue: false },
+            })}
+          />
+        }
+      />
+      {agentsLoading ? (
+        <div className={TILE_GRID}>
+          <SkeletonLoader component="agentCards" count={4} />
+        </div>
+      ) : empty ? (
+        <EmptyState
+          size="sm"
+          icon={FolderOpen}
+          title={t('folders.emptyTitle')}
+          description={t('agents.folders.emptyHint')}
+          action={
+            <Button
+              type="button"
+              shape="pill"
+              onClick={() => onNewAgent(folderId)}
+            >
+              {t('agents.newAgent')}
+            </Button>
+          }
+        />
+      ) : query && folders.length === 0 && agents.length === 0 ? (
+        <NoSearchResults />
+      ) : (
+        <>
+          <FolderGrid
+            folders={folders}
+            openFolder={openFolder}
+            folderMenu={folderMenu}
+          />
+          {agents.length > 0 ? (
+            <>
+              <div className={TILE_GRID}>
+                {pagedAgents.map((agent) => (
+                  <AgentCard
+                    key={agent.id}
+                    agent={agent}
+                    agents={allAgents || []}
+                    updateAgents={(updated) => dispatch(setAgents(updated))}
+                    section={agent.ownership === 'team' ? 'team' : 'user'}
+                    folderLabel={query ? folderLabelOf(tree, agent) : undefined}
+                  />
+                ))}
+              </div>
+              <Pagination
+                page={page}
+                pageSize={SHORT_LIST_PAGE_SIZE}
+                total={agents.length}
+                onPageChange={setPage}
+                rangeLabel={(range) =>
+                  t('agents.pageRange', pageRangeParams(range))
+                }
+              />
+            </>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+type AgentSectionProps = SectionActions & {
   config: (typeof agentSectionsConfig)[number];
   filteredAgents: Agent[];
   totalAgents: number;
   searchQuery: string;
   isFilteredView: boolean;
   isLoading: boolean;
-  folders: AgentFolder[] | null;
-  folderPath: string[];
-  onFolderPathChange?: (path: string[]) => void;
-  onCreateFolder: (name: string, parentId?: string) => void;
-  onDeleteFolder: (id: string) => Promise<boolean>;
-  onRenameFolder: (id: string, name: string) => void;
-  setModalFolderId: (folderId: string | null) => void;
-  setShowAgentTypeModal: (show: boolean) => void;
-}
+  tree: FolderTree;
+  foldersFailed: boolean;
+  onRetryFolders: () => void;
+  openFolder: (id: string | null) => void;
+  folderMenu: FolderMenu;
+};
 
 function AgentSection({
   config,
@@ -271,136 +548,41 @@ function AgentSection({
   searchQuery,
   isFilteredView,
   isLoading,
-  folders,
-  folderPath,
-  onFolderPathChange,
-  onCreateFolder,
-  onDeleteFolder,
-  onRenameFolder,
-  setModalFolderId,
-  setShowAgentTypeModal,
+  tree,
+  foldersFailed,
+  onRetryFolders,
+  openFolder,
+  folderMenu,
+  onNewFolder,
+  onImport,
+  onNewAgent,
 }: AgentSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const allAgents = useSelector(config.selectData);
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [showImportModal, setShowImportModal] = useState(false);
-  const newFolderInputRef = useRef<HTMLInputElement>(null);
-
-  const currentFolderId =
-    folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
-
-  const setFolderPath = useCallback(
-    (updater: string[] | ((prev: string[]) => string[])) => {
-      if (!onFolderPathChange) return;
-      if (typeof updater === 'function') {
-        onFolderPathChange(updater(folderPath));
-      } else {
-        onFolderPathChange(updater);
-      }
-    },
-    [onFolderPathChange, folderPath],
-  );
+  const isUser = config.id === 'user';
+  const query = searchQuery.trim();
 
   const updateAgents = (updatedAgents: Agent[]) => {
     dispatch(config.updateAction(updatedAgents));
   };
 
-  const currentFolderDescendantIds = useMemo(() => {
-    if (config.id !== 'user' || !folders || currentFolderId === null)
-      return null;
-
-    const getDescendants = (folderId: string): string[] => {
-      const children = folders.filter((f) => f.parent_id === folderId);
-      return children.flatMap((child) => [
-        child.id,
-        ...getDescendants(child.id),
-      ]);
-    };
-
-    return new Set([currentFolderId, ...getDescendants(currentFolderId)]);
-  }, [folders, currentFolderId, config.id]);
-
-  const folderHasMatchingAgents = useCallback(
-    (folderId: string): boolean => {
-      const directMatches = filteredAgents.some(
-        (a) => a.folder_id === folderId,
-      );
-      if (directMatches) return true;
-      const childFolders = (folders || []).filter(
-        (f) => f.parent_id === folderId,
-      );
-      return childFolders.some((f) => folderHasMatchingAgents(f.id));
-    },
-    [filteredAgents, folders],
-  );
-
-  // Get folders at the current level (root or inside current folder)
-  const currentLevelFolders = useMemo(() => {
-    if (config.id !== 'user' || !folders) return [];
-    const foldersAtLevel = folders.filter(
-      (f) => (f.parent_id || null) === currentFolderId,
-    );
-    if (searchQuery) {
-      return foldersAtLevel.filter((f) => folderHasMatchingAgents(f.id));
-    }
-    return foldersAtLevel;
-  }, [
-    folders,
-    currentFolderId,
-    config.id,
-    searchQuery,
-    folderHasMatchingAgents,
-  ]);
-
-  const unfolderedAgents = useMemo(() => {
-    if (config.id !== 'user' || !folders) return filteredAgents;
-
-    if (searchQuery) {
-      // When searching at root: return ALL filtered agents
-      if (currentFolderId === null) {
-        return filteredAgents;
-      }
-      // When searching inside a folder: return agents in current folder OR any descendant
-      return filteredAgents.filter(
-        (a) => currentFolderDescendantIds?.has(a.folder_id ?? '') ?? false,
-      );
-    }
-
-    // No search: show agents that belong to the current folder level only
+  // My agents at the root: the top-level folders, then the agents in no
+  // folder (an agent filed in a folder the list doesn't know counts as in
+  // none). A search is flat: folders whose name matches, then every
+  // matching agent wherever it is filed.
+  const folders = isUser
+    ? query
+      ? matchingFolders(tree, query)
+      : childFolders(tree, null)
+    : [];
+  const shownList = useMemo(() => {
+    if (!isUser || query) return filteredAgents;
     return filteredAgents.filter(
-      (a) => (a.folder_id || null) === currentFolderId,
+      (agent) => !agent.folder_id || !tree.byId.has(agent.folder_id),
     );
-  }, [
-    filteredAgents,
-    folders,
-    config.id,
-    currentFolderId,
-    searchQuery,
-    currentFolderDescendantIds,
-  ]);
-
-  const getAgentsForFolder = (folderId: string) => {
-    return filteredAgents.filter((a) => a.folder_id === folderId);
-  };
-
-  const handleNavigateIntoFolder = (folderId: string) => {
-    setFolderPath((prev) => [...prev, folderId]);
-  };
-
-  const handleNavigateToPath = (index: number) => {
-    if (index < 0) {
-      setFolderPath([]);
-    } else {
-      setFolderPath((prev) => prev.slice(0, index + 1));
-    }
-  };
-
-  const handleSubmitNewFolder = (name: string) => {
-    onCreateFolder(name, currentFolderId || undefined);
-  };
+  }, [filteredAgents, isUser, query, tree]);
 
   // Must stay above the empty-state returns below: a hook after an early
   // return is skipped on the render that takes it, which React rejects with
@@ -411,37 +593,29 @@ function AgentSection({
   // section's own page for the rest; that page (and a search or a folder)
   // shows everything, 48 per page.
   const columns = useGridColumns();
-  const capped = !isFilteredView && !searchQuery && !currentFolderId;
+  const capped = !isFilteredView && !query;
   const cap = columns * 2;
   const {
     page: agentsPage,
     setPage: setAgentsPage,
     pageItems: pagedAgents,
-  } = useClientPage(
-    unfolderedAgents,
-    SHORT_LIST_PAGE_SIZE,
-    `${searchQuery}|${currentFolderId ?? ''}`,
-  );
-  const shownAgents = capped ? unfolderedAgents.slice(0, cap) : pagedAgents;
-  const moreThanCap = capped && unfolderedAgents.length > cap;
-
-  const breadcrumbItems = useMemo(() => {
-    if (!folders || folderPath.length === 0) return [];
-    return folderPath.map((folderId) => {
-      const folder = folders.find((f) => f.id === folderId);
-      return { id: folderId, name: folder?.name || '' };
-    });
-  }, [folders, folderPath]);
+  } = useClientPage(shownList, SHORT_LIST_PAGE_SIZE, query);
+  const shownAgents = capped ? shownList.slice(0, cap) : pagedAgents;
+  const moreThanCap = capped && shownList.length > cap;
 
   const hasNoAgentsAtAll = !isLoading && totalAgents === 0;
   const isSearchingWithNoResults =
-    !isLoading && searchQuery && filteredAgents.length === 0 && totalAgents > 0;
+    !isLoading &&
+    query &&
+    filteredAgents.length === 0 &&
+    folders.length === 0 &&
+    totalAgents > 0;
 
   if (isFilteredView && isSearchingWithNoResults) {
     return <NoSearchResults />;
   }
 
-  if (isFilteredView && hasNoAgentsAtAll) {
+  if (isFilteredView && hasNoAgentsAtAll && folders.length === 0) {
     return (
       <EmptyState
         size="sm"
@@ -449,14 +623,7 @@ function AgentSection({
         title={t(`agents.sections.${config.id}.emptyState`)}
         action={
           config.showNewAgentButton ? (
-            <Button
-              type="button"
-              shape="pill"
-              onClick={() => {
-                setModalFolderId(null);
-                setShowAgentTypeModal(true);
-              }}
-            >
+            <Button type="button" shape="pill" onClick={() => onNewAgent(null)}>
               {t('agents.newAgent')}
             </Button>
           ) : undefined
@@ -469,170 +636,60 @@ function AgentSection({
     <div className="mt-8 flex flex-col gap-4">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          {config.id === 'user' && breadcrumbItems.length > 0 ? (
-            // Drilling into a folder is a trail, not a back button — the
-            // sidebar's back is the only thing that means "leave".
-            <Breadcrumb>
-              {/* eslint-disable-next-line shadcn/no-restyle -- the folder
-                  trail stands in for the section <h2>, so it keeps heading
-                  typography and wraps (DESIGN.md Approved exceptions). */}
-              <BreadcrumbList className="text-foreground flex-wrap gap-2 text-lg font-semibold sm:gap-2">
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild>
-                    <button
-                      type="button"
-                      onClick={() => handleNavigateToPath(-1)}
-                    >
-                      {t(`agents.sections.${config.id}.title`)}
-                    </button>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                {breadcrumbItems.map((item, index) => (
-                  <Fragment key={item.id}>
-                    <BreadcrumbSeparator />
-                    <BreadcrumbItem>
-                      {index === breadcrumbItems.length - 1 ? (
-                        <BreadcrumbPage>{item.name}</BreadcrumbPage>
-                      ) : (
-                        <BreadcrumbLink asChild>
-                          <button
-                            type="button"
-                            onClick={() => handleNavigateToPath(index)}
-                          >
-                            {item.name}
-                          </button>
-                        </BreadcrumbLink>
-                      )}
-                    </BreadcrumbItem>
-                  </Fragment>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
-          ) : (
-            <div className="flex items-baseline gap-3">
-              <h2 className="text-foreground text-lg font-semibold">
-                {t(`agents.sections.${config.id}.title`)}
-              </h2>
-              {moreThanCap && (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="inline"
-                  onClick={() => navigate(agentsFilterPath(config.id))}
-                >
-                  {t('agents.showAll', {
-                    count: unfolderedAgents.length,
-                    formatted: formatCount(unfolderedAgents.length),
-                  })}
-                  <ArrowRight aria-hidden />
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-foreground text-lg font-semibold">
+              {t(`agents.sections.${config.id}.title`)}
+            </h2>
+            {moreThanCap && (
+              <Button
+                type="button"
+                variant="link"
+                size="inline"
+                onClick={() => navigate(agentsFilterPath(config.id))}
+              >
+                {t('agents.showAll', {
+                  count: shownList.length,
+                  formatted: formatCount(shownList.length),
+                })}
+                <ArrowRight aria-hidden />
+              </Button>
+            )}
+          </div>
           <p className="text-muted-foreground text-sm">
             {t(`agents.sections.${config.id}.description`)}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {config.id === 'user' &&
-            (isCreatingFolder ? (
-              <Input
-                ref={newFolderInputRef}
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newFolderName.trim()) {
-                    handleSubmitNewFolder(newFolderName.trim());
-                    setNewFolderName('');
-                    setIsCreatingFolder(false);
-                  } else if (e.key === 'Escape') {
-                    setNewFolderName('');
-                    setIsCreatingFolder(false);
-                  }
-                }}
-                onBlur={() => {
-                  if (!newFolderName.trim()) {
-                    setIsCreatingFolder(false);
-                  }
-                }}
-                placeholder={t('agents.folders.newFolder')}
-                shape="pill"
-                className="w-28 sm:w-auto"
-                autoFocus
-              />
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                shape="pill"
-                className="shrink-0 whitespace-nowrap"
-                onClick={() => {
-                  setIsCreatingFolder(true);
-                  setTimeout(() => newFolderInputRef.current?.focus(), 0);
-                }}
-              >
-                {t('agents.folders.newFolder')}
-              </Button>
-            ))}
-          {config.id === 'user' && (
-            <Button
-              type="button"
-              variant="outline"
-              shape="pill"
-              className="shrink-0 whitespace-nowrap"
-              onClick={() => setShowImportModal(true)}
-            >
-              {t('agents.importAgent')}
-            </Button>
-          )}
-          {config.showNewAgentButton && (
-            <Button
-              type="button"
-              shape="pill"
-              className="shrink-0 whitespace-nowrap"
-              onClick={() => {
-                setModalFolderId(currentFolderId);
-                setShowAgentTypeModal(true);
-              }}
-            >
-              {t('agents.newAgent')}
-            </Button>
-          )}
-        </div>
+        {isUser && (
+          <div className="flex items-center gap-2">
+            <UserSectionButtons
+              folderId={null}
+              onNewFolder={onNewFolder}
+              onImport={onImport}
+              onNewAgent={onNewAgent}
+            />
+          </div>
+        )}
       </div>
-      <ImportAgentModal
-        modalState={showImportModal ? 'ACTIVE' : 'INACTIVE'}
-        setModalState={(state) => setShowImportModal(state === 'ACTIVE')}
-      />
 
       <div className="flex flex-col gap-4">
+        {isUser && foldersFailed ? (
+          <FoldersLoadError onRetry={onRetryFolders} />
+        ) : null}
         {isLoading ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className={TILE_GRID}>
             <SkeletonLoader component="agentCards" count={4} />
           </div>
         ) : (
           <>
-            {/* Show subfolders at current level */}
-            {config.id === 'user' && currentLevelFolders.length > 0 && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {currentLevelFolders.map((folder) => (
-                  <FolderCard
-                    key={folder.id}
-                    folder={folder}
-                    agentCount={getAgentsForFolder(folder.id).length}
-                    onDelete={onDeleteFolder}
-                    onRename={onRenameFolder}
-                    onToggleExpand={handleNavigateIntoFolder}
-                  />
-                ))}
-              </div>
-            )}
+            <FolderGrid
+              folders={folders}
+              openFolder={openFolder}
+              folderMenu={folderMenu}
+            />
 
-            {/* Show agents at current level */}
-            {unfolderedAgents.length > 0 ? (
+            {shownList.length > 0 ? (
               <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <div className={TILE_GRID}>
                   {shownAgents.map((agent) => (
                     <AgentCard
                       key={agent.id}
@@ -640,6 +697,9 @@ function AgentSection({
                       agents={allAgents || []}
                       updateAgents={updateAgents}
                       section={config.id}
+                      folderLabel={
+                        query ? folderLabelOf(tree, agent) : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -647,7 +707,7 @@ function AgentSection({
                   <Pagination
                     page={agentsPage}
                     pageSize={SHORT_LIST_PAGE_SIZE}
-                    total={unfolderedAgents.length}
+                    total={shownList.length}
                     onPageChange={setAgentsPage}
                     rangeLabel={(range) =>
                       t('agents.pageRange', pageRangeParams(range))
@@ -655,24 +715,17 @@ function AgentSection({
                   />
                 )}
               </>
-            ) : hasNoAgentsAtAll && currentLevelFolders.length === 0 ? (
+            ) : hasNoAgentsAtAll && folders.length === 0 ? (
               <EmptyState
                 size="sm"
                 illustration="none"
-                title={
-                  currentFolderId
-                    ? t('agents.folders.empty')
-                    : t(`agents.sections.${config.id}.emptyState`)
-                }
+                title={t(`agents.sections.${config.id}.emptyState`)}
                 action={
-                  config.showNewAgentButton && !currentFolderId ? (
+                  config.showNewAgentButton ? (
                     <Button
                       type="button"
                       shape="pill"
-                      onClick={() => {
-                        setModalFolderId(currentFolderId);
-                        setShowAgentTypeModal(true);
-                      }}
+                      onClick={() => onNewAgent(null)}
                     >
                       {t('agents.newAgent')}
                     </Button>
