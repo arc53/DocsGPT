@@ -177,6 +177,57 @@ def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -
     return None
 
 
+#: The token family of each folder type (``/api/folders``).
+_FOLDER_FAMILY = {"agent": "agents", "source": "sources"}
+
+
+def _folder_family(request, user_id: Optional[str]) -> Optional[str]:
+    """The family of the folder type a ``/api/folders`` request touches, or None when it can't tell.
+
+    The type travels as ``type`` (query or JSON); a request naming only a
+    folder id takes the folder's own type.
+    """
+    raw = request.args.get("type") or _json_body(request).get("type")
+    if raw:
+        return _FOLDER_FAMILY.get(str(raw).strip().lower())
+    folder_id = (request.view_args or {}).get("folder_id")
+    if not folder_id or not user_id:
+        return None
+    from docsgpt.storage.db.repositories.folders import FoldersRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    try:
+        with db_readonly() as conn:
+            folder = FoldersRepository(conn).get(str(folder_id), user_id)
+    except Exception:
+        return None
+    return _FOLDER_FAMILY.get(folder.get("resource_type")) if folder else None
+
+
+def _folder_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
+    """Hold a restricted token to the agent-folder rules for both folder types.
+
+    Folders are not on any allowlist, so a token restricted on the type's
+    family may list folders and file items on its allowlist (``ids``), but not
+    create, rename, move or delete a folder. The route checks the type's
+    read/write scope.
+    """
+    family = _folder_family(request, user_id)
+    if family is None or family not in resource_filter or request.method == "GET":
+        return None
+    if (request.url_rule.rule if request.url_rule else "").endswith("/folders/items"):
+        ids = _as_ids(_json_body(request).get("ids"))
+        if not ids:
+            return f"This token is restricted to specific {family} and cannot use this endpoint"
+        if not _all_allowed(ids, resource_filter[family]):
+            return f"Token is not allowed to access this resource ({family})"
+        return None
+    return f"This token is restricted to specific {family} and cannot use this endpoint"
+
+
+_FOLDER_READ = _rule(any_of=("agents:read", "sources:read"), check=_folder_check)
+_FOLDER_WRITE = _rule(any_of=("agents:write", "sources:write"), check=_folder_check)
+
 _CHAT = dict(
     family=None,
     refs=(
@@ -214,6 +265,13 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/analytics/topics", "GET"): _rule(
         "analytics:read", (QUERY, "agent_id"), family="agents", blocked_by=_NON_AGENT_FAMILIES
     ),
+    # Folders of both types; the route also checks the type's own scope (agents:* or sources:*).
+    ("/api/folders", "GET"): _FOLDER_READ,
+    ("/api/folders", "POST"): _FOLDER_WRITE,
+    ("/api/folders/<string:folder_id>", "PUT"): _FOLDER_WRITE,
+    ("/api/folders/<string:folder_id>", "DELETE"): _FOLDER_WRITE,
+    ("/api/folders/items", "POST"): _FOLDER_WRITE,
+    # Agent folders: aliases of /api/folders with type=agent.
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
     ("/api/create_agent", "POST"): _rule("agents:write", refs=_AGENT_BODY_REFS, check=_agent_body_check),

@@ -58,13 +58,14 @@ ACTIONS: dict[str, dict[str, str]] = {
         "manage_schedules": "editor",
         "export": "editor",
         "manage_access_details": "editor",  # API key, webhook, public link
-        "move_folder": "owner",
+        "move_folder": "viewer",  # file it in my own folders (personal filing, folder_items)
         "share": "owner",
         "delete": "owner",
         "manage_settings": "owner",
     },
     "source": {
         "use": "viewer",  # browse files, chunks, graph, wiki; test retrieval; attach to agents
+        "move_folder": "viewer",  # file it in my own folders (personal filing, folder_items)
         "view_config": "editor",
         "edit": "editor",  # chunks, files, wiki, config, sync, reingest, GraphRAG, convert
         "reconnect": "owner",  # change the connector account

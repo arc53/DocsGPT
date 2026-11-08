@@ -49,6 +49,7 @@ from docsgpt.api.user.resource_usage import (
     is_in_use,
     used_by_many,
 )
+from docsgpt.api.user.folders.service import SourceFiling, folder_error, subtree_ids
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
@@ -304,6 +305,7 @@ class CombinedJson(Resource):
                 shared_sources = [r for r in rows if str(r["id"]) not in owned_ids]
                 shared_ids = [str(r["id"]) for r in shared_sources]
                 switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
+                filing = SourceFiling(conn, user)
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
             # equivalent for dev; re-sort defensively.
@@ -338,6 +340,8 @@ class CombinedJson(Resource):
                     "files": _file_count(index),
                     # As in the paginated listing (SourcesRepository.list_for_user).
                     "ingestStatus": index.get("ingest_status"),
+                    # The caller's own filing: folder_id and its path, top-level folder first.
+                    **filing.fields(index["id"]),
                 }
                 return _with_access(
                     entry,
@@ -372,9 +376,11 @@ class PaginatedSources(Resource):
     @api.doc(
         description=(
             "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` "
-            "(the agents using it). ``kind_counts`` counts every kind with the search and usage "
-            "filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind "
-            "filters applied."
+            "(the agents using it) and the caller's filing (``folder_id``, ``folder_path`` "
+            "[{id, name}] from the top-level folder down). ``kind_counts`` counts every kind with the "
+            "search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search "
+            "and kind filters applied. With ``folder``, both counts and ``subtree_total`` cover the "
+            "folder's whole subtree, while ``total``/``totalPages`` describe the listed rows."
         ),
         params={
             "page": "Page number, from 1",
@@ -387,6 +393,14 @@ class PaginatedSources(Resource):
                 "with the caller, of any kind)"
             ),
             "usage": "all (default), in_use (some agent uses it) or unused",
+            "folder": (
+                "root, or one of the caller's source folders: counts cover that folder and every folder "
+                "under it (root: everything). Omitted: no folder scoping"
+            ),
+            "direct": (
+                "true lists only the sources filed directly in ``folder`` (root: the unfiled ones); "
+                "false (default) lists its whole subtree"
+            ),
         },
     )
     def get(self):
@@ -407,6 +421,11 @@ class PaginatedSources(Resource):
                 400,
                 code="invalid_filter",
             )
+        folder_param = (request.args.get("folder") or "").strip() or None
+        direct_raw = (request.args.get("direct") or "false").strip().lower()
+        if direct_raw not in ("true", "false"):
+            return error_response("direct must be true or false", 400, code="invalid_filter")
+        direct = direct_raw == "true"
 
         try:
             with db_readonly() as conn:
@@ -419,7 +438,17 @@ class PaginatedSources(Resource):
                 # Kind and usage are judged in Python over every row the search
                 # matches (light columns only); the window is then read in SQL,
                 # narrowed to the ids that pass, so sorting and paging stay there.
+                filing = SourceFiling(conn, user)
+                # ``subtree``: the folders whose sources count (None: every source).
+                subtree: Optional[set] = None
+                if folder_param and folder_param != "root":
+                    folder_key = folder_param.lower()
+                    if folder_key not in filing.paths:
+                        return folder_error(404, "folder_not_found", "Folder not found")
+                    subtree = subtree_ids(filing.folders, folder_key)
                 facets = repo.list_facets_for_user(user, search_term=search_term, extra_ids=extra_ids)
+                if subtree is not None:
+                    facets = [row for row in facets if filing.folder_of(row["id"]) in subtree]
                 ids = [str(row["id"]) for row in facets]
                 used_by = used_by_many(
                     conn, user, "source", ids,
@@ -429,6 +458,7 @@ class PaginatedSources(Resource):
                 kind_counts = dict.fromkeys(SOURCE_KINDS, 0)
                 usage_counts = dict.fromkeys(USAGE_FILTERS, 0)
                 matching: list[str] = []
+                subtree_total = 0
                 for row in facets:
                     sid = str(row["id"])
                     content_kind = source_kind(row)
@@ -443,8 +473,15 @@ class PaginatedSources(Resource):
                         for name in USAGE_FILTERS:
                             usage_counts[name] += matches_usage(name, in_use)
                     if kind_ok and usage_ok:
+                        subtree_total += 1
+                        if direct and folder_param:
+                            # Directly in the folder; at the root, not in any folder.
+                            target = None if folder_param == "root" else folder_param.lower()
+                            if filing.folder_of(sid) != target:
+                                continue
                         matching.append(sid)
-                filtered = kind != "all" or usage != "all"
+                scoped = subtree is not None or (folder_param == "root" and direct)
+                filtered = kind != "all" or usage != "all" or scoped
                 total_documents = len(matching)
                 # Prior in-Python implementation returned ``totalPages = 1``
                 # for empty result sets (``max(1, ceil(0/rows))``); we
@@ -500,6 +537,7 @@ class PaginatedSources(Resource):
                     "website": _website_summary(doc),
                     "files": _file_count(doc),
                     "used_by": used_by.get(str(doc["id"])) or empty_usage(),
+                    **filing.fields(doc["id"]),
                 }
                 paginated_docs.append(
                     _with_access(
@@ -516,6 +554,8 @@ class PaginatedSources(Resource):
                 "kind_counts": kind_counts,
                 "usage_counts": usage_counts,
             }
+            if folder_param:
+                response["subtree_total"] = subtree_total
             return make_response(jsonify(response), 200)
         except Exception as err:
             current_app.logger.error(

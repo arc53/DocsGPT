@@ -1,627 +1,311 @@
-import datetime
+"""``/api/folders``: personal folders for agents and sources, on real repositories (``pg_conn``)."""
+
+from __future__ import annotations
+
 import uuid
-from unittest.mock import Mock, patch
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
+from sqlalchemy import text
 
-pytestmark = pytest.mark.skip(
-    reason="Asserts Mongo-era agent_folders_collection call shapes; needs PG repository-based "
-    "rewrite. Tracked as migration debt."
-)
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+USER, OTHER = "f-user", "f-other"
 
 
 @pytest.fixture
 def app():
-    app = Flask(__name__)
-    return app
-
-
-@pytest.mark.unit
-class TestAgentFoldersGet:
-
-    def test_returns_folders(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolders
-
-        now = datetime.datetime(2024, 6, 15, tzinfo=datetime.timezone.utc)
-        folder_id = uuid.uuid4().hex
-        mock_collection = Mock()
-        mock_collection.find.return_value = [
-            {
-                "_id": folder_id,
-                "name": "My Folder",
-                "parent_id": None,
-                "created_at": now,
-                "updated_at": now,
-            }
-        ]
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_collection,
-        ):
-            with app.test_request_context("/api/agents/folders/", method="GET"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().get()
-
-        assert response.status_code == 200
-        folders = response.json["folders"]
-        assert len(folders) == 1
-        assert folders[0]["id"] == str(folder_id)
-        assert folders[0]["name"] == "My Folder"
-
-    def test_returns_401_unauthenticated(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolders
-
-        with app.test_request_context("/api/agents/folders/", method="GET"):
-            from flask import request
-
-            request.decoded_token = None
-            response = AgentFolders().get()
-
-        assert response.status_code == 401
-
-
-@pytest.mark.unit
-class TestAgentFoldersCreate:
-
-    def test_creates_folder(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolders
-
-        inserted_id = uuid.uuid4().hex
-        mock_collection = Mock()
-        mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/",
-                method="POST",
-                json={"name": "New Folder"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().post()
-
-        assert response.status_code == 201
-        assert response.json["id"] == str(inserted_id)
-        assert response.json["name"] == "New Folder"
-
-    def test_returns_400_missing_name(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolders
-
-        with app.test_request_context(
-            "/api/agents/folders/",
-            method="POST",
-            json={},
-        ):
-            from flask import request
-
-            request.decoded_token = {"sub": "user1"}
-            response = AgentFolders().post()
-
-        assert response.status_code == 400
-
-    def test_validates_parent_folder_exists(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolders
-
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = None
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/",
-                method="POST",
-                json={"name": "Sub", "parent_id": str(uuid.uuid4().hex)},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().post()
-
-        assert response.status_code == 404
-
-
-@pytest.mark.unit
-class TestAgentFolderGet:
-
-    def test_returns_folder_with_agents_and_subfolders(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        folder_id = uuid.uuid4().hex
-        agent_id = uuid.uuid4().hex
-        subfolder_id = uuid.uuid4().hex
-        mock_folders = Mock()
-        mock_folders.find_one.return_value = {
-            "_id": folder_id,
-            "name": "Folder",
-            "parent_id": None,
-        }
-        mock_folders.find.return_value = [
-            {"_id": subfolder_id, "name": "Subfolder"}
-        ]
-        mock_agents = Mock()
-        mock_agents.find.return_value = [
-            {"_id": agent_id, "name": "Agent 1", "description": "Desc"}
-        ]
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ), patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{folder_id}", method="GET"
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().get(str(folder_id))
-
-        assert response.status_code == 200
-        assert response.json["name"] == "Folder"
-        assert len(response.json["agents"]) == 1
-        assert len(response.json["subfolders"]) == 1
-
-    def test_returns_404_not_found(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = None
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{uuid.uuid4().hex}", method="GET"
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().get(str(uuid.uuid4().hex))
-
-        assert response.status_code == 404
-
-
-@pytest.mark.unit
-class TestAgentFolderUpdate:
-
-    def test_updates_folder_name(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        folder_id = uuid.uuid4().hex
-        mock_collection = Mock()
-        mock_collection.update_one.return_value = Mock(matched_count=1)
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{folder_id}",
-                method="PUT",
-                json={"name": "Renamed"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().put(str(folder_id))
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-
-    def test_prevents_self_parent(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        folder_id = str(uuid.uuid4().hex)
-
-        with app.test_request_context(
-            f"/api/agents/folders/{folder_id}",
-            method="PUT",
-            json={"parent_id": folder_id},
-        ):
-            from flask import request
-
-            request.decoded_token = {"sub": "user1"}
-            response = AgentFolder().put(folder_id)
-
-        assert response.status_code == 400
-        assert "own parent" in response.json["message"]
-
-    def test_returns_404_when_not_found(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        mock_collection = Mock()
-        mock_collection.update_one.return_value = Mock(matched_count=0)
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{uuid.uuid4().hex}",
-                method="PUT",
-                json={"name": "X"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().put(str(uuid.uuid4().hex))
-
-        assert response.status_code == 404
-
-
-@pytest.mark.unit
-class TestAgentFolderDelete:
-
-    def test_deletes_folder_and_unsets_references(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        folder_id = str(uuid.uuid4().hex)
-        mock_folders = Mock()
-        mock_folders.delete_one.return_value = Mock(deleted_count=1)
-        mock_agents = Mock()
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ), patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{folder_id}", method="DELETE"
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().delete(folder_id)
-
-        assert response.status_code == 200
-        mock_agents.update_many.assert_called_once()
-        mock_folders.update_many.assert_called_once()
-        mock_folders.delete_one.assert_called_once()
-
-    def test_returns_404_not_found(self, app):
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        mock_folders = Mock()
-        mock_folders.delete_one.return_value = Mock(deleted_count=0)
-        mock_agents = Mock()
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ), patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{uuid.uuid4().hex}", method="DELETE"
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().delete(str(uuid.uuid4().hex))
-
-        assert response.status_code == 404
-
-
-@pytest.mark.unit
-class TestMoveAgentToFolder:
-
-    def test_moves_agent_to_folder(self, app):
-        from docsgpt.api.user.agents.folders import MoveAgentToFolder
-
-        agent_id = uuid.uuid4().hex
-        folder_id = uuid.uuid4().hex
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {"_id": agent_id, "user": "user1"}
-        mock_folders = Mock()
-        mock_folders.find_one.return_value = {"_id": folder_id}
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ), patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/move_agent",
-                method="POST",
-                json={
-                    "agent_id": str(agent_id),
-                    "folder_id": str(folder_id),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = MoveAgentToFolder().post()
-
-        assert response.status_code == 200
-        mock_agents.update_one.assert_called_once()
-
-    def test_removes_agent_from_folder(self, app):
-        from docsgpt.api.user.agents.folders import MoveAgentToFolder
-
-        agent_id = uuid.uuid4().hex
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {"_id": agent_id, "user": "user1"}
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/move_agent",
-                method="POST",
-                json={"agent_id": str(agent_id), "folder_id": None},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = MoveAgentToFolder().post()
-
-        assert response.status_code == 200
-        call_args = mock_agents.update_one.call_args
-        assert "$unset" in call_args[0][1]
-
-    def test_returns_404_agent_not_found(self, app):
-        from docsgpt.api.user.agents.folders import MoveAgentToFolder
-
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/move_agent",
-                method="POST",
-                json={"agent_id": str(uuid.uuid4().hex)},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = MoveAgentToFolder().post()
-
-        assert response.status_code == 404
-
-    def test_returns_400_missing_agent_id(self, app):
-        from docsgpt.api.user.agents.folders import MoveAgentToFolder
-
-        with app.test_request_context(
-            "/api/agents/folders/move_agent",
-            method="POST",
-            json={},
-        ):
-            from flask import request
-
-            request.decoded_token = {"sub": "user1"}
-            response = MoveAgentToFolder().post()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestBulkMoveAgents:
-
-    def test_bulk_moves_to_folder(self, app):
-        from docsgpt.api.user.agents.folders import BulkMoveAgents
-
-        folder_id = uuid.uuid4().hex
-        agent_ids = [str(uuid.uuid4().hex), str(uuid.uuid4().hex)]
-        mock_agents = Mock()
-        mock_folders = Mock()
-        mock_folders.find_one.return_value = {"_id": folder_id}
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ), patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/bulk_move",
-                method="POST",
-                json={"agent_ids": agent_ids, "folder_id": str(folder_id)},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = BulkMoveAgents().post()
-
-        assert response.status_code == 200
-        mock_agents.update_many.assert_called_once()
-
-    def test_bulk_removes_from_folders(self, app):
-        from docsgpt.api.user.agents.folders import BulkMoveAgents
-
-        agent_ids = [str(uuid.uuid4().hex)]
-        mock_agents = Mock()
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/bulk_move",
-                method="POST",
-                json={"agent_ids": agent_ids},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = BulkMoveAgents().post()
-
-        assert response.status_code == 200
-        call_args = mock_agents.update_many.call_args
-        assert "$unset" in call_args[0][1]
-
-    def test_returns_400_missing_agent_ids(self, app):
-        from docsgpt.api.user.agents.folders import BulkMoveAgents
-
-        with app.test_request_context(
-            "/api/agents/folders/bulk_move",
-            method="POST",
-            json={},
-        ):
-            from flask import request
-
-            request.decoded_token = {"sub": "user1"}
-            response = BulkMoveAgents().post()
-
-        assert response.status_code == 400
-
-    def test_returns_404_folder_not_found(self, app):
-        from docsgpt.api.user.agents.folders import BulkMoveAgents
-
-        mock_folders = Mock()
-        mock_folders.find_one.return_value = None
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/bulk_move",
-                method="POST",
-                json={
-                    "agent_ids": [str(uuid.uuid4().hex)],
-                    "folder_id": str(uuid.uuid4().hex),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = BulkMoveAgents().post()
-
-        assert response.status_code == 404
-
-
-# =====================================================================
-# Coverage gap tests  (lines 64, 90-91, 100, 125-126, 132, 136)
-# =====================================================================
-
-
-@pytest.mark.unit
-class TestAgentFoldersGaps:
-
-    def test_create_folder_no_auth(self, app):
-        """Cover line 64: post returns 401 when no decoded_token."""
-        from docsgpt.api.user.agents.folders import AgentFolders
-
-        with app.test_request_context(
-            "/api/agents/folders/",
-            method="POST",
-            json={"name": "Test"},
-        ):
-            from flask import request
-
-            request.decoded_token = None
-            response = AgentFolders().post()
-        assert response.status_code == 401
-
-    def test_create_folder_exception(self, app):
-        """Cover lines 90-91: exception during insert_one returns 400."""
-        from docsgpt.api.user.agents.folders import AgentFolders
-
-        mock_folders = Mock()
-        mock_folders.find_one.return_value = None
-        mock_folders.insert_one.side_effect = Exception("db error")
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/",
-                method="POST",
-                json={"name": "Test"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().post()
-        assert response.status_code == 400
-
-    def test_get_folder_no_auth(self, app):
-        """Cover line 100: get specific folder returns 401 when no auth."""
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        with app.test_request_context(
-            "/api/agents/folders/abc",
-            method="GET",
-        ):
-            from flask import request
-
-            request.decoded_token = None
-            response = AgentFolder().get("abc")
-        assert response.status_code == 401
-
-    def test_get_folder_exception(self, app):
-        """Cover lines 125-126: exception during find returns 400."""
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        mock_folders = Mock()
-        mock_folders.find_one.side_effect = Exception("db error")
-
-        with patch(
-            "docsgpt.api.user.agents.folders.agent_folders_collection",
-            mock_folders,
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/" + str(uuid.uuid4().hex),
-                method="GET",
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().get(str(uuid.uuid4().hex))
-        assert response.status_code == 400
-
-    def test_update_folder_no_auth(self, app):
-        """Cover line 132: put returns 401 when no decoded_token."""
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        with app.test_request_context(
-            "/api/agents/folders/abc",
-            method="PUT",
-            json={"name": "Updated"},
-        ):
-            from flask import request
-
-            request.decoded_token = None
-            response = AgentFolder().put("abc")
-        assert response.status_code == 401
-
-    def test_update_folder_no_data(self, app):
-        """Cover line 136: put with no data returns 400."""
-        from docsgpt.api.user.agents.folders import AgentFolder
-
-        with app.test_request_context(
-            "/api/agents/folders/abc",
-            method="PUT",
-            content_type="application/json",
-            data="null",
-        ):
-            from flask import request
-
-            request.decoded_token = {"sub": "user1"}
-            response = AgentFolder().put("abc")
-        assert response.status_code == 400
+    return Flask(__name__)
+
+
+@contextmanager
+def _patch_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch("docsgpt.api.user.folders.routes.db_session", _yield), patch(
+        "docsgpt.api.user.folders.routes.db_readonly", _yield
+    ):
+        yield
+
+
+def _call(app, conn, method, path, user=USER, *, json=None, args=()):
+    from docsgpt.api.user.folders.routes import FolderItems, FolderResource, Folders
+
+    resource = FolderItems if path.startswith("/api/folders/items") else (
+        FolderResource if args else Folders
+    )
+    kwargs = {"method": method.upper()}
+    if json is not None:
+        kwargs["json"] = json
+    with _patch_db(conn), app.test_request_context(path, **kwargs):
+        from flask import request
+
+        request.decoded_token = {"sub": user} if user else None
+        response = getattr(resource(), method.lower())(*args)
+    return response.status_code, response.get_json()
+
+
+def _create(app, conn, name, *, type_="source", parent=None, user=USER):
+    body = {"type": type_, "name": name}
+    if parent:
+        body["parent_id"] = parent
+    return _call(app, conn, "post", "/api/folders", user, json=body)
+
+
+def _source(conn, owner=USER, name="s"):
+    return str(SourcesRepository(conn).create(name, user_id=owner)["id"])
+
+
+def _share(conn, resource_type, resource_id, owner, member, level="viewer"):
+    team = TeamsRepository(conn).create("T", f"t-{uuid.uuid4().hex[:8]}", owner)
+    TeamMembersRepository(conn).add_member(str(team["id"]), member)
+    TeamResourceGrantsRepository(conn).grant(
+        str(team["id"]), resource_type, resource_id, owner, owner, access_level=level, target_user_id=member
+    )
+
+
+class TestCreate:
+    def test_needs_a_session(self, app, pg_conn):
+        status, _ = _call(app, pg_conn, "get", "/api/folders?type=source", None)
+        assert status == 401
+
+    def test_type_is_required(self, app, pg_conn):
+        status, body = _call(app, pg_conn, "get", "/api/folders")
+        assert (status, body["error"]) == (400, "invalid_type")
+        status, body = _call(app, pg_conn, "post", "/api/folders", json={"type": "tool", "name": "x"})
+        assert (status, body["error"]) == (400, "invalid_type")
+
+    def test_creates_a_trimmed_folder(self, app, pg_conn):
+        status, body = _create(app, pg_conn, "  Carriers  ")
+        assert status == 201
+        assert body["name"] == "Carriers"
+        assert body["type"] == "source"
+        assert body["parent_id"] is None
+        assert (body["item_count"], body["folder_count"]) == (0, 0)
+        assert body["used_by"] == {"agents": [], "others": 0}
+
+    @pytest.mark.parametrize("name", ["", "   ", "x" * 81, "bad\x07name", 7, None])
+    def test_rejects_bad_names(self, app, pg_conn, name):
+        status, body = _call(app, pg_conn, "post", "/api/folders", json={"type": "source", "name": name})
+        assert (status, body["error"]) == (400, "invalid_folder_name")
+
+    def test_sibling_names_are_unique_ignoring_case(self, app, pg_conn):
+        _, parent = _create(app, pg_conn, "Carriers")
+        assert _create(app, pg_conn, "carriers")[1]["error"] == "folder_name_taken"
+        assert _create(app, pg_conn, "CARRIERS")[0] == 409
+        # Another parent, another type or another user is fine.
+        assert _create(app, pg_conn, "Carriers", parent=parent["id"])[0] == 201
+        assert _create(app, pg_conn, "Carriers", type_="agent")[0] == 201
+        assert _create(app, pg_conn, "Carriers", user=OTHER)[0] == 201
+
+    def test_three_levels_deep_at_most(self, app, pg_conn):
+        _, one = _create(app, pg_conn, "1")
+        _, two = _create(app, pg_conn, "2", parent=one["id"])
+        status, three = _create(app, pg_conn, "3", parent=two["id"])
+        assert status == 201
+        status, body = _create(app, pg_conn, "4", parent=three["id"])
+        assert (status, body["error"]) == (400, "folder_too_deep")
+
+    def test_parent_must_be_the_callers_folder_of_the_type(self, app, pg_conn):
+        _, agent_folder = _create(app, pg_conn, "Agents", type_="agent")
+        _, theirs = _create(app, pg_conn, "Theirs", user=OTHER)
+        for parent in (agent_folder["id"], theirs["id"], "not-a-folder"):
+            status, body = _create(app, pg_conn, "x", parent=parent)
+            assert (status, body["error"]) == (404, "folder_not_found")
+
+
+class TestUpdate:
+    def _put(self, app, conn, folder_id, body, user=USER):
+        return _call(app, conn, "put", f"/api/folders/{folder_id}", user, json=body, args=(folder_id,))
+
+    def test_renames_and_moves(self, app, pg_conn):
+        _, a = _create(app, pg_conn, "A")
+        _, b = _create(app, pg_conn, "B")
+        status, body = self._put(app, pg_conn, b["id"], {"name": "Bee", "parent_id": a["id"]})
+        assert status == 200
+        assert (body["name"], body["parent_id"]) == ("Bee", a["id"])
+        status, body = self._put(app, pg_conn, b["id"], {"parent_id": None})
+        assert (status, body["parent_id"]) == (200, None)
+
+    def test_rename_collides_with_a_sibling(self, app, pg_conn):
+        _create(app, pg_conn, "A")
+        _, b = _create(app, pg_conn, "B")
+        status, body = self._put(app, pg_conn, b["id"], {"name": "a"})
+        assert (status, body["error"]) == (409, "folder_name_taken")
+        # Renaming to its own name in another case is fine.
+        assert self._put(app, pg_conn, b["id"], {"name": "b"})[0] == 200
+
+    def test_a_move_lands_among_new_siblings_by_name(self, app, pg_conn):
+        _, a = _create(app, pg_conn, "A")
+        _create(app, pg_conn, "Dup", parent=a["id"])
+        _, dup = _create(app, pg_conn, "Dup")
+        status, body = self._put(app, pg_conn, dup["id"], {"parent_id": a["id"]})
+        assert (status, body["error"]) == (409, "folder_name_taken")
+
+    def test_no_cycles(self, app, pg_conn):
+        _, a = _create(app, pg_conn, "A")
+        _, b = _create(app, pg_conn, "B", parent=a["id"])
+        for target in (a["id"], b["id"]):
+            status, body = self._put(app, pg_conn, a["id"], {"parent_id": target})
+            assert (status, body["error"]) == (400, "folder_cycle")
+
+    def test_a_move_keeps_the_whole_subtree_within_three_levels(self, app, pg_conn):
+        _, a = _create(app, pg_conn, "A")
+        _, a2 = _create(app, pg_conn, "A2", parent=a["id"])
+        _, b = _create(app, pg_conn, "B")
+        _create(app, pg_conn, "B2", parent=b["id"])
+        status, body = self._put(app, pg_conn, b["id"], {"parent_id": a2["id"]})
+        assert (status, body["error"]) == (400, "folder_too_deep")
+        assert self._put(app, pg_conn, b["id"], {"parent_id": a["id"]})[0] == 200
+
+    def test_existing_deeper_folders_keep_working(self, app, pg_conn):
+        repo = FoldersRepository(pg_conn)
+        parent = None
+        for level in range(5):
+            parent = repo.create(USER, f"L{level}", parent_id=parent["id"] if parent else None)
+        status, body = self._put(app, pg_conn, parent["id"], {"name": "renamed"})
+        assert (status, body["name"]) == (200, "renamed")
+        # A full-form save re-sending the current parent isn't a move.
+        status, _ = self._put(app, pg_conn, parent["id"], {"name": "again", "parent_id": parent["parent_id"]})
+        assert status == 200
+
+    def test_another_users_folder_is_not_found(self, app, pg_conn):
+        _, theirs = _create(app, pg_conn, "Theirs", user=OTHER)
+        status, body = self._put(app, pg_conn, theirs["id"], {"name": "mine"})
+        assert (status, body["error"]) == (404, "folder_not_found")
+
+
+class TestDelete:
+    def _delete(self, app, conn, folder_id, user=USER):
+        return _call(app, conn, "delete", f"/api/folders/{folder_id}", user, args=(folder_id,))
+
+    def test_contents_move_to_the_parent(self, app, pg_conn):
+        _, top = _create(app, pg_conn, "Top")
+        _, mid = _create(app, pg_conn, "Mid", parent=top["id"])
+        _, leaf = _create(app, pg_conn, "Leaf", parent=mid["id"])
+        source = _source(pg_conn)
+        FolderItemsRepository(pg_conn).file(USER, "source", source, mid["id"])
+        status, body = self._delete(app, pg_conn, mid["id"])
+        assert status == 200
+        assert body == {"success": True, "moved_items": 1, "moved_folders": 1}
+        assert FoldersRepository(pg_conn).get(leaf["id"], USER)["parent_id"] == top["id"]
+        assert FolderItemsRepository(pg_conn).filing(USER, "source", source) == top["id"]
+
+    def test_agents_reading_it_live_lose_it(self, app, pg_conn):
+        _, folder = _create(app, pg_conn, "Live")
+        agent = AgentsRepository(pg_conn).create(USER, "a", "draft")
+        pg_conn.execute(
+            text("UPDATE agents SET knowledge_folder_ids = ARRAY[CAST(:f AS uuid)] WHERE id = CAST(:a AS uuid)"),
+            {"f": folder["id"], "a": agent["id"]},
+        )
+        assert self._delete(app, pg_conn, folder["id"])[0] == 200
+        assert AgentsRepository(pg_conn).get_by_id(agent["id"])["knowledge_folder_ids"] == []
+
+    def test_another_users_folder_is_not_found(self, app, pg_conn):
+        _, theirs = _create(app, pg_conn, "Theirs", user=OTHER)
+        assert self._delete(app, pg_conn, theirs["id"])[0] == 404
+        assert FoldersRepository(pg_conn).get(theirs["id"], OTHER) is not None
+
+
+class TestFileItems:
+    def _file(self, app, conn, body, user=USER):
+        return _call(app, conn, "post", "/api/folders/items", user, json=body)
+
+    def test_files_what_the_caller_can_see(self, app, pg_conn):
+        _, folder = _create(app, pg_conn, "K")
+        own = _source(pg_conn)
+        shared = _source(pg_conn, owner=OTHER, name="shared")
+        hidden = _source(pg_conn, owner=OTHER, name="hidden")
+        _share(pg_conn, "source", shared, OTHER, USER)
+        stamp = SourcesRepository(pg_conn).get_by_id(shared)["updated_at"]
+        status, body = self._file(app, pg_conn, {"type": "source", "folder_id": folder["id"],
+                                                 "ids": [own, shared, hidden]})
+        assert status == 200
+        assert (body["moved"], body["skipped"]) == ([own, shared], [hidden])
+        assert FolderItemsRepository(pg_conn).filings(USER, "source") == {own: folder["id"], shared: folder["id"]}
+        # Filing never touches the item, and the owner's filing is their own.
+        assert SourcesRepository(pg_conn).get_by_id(shared)["updated_at"] == stamp
+        assert FolderItemsRepository(pg_conn).filings(OTHER, "source") == {}
+
+    def test_null_unfiles(self, app, pg_conn):
+        _, folder = _create(app, pg_conn, "K")
+        own = _source(pg_conn)
+        self._file(app, pg_conn, {"type": "source", "folder_id": folder["id"], "ids": [own]})
+        status, body = self._file(app, pg_conn, {"type": "source", "folder_id": None, "ids": [own]})
+        assert (status, body["moved"]) == (200, [own])
+        assert FolderItemsRepository(pg_conn).filings(USER, "source") == {}
+
+    def test_only_into_the_callers_folder_of_the_items_type(self, app, pg_conn):
+        _, agent_folder = _create(app, pg_conn, "Agents", type_="agent")
+        _, theirs = _create(app, pg_conn, "Theirs", user=OTHER)
+        own = _source(pg_conn)
+        for folder_id in (agent_folder["id"], theirs["id"]):
+            status, body = self._file(app, pg_conn, {"type": "source", "folder_id": folder_id, "ids": [own]})
+            assert (status, body["error"]) == (404, "folder_not_found")
+
+    @pytest.mark.parametrize("ids", [None, [], "x", [str(i) for i in range(501)]])
+    def test_ids_must_be_a_short_list(self, app, pg_conn, ids):
+        status, body = self._file(app, pg_conn, {"type": "source", "folder_id": None, "ids": ids})
+        assert (status, body["error"]) == (400, "invalid_ids")
+
+    def test_files_agents_too(self, app, pg_conn):
+        _, folder = _create(app, pg_conn, "Agents", type_="agent")
+        agent = str(AgentsRepository(pg_conn).create(OTHER, "a", "draft")["id"])
+        _share(pg_conn, "agent", agent, OTHER, USER)
+        status, body = self._file(app, pg_conn, {"type": "agent", "folder_id": folder["id"], "ids": [agent]})
+        assert (status, body["moved"]) == (200, [agent])
+
+
+class TestList:
+    def test_counts_direct_children_the_caller_can_see(self, app, pg_conn):
+        _, top = _create(app, pg_conn, "Top")
+        _, child = _create(app, pg_conn, "Child", parent=top["id"])
+        own = _source(pg_conn)
+        shared = _source(pg_conn, owner=OTHER, name="shared")
+        _share(pg_conn, "source", shared, OTHER, USER)
+        items = FolderItemsRepository(pg_conn)
+        items.file(USER, "source", own, top["id"])
+        items.file(USER, "source", shared, child["id"])
+        # A filing of a source no longer shared stays hidden.
+        gone = _source(pg_conn, owner=OTHER, name="gone")
+        items.file(USER, "source", gone, top["id"])
+        status, body = _call(app, pg_conn, "get", "/api/folders?type=source")
+        assert status == 200
+        by_name = {f["name"]: f for f in body["folders"]}
+        assert (by_name["Top"]["item_count"], by_name["Top"]["folder_count"]) == (1, 1)
+        assert (by_name["Child"]["item_count"], by_name["Child"]["folder_count"]) == (1, 0)
+        assert by_name["Child"]["parent_id"] == top["id"]
+
+    def test_lists_one_type_of_the_callers_folders(self, app, pg_conn):
+        _create(app, pg_conn, "K")
+        _create(app, pg_conn, "A", type_="agent")
+        _create(app, pg_conn, "Theirs", user=OTHER)
+        _, body = _call(app, pg_conn, "get", "/api/folders?type=agent")
+        assert [f["name"] for f in body["folders"]] == ["A"]
+        assert "used_by" not in body["folders"][0]
+
+    def test_source_folders_name_the_agents_reading_them(self, app, pg_conn):
+        _, folder = _create(app, pg_conn, "Live")
+        agent = AgentsRepository(pg_conn).create(USER, "Reader", "published")
+        pg_conn.execute(
+            text("UPDATE agents SET knowledge_folder_ids = ARRAY[CAST(:f AS uuid)] WHERE id = CAST(:a AS uuid)"),
+            {"f": folder["id"], "a": agent["id"]},
+        )
+        hidden = AgentsRepository(pg_conn).create(OTHER, "Theirs", "published")
+        pg_conn.execute(
+            text("UPDATE agents SET knowledge_folder_ids = ARRAY[CAST(:f AS uuid)] WHERE id = CAST(:a AS uuid)"),
+            {"f": folder["id"], "a": hidden["id"]},
+        )
+        _, body = _call(app, pg_conn, "get", "/api/folders?type=source")
+        used_by = body["folders"][0]["used_by"]
+        assert [a["name"] for a in used_by["agents"]] == ["Reader"]
+        assert used_by["others"] == 1

@@ -6,7 +6,8 @@ Covers every write operation the legacy Mongo code performs on ``agents_collecti
 - find by key (API key lookup)
 - find by webhook token
 - list for user, list templates
-- folder assignment
+
+Folder filing is per user and lives in ``folder_items`` (``repositories/folders.py``).
 
 The ``creative`` and ``strict`` prompt presets have no ``prompts`` row, so
 ``prompt_id`` (a foreign key) can't hold them: they are stored in
@@ -32,12 +33,12 @@ STORED_PROMPT_PRESETS = ("creative", "strict")
 #: Columns a write may change without moving ``updated_at``. The builders send
 #: ``updated_at`` back as their stale-write token, so it tracks content only:
 #: an owner's chat (``last_used_at``), a regenerated key, the webhook token,
-#: the share link, the slug an export assigns and the owner's folder don't make
-#: a builder's open copy stale. The ``agents_set_updated_at`` trigger
-#: (migration 0060) skips the same columns.
+#: the share link and the slug an export assigns don't make a builder's open
+#: copy stale. The ``agents_set_updated_at`` trigger (migrations 0060, 0063)
+#: skips the same columns. Folder filing is not on the agent row at all.
 BOOKKEEPING_COLUMNS = frozenset({
     "last_used_at", "key", "incoming_webhook_token", "shared", "shared_token", "shared_metadata",
-    "slug", "folder_id",
+    "slug",
 })
 
 
@@ -120,7 +121,7 @@ class AgentsRepository:
         _ALLOWED = {
             "description", "agent_type", "key", "slug", "retriever",
             "default_model_id", "incoming_webhook_token",
-            "source_id", "prompt_id", "folder_id", "workflow_id",
+            "source_id", "prompt_id", "workflow_id",
             "extra_source_ids", "image",
             "chunks", "token_limit", "request_limit",
             "limited_token_mode", "limited_request_mode",
@@ -153,7 +154,7 @@ class AgentsRepository:
                 "shared", "allow_system_prompt_override",
             ):
                 values[col] = bool(val)
-            elif col in ("source_id", "folder_id", "workflow_id"):
+            elif col in ("source_id", "workflow_id"):
                 values[col] = str(val)
             elif col == "extra_source_ids":
                 # ARRAY(UUID) — pass list of strings; psycopg adapts it.
@@ -341,7 +342,7 @@ class AgentsRepository:
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "config", "resource_sponsors", "starters",
-            "default_model_id", "folder_id", "workflow_id",
+            "default_model_id", "workflow_id",
             "extra_source_ids", "image",
             "limited_token_mode", "token_limit",
             "limited_request_mode", "request_limit",
@@ -358,7 +359,7 @@ class AgentsRepository:
                 values[col] = val
             elif col == "prompt_id":
                 values["prompt_id"], values["prompt_preset"] = split_prompt_ref(val)
-            elif col in ("source_id", "folder_id", "workflow_id"):
+            elif col in ("source_id", "workflow_id"):
                 values[col] = str(val) if val else None
             elif col == "extra_source_ids":
                 values[col] = [str(x) for x in val] if val else []
@@ -419,7 +420,7 @@ class AgentsRepository:
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "config", "resource_sponsors", "starters",
-            "default_model_id", "folder_id", "workflow_id",
+            "default_model_id", "workflow_id",
             "extra_source_ids", "image",
             "limited_token_mode", "token_limit",
             "limited_request_mode", "request_limit",
@@ -439,7 +440,7 @@ class AgentsRepository:
                 values[col] = val
             elif col == "prompt_id":
                 values["prompt_id"], values["prompt_preset"] = split_prompt_ref(val)
-            elif col in ("source_id", "folder_id", "workflow_id"):
+            elif col in ("source_id", "workflow_id"):
                 values[col] = str(val) if val else None
             elif col == "extra_source_ids":
                 values[col] = [str(x) for x in val] if val else []
@@ -490,24 +491,3 @@ class AgentsRepository:
             {"legacy_id": legacy_mongo_id, "user_id": user_id},
         )
         return result.rowcount > 0
-
-    def set_folder(self, agent_id: str, user_id: str, folder_id: Optional[str]) -> None:
-        self._conn.execute(
-            text(
-                """
-                UPDATE agents SET folder_id = CAST(:folder_id AS uuid)
-                WHERE id = CAST(:id AS uuid) AND user_id = :user_id
-                """
-            ),
-            {"id": agent_id, "user_id": user_id, "folder_id": folder_id},
-        )
-
-    def clear_folder_for_all(self, folder_id: str, user_id: str) -> None:
-        """Remove folder assignment from all agents in a folder (used on folder delete)."""
-        self._conn.execute(
-            text(
-                "UPDATE agents SET folder_id = NULL "
-                "WHERE folder_id = CAST(:folder_id AS uuid) AND user_id = :user_id"
-            ),
-            {"folder_id": folder_id, "user_id": user_id},
-        )

@@ -304,7 +304,7 @@ class TestResourceSettings:
             resp = client.get(f"/api/resource_settings?resource_type=agent&resource_id={aid}")
         assert resp.status_code == 200
         assert _body(resp)["access"] == "viewer"
-        assert _body(resp)["allowed_actions"] == ["pin", "use"]
+        assert _body(resp)["allowed_actions"] == ["move_folder", "pin", "use"]
 
     def test_stranger_404(self, client, db):
         aid = _agent(db)

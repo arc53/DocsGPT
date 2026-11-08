@@ -812,6 +812,7 @@ def ingest_worker(
     idempotency_key=None,
     source_id=None,
     copy_files=None,
+    folder_id=None,
 ):
     """
     Ingest and process documents.
@@ -840,6 +841,8 @@ def ingest_worker(
             first, ``{"from": storage path, "to": storage path}`` each (a
             Knowledge source made from chat attachments). The copy runs here
             rather than in the request; a retry copies again, harmlessly.
+        folder_id (str|None): One of the uploader's source folders to file
+            the new source in once it is stored.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -1039,6 +1042,7 @@ def ingest_worker(
                 file_data["config"] = json.dumps(config)
 
             upload_index(vector_store_path, file_data)
+            _file_new_source(user, source_id_for_events, folder_id)
             publish_user_event(
                 user,
                 "source.ingest.completed",
@@ -1626,6 +1630,7 @@ def remote_worker(
     source_id=None,
     connection_id=None,
     actor_id=None,
+    folder_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1871,6 +1876,8 @@ def remote_worker(
             return _skip_refused_sync(self, user, source_id_for_events, name_job, loader, refused, actor_id)
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
+        if operation_mode != "sync":
+            _file_new_source(user, source_id_for_events, folder_id)
         website_fields = {}
         if loader == "website":
             website_fields = _record_website_report(
@@ -4404,6 +4411,28 @@ def _with_connection_credentials(source_data, connection_id: str):
     return {**dict(source_data or {}), **credentials}
 
 
+def _file_new_source(user: str, source_id: str, folder_id: Optional[str]) -> None:
+    """File a source the ingest just stored into the folder its upload asked for.
+
+    Best effort: the source stands without it, so a failure (the folder was
+    deleted meanwhile) is logged, not raised.
+
+    Args:
+        user: The uploader, the source's owner.
+        source_id: The new source.
+        folder_id: The uploader's source folder, or None.
+    """
+    if not folder_id:
+        return
+    from docsgpt.api.user.folders.service import file_new_source
+
+    try:
+        with db_session() as conn:
+            file_new_source(conn, user, str(source_id), str(folder_id))
+    except Exception:
+        logging.warning("Could not file source %s into folder %s", source_id, folder_id, exc_info=True)
+
+
 def _link_source_to_connection(source_id: str, connection_id: str) -> None:
     """Point a source at the connection it syncs from, and lift any reconnect pause."""
     from sqlalchemy import text as sql_text
@@ -4602,6 +4631,7 @@ def ingest_connector(
     connection_id=None,
     notify_skip: bool = True,
     actor_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -4639,6 +4669,7 @@ def ingest_connector(
             ``reason``) when a sync is skipped. Off for scheduled syncs.
         actor_id: The user who asked for the ingest or sync (a team editor),
             who gets its ``source.ingest.*`` events too; ``None`` for the owner.
+        folder_id: One of the uploader's source folders to file a new source in.
 
     Returns:
         The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
@@ -4653,7 +4684,7 @@ def ingest_connector(
         return _ingest_connector(
             self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
             operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
-            actor_id=actor_id,
+            actor_id=actor_id, folder_id=folder_id,
         )
 
     def _run(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -4697,6 +4728,7 @@ def _ingest_connector(
     source_id: Optional[str],
     connection_id: Optional[str],
     actor_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """The body of ``ingest_connector`` (same arguments); a sync runs it holding the source's index lock."""
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
@@ -4969,6 +5001,8 @@ def _ingest_connector(
                 return _skip_refused_sync(self, user, source_id_for_events, job_name, source_type, refused, actor_id)
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
+            if operation_mode != "sync":
+                _file_new_source(user, source_id_for_events, folder_id)
 
             # Ensure we mark the task as complete
             self.update_state(

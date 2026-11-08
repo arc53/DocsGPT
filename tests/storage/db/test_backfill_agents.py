@@ -74,3 +74,31 @@ def test_a_rerun_sets_both_prompt_columns_together(pg_conn):
     assert _prompt_columns(pg_conn) == {"a": (str(prompt), None)}
     _run(pg_conn, [{"_id": oid, "user": "u", "name": "a", "prompt_id": "creative"}])
     assert _prompt_columns(pg_conn) == {"a": (None, "creative")}
+
+
+def test_a_mongo_folder_becomes_the_owners_filing(pg_conn):
+    folder_oid, foreign_oid = ObjectId(), ObjectId()
+    folder = pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('u', 'F', :oid) RETURNING id"),
+        {"oid": folder_oid},
+    ).scalar()
+    pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('v', 'G', :oid)"), {"oid": foreign_oid}
+    )
+    filed, stray = ObjectId(), ObjectId()
+    stats = _run(
+        pg_conn,
+        [
+            {"_id": filed, "user": "u", "name": "filed", "folder_id": folder_oid},
+            # Another user's folder is not this owner's to file into.
+            {"_id": stray, "user": "u", "name": "stray", "folder_id": foreign_oid},
+        ],
+    )
+    rows = pg_conn.execute(
+        text(
+            "SELECT a.name, fi.user_id, fi.folder_id FROM folder_items fi "
+            "JOIN agents a ON a.id = fi.resource_id WHERE fi.resource_type = 'agent'"
+        )
+    ).fetchall()
+    assert [tuple(r) for r in rows] == [("filed", "u", folder)]
+    assert stats["folder_refs"] == 2

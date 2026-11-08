@@ -9,7 +9,7 @@ import re
 import tempfile
 import uuid
 import zipfile
-from typing import Container, Optional
+from typing import Any, Container, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from flask import Response, current_app, jsonify, make_response, request
@@ -18,6 +18,7 @@ from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
+from docsgpt.api.user.folders.service import FolderError, ingest_folder
 from docsgpt.api.user.idempotency import _synthesize_guard_key
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.resource_access import AccessDenied
@@ -557,6 +558,26 @@ class _UploadStager:
                 self.pending.append((temp_file_path, rel_path))
 
 
+def _requested_folder(user: str, raw: Any) -> tuple[Optional[str], Optional[Response]]:
+    """The source folder an ingest request asks to file its new source in.
+
+    Args:
+        user: The uploader.
+        raw: The request's ``folder_id`` (empty for none).
+
+    Returns:
+        tuple: ``(folder_id, None)``, or ``(None, 404 folder_not_found)`` when
+        it isn't one of the caller's source folders.
+    """
+    if raw in (None, "", "null"):
+        return None, None
+    try:
+        with db_readonly() as conn:
+            return ingest_folder(conn, user, raw), None
+    except FolderError as err:
+        return None, err.response()
+
+
 def _audit_source_created(
     *,
     source_id: str,
@@ -600,6 +621,9 @@ class UploadFile(Resource):
                 "user": fields.String(required=True, description="User ID"),
                 "name": fields.String(required=True, description="Job name"),
                 "file": fields.Raw(required=True, description="File(s) to upload"),
+                "folder_id": fields.String(
+                    required=False, description="One of the caller's source folders to file the new source in",
+                ),
             },
         )
     )
@@ -623,6 +647,9 @@ class UploadFile(Resource):
         )
         if config_error is not None:
             return config_error
+        folder_id, folder_refusal = _requested_folder(user, request.form.get("folder_id"))
+        if folder_refusal is not None:
+            return folder_refusal
         # User-scoped to avoid cross-user collisions; also feeds
         # ``_derive_source_id`` so uuid5 stays user-disjoint.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
@@ -697,6 +724,8 @@ class UploadFile(Resource):
                     # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
+                    # Only when given, so the task's call shape is unchanged otherwise.
+                    **({"folder_id": folder_id} if folder_id else {}),
                 },
             )
             if predetermined_task_id is not None:
@@ -831,6 +860,9 @@ class UploadRemote(Resource):
                 "sync_frequency": fields.String(
                     description="How often to re-fetch: never (default), daily, weekly or monthly",
                 ),
+                "folder_id": fields.String(
+                    description="One of the caller's source folders to file the new source in",
+                ),
             },
         )
     )
@@ -856,6 +888,9 @@ class UploadRemote(Resource):
             return config_error
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
         data = request.form
+        folder_id, folder_refusal = _requested_folder(user, data.get("folder_id"))
+        if folder_refusal is not None:
+            return folder_refusal
         required_fields = ["user", "source", "name", "data"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
@@ -970,6 +1005,7 @@ class UploadRemote(Resource):
                         "source_id": str(source_uuid),
                         # Validated above; stored on the new source so its syncs run on schedule.
                         "sync_frequency": sync_frequency,
+                        **({"folder_id": folder_id} if folder_id else {}),
                     },
                 }
                 if predetermined_task_id is not None:
@@ -1025,6 +1061,7 @@ class UploadRemote(Resource):
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
                     "sync_frequency": sync_frequency,
+                    **({"folder_id": folder_id} if folder_id else {}),
                 },
             }
             if predetermined_task_id is not None:

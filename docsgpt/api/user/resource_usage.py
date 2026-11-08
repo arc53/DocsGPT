@@ -38,7 +38,7 @@ from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 
 logger = logging.getLogger(__name__)
 
-UsageKind = Literal["tool", "prompt", "source"]
+UsageKind = Literal["tool", "prompt", "source", "folder"]
 
 #: The ``used_by`` of a resource no agent uses. Compare against it; never mutate it.
 EMPTY_USAGE: dict = {"agents": [], "others": 0}
@@ -80,6 +80,17 @@ _CLASSIC_SOURCES_SQL = f"""
 """
 # Uses ``agents_source_id_idx`` and the GIN index on ``agents.extra_source_ids`` (migration 0060).
 _CLASSIC_SOURCES_MATCH = "(a.source_id = ANY(CAST({ids} AS uuid[])) OR a.extra_source_ids && CAST({ids} AS uuid[]))"
+
+# A source folder an agent reads live (``agents.knowledge_folder_ids``, migration 0063).
+_CLASSIC_FOLDERS_SQL = f"""
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, f.fid::text AS ref
+    FROM agents a
+    CROSS JOIN LATERAL unnest(a.knowledge_folder_ids) AS f(fid)
+    WHERE {_CLASSIC} AND ({{match}})
+      AND f.fid = ANY(CAST(:ids AS uuid[]))
+"""
+# Uses the GIN index on ``agents.knowledge_folder_ids`` (migration 0063).
+_CLASSIC_FOLDERS_MATCH = "a.knowledge_folder_ids && CAST({ids} AS uuid[])"
 
 _CLASSIC_PROMPTS_SQL = f"""
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status,
@@ -314,6 +325,10 @@ def _usage_rows(
         return conn.execute(text(_CLASSIC_PROMPTS_SQL.format(match=where)), params).fetchall()
     if not (full_ids or scoped_ids):
         return []
+    if kind == "folder":
+        # Classic agents only: workflow agent nodes don't name folders yet.
+        where = _match(_CLASSIC_FOLDERS_MATCH, full_ids, scoped_ids)
+        return conn.execute(text(_CLASSIC_FOLDERS_SQL.format(match=where)), params).fetchall()
     classic_sql, classic_match = (
         (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH) if kind == "tool" else (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH)
     )

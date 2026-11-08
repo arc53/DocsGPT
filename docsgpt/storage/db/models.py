@@ -342,18 +342,39 @@ app_metadata_table = Table(
 
 # --- Agents, sources, attachments, artifacts --------------------------------
 
-agent_folders_table = Table(
-    "agent_folders",
+folders_table = Table(
+    "folders",
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
     Column("name", Text, nullable=False),
     Column("description", Text),
-    Column("parent_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
+    Column("parent_id", UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # ``agent`` or ``source`` (migration 0063; ``agent_folders`` before it).
+    Column("resource_type", Text, nullable=False, server_default="agent"),
+    CheckConstraint("resource_type IN ('agent', 'source')", name="folders_resource_type_chk"),
 )
+
+Index("folders_user_type_idx", folders_table.c.user_id, folders_table.c.resource_type)
+
+# Personal filing: each user files an item they can see into one of their own
+# folders of the same type, once (migration 0063).
+folder_items_table = Table(
+    "folder_items",
+    metadata,
+    Column("user_id", Text, nullable=False),
+    Column("resource_type", Text, nullable=False),
+    Column("resource_id", UUID(as_uuid=True), nullable=False),
+    Column("folder_id", UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("user_id", "resource_type", "resource_id"),
+    CheckConstraint("resource_type IN ('agent', 'source')", name="folder_items_resource_type_chk"),
+)
+
+Index("folder_items_folder_idx", folder_items_table.c.folder_id)
 
 sources_table = Table(
     "sources",
@@ -425,7 +446,8 @@ agents_table = Table(
     # Up to four questions a new chat with the agent offers (migration 0061).
     Column("starters", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("default_model_id", Text),
-    Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
+    # Source folders the agent reads live (migration 0063); a deleted folder drops out.
+    Column("knowledge_folder_ids", ARRAY(UUID(as_uuid=True)), nullable=False, server_default="{}"),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
     Column("limited_token_mode", Boolean, nullable=False, server_default="false"),
     Column("token_limit", Integer),
@@ -459,6 +481,7 @@ Index(
 # Mirrors migration 0060.
 Index("agents_tools_gin_idx", agents_table.c.tools, postgresql_using="gin")
 Index("agents_extra_source_ids_gin_idx", agents_table.c.extra_source_ids, postgresql_using="gin")
+Index("agents_knowledge_folder_ids_gin_idx", agents_table.c.knowledge_folder_ids, postgresql_using="gin")
 
 user_custom_models_table = Table(
     "user_custom_models",

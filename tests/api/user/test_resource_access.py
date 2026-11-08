@@ -48,11 +48,15 @@ class TestAllowedActions:
         actions = allowed_actions("agent", "editor", {})
         assert {"use", "edit", "publish", "view_logs", "manage_schedules", "export",
                 "manage_access_details", "edit_policy"} <= actions
-        assert not {"delete", "share", "manage_settings", "move_folder"} & actions
+        assert not {"delete", "share", "manage_settings"} & actions
 
     def test_agent_viewer_defaults(self):
         actions = allowed_actions("agent", "viewer", {})
-        assert actions == {"use", "pin"}
+        # Filing in one's own folders is personal, so anyone who sees the agent may.
+        assert actions == {"use", "pin", "move_folder"}
+
+    def test_source_viewer_files_too(self):
+        assert "move_folder" in allowed_actions("source", "viewer", {})
 
     def test_switches_widen_and_narrow(self):
         settings = {
@@ -156,7 +160,7 @@ class TestResolve:
         _share(pg_conn, team, "agent", aid2, "viewer", member="carol")
         rv = resolve(pg_conn, "agent", aid2, "carol")
         assert rv.access == "viewer"
-        assert rv.actions == frozenset({"use", "pin"})
+        assert rv.actions == frozenset({"use", "pin", "move_folder"})
 
     def test_switch_applies_to_grantee(self, pg_conn):
         team = _team(pg_conn)

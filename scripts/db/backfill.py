@@ -562,7 +562,7 @@ def _backfill_token_usage(
 def _backfill_agent_folders(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Backfill ``agent_folders`` in two passes.
+    """Backfill the Mongo ``agent_folders`` into ``folders`` (agent folders) in two passes.
 
     Folders are self-referential via ``parent_id``. Pass 1 inserts every
     folder with ``parent_id = NULL`` so legacy_mongo_ids are present in PG.
@@ -571,11 +571,11 @@ def _backfill_agent_folders(
     """
     insert_sql = text(
         """
-        INSERT INTO agent_folders (
-            user_id, name, description, created_at, updated_at, legacy_mongo_id
+        INSERT INTO folders (
+            user_id, name, description, resource_type, created_at, updated_at, legacy_mongo_id
         )
         VALUES (
-            :user_id, :name, :description,
+            :user_id, :name, :description, 'agent',
             COALESCE(:created_at, now()),
             COALESCE(:updated_at, now()),
             :legacy_mongo_id
@@ -589,7 +589,7 @@ def _backfill_agent_folders(
     )
     update_parent_sql = text(
         """
-        UPDATE agent_folders
+        UPDATE folders
         SET parent_id = CAST(:parent_pg_id AS uuid)
         WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id
         """
@@ -636,7 +636,7 @@ def _backfill_agent_folders(
     # Pass 2 — resolve parent_id once every folder row has a legacy_mongo_id
     parent_links_resolved = 0
     if parent_links and not dry_run:
-        folders_id_map = _build_legacy_id_map(conn, "agent_folders")
+        folders_id_map = _build_legacy_id_map(conn, "folders")
         update_batch: list[dict] = []
         for link in parent_links:
             parent_pg_id = folders_id_map.get(link["parent_legacy_id"])
@@ -1039,7 +1039,7 @@ def _backfill_agents(
 ) -> dict:
     sources_id_map = _build_legacy_id_map(conn, "sources")
     prompts_id_map = _build_legacy_id_map(conn, "prompts")
-    folders_id_map = _build_legacy_id_map(conn, "agent_folders")
+    folders_id_map = _build_legacy_id_map(conn, "folders")
     workflows_id_map = _build_legacy_id_map(conn, "workflows")
 
     insert_sql = text(
@@ -1048,7 +1048,7 @@ def _backfill_agents(
             user_id, name, status, key, image, description, agent_type,
             source_id, extra_source_ids,
             chunks, retriever, default_model_id,
-            prompt_id, prompt_preset, folder_id, workflow_id,
+            prompt_id, prompt_preset, workflow_id,
             tools, json_schema, models,
             limited_token_mode, token_limit, limited_request_mode, request_limit,
             allow_system_prompt_override,
@@ -1060,7 +1060,7 @@ def _backfill_agents(
             :user_id, :name, :status, :key, :image, :description, :agent_type,
             CAST(:source_id AS uuid), CAST(:extra_source_ids AS uuid[]),
             :chunks, :retriever, :default_model_id,
-            CAST(:prompt_id AS uuid), :prompt_preset, CAST(:folder_id AS uuid), CAST(:workflow_id AS uuid),
+            CAST(:prompt_id AS uuid), :prompt_preset, CAST(:workflow_id AS uuid),
             CAST(:tools AS jsonb), CAST(:json_schema AS jsonb), CAST(:models AS jsonb),
             :limited_token_mode, :token_limit, :limited_request_mode, :request_limit,
             :allow_system_prompt_override,
@@ -1087,7 +1087,6 @@ def _backfill_agents(
             -- allows at most one of them, so they can't be moved one at a time.
             prompt_id = EXCLUDED.prompt_id,
             prompt_preset = EXCLUDED.prompt_preset,
-            folder_id = EXCLUDED.folder_id,
             workflow_id = EXCLUDED.workflow_id,
             tools = EXCLUDED.tools,
             json_schema = EXCLUDED.json_schema,
@@ -1104,9 +1103,22 @@ def _backfill_agents(
             last_used_at = EXCLUDED.last_used_at
         """
     )
+    # The Mongo folder becomes the owner's filing (``folder_items``), matched
+    # by the agent's legacy id once the agent row exists.
+    filing_sql = text(
+        """
+        INSERT INTO folder_items (user_id, resource_type, resource_id, folder_id)
+        SELECT a.user_id, 'agent', a.id, f.id
+        FROM agents a
+        JOIN folders f ON f.id = CAST(:folder_id AS uuid) AND f.user_id = a.user_id AND f.resource_type = 'agent'
+        WHERE a.legacy_mongo_id = :legacy_mongo_id
+        ON CONFLICT (user_id, resource_type, resource_id) DO UPDATE SET folder_id = EXCLUDED.folder_id
+        """
+    )
     cursor = mongo_db["agents"].find({}, no_cursor_timeout=True).batch_size(batch_size)
     seen = written = skipped = 0
     batch: list[dict] = []
+    filings: list[dict] = []
     try:
         for doc in cursor:
             seen += 1
@@ -1156,7 +1168,6 @@ def _backfill_agents(
                 "default_model_id": doc.get("default_model_id"),
                 "prompt_id": prompt_pg,
                 "prompt_preset": prompt_preset,
-                "folder_id": folder_pg,
                 "workflow_id": workflow_pg,
                 "tools": json.dumps(doc.get("tools") or [], default=str),
                 "json_schema": json.dumps(doc.get("json_schema"), default=str) if doc.get("json_schema") else None,
@@ -1185,6 +1196,8 @@ def _backfill_agents(
                 "last_used_at": doc.get("lastUsedAt") or doc.get("last_used_at"),
                 "legacy_mongo_id": str(doc["_id"]),
             })
+            if folder_pg:
+                filings.append({"folder_id": folder_pg, "legacy_mongo_id": str(doc["_id"])})
             if len(batch) >= batch_size:
                 if not dry_run:
                     conn.execute(insert_sql, batch)
@@ -1196,7 +1209,9 @@ def _backfill_agents(
             written += len(batch)
     finally:
         cursor.close()
-    return {"seen": seen, "written": written, "skipped": skipped}
+    if filings and not dry_run:
+        conn.execute(filing_sql, filings)
+    return {"seen": seen, "written": written, "skipped": skipped, "folder_refs": len(filings)}
 
 
 def _backfill_attachments(
