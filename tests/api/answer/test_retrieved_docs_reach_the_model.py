@@ -164,3 +164,88 @@ class TestChunksPrecedence:
         sp.all_sources = []
         sp._configure_retriever()
         assert sp.retriever_config["chunks"] == 500
+
+
+@pytest.mark.unit
+class TestParentTextReachesPrompt:
+    """When a chunk was produced by the parent_child chunker the LLM must see
+    the parent window, not the narrow child that was embedded.
+
+    The StreamProcessor returns whatever the retriever puts in entry["text"].
+    After the fix, ClassicRAG puts the parent window there; this test pins
+    the contract from retriever output all the way to the user-turn <content>
+    block sent to the model.
+    """
+
+    PARENT = "Full parent window with extensive background context and reporting rules."
+    CHILD = "distinct child chunk that should not be injected directly"
+
+    def _agent_with_docs(self, docs):
+        with patch("docsgpt.llm.llm_creator.LLMCreator.create_llm"), patch(
+            "docsgpt.llm.handlers.handler_creator.LLMHandlerCreator.create_handler"
+        ):
+            return ClassicAgent(
+                endpoint="stream",
+                llm_name="openai",
+                model_id="gpt-4o",
+                api_key="k",
+                prompt="SYSTEM",
+                decoded_token={"sub": "u"},
+                tool_executor=MagicMock(),
+                retrieved_docs=docs,
+            )
+
+    def test_parent_text_in_prompt_not_child(self):
+        """entry['text'] == parent window → parent must appear in <content>."""
+        docs = [
+            {
+                "text": self.PARENT,
+                "matched_text": self.CHILD,
+                "filename": "aml.pdf",
+            }
+        ]
+        agent = self._agent_with_docs(docs)
+        messages = agent._build_messages("SYSTEM", "What is the deadline?")
+        user_turn = messages[-1]["content"]
+
+        assert self.PARENT in user_turn, "Parent window must appear in the user turn"
+        assert self.CHILD not in user_turn, "Child chunk must NOT appear in the user turn"
+
+    def test_retrieved_parent_metadata_reaches_prompt(self):
+        """Parent-expanded retriever entries keep their metadata through prompting."""
+        sp = _processor()
+        expanded_doc = {
+            "text": self.PARENT,
+            "matched_text": self.CHILD,
+            "metadata": {"parent_text": self.PARENT},
+            "filename": "aml.pdf",
+        }
+        retriever = MagicMock()
+        retriever.search.return_value = [expanded_doc]
+        retriever.chunks = 2
+        retriever.doc_token_limit = 50000
+        with patch.object(sp, "create_retriever", return_value=retriever):
+            _, docs = sp.pre_fetch_docs("What is the deadline?")
+
+        agent = self._agent_with_docs(docs)
+        user_turn = agent._build_messages("SYSTEM", "What is the deadline?")[-1]["content"]
+        assert self.PARENT in user_turn
+        assert self.CHILD not in user_turn
+
+    def test_matched_text_not_in_prompt(self):
+        """'matched_text' is for citation/source display only — not sent to LLM."""
+        docs = [
+            {
+                "text": self.PARENT,
+                "matched_text": self.CHILD,
+                "filename": "aml.pdf",
+            }
+        ]
+        agent = self._agent_with_docs(docs)
+        messages = agent._build_messages("SYSTEM", "What is the deadline?")
+        full_prompt = " ".join(
+            m["content"] if isinstance(m["content"], str) else ""
+            for m in messages
+        )
+        # matched_text must not appear literally as a standalone passage
+        assert self.CHILD not in full_prompt
