@@ -36,11 +36,13 @@ import { ActiveState, Doc } from '../models/misc';
 import {
   selectAttachmentBudgetShare,
   selectSelectedDocs,
+  selectSelectedFolders,
   selectSelectedModel,
   selectSourceDocs,
   selectSttAvailable,
   selectToken,
   setSelectedDocs,
+  setSelectedFolders,
 } from '../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
@@ -94,11 +96,11 @@ import {
   getFileExtension,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
-import { useSourceKindFilter } from '../settings/SourceKindFilter';
 import { useDeviceOnline } from '../hooks/useDeviceOnline';
 import { useToolKindFilter } from '../settings/useToolKindFilter';
 import { sourceItemId } from '../utils/sourceUtils';
-import { toSourcePickerItems } from './sourcePickerItems';
+import type { KnowledgePick } from './folders/folderPick';
+import { useKnowledgeFolderPicker } from './folders/useKnowledgeFolderPicker';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
@@ -397,6 +399,7 @@ export default function MessageInput({
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const selectedDocs = useSelector(selectSelectedDocs);
+  const selectedFolders = useSelector(selectSelectedFolders);
   const sourceDocs = useSelector(selectSourceDocs);
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
@@ -1376,40 +1379,48 @@ export default function MessageInput({
     void _docs;
   };
 
-  // The picker's kind filter, back on All each time it opens.
-  const sourceKinds = useSourceKindFilter(sourceDocs, isSourcesPopupOpen);
-  const sourceItems: MultiSelectPopoverItem[] = useMemo(
-    () =>
-      toSourcePickerItems(sourceKinds.docs, {
-        t,
-        labels: {
-          own: t('conversation.sources.groupOwn'),
-          team: t('conversation.sources.groupTeam'),
-        },
-        connections,
-      }),
-    [sourceKinds.docs, t, connections],
+  // The picker's rows: folders (a folder picks whole, its chevron opens
+  // it), then sources, with the kind track counting the open place.
+  const selectedDocList = useMemo(
+    () => (Array.isArray(selectedDocs) ? selectedDocs : []),
+    [selectedDocs],
   );
-
-  const selectedSourceIds = (
-    selectedDocs && Array.isArray(selectedDocs) ? selectedDocs : []
-  ).map((doc) => sourceItemId(doc));
-
-  const handleToggleSource = (id: string) => {
-    if (!sourceDocs) return;
-    const current = Array.isArray(selectedDocs) ? selectedDocs : [];
-    const matched = current.find((doc) => sourceItemId(doc) === id);
-    let updated: Doc[];
-    if (matched) {
-      updated = current.filter((doc) => sourceItemId(doc) !== id);
-    } else {
-      const incoming = sourceDocs.find((doc) => sourceItemId(doc) === id);
-      if (!incoming) return;
-      updated = [...current, incoming];
-    }
-    dispatch(setSelectedDocs(updated.length > 0 ? updated : []));
+  const knowledgePick = useMemo<KnowledgePick>(
+    () => ({
+      sources: selectedDocList.map((doc) => sourceItemId(doc)),
+      folders: selectedFolders.map((folder) => folder.id),
+    }),
+    [selectedDocList, selectedFolders],
+  );
+  const handlePickChange = (next: KnowledgePick) => {
+    const docs = sourceDocs ?? [];
+    // A picked source keeps its stored copy; a new one comes from the list.
+    const updated = next.sources
+      .map(
+        (id) =>
+          selectedDocList.find((doc) => sourceItemId(doc) === id) ??
+          docs.find((doc) => sourceItemId(doc) === id),
+      )
+      .filter((doc): doc is Doc => Boolean(doc));
+    const folders = next.folders.map((id) => ({
+      id,
+      name:
+        knowledgeTree.byId.get(id)?.name ??
+        selectedFolders.find((folder) => folder.id === id)?.name ??
+        '',
+    }));
+    dispatch(setSelectedDocs(updated));
+    dispatch(setSelectedFolders(folders));
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
+  const { popoverProps: knowledgePopover, tree: knowledgeTree } =
+    useKnowledgeFolderPicker({
+      open: isSourcesPopupOpen,
+      docs: sourceDocs ?? [],
+      pick: knowledgePick,
+      onPickChange: handlePickChange,
+      connections,
+    });
 
   // The list loads on mount and on each open; the slice applies only the
   // newest request's answer, from this composer or one a chat switch
@@ -1726,12 +1737,10 @@ export default function MessageInput({
               <SourcesTrigger
                 open={isSourcesPopupOpen}
                 onOpenChange={setIsSourcesPopupOpen}
-                items={sourceItems}
-                selectedIds={selectedSourceIds}
-                onToggle={handleToggleSource}
+                {...knowledgePopover}
                 selectedDocs={selectedDocs}
+                selectedFolders={selectedFolders}
                 onUploadClick={handleUploadClick}
-                filters={sourceKinds.filters}
               />
             )}
 

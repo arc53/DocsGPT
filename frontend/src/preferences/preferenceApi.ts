@@ -225,6 +225,43 @@ export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
   return validDocs.length > 0 ? validDocs : null;
 }
 
+/** A whole folder picked in the composer: its id, and its name for the pill. */
+export type SelectedFolder = { id: string; name: string };
+
+const RECENT_FOLDERS_KEY = 'DocsGPTRecentFolders';
+
+/**
+ * The composer's picked folders from the last visit, like its picked
+ * sources; anything malformed reads as none.
+ */
+export function getStoredRecentFolders(): SelectedFolder[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(RECENT_FOLDERS_KEY) ?? '[]',
+    );
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is SelectedFolder =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof item.id === 'string' &&
+        typeof item.name === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function setStoredRecentFolders(folders: SelectedFolder[]): void {
+  try {
+    if (folders.length > 0)
+      localStorage.setItem(RECENT_FOLDERS_KEY, JSON.stringify(folders));
+    else localStorage.removeItem(RECENT_FOLDERS_KEY);
+  } catch {
+    // Storage off (a private window): the pick lasts for this visit.
+  }
+}
+
 export function setLocalApiKey(key: string): void {
   localStorage.setItem('DocsGPTApiKey', key);
 }

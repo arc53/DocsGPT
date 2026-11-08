@@ -2588,7 +2588,10 @@
       "cancel": "取消",
       "review": "检查",
       "import": "导入",
-      "continueToAgent": "前往智能体"
+      "continueToAgent": "前往智能体",
+      "planWarningsTitle": "导入前请检查：",
+      "folderMatched": "{{name}}：使用你的文件夹",
+      "folderMissing": "{{name}}：你没有同名文件夹"
     },
     "jwt": {
       "title": "添加 JWT 令牌",
@@ -3971,6 +3974,26 @@
       "deleteFailed": "无法删除文件夹，请重试。",
       "loadFailed": "无法加载文件夹。",
       "openFailed": "该文件夹已不存在。"
+    },
+    "picker": {
+      "allOf": "{{name}} 全部",
+      "inFolder": "此文件夹中",
+      "partial": "已选 {{picked}}/{{total}}",
+      "live": "{{what}} · 包括新来源",
+      "includedWith": "已随{{name}}包含",
+      "back": "返回",
+      "deletedFolder": "已删除的文件夹",
+      "deletedLine": "已不存在，请移除。",
+      "ownersFolder": "{{person}} 的文件夹",
+      "stoppedShort": "已停止",
+      "hintOne_one": "{{name}} 是一个文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "hintOne_other": "{{name}} 是一个文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "hintMany_one": "{{names}} 是文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "hintMany_other": "{{names}} 是文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "stopped": "{{name}} 已停止：这是 {{person}} 的文件夹，而该用户已无法编辑此智能体。",
+      "stoppedOther": "{{name}} 已停止：其所有者已无法编辑此智能体。",
+      "deleted_one": "此智能体的一个文件夹已被删除。请在列表中移除它。",
+      "deleted_other": "此智能体的 {{formatted}} 个文件夹已被删除。请在列表中移除它们。"
     }
   },
   "components": {

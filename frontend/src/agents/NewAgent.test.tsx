@@ -1032,6 +1032,41 @@ describe('NewAgent form', () => {
     ).toBe('Renamed');
   });
 
+  it("shows a teammate's stopped folder, counts it once and saves it off", async () => {
+    await renderEdit({
+      folders: ['ops'],
+      folder_details: [
+        {
+          id: 'ops',
+          name: 'Ops',
+          source_count: 0,
+          owner_name: 'lena@x.io',
+          stopped: true,
+          reason: 'sponsor_cannot_edit_agent',
+        },
+      ],
+    });
+    // A lone folder is the field's label; the hint says why it stopped.
+    const field = Array.from(
+      container.querySelectorAll<HTMLElement>('[role="combobox"]'),
+    ).find((el) => el.textContent === 'Ops');
+    expect(field?.hasAttribute('data-placeholder')).toBe(false);
+    expect(container.textContent).toContain('folders.picker.stopped');
+    const folderRow = container.querySelector('[data-item="folder:ops"]');
+    expect(folderRow?.getAttribute('data-description')).toContain(
+      'folders.picker.ownersFolder',
+    );
+    // Saving unchanged keeps it; taking it off saves an empty list.
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('folders')).toBe('[]');
+  });
+
   it('sends the stamp the last save answered with', async () => {
     mocks.updateAgent.mockImplementation(() =>
       jsonResponse({ success: true, id: 'agent-1', updated_at: 'stamp-2' }),

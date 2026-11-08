@@ -2600,7 +2600,10 @@
       "cancel": "Cancel",
       "review": "Review",
       "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "continueToAgent": "Continue to agent",
+      "planWarningsTitle": "Check before you import:",
+      "folderMatched": "{{name}}: using your folder",
+      "folderMissing": "{{name}}: you have no folder with this name"
     },
     "jwt": {
       "title": "Add JWT Token",
@@ -3993,6 +3996,26 @@
       "deleteFailed": "Couldn't delete the folder. Try again.",
       "loadFailed": "Couldn't load your folders.",
       "openFailed": "That folder doesn't exist any more."
+    },
+    "picker": {
+      "allOf": "All of {{name}}",
+      "inFolder": "In this folder",
+      "partial": "{{picked}} of {{total}} picked",
+      "live": "{{what}} · new sources included",
+      "includedWith": "Included with {{name}}",
+      "back": "Back",
+      "deletedFolder": "Deleted folder",
+      "deletedLine": "No longer exists. Take it off.",
+      "ownersFolder": "{{person}}'s folder",
+      "stoppedShort": "Stopped",
+      "hintOne_one": "{{name}} is a folder: its {{formatted}} source today, and any added to it later.",
+      "hintOne_other": "{{name}} is a folder: its {{formatted}} sources today, and any added to it later.",
+      "hintMany_one": "{{names}} are folders: their {{formatted}} source today, and any added to them later.",
+      "hintMany_other": "{{names}} are folders: their {{formatted}} sources today, and any added to them later.",
+      "stopped": "{{name}} stopped: it's {{person}}'s folder, and they can no longer edit this agent.",
+      "stoppedOther": "{{name}} stopped: its owner can no longer edit this agent.",
+      "deleted_one": "A folder on this agent was deleted. Take it off in the list.",
+      "deleted_other": "{{formatted}} folders on this agent were deleted. Take them off in the list."
     }
   },
   "components": {

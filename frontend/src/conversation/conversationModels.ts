@@ -144,6 +144,8 @@ export interface Query {
 export interface RetrievalPayload {
   question: string;
   active_docs?: string | string[];
+  /** Whole knowledge folders (agentless chats), read live. */
+  active_folders?: string[];
   retriever?: string;
   conversation_id: string | null;
   prompt_id?: string | null;

@@ -79,6 +79,7 @@ const makeStore = (
     prompts: [],
     chunks: '2',
     selectedDocs: [],
+    selectedFolders: [],
     sourceDocs: null,
     sourceDocsFailed: false,
     conversations: { data: null, loading: false },

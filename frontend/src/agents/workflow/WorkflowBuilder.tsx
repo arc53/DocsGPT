@@ -53,6 +53,7 @@ import type { SponsorAudience } from '../sponsorConsent';
 import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
 import { analyticsOf } from '../analyticsConfig';
 import { largestModelWindow } from '../contextLimit';
+import type { FolderRefDetail } from '../../components/folders/pickedFolders';
 import { cleanStarters } from '../starters';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
 import { ConditionCase, RetryConfig, WorkflowNode } from '../types/workflow';
@@ -446,7 +447,8 @@ function WorkflowBuilderInner() {
   const [nodeRefNames, setNodeRefNames] = useState<{
     tools: { id: string; label: string; name?: string }[];
     sources: { id: string; label: string }[];
-  }>({ tools: [], sources: [] });
+    folders: FolderRefDetail[];
+  }>({ tools: [], sources: [], folders: [] });
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
     Record<string, string>
   >({});
@@ -1396,6 +1398,7 @@ function WorkflowBuilderInner() {
               label: source.name || '',
             }),
           ),
+          folders: Array.isArray(refDetails?.folders) ? refDetails.folders : [],
         });
         // The agent's own fields when there is one (an older agent's may
         // differ from its workflow's), else the workflow's.
@@ -2608,6 +2611,7 @@ function WorkflowBuilderInner() {
                   availableTools={availableTools}
                   attachedTools={nodeRefNames.tools}
                   attachedSources={nodeRefNames.sources}
+                  attachedFolders={nodeRefNames.folders}
                   documentOptions={selectedAgentDocumentOptions}
                   jsonSchemaText={selectedAgentJsonSchemaText}
                   jsonSchemaError={selectedAgentJsonSchemaError}

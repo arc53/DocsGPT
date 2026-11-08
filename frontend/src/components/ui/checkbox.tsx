@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority';
-import { CheckIcon } from 'lucide-react';
+import { CheckIcon, MinusIcon } from 'lucide-react';
 import { Checkbox as CheckboxPrimitive } from 'radix-ui';
 import * as React from 'react';
 
@@ -7,7 +7,7 @@ import { useFormFieldControl } from '@/components/ui/form-field';
 import { cn, focusRing, invalidState } from '@/lib/utils';
 
 const checkboxVariants = cva(
-  `${focusRing} ${invalidState} peer border-input dark:bg-input/30 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:data-[state=checked]:bg-primary data-[state=checked]:border-primary focus-visible:border-ring shrink-0 rounded-sm border shadow-xs transition-shadow outline-none disabled:cursor-not-allowed disabled:opacity-50`,
+  `${focusRing} ${invalidState} peer border-input dark:bg-input/30 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground dark:data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary focus-visible:border-ring shrink-0 rounded-sm border shadow-xs transition-shadow outline-none disabled:cursor-not-allowed disabled:opacity-50`,
   {
     variants: {
       size: {
@@ -24,7 +24,11 @@ const checkboxVariants = cva(
 type CheckboxProps = React.ComponentProps<typeof CheckboxPrimitive.Root> &
   VariantProps<typeof checkboxVariants>;
 
-/** A themed checkbox (Radix), so it looks the same on every OS and theme. */
+/**
+ * A themed checkbox (Radix), so it looks the same on every OS and theme.
+ * `checked="indeterminate"` draws a minus on the filled box (a folder partly
+ * picked).
+ */
 function Checkbox(checkboxProps: CheckboxProps) {
   const {
     className,
@@ -44,11 +48,19 @@ function Checkbox(checkboxProps: CheckboxProps) {
       >
         {/* text-current: a parent that greys un-coloured svgs (CommandItem,
             SelectItem) must not grey the tick. */}
-        <CheckIcon
-          className={
-            size === 'sm' ? 'size-3 text-current' : 'size-3.5 text-current'
-          }
-        />
+        {props.checked === 'indeterminate' ? (
+          <MinusIcon
+            className={
+              size === 'sm' ? 'size-3 text-current' : 'size-3.5 text-current'
+            }
+          />
+        ) : (
+          <CheckIcon
+            className={
+              size === 'sm' ? 'size-3 text-current' : 'size-3.5 text-current'
+            }
+          />
+        )}
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

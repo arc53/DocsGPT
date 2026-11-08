@@ -1,4 +1,10 @@
-import { CircleCheck, CircleX, Play, SquarePen } from 'lucide-react';
+import {
+  CircleCheck,
+  CircleX,
+  Folder as FolderIcon,
+  Play,
+  SquarePen,
+} from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -51,6 +57,14 @@ import {
   loadFolders,
   selectFolderList,
 } from '../components/folders/foldersSlice';
+import {
+  pickedFolderLabel,
+  pickedFolders,
+  pickedFoldersHint,
+  stoppedFolderLines,
+  unlistedFolderRow,
+} from '../components/folders/pickedFolders';
+import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
 import {
   selectSelectedAgent,
   selectSourceDocs,
@@ -137,6 +151,7 @@ function agentSavePayload(agent: Agent, jsonSchemaText: string) {
     starters: cleanStarters(agent.starters),
     source: agent.source ?? '',
     sources: agent.sources ?? [],
+    folders: agent.folders ?? [],
     chunks: agent.chunks ?? '',
     retriever: agent.retriever ?? '',
     prompt_id: agent.prompt_id ?? '',
@@ -231,6 +246,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
     new Set(),
   );
+  // Whole knowledge folders on the agent, read live on every answer.
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const { tree: sourceFolderTree } = useSourceFolderTree();
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   // Tools on the agent when it loaded: the owner's private ones don't come
   // back in the caller's own tool list, so the picker adds a row for each.
@@ -492,14 +510,49 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         .filter(Boolean),
     [resolveSourceLabel, selectedSourceIds],
   );
+  // The picked folders, named and counted (a teammate's or a deleted one
+  // from the agent's folder_details).
+  const knowledgeFolders = useMemo(
+    () =>
+      pickedFolders(
+        sourceFolderTree,
+        sourceDocs ?? [],
+        selectedFolderIds,
+        agent.folder_details,
+      ),
+    [sourceFolderTree, sourceDocs, selectedFolderIds, agent.folder_details],
+  );
+  const folderNames = knowledgeFolders.map((folder) =>
+    pickedFolderLabel(t, folder),
+  );
+  // A folder counts once, like a source.
+  const knowledgeCount = selectedSourceIds.size + selectedFolderIds.length;
+  const loneFolder = selectedSourceIds.size === 0 && folderNames.length === 1;
   const sourceTriggerLabel =
-    selectedSourceIds.size === 0
+    knowledgeCount === 0
       ? t('agents.form.placeholders.selectSources')
-      : selectedSourceIds.size === 1
-        ? selectedSourceNames[0]
+      : knowledgeCount === 1
+        ? (selectedSourceNames[0] ?? folderNames[0])
         : t('conversation.sources.selectedCount', {
-            count: selectedSourceIds.size,
+            count: knowledgeCount,
           });
+  const knowledgeHint =
+    knowledgeCount === 0 ? (
+      t('agents.form.sourcePopup.noSourceHint')
+    ) : knowledgeFolders.length > 0 ? (
+      <>
+        {[
+          pickedFoldersHint(t, knowledgeFolders),
+          ...stoppedFolderLines(t, knowledgeFolders),
+        ]
+          .filter(Boolean)
+          .map((line) => (
+            <span key={line} className="block">
+              {line}
+            </span>
+          ))}
+      </>
+    ) : undefined;
 
   // Select the source an upload started from this form created. The id comes
   // from the upload itself, so a source that appeared meanwhile for another
@@ -518,6 +571,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     );
     formData.append('source', source);
     formData.append('sources', JSON.stringify(sources));
+    formData.append('folders', JSON.stringify(selectedFolderIds));
   };
 
   const handleUpload = useCallback((files: File[]) => {
@@ -1031,6 +1085,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
         const agentSourceIds = selectedSourceIdsFromAgent(data);
         setSelectedSourceIds(new Set(agentSourceIds));
+        const agentFolderIds: string[] = Array.isArray(data.folders)
+          ? data.folders
+          : [];
+        setSelectedFolderIds(agentFolderIds);
 
         if (data.tool_details) {
           setSelectedTools(data.tool_details);
@@ -1061,6 +1119,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             ? toolIdsOf(data.tool_details)
             : data.tools || [],
           ...serializeAgentSources(agentSourceIds, sourceDocs),
+          folders: agentFolderIds,
           models: agentModels,
           default_model_id: agentModels.includes(data.default_model_id || '')
             ? data.default_model_id
@@ -1122,6 +1181,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       retriever: selectedSourceIds.size === 0 ? 'classic' : '',
     }));
   }, [selectedSourceIds]);
+
+  useEffect(() => {
+    setAgent((prev) => ({ ...prev, folders: selectedFolderIds }));
+  }, [selectedFolderIds]);
 
   useEffect(() => {
     setAgent((prev) => ({ ...prev, tools: toolIdsOf(selectedTools) }));
@@ -1331,22 +1394,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               id={sourcesPickerId}
               labelSurface="background"
               label={t('agents.form.labels.sources')}
-              hint={
-                selectedSourceIds.size === 0
-                  ? t('agents.form.sourcePopup.noSourceHint')
-                  : undefined
-              }
+              hint={knowledgeHint}
             >
               <KnowledgePicker
                 open={isSourcePopupOpen}
                 onOpenChange={setIsSourcePopupOpen}
                 docs={sourceDocs ?? []}
-                selectedIds={Array.from(selectedSourceIds)}
-                onToggle={(id) => {
-                  const next = new Set(selectedSourceIds);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  setSelectedSourceIds(next);
+                pick={{
+                  sources: Array.from(selectedSourceIds),
+                  folders: selectedFolderIds,
+                }}
+                onPickChange={(next) => {
+                  setSelectedSourceIds(new Set(next.sources));
+                  setSelectedFolderIds(next.folders);
+                }}
+                unlistedFolder={(id) => {
+                  const folder = knowledgeFolders.find(
+                    (item) => item.id === id,
+                  );
+                  return folder
+                    ? unlistedFolderRow(t, folder)
+                    : { label: t('folders.picker.deletedFolder') };
                 }}
                 connections={toolContext.connections}
                 unlistedLabel={resolveSourceLabel}
@@ -1366,14 +1434,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     role="combobox"
                     id={sourcesPickerId}
                     ref={sourceAnchorButtonRef}
-                    data-placeholder={
-                      selectedSourceIds.size > 0 ? undefined : ''
-                    }
+                    data-placeholder={knowledgeCount > 0 ? undefined : ''}
                     className="w-full justify-start text-left"
                   >
+                    {/* A lone folder reads as the folder: its icon and name. */}
+                    {loneFolder && (
+                      <FolderIcon className="text-muted-foreground size-4" />
+                    )}
                     <span
                       className="truncate"
-                      title={selectedSourceNames.join(', ')}
+                      title={[...folderNames, ...selectedSourceNames].join(
+                        ', ',
+                      )}
                     >
                       {sourceTriggerLabel}
                     </span>

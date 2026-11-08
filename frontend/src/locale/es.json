@@ -2687,7 +2687,10 @@
       "cancel": "Cancelar",
       "review": "Revisar",
       "import": "Importar",
-      "continueToAgent": "Continuar al agente"
+      "continueToAgent": "Continuar al agente",
+      "planWarningsTitle": "Revisa antes de importar:",
+      "folderMatched": "{{name}}: se usa tu carpeta",
+      "folderMissing": "{{name}}: no tienes ninguna carpeta con este nombre"
     },
     "jwt": {
       "title": "Añadir token JWT",
@@ -4112,6 +4115,29 @@
       "deleteFailed": "No se pudo eliminar la carpeta. Inténtalo de nuevo.",
       "loadFailed": "No se pudieron cargar tus carpetas.",
       "openFailed": "Esa carpeta ya no existe."
+    },
+    "picker": {
+      "allOf": "Todo {{name}}",
+      "inFolder": "En esta carpeta",
+      "partial": "{{picked}} de {{total}} elegidas",
+      "live": "{{what}} · incluye fuentes nuevas",
+      "includedWith": "Incluida con {{name}}",
+      "back": "Atrás",
+      "deletedFolder": "Carpeta eliminada",
+      "deletedLine": "Ya no existe. Quítala.",
+      "ownersFolder": "Carpeta de {{person}}",
+      "stoppedShort": "Detenida",
+      "hintOne_one": "{{name}} es una carpeta: hoy {{formatted}} fuente, y las que se añadan después.",
+      "hintOne_many": "{{name}} es una carpeta: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintOne_other": "{{name}} es una carpeta: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintMany_one": "{{names}} son carpetas: hoy {{formatted}} fuente, y las que se añadan después.",
+      "hintMany_many": "{{names}} son carpetas: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintMany_other": "{{names}} son carpetas: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "stopped": "{{name}} se detuvo: es la carpeta de {{person}}, que ya no puede editar este agente.",
+      "stoppedOther": "{{name}} se detuvo: su propietario ya no puede editar este agente.",
+      "deleted_one": "Se eliminó una carpeta de este agente. Quítala de la lista.",
+      "deleted_many": "Se eliminaron {{formatted}} carpetas de este agente. Quítalas de la lista.",
+      "deleted_other": "Se eliminaron {{formatted}} carpetas de este agente. Quítalas de la lista."
     }
   },
   "components": {

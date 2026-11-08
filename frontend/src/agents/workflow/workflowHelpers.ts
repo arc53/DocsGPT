@@ -18,6 +18,8 @@ export interface AgentNodeConfig {
   output_variable?: string;
   stream_to_user: boolean;
   sources: string[];
+  /** Whole knowledge folders, read live on every run. */
+  folders?: string[];
   tools: string[];
   chunks?: string;
   retriever?: string;

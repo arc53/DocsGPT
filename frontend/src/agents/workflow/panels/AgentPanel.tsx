@@ -38,6 +38,15 @@ import {
   selectToken,
 } from '../../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../../store';
+import {
+  type FolderRefDetail,
+  pickedFolderLabel,
+  pickedFolders,
+  pickedFoldersHint,
+  stoppedFolderLines,
+  unlistedFolderRow,
+} from '../../../components/folders/pickedFolders';
+import { useSourceFolderTree } from '../../../components/folders/useKnowledgeFolderPicker';
 import type { Connection } from '../../../connectors/types';
 import type { LeaveTo } from '../../../hooks/useLeaveGuard';
 import KnowledgePicker from '../../components/KnowledgePicker';
@@ -80,6 +89,12 @@ interface AgentPanelProps extends NodePanelBodyProps {
    */
   attachedTools?: { id: string; label: string; name?: string }[];
   attachedSources?: { id: string; label: string }[];
+  /**
+   * The knowledge folders the workflow's nodes reference
+   * (`ref_details.folders`): a teammate's or a deleted one still gets a
+   * remove-only row.
+   */
+  attachedFolders?: FolderRefDetail[];
   /** Upstream file variables the agent can read. */
   documentOptions: { value: string; label: string }[];
   /** The structured-output schema as typed. */
@@ -166,6 +181,7 @@ export default function AgentPanel({
   availableTools,
   attachedTools = [],
   attachedSources = [],
+  attachedFolders = [],
   documentOptions,
   jsonSchemaText,
   jsonSchemaError,
@@ -201,6 +217,15 @@ export default function AgentPanel({
     [storedDocs],
   );
   const pickedSources: string[] = config.sources || [];
+  const pickedFolderIds: string[] = Array.isArray(config.folders)
+    ? config.folders
+    : [];
+  const { tree: folderTree } = useSourceFolderTree();
+  const nodeFolders = useMemo(
+    () =>
+      pickedFolders(folderTree, sourceDocs, pickedFolderIds, attachedFolders),
+    [folderTree, sourceDocs, pickedFolderIds, attachedFolders],
+  );
   const pickedTools: string[] = config.tools || [];
 
   // An upload finishes after its dialog closes, maybe after the node did:
@@ -404,6 +429,16 @@ export default function AgentPanel({
         <FormField
           label={t('agents.workflow.builder.sources')}
           labelSurface="background"
+          hint={
+            nodeFolders.length > 0
+              ? [
+                  pickedFoldersHint(t, nodeFolders),
+                  ...stoppedFolderLines(t, nodeFolders),
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+              : undefined
+          }
         >
           {/* The panel is docked beside the canvas, not a dialog, so the
               popover needs no modal (on a phone it is its own sheet). */}
@@ -411,10 +446,16 @@ export default function AgentPanel({
             open={sourcesOpen}
             onOpenChange={openPicker(setSourcesOpen)}
             docs={sourceDocs}
-            selectedIds={pickedSources}
-            onToggle={(id) =>
-              updateConfig({ sources: toggled(pickedSources, id) })
+            pick={{ sources: pickedSources, folders: pickedFolderIds }}
+            onPickChange={(next) =>
+              updateConfig({ sources: next.sources, folders: next.folders })
             }
+            unlistedFolder={(id) => {
+              const folder = nodeFolders.find((item) => item.id === id);
+              return folder
+                ? unlistedFolderRow(t, folder)
+                : { label: t('folders.picker.deletedFolder') };
+            }}
             connections={connections}
             unlistedLabel={(id) =>
               attachedSources.find((item) => item.id === id)?.label || id
@@ -430,7 +471,10 @@ export default function AgentPanel({
             onLeaveTo={onLeaveTo}
             trigger={
               <MultiSelectTrigger
-                labels={pickedSources.map(sourceName)}
+                labels={[
+                  ...nodeFolders.map((folder) => pickedFolderLabel(t, folder)),
+                  ...pickedSources.map(sourceName),
+                ]}
                 placeholder={t('agents.form.placeholders.selectSources')}
               />
             }

@@ -761,6 +761,7 @@ async function answerQuestion(
         true,
         modelId,
         idempotencyKey,
+        (state.preference.selectedFolders ?? []).map((folder) => folder.id),
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -776,6 +777,7 @@ async function answerQuestion(
         true,
         modelId,
         idempotencyKey,
+        (state.preference.selectedFolders ?? []).map((folder) => folder.id),
       );
       if (answer) {
         let sourcesPrepped = [];

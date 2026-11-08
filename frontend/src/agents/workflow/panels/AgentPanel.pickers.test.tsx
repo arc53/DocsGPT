@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { Node } from 'reactflow';
 import type { Mock } from 'vitest';
 
+import type { Folder } from '../../../components/folders/types';
 import type { Doc } from '../../../models/misc';
 import type { UserTool } from '../workflowHelpers';
 
@@ -99,6 +100,15 @@ const TOOLS: UserTool[] = [
 
 type UpdateFn = (data: Record<string, unknown>) => void;
 
+const folderList = (items: Folder[]) => ({
+  items,
+  loaded: true,
+  loading: false,
+  failed: false,
+  latestRequestId: null,
+  removedParents: {},
+});
+
 const makeNode = (config: Record<string, unknown> = {}): Node => ({
   id: 'agent_1',
   type: 'agent',
@@ -125,6 +135,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
         loaded: true,
         loading: false,
       },
+      folders: { source: folderList([]), agent: folderList([]) },
     };
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -423,6 +434,41 @@ describe('AgentPanel knowledge and tool pickers', () => {
     expect(popover().textContent).toContain(
       'settings.sources.noKnowledgeFound',
     );
+  });
+
+  it('picks a whole folder into config.folders and names it on the trigger', async () => {
+    store.state = {
+      ...store.state,
+      preference: {
+        token: 'tok',
+        sourceDocs: [
+          doc('own-1', 'Handbook', { folder_id: 'carriers' }),
+          doc('own-2', 'Rates', { folder_id: 'carriers' }),
+        ],
+      },
+      folders: {
+        source: folderList([
+          { id: 'carriers', name: 'Carriers', parent_id: null, item_count: 2 },
+        ]),
+        agent: folderList([]),
+      },
+    };
+    const onUpdate = await render(makeNode({ sources: ['own-1'] }));
+    await open(sourcesTrigger());
+    // Handbook leads Selected, its line naming the folder it is filed in.
+    expect(row('Handbook').textContent).toContain('Carriers');
+    const folderRow = rows().find(
+      (el) => el.querySelector('p')?.textContent === 'Carriers',
+    )!;
+    await act(async () => folderRow.click());
+    // The folder replaces the source picked inside it.
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      config: expect.objectContaining({ sources: [], folders: ['carriers'] }),
+    });
+    await act(async () => root.render(<></>));
+    await render(makeNode({ folders: ['carriers'] }));
+    expect(sourcesTrigger().textContent).toContain('Carriers');
+    expect(knowledgeSection().textContent).toContain('folders.picker.hintOne');
   });
 
   it('refreshes the connections when a picker opens', async () => {

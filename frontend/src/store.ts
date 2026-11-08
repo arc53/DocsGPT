@@ -19,7 +19,10 @@ import {
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import actionToastReducer from './notifications/actionToastSlice';
 import notificationsReducer from './notifications/notificationsSlice';
-import { getStoredRecentDocs } from './preferences/preferenceApi';
+import {
+  getStoredRecentDocs,
+  getStoredRecentFolders,
+} from './preferences/preferenceApi';
 import {
   Preference,
   prefListenerMiddleware,
@@ -47,6 +50,7 @@ const preloadedState: { preference: Preference } = {
     ],
     chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
+    selectedFolders: getStoredRecentFolders(),
     conversations: {
       data: null,
       loading: false,

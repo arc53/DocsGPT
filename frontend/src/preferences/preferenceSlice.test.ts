@@ -1,7 +1,9 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { loadFolders } from '../components/folders/foldersSlice';
 import type { Doc } from '../models/misc';
+import { getStoredRecentFolders } from './preferenceApi';
 import type { RootState } from '../store';
 import reducer, {
   appendConversations,
@@ -19,10 +21,12 @@ import reducer, {
   selectIsAdmin,
   selectRoles,
   selectRolesResolved,
+  selectSelectedFolders,
   selectTtsAvailable,
   setAnalyticsAvailability,
   setAuthRequired,
   setRoles,
+  setSelectedFolders,
   setSourceDocs,
   setSpeechAvailability,
   setToken,
@@ -281,5 +285,56 @@ describe('insights availability', () => {
     expect(selectAnalyticsEnabled(state)).toBe(true);
     expect(selectAnalyticsMaxTopics(state)).toBe(8);
     expect(selectAnalyticsMaxOverlapping(state)).toBe(0);
+  });
+});
+
+describe('composer folder pick', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const loaded = (folders: { id: string; name: string }[], type = 'source') =>
+    loadFolders.fulfilled(
+      folders.map((folder) => ({ ...folder, parent_id: null })),
+      'req',
+      { type: type as 'source', token: null },
+    );
+
+  it('keeps the picked folders across visits', () => {
+    const store = storeWithListener();
+    store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
+    expect(getStoredRecentFolders()).toEqual([{ id: 'c', name: 'Carriers' }]);
+    store.dispatch(setSelectedFolders([]));
+    expect(localStorage.getItem('DocsGPTRecentFolders')).toBeNull();
+  });
+
+  it('follows a rename and drops a deleted folder when the folders load', () => {
+    const store = storeWithListener();
+    store.dispatch(
+      setSelectedFolders([
+        { id: 'c', name: 'Carriers' },
+        { id: 'gone', name: 'Old' },
+      ]),
+    );
+    store.dispatch(loaded([{ id: 'c', name: 'Carrier docs' }]));
+    expect(selectSelectedFolders(store.getState() as RootState)).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
+  });
+
+  it("ignores the agents' folder list", () => {
+    const store = storeWithListener();
+    store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
+    store.dispatch(loaded([], 'agent'));
+    expect(selectSelectedFolders(store.getState() as RootState)).toHaveLength(
+      1,
+    );
+  });
+
+  it('reads malformed storage as no folders', () => {
+    localStorage.setItem('DocsGPTRecentFolders', '{"id":1}');
+    expect(getStoredRecentFolders()).toEqual([]);
+    localStorage.setItem('DocsGPTRecentFolders', 'nope');
+    expect(getStoredRecentFolders()).toEqual([]);
   });
 });

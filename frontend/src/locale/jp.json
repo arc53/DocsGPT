@@ -2590,7 +2590,10 @@
       "cancel": "キャンセル",
       "review": "確認",
       "import": "インポート",
-      "continueToAgent": "エージェントへ進む"
+      "continueToAgent": "エージェントへ進む",
+      "planWarningsTitle": "インポート前に確認してください:",
+      "folderMatched": "{{name}}: あなたのフォルダを使用",
+      "folderMissing": "{{name}}: この名前のフォルダはありません"
     },
     "jwt": {
       "title": "JWT トークンを追加",
@@ -3973,6 +3976,26 @@
       "deleteFailed": "フォルダを削除できませんでした。もう一度お試しください。",
       "loadFailed": "フォルダを読み込めませんでした。",
       "openFailed": "そのフォルダはもう存在しません。"
+    },
+    "picker": {
+      "allOf": "{{name}} のすべて",
+      "inFolder": "このフォルダ内",
+      "partial": "{{total}}件中{{picked}}件を選択",
+      "live": "{{what}} · 新しいソースも含む",
+      "includedWith": "{{name}} に含まれます",
+      "back": "戻る",
+      "deletedFolder": "削除されたフォルダ",
+      "deletedLine": "もう存在しません。外してください。",
+      "ownersFolder": "{{person}} のフォルダ",
+      "stoppedShort": "停止中",
+      "hintOne_one": "{{name}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintOne_other": "{{name}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintMany_one": "{{names}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintMany_other": "{{names}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "stopped": "{{name}} は停止中です: {{person}} のフォルダですが、このユーザーはもうこのエージェントを編集できません。",
+      "stoppedOther": "{{name}} は停止中です: 所有者はもうこのエージェントを編集できません。",
+      "deleted_one": "このエージェントのフォルダが削除されました。一覧から外してください。",
+      "deleted_other": "このエージェントのフォルダが{{formatted}}個削除されました。一覧から外してください。"
     }
   },
   "components": {

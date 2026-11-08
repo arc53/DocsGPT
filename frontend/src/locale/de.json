@@ -2600,7 +2600,10 @@
       "cancel": "Abbrechen",
       "review": "Prüfen",
       "import": "Importieren",
-      "continueToAgent": "Weiter zum Agenten"
+      "continueToAgent": "Weiter zum Agenten",
+      "planWarningsTitle": "Vor dem Import prüfen:",
+      "folderMatched": "{{name}}: dein Ordner wird verwendet",
+      "folderMissing": "{{name}}: du hast keinen Ordner mit diesem Namen"
     },
     "jwt": {
       "title": "JWT-Token hinzufügen",
@@ -3993,6 +3996,26 @@
       "deleteFailed": "Der Ordner konnte nicht gelöscht werden. Bitte versuche es erneut.",
       "loadFailed": "Deine Ordner konnten nicht geladen werden.",
       "openFailed": "Diesen Ordner gibt es nicht mehr."
+    },
+    "picker": {
+      "allOf": "Ganz {{name}}",
+      "inFolder": "In diesem Ordner",
+      "partial": "{{picked}} von {{total}} ausgewählt",
+      "live": "{{what}} · neue Quellen inklusive",
+      "includedWith": "Enthalten in {{name}}",
+      "back": "Zurück",
+      "deletedFolder": "Gelöschter Ordner",
+      "deletedLine": "Existiert nicht mehr. Entferne ihn.",
+      "ownersFolder": "Ordner von {{person}}",
+      "stoppedShort": "Gestoppt",
+      "hintOne_one": "{{name}} ist ein Ordner: heute {{formatted}} Quelle und alle, die später hinzukommen.",
+      "hintOne_other": "{{name}} ist ein Ordner: heute {{formatted}} Quellen und alle, die später hinzukommen.",
+      "hintMany_one": "{{names}} sind Ordner: heute {{formatted}} Quelle und alle, die später hinzukommen.",
+      "hintMany_other": "{{names}} sind Ordner: heute {{formatted}} Quellen und alle, die später hinzukommen.",
+      "stopped": "{{name}} ist gestoppt: Der Ordner gehört {{person}}, und diese Person kann den Agenten nicht mehr bearbeiten.",
+      "stoppedOther": "{{name}} ist gestoppt: Der Besitzer kann den Agenten nicht mehr bearbeiten.",
+      "deleted_one": "Ein Ordner dieses Agenten wurde gelöscht. Entferne ihn in der Liste.",
+      "deleted_other": "{{formatted}} Ordner dieses Agenten wurden gelöscht. Entferne sie in der Liste."
     }
   },
   "components": {

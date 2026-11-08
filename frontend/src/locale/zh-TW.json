@@ -2590,7 +2590,10 @@
       "cancel": "取消",
       "review": "檢閱",
       "import": "匯入",
-      "continueToAgent": "前往代理"
+      "continueToAgent": "前往代理",
+      "planWarningsTitle": "匯入前請檢查：",
+      "folderMatched": "{{name}}：使用你的資料夾",
+      "folderMissing": "{{name}}：你沒有同名資料夾"
     },
     "jwt": {
       "title": "新增 JWT 權杖",
@@ -3973,6 +3976,26 @@
       "deleteFailed": "無法刪除資料夾，請再試一次。",
       "loadFailed": "無法載入資料夾。",
       "openFailed": "該資料夾已不存在。"
+    },
+    "picker": {
+      "allOf": "{{name}} 全部",
+      "inFolder": "此資料夾中",
+      "partial": "已選 {{picked}}/{{total}}",
+      "live": "{{what}} · 包括新來源",
+      "includedWith": "已隨{{name}}包含",
+      "back": "返回",
+      "deletedFolder": "已刪除的資料夾",
+      "deletedLine": "已不存在，請移除。",
+      "ownersFolder": "{{person}} 的資料夾",
+      "stoppedShort": "已停止",
+      "hintOne_one": "{{name}} 是一個資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "hintOne_other": "{{name}} 是一個資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "hintMany_one": "{{names}} 是資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "hintMany_other": "{{names}} 是資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "stopped": "{{name}} 已停止：這是 {{person}} 的資料夾，而該使用者已無法編輯此代理。",
+      "stoppedOther": "{{name}} 已停止：其擁有者已無法編輯此代理。",
+      "deleted_one": "此代理的一個資料夾已被刪除。請在清單中移除它。",
+      "deleted_other": "此代理的 {{formatted}} 個資料夾已被刪除。請在清單中移除它們。"
     }
   },
   "components": {

@@ -6,6 +6,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
+import { loadFolders } from '../components/folders/foldersSlice';
 import { Agent } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
@@ -13,6 +14,8 @@ import {
   getLocalRecentDocs,
   setLocalApiKey,
   setLocalRecentDocs,
+  setStoredRecentFolders,
+  type SelectedFolder,
 } from './preferenceApi';
 
 import type { Model } from '../models/types';
@@ -36,6 +39,12 @@ export interface Preference {
   prompts: Prompt[];
   chunks: string;
   selectedDocs: Doc[];
+  /**
+   * Whole knowledge folders picked in the composer, sent as
+   * `active_folders`; kept with their names so the pill reads before the
+   * folder list loads.
+   */
+  selectedFolders: SelectedFolder[];
   sourceDocs: Doc[] | null;
   /** The last source list fetch failed; `sourceDocs` is then null. */
   sourceDocsFailed: boolean;
@@ -92,6 +101,7 @@ const initialState: Preference = {
   ],
   chunks: '6',
   selectedDocs: [],
+  selectedFolders: [],
   sourceDocs: null,
   sourceDocsFailed: false,
   conversations: {
@@ -128,6 +138,9 @@ export const prefSlice = createSlice({
     },
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
+    },
+    setSelectedFolders: (state, action: PayloadAction<SelectedFolder[]>) => {
+      state.selectedFolders = action.payload;
     },
     /** A source list fetch's answer; null when it failed. */
     setSourceDocs: (state, action) => {
@@ -310,6 +323,7 @@ export const prefSlice = createSlice({
 export const {
   setApiKey,
   setSelectedDocs,
+  setSelectedFolders,
   setSourceDocs,
   setConversations,
   setConversationsHead,
@@ -358,6 +372,35 @@ prefListenerMiddleware.startListening({
         ? state.preference.selectedDocs
         : null,
     );
+  },
+});
+
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setSelectedFolders),
+  effect: (_action, listenerApi) => {
+    setStoredRecentFolders(
+      (listenerApi.getState() as RootState).preference.selectedFolders,
+    );
+  },
+});
+
+// The picked folders follow the caller's folder list: a rename shows, and a
+// deleted folder drops out of the pick.
+prefListenerMiddleware.startListening({
+  actionCreator: loadFolders.fulfilled,
+  effect: (action, listenerApi) => {
+    if (action.meta.arg.type !== 'source') return;
+    const { selectedFolders } = (listenerApi.getState() as RootState)
+      .preference;
+    if (selectedFolders.length === 0) return;
+    const byId = new Map(action.payload.map((folder) => [folder.id, folder]));
+    const next = selectedFolders
+      .filter((folder) => byId.has(folder.id))
+      .map((folder) => ({ id: folder.id, name: byId.get(folder.id)!.name }));
+    const same =
+      next.length === selectedFolders.length &&
+      next.every((folder, i) => folder.name === selectedFolders[i].name);
+    if (!same) listenerApi.dispatch(setSelectedFolders(next));
   },
 });
 
@@ -448,6 +491,8 @@ export const selectModalStateDeleteConv = (state: RootState) =>
   state.preference.modalState;
 export const selectSelectedDocs = (state: RootState) =>
   state.preference.selectedDocs;
+export const selectSelectedFolders = (state: RootState) =>
+  state.preference.selectedFolders ?? [];
 export const selectConversations = (state: RootState) =>
   state.preference.conversations;
 export const selectConversationId = (state: RootState) =>

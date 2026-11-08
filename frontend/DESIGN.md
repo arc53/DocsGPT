@@ -767,7 +767,9 @@ labels and wires it (see FormField).
   `onSearchChange`, and `valueOption` when the picked option isn't in the
   current results.
 - Rows carry no actions: what you do to an item (a prompt's Edit, Share or
-  Delete) is on its page, and the picker's footer links there.
+  Delete) is on its page, and the picker's footer links there. The one
+  exception is a folder row's chevron in a knowledge picker, which opens the
+  folder (see Folders › Pickers).
 - `mode="add"` is a picker that adds something (Share's "Add people or
   teams"): the trigger always shows the placeholder and no row is marked.
 - `footer` pins a row under the list, the same `PickerFooter` row as the
@@ -873,7 +875,8 @@ toggle) are not SettingRows.
 `<Checkbox checked onCheckedChange>` (Radix), never `<input type="checkbox">`
 (enforced): native boxes take the OS accent and ignore dark mode. `size`: `default`
 (16px, option rows), `sm` (14px, table cells). Unchecked it is an
-`border-input` box; checked, `primary` with a `primary-foreground` check.
+`border-input` box; checked, `primary` with a `primary-foreground` check;
+`checked="indeterminate"` (a folder partly picked) the same fill with a minus.
 Name it with a `Label htmlFor` or `aria-label`. For an on/off setting with a
 description use a Switch in a SettingRow instead.
 
@@ -1449,6 +1452,24 @@ never hand-draws a folder.
 "<name>"?` / "Its 2 agents and 1 folder move to My agents. Nothing is
   deleted.", submit "Delete folder"; for a source folder agents read, a warning
   Alert names them ("2 agents use this folder and will lose its sources: A, B.").
+- **Pickers** (`useKnowledgeFolderPicker`, the chat composer, the agent
+  builder, a workflow agent node): a folder picks whole and stays live (what
+  is filed in it later reaches the agent). Its row is the control like any
+  row (folder icon, count line, a tri-state box: none, some "1 of 2 picked",
+  all "7 sources · new sources included"); its chevron, an `IconButton`
+  after the box off the tab order (ArrowRight opens the highlighted row,
+  ArrowLeft with an empty search goes back), opens it. The root groups
+  Selected · Folders · Sources · Shared with team (a picked source filed
+  deeper shows only in Selected, `pinnedOnly`, its line led by its trail).
+  Inside a folder `PickerFolderCrumb` (back, `Knowledge › Carriers`) sits
+  under the search, "All of <folder>" leads, then In this folder; inside a
+  picked folder every row is checked and fixed, "Included with <folder>"
+  (`CommandItem muted`: disabled but not faded). A search or a kind filter is
+  flat (matching folders first, no chevrons; the picker filters, cmdk
+  doesn't). Picking a folder replaces the picks inside it. A builder field
+  counts a folder once ("2 selected"), reads a lone folder as its icon and
+  name (the composer pill too), and says what the folders bring in its hint;
+  a stopped or deleted folder says so there and keeps a remove-only row.
 - **State**: one Redux copy per type (`folders.agent`, `folders.source`,
   `loadFolders`); every change reloads it, so counts stay the server's. A failed
   load is `EmptyState tone="destructive"` with Retry where the folders would be,

@@ -2687,7 +2687,10 @@
       "cancel": "Annuler",
       "review": "Vérifier",
       "import": "Importer",
-      "continueToAgent": "Continuer vers l’agent"
+      "continueToAgent": "Continuer vers l’agent",
+      "planWarningsTitle": "À vérifier avant l’import :",
+      "folderMatched": "{{name}} : utilise votre dossier",
+      "folderMissing": "{{name}} : vous n’avez aucun dossier de ce nom"
     },
     "jwt": {
       "title": "Ajouter un jeton JWT",
@@ -4112,6 +4115,29 @@
       "deleteFailed": "Impossible de supprimer le dossier. Veuillez réessayer.",
       "loadFailed": "Impossible de charger vos dossiers.",
       "openFailed": "Ce dossier n’existe plus."
+    },
+    "picker": {
+      "allOf": "Tout {{name}}",
+      "inFolder": "Dans ce dossier",
+      "partial": "{{picked}} sur {{total}} choisies",
+      "live": "{{what}} · nouvelles sources incluses",
+      "includedWith": "Incluse avec {{name}}",
+      "back": "Retour",
+      "deletedFolder": "Dossier supprimé",
+      "deletedLine": "N’existe plus. Retirez-le.",
+      "ownersFolder": "Dossier de {{person}}",
+      "stoppedShort": "Arrêté",
+      "hintOne_one": "{{name}} est un dossier : {{formatted}} source aujourd’hui, et toutes celles ajoutées plus tard.",
+      "hintOne_many": "{{name}} est un dossier : {{formatted}} sources aujourd’hui, et toutes celles ajoutées plus tard.",
+      "hintOne_other": "{{name}} est un dossier : {{formatted}} sources aujourd’hui, et toutes celles ajoutées plus tard.",
+      "hintMany_one": "{{names}} sont des dossiers : {{formatted}} source aujourd’hui, et toutes celles ajoutées plus tard.",
+      "hintMany_many": "{{names}} sont des dossiers : {{formatted}} sources aujourd’hui, et toutes celles ajoutées plus tard.",
+      "hintMany_other": "{{names}} sont des dossiers : {{formatted}} sources aujourd’hui, et toutes celles ajoutées plus tard.",
+      "stopped": "{{name}} est arrêté : c’est le dossier de {{person}}, qui ne peut plus modifier cet agent.",
+      "stoppedOther": "{{name}} est arrêté : son propriétaire ne peut plus modifier cet agent.",
+      "deleted_one": "Un dossier de cet agent a été supprimé. Retirez-le de la liste.",
+      "deleted_many": "{{formatted}} dossiers de cet agent ont été supprimés. Retirez-les de la liste.",
+      "deleted_other": "{{formatted}} dossiers de cet agent ont été supprimés. Retirez-les de la liste."
     }
   },
   "components": {
