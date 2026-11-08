@@ -67,7 +67,7 @@ To bring in an agent exported from another instance (**Export as YAML**):
 
 1. In **Manage Agents**, choose **Import**.
 2. Drop a `.yaml` or `.yml` file on the dialog, or click to choose one, then choose **Review**.
-3. The dialog shows whether the file creates a new agent or updates one you already have, and how it will match **Sources**, **Tools** and **Models** to your account. For a source that isn't found, pick one of yours or **Leave unattached**. A Knowledge folder the agent used is matched to one of your own folders by its path, then by its name; if none matches, it is left unattached, and the dialog lists it after the import. For a tool or custom model that needs a secret, enter it, or leave it blank to skip that item.
+3. The dialog shows whether the file creates a new agent or updates one you already have, and how it will match **Sources**, **Tools** and **Models** to your account. For a source that isn't found, pick one of yours or **Leave unattached**. A Knowledge folder the agent used is listed under **Sources** and matched to one of your own folders by its path, then by its name: it reads, for example, **Carriers: using your folder**, or **Carriers: you have no folder with this name**. For a folder with no match, pick one of your folders or **Leave unattached**; the problems the import would leave are listed first, under **Check before you import:**. For a tool or custom model that needs a secret, enter it, or leave it blank to skip that item.
 4. Choose **Import**.
 
 A new agent is imported as a draft. Re-importing a file updates the matching agent and keeps its current status, so a published agent stays live. If something was skipped, the dialog lists it before **Continue to agent** opens the agent.
