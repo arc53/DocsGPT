@@ -174,6 +174,24 @@ class TestClassicRAGParentExpansion:
         # The parent is ~200 tokens; 90% of 50 = 45 token budget → excluded.
         assert results == [], f"Expected exclusion due to parent size; got {results}"
 
+    def test_unselected_first_sibling_does_not_hide_a_later_child_that_fits(self):
+        """A parent is marked seen only after one of its entries is accepted."""
+        parent = "shared parent window"
+        first = _make_lc_doc(
+            "first child",
+            {"parent_text": parent, "source": "doc.txt", "filename": "oversized " * 120},
+        )
+        second = _make_lc_doc(
+            "second child",
+            {"parent_text": parent, "source": "doc.txt", "filename": "small.txt"},
+        )
+
+        results = _make_rag([first, second], doc_token_limit=112)._get_data()
+
+        assert len(results) == 1
+        assert results[0]["text"] == parent
+        assert results[0]["matched_text"] == "second child"
+
     def test_cross_source_dedup_independent(self):
         """Same parent_text from two different sources must NOT be deduplicated."""
         meta = {"parent_text": PARENT_TEXT, "source": "doc.txt"}

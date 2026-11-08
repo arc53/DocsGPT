@@ -612,12 +612,12 @@ class GraphRAGRetriever(BaseRetriever):
             # Deduplication: sibling children sharing the same parent expand to
             # identical text — keep only the first (highest-ranked) occurrence.
             parent_text = (metadata or {}).get("parent_text")
+            parent_key = None
             if isinstance(parent_text, str) and parent_text:
                 source_key = (metadata or {}).get("source", "")
                 parent_key = (source_id, source_key, parent_text)
                 if parent_key in seen_parents:
                     continue
-                seen_parents.add(parent_key)
 
             labels = labels_from_metadata(metadata, text, source_id)
             attribution = self._connector_labels.for_source(source_id, metadata)
@@ -628,6 +628,8 @@ class GraphRAGRetriever(BaseRetriever):
             in_pool = in_pool and pool_tokens + doc_tokens < pool_budget
             if not in_selection and not in_pool:
                 break
+            if parent_key is not None:
+                seen_parents.add(parent_key)
             doc = {"text": effective_text, **labels, **attribution}
             if effective_text != text:
                 doc["matched_text"] = text
