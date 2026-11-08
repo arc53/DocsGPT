@@ -17,8 +17,15 @@ class _Response:
         if self.status_code >= 400:
             raise google_tts.requests.HTTPError(f"status {self.status_code}")
 
-    def iter_lines(self):
-        return iter(self._lines)
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def iter_content(self, chunk_size=1):
+        for line in self._lines:
+            yield line + b"\n"
 
 
 def _patch_post(monkeypatch, fake_post):
@@ -34,7 +41,8 @@ def test_text_to_speech_joins_audio_of_every_chunk(monkeypatch):
     sent = []
     parts = iter([b"one-", b"two"])
 
-    def fake_post(url, data, headers, timeout):
+    def fake_post(url, data, headers, timeout, stream):
+        assert stream is True
         sent.append({"url": url, "data": data, "timeout": timeout})
         return _Response([b")]}'", b"", _audio_line(next(parts))])
 
@@ -145,6 +153,23 @@ def test_retries_share_the_deadline(monkeypatch):
         GoogleTTS().text_to_speech("hello")
     assert now[0] <= google_tts.DEADLINE_SECONDS
     assert timeouts[-1] < google_tts.TIMEOUT_SECONDS
+
+
+def test_a_trickling_download_stops_at_the_deadline(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(google_tts.time, "monotonic", lambda: now[0])
+
+    class Trickle(_Response):
+        def iter_content(self, chunk_size=1):
+            while True:
+                now[0] += 20
+                yield b"x"
+
+    _patch_post(monkeypatch, lambda *a, **k: Trickle([]))
+
+    with pytest.raises(TimeoutError):
+        GoogleTTS().text_to_speech("hello")
+    assert now[0] <= google_tts.DEADLINE_SECONDS + 20
 
 
 def test_text_to_speech_raises_on_empty_text():

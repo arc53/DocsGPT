@@ -97,26 +97,35 @@ def _time_left(deadline: float) -> float:
     return remaining
 
 
+def _read_lines(response: requests.Response, deadline: float) -> List[bytes]:
+    """The response body's lines, checking the deadline between blocks so a trickling download stops."""
+    body = bytearray()
+    for block in response.iter_content(chunk_size=8192):
+        _time_left(deadline)
+        body.extend(block)
+    return bytes(body).splitlines()
+
+
 def _synthesize_chunk(session: requests.Session, chunk: str, lang: str, deadline: float) -> bytes:
     """mp3 bytes for one chunk, retrying throttling and server errors; every attempt and wait fits the deadline."""
     for attempt in range(len(RETRY_BACKOFF_SECONDS) + 1):
         retryable = attempt < len(RETRY_BACKOFF_SECONDS)
         try:
-            response = session.post(
+            with session.post(
                 TTS_URL,
                 data=_rpc_body(chunk, lang),
                 headers=HEADERS,
                 timeout=min(TIMEOUT_SECONDS, _time_left(deadline)),
-            )
+                stream=True,
+            ) as response:
+                if not (retryable and response.status_code in RETRY_STATUSES):
+                    response.raise_for_status()
+                    part = _audio_from_lines(_read_lines(response, deadline))
+                    if part is None:
+                        raise RuntimeError("Google TTS returned no audio")
+                    return part
         except (requests.ConnectionError, requests.Timeout):
             if not retryable:
                 raise
-        else:
-            if not (retryable and response.status_code in RETRY_STATUSES):
-                response.raise_for_status()
-                part = _audio_from_lines(response.iter_lines())
-                if part is None:
-                    raise RuntimeError("Google TTS returned no audio")
-                return part
         time.sleep(min(RETRY_BACKOFF_SECONDS[attempt], _time_left(deadline)))
     raise AssertionError("unreachable")
