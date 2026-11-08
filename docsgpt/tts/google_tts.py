@@ -8,8 +8,6 @@ import urllib.parse
 from typing import Iterator, List, Optional, Tuple
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 from docsgpt.tts.base import BaseTTS
 
@@ -28,17 +26,10 @@ HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
 }
 
-# A long answer is many sequential chunks; a transient 429 or 5xx on one would
-# otherwise throw away the audio already made. Retry-After is ignored so the
-# waits stay at the short backoff (0.5s, 1s, 2s).
-RETRY = Retry(
-    total=3,
-    backoff_factor=0.5,
-    backoff_max=4,
-    status_forcelist=(429, 500, 502, 503, 504),
-    allowed_methods=frozenset({"POST"}),
-    respect_retry_after_header=False,
-)
+# A long answer is many sequential chunks; a transient 429 or 5xx (or a dropped
+# connection) on one would otherwise throw away the audio already made.
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+RETRY_BACKOFF_SECONDS = (0.5, 1.0, 2.0)
 
 _SENTENCE_END = re.compile(r"(?<=[.!?;:。！？])\s+|\n+")
 
@@ -93,20 +84,39 @@ class GoogleTTS(BaseTTS):
         audio = bytearray()
         deadline = time.monotonic() + DEADLINE_SECONDS
         with requests.Session() as session:
-            session.mount("https://", HTTPAdapter(max_retries=RETRY))
             for chunk in chunks:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise TimeoutError(f"Google TTS took longer than {DEADLINE_SECONDS}s")
-                response = session.post(
-                    TTS_URL,
-                    data=_rpc_body(chunk, lang),
-                    headers=HEADERS,
-                    timeout=min(TIMEOUT_SECONDS, remaining),
-                )
+                audio.extend(_synthesize_chunk(session, chunk, lang, deadline))
+        return base64.b64encode(bytes(audio)).decode("utf-8"), lang
+
+
+def _time_left(deadline: float) -> float:
+    """Seconds until ``deadline``; raises TimeoutError once it has passed."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError(f"Google TTS took longer than {DEADLINE_SECONDS}s")
+    return remaining
+
+
+def _synthesize_chunk(session: requests.Session, chunk: str, lang: str, deadline: float) -> bytes:
+    """mp3 bytes for one chunk, retrying throttling and server errors; every attempt and wait fits the deadline."""
+    for attempt in range(len(RETRY_BACKOFF_SECONDS) + 1):
+        retryable = attempt < len(RETRY_BACKOFF_SECONDS)
+        try:
+            response = session.post(
+                TTS_URL,
+                data=_rpc_body(chunk, lang),
+                headers=HEADERS,
+                timeout=min(TIMEOUT_SECONDS, _time_left(deadline)),
+            )
+        except (requests.ConnectionError, requests.Timeout):
+            if not retryable:
+                raise
+        else:
+            if not (retryable and response.status_code in RETRY_STATUSES):
                 response.raise_for_status()
                 part = _audio_from_lines(response.iter_lines())
                 if part is None:
                     raise RuntimeError("Google TTS returned no audio")
-                audio.extend(part)
-        return base64.b64encode(bytes(audio)).decode("utf-8"), lang
+                return part
+        time.sleep(min(RETRY_BACKOFF_SECONDS[attempt], _time_left(deadline)))
+    raise AssertionError("unreachable")

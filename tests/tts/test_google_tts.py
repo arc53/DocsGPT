@@ -85,34 +85,66 @@ def test_text_to_speech_raises_without_audio(monkeypatch):
         GoogleTTS().text_to_speech("hello")
 
 
-def test_session_retries_rate_limits_and_server_errors(monkeypatch):
-    mounted = {}
-    original_mount = google_tts.requests.Session.mount
+def test_retries_throttling_and_dropped_connections(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(google_tts.time, "sleep", sleeps.append)
+    replies = iter(
+        [
+            _Response([], status=429),
+            google_tts.requests.ConnectionError("reset"),
+            _Response([_audio_line(b"ok")]),
+        ]
+    )
 
-    def spy_mount(self, prefix, adapter):
-        mounted[prefix] = adapter
-        return original_mount(self, prefix, adapter)
+    def fake_post(*a, **k):
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
-    monkeypatch.setattr(google_tts.requests.Session, "mount", spy_mount)
-    _patch_post(monkeypatch, lambda *a, **k: _Response([_audio_line(b"ok")]))
+    _patch_post(monkeypatch, fake_post)
 
-    GoogleTTS().text_to_speech("hello")
+    audio_base64, _ = GoogleTTS().text_to_speech("hello")
 
-    retry = mounted["https://"].max_retries
-    assert retry.total == 3
-    assert 429 in retry.status_forcelist and 503 in retry.status_forcelist
-    assert "POST" in retry.allowed_methods
-    assert retry.respect_retry_after_header is False
-    assert retry.backoff_max <= 4
+    assert base64.b64decode(audio_base64) == b"ok"
+    assert sleeps == [0.5, 1.0]
 
 
-def test_text_to_speech_stops_at_the_deadline(monkeypatch):
-    clock = iter([0.0, 1.0, google_tts.DEADLINE_SECONDS + 1])
-    monkeypatch.setattr(google_tts.time, "monotonic", lambda: next(clock))
-    _patch_post(monkeypatch, lambda *a, **k: _Response([_audio_line(b"part")]))
+def test_gives_up_after_the_last_retry(monkeypatch):
+    monkeypatch.setattr(google_tts.time, "sleep", lambda s: None)
+    calls = []
 
-    with pytest.raises(TimeoutError):
-        GoogleTTS().text_to_speech("First sentence here.\n" + "word " * 18)
+    def fake_post(*a, **k):
+        calls.append(1)
+        return _Response([], status=503)
+
+    _patch_post(monkeypatch, fake_post)
+
+    with pytest.raises(google_tts.requests.HTTPError):
+        GoogleTTS().text_to_speech("hello")
+    assert len(calls) == len(google_tts.RETRY_BACKOFF_SECONDS) + 1
+
+
+def test_retries_share_the_deadline(monkeypatch):
+    now = [0.0]
+    timeouts = []
+    monkeypatch.setattr(google_tts.time, "monotonic", lambda: now[0])
+
+    def fake_sleep(seconds):
+        now[0] += seconds
+
+    def fake_post(*a, timeout, **k):
+        timeouts.append(timeout)
+        now[0] += timeout
+        raise google_tts.requests.Timeout("slow")
+
+    monkeypatch.setattr(google_tts.time, "sleep", fake_sleep)
+    _patch_post(monkeypatch, fake_post)
+
+    with pytest.raises((TimeoutError, google_tts.requests.Timeout)):
+        GoogleTTS().text_to_speech("hello")
+    assert now[0] <= google_tts.DEADLINE_SECONDS
+    assert timeouts[-1] < google_tts.TIMEOUT_SECONDS
 
 
 def test_text_to_speech_raises_on_empty_text():
