@@ -698,6 +698,15 @@
       "kindFilterLabel": "Filter by kind",
       "needsAttention": "Needs attention",
       "allKnowledge": "All knowledge",
+      "sections": {
+        "folders": "Folders",
+        "sources": "Sources"
+      },
+      "folders": {
+        "emptyHint": "Add knowledge here, or move sources in from their ⋯ menu.",
+        "searchAll": "Search all knowledge",
+        "noMatchIn": "Nothing in {{name}} matches “{{query}}”."
+      },
       "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this source. Its files and chunks are deleted too. This can't be undone.",
       "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this source. Its files and chunks are deleted too. This can't be undone.",
       "noKnowledgeFound": "No knowledge found"
@@ -3970,6 +3979,7 @@
       "empty": "Empty"
     },
     "searchIn": "Search in {{name}}…",
+    "inParent": "In {{name}}",
     "emptyTitle": "This folder is empty",
     "errors": {
       "nameTaken": "A folder with this name already exists.",

@@ -726,6 +726,15 @@
       "kindFilterLabel": "Filtrar por tipo",
       "needsAttention": "Requiere atención",
       "allKnowledge": "Todo el conocimiento",
+      "sections": {
+        "folders": "Carpetas",
+        "sources": "Fuentes"
+      },
+      "folders": {
+        "emptyHint": "Añade conocimiento aquí o mueve fuentes desde su menú ⋯.",
+        "searchAll": "Buscar en todo el conocimiento",
+        "noMatchIn": "Nada en {{name}} coincide con «{{query}}»."
+      },
       "deleteUsedBy_one": "La usa {{formatted}} agente, que la perderá. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
       "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
       "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
@@ -4089,6 +4098,7 @@
       "empty": "Vacía"
     },
     "searchIn": "Buscar en {{name}}…",
+    "inParent": "En {{name}}",
     "emptyTitle": "Esta carpeta está vacía",
     "errors": {
       "nameTaken": "Ya existe una carpeta con este nombre.",

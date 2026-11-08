@@ -726,6 +726,15 @@
       "kindFilterLabel": "Filtrer par type",
       "needsAttention": "À traiter",
       "allKnowledge": "Toutes les connaissances",
+      "sections": {
+        "folders": "Dossiers",
+        "sources": "Sources"
+      },
+      "folders": {
+        "emptyHint": "Ajoutez des connaissances ici ou déplacez des sources depuis leur menu ⋯.",
+        "searchAll": "Rechercher dans toutes les connaissances",
+        "noMatchIn": "Rien dans {{name}} ne correspond à « {{query}} »."
+      },
       "deleteUsedBy_one": "Utilisée par {{formatted}} agent, qui perd cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
       "deleteUsedBy_other": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
       "deleteUsedBy_many": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
@@ -4089,6 +4098,7 @@
       "empty": "Vide"
     },
     "searchIn": "Rechercher dans {{name}}…",
+    "inParent": "Dans {{name}}",
     "emptyTitle": "Ce dossier est vide",
     "errors": {
       "nameTaken": "Un dossier porte déjà ce nom.",

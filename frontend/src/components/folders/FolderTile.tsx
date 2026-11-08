@@ -15,12 +15,17 @@ export type FolderTileProps = {
   onOpen: (folder: Folder) => void;
   /** The folder's ⋯: Rename, Move to folder, Delete (`useFolderMenu`). */
   menuOptions?: MenuOption[];
+  /**
+   * Where the folder sits ("In Carriers"), first on its line: for a search
+   * that lists folders from every level. Left out at the folder's own level.
+   */
+  parentName?: string;
 };
 
 /**
  * A folder in a tile grid (Agents, Knowledge): a compact `filled` tile with
  * the folder icon, the name on one line, the count line ("3 sources · 1
- * folder", "2 agents", "Empty") and, for a source folder agents read, the
+ * folder", "2 agents", "Empty"; after "In Carriers" in a search) and, for a source folder agents read, the
  * usage item, then the ⋯. A stretched button on the name opens the folder
  * (DESIGN "A clickable card that holds a link"); the ⋯ and the usage popover
  * sit above it.
@@ -30,6 +35,7 @@ export default function FolderTile({
   type,
   onOpen,
   menuOptions = [],
+  parentName,
 }: FolderTileProps) {
   const { t } = useTranslation();
   const used = type === 'source' && agentUseCount(folder.used_by) > 0;
@@ -53,6 +59,14 @@ export default function FolderTile({
       </button>
       <CardFooter className="col-start-2 row-start-2 min-w-0">
         <MetaLine>
+          {parentName ? (
+            <MetaItem title={parentName}>
+              {t('folders.inParent', {
+                name: parentName,
+                interpolation: { escapeValue: false },
+              })}
+            </MetaItem>
+          ) : null}
           <MetaItem>{folderCountLine(t, folder, type)}</MetaItem>
           {used ? (
             <span className="relative z-10">

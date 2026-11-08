@@ -698,6 +698,15 @@
       "kindFilterLabel": "Nach Art filtern",
       "needsAttention": "Braucht Aufmerksamkeit",
       "allKnowledge": "Gesamtes Wissen",
+      "sections": {
+        "folders": "Ordner",
+        "sources": "Quellen"
+      },
+      "folders": {
+        "emptyHint": "Füge hier Wissen hinzu oder verschiebe Quellen über ihr ⋯-Menü hierher.",
+        "searchAll": "Gesamtes Wissen durchsuchen",
+        "noMatchIn": "Nichts in {{name}} passt zu „{{query}}“."
+      },
       "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der diese Quelle danach nicht mehr hat. Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die diese Quelle danach nicht mehr haben. Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "noKnowledgeFound": "Kein Wissen gefunden"
@@ -3970,6 +3979,7 @@
       "empty": "Leer"
     },
     "searchIn": "In {{name}} suchen…",
+    "inParent": "In {{name}}",
     "emptyTitle": "Dieser Ordner ist leer",
     "errors": {
       "nameTaken": "Ein Ordner mit diesem Namen existiert bereits.",

@@ -695,6 +695,15 @@
       "kindFilterLabel": "按类型筛选",
       "needsAttention": "需要处理",
       "allKnowledge": "全部知识",
+      "sections": {
+        "folders": "文件夹",
+        "sources": "来源"
+      },
+      "folders": {
+        "emptyHint": "在此添加知识，或通过来源的 ⋯ 菜单将其移入。",
+        "searchAll": "搜索全部知识",
+        "noMatchIn": "{{name}}中没有与“{{query}}”匹配的内容。"
+      },
       "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
       "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
       "noKnowledgeFound": "未找到知识"
@@ -3948,6 +3957,7 @@
       "empty": "空"
     },
     "searchIn": "在{{name}}中搜索…",
+    "inParent": "位于{{name}}",
     "emptyTitle": "此文件夹为空",
     "errors": {
       "nameTaken": "已存在同名文件夹。",

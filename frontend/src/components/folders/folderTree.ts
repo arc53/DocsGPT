@@ -143,3 +143,33 @@ export function folderMoveCheck(
 /** A trail as one line: "Carriers › Rate archive". */
 export const formatFolderPath = (path: Folder[]): string =>
   path.map((folder) => folder.name).join(' › ');
+
+/**
+ * Folders whose name holds `query` (any case), nested ones included, sorted
+ * by trail, so a search lists the folders it found before the items.
+ *
+ * Args:
+ *   tree: The folder tree.
+ *   query: The search; blank finds nothing.
+ *   within: Only these folders (a subtree) when given.
+ *
+ * Returns:
+ *   The matching folders.
+ */
+export function matchingFolders(
+  tree: FolderTree,
+  query: string,
+  within?: Set<string>,
+): Folder[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  return [...tree.byId.values()]
+    .filter((folder) => !within || within.has(folder.id))
+    .filter((folder) => folder.name.toLowerCase().includes(needle))
+    .map((folder) => ({
+      folder,
+      path: formatFolderPath(folderPath(tree, folder.id)),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map(({ folder }) => folder);
+}

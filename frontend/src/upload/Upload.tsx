@@ -129,6 +129,7 @@ function Upload({
   selectUploadedDoc = true,
   onBrowseConnectors,
   onNavigate,
+  folderId = null,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -155,6 +156,11 @@ function Upload({
    * router's navigate otherwise.
    */
   onNavigate?: LeaveTo;
+  /**
+   * The caller's Knowledge folder the new source is filed into (Add
+   * knowledge inside a folder), by upload, remote ingest or sync alike.
+   */
+  folderId?: string | null;
 }) {
   const token = useSelector(selectToken);
   const connectorCatalog = useSelector(selectConnectorCatalog);
@@ -595,6 +601,7 @@ function Upload({
     onConnected: () => close(),
     onCancel: () => setHandedOver(false),
     onNavigate,
+    folderId,
     onSynced: (sourceIds) => {
       const batch = new Set(sourceIds);
       sourceIds.forEach((sourceId) => trackTraining(sourceId, sourceId, batch));
@@ -681,6 +688,7 @@ function Upload({
       'config',
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
+    if (folderId) formData.append('folder_id', folderId);
 
     const apiHost = envVar('VITE_API_HOST');
     const xhr = new XMLHttpRequest();
@@ -769,6 +777,7 @@ function Upload({
       'config',
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
+    if (folderId) formData.append('folder_id', folderId);
 
     if (ingestor.type === 'website') {
       formData.append(

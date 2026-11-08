@@ -1,10 +1,37 @@
-import { Cloud, HardDrive, Network, RefreshCw, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Cloud,
+  Folder as FolderIcon,
+  FolderOpen,
+  HardDrive,
+  Network,
+  RefreshCw,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import FilterSelect from '../components/FilterSelect';
+import { folderCountLine } from '../components/folders/folderCopy';
+import FolderCrumbRow from '../components/folders/FolderCrumbRow';
+import FolderNameModal from '../components/folders/FolderNameModal';
+import { selectFolderList } from '../components/folders/foldersSlice';
+import FolderTile from '../components/folders/FolderTile';
+import {
+  canCreateIn,
+  childFolders,
+  folderPath,
+  matchingFolders,
+  subtreeIds,
+} from '../components/folders/folderTree';
+import NewFolderButton from '../components/folders/NewFolderButton';
+import type { Folder } from '../components/folders/types';
+import { useFolderActions } from '../components/folders/useFolderActions';
+import { useFolderMenu } from '../components/folders/useFolderMenu';
+import { useFolderParam } from '../components/folders/useFolderParam';
+import type { Crumb } from '../components/tree/PathHeader';
+import { SourceFolderTrail } from '../components/tree/folderTrail';
 import PageToolbar from '../components/PageToolbar';
 import RoleMeta from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
@@ -38,6 +65,7 @@ import {
   Doc,
   DocumentsProps,
   type KnowledgeDoc,
+  type SourceListScope,
   type UsageFilter,
 } from '../models/misc';
 import type { SSEEvent } from '../notifications/notificationsSlice';
@@ -172,8 +200,41 @@ export default function Sources({
     if (!connectorsLoaded) dispatch(loadConnectors({ token }));
   }, [connectorsLoaded, dispatch, token]);
 
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
+  // The open folder (`?folder=`), its trail and the caller's folder tree.
+  const folderList = useSelector(selectFolderList('source'));
+  const { folderId, folder, trail, tree, openFolder } =
+    useFolderParam('source');
+  const folderActions = useFolderActions('source');
+  useEffect(() => {
+    if (!folderList.loaded && !folderList.loading) void folderActions.reload();
+  }, []);
+  const hasFolders = folderList.items.length > 0;
+  const inFolder = folderId !== null;
+
+  // A search belongs to the folder it was typed in: opening another folder
+  // starts with none, at once (no debounce), so the folder's list is read
+  // once. "Search all knowledge" carries it to the root.
+  const [search, setSearch] = useState<{
+    folderId: string | null;
+    term: string;
+  }>({ folderId: null, term: '' });
+  // A search carried to the root by "Search all knowledge" (see below).
+  const carriedSearch = useRef<string | null>(null);
+  const searchTerm =
+    search.folderId === folderId
+      ? search.term
+      : folderId === null
+        ? (carriedSearch.current ?? '')
+        : '';
+  const setSearchTerm = (term: string) => setSearch({ folderId, term });
+  useEffect(() => {
+    if (folderId !== null || carriedSearch.current === null) return;
+    setSearch({ folderId: null, term: carriedSearch.current });
+    carriedSearch.current = null;
+  }, [folderId]);
+  const debouncedTerm = useDebouncedValue(searchTerm, 500);
+  // Clearing the search applies at once; typing waits for the pause.
+  const debouncedSearchTerm = searchTerm.trim() ? debouncedTerm : '';
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [loading, setLoading] = useLoaderState(false);
   // The last page load failed: an error with Retry, not "no sources".
@@ -330,9 +391,34 @@ export default function Sources({
     setStartedSync(null);
     setBusyViewId(null);
   };
+  // A source opened inside a folder reads `Knowledge › Carriers › source`:
+  // the Knowledge crumb leaves for the root, a folder crumb for that folder.
+  const leaveToRoot = () => {
+    closeDocument();
+    if (folderId) openFolder(null);
+  };
+  const folderCrumbs: Crumb[] = trail.map((step) => ({
+    label: step.name,
+    onSelect: () => {
+      closeDocument();
+      if (step.id !== folderId) openFolder(step.id);
+    },
+  }));
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
+
+  // A search or a filter lists flat: every folder at the root, the open
+  // folder's whole subtree inside one. Otherwise the root lists the sources
+  // in no folder and a folder its own; the counts cover the subtree.
+  const searching = debouncedSearchTerm.trim() !== '';
+  const filtered = kind !== 'all' || usage !== 'all';
+  const flat = searching || filtered;
+  const listScope: SourceListScope | undefined = folderId
+    ? { folder: folderId, direct: !flat }
+    : flat
+      ? undefined
+      : { folder: 'root', direct: true };
 
   // Each page request's number: only the latest one's answer is shown, so a
   // filter, search or page clicked while one loads isn't overwritten by it.
@@ -369,7 +455,7 @@ export default function Sources({
         rowsPerPg,
         debouncedSearchTerm,
         token,
-        { kind, usage },
+        { kind, usage, ...(listScope ? { scope: listScope } : {}) },
       )
         .then((data) => {
           if (!isLatest()) return;
@@ -396,6 +482,8 @@ export default function Sources({
       debouncedSearchTerm,
       kind,
       usage,
+      listScope?.folder,
+      listScope?.direct,
       setCurrentPage,
     ],
   );
@@ -426,6 +514,8 @@ export default function Sources({
     onDeleted: (doc) => {
       if (documentToView?.id === doc.id) closeDocument();
       refreshDocs();
+      // A filed source counted in its folder.
+      if (doc.folder_id) void folderActions.reload();
     },
     // An open source (one opened from a citation may be off this page)
     // follows its own reingest, wiki conversion or graph enable. The
@@ -443,12 +533,29 @@ export default function Sources({
       // The open view reads what it keeps of the settings again.
       if (id === documentToView?.id) setSettingsVersion((v) => v + 1);
     },
+    // Filed elsewhere: the card leaves this list (or names its new folder).
+    onMoved: (doc, target) => {
+      if (!doc.id) return;
+      patchDoc(doc.id, {
+        folder_id: target,
+        folder_path: folderPath(tree, target).map(({ id, name }) => ({
+          id,
+          name,
+        })),
+      });
+      refreshDocs();
+    },
     onSyncStarted: (doc, sync) =>
       doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
     syncingId:
       viewSync?.sourceId ??
       (busyViewId && busyViewId === documentToView?.id ? busyViewId : null),
   });
+
+  // The folder ⋯ (on its tile and its crumb row). A deleted folder's sources
+  // moved up a level, so the list is read again.
+  const folderMenu = useFolderMenu('source', () => refreshDocs());
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
 
   /**
    * Reads the app's knowledge list again into the store.
@@ -486,12 +593,13 @@ export default function Sources({
 
   // The first load opens on the URL's page; a new search or filter starts
   // on page 1.
-  const listQuery = `${debouncedSearchTerm}\n${kind}\n${usage}`;
+  const listQuery = `${debouncedSearchTerm}\n${kind}\n${usage}\n${folderId}`;
   const queried = useRef(listQuery);
   useEffect(() => {
     const newQuery = queried.current !== listQuery;
     queried.current = listQuery;
-    if (newQuery) setCurrentPage(1);
+    // Only when it moves: a page write would race a folder change.
+    if (newQuery && currentPage !== 1) setCurrentPage(1);
     refreshDocs(undefined, newQuery ? 1 : currentPage, rowsPerPage);
   }, [listQuery]);
 
@@ -612,10 +720,24 @@ export default function Sources({
   // Not a source yet, so a sync's kind is Synced and nothing uses it.
   const pendingFits =
     (kind === 'all' || kind === 'synced') && usage !== 'in_use';
+  // A sync added inside a folder files its source there: it waits in that
+  // folder (its subtree, for a search inside a parent), or anywhere when the
+  // root lists flat.
+  const subtree = useMemo(
+    () => (folderId ? subtreeIds(tree, folderId) : null),
+    [tree, folderId],
+  );
+  const pendingInScope = (sync: { folderId?: string }) =>
+    subtree
+      ? flat
+        ? !!sync.folderId && subtree.has(sync.folderId)
+        : sync.folderId === folderId
+      : flat || !sync.folderId || !tree.byId.has(sync.folderId);
   const pendingSyncs =
     currentPage === 1 && pendingFits
       ? [...unlistedSyncs]
           .reverse()
+          .filter(pendingInScope)
           .filter(
             (sync) =>
               !pendingTerm || sync.name.toLowerCase().includes(pendingTerm),
@@ -629,7 +751,7 @@ export default function Sources({
   // needs no one, so it stays in the list. Page 1 leads with them and drops
   // them from its grid; later pages, with no such section, keep their own
   // cards. A card on this page is the fresher copy of its source.
-  const unfiltered = !pendingTerm && kind === 'all' && usage === 'all';
+  const unfiltered = !inFolder && !pendingTerm && !filtered;
   const attentionRank = (doc: Doc): number | null => {
     if (ingestState(doc) === 'failed' && can(doc, 'edit')) return 0;
     return connectionNeedsSignIn(connectionOf(doc, connections)) ? 1 : null;
@@ -654,13 +776,60 @@ export default function Sources({
     (doc) => !attentionIds.has(doc.id),
   );
   const showAttention = attentionDocs.length > 0;
+  // Only the root's own (in no folder) are part of its listed total.
+  const attentionListed = attentionDocs.filter(
+    (doc) => !doc.folder_id || !tree.byId.has(doc.folder_id),
+  ).length;
+
+  // The folders on page 1: the level's own, or for a search the matching
+  // ones from every level below (a filter alone lists sources only).
+  const shownFolders: Folder[] =
+    currentPage !== 1
+      ? []
+      : searching
+        ? matchingFolders(
+            tree,
+            debouncedSearchTerm,
+            subtree
+              ? new Set([...subtree].filter((id) => id !== folderId))
+              : undefined,
+          )
+        : filtered
+          ? []
+          : childFolders(tree, folderId);
+  /** Where a folder found by a search sits, when not right here. */
+  const parentNameOf = (found: Folder): string | undefined => {
+    if (!searching) return undefined;
+    const parentId = tree.parentOf.get(found.id) ?? null;
+    if (parentId === null || parentId === folderId) return undefined;
+    return tree.byId.get(parentId)?.name;
+  };
+  /**
+   * The folder trail a source is filed under, where the list mixes levels
+   * (a search, a filter, Needs attention): from the root, or from the open
+   * folder; none for a source in no folder or right in the open one.
+   */
+  const folderLabelOf = (doc: Doc): string | null => {
+    if (!doc.folder_id) return null;
+    const path: { id: string; name: string }[] = tree.byId.has(doc.folder_id)
+      ? folderPath(tree, doc.folder_id)
+      : (doc.folder_path ?? []);
+    const from = folderId
+      ? path.findIndex((step) => step.id === folderId) + 1
+      : 0;
+    const label = path
+      .slice(from)
+      .map((step) => step.name)
+      .join(' › ');
+    return label || null;
+  };
 
   // What every source view takes, and what a tree view adds.
   const viewProps = {
     docId: documentToView?.id || '',
     canEdit: viewCanEdit,
     sourceName: documentToView?.name ?? '',
-    onBackToDocuments: closeDocument,
+    onBackToDocuments: leaveToRoot,
     headerAction: testRetrievalAction,
     headerMenu: viewMenu,
     linkedChunk: link?.chunk,
@@ -748,8 +917,10 @@ export default function Sources({
     );
   };
 
-  const renderSourceCard = (document: Doc) => {
+  /** A source's tile; `showFolder` names its folder trail (a mixed list). */
+  const renderSourceCard = (document: Doc, showFolder = false) => {
     const docId = document.id ? document.id.toString() : '';
+    const folderLabel = showFolder ? folderLabelOf(document) : null;
     const connection = connectionOf(document, connections);
     // Sync stops until the reader signs in again (the shared rule).
     const paused = connectionNeedsSignIn(connection);
@@ -844,6 +1015,11 @@ export default function Sources({
                 {t('settings.sources.graphrag.badge')}
               </MetaItem>
             ) : null}
+            {folderLabel ? (
+              <MetaItem icon={<FolderIcon />} title={folderLabel} data-folder>
+                {folderLabel}
+              </MetaItem>
+            ) : null}
             {isOwner(document) ? null : <RoleMeta item={document} />}
             {agentUseCount(document.used_by) > 0 ? (
               // A sibling above the stretched button, so its popover opens.
@@ -883,106 +1059,174 @@ export default function Sources({
 
   const GRID =
     'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
-  const filtered = kind !== 'all' || usage !== 'all';
+  // New folder and Add knowledge, here or inside the open folder; on a
+  // phone the two share the row.
   const toolbarAction = (
-    <Button
-      type="button"
-      size="field"
-      shape="pill"
-      onClick={() => setModalState('ACTIVE')}
-    >
-      {t('settings.sources.addSource')}
-    </Button>
+    <div className="flex w-full items-center gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
+      <NewFolderButton
+        atDepthLimit={!canCreateIn(tree, folderId)}
+        onClick={() => setNewFolderOpen(true)}
+      />
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
+        onClick={() => setModalState('ACTIVE')}
+      >
+        {t('settings.sources.addSource')}
+      </Button>
+    </div>
   );
+  const folderMenuButton = folder ? (
+    <ActionMenu
+      size="toolbar"
+      options={folderMenu.menuOptions(folder)}
+      triggerLabel={t('folders.menuLabel', {
+        name: folder.name,
+        interpolation: { escapeValue: false },
+      })}
+    />
+  ) : null;
+  // The open folder before its folder list has loaded: wait for it (or say
+  // it failed) rather than draw a folder with no name.
+  const folderPending = inFolder && !folder;
+
+  const sourcesTitle =
+    inFolder || hasFolders
+      ? t('settings.sources.sections.sources')
+      : t('settings.sources.allKnowledge');
+  const sourcesCount =
+    Math.max(0, totalDocuments - attentionListed) + pendingSyncs.length;
+  const foldersFailed = folderList.failed && !folderList.loaded;
+  const foldersError = (
+    <EmptyState
+      size="sm"
+      illustration="none"
+      tone="destructive"
+      title={t('folders.errors.loadFailed')}
+      onRetry={() => void folderActions.reload()}
+    />
+  );
+  // The root with no folders keeps one unheaded grid, as before folders;
+  // with folders (or inside one) every group has its heading.
+  const sectioned =
+    showAttention || inFolder || hasFolders || shownFolders.length > 0;
+  const nothingListed =
+    !currentDocuments.length &&
+    !showAttention &&
+    pendingSyncs.length === 0 &&
+    shownFolders.length === 0;
 
   return documentToView ? (
-    <div className="flex flex-col">
-      {isWikiSource(documentToView) ? (
-        <WikiViewer
-          docId={documentToView.id || ''}
-          sourceName={documentToView.name}
-          canEdit={viewCanEdit}
-          onBackToDocuments={closeDocument}
-          headerAction={testRetrievalAction}
-          headerMenu={viewMenu}
-          initialPath={link?.wikiPage}
-        />
-      ) : isGraphSource(documentToView) ? (
-        <GraphSourceView
-          // One view per source: another source's waits and state never
-          // carry over.
-          key={documentToView.id}
-          {...viewProps}
-          {...websiteProps}
-          sourceType={documentToView.type}
-          synced={viewSynced}
-          canSync={canSyncSource(documentToView)}
-          isNested={!!documentToView.isNested}
-          website={documentToView.website}
-        />
-      ) : documentToView.isNested ? (
-        documentToView.website ? (
-          <WebsiteTree
+    <SourceFolderTrail.Provider value={folderCrumbs}>
+      <div className="flex flex-col">
+        {isWikiSource(documentToView) ? (
+          <WikiViewer
+            docId={documentToView.id || ''}
+            sourceName={documentToView.name}
+            canEdit={viewCanEdit}
+            onBackToDocuments={leaveToRoot}
+            headerAction={testRetrievalAction}
+            headerMenu={viewMenu}
+            initialPath={link?.wikiPage}
+          />
+        ) : isGraphSource(documentToView) ? (
+          <GraphSourceView
+            // One view per source: another source's waits and state never
+            // carry over.
             key={documentToView.id}
-            {...treeProps}
+            {...viewProps}
             {...websiteProps}
-            hosts={documentToView.website.hosts}
-          />
-        ) : viewSynced ? (
-          // Synced from a connection or on a schedule, whatever its stored
-          // type (an S3 or GitHub source is typed by its loader): Sync now,
-          // no Add file, since a sync replaces the files.
-          <ConnectorTree
-            {...treeProps}
             sourceType={documentToView.type}
-            connection={viewConnection}
+            synced={viewSynced}
             canSync={canSyncSource(documentToView)}
-            syncFrequency={documentToView.syncFrequency}
-            syncedAt={documentToView.date}
+            isNested={!!documentToView.isNested}
+            website={documentToView.website}
           />
+        ) : documentToView.isNested ? (
+          documentToView.website ? (
+            <WebsiteTree
+              key={documentToView.id}
+              {...treeProps}
+              {...websiteProps}
+              hosts={documentToView.website.hosts}
+            />
+          ) : viewSynced ? (
+            // Synced from a connection or on a schedule, whatever its stored
+            // type (an S3 or GitHub source is typed by its loader): Sync now,
+            // no Add file, since a sync replaces the files.
+            <ConnectorTree
+              {...treeProps}
+              sourceType={documentToView.type}
+              connection={viewConnection}
+              canSync={canSyncSource(documentToView)}
+              syncFrequency={documentToView.syncFrequency}
+              syncedAt={documentToView.date}
+            />
+          ) : (
+            <FileTree {...treeProps} />
+          )
         ) : (
-          <FileTree {...treeProps} />
-        )
-      ) : (
-        <Chunks
-          documentId={documentToView.id || ''}
-          documentName={documentToView.name}
-          canEdit={viewCanEdit}
-          handleGoBack={closeDocument}
-          headerAction={
-            <>
-              {testRetrievalAction}
-              {/* A flat synced source has no tree to sync from: the
+          <Chunks
+            documentId={documentToView.id || ''}
+            documentName={documentToView.name}
+            canEdit={viewCanEdit}
+            handleGoBack={leaveToRoot}
+            headerAction={
+              <>
+                {testRetrievalAction}
+                {/* A flat synced source has no tree to sync from: the
                   button starts the sync and toasts. */}
-              {viewCanEdit &&
-              syncNowIsPrimary(documentToView) &&
-              canSyncSource(documentToView) ? (
-                <Button
-                  type="button"
-                  shape="pill"
-                  size="field"
-                  onClick={() => void actions.syncNow(documentToView)}
-                >
-                  {t('settings.sources.syncNow')}
-                </Button>
-              ) : null}
-            </>
-          }
-          headerMenu={viewMenu}
-          linkedChunk={link?.chunk}
-        />
-      )}
-      {actions.modals}
-    </div>
+                {viewCanEdit &&
+                syncNowIsPrimary(documentToView) &&
+                canSyncSource(documentToView) ? (
+                  <Button
+                    type="button"
+                    shape="pill"
+                    size="field"
+                    onClick={() => void actions.syncNow(documentToView)}
+                  >
+                    {t('settings.sources.syncNow')}
+                  </Button>
+                ) : null}
+              </>
+            }
+            headerMenu={viewMenu}
+            linkedChunk={link?.chunk}
+          />
+        )}
+        {actions.modals}
+      </div>
+    </SourceFolderTrail.Provider>
   ) : (
     <div className="flex w-full max-w-full flex-col">
       <div className="relative flex grow flex-col">
+        {/* Inside a folder its crumb row stands where the intro was: the
+            trail, its count line, and the folder's ⋯ last. */}
+        {folder ? (
+          <div className="mb-5">
+            <FolderCrumbRow
+              type="source"
+              trail={trail}
+              onNavigate={openFolder}
+              meta={folderCountLine(t, folder, 'source')}
+              menu={folderMenuButton}
+            />
+          </div>
+        ) : null}
         <PageToolbar
-          intro={t('settings.sources.subtitle')}
+          intro={inFolder ? undefined : t('settings.sources.subtitle')}
           search={
             <SearchInput
               maxLength={256}
-              label={t('settings.sources.searchPlaceholder')}
+              label={
+                folder
+                  ? t('folders.searchIn', {
+                      name: folder.name,
+                      interpolation: { escapeValue: false },
+                    })
+                  : t('settings.sources.searchPlaceholder')
+              }
               name="Document-search-input"
               id="document-search-input"
               value={searchTerm}
@@ -1017,7 +1261,9 @@ export default function Sources({
           ) : null}
         </PageToolbar>
         <div className="relative w-full">
-          {loading ? (
+          {folderPending && foldersFailed ? (
+            foldersError
+          ) : loading || folderPending ? (
             <div className={GRID}>
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
@@ -1028,10 +1274,55 @@ export default function Sources({
               title={t('settings.sources.loadError')}
               onRetry={() => refreshDocs()}
             />
-          ) : !currentDocuments.length &&
-            !showAttention &&
-            pendingSyncs.length === 0 ? (
-            searchTerm || filtered ? (
+          ) : nothingListed ? (
+            folder && flat ? (
+              // Nothing in the folder matches: the same search at the root.
+              <EmptyState
+                size="xs"
+                illustration="none"
+                title={t('settings.sources.noResults')}
+                description={
+                  searching
+                    ? t('settings.sources.folders.noMatchIn', {
+                        name: folder.name,
+                        query: debouncedSearchTerm.trim(),
+                        interpolation: { escapeValue: false },
+                      })
+                    : undefined
+                }
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    shape="pill"
+                    onClick={() => {
+                      carriedSearch.current = searchTerm;
+                      openFolder(null);
+                    }}
+                  >
+                    {t('settings.sources.folders.searchAll')}
+                  </Button>
+                }
+              />
+            ) : folder ? (
+              <EmptyState
+                size="sm"
+                icon={FolderOpen}
+                title={t('folders.emptyTitle')}
+                description={t('settings.sources.folders.emptyHint')}
+                action={
+                  <Button
+                    type="button"
+                    shape="pill"
+                    onClick={() => setModalState('ACTIVE')}
+                  >
+                    {t('settings.sources.addSource')}
+                  </Button>
+                }
+              />
+            ) : foldersFailed && !flat && currentPage === 1 ? (
+              foldersError
+            ) : searchTerm || filtered ? (
               <EmptyState
                 size="xs"
                 illustration="none"
@@ -1054,39 +1345,61 @@ export default function Sources({
                 }
               />
             )
-          ) : showAttention ? (
+          ) : sectioned ? (
             <div className="flex flex-col gap-8">
-              <section className="flex flex-col gap-3">
-                <SectionHeader
-                  size="sm"
-                  title={t('settings.sources.needsAttention')}
-                  count={attentionDocs.length}
-                />
-                <div className={GRID}>
-                  {attentionDocs.map(renderSourceCard)}
-                </div>
-              </section>
-              {gridDocuments.length + pendingSyncs.length > 0 && (
+              {showAttention ? (
                 <section className="flex flex-col gap-3">
                   <SectionHeader
                     size="sm"
-                    title={t('settings.sources.allKnowledge')}
-                    count={
-                      Math.max(0, totalDocuments - attentionDocs.length) +
-                      pendingSyncs.length
-                    }
+                    title={t('settings.sources.needsAttention')}
+                    count={attentionDocs.length}
+                  />
+                  <div className={GRID}>
+                    {attentionDocs.map((doc) => renderSourceCard(doc, true))}
+                  </div>
+                </section>
+              ) : null}
+              {shownFolders.length > 0 ? (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    size="sm"
+                    title={t('settings.sources.sections.folders')}
+                    count={shownFolders.length}
+                  />
+                  <div className={GRID}>
+                    {shownFolders.map((shown) => (
+                      <FolderTile
+                        key={shown.id}
+                        folder={shown}
+                        type="source"
+                        onOpen={(opened) => openFolder(opened.id)}
+                        menuOptions={folderMenu.menuOptions(shown)}
+                        parentName={parentNameOf(shown)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : foldersFailed && !inFolder && !flat && currentPage === 1 ? (
+                foldersError
+              ) : null}
+              {gridDocuments.length + pendingSyncs.length > 0 ? (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    size="sm"
+                    title={sourcesTitle}
+                    count={sourcesCount}
                   />
                   <div className={GRID}>
                     {pendingSyncs.map(renderPendingSync)}
-                    {gridDocuments.map(renderSourceCard)}
+                    {gridDocuments.map((doc) => renderSourceCard(doc, flat))}
                   </div>
                 </section>
-              )}
+              ) : null}
             </div>
           ) : (
             <div className={GRID}>
               {pendingSyncs.map(renderPendingSync)}
-              {gridDocuments.map(renderSourceCard)}
+              {gridDocuments.map((doc) => renderSourceCard(doc, flat))}
             </div>
           )}
         </div>
@@ -1122,7 +1435,12 @@ export default function Sources({
           isOnboarding={false}
           renderTab={null}
           close={() => setModalState('INACTIVE')}
-          onSuccessfulUpload={() => refreshDocs()}
+          folderId={folderId}
+          onSuccessfulUpload={() => {
+            refreshDocs();
+            // The folder it was added to counts it.
+            if (folderId) void folderActions.reload();
+          }}
           onBrowseConnectors={() =>
             navigate('/settings/connectors?capability=sync')
           }
@@ -1132,6 +1450,14 @@ export default function Sources({
       {signInModals}
 
       {actions.modals}
+      {folderMenu.dialogs}
+      <FolderNameModal
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+        type="source"
+        mode="create"
+        parentId={folderId}
+      />
     </div>
   );
 }

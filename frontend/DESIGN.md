@@ -1392,7 +1392,9 @@ never hand-draws a folder.
   folder agents read adds `UsedByAgents` to that line. The name is a stretched
   button that is the Card's direct child (see A clickable card that holds a
   link); the ⋯ is `ActionMenu size="row"`. Folder tiles lead the item tiles,
-  in their own grid with the same columns.
+  in their own grid with the same columns. A search that lists folders from
+  several levels passes `parentName`, which leads the line ("In Carriers ·
+  4 sources").
 - **Menu**: `useFolderMenu(type)` gives every folder's ⋯ (Rename, Move to
   folder, then Delete after a rule) and draws its dialogs once per page. The
   tile and the crumb row use the same items.
@@ -1407,13 +1409,27 @@ never hand-draws a folder.
   `EmptyState size="sm" icon={FolderOpen}` ("This folder is empty", a hint that
   names the item's ⋯, and the page's create action, which files into the
   folder).
+- **Knowledge** (`settings/Sources.tsx`): the root is Needs attention (every
+  folder's sources), then Folders (the top level, page 1 only, never paged),
+  then Sources, the sources in no folder; with no folders it keeps the one
+  "All knowledge" grid. Inside a folder the crumb row stands where the intro
+  was, above the toolbar, which keeps New folder · Add knowledge beside the
+  search (Add knowledge files into the folder); then Folders and Sources. The
+  kind track and usage count what the place holds (the root: everything). A
+  source opened in a folder reads `Knowledge › Carriers › source` through
+  `SourceFolderTrail` (PathHeader puts it after the root crumb): a folder
+  crumb returns to the folder, Knowledge to the root. Inside a folder,
+  nothing found offers "Search all knowledge", the same search at the root.
 - **URL**: `useFolderParam(type)` keeps the open folder in `?folder=`; the trail
   comes from the folder list's `parent_id` chain, so a link to a nested folder
   shows every parent. An unknown id returns to the root with a destructive
   toast; a folder deleted here steps up to its parent silently.
 - **Search** at the root is flat: folders whose name matches first (any
   depth), then every matching item wherever it is filed, each tile naming its
-  folder trail in a `Folder` `MetaItem`.
+  folder trail in a `Folder` `MetaItem`. Inside a folder the trail starts
+  below the open folder, and an item right in it names none. On Knowledge a
+  kind or usage filter is flat the same way, and a Needs attention tile
+  names its folder too.
 - **Create and rename**: `FolderNameModal` (`Modal sm`, one labelled field,
   pending submit, closes only once the server saved it; `folder_name_taken`,
   `folder_too_deep` and a failed request stay under the field). New folder is

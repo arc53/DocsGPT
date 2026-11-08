@@ -695,6 +695,15 @@
       "kindFilterLabel": "種類で絞り込む",
       "needsAttention": "要対応",
       "allKnowledge": "すべてのナレッジ",
+      "sections": {
+        "folders": "フォルダー",
+        "sources": "ソース"
+      },
+      "folders": {
+        "emptyHint": "ここにナレッジを追加するか、ソースの⋯メニューからここに移動してください。",
+        "searchAll": "すべてのナレッジを検索",
+        "noMatchIn": "{{name}} 内に「{{query}}」に一致するものはありません。"
+      },
       "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはこのソースを使えなくなります。ファイルとチャンクも削除されます。この操作は元に戻せません。",
       "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのソースを使えなくなります。ファイルとチャンクも削除されます。この操作は元に戻せません。",
       "noKnowledgeFound": "ナレッジが見つかりません"
@@ -3950,6 +3959,7 @@
       "empty": "空"
     },
     "searchIn": "{{name}} 内を検索…",
+    "inParent": "{{name}} 内",
     "emptyTitle": "このフォルダは空です",
     "errors": {
       "nameTaken": "同じ名前のフォルダが既にあります。",

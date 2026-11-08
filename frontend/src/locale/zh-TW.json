@@ -695,6 +695,15 @@
       "kindFilterLabel": "依類型篩選",
       "needsAttention": "需要處理",
       "allKnowledge": "所有知識",
+      "sections": {
+        "folders": "資料夾",
+        "sources": "來源"
+      },
+      "folders": {
+        "emptyHint": "在此新增知識，或透過來源的 ⋯ 選單將其移入。",
+        "searchAll": "搜尋所有知識",
+        "noMatchIn": "{{name}}中沒有符合「{{query}}」的內容。"
+      },
       "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
       "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
       "noKnowledgeFound": "找不到知識"
@@ -3950,6 +3959,7 @@
       "empty": "空"
     },
     "searchIn": "在{{name}}中搜尋…",
+    "inParent": "位於{{name}}",
     "emptyTitle": "此資料夾是空的",
     "errors": {
       "nameTaken": "已有同名的資料夾。",

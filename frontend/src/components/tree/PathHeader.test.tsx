@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '../ui/tooltip';
+import { SourceFolderTrail } from './folderTrail';
 import PathHeader from './PathHeader';
 
 const render = (node: React.ReactNode) =>
@@ -114,5 +115,37 @@ describe('PathHeader', () => {
     const html = render(<PathHeader root={{ label: 'Files' }} />);
     expect(html).not.toContain('<button');
     expect(html).toContain('data-slot="breadcrumb-page"');
+  });
+
+  // A source opened inside a Knowledge folder: Knowledge › Carriers › source.
+  it('puts the folder trail it was opened in after the root', () => {
+    const html = render(
+      <SourceFolderTrail.Provider
+        value={[{ label: 'Carriers', onSelect: vi.fn() }]}
+      >
+        <PathHeader
+          root={{ label: 'Knowledge', onSelect: vi.fn() }}
+          segments={[{ label: 'Rate sheet' }]}
+        />
+      </SourceFolderTrail.Provider>,
+    );
+    const labels = [...html.matchAll(/>([^<>]+)<\/(?:button|span)>/g)].map(
+      (match) => match[1],
+    );
+    expect(labels.filter((label) => label.trim())).toEqual([
+      'Knowledge',
+      'Carriers',
+      'Rate sheet',
+    ]);
+  });
+
+  // An embedded tree's root is the source itself: no folders after it.
+  it('leaves the trail out when told to', () => {
+    const html = render(
+      <SourceFolderTrail.Provider value={[{ label: 'Carriers' }]}>
+        <PathHeader root={{ label: 'Rate sheet' }} parents={[]} />
+      </SourceFolderTrail.Provider>,
+    );
+    expect(html).not.toContain('Carriers');
   });
 });

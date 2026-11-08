@@ -18,6 +18,7 @@ import {
   childFolders,
   folderPath,
   formatFolderPath,
+  matchingFolders,
   subtreeIds,
   type FolderTree,
 } from '../components/folders/folderTree';
@@ -57,28 +58,6 @@ import { Agent } from './types';
 
 const TILE_GRID =
   'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
-
-/**
- * Folders whose name matches a search, nested ones included, by trail, so
- * a search shows the folders it found before the flat list of agents.
- */
-const matchingFolders = (
-  tree: FolderTree,
-  query: string,
-  within?: Set<string>,
-): Folder[] => {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
-  return [...tree.byId.values()]
-    .filter((folder) => !within || within.has(folder.id))
-    .filter((folder) => folder.name.toLowerCase().includes(needle))
-    .map((folder) => ({
-      folder,
-      path: formatFolderPath(folderPath(tree, folder.id)),
-    }))
-    .sort((a, b) => a.path.localeCompare(b.path))
-    .map(({ folder }) => folder);
-};
 
 /** "Customer-facing › EU" for an agent filed in a folder the list knows. */
 const folderLabelOf = (tree: FolderTree, agent: Agent): string | undefined =>

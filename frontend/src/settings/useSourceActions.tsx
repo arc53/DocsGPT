@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Eye,
+  FolderInput,
   Network,
   RefreshCw,
   Search,
@@ -13,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import MoveToFolderModal from '../components/folders/MoveToFolderModal';
 import type { MenuOption } from '../components/ui/dropdown-menu';
 import { requestSync, syncRefusal } from '../connectors/syncRefusal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -60,6 +62,11 @@ interface UseSourceActionsOptions {
   /** Updates the source in place (a saved schedule or config), no refetch. */
   onPatched: (id: string, patch: Partial<Doc>) => void;
   /**
+   * The source was filed into a folder (null: taken out of any), once the
+   * server did it and the folder list reloaded.
+   */
+  onMoved?: (doc: Doc, folderId: string | null) => void;
+  /**
    * A sync the server accepted (Sync now from a menu or Source settings), so
    * an open view of the source can wait for it to finish.
    */
@@ -87,6 +94,7 @@ export function useSourceActions({
   onDeleted,
   onChanged,
   onPatched,
+  onMoved,
   onSyncStarted,
   syncingId = null,
 }: UseSourceActionsOptions) {
@@ -102,6 +110,7 @@ export function useSourceActions({
   const [toGraph, setToGraph] = useState<Doc | null>(null);
   const [wikiSettingsOf, setWikiSettingsOf] = useState<Doc | null>(null);
   const [toDelete, setToDelete] = useState<Doc | null>(null);
+  const [toMove, setToMove] = useState<Doc | null>(null);
 
   const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token);
@@ -204,7 +213,8 @@ export function useSourceActions({
 
   /**
    * The source's actions. On the card: View, Reingest (failed), Sync now,
-   * Settings, Test retrieval, Convert to wiki, Share with team, then Delete
+   * Settings, Test retrieval, Convert to wiki, Share with team, Move to
+   * folder (anyone who can see it files it in their own folders), then Delete
    * set apart. In the opened view the same, less View and Test retrieval
    * (a button beside it), and less Sync now where it is the view's primary.
    */
@@ -300,6 +310,14 @@ export function useSourceActions({
       });
     }
 
+    if (doc.id && can(doc, 'move_folder')) {
+      options.push({
+        icon: FolderInput,
+        label: t('folders.moveToFolder'),
+        onClick: () => setToMove(doc),
+      });
+    }
+
     if (can(doc, 'delete')) {
       options.push({
         icon: Trash2,
@@ -352,6 +370,21 @@ export function useSourceActions({
           handleCancel={() => setToDelete(null)}
           submitLabel={t('settings.sources.delete')}
           variant="destructive"
+        />
+      )}
+
+      {toMove?.id && (
+        <MoveToFolderModal
+          open
+          onOpenChange={(open) => !open && setToMove(null)}
+          type="source"
+          subject={{
+            kind: 'items',
+            ids: [toMove.id],
+            name: toMove.name,
+            folderId: toMove.folder_id ?? null,
+          }}
+          onMoved={(folderId) => onMoved?.(toMove, folderId)}
         />
       )}
 

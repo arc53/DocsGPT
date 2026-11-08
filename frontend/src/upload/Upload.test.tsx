@@ -109,6 +109,7 @@ type LauncherOptions = {
   onCancel?: () => void;
   onSynced?: (sourceIds: string[]) => void;
   onNavigate?: (to: string) => void;
+  folderId?: string | null;
 };
 const launcher = vi.hoisted(() => ({
   options: undefined as LauncherOptions | undefined,
@@ -195,6 +196,11 @@ describe('Upload source-type tiles', () => {
   });
 
   const close = vi.fn();
+  // The Knowledge folder the dialog was opened in, if any.
+  let folderId: string | undefined;
+  beforeEach(() => {
+    folderId = undefined;
+  });
   const render = async (onBrowseConnectors?: () => void) => {
     await act(async () => {
       root.render(
@@ -205,6 +211,7 @@ describe('Upload source-type tiles', () => {
           renderTab={null}
           close={close}
           onBrowseConnectors={onBrowseConnectors}
+          folderId={folderId}
         />,
       );
     });
@@ -694,6 +701,26 @@ describe('Upload source-type tiles', () => {
     });
   });
 
+  // Add knowledge inside a Knowledge folder files the new source there, by
+  // any route: a remote ingest here, a sync through the launcher.
+  it('files a source added inside a folder into it', async () => {
+    folderId = 'fold-1';
+    const sent = stubXhr();
+    await openType('website');
+    await typeInto(urlInput(), 'docs.example.com/guide');
+    await act(async () => trainButton().click());
+    expect(sent[0].body.get('folder_id')).toBe('fold-1');
+    expect(launcher.options?.folderId).toBe('fold-1');
+  });
+
+  it('sends no folder from the root of Knowledge', async () => {
+    const sent = stubXhr();
+    await openType('website');
+    await typeInto(urlInput(), 'docs.example.com/guide');
+    await act(async () => trainButton().click());
+    expect(sent[0].body.has('folder_id')).toBe(false);
+  });
+
   it('sends a whole site with its scope, synced weekly by default', async () => {
     const sent = stubXhr();
     await openType('website');
@@ -1070,7 +1097,7 @@ describe('Upload local file step', () => {
     container.remove();
   });
 
-  const openLocalFile = async () => {
+  const openLocalFile = async (folderId?: string) => {
     await act(async () => {
       root.render(
         <Upload
@@ -1079,6 +1106,7 @@ describe('Upload local file step', () => {
           isOnboarding={false}
           renderTab={null}
           close={vi.fn()}
+          folderId={folderId}
         />,
       );
     });
@@ -1386,5 +1414,13 @@ describe('Upload local file step', () => {
       .map((entry) => (entry as File).name);
     expect(names).toEqual(['Handbook/guide/setup.md', 'Handbook/intro.pdf']);
     expect(sent[0].body.get('name')).toBe('Handbook');
+  });
+
+  it('uploads into the folder it was opened in', async () => {
+    const sent = stubXhr();
+    await openLocalFile('fold-1');
+    await pickFolder([inFolder('Handbook/intro.pdf', 'application/pdf')]);
+    await act(async () => trainButton().click());
+    expect(sent[0].body.get('folder_id')).toBe('fold-1');
   });
 });

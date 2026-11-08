@@ -32,6 +32,7 @@ const render = async (
   folder: Folder,
   type: 'agent' | 'source',
   onOpen = vi.fn(),
+  parentName?: string,
 ) => {
   await act(async () =>
     root.render(
@@ -41,6 +42,7 @@ const render = async (
           type={type}
           onOpen={onOpen}
           menuOptions={[{ label: 'Rename', onClick: () => undefined }]}
+          parentName={parentName}
         />
       </MemoryRouter>,
     ),
@@ -85,5 +87,19 @@ describe('FolderTile', () => {
     );
     expect(container.textContent).toContain('folders.counts.empty');
     expect(container.textContent).toContain('settings.usage.agentsShort:1');
+  });
+
+  // A search across levels: a nested folder says where it sits first.
+  it('names the parent of a folder found by a search', async () => {
+    await render(
+      { id: 'f3', name: 'Rate archive', parent_id: 'f2', item_count: 4 },
+      'source',
+      vi.fn(),
+      'Carriers',
+    );
+    const items = Array.from(
+      container.querySelectorAll('[data-slot="meta-item"]'),
+    ).map((item) => item.textContent);
+    expect(items).toEqual(['folders.inParent', 'folders.counts.source:4']);
   });
 });

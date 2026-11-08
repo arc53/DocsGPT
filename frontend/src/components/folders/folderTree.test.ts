@@ -8,6 +8,7 @@ import {
   folderMoveCheck,
   folderPath,
   formatFolderPath,
+  matchingFolders,
   subtreeHeight,
   subtreeIds,
 } from './folderTree';
@@ -113,5 +114,25 @@ describe('folderMoveCheck', () => {
     expect(folderMoveCheck(tree, 'customs', 'rates')).toBe('ok');
     expect(folderMoveCheck(tree, 'customs', 'archive')).toBe('too_deep');
     expect(folderMoveCheck(tree, 'archive', null)).toBe('ok');
+  });
+});
+
+describe('matchingFolders', () => {
+  const tree = buildFolderTree(folders);
+
+  it('finds folders by name at any depth, by trail', () => {
+    expect(matchingFolders(tree, ' ARCH ').map((x) => x.id)).toEqual([
+      'rates',
+      'archive',
+    ]);
+    expect(matchingFolders(tree, '')).toEqual([]);
+  });
+
+  it('keeps to a subtree when given one', () => {
+    const within = subtreeIds(tree, 'rates');
+    within.delete('rates');
+    expect(matchingFolders(tree, 'arch', within).map((x) => x.id)).toEqual([
+      'archive',
+    ]);
   });
 });

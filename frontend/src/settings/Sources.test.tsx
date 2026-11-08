@@ -13,7 +13,10 @@ const {
   configModal,
   viewProps,
   changeModals,
+  folderState,
 } = vi.hoisted(() => ({
+  // The caller's source folders (`folders.source`); undefined is unloaded.
+  folderState: { items: undefined as unknown[] | undefined },
   // The callbacks Convert to wiki and Enable GraphRAG were given.
   changeModals: {
     onConverted: null as null | (() => void),
@@ -110,6 +113,26 @@ vi.mock('react-redux', () => ({
         startedSyncs: connectors.startedSyncs,
       },
       notifications: { recentEvents: connectors.events },
+      folders: folderState.items
+        ? {
+            agent: {
+              items: [],
+              loaded: true,
+              loading: false,
+              failed: false,
+              latestRequestId: null,
+              removedParents: {},
+            },
+            source: {
+              items: folderState.items,
+              loaded: true,
+              loading: false,
+              failed: false,
+              latestRequestId: null,
+              removedParents: {},
+            },
+          }
+        : undefined,
     }),
 }));
 
@@ -135,7 +158,30 @@ vi.mock('../preferences/preferenceApi', () => ({
   })),
 }));
 
-vi.mock('../components/Chunks', () => ({ default: view('chunks') }));
+// The chunk view also shows the folder crumbs it was handed (see
+// SourceFolderTrail), each a button that runs its crumb.
+vi.mock('../components/Chunks', async () => {
+  const { useSourceFolderTrail } =
+    await import('../components/tree/folderTrail');
+  const Base = view('chunks');
+  return {
+    default: (props: Parameters<typeof Base>[0]) => {
+      const trail = useSourceFolderTrail();
+      return (
+        <>
+          {Base(props)}
+          <nav data-testid="folder-trail">
+            {trail.map((crumb) => (
+              <button key={crumb.label} type="button" onClick={crumb.onSelect}>
+                {crumb.label}
+              </button>
+            ))}
+          </nav>
+        </>
+      );
+    },
+  };
+});
 vi.mock('../components/FileTree', () => ({ default: view('file-tree') }));
 vi.mock('../components/ConnectorTree', () => ({
   default: view('connector-tree'),
@@ -409,8 +455,13 @@ describe('Sources access', () => {
       [VIEW, TEST],
       null,
     ],
-    // No access fields: the caller's own.
-    ['no access fields', {}, FULL, false],
+    // No access fields: the caller's own, filed like any.
+    [
+      'no access fields',
+      {},
+      [VIEW, EDIT_CONFIG, TEST, CONVERT, SHARE, 'folders.moveToFolder', DELETE],
+      false,
+    ],
   ])('the card menu of %s', async (_, fields, expected, eye) => {
     await render(doc(fields));
     expect(await menuItems()).toEqual(expected);
@@ -2064,17 +2115,338 @@ describe('Sources toolbar', () => {
     document.body.innerHTML = '';
   });
 
-  it('offers Add knowledge alone: no Select mode, the card keeps its menu', async () => {
+  it('offers New folder and Add knowledge: no Select mode, the card keeps its menu', async () => {
     await mount(root, [owned]);
     const labels = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
         '[data-slot="page-toolbar"] button',
       ),
     ).map((button) => button.textContent);
-    expect(labels).toEqual(['settings.sources.addSource']);
+    expect(labels).toEqual(['folders.newFolder', 'settings.sources.addSource']);
     expect(container.querySelector('[role="checkbox"]')).toBeNull();
     expect(
       container.querySelector('[data-testid="menu-button-a"]'),
     ).not.toBeNull();
+  });
+});
+
+describe('Sources folders', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const FOLDERS = [
+    {
+      id: 'f-car',
+      name: 'Carriers',
+      parent_id: null,
+      item_count: 3,
+      folder_count: 1,
+    },
+    { id: 'f-rate', name: 'Rate archive', parent_id: 'f-car', item_count: 4 },
+    { id: 'f-cus', name: 'Customs', parent_id: null, item_count: 0 },
+  ];
+  const CAR = { id: 'f-car', name: 'Carriers' };
+  const RATE = { id: 'f-rate', name: 'Rate archive' };
+  const tenders = doc({
+    id: 't',
+    name: 'Tenders',
+    folder_id: 'f-car',
+    folder_path: [CAR],
+  });
+  const sheet = doc({
+    id: 's',
+    name: 'Rate sheet',
+    folder_id: 'f-rate',
+    folder_path: [CAR, RATE],
+  });
+  const loose = doc({ id: 'l', name: 'Loose', folder_id: null });
+
+  const answer = (docs: Doc[], total = docs.length) =>
+    fetchPage.mockResolvedValue({
+      docs,
+      totalDocuments: total,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+
+  beforeEach(() => {
+    localStorage.clear();
+    dispatch.mockReset();
+    fetchPage.mockReset();
+    uploadProps.mockReset();
+    answer([loose]);
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    folderState.items = FOLDERS;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    folderState.items = undefined;
+    knowledge.docs = undefined;
+    connectors.startedSyncs = [];
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+  const headings = () =>
+    Array.from(container.querySelectorAll('section h2')).map(
+      (h) => h.textContent,
+    );
+  const folderTiles = () =>
+    Array.from(container.querySelectorAll('[data-folder-tile]')).map(
+      (tile) => tile.querySelector('button')!.textContent,
+    );
+  /** The folder meta item on a source's card, by the source's name. */
+  const folderMetaOf = (name: string) => {
+    const card = container
+      .querySelector(`[aria-label="${name}"]`)!
+      .closest('[data-slot="card"]')!;
+    return (
+      card.querySelector('[data-slot="meta-item"][data-folder]')?.textContent ??
+      null
+    );
+  };
+  const button = (label: string) =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === label,
+    );
+  const searchLabel = () =>
+    container.querySelector('label[for="document-search-input"]')?.textContent;
+
+  it('lists the folders, then the sources in none, at the root', async () => {
+    await mount(root, [loose]);
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'root', direct: true },
+    });
+    // Top-level folders only, by name; the loose sources under Sources.
+    expect(folderTiles()).toEqual(['Carriers', 'Customs']);
+    expect(headings()).toEqual([
+      'settings.sources.sections.folders2',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(folderMetaOf('Loose')).toBeNull();
+  });
+
+  it('keeps one unheaded grid with no folders', async () => {
+    folderState.items = [];
+    await mount(root, [loose]);
+    expect(folderTiles()).toEqual([]);
+    expect(headings()).toEqual([]);
+  });
+
+  it('shows folders on page 1 only', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [loose],
+      totalDocuments: 40,
+      totalPages: 2,
+      currentPage: 2,
+      nextCursor: '',
+    });
+    await mount(root, [loose], { entry: '/settings/knowledge?page=2' });
+    expect(folderTiles()).toEqual([]);
+  });
+
+  it('opens a folder as a place: crumbs, a scoped toolbar and its contents', async () => {
+    knowledge.docs = [doc({ id: 'x', name: 'Broken', ingestStatus: 'failed' })];
+    answer([tenders]);
+    await mount(root, [tenders]);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-folder-tile="f-car"] button')!
+        .click(),
+    );
+    expect(where()).toBe('?folder=f-car');
+    expect(fetchPage.mock.lastCall![6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'f-car', direct: true },
+    });
+    const crumbs = container.querySelector('[data-slot="folder-crumb-row"]')!;
+    expect(crumbs.textContent).toContain('folders.root.source');
+    expect(crumbs.textContent).toContain('Carriers');
+    expect(
+      crumbs.querySelector('button[aria-label="folders.menuLabel"]'),
+    ).not.toBeNull();
+    expect(searchLabel()).toBe('folders.searchIn');
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="page-toolbar"] button',
+        ),
+      ).map((b) => b.textContent),
+    ).toEqual(['folders.newFolder', 'settings.sources.addSource']);
+    // Its own folders and sources; nothing from outside it.
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(headings()).toEqual([
+      'settings.sources.sections.folders1',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(folderMetaOf('Tenders')).toBeNull();
+  });
+
+  it('searches a folder and its subfolders, paths relative to it', async () => {
+    answer([tenders, sheet]);
+    await mount(root, [tenders, sheet], {
+      entry: '/settings/knowledge?folder=f-car',
+    });
+    await typeSearch('rate');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('rate');
+    expect(options).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'f-car', direct: false },
+    });
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(folderMetaOf('Rate sheet')).toBe('Rate archive');
+    expect(folderMetaOf('Tenders')).toBeNull();
+  });
+
+  it('offers Add knowledge in an empty folder, filing into it', async () => {
+    answer([], 0);
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-cus' });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('folders.emptyTitle');
+    expect(empty.textContent).toContain('settings.sources.folders.emptyHint');
+    const add = Array.from(empty.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.addSource',
+    )!;
+    await act(async () => add.click());
+    expect(uploadProps.mock.lastCall![0]).toMatchObject({ folderId: 'f-cus' });
+  });
+
+  it('offers to search all knowledge when nothing in the folder matches', async () => {
+    answer([], 0);
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-car' });
+    await typeSearch('tariff');
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    await act(async () =>
+      Array.from(empty.querySelectorAll('button'))
+        .find((b) => b.textContent === 'settings.sources.folders.searchAll')!
+        .click(),
+    );
+    expect(where()).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('#document-search-input')!
+        .value,
+    ).toBe('tariff');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('tariff');
+    expect(options).toEqual({ kind: 'all', usage: 'all' });
+  });
+
+  it('searches every folder from the root: matching folders first, each source with its folder', async () => {
+    answer([sheet, loose]);
+    await mount(root, [sheet, loose]);
+    await typeSearch('rate');
+    expect(fetchPage.mock.lastCall![6]).toEqual({ kind: 'all', usage: 'all' });
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(
+      container.querySelector('[data-folder-tile="f-rate"]')!.textContent,
+    ).toContain('folders.inParent');
+    expect(folderMetaOf('Rate sheet')).toBe('Carriers › Rate archive');
+    expect(folderMetaOf('Loose')).toBeNull();
+  });
+
+  it('goes flat under a filter at the root, with no folder tiles', async () => {
+    await mount(root, [sheet], { entry: '/settings/knowledge?kind=files' });
+    expect(fetchPage.mock.calls[0][6]).toEqual({ kind: 'files', usage: 'all' });
+    expect(folderTiles()).toEqual([]);
+    expect(folderMetaOf('Rate sheet')).toBe('Carriers › Rate archive');
+  });
+
+  it('names the folder of a filed source that needs attention', async () => {
+    const failed = doc({
+      id: 'f',
+      name: 'Failed',
+      ingestStatus: 'failed',
+      allowed_actions: ['edit'],
+      folder_id: 'f-car',
+      folder_path: [CAR],
+    });
+    knowledge.docs = [failed, loose];
+    answer([loose], 1);
+    await mount(root, [loose]);
+    // The failed source isn't one of the root's own: Sources stays at 1.
+    expect(headings()).toEqual([
+      'settings.sources.needsAttention1',
+      'settings.sources.sections.folders2',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(folderMetaOf('Failed')).toBe('Carriers');
+  });
+
+  it('keeps the folder in a source opened inside it, and returns to it', async () => {
+    answer([tenders]);
+    await mount(root, [tenders], { entry: '/settings/knowledge?folder=f-car' });
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="Tenders"]')!.click(),
+    );
+    const trail = container.querySelector('[data-testid="folder-trail"]')!;
+    expect(trail.textContent).toBe('Carriers');
+    await act(async () => trail.querySelector('button')!.click());
+    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+    expect(where()).toBe('?folder=f-car');
+    // The Knowledge crumb leaves the folder for the root.
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="Tenders"]')!.click(),
+    );
+    await act(async () => button('VIEW BACK')!.click());
+    expect(where()).toBe('');
+  });
+
+  it('shows a sync started in a folder there, not at the root', async () => {
+    connectors.startedSyncs = [
+      {
+        id: 'sync-1',
+        name: 'Drive sync',
+        connectionId: 'conn-1',
+        startedAt: new Date().toISOString(),
+        folderId: 'f-car',
+      },
+    ];
+    knowledge.docs = [];
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-car' });
+    expect(container.textContent).toContain('Drive sync');
+    await act(async () => button('folders.root.source')!.click());
+    expect(where()).toBe('');
+    expect(container.textContent).not.toContain('Drive sync');
+  });
+
+  it('offers Move to folder after Share with team, before Delete', async () => {
+    const owned = doc({
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use', 'move_folder'],
+    });
+    answer([owned]);
+    await mount(root, [owned]);
+    const items = await openMenu('menu-button-src-1');
+    expect(items.slice(-3)).toEqual([
+      'settings.sources.shareWithTeam',
+      'folders.moveToFolder',
+      'settings.sources.delete',
+    ]);
+  });
+
+  it('leaves Move to folder out without move_folder', async () => {
+    const viewer = doc({ access: 'viewer', allowed_actions: VIEWER });
+    answer([viewer]);
+    await mount(root, [viewer]);
+    expect(await openMenu('menu-button-src-1')).not.toContain(
+      'folders.moveToFolder',
+    );
   });
 });
