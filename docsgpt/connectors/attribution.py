@@ -92,9 +92,10 @@ def client_sources(docs: Any) -> Any:
 
     Returns:
         A new list of copies without :data:`PROMPT_ONLY_KEYS` or
-        ``matched_text``. When it is a non-empty string, ``matched_text``
-        becomes the client-facing ``text``. The caller's chunks keep their
-        original text for the prompt. Anything but a list is returned as is.
+        ``matched_text``. A non-empty string becomes the client-facing
+        ``text`` only when it is contained in the current document text. The
+        caller's chunks keep their original text for the prompt. Anything but
+        a list is returned as is.
     """
     if not isinstance(docs, list):
         return docs
@@ -109,7 +110,8 @@ def client_sources(docs: Any) -> Any:
             for key, value in doc.items()
             if key not in PROMPT_ONLY_KEYS and key != "matched_text"
         }
-        if isinstance(matched, str) and matched:
+        current_text = doc.get("text")
+        if isinstance(matched, str) and matched and isinstance(current_text, str) and matched in current_text:
             client_doc["text"] = matched
         client_docs.append(client_doc)
     return client_docs
