@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 
 import type { Doc } from '../../models/misc';
 import { formatCount, intlLocale } from '../../utils/dateTimeUtils';
+import { personLabel } from '../../utils/personLabel';
 import { docFolderId } from './folderPick';
 import { type FolderTree, subtreeIds } from './folderTree';
 
@@ -15,7 +16,9 @@ export type FolderRefDetail = {
   name: string | null;
   /** The sources it feeds now. */
   source_count?: number;
-  /** Its owner, when that isn't the reader. */
+  /** Its owner, when that isn't the reader and the reader knows them. */
+  owner_id?: string;
+  /** That owner's email, else their user id (as a sponsor's `label`). */
   owner_name?: string;
   stopped?: boolean;
   reason?: 'sponsor_cannot_edit_agent' | 'deleted' | string;
@@ -74,7 +77,12 @@ export function pickedFolders(
       id,
       name: detail?.name ?? null,
       sourceCount: detail?.source_count ?? 0,
-      ownerName: detail?.owner_name,
+      ownerName:
+        personLabel(
+          detail?.owner_name
+            ? { user_id: detail.owner_id, label: detail.owner_name }
+            : null,
+        ) ?? undefined,
       stopped: stopped ?? (detail ? undefined : 'deleted'),
     };
   });

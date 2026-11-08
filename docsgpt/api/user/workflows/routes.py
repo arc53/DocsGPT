@@ -194,12 +194,12 @@ def _node_ref_details(
     Args:
         nodes: Nodes in builder shape.
         visible: Keys whose names may be read; None allows every id.
-        viewer: Who reads the folder details (``owner_name`` names other owners).
+        viewer: Who reads the folder details (``owner_id`` and ``owner_name`` name other owners).
         workflow: The workflow row the nodes belong to (a teammate's folder stops with their edit access).
 
     Returns:
         dict: ``tools`` as ``[{id, name, display_name}]``, ``sources`` as
-        ``[{id, name}]`` and ``folders`` as ``[{id, name, owner_name?, source_count}]``,
+        ``[{id, name}]`` and ``folders`` as ``[{id, name, owner_id?, owner_name?, source_count}]``,
         each id once.
     """
     from docsgpt.agents.default_tools import is_synthesized_tool_id

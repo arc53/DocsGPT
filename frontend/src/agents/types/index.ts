@@ -143,7 +143,8 @@ export type Agent = {
   folders?: string[];
   /**
    * Those folders named and counted (GET /api/get_agent): a teammate's
-   * carries `owner_name`, a stopped one `stopped` and its `reason`.
+   * carries `owner_id` and `owner_name`, a stopped one `stopped` and its
+   * `reason`.
    */
   folder_details?: FolderRefDetail[];
   // Resources the owner can't use that run as the editor who attached them

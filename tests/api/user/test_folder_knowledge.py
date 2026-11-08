@@ -150,19 +150,47 @@ class TestAttachGate:
         assert unattachable_folder(pg_conn, [theirs], OWNER, existing=[theirs.upper()]) is None
 
 
+def _email(conn, user_id, email):
+    conn.execute(
+        text("INSERT INTO users (user_id, email) VALUES (:u, :e) ON CONFLICT (user_id) DO UPDATE SET email = :e"),
+        {"u": user_id, "e": email},
+    )
+
+
+def _teammates(conn, *users):
+    team = TeamsRepository(conn).create("T", f"t-{uuid.uuid4().hex[:8]}", users[0])
+    for user in users:
+        TeamMembersRepository(conn).add_member(str(team["id"]), user)
+
+
 class TestDetails:
     def test_names_counts_and_owner(self, pg_conn):
-        pg_conn.execute(
-            text("INSERT INTO users (user_id, email) VALUES (:u, :e) ON CONFLICT (user_id) DO UPDATE SET email = :e"),
-            {"u": MATE, "e": "mate@example.com"},
-        )
+        _email(pg_conn, MATE, "mate@example.com")
+        _teammates(pg_conn, OWNER, MATE)
         mine = _folder(pg_conn, "Mine")
         theirs = _folder(pg_conn, "Theirs", owner=MATE)
         _file(pg_conn, _source(pg_conn, "a"), mine)
         gone = str(uuid.uuid4())
         assert folder_details(pg_conn, [mine, theirs, gone], OWNER) == [
             {"id": mine, "name": "Mine", "source_count": 1},
-            {"id": theirs, "name": "Theirs", "source_count": 0, "owner_name": "mate@example.com"},
+            {"id": theirs, "name": "Theirs", "source_count": 0, "owner_id": MATE, "owner_name": "mate@example.com"},
             {"id": gone, "name": None, "source_count": 0, "stopped": True, "reason": "deleted"},
         ]
         assert folder_details(pg_conn, [], OWNER) == []
+
+    def test_an_owner_without_an_email_is_named_by_id_like_a_sponsor(self, pg_conn):
+        _teammates(pg_conn, OWNER, MATE)
+        theirs = _folder(pg_conn, "Theirs", owner=MATE)
+        [entry] = folder_details(pg_conn, [theirs], OWNER)
+        assert (entry["owner_id"], entry["owner_name"]) == (MATE, MATE)
+
+    def test_an_owner_the_reader_does_not_know_stays_unnamed(self, pg_conn):
+        _email(pg_conn, STRANGER, "stranger@example.com")
+        theirs = _folder(pg_conn, "Theirs", owner=STRANGER)
+        assert folder_details(pg_conn, [theirs], OWNER) == [{"id": theirs, "name": "Theirs", "source_count": 0}]
+
+    def test_the_holders_owner_is_named_to_its_reader(self, pg_conn):
+        _email(pg_conn, MATE, "mate@example.com")
+        theirs = _folder(pg_conn, "Theirs", owner=MATE)
+        [entry] = folder_details(pg_conn, [theirs], OWNER, "agent", {"user_id": MATE})
+        assert entry["owner_name"] == "mate@example.com"

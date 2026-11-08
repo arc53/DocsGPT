@@ -87,6 +87,25 @@ describe('pickedFolders', () => {
       },
     ]);
   });
+
+  it('names an owner without an email by their id, as the sponsor list does', () => {
+    const sub = 'f3c1a2b4-9d8e-4f7a-b6c5-0123456789ab';
+    const [folder] = pickedFolders(
+      tree,
+      docs,
+      ['lena'],
+      [
+        {
+          id: 'lena',
+          name: 'Lena docs',
+          source_count: 1,
+          owner_id: sub,
+          owner_name: sub,
+        },
+      ],
+    );
+    expect(folder.ownerName).toBe('f3c1a2b4-9d8…456789ab');
+  });
 });
 
 describe('pickedFoldersHint', () => {

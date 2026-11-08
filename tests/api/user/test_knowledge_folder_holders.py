@@ -203,7 +203,7 @@ class TestAgentUpdate:
         out = _get(app, pg_conn, agent_id, VIEWER)
         assert out["folders"] == [folder]
         assert out["folder_details"] == [
-            {"id": folder, "name": "Carriers", "source_count": 1, "owner_name": "owner@example.com"}
+            {"id": folder, "name": "Carriers", "source_count": 1, "owner_id": OWNER, "owner_name": "owner@example.com"}
         ]
 
     def test_listing_carries_folder_ids(self, app, pg_conn):

@@ -1164,8 +1164,7 @@ def sponsor_details(
     sponsors = holder.get("resource_sponsors") or {}
     if not sponsors:
         return []
-    named = {user_id for user_id, _ in people_named_to(conn, viewer, holder, [(u, None) for u in sponsors.values()])}
-    labels = _user_labels(conn, named)
+    labels = person_labels(conn, viewer, holder, sponsors.values())
     entries = []
     for key, user_id in sponsors.items():
         resource_type, _, resource_id = key.partition(":")
@@ -1187,7 +1186,7 @@ def sponsor_details(
                 "type": resource_type,
                 "id": resource_id,
                 "name": names.get(key),
-                **(_person(user_id, labels, user_id in named) or {"user_id": None, "label": None}),
+                **(_person(user_id, labels, user_id in labels) or {"user_id": None, "label": None}),
                 "state": "active" if active else "inactive",
                 "reason": reason,
                 "active": active,
@@ -1396,6 +1395,29 @@ def people_named_to(
         ):
             named.add((user_id, ref))
     return named
+
+
+def person_labels(
+    conn: Connection, viewer: Optional[str], holder: Optional[dict], user_ids: Iterable[Optional[str]]
+) -> dict[str, str]:
+    """How an agent or workflow page names each person to its reader.
+
+    The names the sponsor list ("Added by …") uses: only people the reader
+    knows (:func:`people_named_to`), each by their email when on file, else
+    by their user id.
+
+    Args:
+        conn: Open database connection.
+        viewer: The user reading the page.
+        holder: The agent or workflow row, or None off a holder.
+        user_ids: The people to name.
+
+    Returns:
+        dict: ``user_id -> label`` for the ones the reader may see named.
+    """
+    named = {user_id for user_id, _ in people_named_to(conn, viewer, holder or {}, [(u, None) for u in user_ids])}
+    emails = _user_labels(conn, named)
+    return {user_id: emails.get(user_id) or user_id for user_id in named}
 
 
 def _person(user_id: Optional[str], labels: dict, named: bool) -> Optional[dict]:

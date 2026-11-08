@@ -30,6 +30,7 @@ from docsgpt.api.user.resource_access import (
     can_sponsor_ref,
     can_use_ref,
     holder_editable_by,
+    person_labels,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.session import db_readonly
@@ -269,17 +270,6 @@ def caller_folder_source_ids(conn: Connection, folder_ids: Optional[Iterable[Any
     return folder_source_ids(conn, owned_source_folders(conn, folder_ids, user))
 
 
-def _owner_labels(conn: Connection, owners: Iterable[str]) -> dict[str, str]:
-    ids = sorted({o for o in owners if o})
-    if not ids:
-        return {}
-    rows = conn.execute(
-        text("SELECT user_id, email FROM users WHERE user_id = ANY(:ids) AND email IS NOT NULL AND email <> ''"),
-        {"ids": ids},
-    ).fetchall()
-    return {r[0]: r[1] for r in rows}
-
-
 def folder_details(
     conn: Connection,
     folder_ids: Optional[Iterable[Any]],
@@ -287,11 +277,12 @@ def folder_details(
     holder_type: Optional[str] = None,
     holder: Optional[dict] = None,
 ) -> list[dict]:
-    """``[{id, name, owner_name?, source_count, stopped?, reason?}]`` for a holder's folders, in order.
+    """``[{id, name, owner_id?, owner_name?, source_count, stopped?, reason?}]`` for a holder's folders, in order.
 
     Looked up whoever owns them, so an editor sees (and may remove) a teammate's
-    folder. ``owner_name`` (the owner's email) is set when the owner is not
-    ``viewer`` and has one on file. ``source_count`` counts what the folder
+    folder. ``owner_id`` and ``owner_name`` name an owner other than ``viewer``
+    the way the sponsor list does (``resource_access.person_labels``): only
+    someone the reader knows, by their email when on file, else their user id. ``source_count`` counts what the folder
     feeds the holder. A folder that feeds nothing because it is gone, or its
     owner no longer edits the holder, reads ``stopped: True`` with a
     ``reason`` (``deleted`` or ``sponsor_cannot_edit_agent``, as in
@@ -312,12 +303,13 @@ def folder_details(
         return []
     rows = {r[0].lower(): (r[1], r[2]) for r in conn.execute(text(_FOLDERS_SQL), {"ids": ids}).fetchall()}
     expanded, stopped = _expand(conn, ids, holder_type, holder)
-    labels = _owner_labels(conn, [owner for _, owner in rows.values() if owner != viewer])
+    labels = person_labels(conn, viewer, holder, [owner for _, owner in rows.values() if owner != viewer])
     out = []
     for fid in ids:
         name, owner = rows.get(fid, (None, None))
         entry: dict[str, Any] = {"id": fid, "name": name, "source_count": len(expanded.get(fid, []))}
-        if owner and owner != viewer and labels.get(owner):
+        if owner and owner != viewer and owner in labels:
+            entry["owner_id"] = owner
             entry["owner_name"] = labels[owner]
         reason = REASON_DELETED if fid not in rows else stopped.get(fid)
         if reason:
