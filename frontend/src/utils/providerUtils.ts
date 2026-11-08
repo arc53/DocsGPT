@@ -16,7 +16,7 @@ export const claimLegacySessionTokens = async (
   token: string | null,
 ): Promise<void> => {
   for (const provider of LEGACY_PROVIDERS) {
-    let value: string | null = null;
+    let value: string | null;
     try {
       value = localStorage.getItem(legacyKey(provider));
     } catch {
