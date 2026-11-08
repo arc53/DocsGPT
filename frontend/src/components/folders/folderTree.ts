@@ -173,3 +173,18 @@ export function matchingFolders(
     .sort((a, b) => a.path.localeCompare(b.path))
     .map(({ folder }) => folder);
 }
+
+/**
+ * Where a folder a search found sits, for its tile's "In <parent>": the
+ * parent's name, or none when the folder sits at the top level or right in
+ * the open folder (`openId`, null at the root).
+ */
+export function searchParentName(
+  tree: FolderTree,
+  folder: Folder,
+  openId: string | null,
+): string | undefined {
+  const parentId = tree.parentOf.get(folder.id) ?? null;
+  if (parentId === null || parentId === openId) return undefined;
+  return tree.byId.get(parentId)?.name;
+}

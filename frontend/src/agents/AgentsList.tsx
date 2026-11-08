@@ -19,6 +19,7 @@ import {
   folderPath,
   formatFolderPath,
   matchingFolders,
+  searchParentName,
   subtreeIds,
   type FolderTree,
 } from '../components/folders/folderTree';
@@ -314,15 +315,21 @@ function UserSectionButtons({
   );
 }
 
-/** A grid of folder tiles that open the folder, each with its ⋯. */
+/**
+ * A grid of folder tiles that open the folder, each with its ⋯. A search
+ * lists folders from several levels: `parentNameOf` names where a nested one
+ * sits ("In Carriers").
+ */
 function FolderGrid({
   folders,
   openFolder,
   folderMenu,
+  parentNameOf,
 }: {
   folders: Folder[];
   openFolder: (id: string) => void;
   folderMenu: FolderMenu;
+  parentNameOf?: (folder: Folder) => string | undefined;
 }) {
   if (folders.length === 0) return null;
   return (
@@ -334,6 +341,7 @@ function FolderGrid({
           type="agent"
           onOpen={(f) => openFolder(f.id)}
           menuOptions={folderMenu.menuOptions(folder)}
+          parentName={parentNameOf?.(folder)}
         />
       ))}
     </div>
@@ -474,6 +482,11 @@ function AgentFolderView({
             folders={folders}
             openFolder={openFolder}
             folderMenu={folderMenu}
+            parentNameOf={
+              query
+                ? (found) => searchParentName(tree, found, folderId)
+                : undefined
+            }
           />
           {agents.length > 0 ? (
             <>
@@ -664,6 +677,11 @@ function AgentSection({
               folders={folders}
               openFolder={openFolder}
               folderMenu={folderMenu}
+              parentNameOf={
+                query
+                  ? (found) => searchParentName(tree, found, null)
+                  : undefined
+              }
             />
 
             {shownList.length > 0 ? (

@@ -9,6 +9,7 @@ import {
   folderPath,
   formatFolderPath,
   matchingFolders,
+  searchParentName,
   subtreeHeight,
   subtreeIds,
 } from './folderTree';
@@ -134,5 +135,24 @@ describe('matchingFolders', () => {
     expect(matchingFolders(tree, 'arch', within).map((x) => x.id)).toEqual([
       'archive',
     ]);
+  });
+});
+
+describe('searchParentName', () => {
+  const tree = buildFolderTree(folders);
+
+  it('names the parent of a nested folder found by a search', () => {
+    expect(searchParentName(tree, tree.byId.get('rates')!, null)).toBe(
+      'Carriers',
+    );
+  });
+
+  it('names none at the top level or right in the open folder', () => {
+    expect(searchParentName(tree, tree.byId.get('carriers')!, null)).toBe(
+      undefined,
+    );
+    expect(
+      searchParentName(tree, tree.byId.get('rates')!, 'carriers'),
+    ).toBeUndefined();
   });
 });
