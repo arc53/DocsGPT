@@ -12,7 +12,7 @@ def test_retired_pause_persists_matched_text_and_handles_mapped_sources():
     message_id = "22222222-2222-2222-2222-222222222222"
     already_mapped = client_sources([{"text": "CHILD", "matched_text": "CHILD", "filename": "b.pdf"}])[0]
     retrieved_docs = [
-        {"text": "PARENT", "matched_text": "CHILD", "filename": "a.pdf"},
+        {"text": "PARENT CHILD", "matched_text": "CHILD", "filename": "a.pdf"},
         already_mapped,
     ]
     state = {
@@ -41,4 +41,4 @@ def test_retired_pause_persists_matched_text_and_handles_mapped_sources():
     saved_sources = repo.update_message_by_id.call_args.args[1]["sources"]
     assert [source["text"] for source in saved_sources] == ["CHILD", "CHILD"]
     assert all("matched_text" not in source for source in saved_sources)
-    assert retrieved_docs[0]["text"] == "PARENT"
+    assert retrieved_docs[0]["text"] == "PARENT CHILD"
