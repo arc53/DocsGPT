@@ -91,15 +91,28 @@ def client_sources(docs: Any) -> Any:
         docs: The chunks a retrieval or an agent produced.
 
     Returns:
-        A new list of copies without :data:`PROMPT_ONLY_KEYS`, so the caller's
-        chunks keep them for the prompt. Anything but a list is returned as is.
+        A new list of copies without :data:`PROMPT_ONLY_KEYS` or
+        ``matched_text``. When it is a non-empty string, ``matched_text``
+        becomes the client-facing ``text``. The caller's chunks keep their
+        original text for the prompt. Anything but a list is returned as is.
     """
     if not isinstance(docs, list):
         return docs
-    return [
-        {key: value for key, value in doc.items() if key not in PROMPT_ONLY_KEYS} if isinstance(doc, dict) else doc
-        for doc in docs
-    ]
+    client_docs = []
+    for doc in docs:
+        if not isinstance(doc, dict):
+            client_docs.append(doc)
+            continue
+        matched = doc.get("matched_text")
+        client_doc = {
+            key: value
+            for key, value in doc.items()
+            if key not in PROMPT_ONLY_KEYS and key != "matched_text"
+        }
+        if isinstance(matched, str) and matched:
+            client_doc["text"] = matched
+        client_docs.append(client_doc)
+    return client_docs
 
 
 def _web_link(value: Any) -> Optional[str]:

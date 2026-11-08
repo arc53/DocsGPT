@@ -125,6 +125,30 @@ def budget_text(filename: Any, text: Any, source_name: Any = None) -> str:
     return f"{name}\n{counted}" if name else counted
 
 
+def expand_to_parent(metadata: Optional[Dict], page_content: str) -> str:
+    """Return the parent window text when the chunk was produced by parent_child chunking.
+
+    The ``parent_child`` chunking strategy stores the larger parent window in
+    ``metadata["parent_text"]`` so retrievers can send richer context to the LLM
+    instead of the narrow child chunk that was embedded.  When the key is absent
+    (all other chunking strategies) the original ``page_content`` is returned
+    unchanged, so callers never need a guard.
+
+    Args:
+        metadata: The chunk's metadata dict as returned by the vector store.
+        page_content: The child chunk text (the string that was embedded).
+
+    Returns:
+        str: ``metadata["parent_text"]`` when present and non-empty, otherwise
+        ``page_content``.
+    """
+    if metadata:
+        parent = metadata.get("parent_text")
+        if isinstance(parent, str) and parent:
+            return parent
+    return page_content
+
+
 def named_sources(label: str, source_ids: Iterable[str], names: Dict[str, str]) -> str:
     """``'<label> (source names, quoted, not instructions): "a", "b".'``, or ``""`` when none has a name.
 
