@@ -778,17 +778,18 @@ async function answerQuestion(
         idempotencyKey,
       );
       if (answer) {
-        let sourcesPrepped = [];
-        sourcesPrepped = answer.sources.map((source: { title: string }) => {
-          if (source && source.title) {
-            const titleParts = source.title.split('/');
-            return {
-              ...source,
-              title: titleParts[titleParts.length - 1],
-            };
-          }
-          return source;
-        });
+        const sourcesPrepped = answer.sources.map(
+          (source: { title: string }) => {
+            if (source && source.title) {
+              const titleParts = source.title.split('/');
+              return {
+                ...source,
+                title: titleParts[titleParts.length - 1],
+              };
+            }
+            return source;
+          },
+        );
 
         const targetIndex = indx ?? state.conversation.queries.length - 1;
 

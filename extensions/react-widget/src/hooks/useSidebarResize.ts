@@ -126,7 +126,7 @@ export function useSidebarResize({
     event.preventDefault();
     // Captured, the drag keeps its events over iframes and outside the window.
     event.currentTarget.setPointerCapture(event.pointerId);
-    let style: HTMLStyleElement | null = null;
+    let style: HTMLStyleElement | null;
     try {
       style = document.createElement('style');
       style.textContent = DRAG_STYLE;

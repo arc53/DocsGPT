@@ -302,7 +302,7 @@ export function connectEventStream(
             }
             // Empty data line is technically valid SSE but useless; skip.
             if (record.data.trim().length === 0) return;
-            let envelope: SSEEvent | null = null;
+            let envelope: SSEEvent | null;
             try {
               envelope = JSON.parse(record.data) as SSEEvent;
             } catch {
