@@ -35,8 +35,6 @@ amqp==5.4.2
     # via kombu
 aniso8601==10.0.1
     # via flask-restx
-annotated-doc==0.0.5
-    # via typer
 annotated-types==0.8.0
     # via pydantic
 anthropic==2.6.0
@@ -79,19 +77,19 @@ billiard==4.3.2
     # via celery
 blinker==1.9.0
     # via flask
-boto3==1.43.125
+boto3==1.43.126
     # via docsgpt
-botocore==1.43.125
+botocore==1.43.126
     # via
     #   boto3
     #   s3transfer
-cachetools==7.3.0
+cachetools==8.0.0
     # via py-key-value-aio
 caio==0.12.10
     # via aiofile
 cel-python==0.5.0
     # via docsgpt
-celery==5.6.3
+celery==5.7.0
     # via
     #   celery-redbeat
     #   docsgpt
@@ -107,7 +105,7 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.2
     # via requests
-click==8.1.8
+click==8.5.1
     # via
     #   celery
     #   click-didyoumean
@@ -115,7 +113,7 @@ click==8.1.8
     #   click-repl
     #   ddgs
     #   flask
-    #   gtts
+    #   huggingface-hub
     #   uvicorn
 click-didyoumean==0.3.1
     # via celery
@@ -125,10 +123,8 @@ click-repl==0.4.1
     # via celery
 colorama==0.4.6 ; sys_platform == 'win32'
     # via
-    #   click
     #   loguru
     #   tqdm
-    #   typer
 croniter==6.2.4
     # via docsgpt
 cryptography==50.0.2
@@ -146,19 +142,19 @@ cyclopts==5.3.3
     # via fastmcp-slim
 dataclasses-json==0.6.7
     # via docsgpt
-daytona==0.227.0
+daytona==0.231.0
     # via docsgpt
-daytona-analytics-api-client==0.227.0
+daytona-analytics-api-client==0.231.0
     # via daytona
-daytona-analytics-api-client-async==0.227.0
+daytona-analytics-api-client-async==0.231.0
     # via daytona
-daytona-api-client==0.227.0
+daytona-api-client==0.231.0
     # via daytona
-daytona-api-client-async==0.227.0
+daytona-api-client-async==0.231.0
     # via daytona
-daytona-toolbox-api-client==0.227.0
+daytona-toolbox-api-client==0.231.0
     # via daytona
-daytona-toolbox-api-client-async==0.227.0
+daytona-toolbox-api-client-async==0.231.0
     # via daytona
 ddgs==9.16.1
     # via docsgpt
@@ -180,7 +176,7 @@ docstring-parser==0.18.0
     #   cyclopts
 docx2txt==0.9
     # via docsgpt
-elevenlabs==2.76.0
+elevenlabs==2.77.0
     # via docsgpt
 email-validator==2.3.0
     # via pydantic
@@ -248,8 +244,6 @@ grpcio==1.85.1
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   qdrant-client
-gtts==2.5.4
-    # via docsgpt
 gunicorn==26.2.0
     # via
     #   docsgpt
@@ -299,7 +293,7 @@ httpx2==2.16.0
     #   openai
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
     # via httpx2
-huggingface-hub==1.16.1
+huggingface-hub==1.33.0
     # via
     #   docsgpt
     #   fastembed
@@ -323,7 +317,7 @@ jinja2==3.1.6
     # via
     #   docsgpt
     #   flask
-jiter==0.18.0
+jiter==0.19.0
     # via
     #   anthropic
     #   openai
@@ -649,9 +643,9 @@ pyjwt==2.15.1
     #   msal
 pyparsing==3.3.3
     # via httplib2
-pypdf==6.21.4
+pypdf==7.0.0
     # via docsgpt
-pypdfium2==5.14.0
+pypdfium2==5.15.1
     # via docsgpt
 pyperclip==1.11.0
     # via fastmcp-slim
@@ -714,7 +708,7 @@ referencing==0.37.0
     #   jsonschema-path
     #   jsonschema-specifications
     #   openapi3-parser
-regex==2026.9.29
+regex==2026.11.7
     # via
     #   docsgpt
     #   tiktoken
@@ -726,7 +720,6 @@ requests==2.34.2
     #   google-api-core
     #   google-auth
     #   google-genai
-    #   gtts
     #   msal
     #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
@@ -748,7 +741,6 @@ rich==15.0.0
     #   cyclopts
     #   fastmcp-slim
     #   rich-rst
-    #   typer
 rich-rst==2.2.0
     # via cyclopts
 rpds-py==2026.9.1
@@ -757,8 +749,6 @@ rpds-py==2026.9.1
     #   referencing
 s3transfer==0.19.3
     # via boto3
-shellingham==1.5.4
-    # via typer
 simple-websocket==1.1.0
     # via python-engineio
 six==1.17.0
@@ -776,7 +766,7 @@ sqlalchemy==2.1.8
     # via
     #   alembic
     #   docsgpt
-sse-starlette==3.6.0
+sse-starlette==3.7.0
     # via mcp
 starlette==1.10.0
     # via
@@ -807,8 +797,6 @@ truststore==0.10.5 ; sys_platform != 'emscripten'
     # via
     #   httpcore2
     #   httpx2
-typer==0.27.3
-    # via huggingface-hub
 typing-extensions==4.16.0
     # via
     #   aiohttp
