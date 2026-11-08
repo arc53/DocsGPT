@@ -5,9 +5,27 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+const folderList = (items: unknown[]) => ({
+  items,
+  loaded: true,
+  loading: false,
+  failed: false,
+  latestRequestId: null,
+  removedParents: {},
+});
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
-    selector({ preference: { token: 'token', sourceDocs: [] } }),
+    selector({
+      preference: { token: 'token', sourceDocs: [] },
+      folders: {
+        agent: folderList([]),
+        source: folderList([
+          { id: 'f-1', name: 'Carriers', parent_id: null },
+          { id: 'f-2', name: 'Rate archive', parent_id: 'f-1' },
+        ]),
+      },
+    }),
+  useDispatch: () => vi.fn(),
 }));
 
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
@@ -188,5 +206,59 @@ describe('ImportAgentModal', () => {
     expect(error?.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
       'true',
     );
+  });
+
+  it('lists folder entries, the plan warnings, and maps a missing folder', async () => {
+    service.planImportAgent.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        plan: {
+          target: { action: 'create', agent_id: null, matched_by: null },
+          sources: [
+            {
+              name: 'Customs',
+              type: 'folder',
+              status: 'matched',
+              target_id: 'f-9',
+            },
+            { name: 'Ops', type: 'folder', status: 'missing', target_id: null },
+          ],
+          tools: [],
+          prompt: { status: 'default' },
+          models: [],
+          warnings: ["Folder 'Ops' not found; left unattached"],
+        },
+      }),
+    );
+    act(() => {
+      root.render(
+        <ImportAgentModal
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+        />,
+      );
+    });
+    const file = new File(['name: Agent\n'], 'agent.yaml', {
+      type: 'application/x-yaml',
+    });
+    await act(async () => dropzone.onDrop!([file], []));
+    await flush();
+    await clickButton('modals.importAgent.review');
+
+    const warning = document.querySelector(
+      '[data-slot="alert"][data-variant="warning"]',
+    );
+    expect(warning?.textContent).toContain(
+      "Folder 'Ops' not found; left unattached",
+    );
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('modals.importAgent.folderMatched');
+    expect(body).toContain('modals.importAgent.folderMissing');
+    // Left unmapped, the folder goes unattached: no folder resolution.
+    await clickButton('modals.importAgent.import');
+    expect(service.importAgent.mock.calls[0][0].resolution).toMatchObject({
+      sources: {},
+      folders: {},
+    });
   });
 });
