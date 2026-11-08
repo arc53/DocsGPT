@@ -7,7 +7,7 @@
       "use": "dataframes, CSV and Excel I/O"
     },
     {
-      "spec": "numpy==2.5.4",
+      "spec": "numpy==2.3.5",
       "import": "numpy",
       "use": "arrays and maths"
     },

@@ -21,6 +21,10 @@ class _Response:
         return iter(self._lines)
 
 
+def _patch_post(monkeypatch, fake_post):
+    monkeypatch.setattr(google_tts.requests.Session, "post", lambda self, *a, **k: fake_post(*a, **k))
+
+
 def _audio_line(audio: bytes) -> bytes:
     payload = json.dumps([base64.b64encode(audio).decode()])
     return json.dumps([["wrb.fr", "jQ1olc", payload, None, None, None, "generic"]]).encode()
@@ -34,7 +38,7 @@ def test_text_to_speech_joins_audio_of_every_chunk(monkeypatch):
         sent.append({"url": url, "data": data, "timeout": timeout})
         return _Response([b")]}'", b"", _audio_line(next(parts))])
 
-    monkeypatch.setattr(google_tts.requests, "post", fake_post)
+    _patch_post(monkeypatch, fake_post)
     text = "First sentence here.\n" + "word " * 18
 
     audio_base64, lang = GoogleTTS().text_to_speech(text)
@@ -75,10 +79,29 @@ def test_split_text_drops_blank_input():
 
 
 def test_text_to_speech_raises_without_audio(monkeypatch):
-    monkeypatch.setattr(google_tts.requests, "post", lambda *a, **k: _Response([b")]}'", b"[]"]))
+    _patch_post(monkeypatch, lambda *a, **k: _Response([b")]}'", b"[]"]))
 
     with pytest.raises(RuntimeError, match="no audio"):
         GoogleTTS().text_to_speech("hello")
+
+
+def test_session_retries_rate_limits_and_server_errors(monkeypatch):
+    mounted = {}
+    original_mount = google_tts.requests.Session.mount
+
+    def spy_mount(self, prefix, adapter):
+        mounted[prefix] = adapter
+        return original_mount(self, prefix, adapter)
+
+    monkeypatch.setattr(google_tts.requests.Session, "mount", spy_mount)
+    _patch_post(monkeypatch, lambda *a, **k: _Response([_audio_line(b"ok")]))
+
+    GoogleTTS().text_to_speech("hello")
+
+    retry = mounted["https://"].max_retries
+    assert retry.total == 3
+    assert 429 in retry.status_forcelist and 503 in retry.status_forcelist
+    assert "POST" in retry.allowed_methods
 
 
 def test_text_to_speech_raises_on_empty_text():

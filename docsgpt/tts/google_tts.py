@@ -7,6 +7,8 @@ import urllib.parse
 from typing import Iterator, List, Optional, Tuple
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from docsgpt.tts.base import BaseTTS
 
@@ -22,6 +24,16 @@ HEADERS = {
     ),
     "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
 }
+
+# A long answer is many sequential chunks; a transient 429 or 5xx on one would
+# otherwise throw away the audio already made.
+RETRY = Retry(
+    total=3,
+    backoff_factor=0.5,
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=frozenset({"POST"}),
+    respect_retry_after_header=True,
+)
 
 _SENTENCE_END = re.compile(r"(?<=[.!?;:。！？])\s+|\n+")
 
@@ -74,13 +86,15 @@ class GoogleTTS(BaseTTS):
         if not chunks:
             raise ValueError("No text to speak")
         audio = bytearray()
-        for chunk in chunks:
-            response = requests.post(
-                TTS_URL, data=_rpc_body(chunk, lang), headers=HEADERS, timeout=TIMEOUT_SECONDS
-            )
-            response.raise_for_status()
-            part = _audio_from_lines(response.iter_lines())
-            if part is None:
-                raise RuntimeError("Google TTS returned no audio")
-            audio.extend(part)
+        with requests.Session() as session:
+            session.mount("https://", HTTPAdapter(max_retries=RETRY))
+            for chunk in chunks:
+                response = session.post(
+                    TTS_URL, data=_rpc_body(chunk, lang), headers=HEADERS, timeout=TIMEOUT_SECONDS
+                )
+                response.raise_for_status()
+                part = _audio_from_lines(response.iter_lines())
+                if part is None:
+                    raise RuntimeError("Google TTS returned no audio")
+                audio.extend(part)
         return base64.b64encode(bytes(audio)).decode("utf-8"), lang

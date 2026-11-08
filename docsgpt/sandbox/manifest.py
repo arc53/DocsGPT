@@ -96,7 +96,7 @@ class NodeRelease(TypedDict):
 # artifact renderer uses for Devanagari and other complex scripts.
 PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "pandas==2.3.3", "import": "pandas", "use": "dataframes, CSV and Excel I/O"},
-    {"spec": "numpy==2.5.4", "import": "numpy", "use": "arrays and maths"},
+    {"spec": "numpy==2.3.5", "import": "numpy", "use": "arrays and maths"},
     {"spec": "matplotlib==3.11.2", "import": "matplotlib", "use": "charts"},
     {"spec": "openpyxl==3.1.5", "import": "openpyxl", "use": "Excel .xlsx"},
     {"spec": "python-docx==1.2.0", "import": "docx", "use": "Word .docx"},
