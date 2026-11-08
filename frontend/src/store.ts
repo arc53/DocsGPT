@@ -9,6 +9,7 @@ import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListene
 import backgroundReducer from './backgroundJobs/backgroundSlice';
 import chatToolsReducer from './conversation/chatToolsSlice';
 import connectorsReducer from './connectors/connectorsSlice';
+import foldersReducer from './components/folders/foldersSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import {
@@ -88,6 +89,7 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    folders: foldersReducer,
     chatTools: chatToolsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,

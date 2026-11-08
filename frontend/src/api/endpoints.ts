@@ -206,6 +206,11 @@ const endpoints = {
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
     MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
+    FOLDERS: (type: 'agent' | 'source') =>
+      `/api/folders?type=${encodeURIComponent(type)}`,
+    FOLDERS_CREATE: '/api/folders',
+    FOLDER: (id: string) => `/api/folders/${encodeURIComponent(id)}`,
+    FOLDER_ITEMS: '/api/folders/items',
     GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
     GET_DOCUMENT_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}`,

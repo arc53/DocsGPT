@@ -79,6 +79,7 @@ describe('confirm dialog copy', () => {
     'convTile.deleteWarning',
     'agents.deleteConfirmation',
     'agents.folders.deleteConfirm',
+    'folders.deleteConfirm',
     'agents.schedules.deleteConfirm',
     'modals.prompts.deleteConfirmation',
     'modals.agentDetails.resetKeyConfirm',

@@ -453,6 +453,38 @@ const userService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
+  /**
+   * The caller's folders of one type, oldest first:
+   * `{folders: [{id, name, parent_id, type, item_count, folder_count, used_by?}]}`.
+   */
+  getFolders: (type: 'agent' | 'source', token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.FOLDERS(type), token),
+  /** 201 with the folder; 409 `folder_name_taken`, 400 `folder_too_deep`. */
+  createFolder: (
+    data: { type: 'agent' | 'source'; name: string; parent_id?: string | null },
+    token: string | null,
+  ): Promise<any> => apiClient.post(endpoints.USER.FOLDERS_CREATE, data, token),
+  /** Rename or move a folder; `parent_id: null` moves it to the top level. */
+  updateFolder: (
+    id: string,
+    data: { name?: string; parent_id?: string | null },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.USER.FOLDER(id), data, token),
+  /** `{moved_items, moved_folders}`: the contents move to the parent. */
+  deleteFolder: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.FOLDER(id), token),
+  /**
+   * File items (one or many, up to 500) into a folder; `folder_id: null`
+   * unfiles them. `{moved, skipped}`: skipped ids are ones the caller can't see.
+   */
+  fileFolderItems: (
+    data: {
+      type: 'agent' | 'source';
+      folder_id: string | null;
+      ids: string[];
+    },
+    token: string | null,
+  ): Promise<any> => apiClient.post(endpoints.USER.FOLDER_ITEMS, data, token),
   getArtifact: (artifactId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_ARTIFACT(artifactId), token),
   getDocumentArtifact: (
