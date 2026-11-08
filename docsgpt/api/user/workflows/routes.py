@@ -146,7 +146,37 @@ def _node_refs(nodes: List[Dict]) -> List[Tuple[str, str]]:
     return refs
 
 
-def _node_ref_details(nodes: List[Dict], visible: Optional[Set[str]] = None) -> Dict[str, List[Dict]]:
+def _node_folder_refs(nodes: List[Dict]) -> List[str]:
+    """The knowledge folders a workflow's agent nodes read (``config.folders``), lower-case, each once.
+
+    Kept apart from :func:`_node_refs`: a folder reads as its owner's filing,
+    so it never needs a sponsor and has no run state of its own.
+
+    Args:
+        nodes: Nodes in builder shape.
+
+    Returns:
+        list: Folder ids, in node order.
+    """
+    out: List[str] = []
+    for node in nodes or []:
+        if not isinstance(node, dict) or node.get("type") != "agent":
+            continue
+        data = node.get("data") or {}
+        cfg = data.get("config") if isinstance(data.get("config"), dict) else data
+        values = cfg.get("folders") or []
+        if isinstance(values, (str, int)):
+            values = [values]
+        for value in values:
+            key = str(value).strip().lower() if value else ""
+            if key and key not in out:
+                out.append(key)
+    return out
+
+
+def _node_ref_details(
+    nodes: List[Dict], visible: Optional[Set[str]] = None, viewer: Optional[str] = None
+) -> Dict[str, List[Dict]]:
     """Names of the tools and sources the graph's agent nodes reference.
 
     Looked up by id whoever owns them, so an editor's node pickers can show
@@ -155,13 +185,18 @@ def _node_ref_details(nodes: List[Dict], visible: Optional[Set[str]] = None) -> 
     ``visible`` (see ``resource_access.named_ref_keys``), so a node naming
     someone else's resource never reveals its name.
 
+    Knowledge folders (``config.folders``) are named whoever owns them, as on
+    an agent (``folder_knowledge.folder_details``).
+
     Args:
         nodes: Nodes in builder shape.
         visible: Keys whose names may be read; None allows every id.
+        viewer: Who reads the folder details (``owner_name`` names other owners).
 
     Returns:
-        dict: ``tools`` as ``[{id, name, display_name}]`` and ``sources`` as
-        ``[{id, name}]``, each id once.
+        dict: ``tools`` as ``[{id, name, display_name}]``, ``sources`` as
+        ``[{id, name}]`` and ``folders`` as ``[{id, name, owner_name?, source_count}]``,
+        each id once.
     """
     from docsgpt.agents.default_tools import is_synthesized_tool_id
     from docsgpt.api.user.base import resolve_source_details, resolve_tool_details
@@ -178,9 +213,12 @@ def _node_ref_details(nodes: List[Dict], visible: Optional[Set[str]] = None) -> 
         bucket = tool_ids if resource_type == "tool" else source_ids
         if resource_id not in bucket:
             bucket.append(resource_id)
+    from docsgpt.api.user.folder_knowledge import resolve_folder_details
+
     return {
         "tools": resolve_tool_details(tool_ids),
         "sources": resolve_source_details(source_ids),
+        "folders": resolve_folder_details(_node_folder_refs(nodes), viewer),
     }
 
 
@@ -212,6 +250,11 @@ def _new_node_ref_denied(
             continue
         if not ref_attachable(conn, resource_type, resource_id, caller):
             return AccessDenied(403, f"{resource_type.capitalize()} not accessible")
+    # A knowledge folder reads as its owner's filing: only its owner attaches it.
+    from docsgpt.api.user.folder_knowledge import unattachable_folder
+
+    if unattachable_folder(conn, _node_folder_refs(new_nodes), caller, _node_folder_refs(previous_nodes)):
+        return AccessDenied(403, "Folder not accessible")
     return None
 
 
@@ -336,6 +379,13 @@ def workflow_graph_shape_errors(nodes: Any, edges: Any) -> List[str]:
         if isinstance(data, dict) and data.get("config") is not None and not isinstance(data["config"], dict):
             # The engine reads a node's settings from ``data.config`` when present.
             errors.append(f"Node {node_id} config must be an object")
+        elif node_type == "agent" and isinstance(data, dict):
+            settings_ = data["config"] if isinstance(data.get("config"), dict) else data
+            folders = settings_.get("folders")
+            if folders is not None and (
+                not isinstance(folders, list) or not all(isinstance(f, str) and looks_like_uuid(f) for f in folders)
+            ):
+                errors.append(f"Node {node_id} folders must be a list of folder ids")
         for key in ("title", "description"):
             if node.get(key) is not None and not isinstance(node.get(key), str):
                 errors.append(f"Node {node_id} {key} must be text")
@@ -1103,9 +1153,9 @@ class WorkflowDetail(Resource):
                         )
                         visible = named_ref_keys(states)
             ref_details = (
-                _node_ref_details(serialized_nodes, visible)
+                _node_ref_details(serialized_nodes, visible, user_id)
                 if visible is not None
-                else {"tools": [], "sources": []}
+                else {"tools": [], "sources": [], "folders": []}
             )
         except Exception as err:
             return _workflow_error_response("Failed to fetch workflow", err)

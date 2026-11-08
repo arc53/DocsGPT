@@ -239,17 +239,18 @@ def _run_agent_headless(
     if exceeded is not None:
         raise QuotaExceededError(exceeded)
 
-    retriever_kind = agent_config.get("retriever", "classic")
+    # A row's unset retriever is None, not missing: unset means classic.
+    retriever_kind = agent_config.get("retriever") or "classic"
     # PG rows carry every column: an unset type is None, not missing.
     agent_type = (agent_config.get("agent_type") or "").strip() or "classic"
     # Every source a chat with this agent searches: the primary and the
     # extras, each owned or team-shared to the owner, else attached by an
-    # editor who still qualifies.
+    # editor who still qualifies, then its knowledge folders' sources.
     sources_row = dict(agent_config)
     sources_row["source_id"] = agent_config.get("source_id") or agent_config.get("source")
     primary, source_docs = None, []
     wiki_config: Optional[Dict[str, Any]] = None
-    if sources_row["source_id"] or sources_row.get("extra_source_ids"):
+    if sources_row["source_id"] or sources_row.get("extra_source_ids") or sources_row.get("knowledge_folder_ids"):
         with db_readonly() as conn:
             primary, source_docs = authorized_agent_sources(conn, sources_row)
             if agent_type in WIKI_AGENT_TYPES and source_docs:

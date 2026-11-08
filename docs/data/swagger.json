@@ -63,6 +63,13 @@
           "description": "Active documents",
           "type": "string"
         },
+        "active_folders": {
+          "description": "Agentless chats only: the caller's own source folders to search as a whole, every source filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agent_id": {
           "description": "Agent ID",
           "type": "string"
@@ -286,6 +293,13 @@
         "folder_id": {
           "description": "One of the caller's agent folders to file the agent in (the caller's own filing)",
           "type": "string"
+        },
+        "folders": {
+          "description": "Source folders the agent reads live: every source their owner files in them, subfolders included. A folder is attached by its owner only (403 folder_not_accessible); ones already on the agent stay. Must be a list (a JSON string in a multipart form)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "image": {
           "description": "Image file upload",
@@ -1460,6 +1474,13 @@
           "description": "Active documents",
           "type": "string"
         },
+        "active_folders": {
+          "description": "Agentless chats only: the caller's own source folders to search as a whole, every source filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agent_id": {
           "description": "Agent ID",
           "type": "string"
@@ -1596,6 +1617,13 @@
         "folder_id": {
           "description": "One of the caller's agent folders to file the agent in (the caller's own filing)",
           "type": "string"
+        },
+        "folders": {
+          "description": "Source folders the agent reads live: every source their owner files in them, subfolders included. A folder is attached by its owner only (403 folder_not_accessible); ones already on the agent stay. Must be a list (a JSON string in a multipart form)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "image": {
           "description": "Image file upload",

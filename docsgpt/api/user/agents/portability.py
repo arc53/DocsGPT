@@ -11,6 +11,10 @@ prompts by ``(name, content)``, custom models by
 ``(display_name, upstream_model_id, base_url)`` — so the same file
 applied twice updates rather than duplicating.
 
+Knowledge folders an agent (or a workflow agent node) reads live travel as
+``spec.sources`` entries with ``type: folder``, by name and path; import
+matches the importer's own source folders and drops the rest with a warning.
+
 Workflow agents additionally carry their graph under ``spec.workflow``.
 The graph's agent nodes reference tools, sources and models by raw id in
 their config; export rewrites those into the same portable identities the
@@ -446,6 +450,66 @@ def _serialize_sources(conn, agent: dict, user: str) -> list:
     return out
 
 
+#: The ``spec.sources`` entry type of a knowledge folder.
+FOLDER_ENTRY_TYPE = "folder"
+
+
+def _is_folder_entry(entry: Any) -> bool:
+    """Whether a ``spec.sources`` entry names a knowledge folder rather than a source."""
+    return isinstance(entry, dict) and entry.get("type") == FOLDER_ENTRY_TYPE
+
+
+def _serialize_folders(conn, folder_ids) -> list:
+    """Knowledge folders as ``spec.sources`` entries: ``{name, type: folder, path, ref}``.
+
+    Exported whoever owns them (a teammate may have attached theirs): only
+    the name and the names on its path leave, and import matches the
+    importer's own folders by them. Folders that no longer exist are left out.
+
+    Args:
+        conn: Open database connection.
+        folder_ids: The holder's folder ids, in order.
+
+    Returns:
+        list: One entry per existing source folder.
+    """
+    from sqlalchemy import text as _sql_text
+
+    from docsgpt.api.user.folders.service import folder_paths
+    from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+    ids = [str(f).lower() for f in folder_ids or [] if f and looks_like_uuid(str(f))]
+    if not ids:
+        return []
+    rows = conn.execute(
+        _sql_text(
+            "SELECT id::text, user_id FROM folders WHERE id = ANY(CAST(:ids AS uuid[])) AND resource_type = 'source'"
+        ),
+        {"ids": ids},
+    ).fetchall()
+    owner_of = {r[0].lower(): r[1] for r in rows}
+    paths: dict[str, dict] = {}
+    out = []
+    for fid in dict.fromkeys(ids):
+        owner = owner_of.get(fid)
+        if owner is None:
+            continue
+        if owner not in paths:
+            paths[owner] = folder_paths(FoldersRepository(conn).list_for_user(owner, "source"))
+        path = paths[owner].get(fid) or []
+        if not path:
+            continue
+        out.append(
+            {
+                "name": path[-1]["name"] or "",
+                "type": FOLDER_ENTRY_TYPE,
+                "path": [p["name"] or "" for p in path],
+                "ref": fid,
+            }
+        )
+    return out
+
+
 def _serialize_tools(conn, agent: dict, user: str) -> list:
     repo = UserToolsRepository(conn)
     out = []
@@ -541,7 +605,7 @@ def _effective_node_config(config: dict) -> dict:
 
 
 def _strip_shadowed_ref_keys(config: dict) -> None:
-    """Drop flat ``tools``/``sources``/``model_id`` shadowed by a nested config.
+    """Drop flat ``tools``/``sources``/``folders``/``model_id`` shadowed by a nested config.
 
     When a node stores its settings under ``config["config"]``, the engine
     reads only the nested dict — flat leftovers of those keys are inert, but
@@ -549,7 +613,7 @@ def _strip_shadowed_ref_keys(config: dict) -> None:
     import they would store a hand-edited file's raw ids verbatim.
     """
     if isinstance(config.get("config"), dict):
-        for key in ("tools", "sources", "model_id"):
+        for key in ("tools", "sources", "folders", "model_id"):
             config.pop(key, None)
 
 
@@ -580,6 +644,7 @@ def _serialize_workflow(conn, agent: dict, user: str):
     # Pass 1: collect referenced ids across agent nodes, deduped and ordered.
     tool_ids: list[str] = []
     source_ids: list[str] = []
+    folder_ids: list[str] = []
     model_ids: list[str] = []
     for n in node_rows:
         if n.get("node_type") != "agent":
@@ -591,6 +656,10 @@ def _serialize_workflow(conn, agent: dict, user: str):
         for sid in cfg.get("sources") or []:
             if str(sid) and str(sid) not in source_ids:
                 source_ids.append(str(sid))
+        folders = cfg.get("folders") or []
+        for fid in folders if isinstance(folders, list) else [folders]:
+            if str(fid).lower() and str(fid).lower() not in folder_ids:
+                folder_ids.append(str(fid).lower())
         mid = cfg.get("model_id")
         if mid and str(mid) not in model_ids:
             model_ids.append(str(mid))
@@ -609,6 +678,10 @@ def _serialize_workflow(conn, agent: dict, user: str):
     source_name_by_id: dict[str, str] = {}
     for entry in _serialize_sources(conn, {"extra_source_ids": source_ids}, user):
         source_name_by_id[str(entry["ref"])] = entry["name"]
+        sources.append(entry)
+    folder_name_by_id: dict[str, str] = {}
+    for entry in _serialize_folders(conn, folder_ids):
+        folder_name_by_id[str(entry["ref"])] = entry["name"]
         sources.append(entry)
 
     model = _serialize_models(conn, {"models": model_ids, "default_model_id": ""}, user)
@@ -650,6 +723,13 @@ def _serialize_workflow(conn, agent: dict, user: str):
                 for s in cfg.get("sources") or []
                 if str(s) in source_name_by_id
             ]
+            if "folders" in cfg:
+                folders = cfg.get("folders") or []
+                cfg["folders"] = [
+                    folder_name_by_id[str(f).lower()]
+                    for f in (folders if isinstance(folders, list) else [folders])
+                    if str(f).lower() in folder_name_by_id
+                ]
             if cfg.get("model_id"):
                 cfg["model_id"] = model_name_by_id.get(str(cfg["model_id"]))
             _strip_shadowed_ref_keys(config)
@@ -777,7 +857,9 @@ def serialize_agent(conn, agent: dict, user: str) -> dict:
         prompt = "default"
     else:
         tools = _serialize_tools(conn, agent, user)
-        sources = _serialize_sources(conn, agent, user)
+        sources = _serialize_sources(conn, agent, user) + _serialize_folders(
+            conn, agent.get("knowledge_folder_ids")
+        )
         model = _serialize_models(conn, agent, user)
         prompt = _serialize_prompt(conn, agent, user)
     spec = {
@@ -1008,7 +1090,23 @@ def plan_import(conn, user: str, doc: dict) -> dict:
 
     sources_repo = SourcesRepository(conn)
     sources = []
+    warnings: list[str] = []
+    finder = _FolderFinder(conn, user)
     for src in spec.get("sources") or []:
+        if _is_folder_entry(src):
+            name = src.get("name") or ""
+            folder_id = finder.find(src)
+            if folder_id is None:
+                warnings.append(_folder_missing(name))
+            sources.append(
+                {
+                    "name": name,
+                    "type": FOLDER_ENTRY_TYPE,
+                    "status": "matched" if folder_id else "missing",
+                    "target_id": folder_id,
+                }
+            )
+            continue
         name = src.get("name") or ""
         match = sources_repo.find_by_name(user, name)
         sources.append(
@@ -1120,6 +1218,7 @@ def plan_import(conn, user: str, doc: dict) -> dict:
         "prompt": prompt,
         "models": models,
         "workflow": workflow_plan,
+        "warnings": warnings,
     }
 
 
@@ -1165,7 +1264,7 @@ def _apply_sources(conn, user: str, spec: dict, resolution: dict, warnings: list
         mapping = {}
     resolved: list[str] = []
     id_by_name: dict[str, Optional[str]] = {}
-    entries = [src for src in spec.get("sources") or [] if isinstance(src, dict)]
+    entries = [src for src in spec.get("sources") or [] if isinstance(src, dict) and not _is_folder_entry(src)]
     # ``id_by_name`` (and a workflow node's source reference) keys on the name
     # alone, but names aren't unique per user — ``find_by_name`` returns the
     # oldest match, so duplicates collapse onto one source. Same hazard the
@@ -1203,6 +1302,85 @@ def _apply_sources(conn, user: str, spec: dict, resolution: dict, warnings: list
             seen.add(sid)
             out.append(sid)
     return out, id_by_name
+
+
+def _folder_missing(name: str) -> str:
+    return f"Folder '{name}' not found; left unattached"
+
+
+class _FolderFinder:
+    """The importer's own source folders, matched to a file's folder entries by path, then by name.
+
+    Names compare ignoring case; among several matches the oldest folder wins.
+    """
+
+    def __init__(self, conn, user: str) -> None:
+        from docsgpt.api.user.folders.service import folder_paths
+        from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+        self._folders = FoldersRepository(conn).list_for_user(user, "source")
+        self._paths = folder_paths(self._folders)
+
+    @staticmethod
+    def _key(names) -> tuple:
+        return tuple(str(n or "").strip().casefold() for n in names)
+
+    def find(self, entry: dict) -> Optional[str]:
+        """The id of the importer's folder an entry names, or None."""
+        path = entry.get("path")
+        if isinstance(path, list) and path:
+            wanted = self._key(path)
+            for folder in self._folders:
+                fid = str(folder["id"])
+                if self._key(p["name"] for p in self._paths.get(fid, [])) == wanted:
+                    return fid
+        name = str(entry.get("name") or "").strip().casefold()
+        if not name:
+            return None
+        for folder in self._folders:
+            if str(folder.get("name") or "").strip().casefold() == name:
+                return str(folder["id"])
+        return None
+
+
+def _apply_folders(conn, user: str, spec: dict, resolution: dict, warnings: list):
+    """Resolve the file's knowledge folders against the importer's own; returns ``(ids, id_by_name)``.
+
+    A ``resolution["folders"]`` entry (name -> folder id) picks a folder by
+    hand; it must be one of the importer's source folders. An entry left
+    unmatched is dropped with a warning.
+    """
+    from docsgpt.api.user.folder_knowledge import owned_source_folders
+
+    mapping = resolution.get("folders")
+    if not isinstance(mapping, dict):
+        mapping = {}
+    finder = _FolderFinder(conn, user)
+    resolved: list[str] = []
+    id_by_name: dict[str, Optional[str]] = {}
+    for entry in spec.get("sources") or []:
+        if not _is_folder_entry(entry):
+            continue
+        name = entry.get("name") or ""
+        id_by_name.setdefault(name, None)
+        mapped = mapping.get(name)
+        folder_id = None
+        if mapped:
+            owned = owned_source_folders(conn, [mapped], user)
+            if owned:
+                folder_id = owned[0]
+            else:
+                warnings.append(f"Folder mapping for '{name}' is not yours; ignored")
+        if folder_id is None:
+            folder_id = finder.find(entry)
+        if folder_id is None:
+            warnings.append(_folder_missing(name))
+            continue
+        folder_id = folder_id.lower()
+        id_by_name[name] = id_by_name[name] or folder_id
+        if folder_id not in resolved:
+            resolved.append(folder_id)
+    return resolved, id_by_name
 
 
 def _validate_tool_urls(tool_type: str, config: dict) -> Optional[str]:
@@ -1445,6 +1623,7 @@ def _rewrite_node_refs(
     source_ids_by_name: dict,
     model_ids_by_name: dict,
     warnings: list,
+    folder_ids_by_name: Optional[dict] = None,
 ) -> None:
     """Resolve an agent node's portable references back to the importer's ids.
 
@@ -1491,6 +1670,26 @@ def _rewrite_node_refs(
     # dedupe rather than storing the same id twice on the node.
     cfg["sources"] = list(dict.fromkeys(resolved_sources))
 
+    if "folders" in cfg:
+        from docsgpt.api.user.folder_knowledge import owned_source_folders
+
+        folder_ids_by_name = folder_ids_by_name or {}
+        raw_folders = cfg.get("folders") or []
+        resolved_folders = []
+        for ref in raw_folders if isinstance(raw_folders, list) else [raw_folders]:
+            ref = str(ref)
+            if ref in folder_ids_by_name:
+                fid = folder_ids_by_name[ref]
+            else:
+                # A raw id must be one of the importer's own folders (only a folder's owner attaches it).
+                owned = owned_source_folders(conn, [ref], user)
+                fid = owned[0] if owned else None
+            if fid:
+                resolved_folders.append(fid)
+            else:
+                warnings.append(f"Workflow node folder '{ref}' not resolved; removed")
+        cfg["folders"] = list(dict.fromkeys(resolved_folders))
+
     raw_model = cfg.get("model_id")
     if raw_model:
         raw_model = str(raw_model)
@@ -1512,6 +1711,7 @@ def _apply_workflow(
     source_ids_by_name: dict,
     model_ids_by_name: dict,
     warnings: list,
+    folder_ids_by_name: Optional[dict] = None,
 ):
     """Write the imported graph; returns the workflow id, None, or the sentinel.
 
@@ -1555,6 +1755,7 @@ def _apply_workflow(
                 source_ids_by_name,
                 model_ids_by_name,
                 warnings,
+                folder_ids_by_name,
             )
             _strip_shadowed_ref_keys(config)
         position = node.get("position")
@@ -1678,6 +1879,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
 
     prompt_id = _apply_prompt(conn, user, spec)
     source_ids, source_ids_by_name = _apply_sources(conn, user, spec, resolution, warnings)
+    folder_ids, folder_ids_by_name = _apply_folders(conn, user, spec, resolution, warnings)
     tool_ids, tool_ids_by_key = _apply_tools(conn, user, spec, resolution, warnings)
     models, default_model_id, model_ids_by_name = _apply_models(
         conn, user, spec, resolution, warnings
@@ -1715,6 +1917,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "models": models,
         "default_model_id": default_model_id,
         "extra_source_ids": source_ids,
+        "knowledge_folder_ids": folder_ids,
         "limited_token_mode": bool(_limit(spec, "limited_token_mode")),
         "limited_request_mode": bool(_limit(spec, "limited_request_mode")),
         "allow_system_prompt_override": bool(spec.get("allow_system_prompt_override")),
@@ -1735,6 +1938,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
                 "models": None,
                 "default_model_id": None,
                 "extra_source_ids": [],
+                "knowledge_folder_ids": [],
             }
         )
         prior_workflow_id = None
@@ -1752,6 +1956,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
             source_ids_by_name,
             model_ids_by_name,
             warnings,
+            folder_ids_by_name,
         )
         # A published workflow agent with no graph can't run — the create and
         # update routes both reject that state, so import must not install it

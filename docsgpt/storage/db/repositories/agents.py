@@ -122,7 +122,7 @@ class AgentsRepository:
             "description", "agent_type", "key", "slug", "retriever",
             "default_model_id", "incoming_webhook_token",
             "source_id", "prompt_id", "workflow_id",
-            "extra_source_ids", "image",
+            "extra_source_ids", "knowledge_folder_ids", "image",
             "chunks", "token_limit", "request_limit",
             "limited_token_mode", "limited_request_mode",
             "allow_system_prompt_override",
@@ -156,7 +156,7 @@ class AgentsRepository:
                 values[col] = bool(val)
             elif col in ("source_id", "workflow_id"):
                 values[col] = str(val)
-            elif col == "extra_source_ids":
+            elif col in ("extra_source_ids", "knowledge_folder_ids"):
                 # ARRAY(UUID) — pass list of strings; psycopg adapts it.
                 values[col] = [str(x) for x in val] if val else []
             else:
@@ -343,7 +343,7 @@ class AgentsRepository:
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "config", "resource_sponsors", "starters",
             "default_model_id", "workflow_id",
-            "extra_source_ids", "image",
+            "extra_source_ids", "knowledge_folder_ids", "image",
             "limited_token_mode", "token_limit",
             "limited_request_mode", "request_limit",
             "allow_system_prompt_override",
@@ -361,7 +361,7 @@ class AgentsRepository:
                 values["prompt_id"], values["prompt_preset"] = split_prompt_ref(val)
             elif col in ("source_id", "workflow_id"):
                 values[col] = str(val) if val else None
-            elif col == "extra_source_ids":
+            elif col in ("extra_source_ids", "knowledge_folder_ids"):
                 values[col] = [str(x) for x in val] if val else []
             elif col in (
                 "limited_token_mode", "limited_request_mode",
@@ -421,7 +421,7 @@ class AgentsRepository:
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "config", "resource_sponsors", "starters",
             "default_model_id", "workflow_id",
-            "extra_source_ids", "image",
+            "extra_source_ids", "knowledge_folder_ids", "image",
             "limited_token_mode", "token_limit",
             "limited_request_mode", "request_limit",
             "allow_system_prompt_override",
@@ -442,7 +442,7 @@ class AgentsRepository:
                 values["prompt_id"], values["prompt_preset"] = split_prompt_ref(val)
             elif col in ("source_id", "workflow_id"):
                 values[col] = str(val) if val else None
-            elif col == "extra_source_ids":
+            elif col in ("extra_source_ids", "knowledge_folder_ids"):
                 values[col] = [str(x) for x in val] if val else []
             elif col in (
                 "limited_token_mode", "limited_request_mode",

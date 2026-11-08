@@ -861,7 +861,7 @@ class WorkflowEngine:
 
         self._node_search_outcome = None
         node_docs = (
-            self._retrieve_node_sources(node_config) if node_config.sources else []
+            self._retrieve_node_sources(node_config) if node_config.sources or node_config.folders else []
         )
 
         if node_config.prompt_template:
@@ -947,7 +947,7 @@ class WorkflowEngine:
             "prompt_embeds_documents": _prompt_embeds_documents(
                 node_config.prompt_template
             ),
-            "sources_were_searched": bool(node_config.sources),
+            "sources_were_searched": bool(node_config.sources or node_config.folders),
             "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
@@ -958,8 +958,8 @@ class WorkflowEngine:
         if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
             factory_kwargs["retriever_config"] = {
                 "source": (
-                    {"active_docs": self._authorized_node_sources(node_config.sources)}
-                    if node_config.sources
+                    {"active_docs": self._node_source_ids(node_config)}
+                    if node_config.sources or node_config.folders
                     else {}
                 ),
                 "retriever_name": node_config.retriever or "classic",
@@ -2329,6 +2329,45 @@ class WorkflowEngine:
         resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
         return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
 
+    def _node_source_ids(self, node_config: AgentNodeConfig) -> list:
+        """The sources a node retrieves from: its own authorized ones, then its knowledge folders'.
+
+        Args:
+            node_config: The node's resolved configuration.
+
+        Returns:
+            list: Source ids, each once.
+        """
+        return self._with_folder_sources(self._authorized_node_sources(node_config.sources), node_config.folders)
+
+    @staticmethod
+    def _with_folder_sources(source_ids: list, folders) -> list:
+        """``source_ids`` plus the sources a node's knowledge folders hold, each once.
+
+        A folder reads as its owner's filing (``folder_knowledge``), whoever
+        owns the workflow; a folder that no longer exists adds nothing.
+
+        Args:
+            source_ids: The node's authorized source ids.
+            folders: Folder ids from the stored node config.
+
+        Returns:
+            list: ``source_ids`` followed by the folders' sources.
+        """
+        if not folders:
+            return source_ids
+        from docsgpt.api.user.folder_knowledge import folder_source_ids
+        from docsgpt.storage.db.session import db_readonly
+
+        try:
+            with db_readonly() as conn:
+                extra = folder_source_ids(conn, folders)
+        except Exception:
+            logger.exception("Workflow node knowledge folders could not be read; dropping them.")
+            return source_ids
+        seen = {str(sid).lower() for sid in source_ids}
+        return list(source_ids) + [sid for sid in extra if sid not in seen]
+
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
 
@@ -2393,7 +2432,7 @@ class WorkflowEngine:
 
         sources: list = []
         try:
-            sources = self._authorized_node_sources(node_config.sources)
+            sources = self._node_source_ids(node_config)
             retriever = RetrieverCreator.create_retriever(
                 node_config.retriever or "classic",
                 source={"active_docs": sources},

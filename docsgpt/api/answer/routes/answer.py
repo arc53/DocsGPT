@@ -60,6 +60,14 @@ class AnswerResource(Resource, BaseAnswerResource):
             "active_docs": fields.String(
                 required=False, description="Active documents"
             ),
+            "active_folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Agentless chats only: the caller's own source folders to search as a whole, every source "
+                    "filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers"
+                ),
+            ),
             "isNoneDoc": fields.Boolean(
                 required=False, description="Flag indicating if no document is used"
             ),

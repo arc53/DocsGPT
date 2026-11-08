@@ -109,7 +109,9 @@ def _chat_check(request, resource_filter: dict, user_id: Optional[str]) -> Optio
 
     Chat executes tools: an agent's own, or the user's defaults when there is
     no agent. Neither can be held to a tools allowlist from here, so a token
-    restricted on tools cannot chat at all.
+    restricted on tools cannot chat at all. Knowledge folders
+    (``active_folders``) read sources no allowlist names, so a token
+    restricted on sources cannot name any.
     """
     body = _json_body(request)
     if "tools" in resource_filter:
@@ -128,6 +130,9 @@ def _chat_check(request, resource_filter: dict, user_id: Optional[str]) -> Optio
         return "Restrict this token to specific agents to use chat endpoints"
     elif agent_ids:
         return "This token is restricted to specific sources and cannot run agents"
+    if "sources" in resource_filter and _as_ids(body.get("active_folders")):
+        # A folder reads every source filed in it, which no allowlist names.
+        return "A token restricted to specific sources cannot chat with knowledge folders"
     conversation_id = body.get("conversation_id")
     if conversation_id:
         found, conversation_agent = _conversation_agent_id(conversation_id, user_id)
@@ -143,13 +148,17 @@ def _agent_body_check(request, resource_filter: dict, user_id: Optional[str]) ->
     A token restricted on any of those may attach a workflow to an agent only
     when it is also restricted on workflows, so the workflow is one its owner
     chose (``refs`` then verifies the id). An inline ``workflow_graph`` is
-    refused to a token restricted on any of them or on workflows.
+    refused to a token restricted on any of them or on workflows. Knowledge
+    folders (``folders``) read sources no allowlist names, so a token
+    restricted on sources may only clear them.
     """
     graph = _json_body(request).get("workflow_graph") if request.is_json else request.form.get("workflow_graph")
     if graph not in (None, "") and set(resource_filter) & {*_WORKFLOW_CONTENT_FAMILIES, "workflows"}:
         # An inline graph can name any source, tool or prompt and creates or rewrites a workflow
         # no allowlist can prove; like POST /api/workflows, closed to tokens restricted on those.
         return "A token restricted to specific sources, tools, prompts or workflows cannot save a workflow graph"
+    if "sources" in resource_filter and _read(request, (BODY, "folders")):
+        return "A token restricted to specific sources cannot attach knowledge folders"
     if "workflows" in resource_filter or not set(resource_filter) & {"sources", "tools", "prompts"}:
         return None
     if _read(request, (BODY, "workflow")):
