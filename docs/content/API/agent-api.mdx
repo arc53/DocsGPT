@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-08
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -77,6 +77,7 @@ Common request body fields:
 | `passthrough` | `object` | No | `/api/answer`, `/stream` | Values for the prompt's `{{ passthrough.* }}` variables, such as the end user's id. Strings, numbers, booleans and `null` are kept with the conversation and on each turn's [Logs](/Using/analytics-and-logs) row. |
 | `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. Without it, a chat without an agent uses `default`, not the prompt picked on **Settings → Prompts** (the web app sends that one itself). |
 | `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
+| `active_folders` | `string[]` | No | `/api/answer`, `/stream` | Knowledge folder ids for a chat without an agent: the sources you filed anywhere in each folder, added to `active_docs`. Only your own folders count; others are ignored. Ignored when `api_key` or `agent_id` selects an agent, which brings its own folders. See [Pick a whole folder](/Sources/adding-knowledge#pick-a-whole-folder). |
 | `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). Ignored when `api_key` or `agent_id` selects an agent: the agent's retriever is used. |
 | `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. Clamped to `0`-`500`; `0` skips retrieval. Ignored when `api_key` or `agent_id` selects an agent (the agent's value is used), and when a source has its own chunk count configured (the source's value wins). |
 | `isNoneDoc` | `boolean` | No | `/api/answer`, `/stream` | Skip document retrieval. |
@@ -625,7 +626,7 @@ On an update the file is authoritative: fields it sets are written even when tha
 | Part | Statuses |
 | --- | --- |
 | `target` | `action`: `create`, or `update` with the `agent_id` it matched and `matched_by` (`id` or `slug`) |
-| `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached) |
+| `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached). A Knowledge folder the agent uses is an entry with `"type": "folder"`, matched to one of your own folders by its path, then by its name |
 | `tools` | `builtin`, `reuse` (one of your tools matches its type and name), `create` (a new tool is created; `requires_secrets` lists what you must supply) or `unavailable` |
 | `prompt` | `reuse`, `create` or `default` |
 | `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`) |
@@ -645,13 +646,15 @@ Each tool in the plan has a `key` (`tool-0`, `tool-1`, ... in file order) that t
     "tool-1": { "decision": "create", "secrets": { "api_key": "..." } },
     "tool-2": { "decision": "skip" }
   },
-  "models": { "My custom model": { "api_key": "..." } }
+  "models": { "My custom model": { "api_key": "..." } },
+  "folders": { "Carriers": "<id of one of your Knowledge folders>" }
 }
 ```
 
 - `sources` maps a source name in the file to one of your source ids.
 - `tools` takes a decision per tool key: `reuse` an existing tool, `create` a new one with the given secrets, or `skip` it.
 - `models` supplies the API key for a custom model that has to be created, keyed by its display name.
+- `folders` maps a Knowledge folder name in the file to one of your Knowledge folder ids. A folder that matches none of yours is left unattached with a warning.
 
 Ids you pass must belong to you; any other id is ignored with a warning. Prompts are not resolvable: the file's prompt is reused when you already have one with the same name and content, and created otherwise.
 

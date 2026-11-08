@@ -1,7 +1,7 @@
 ---
 title: Add Knowledge
-description: Add files, web pages, whole websites, GitHub repositories and synced services to DocsGPT Knowledge, keep them up to date, and use them in chats and agents.
-lastUpdated: 2026-10-31
+description: Add files, web pages, whole websites, GitHub repositories and synced services to DocsGPT Knowledge, keep them up to date, organize them in folders, and use them or whole folders in chats and agents.
+lastUpdated: 2026-11-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -34,7 +34,7 @@ import Image from 'next/image'
 <Steps>
 ### Open Knowledge
 
-Go to **Settings > Knowledge** and click **Add knowledge**. From a chat, you can also open the composer's **Knowledge** menu and choose **Upload new**.
+Go to **Settings > Knowledge** and click **Add knowledge**. From a chat, you can also open the composer's **Knowledge** menu and choose **Upload new**. Click **Add knowledge** inside an open [folder](#organize-knowledge-in-folders) to file the new source in that folder.
 
 ### Pick a source type
 
@@ -172,7 +172,7 @@ The Knowledge page shows each source as a card: an icon for its kind, a line of 
   style={{ width: '100%', height: 'auto', margin: '1em auto', display: 'block', borderRadius: '8px' }}
 />
 
-With no search or filter, page 1 opens with **Needs attention**: sources whose ingest failed that you can reingest, and those whose connection of yours needs **Reconnect**. Later pages keep such sources in place in the list. **All knowledge** follows with the rest, led by any synced service still indexing its first copy.
+With no search or filter, page 1 opens with **Needs attention**: sources whose ingest failed that you can reingest, and those whose connection of yours needs **Reconnect**, in any folder. Later pages keep such sources in place in the list. **All knowledge** follows with the rest, led by any synced service still indexing its first copy. Once you have [folders](#organize-knowledge-in-folders), **Folders** comes first and the sources in no folder follow under **Sources**.
 
 Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
 
@@ -182,6 +182,7 @@ Each source on the Knowledge page has a menu. Which items appear depends on the 
 - **Test retrieval** runs a question against the source and shows which chunks come back.
 - **Convert to wiki** turns the source into editable wiki pages. This can't be undone, and it stops the source's sync schedule: a wiki doesn't sync.
 - **Share with team** shares the source with a team. See [Access control](/Deploying/Access-Control).
+- **Move to folder** files the source in one of your folders. See [Move a source into a folder](#move-a-source-into-a-folder).
 - **Delete** removes the source and its index. While a sync or a page change runs on the source, it waits a few seconds, then is refused with the same message; delete it once the change is done.
 
 An open source keeps the same actions in its header: **Test retrieval**, then its main action (**Add file** for an upload, **Add pages** for a website, **Sync now** for a synced source), then the ⋯ menu with the rest. **Delete source** there returns you to the Knowledge page.
@@ -199,11 +200,92 @@ To replace all of a source's files at once, for example from a script, send the 
 
 To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 
+## Organize knowledge in folders
+
+Folders group sources by team, customer or topic. They are optional: until you create one, the Knowledge page looks as described above. Filing a source in a folder doesn't change the source, its settings or the agents that use it.
+
+### Create a folder
+
+Click **New folder** next to **Add knowledge**, type a **Folder name** and click **Create**. A folder created inside an open folder goes inside it. Folders nest up to three levels deep, such as **Knowledge › Carriers › Rate archive**; inside a third-level folder, **New folder** is unavailable. A name is up to 80 characters, and two folders in the same place can't share a name, ignoring case.
+
+With folders, page 1 of Knowledge shows them under **Folders**, above the sources in no folder (**Sources**). Each folder tile shows what it holds directly, such as **3 sources · 1 folder** or **Empty**, and how many agents use it. Folders aren't paged: all your top-level folders show on page 1.
+
+### Open a folder
+
+Click a folder to open it. The trail above the list, such as **Knowledge › Carriers**, shows where you are; click a part of it to go back up. A line under it counts what the folder holds, and the folder's **⋯** menu at the end of the row has **Rename**, **Move to folder** and **Delete**.
+
+Inside a folder the page shows only that folder: its folders, then its sources. The search (**Search in Carriers…**), the kind filter and **Any use**, with their counts, cover the folder and every folder inside it. **Add knowledge** files the new source in this folder, and **New folder** creates one inside it. An empty folder says so and offers **Add knowledge**.
+
+### Move a source into a folder
+
+Choose **Move to folder** from the source's **⋯** menu. The **Move "…"** dialog lists your folders: type in **Search folders…** to find one at any level, or click a folder's arrow to see the folders inside it. The folder the source is in now is marked **Current**. Pick **Knowledge** (no folder) to take the source out of its folder, or click **New folder** to create one from the dialog. Then click **Move**.
+
+A source is in at most one of your folders, so moving it takes it out of the one it was in.
+
+To move a folder, choose **Move to folder** from its **⋯** menu; everything inside moves with it. A folder can't move into itself or into a folder inside it, and a place where its folders would end up more than three levels deep is marked **Too deep**.
+
+### Search across folders
+
+At the top of Knowledge, a search or a kind or usage filter looks in every folder and lists the results flat: folders whose name matches come first, then the sources, each showing the folder it's in, such as **Carriers › Rate archive**.
+
+### Rename or delete a folder
+
+**Rename** and **Delete** are in the folder's **⋯** menu, on its tile or in the trail of the open folder.
+
+Deleting a folder never deletes a source. Its sources and folders move up to the folder it was in, or to the top of Knowledge. The confirmation says what moves where and names the agents that use the folder: they lose its sources, because the folder comes off them. Sources those agents use one by one stay on them.
+
+### Folders are personal
+
+Your folders are your own: teammates don't see them, and filing a source changes nothing for anyone else. You can file any source you can see, including sources teammates share with you, and each teammate files the same source in their own folders. Deleting a source takes it out of every folder.
+
+A teammate sees one of your folders only when you give it to an agent you share, and then only its name; see [Pick a whole folder](#pick-a-whole-folder).
+
+### Folders through the API
+
+Folders are the same for Knowledge and agents: every folder route takes `type`, `source` for Knowledge or `agent` for agents.
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| `GET` | `/api/folders?type=source` | Your folders of that type, oldest first, each with `id`, `name`, `parent_id`, `item_count` and `folder_count` (what it holds directly). A Knowledge folder also has `used_by`, the agents that use it. |
+| `POST` | `/api/folders` | Create one: `{"type": "source", "name": "Carriers", "parent_id": null}`. Answers `201` with the folder. |
+| `PUT` | `/api/folders/<id>` | Rename or move it: `name`, `parent_id` (`null` moves it to the top level). |
+| `DELETE` | `/api/folders/<id>` | Delete it. Its contents move to its parent; the response counts them in `moved_items` and `moved_folders`. |
+| `POST` | `/api/folders/items` | File items: `{"type": "source", "folder_id": "<id>", "ids": ["<source id>", …]}`, up to 500 ids. `folder_id: null` takes them out of their folder. The response lists `moved` ids and `skipped` ones, which you can't see. |
+
+A refused request answers `{"success": false, "error": <code>, "message": …}`: `400` with `invalid_folder_name`, `folder_too_deep`, `folder_cycle` or `invalid_ids`, `409` with `folder_name_taken`, and `404` with `folder_not_found`.
+
+Every source in `GET /api/sources` and `GET /api/sources/paginated` carries your filing: `folder_id` and `folder_path`, the folders from the top level down as `[{"id", "name"}]`. `/api/sources/paginated` also takes:
+
+- `folder`: one of your Knowledge folder ids, or `root`. The counts (`kind_counts`, `usage_counts` and `subtree_total`) cover the folder and every folder inside it; `root` covers everything. An unknown folder answers `404`.
+- `direct`: `true` lists only the sources filed directly in `folder` (with `root`, the sources in no folder); `false`, the default, lists the whole subtree.
+
+To file a new source as you add it, send `folder_id` with `POST /api/upload` or `POST /api/remote`, or `sync.folder_id` with `POST /api/connections/<id>/setup`. It must be one of your Knowledge folders, or the request answers `404` with `folder_not_found`.
+
+The agent folder routes under `/api/agents/folders`, including `move_agent` and `bulk_move`, still work: they are the same as `/api/folders` with `type=agent`. With a [personal access token](/API/personal-access-tokens#resource-restrictions), Knowledge folders need `sources:read` or `sources:write`, and agent folders `agents:read` or `agents:write`.
+
 ## Use knowledge in chats and agents
 
 - **In a chat without an agent**, click **Knowledge** in the composer and select one or more sources. Answers draw on the chunks retrieved from them and cite them. The menu's footer has **Go to Knowledge** and **Upload new**.
 - **In an agent**, pick sources in the agent builder's **Knowledge** field (**Select knowledge**). Knowledge is optional: without it, the agent answers from the model and its tools. When you chat with an agent, the composer hides the Knowledge button because the agent uses its own. See [Agents](/Agents/basics).
 
-Both pickers show an icon for each source's kind and the same details line as its card, with a badge when its ingest failed or is running, or its connection needs **Reconnect**. The sources already selected come first, under **Selected**, and the same kind filter (**All**, **Files**, **Websites**, **Synced**, **Wikis**, **Shared**) narrows the list once you have more than 10 sources. When teams share sources with you, they are listed under **Shared with team**, after **Yours**.
+Both pickers show an icon for each source's kind and the same details line as its card, with a badge when its ingest failed or is running, or its connection needs **Reconnect**. The sources and folders already selected come first, under **Selected**, then your **Folders** and your sources. The same kind filter (**All**, **Files**, **Websites**, **Synced**, **Wikis**, **Shared**) narrows the list once you have more than 10 sources. When teams share sources with you, they are listed under **Shared with team**.
+
+### Pick a whole folder
+
+In a chat, an agent or a workflow's AI agent step, you can pick one of your [folders](#organize-knowledge-in-folders) like a single source:
+
+- **Tick a folder** to give everything in it, including the folders inside it. The folder row reads, for example, **7 sources · new sources included**.
+- **Open a folder** with its arrow to see what's inside or to pick single sources from it. A trail under the search takes you back. Inside a picked folder, the first row is **All of Carriers**, and everything in it is ticked and marked **Included with Carriers**. A folder where you picked only some sources shows a partly filled box and, for example, **1 of 2 picked**.
+- **Search** lists matching folders first, then sources, each led by the folder it's in.
+
+A picked folder stays up to date: each answer uses what is in the folder at that moment. A source you file in it later reaches the agent or chat without editing anything, and a source you move out of it stops being used, unless it is also picked on its own. Picked sources and folders count once each, and a source in both is used once.
+
+- **In a chat without an agent**, the folder applies to that conversation. When the only thing picked is one folder, the composer's **Knowledge** button shows the folder's name.
+- **In the agent builder**, the **Knowledge** field counts each folder once, such as **2 selected**, and a hint under it names the folders and says that sources added to them later are included.
+- **In a workflow**, an AI agent step's **Knowledge** picker takes folders the same way. See [AI Agent Node](/Agents/nodes#ai-agent-node).
+
+A folder reads as its owner's filing: the sources its owner filed anywhere in it that its owner can still use. You can pick only your own folders. On an agent shared with you as an editor, a teammate's folder shows by name, with whose folder it is; you can remove it, but not change what's in it. It gives the agent only sources the agent's owner can use, or sources its folder's owner owns or edits, and it stops, giving the agent nothing, once that teammate can no longer edit the agent. A deleted folder comes off the agents that used it and gives nothing to workflow steps that still name it.
+
+Through the API, an agent's folders are its `folders` field, a list of folder ids, on `POST /api/create_agent` and `PUT /api/update_agent/<agent_id>` (a JSON string in a multipart form). `[]` clears them, and leaving the field out keeps them. Adding a folder that isn't one of your own Knowledge folders answers `403` with `folder_not_accessible`; folders already on the agent stay when someone else saves it. Every agent output has `folders`, and `GET /api/get_agent` adds `folder_details`: each folder's `id`, `name`, `source_count` (the sources it gives the agent now), `owner_name` when it isn't yours, and `stopped` with a `reason` (`sponsor_cannot_edit_agent`, or `deleted` with `name: null`). A workflow's AI agent step takes `folders` in its `config`. For a chat without an agent, send `active_folders`; see [Request parameters](/API/agent-api#request-parameters).
 
 **Attach** in the composer is different. It adds a file to the current conversation only. To reuse a file across chats and agents, add it to Knowledge instead.
