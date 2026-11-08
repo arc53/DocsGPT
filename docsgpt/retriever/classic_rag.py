@@ -437,10 +437,15 @@ class ClassicRAG(BaseRetriever):
                     parent_text = (metadata or {}).get("parent_text")
                     parent_key = None
                     if isinstance(parent_text, str) and parent_text:
-                        source_key = (metadata or {}).get("source", "")
-                        parent_key = (vectorstore_id, source_key, parent_text)
-                        if parent_key in seen_parents:
-                            continue
+                        meta = metadata or {}
+                        identities = [meta.get(key) for key in ("source", "filename", "file_name", "title", "post_title")]
+                        source_key = next(
+                            (identity for identity in identities if isinstance(identity, str) and identity), None
+                        )
+                        if source_key is not None:
+                            parent_key = (vectorstore_id, source_key, parent_text)
+                            if parent_key in seen_parents:
+                                continue
 
                     labels = labels_from_metadata(metadata, page_content, vectorstore_id)
                     attribution = self._connector_labels.for_source(vectorstore_id, metadata)
