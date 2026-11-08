@@ -435,12 +435,12 @@ class ClassicRAG(BaseRetriever):
                     # ranked) one and skip the rest to avoid sending the same
                     # passage multiple times.
                     parent_text = (metadata or {}).get("parent_text")
+                    parent_key = None
                     if isinstance(parent_text, str) and parent_text:
                         source_key = (metadata or {}).get("source", "")
                         parent_key = (vectorstore_id, source_key, parent_text)
                         if parent_key in seen_parents:
                             continue
-                        seen_parents.add(parent_key)
 
                     labels = labels_from_metadata(metadata, page_content, vectorstore_id)
                     attribution = self._connector_labels.for_source(vectorstore_id, metadata)
@@ -451,6 +451,8 @@ class ClassicRAG(BaseRetriever):
 
                     selected = in_selection and cumulative_tokens + doc_tokens < token_budget
                     if selected or (in_pool and pool_tokens + doc_tokens < pool_budget):
+                        if parent_key is not None:
+                            seen_parents.add(parent_key)
                         entry = {
                             "text": effective_text,
                             **labels,
