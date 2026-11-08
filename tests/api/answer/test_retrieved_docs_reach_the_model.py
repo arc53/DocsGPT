@@ -178,7 +178,7 @@ class TestParentTextReachesPrompt:
     """
 
     PARENT = "Full parent window with extensive background context and reporting rules."
-    CHILD = "distinct child chunk that should not be injected directly"
+    CHILD = "Full parent window"
 
     def _agent_with_docs(self, docs):
         with patch("docsgpt.llm.llm_creator.LLMCreator.create_llm"), patch(
@@ -209,7 +209,7 @@ class TestParentTextReachesPrompt:
         user_turn = messages[-1]["content"]
 
         assert self.PARENT in user_turn, "Parent window must appear in the user turn"
-        assert self.CHILD not in user_turn, "Child chunk must NOT appear in the user turn"
+        assert user_turn.count(self.CHILD) == 1, "The child must not be added as a separate passage"
 
     def test_retrieved_parent_metadata_reaches_prompt(self):
         """Parent-expanded retriever entries keep their metadata through prompting."""
@@ -230,7 +230,7 @@ class TestParentTextReachesPrompt:
         agent = self._agent_with_docs(docs)
         user_turn = agent._build_messages("SYSTEM", "What is the deadline?")[-1]["content"]
         assert self.PARENT in user_turn
-        assert self.CHILD not in user_turn
+        assert user_turn.count(self.CHILD) == 1
 
     def test_matched_text_not_in_prompt(self):
         """'matched_text' is for citation/source display only — not sent to LLM."""
@@ -247,5 +247,5 @@ class TestParentTextReachesPrompt:
             m["content"] if isinstance(m["content"], str) else ""
             for m in messages
         )
-        # matched_text must not appear literally as a standalone passage
-        assert self.CHILD not in full_prompt
+        # The child is within the parent, but must not be added as a second passage.
+        assert full_prompt.count(self.CHILD) == 1

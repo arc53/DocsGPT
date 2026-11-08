@@ -23,8 +23,12 @@ from docsgpt.retriever.base import expand_to_parent
 
 class TestExpandToParent:
     def test_returns_parent_when_present(self):
-        meta = {"parent_text": "big parent window"}
-        assert expand_to_parent(meta, "small child") == "big parent window"
+        parent = "big parent window with small child inside"
+        meta = {"parent_text": parent}
+        assert expand_to_parent(meta, "small child") == parent
+
+    def test_returns_child_when_edited_child_is_not_in_parent(self):
+        assert expand_to_parent({"parent_text": "original parent with old text"}, "edited child") == "edited child"
 
     def test_returns_child_when_no_key(self):
         assert expand_to_parent({"source": "foo.txt"}, "child text") == "child text"
@@ -43,6 +47,19 @@ class TestExpandToParent:
 
     def test_returns_child_when_metadata_is_empty(self):
         assert expand_to_parent({}, "child text") == "child text"
+
+    def test_parent_child_chunker_round_trip_expands_only_unchanged_children(self):
+        from docsgpt.parser.chunking_strategies import ParentChildChunker
+        from docsgpt.parser.schema.base import Document
+
+        chunker = ParentChildChunker(max_tokens=40, min_tokens=10)
+        chunks = chunker.chunk([Document(text="A sample passage with enough words. " * 30)])
+
+        assert chunks
+        for chunk in chunks:
+            parent = chunk.extra_info["parent_text"]
+            assert chunk.text in parent
+            assert expand_to_parent(chunk.extra_info, chunk.text) == parent
 
 
 # ---------------------------------------------------------------------------
@@ -152,13 +169,15 @@ class TestClassicRAGParentExpansion:
 
     def test_different_parents_both_kept(self):
         """Children with different parent windows must each produce one entry."""
-        doc_a = _make_lc_doc("child 1", {"parent_text": "parent window one", "source": "doc.txt"})
-        doc_b = _make_lc_doc("child 2", {"parent_text": "parent window two", "source": "doc.txt"})
+        parent_a = "parent window one contains child 1"
+        parent_b = "parent window two contains child 2"
+        doc_a = _make_lc_doc("child 1", {"parent_text": parent_a, "source": "doc.txt"})
+        doc_b = _make_lc_doc("child 2", {"parent_text": parent_b, "source": "doc.txt"})
         rag = _make_rag([doc_a, doc_b])
         results = rag._get_data()
         assert len(results) == 2
         returned_texts = {r["text"] for r in results}
-        assert returned_texts == {"parent window one", "parent window two"}
+        assert returned_texts == {parent_a, parent_b}
 
     def test_budget_uses_expanded_text(self):
         """Token budget must count the parent window length, not the child."""
@@ -176,7 +195,7 @@ class TestClassicRAGParentExpansion:
 
     def test_unselected_first_sibling_does_not_hide_a_later_child_that_fits(self):
         """A parent is marked seen only after one of its entries is accepted."""
-        parent = "shared parent window"
+        parent = "shared parent window containing first child and second child"
         first = _make_lc_doc(
             "first child",
             {"parent_text": parent, "source": "doc.txt", "filename": "oversized " * 120},
@@ -269,13 +288,13 @@ class TestGraphRAGParentExpansion:
         store.get_chunk_texts.return_value = {
             "c1": {
                 "text": "child text",
-                "metadata": {"parent_text": "parent window text", "source": "f.txt"},
+                "metadata": {"parent_text": "parent window text with child text", "source": "f.txt"},
             }
         }
 
         docs = rag._graph_docs_for_source(store, "src1", None)
         assert len(docs) == 1
-        assert docs[0]["text"] == "parent window text"
+        assert docs[0]["text"] == "parent window text with child text"
         assert docs[0]["matched_text"] == "child text"
 
     @patch("docsgpt.retriever.graph_rag.GraphStore")
@@ -304,17 +323,17 @@ class TestGraphRAGParentExpansion:
         store.get_chunk_texts.return_value = {
             "c1": {
                 "text": "child text 1",
-                "metadata": {"parent_text": "shared parent", "source": "f.txt"},
+                "metadata": {"parent_text": "shared parent with child text 1 and child text 2", "source": "f.txt"},
             },
             "c2": {
                 "text": "child text 2",
-                "metadata": {"parent_text": "shared parent", "source": "f.txt"},
+                "metadata": {"parent_text": "shared parent with child text 1 and child text 2", "source": "f.txt"},
             },
         }
 
         docs = rag._graph_docs_for_source(store, "src1", None)
         assert len(docs) == 1
-        assert docs[0]["text"] == "shared parent"
+        assert docs[0]["text"] == "shared parent with child text 1 and child text 2"
         assert docs[0]["matched_text"] == "child text 1"
 
 

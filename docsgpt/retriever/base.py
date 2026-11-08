@@ -126,25 +126,26 @@ def budget_text(filename: Any, text: Any, source_name: Any = None) -> str:
 
 
 def expand_to_parent(metadata: Optional[Dict], page_content: str) -> str:
-    """Return the parent window text when the chunk was produced by parent_child chunking.
+    """Return a valid parent window, or the current chunk text if it was edited.
 
     The ``parent_child`` chunking strategy stores the larger parent window in
     ``metadata["parent_text"]`` so retrievers can send richer context to the LLM
-    instead of the narrow child chunk that was embedded.  When the key is absent
-    (all other chunking strategies) the original ``page_content`` is returned
-    unchanged, so callers never need a guard.
+    instead of the narrow child chunk that was embedded. A parent is used only
+    when it contains the current chunk text. If the chunk was edited and no
+    longer belongs to that parent, or the key is absent, ``page_content`` is
+    returned unchanged.
 
     Args:
         metadata: The chunk's metadata dict as returned by the vector store.
         page_content: The child chunk text (the string that was embedded).
 
     Returns:
-        str: ``metadata["parent_text"]`` when present and non-empty, otherwise
-        ``page_content``.
+        str: The parent text when it contains ``page_content``, otherwise the
+        current ``page_content``.
     """
     if metadata:
         parent = metadata.get("parent_text")
-        if isinstance(parent, str) and parent:
+        if isinstance(parent, str) and parent and page_content in parent:
             return parent
     return page_content
 
