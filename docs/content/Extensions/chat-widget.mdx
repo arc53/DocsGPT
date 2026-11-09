@@ -1,7 +1,7 @@
 ---
 title: Chat Widget
 description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-09
 ---
 import { Callout, Tabs } from 'nextra/components'
 
@@ -252,6 +252,10 @@ Each answer that used your documents shows a **Sources** row with the number of 
 When the agent cites its sources with `[1]`, `[2]` and so on, each number becomes a small button in the answer. Selecting it opens the Sources list, scrolls to that source and highlights it. A grouped citation such as `[1, 3]` becomes one button per number. To get numbered citations, ask for them in the agent's prompt; see [Citations](/Agents/prompts#citations) in Customizing Prompts.
 
 Links in an answer open in a new tab, so the visitor stays on your page. A plain web address the model writes out, such as `https://example.com`, becomes a link too.
+
+## Clarifying questions
+
+When the answer depends on something the visitor hasn't said, the agent can ask up to three short questions first. In the widget they arrive as the answer's text: a lead-in line, then each question with its options as `a)`, `b)` and so on. The visitor replies in a message, in their own words or with picks such as "1a, 2b", and the agent answers from there. In the DocsGPT web app the same questions are cards to pick from; see [Clarifying questions](/Using/web-app#clarifying-questions).
 
 ---
 

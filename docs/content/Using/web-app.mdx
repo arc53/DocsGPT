@@ -1,7 +1,7 @@
 ---
 title: Using the Web App
-description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language.
-lastUpdated: 2026-11-06
+description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language, and the clarifying questions an assistant can ask in a chat.
+lastUpdated: 2026-11-09
 ---
 
 import { Callout } from 'nextra/components'
@@ -93,6 +93,18 @@ The list starts with **Use instance default**, which names in brackets the model
 Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model, unless it is disabled. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. Settings then shows **Unavailable model** and a note that the instance default runs; your choice is kept and runs again if the model comes back, until you pick **Use instance default** or another model. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
 
 Over the API, `GET /api/user/preferences` returns `task_model_id` (`null` when you have no choice, or can no longer use it), `task_model_unavailable` (`true` when a choice is stored that can no longer run) and `instance_task_model_id` (the model that runs without one, `null` when no model can), and `PUT /api/user/preferences` with `{"task_model_id": "<model id>"}` sets it; `null` goes back to the instance default, and a model you can't use answers `400` (`invalid_model`). A [personal access token](/API/personal-access-tokens#scopes) reads these fields with `models:read` and sets the task model with `models:write`.
+
+## Clarifying questions
+
+When your answer depends on something neither the chat nor your sources settle (which quarter, who a document is for), the assistant can ask first instead of guessing. It asks at most three short questions, once per message, and only when the answer would really differ. Each question has a few options to pick, one or several, and **Something else…** for your own words, or a field to type in when only you know the answer (a name, an order number).
+
+- **Send answers** sends your picks, and the same answer carries on.
+- **Just answer** skips the questions: the assistant goes ahead with its best guess and says what it assumed.
+- You can also type a reply in the message box, which says **Or type your answer…** while the questions wait.
+
+Once answered, the questions fold into a short record of what you picked, which stays in the chat. Questions waiting for you show in [Activity](/Using/activity#now) under **Needs you**; they expire like a tool approval, after which they're kept as not answered.
+
+There's nothing to turn on: every chat and agent can ask. Where an agent can't show the questions as cards, such as the [chat widget](/Extensions/chat-widget#clarifying-questions), a chat bot or an API call, they arrive as a short numbered list and the user replies in a message; see [Clarifying questions](/API/agent-api#clarifying-questions) in the Agent API.
 
 ## Default tools in chats without an agent
 
