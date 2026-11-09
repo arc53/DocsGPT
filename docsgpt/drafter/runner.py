@@ -60,6 +60,9 @@ MAX_QUESTION_ROUNDS = 2
 TOOL_RESULT_CHARS = 16000
 #: Read tool calls run from one model answer; the rest are answered "not run".
 MAX_READ_CALLS = 5
+#: Most items, and characters of one, a ``read`` event lists.
+READ_EVENT_ITEMS = 10
+READ_ITEM_CHARS = 300
 
 COMMON_RULES = f"""You are the DocsGPT drafter. A user describes what they want, and you fill a form in the DocsGPT \
 app for them. You never save, publish or delete anything: the user reviews your draft in the form and saves it \
@@ -288,6 +291,7 @@ class _Turn:
             req, recipe, ws, tool_mode=tool_mode, allow_questions=self.allow_questions
         )
         self.corrections = 0
+        self.read_tools = recipe.offered_tools(req, ws)
 
     def finish(self, name: str, arguments: Any) -> list[dict]:
         """Validate a terminal answer and return its events.
@@ -345,7 +349,7 @@ class _Turn:
         if self.tool_mode:
             tools = _terminal_definitions(self.recipe, self.allow_questions)
             if not final:
-                tools = tool_definitions(self.recipe.read_tools) + tools
+                tools = tool_definitions(self.read_tools) + tools
         response = self.llm.gen(
             model=getattr(self.llm, "model_id", None) or self.model_id,
             messages=self.messages,
@@ -394,22 +398,35 @@ class _Turn:
             assistant["reasoning_content"] = reasoning
         return assistant
 
-    def _read(self, calls: list, reasoning: str) -> None:
+    def _read(self, calls: list, reasoning: str) -> list[dict]:
         """Run the read tools the model called and add their fenced results.
 
-        Only the recipe's read tools run, and at most :data:`MAX_READ_CALLS`
+        Only the turn's read tools run, and at most :data:`MAX_READ_CALLS`
         of one answer; every other call is answered without running anything.
+        A result's ``shown`` (what the panel lists as read, such as end users'
+        questions) becomes a ``read`` event and is left out of what the model
+        reads, which holds the same text already.
+
+        Returns:
+            The ``read`` events, one per result that showed something.
         """
         assistant = self._assistant_for(calls, reasoning)
         self.messages.append(assistant)
+        events: list[dict] = []
         for index, (call, entry) in enumerate(zip(calls, assistant["tool_calls"])):
             if index >= MAX_READ_CALLS:
                 content = f"Not run: at most {MAX_READ_CALLS} reads in one answer. Call it again if you still need it."
             else:
                 result = run_read_tool(call.name, self.ws, parse_arguments(call.arguments) or {},
-                                       offered=self.recipe.read_tools)
+                                       offered=self.read_tools)
+                shown = result.pop("shown", None) if isinstance(result, dict) else None
+                items = [clean_text(item, READ_ITEM_CHARS) for item in shown or [] if isinstance(item, str)]
+                items = [item for item in items if item][:READ_EVENT_ITEMS]
+                if items:
+                    events.append({"type": "read", "kind": "questions", "items": items})
                 content = f"{fence(f'{call.name} result', _capped(result))}\n{DATA_GUARD}"
             self.messages.append({"role": "tool", "tool_call_id": entry["id"], "content": content})
+        return events
 
     def run(self, should_stop: Callable[[], bool]) -> Iterator[dict]:
         """The model loop: read, then finish with questions or a proposal, correcting once.
@@ -419,7 +436,7 @@ class _Turn:
                 correction); True ends the turn quietly.
 
         Yields:
-            ``message``, ``questions``, ``proposal`` or ``error`` events.
+            ``read`` events as the model reads, then ``message``, ``questions``, ``proposal`` or ``error`` events.
         """
         problems: list[str] = []
         for step in range(MAX_LLM_CALLS):
@@ -454,7 +471,7 @@ class _Turn:
                     self._correct_calls(assistant, invalid.problems)
                     continue
             if calls:
-                self._read(calls, reasoning)
+                yield from self._read(calls, reasoning)
                 continue
             payload = parse_json_object(text)
             if payload is not None:
@@ -495,7 +512,8 @@ def run_draft(
     llm_factory: Optional[Callable[[str, str, str], Any]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> Iterator[dict]:
-    """Run one draft turn and yield its events (``status``, ``message``, ``questions``, ``proposal``, ``error``).
+    """Run one draft turn and yield its events (``status``, ``read``, ``message``, ``questions``, ``proposal``,
+    ``error``).
 
     The caller adds the closing ``end`` event. Nothing here needs a Flask
     request: it runs on the SSE pump thread.

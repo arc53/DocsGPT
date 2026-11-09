@@ -112,8 +112,8 @@ class DrafterStream(Resource):
         description=(
             "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, "
             "{\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a "
-            "valid one; absent when the server can't stop turns), status, message, questions, proposal, error, "
-            "and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an "
+            "valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, "
+            "{\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an "
             "error event in a 200 stream. Nothing is saved."
         ),
         responses={200: "text/event-stream of draft events", 401: "Not signed in"},

@@ -348,3 +348,46 @@ class TestReadTools:
         assert len(results) == MAX_READ_CALLS + 3, "every call gets an answer"
         assert sum("Be kind." in r for r in results) == MAX_READ_CALLS
         assert all("Not run" in r for r in results[MAX_READ_CALLS:])
+
+
+@pytest.mark.unit
+class TestReadEvents:
+    @pytest.fixture
+    def shown_tool(self, monkeypatch):
+        from docsgpt.drafter import read_tools
+
+        definition = {"type": "function", "function": {"name": "fake_read", "description": "Reads.",
+                                                       "parameters": {"type": "object", "properties": {}}}}
+        result = {"questions": ["Where is MRD-1?", "Can I return it?"], "shown": ["Where is MRD-1?",
+                                                                                   "Can I return it?"]}
+        monkeypatch.setitem(read_tools.READ_TOOLS, "fake_read", (definition, lambda ws, args: dict(result)))
+        _, agent = _request()
+        return dataclasses.replace(agent, read_tools=("fake_read",))
+
+    def test_a_read_that_shows_items_emits_a_read_event_and_the_model_reads_them_once(self, shown_tool):
+        fake = FakeLLM(calls(tool_call("fake_read", {})), calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake, recipe=shown_tool)
+        reads = [e for e in events if e["type"] == "read"]
+        assert reads == [{"type": "read", "kind": "questions", "items": ["Where is MRD-1?", "Can I return it?"]}]
+        assert events.index(reads[0]) < [e["type"] for e in events].index("proposal")
+        [result] = [m["content"] for m in fake.calls[1]["messages"] if m["role"] == "tool"]
+        assert "shown" not in result and result.count("Where is MRD-1?") == 1
+
+    def test_a_read_that_shows_nothing_emits_no_read_event(self):
+        fake = FakeLLM(calls(tool_call("get_prompt", {"prompt_id": "default"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake, ws=Workspace(prompt_texts={"default": "Be kind."}))
+        assert not [e for e in events if e["type"] == "read"]
+
+    def test_a_recipe_picks_its_read_tools_per_turn(self):
+        _, agent = _request()
+        recipe = dataclasses.replace(agent, read_tools=("get_prompt", "get_source"),
+                                     tools_for=lambda req, ws: ("get_prompt",))
+        fake = FakeLLM(calls(tool_call("get_source", {"source_id": "s1"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, ws=Workspace(sources=[{"id": "s1", "name": "Help"}], source_files={"s1": ["faq.md"]}),
+             recipe=recipe)
+        offered = [t["function"]["name"] for t in fake.calls[0]["tools"]]
+        assert "get_prompt" in offered and "get_source" not in offered
+        [result] = [m["content"] for m in fake.calls[1]["messages"] if m["role"] == "tool"]
+        assert "Unknown tool" in result

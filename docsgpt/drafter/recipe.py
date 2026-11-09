@@ -67,6 +67,9 @@ class Recipe:
         validate: Turns valid ``submit_proposal`` arguments into the ``proposal`` event payload:
             ``(arguments, request, workspace) -> dict``; raises :class:`ProposalInvalid` on a fixable problem.
         read_tools: Names of the read tools offered (``docsgpt/drafter/read_tools.py``).
+        tools_for: Picks the read tools a turn offers, ``(request, workspace) -> names``, when they depend on
+            what was loaded (the agent recipe offers its Insights reads only with Insights data); None offers
+            ``read_tools`` every turn.
         proposal_description: The ``submit_proposal`` tool description.
         questions: Whether the model may ask questions (``ask_user``) before proposing, or a
             ``(request) -> bool`` deciding it per turn (the prompt recipe asks only before writing).
@@ -82,6 +85,7 @@ class Recipe:
     proposal_schema: dict
     validate: Callable[[dict, DraftRequest, Workspace], dict]
     read_tools: tuple[str, ...] = field(default_factory=tuple)
+    tools_for: Optional[Callable[[DraftRequest, Workspace], tuple[str, ...]]] = None
     proposal_description: str = "Hand the finished draft to the user's form. Ends your turn."
     questions: Union[bool, Callable[[DraftRequest], bool]] = True
     reads_workspace: bool = True
@@ -89,6 +93,10 @@ class Recipe:
     def asks(self, req: DraftRequest) -> bool:
         """Whether this turn of ``req`` may ask questions at all."""
         return self.questions(req) if callable(self.questions) else self.questions
+
+    def offered_tools(self, req: DraftRequest, ws: Workspace) -> tuple[str, ...]:
+        """The read tools this turn of ``req`` offers, given its workspace."""
+        return self.tools_for(req, ws) if self.tools_for is not None else self.read_tools
 
 
 _RECIPES: dict[str, Recipe] = {}
