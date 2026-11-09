@@ -21,6 +21,12 @@ class TestToolVariables:
         content = VIEW + " {{ tools['search']['run'] }} {% if tools.notes %}x{% endif %}"
         assert tool_variables(content) == {("memory", "memory_view"), ("search", "run"), ("notes", None)}
 
+    def test_the_enabled_tools_list_is_not_a_tool(self):
+        # ``tools.enabled`` lists the tools attached this turn (the built-in prompts gate a line on it); it runs none.
+        content = VIEW + " {% if 'monitor' in tools.enabled %}x{% endif %}"
+        assert tool_variables(content) == {("memory", "memory_view")}
+        assert tool_variables_problem(content, VIEW, _req("Mention monitors")) is None
+
     def test_another_action_of_a_tool_already_used_is_added(self):
         content = VIEW + " {{ tools.memory.memory_create }}"
         assert tool_variables_problem(content, VIEW, _req("Make it friendlier")) is not None

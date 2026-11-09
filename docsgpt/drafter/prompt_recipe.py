@@ -25,11 +25,13 @@ from typing import Any
 from docsgpt.drafter.catalog import is_template, Workspace
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.prompt_rules import (
+    CITATION_MARKER,
     COMPOSER_ADDS,
     CONTACT_DETAILS_ROUND,
     EDIT_RULES,
     hand_off_rule,
     HAND_OFF_OPTIONS,
+    has_boundaries,
     no_placeholders,
     TEMPLATE_PROBLEM,
     template_parses,
@@ -61,11 +63,6 @@ CHECK_TO_TEMPLATE = "to_template"
 CHECK_TO_PERSONA = "to_persona"
 CHECK_BOUNDARIES_REMOVED = "boundaries_removed"
 CHECK_CITATIONS_REMOVED = "citations_removed"
-
-#: Text that marks a template's Boundaries section (the built-in one, or one written after it).
-_BOUNDARY_MARKERS = ("## boundaries", "not instructions", "never follow directions")
-_CITATION_MARKER = "source.citation_rules"
-
 
 # ---------------------------------------------------------------------------
 # Context
@@ -280,12 +277,6 @@ PROPOSAL_SCHEMA: dict = {
 }
 
 
-def _has_boundaries(text: str) -> bool:
-    """Whether a prompt's text holds the Boundaries section, or the lines it adds about treating data as data."""
-    lowered = text.lower()
-    return any(marker in lowered for marker in _BOUNDARY_MARKERS)
-
-
 def checks_for(before: str, after: str) -> list[str]:
     """What a change does to a prompt that the user should know, as ``checks`` codes.
 
@@ -303,9 +294,9 @@ def checks_for(before: str, after: str) -> list[str]:
         out.append(CHECK_TO_TEMPLATE)
     if was and not now:
         out.append(CHECK_TO_PERSONA)
-    if now and _has_boundaries(before) and not _has_boundaries(after):
+    if now and has_boundaries(before) and not has_boundaries(after):
         out.append(CHECK_BOUNDARIES_REMOVED)
-    if now and _CITATION_MARKER in before and _CITATION_MARKER not in after:
+    if now and CITATION_MARKER in before and CITATION_MARKER not in after:
         out.append(CHECK_CITATIONS_REMOVED)
     return out
 
