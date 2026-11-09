@@ -32,6 +32,11 @@ export type PromptReviewState = {
   acceptAll: () => void;
   /** Start stepping through the changes from the first one left. */
   reviewOneByOne: () => void;
+  /**
+   * Step to one change (a review finding's "Change n"), stepping on from it
+   * as "Review one by one" does. A change not under review does nothing.
+   */
+  goTo: (id: string) => void;
   /** Leave the review with the text as it was. */
   discard: () => void;
   /**
@@ -143,6 +148,14 @@ export function usePromptReview(
     );
   }, []);
 
+  const goTo = useCallback((id: string) => {
+    setReview((prev) =>
+      prev && prev.proposal.edits.some((edit) => edit.id === id)
+        ? { ...prev, current: id }
+        : prev,
+    );
+  }, []);
+
   const discard = useCallback(() => {
     if (!review) return;
     const before = review.before ?? review.original;
@@ -168,6 +181,7 @@ export function usePromptReview(
     decide,
     acceptAll,
     reviewOneByOne,
+    goTo,
     discard,
     finish,
     clear,

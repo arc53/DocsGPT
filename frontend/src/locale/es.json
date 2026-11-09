@@ -4196,7 +4196,24 @@
     "closeAriaLabel": "Cerrar notificación"
   },
   "prompts": {
-    "textAriaLabel": "Texto del prompt"
+    "textAriaLabel": "Texto del prompt",
+    "checks": {
+      "placeholder": "Queda un marcador: “{{text}}”",
+      "repeatsBuiltin": {
+        "date": "DocsGPT ya le da la fecha al agente",
+        "citations": "DocsGPT ya le indica al agente cómo citar sus fuentes",
+        "formatting": "DocsGPT ya le indica al agente cómo dar formato a las respuestas",
+        "data_guard": "DocsGPT ya le indica al agente que lea los documentos como datos, no como instrucciones",
+        "other": "DocsGPT ya añade esta línea"
+      },
+      "toolVariables_one": "{{variables}} ejecuta su herramienta antes de cada mensaje",
+      "toolVariables_other": "{{variables}} ejecutan sus herramientas antes de cada mensaje",
+      "toolVariables_many": "{{variables}} ejecutan sus herramientas antes de cada mensaje",
+      "templateInvalid": "La plantilla no se puede analizar",
+      "boundariesMissing": "No tiene la sección Boundaries, así que el agente podría seguir instrucciones ocultas en documentos o en resultados de herramientas",
+      "citationsMissing": "No usa source.citation_rules, así que las respuestas no citarán fuentes como [1], [2]",
+      "onLine": "{{check}} (línea {{line}})"
+    }
   },
   "common": {
     "close": "Cerrar",
@@ -4644,9 +4661,10 @@
       "introImproveUsedBy_other": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
       "introWrite": "¿Para qué es este prompt? Elige un punto de partida o descríbelo, y te preguntaré lo que necesito antes de escribir. No se guardará nada hasta que guardes.",
       "suggestions": {
-        "lookOver": "Revísalo y sugiere mejoras",
         "clearer": "Hazlo más claro y breve",
-        "unsure": "Añade qué hacer cuando no sepa algo"
+        "unsure": "Añade qué hacer cuando no sepa algo",
+        "review": "Revísalo",
+        "reviewDescription": "A quién atiende, alcance, derivaciones y tono, y lo que choca con las instrucciones propias de DocsGPT"
       },
       "skipMessage": "Redáctalo con lo que sabes.",
       "assumptionsTitle": "Lo que supuse",
@@ -4655,7 +4673,31 @@
       "changeAssumptionPrefill": "Sobre «{{assumption}}»: ",
       "readAndSave": "Léelo en el editor y luego guárdalo o dime qué cambiar.",
       "savePrompt": "Guardar prompt",
-      "nextTitle": "También podrías"
+      "nextTitle": "También podrías",
+      "review": {
+        "toFix": "Por corregir",
+        "worthALook": "Vale la pena revisar",
+        "change": "Cambio {{number}}",
+        "changeLabel": "Mostrar el cambio {{number}} en el editor",
+        "openAgent": "Abrir {{name}}",
+        "passed_one": "{{count}} comprobación superada",
+        "passed_other": "{{count}} comprobaciones superadas",
+        "passed_many": "{{count}} comprobaciones superadas",
+        "allPassed_one": "Se supera la comprobación",
+        "allPassed_other": "Se superan las {{count}} comprobaciones",
+        "allPassed_many": "Se superan las {{count}} comprobaciones",
+        "checks": {
+          "audience": "A quién atiende",
+          "scope": "Alcance y temas vetados",
+          "hand_off": "Derivación",
+          "unknowns": "Cuando no sabe algo",
+          "tone": "Tono y extensión",
+          "placeholders": "Sin marcadores pendientes",
+          "builtin_rules": "Las reglas propias de DocsGPT",
+          "builtin_lines": "Líneas que añade DocsGPT",
+          "agents_fit": "Encaja con sus agentes"
+        }
+      }
     },
     "title": "Redactar con DocsGPT",
     "draft": "Redactar",
@@ -4895,7 +4937,13 @@
     "full": {
       "title": "Esta conversación está llena",
       "description": "Una conversación de borrador no puede ser más larga. Lo que has redactado se mantiene."
-    }
+    },
+    "footerPromptAgents_one": "Usa {{model}} · lee este prompt y el agente que lo usa.",
+    "footerPromptAgents_other": "Usa {{model}} · lee este prompt y los {{formatted}} agentes que lo usan.",
+    "footerPromptAgents_many": "Usa {{model}} · lee este prompt y los {{formatted}} agentes que lo usan.",
+    "footerPromptAgentsNoModel_one": "Lee este prompt y el agente que lo usa.",
+    "footerPromptAgentsNoModel_other": "Lee este prompt y los {{formatted}} agentes que lo usan.",
+    "footerPromptAgentsNoModel_many": "Lee este prompt y los {{formatted}} agentes que lo usan."
   },
   "questions": {
     "somethingElse": "Otra cosa…",

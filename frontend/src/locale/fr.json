@@ -4196,7 +4196,24 @@
     "closeAriaLabel": "Fermer la notification"
   },
   "prompts": {
-    "textAriaLabel": "Texte du prompt"
+    "textAriaLabel": "Texte du prompt",
+    "checks": {
+      "placeholder": "Un espace réservé est resté : « {{text}} »",
+      "repeatsBuiltin": {
+        "date": "DocsGPT donne déjà la date à l’agent",
+        "citations": "DocsGPT indique déjà à l’agent comment citer ses sources",
+        "formatting": "DocsGPT indique déjà à l’agent comment mettre en forme ses réponses",
+        "data_guard": "DocsGPT indique déjà à l’agent de lire les documents comme des données, pas comme des instructions",
+        "other": "DocsGPT ajoute déjà cette ligne"
+      },
+      "toolVariables_one": "{{variables}} exécute son outil avant chaque message",
+      "toolVariables_other": "{{variables}} exécutent leurs outils avant chaque message",
+      "toolVariables_many": "{{variables}} exécutent leurs outils avant chaque message",
+      "templateInvalid": "Le modèle ne peut pas être analysé",
+      "boundariesMissing": "Il n’a pas de section Boundaries, donc l’agent risque de suivre des instructions cachées dans des documents ou des résultats d’outils",
+      "citationsMissing": "Il n’utilise pas source.citation_rules, donc les réponses ne citeront pas les sources en [1], [2]",
+      "onLine": "{{check}} (ligne {{line}})"
+    }
   },
   "common": {
     "close": "Fermer",
@@ -4644,9 +4661,10 @@
       "introImproveUsedBy_other": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agents l’utilisent, donc une modification enregistrée s’applique à tous.",
       "introWrite": "À quoi sert ce prompt ? Choisissez un point de départ ou décrivez-le, et je vous demanderai ce qu’il me faut avant d’écrire. Rien n’est enregistré tant que vous n’enregistrez pas.",
       "suggestions": {
-        "lookOver": "Relisez-le et proposez des corrections",
         "clearer": "Rendez-le plus clair et plus court",
-        "unsure": "Ajoutez quoi faire quand il ne sait pas"
+        "unsure": "Ajoutez quoi faire quand il ne sait pas",
+        "review": "Relisez-le",
+        "reviewDescription": "Public, périmètre, transferts et ton, et ce qui contredit les instructions propres à DocsGPT"
       },
       "skipMessage": "Rédigez-le avec ce que vous savez.",
       "assumptionsTitle": "Mes hypothèses",
@@ -4655,7 +4673,31 @@
       "changeAssumptionPrefill": "À propos de « {{assumption}} » : ",
       "readAndSave": "Relisez-le dans l’éditeur, puis enregistrez-le ou dites-moi quoi changer.",
       "savePrompt": "Enregistrer le prompt",
-      "nextTitle": "Vous pourriez aussi"
+      "nextTitle": "Vous pourriez aussi",
+      "review": {
+        "toFix": "À corriger",
+        "worthALook": "À regarder",
+        "change": "Modification {{number}}",
+        "changeLabel": "Afficher la modification {{number}} dans l’éditeur",
+        "openAgent": "Ouvrir {{name}}",
+        "passed_one": "{{count}} vérification réussie",
+        "passed_other": "{{count}} vérifications réussies",
+        "passed_many": "{{count}} vérifications réussies",
+        "allPassed_one": "La vérification est réussie",
+        "allPassed_other": "Les {{count}} vérifications sont réussies",
+        "allPassed_many": "Les {{count}} vérifications sont réussies",
+        "checks": {
+          "audience": "À qui il s’adresse",
+          "scope": "Périmètre et sujets exclus",
+          "hand_off": "Transfert",
+          "unknowns": "Quand il ne sait pas",
+          "tone": "Ton et longueur",
+          "placeholders": "Aucun espace réservé oublié",
+          "builtin_rules": "Les règles propres à DocsGPT",
+          "builtin_lines": "Lignes que DocsGPT ajoute",
+          "agents_fit": "Convient à ses agents"
+        }
+      }
     },
     "title": "Rédiger avec DocsGPT",
     "draft": "Rédiger",
@@ -4895,7 +4937,13 @@
     "full": {
       "title": "Cette conversation est pleine",
       "description": "Une conversation de brouillon ne peut pas être plus longue. Ce que vous avez rédigé reste."
-    }
+    },
+    "footerPromptAgents_one": "Utilise {{model}} · lit ce prompt et l’agent qui l’utilise.",
+    "footerPromptAgents_other": "Utilise {{model}} · lit ce prompt et les {{formatted}} agents qui l’utilisent.",
+    "footerPromptAgents_many": "Utilise {{model}} · lit ce prompt et les {{formatted}} agents qui l’utilisent.",
+    "footerPromptAgentsNoModel_one": "Lit ce prompt et l’agent qui l’utilise.",
+    "footerPromptAgentsNoModel_other": "Lit ce prompt et les {{formatted}} agents qui l’utilisent.",
+    "footerPromptAgentsNoModel_many": "Lit ce prompt et les {{formatted}} agents qui l’utilisent."
   },
   "questions": {
     "somethingElse": "Autre chose…",

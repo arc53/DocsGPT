@@ -1,7 +1,8 @@
 /**
- * The prompt recipe's proposals and the pure helpers its review uses: which
- * mode the drawer runs in, reading a proposal off the stream, applying the
- * accepted edits and splitting the text into the diff the review shows.
+ * The prompt recipe's proposals (improve, review and write) and the pure
+ * helpers its review uses: which mode the drawer runs in, reading a
+ * proposal off the stream, applying the accepted edits and splitting the
+ * text into the diff the review shows.
  */
 
 /** One server-checked change: `find` occurs once in the text it was made for. */
@@ -47,7 +48,55 @@ export type PromptWriteProposal = {
   suggestions: string[];
 };
 
-export type PromptProposal = PromptImproveProposal | PromptWriteProposal;
+/** The review's checklist, in its order (the server's check codes). */
+export const REVIEW_CHECKS = [
+  'audience',
+  'scope',
+  'hand_off',
+  'unknowns',
+  'tone',
+  'placeholders',
+  'builtin_rules',
+  'builtin_lines',
+  'agents_fit',
+] as const;
+
+export type ReviewCheck = (typeof REVIEW_CHECKS)[number];
+
+/**
+ * One thing a review found. The model's carry their own `title` and
+ * `detail`; the server's own checks (`source: "server"`) come with `code`
+ * and `text` only, and the client words them.
+ */
+export type ReviewFinding = {
+  id: string;
+  check: string;
+  /** `fix` goes under To fix, `look` under Worth a look. */
+  severity: 'fix' | 'look';
+  title: string;
+  detail: string;
+  /** The id of the proposal's edit that makes the fix. */
+  edit: string | null;
+  /** A detail the fix needs from the user: the ask bar's prefill. */
+  ask: { label: string; prefill: string } | null;
+  /** The agent using the prompt that the finding is about. */
+  agent: { id: string; name: string } | null;
+  source: 'model' | 'server';
+  /** A server finding's `prompt_checks` code. */
+  code: string | null;
+  /** A server finding's text (the placeholder, the variables). */
+  text: string | null;
+};
+
+export type PromptReviewProposal = Omit<PromptImproveProposal, 'mode'> & {
+  mode: 'review';
+  findings: ReviewFinding[];
+  /** The checks with no finding, in the checklist's order. */
+  passed: ReviewCheck[];
+};
+
+export type PromptProposal =
+  PromptImproveProposal | PromptReviewProposal | PromptWriteProposal;
 
 /**
  * `improve` for a prompt with text, `write` for an empty one, saved or new
@@ -89,6 +138,62 @@ export function readPromptEdits(raw: unknown): PromptEdit[] {
     }));
 }
 
+const record = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const text = (value: unknown): string => (isString(value) ? value : '');
+
+/**
+ * A review's `findings`, malformed ones dropped: each needs an id and a
+ * severity, and a title unless the server words it by `code`. An `edit`
+ * that names no edit of the proposal, a malformed `ask` or `agent`, is
+ * dropped from its finding.
+ */
+function readFindings(raw: unknown, edits: PromptEdit[]): ReviewFinding[] {
+  if (!Array.isArray(raw)) return [];
+  const editIds = new Set(edits.map((edit) => edit.id));
+  return raw.flatMap((item): ReviewFinding[] => {
+    const value = record(item);
+    if (!value || !isString(value.id)) return [];
+    if (value.severity !== 'fix' && value.severity !== 'look') return [];
+    const source = value.source === 'server' ? 'server' : 'model';
+    const code = isString(value.code) && value.code ? value.code : null;
+    const title = text(value.title).trim();
+    if (source === 'server' ? !code : !title) return [];
+    const ask = record(value.ask);
+    const agent = record(value.agent);
+    return [
+      {
+        id: value.id,
+        check: text(value.check),
+        severity: value.severity,
+        title,
+        detail: text(value.detail).trim(),
+        edit:
+          isString(value.edit) && editIds.has(value.edit) ? value.edit : null,
+        ask:
+          ask && isString(ask.label) && ask.label.trim()
+            ? { label: ask.label, prefill: text(ask.prefill) }
+            : null,
+        agent:
+          agent && isString(agent.id) && isString(agent.name) && agent.name
+            ? { id: agent.id, name: agent.name }
+            : null,
+        source,
+        code,
+        text: isString(value.text) && value.text ? value.text : null,
+      },
+    ];
+  });
+}
+
+const passedChecks = (raw: unknown): ReviewCheck[] => {
+  const given = new Set(strings(raw));
+  return REVIEW_CHECKS.filter((check) => given.has(check));
+};
+
 /** A proposal's `checks`, unknown codes dropped. */
 export const readPromptChecks = (raw: unknown): PromptCheck[] => checks(raw);
 
@@ -110,6 +215,19 @@ export function readPromptProposal(raw: unknown): PromptProposal | null {
       mode: 'improve',
       message,
       edits: readPromptEdits(value.edits),
+      warnings: strings(value.warnings),
+      checks: checks(value.checks),
+      suggestions: strings(value.suggestions),
+    };
+  }
+  if (value.mode === 'review') {
+    const edits = readPromptEdits(value.edits);
+    return {
+      mode: 'review',
+      message,
+      edits,
+      findings: readFindings(value.findings, edits),
+      passed: passedChecks(value.passed),
       warnings: strings(value.warnings),
       checks: checks(value.checks),
       suggestions: strings(value.suggestions),

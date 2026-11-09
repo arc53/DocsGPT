@@ -1,8 +1,8 @@
 import {
   CircleHelp,
   Lightbulb,
+  ListChecks,
   type LucideIcon,
-  ScanSearch,
   WrapText,
 } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
@@ -12,17 +12,18 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { SectionHeader } from '../components/ui/section-header';
 import { DraftPanel, type DraftPanelHelpers } from '../drafter/DraftPanel';
-import { readPromptProposal } from '../drafter/promptDraft';
+import { promptDiffSegments, readPromptProposal } from '../drafter/promptDraft';
 import { DRAFTER_STARTERS } from '../drafter/starters';
 import type { PromptDrafter } from '../drafter/usePromptDrafter';
 import SuggestionRows, { suggestionIconClass } from '../hero/SuggestionRows';
 import { formatCount } from '../utils/dateTimeUtils';
+import { PromptReviewFindings } from './PromptReviewFindings';
 
-// The first screen's rows. Improve's send their text; "Look it over" asks
-// for an improvement with no particular change in mind. Write's are starting
-// points: each sends its title and its id, and the drafter asks the rest.
+// The first screen's rows. Improve's send their text; Review it sends its
+// text as a review (the checklist), with a second line saying what it
+// checks. Write's are starting points: each sends its title and its id, and
+// the drafter asks the rest.
 const IMPROVE_SUGGESTIONS: { key: string; Icon: LucideIcon }[] = [
-  { key: 'lookOver', Icon: ScanSearch },
   { key: 'clearer', Icon: WrapText },
   { key: 'unsure', Icon: CircleHelp },
 ];
@@ -48,13 +49,20 @@ type PromptDraftPanelProps = {
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
   /** Save prompt under a written draft. */
   save: PromptDraftSave;
+  /**
+   * Opens an agent a review finding is about ("Open Fleet Desk"), through
+   * the host's leave guard; without it a finding has no such link.
+   */
+  onOpenAgent?: (agent: { id: string; name: string }) => void;
 };
 
 /**
  * The prompt view's docked drawer: the DraftPanel running the prompt
- * recipe. Its greeting and rows follow the mode: a new prompt starts from
- * one of three starting points (or a description), and the drafter may ask
- * first, with Skip to draft at once. Each result shows its message, a
+ * recipe. Its greeting and rows follow the mode: a prompt with text leads
+ * with Review it (the checklist, `mode: "review"`), whose result lists what
+ * to fix and what's worth a look (PromptReviewFindings); a new prompt starts
+ * from one of three starting points (or a description), and the drafter may
+ * ask first, with Skip to draft at once. Each result shows its message, a
  * written prompt's reason, "Check before you save" warnings and the guesses
  * it made (I assumed, each with Change, which puts it in the ask bar); the
  * latest written prompt asks to be read and offers Save prompt, and the
@@ -73,6 +81,7 @@ export function PromptDraftPanel({
   modelName,
   onNavigate,
   save,
+  onOpenAgent,
 }: PromptDraftPanelProps) {
   const { t } = useTranslation();
   const usage = { count: usedBy, formatted: formatCount(usedBy) };
@@ -94,11 +103,23 @@ export function PromptDraftPanel({
             onSelect: () => drafter.start(key, text),
           };
         })
-      : IMPROVE_SUGGESTIONS.map(({ key, Icon }) => ({
-          key,
-          icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
-          text: t(`drafter.prompt.suggestions.${key}`),
-        }));
+      : [
+          {
+            key: 'review',
+            icon: (
+              <ListChecks className={suggestionIconClass} aria-hidden="true" />
+            ),
+            text: t('drafter.prompt.suggestions.review'),
+            description: t('drafter.prompt.suggestions.reviewDescription'),
+            onSelect: () =>
+              drafter.startReview(t('drafter.prompt.suggestions.review')),
+          },
+          ...IMPROVE_SUGGESTIONS.map(({ key, Icon }) => ({
+            key,
+            icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
+            text: t(`drafter.prompt.suggestions.${key}`),
+          })),
+        ];
 
   const renderProposal = (
     raw: unknown,
@@ -108,8 +129,18 @@ export function PromptDraftPanel({
     const proposal = readPromptProposal(raw);
     if (!proposal) return null;
     const { review, session } = drafter;
-    const reviewing = latest && review !== null && proposal.mode === 'improve';
+    const reviewing = latest && review !== null && proposal.mode !== 'write';
     const written = latest && proposal.mode === 'write';
+    // "Change n" goes to a change still under review, numbered as the
+    // editor numbers it.
+    const changeNumbers: Record<string, number> = {};
+    if (reviewing && review)
+      promptDiffSegments(review.original, review.proposal.edits).forEach(
+        (segment) => {
+          if (segment.kind === 'change')
+            changeNumbers[segment.edit.id] = segment.number;
+        },
+      );
     // Next changes wait for an open review to end: sending one would end it.
     const next =
       latest && review === null && !session.streaming
@@ -131,6 +162,18 @@ export function PromptDraftPanel({
               interpolation: { escapeValue: false },
             }),
           )
+        }
+        findings={
+          proposal.mode === 'review' ? (
+            <PromptReviewFindings
+              findings={proposal.findings}
+              passed={proposal.passed}
+              changeNumbers={changeNumbers}
+              onChange={drafter.goTo}
+              onAsk={compose}
+              onOpenAgent={onOpenAgent}
+            />
+          ) : undefined
         }
         next={next}
         onNext={(text) => session.send(text)}
@@ -216,8 +259,8 @@ export function PromptDraftPanel({
 /**
  * One result in the drawer, in ProposalSummary's shapes: the message and a
  * written prompt's reason as paragraphs, what to check before saving as a
- * warning Alert, the guesses made (each with Change), the turn's actions,
- * and the next changes to send as suggestion rows last.
+ * warning Alert, the guesses made (each with Change), a review's findings,
+ * the turn's actions, and the next changes to send as suggestion rows last.
  */
 function PromptResult({
   message,
@@ -225,6 +268,7 @@ function PromptResult({
   warnings,
   assumptions,
   onChangeAssumption,
+  findings,
   next,
   onNext,
   actions,
@@ -234,6 +278,7 @@ function PromptResult({
   warnings: string[];
   assumptions: string[];
   onChangeAssumption: (assumption: string) => void;
+  findings?: ReactNode;
   next: string[];
   onNext: (text: string) => void;
   actions?: ReactNode;
@@ -293,6 +338,7 @@ function PromptResult({
           </ul>
         </div>
       )}
+      {findings && <div className="pt-1">{findings}</div>}
       {actions && (
         <div className="flex flex-wrap items-center gap-2 pt-1">{actions}</div>
       )}

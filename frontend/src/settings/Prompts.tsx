@@ -48,6 +48,7 @@ import { PromptDraftPanel } from '../prompts/PromptDraftPanel';
 import { PromptView } from '../prompts/PromptView';
 import { type PromptDetail, usePromptDetail } from '../prompts/usePromptDetail';
 import type { AppDispatch } from '../store';
+import { agentChatPath, agentEditPath } from '../agents/paths';
 import { agentUseCount } from '../utils/resourceUsage';
 import UsedByAgents from './UsedByAgents';
 import usePromptActions from './usePromptActions';
@@ -514,6 +515,17 @@ function PromptDetailPage({
 
   const back = () => (detail.dirty ? setLeaving(true) : detail.close());
 
+  // A review finding's agent opens as the used-by list opens it: its editor
+  // for one the caller may edit, else its chat.
+  const openAgent = ({ id }: { id: string }) => {
+    const agent = saved?.used_by?.agents.find((item) => item.id === id);
+    leaveGuard.leaveTo(
+      agent?.can_edit
+        ? agentEditPath(id, agent.agent_type === 'workflow')
+        : agentChatPath(id),
+    );
+  };
+
   const draftedSlot = (field: 'name' | 'content') => ({
     drafted: drafter.drafted.isDrafted(field),
     onUndo: () => drafter.drafted.undo(field),
@@ -652,6 +664,7 @@ function PromptDetailPage({
           usedBy={usedBy}
           modelName={drafterConfig?.model?.display_name ?? null}
           onNavigate={leaveGuard.onNavigate()}
+          onOpenAgent={openAgent}
           save={{
             onSave: () => void detail.save(),
             // The header's Save, under the written draft.

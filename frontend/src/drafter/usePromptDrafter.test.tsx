@@ -16,6 +16,7 @@ const stream = vi.hoisted(() => ({
 }));
 vi.mock('./drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./drafterApi')>()),
+  cancelDrafterTurn: async () => undefined,
   streamDrafter: async (
     request: DrafterRequest,
     _token: string | null,
@@ -174,6 +175,43 @@ describe('usePromptDrafter', () => {
       kind: 'message',
       text: 'drafter.agent.prompt.editsStale',
     });
+  });
+
+  it('sends a review in review mode, a Retry too, and the next message in improve', async () => {
+    stream.scripts = [
+      [{ type: 'error', code: 'model_error' }, { type: 'end' }],
+      [
+        {
+          type: 'proposal',
+          proposal: {
+            ...IMPROVE,
+            mode: 'review',
+            findings: [],
+            passed: ['tone'],
+          },
+        },
+        { type: 'end' },
+      ],
+      [{ type: 'end' }],
+    ];
+    await act(async () => current.drafter!.startReview('Review it'));
+    expect(stream.requests[0].context).toMatchObject({
+      mode: 'review',
+      prompt: { id: 'p1', content: ORIGINAL },
+    });
+    await act(async () => current.drafter!.session.retry());
+    expect(stream.requests[1].context).toMatchObject({ mode: 'review' });
+    // A review's edits are reviewed in the editor like an improvement's.
+    expect(
+      current.drafter!.review!.proposal.edits.map((edit) => edit.id),
+    ).toEqual(['e1', 'e2']);
+    await act(async () => current.drafter!.goTo('e2'));
+    expect(current.drafter!.review!.current).toBe('e2');
+    // A change not under review moves nothing.
+    await act(async () => current.drafter!.goTo('e9'));
+    expect(current.drafter!.review!.current).toBe('e2');
+    await act(async () => current.drafter!.session.send('Now be formal'));
+    expect(stream.requests[2].context).toMatchObject({ mode: 'improve' });
   });
 
   const WRITE = {

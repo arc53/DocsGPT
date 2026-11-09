@@ -4081,7 +4081,23 @@
     "closeAriaLabel": "Benachrichtigung schließen"
   },
   "prompts": {
-    "textAriaLabel": "Prompt-Text"
+    "textAriaLabel": "Prompt-Text",
+    "checks": {
+      "placeholder": "Ein Platzhalter ist übrig: „{{text}}“",
+      "repeatsBuiltin": {
+        "date": "DocsGPT gibt dem Agenten das Datum bereits",
+        "citations": "DocsGPT sagt dem Agenten bereits, wie er Quellen zitiert",
+        "formatting": "DocsGPT sagt dem Agenten bereits, wie er Antworten formatiert",
+        "data_guard": "DocsGPT sagt dem Agenten bereits, Dokumente als Daten und nicht als Anweisungen zu lesen",
+        "other": "Das fügt DocsGPT bereits selbst hinzu"
+      },
+      "toolVariables_one": "{{variables}} ruft sein Tool vor jeder Nachricht auf",
+      "toolVariables_other": "{{variables}} rufen ihre Tools vor jeder Nachricht auf",
+      "templateInvalid": "Die Vorlage lässt sich nicht ausführen",
+      "boundariesMissing": "Es fehlt der Abschnitt „Boundaries“, daher könnte der Agent Anweisungen befolgen, die in Dokumenten oder Tool-Ergebnissen versteckt sind",
+      "citationsMissing": "Es nutzt source.citation_rules nicht, daher zitieren Antworten keine Quellen als [1], [2]",
+      "onLine": "{{check}} (Zeile {{line}})"
+    }
   },
   "common": {
     "close": "Schließen",
@@ -4510,14 +4526,15 @@
       "acceptAll": "Alle übernehmen",
       "reviewOneByOne": "Einzeln prüfen",
       "discard": "Verwerfen",
-      "introImprove": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. Gespeichert wird erst, wenn du speicherst.",
-      "introImproveUsedBy_one": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agent nutzt ihn, eine gespeicherte Änderung gilt also auch dort.",
-      "introImproveUsedBy_other": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agenten nutzen ihn, eine gespeicherte Änderung gilt also für alle.",
+      "introImprove": "Ich kann diesen Prompt prüfen oder etwas Bestimmtes ändern. Gespeichert wird erst, wenn du speicherst.",
+      "introImproveUsedBy_one": "Ich kann diesen Prompt prüfen oder etwas Bestimmtes ändern. {{formatted}} Agent nutzt ihn, eine gespeicherte Änderung gilt also auch dort.",
+      "introImproveUsedBy_other": "Ich kann diesen Prompt prüfen oder etwas Bestimmtes ändern. {{formatted}} Agenten nutzen ihn, eine gespeicherte Änderung gilt also für alle.",
       "introWrite": "Wofür ist dieser Prompt? Wähle einen Ausgangspunkt oder beschreibe ihn, und ich frage nach, was ich brauche, bevor ich schreibe. Gespeichert wird erst, wenn du speicherst.",
       "suggestions": {
-        "lookOver": "Durchsehen und Verbesserungen vorschlagen",
         "clearer": "Mach ihn klarer und kürzer",
-        "unsure": "Ergänze, was er tun soll, wenn er etwas nicht weiß"
+        "unsure": "Ergänze, was er tun soll, wenn er etwas nicht weiß",
+        "review": "Prüfen",
+        "reviewDescription": "Für wen, Umfang, Übergaben und Ton, und was den eigenen Anweisungen von DocsGPT widerspricht"
       },
       "skipMessage": "Entwirf ihn mit dem, was du weißt.",
       "assumptionsTitle": "Meine Annahmen",
@@ -4526,7 +4543,29 @@
       "changeAssumptionPrefill": "Zu „{{assumption}}“: ",
       "readAndSave": "Lies ihn im Editor durch, dann speichere ihn oder sag mir, was ich ändern soll.",
       "savePrompt": "Prompt speichern",
-      "nextTitle": "Du könntest auch"
+      "nextTitle": "Du könntest auch",
+      "review": {
+        "toFix": "Zu beheben",
+        "worthALook": "Einen Blick wert",
+        "change": "Änderung {{number}}",
+        "changeLabel": "Änderung {{number}} im Editor zeigen",
+        "openAgent": "{{name}} öffnen",
+        "passed_one": "{{count}} Prüfung bestanden",
+        "passed_other": "{{count}} Prüfungen bestanden",
+        "allPassed_one": "Die {{count}} Prüfung ist bestanden",
+        "allPassed_other": "Alle {{count}} Prüfungen bestanden",
+        "checks": {
+          "audience": "Für wen er da ist",
+          "scope": "Umfang und Tabus",
+          "hand_off": "Übergabe",
+          "unknowns": "Wenn er etwas nicht weiß",
+          "tone": "Ton und Länge",
+          "placeholders": "Keine Platzhalter übrig",
+          "builtin_rules": "Die eigenen Regeln von DocsGPT",
+          "builtin_lines": "Zeilen, die DocsGPT selbst hinzufügt",
+          "agents_fit": "Passt zu seinen Agenten"
+        }
+      }
     },
     "title": "Mit DocsGPT entwerfen",
     "draft": "Entwerfen",
@@ -4741,7 +4780,11 @@
     "full": {
       "title": "Diese Unterhaltung ist voll",
       "description": "Länger kann eine Entwurfsunterhaltung nicht werden. Was du entworfen hast, bleibt."
-    }
+    },
+    "footerPromptAgents_one": "Verwendet {{model}} · liest diesen Prompt und den Agenten, der ihn nutzt.",
+    "footerPromptAgents_other": "Verwendet {{model}} · liest diesen Prompt und die {{formatted}} Agenten, die ihn nutzen.",
+    "footerPromptAgentsNoModel_one": "Liest diesen Prompt und den Agenten, der ihn nutzt.",
+    "footerPromptAgentsNoModel_other": "Liest diesen Prompt und die {{formatted}} Agenten, die ihn nutzen."
   },
   "questions": {
     "somethingElse": "Etwas anderes…",

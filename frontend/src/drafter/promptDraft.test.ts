@@ -74,6 +74,114 @@ describe('readPromptProposal', () => {
     });
   });
 
+  it('reads a review, dropping malformed findings and unknown checks', () => {
+    const finding = {
+      id: 'f1',
+      check: 'placeholders',
+      severity: 'fix',
+      title: 'A placeholder is left',
+      detail: 'Customers would see the brackets.',
+      edit: null,
+      ask: { label: 'Add the address', prefill: 'The support email is ' },
+      agent: null,
+      source: 'model',
+      code: null,
+      text: null,
+    };
+    const proposal = readPromptProposal({
+      mode: 'review',
+      message: '1 thing to fix.',
+      edits: [EDITS[0]],
+      findings: [
+        finding,
+        // An edit the proposal doesn't have, and a malformed agent, drop.
+        {
+          ...finding,
+          id: 'f2',
+          check: 'builtin_lines',
+          severity: 'look',
+          edit: 'e9',
+          ask: { prefill: 'x' },
+          agent: { id: 'a1' },
+        },
+        {
+          ...finding,
+          id: 'f3',
+          edit: 'e1',
+          ask: null,
+          agent: { id: 'a1', name: 'Fleet Desk' },
+        },
+        // The server's own check: no title, worded by code.
+        {
+          id: 'f4',
+          check: 'placeholders',
+          severity: 'fix',
+          title: '',
+          source: 'server',
+          code: 'placeholder',
+          text: '[x]',
+        },
+        // No severity, no title, a server finding without a code, not an object.
+        { ...finding, id: 'f5', severity: 'later' },
+        { ...finding, id: 'f6', title: ' ' },
+        { id: 'f7', severity: 'fix', source: 'server' },
+        'f8',
+      ],
+      passed: ['tone', 'audience', 'nonsense', 3],
+      warnings: [],
+      checks: ['to_template'],
+      suggestions: [],
+    });
+    expect(proposal).toMatchObject({
+      mode: 'review',
+      message: '1 thing to fix.',
+      edits: [EDITS[0]],
+      // In the checklist's order.
+      passed: ['audience', 'tone'],
+      checks: ['to_template'],
+    });
+    if (proposal?.mode !== 'review') throw new Error('not a review');
+    expect(proposal.findings.map((f) => f.id)).toEqual([
+      'f1',
+      'f2',
+      'f3',
+      'f4',
+    ]);
+    expect(proposal.findings[0]).toEqual(finding);
+    expect(proposal.findings[1]).toMatchObject({
+      edit: null,
+      ask: null,
+      agent: null,
+    });
+    expect(proposal.findings[2]).toMatchObject({
+      edit: 'e1',
+      agent: { id: 'a1', name: 'Fleet Desk' },
+    });
+    expect(proposal.findings[3]).toMatchObject({
+      source: 'server',
+      code: 'placeholder',
+      text: '[x]',
+      title: '',
+      detail: '',
+      edit: null,
+    });
+  });
+
+  it('reads a review with nothing found', () => {
+    expect(
+      readPromptProposal({ mode: 'review', message: 'All good.' }),
+    ).toEqual({
+      mode: 'review',
+      message: 'All good.',
+      edits: [],
+      findings: [],
+      passed: [],
+      warnings: [],
+      checks: [],
+      suggestions: [],
+    });
+  });
+
   it('rejects anything else', () => {
     expect(readPromptProposal(null)).toBeNull();
     expect(readPromptProposal({ mode: 'write', name: 'x' })).toBeNull();

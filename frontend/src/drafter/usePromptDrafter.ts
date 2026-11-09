@@ -28,6 +28,11 @@ export type PromptDrafter = {
   start: (starter: DrafterStarter, text: string) => void;
   /** Send `text` and draft from here on without asking questions. */
   skipQuestions: (text: string) => void;
+  /**
+   * Send `text` as a review (`mode: "review"`, the checklist); the messages
+   * after it go back to the drawer's own mode.
+   */
+  startReview: (text: string) => void;
   review: PromptReview | null;
   drafted: DraftedFields<'name' | 'content'>;
   /** Accept or reject one change (null clears the choice). */
@@ -35,6 +40,8 @@ export type PromptDrafter = {
   acceptAll: () => void;
   /** Start stepping through the changes from the first one left. */
   reviewOneByOne: () => void;
+  /** Step the open review to one change (a finding's "Change n"). */
+  goTo: (id: string) => void;
   /** Leave the review with the text as it was. */
   discard: () => void;
   /**
@@ -48,11 +55,12 @@ export type PromptDrafter = {
 
 /**
  * The prompt drafter (the prompt view's drawer in Settings › Prompts): it
- * sends the prompt with each request, turns
- * an improve proposal into a review whose accepted changes write into the
- * text as they are chosen (those that fit the text as the server read it; a
- * message says so when none do), and fills a written prompt's text (and its name
- * when empty), each marked Drafted with undo. A request while a review is
+ * sends the prompt with each request (a Review it turn in `review` mode, the
+ * rest in the drawer's own), turns an improve or review proposal into a
+ * review whose accepted changes write into the text as they are chosen
+ * (those that fit the text as the server read it; a message says so when
+ * none do), and fills a written prompt's text (and its name when empty),
+ * each marked Drafted with undo. A request while a review is
  * open ends the review with the choices so far. Nothing is saved: the
  * host's Save still does that.
  *
@@ -75,6 +83,9 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   // The starting point picked and a Skip on questions hold for the session.
   const starter = useRef<DrafterStarter | null>(null);
   const skipped = useRef(false);
+  // The running turn is a review: a Retry runs it as one again, and the
+  // next message goes back to the drawer's mode.
+  const reviewing = useRef(false);
 
   const values = useMemo(
     () => ({ name: options.name, content: options.content }),
@@ -105,7 +116,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     reviewsRef.current.finish(content);
     sent.current = content;
     return {
-      mode,
+      mode: reviewing.current ? 'review' : mode,
       prompt: { id: promptId, name, content },
       starter: starter.current,
       skip_questions: skipped.current,
@@ -145,7 +156,15 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   });
   sessionRef.current = session;
 
-  const send = session.send;
+  // Every message but a review's goes in the drawer's own mode.
+  const sessionSend = session.send;
+  const send = useCallback<DrafterSession['send']>(
+    (text, sendOptions) => {
+      reviewing.current = false;
+      sessionSend(text, sendOptions);
+    },
+    [sessionSend],
+  );
   const start = useCallback(
     (picked: DrafterStarter, text: string) => {
       starter.current = picked;
@@ -160,31 +179,45 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     },
     [send],
   );
+  const startReview = useCallback(
+    (text: string) => {
+      // Up before the send: the turn reads its context as it starts.
+      reviewing.current = true;
+      sessionSend(text);
+    },
+    [sessionSend],
+  );
+  // The drawer sends through this one too (its ask bar, rows and answers).
+  const drawerSession = useMemo(() => ({ ...session, send }), [session, send]);
 
   const resetSession = session.reset;
   const startOver = useCallback(() => {
     starter.current = null;
     skipped.current = false;
+    reviewing.current = false;
     resetSession();
     reviewsRef.current.finish(latest.current.content);
   }, [resetSession]);
   const reset = useCallback(() => {
     starter.current = null;
     skipped.current = false;
+    reviewing.current = false;
     resetSession();
     reviewsRef.current.clear();
     draftedRef.current.clear();
   }, [resetSession]);
 
   return {
-    session,
+    session: drawerSession,
     start,
     skipQuestions,
+    startReview,
     review: reviews.review,
     drafted,
     decide: reviews.decide,
     acceptAll: reviews.acceptAll,
     reviewOneByOne: reviews.reviewOneByOne,
+    goTo: reviews.goTo,
     discard: reviews.discard,
     startOver,
     reset,

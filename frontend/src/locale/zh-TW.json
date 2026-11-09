@@ -4061,7 +4061,23 @@
     "closeAriaLabel": "關閉通知"
   },
   "prompts": {
-    "textAriaLabel": "提示文字"
+    "textAriaLabel": "提示文字",
+    "checks": {
+      "placeholder": "還留有佔位符：「{{text}}」",
+      "repeatsBuiltin": {
+        "date": "DocsGPT 已經會告訴代理日期",
+        "citations": "DocsGPT 已經會告訴代理如何引用來源",
+        "formatting": "DocsGPT 已經會告訴代理如何排版回答",
+        "data_guard": "DocsGPT 已經會告訴代理把文件當作資料而不是指令",
+        "other": "DocsGPT 已經會加入這一行"
+      },
+      "toolVariables_one": "{{variables}} 會在每則訊息之前執行它的工具",
+      "toolVariables_other": "{{variables}} 會在每則訊息之前執行它們的工具",
+      "templateInvalid": "範本無法解析",
+      "boundariesMissing": "它沒有 Boundaries 區段，代理可能會執行隱藏在文件或工具結果中的指令",
+      "citationsMissing": "它沒有使用 source.citation_rules，所以回答不會以 [1]、[2] 的形式引用來源",
+      "onLine": "{{check}}（第 {{line}} 行）"
+    }
   },
   "common": {
     "close": "關閉",
@@ -4490,14 +4506,15 @@
       "acceptAll": "全部接受",
       "reviewOneByOne": "逐項檢視",
       "discard": "捨棄",
-      "introImprove": "我可以檢查這個提示詞，或修改某個具體的地方。在你儲存之前不會儲存任何內容。",
-      "introImproveUsedBy_one": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更也會套用到它。",
-      "introImproveUsedBy_other": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更會套用到所有這些代理。",
+      "introImprove": "我可以審閱這個提示詞，或修改某個具體的地方。在你儲存之前不會儲存任何內容。",
+      "introImproveUsedBy_one": "我可以審閱這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更也會套用到它。",
+      "introImproveUsedBy_other": "我可以審閱這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更會套用到所有這些代理。",
       "introWrite": "這個提示詞是做什麼用的？選擇一個起點或描述一下，我會在寫之前問清需要的資訊。在你儲存之前不會儲存任何內容。",
       "suggestions": {
-        "lookOver": "檢查一下並提出修改建議",
         "clearer": "寫得更清楚、更簡短",
-        "unsure": "補充不知道答案時該怎麼做"
+        "unsure": "補充不知道答案時該怎麼做",
+        "review": "審閱一下",
+        "reviewDescription": "服務對象、範圍、轉真人和語氣，以及與 DocsGPT 自身指令衝突的地方"
       },
       "skipMessage": "就用你已知的資訊起草吧。",
       "assumptionsTitle": "我的假設",
@@ -4506,7 +4523,29 @@
       "changeAssumptionPrefill": "關於「{{assumption}}」：",
       "readAndSave": "請在編輯器中通讀，然後儲存，或告訴我要改什麼。",
       "savePrompt": "儲存提示詞",
-      "nextTitle": "你還可以"
+      "nextTitle": "你還可以",
+      "review": {
+        "toFix": "需要修正",
+        "worthALook": "值得一看",
+        "change": "變更 {{number}}",
+        "changeLabel": "在編輯器中顯示變更 {{number}}",
+        "openAgent": "開啟 {{name}}",
+        "passed_one": "{{count}} 項檢查通過",
+        "passed_other": "{{count}} 項檢查通過",
+        "allPassed_one": "全部 {{count}} 項檢查通過",
+        "allPassed_other": "全部 {{count}} 項檢查通過",
+        "checks": {
+          "audience": "服務對象",
+          "scope": "範圍與禁區",
+          "hand_off": "轉真人",
+          "unknowns": "不知道答案時",
+          "tone": "語氣和篇幅",
+          "placeholders": "沒有遺留佔位符",
+          "builtin_rules": "DocsGPT 自身的規則",
+          "builtin_lines": "DocsGPT 會加入的內容",
+          "agents_fit": "適合使用它的代理"
+        }
+      }
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",
@@ -4707,7 +4746,11 @@
     "full": {
       "title": "此對話已滿",
       "description": "草擬對話已達最大長度。已草擬的內容會保留。"
-    }
+    },
+    "footerPromptAgents_one": "使用 {{model}} · 讀取此提示詞和使用它的代理。",
+    "footerPromptAgents_other": "使用 {{model}} · 讀取此提示詞和使用它的 {{formatted}} 個代理。",
+    "footerPromptAgentsNoModel_one": "讀取此提示詞和使用它的代理。",
+    "footerPromptAgentsNoModel_other": "讀取此提示詞和使用它的 {{formatted}} 個代理。"
   },
   "questions": {
     "somethingElse": "其他…",

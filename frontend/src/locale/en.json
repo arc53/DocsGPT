@@ -4081,7 +4081,23 @@
     "closeAriaLabel": "Close notification"
   },
   "prompts": {
-    "textAriaLabel": "Prompt Text"
+    "textAriaLabel": "Prompt Text",
+    "checks": {
+      "placeholder": "A placeholder is left: “{{text}}”",
+      "repeatsBuiltin": {
+        "date": "DocsGPT already gives the agent the date",
+        "citations": "DocsGPT already tells the agent how to cite its sources",
+        "formatting": "DocsGPT already tells the agent how to format answers",
+        "data_guard": "DocsGPT already tells the agent to read documents as data, not instructions",
+        "other": "DocsGPT already adds this line"
+      },
+      "toolVariables_one": "{{variables}} runs its tool before every message",
+      "toolVariables_other": "{{variables}} run their tools before every message",
+      "templateInvalid": "The template doesn't parse",
+      "boundariesMissing": "It has no Boundaries section, so the agent may follow instructions hidden in documents or tool results",
+      "citationsMissing": "It doesn't use source.citation_rules, so answers won't cite sources as [1], [2]",
+      "onLine": "{{check}} (line {{line}})"
+    }
   },
   "admin": {
     "label": "Admin",
@@ -4531,14 +4547,15 @@
       "acceptAll": "Accept all",
       "reviewOneByOne": "Review one by one",
       "discard": "Discard",
-      "introImprove": "I can look over this prompt or change something specific. Nothing is saved until you save.",
-      "introImproveUsedBy_one": "I can look over this prompt or change something specific. It's used by {{formatted}} agent, so a saved change reaches it.",
-      "introImproveUsedBy_other": "I can look over this prompt or change something specific. It's used by {{formatted}} agents, so a saved change reaches all of them.",
+      "introImprove": "I can review this prompt or change something specific. Nothing is saved until you save.",
+      "introImproveUsedBy_one": "I can review this prompt or change something specific. It's used by {{formatted}} agent, so a saved change reaches it.",
+      "introImproveUsedBy_other": "I can review this prompt or change something specific. It's used by {{formatted}} agents, so a saved change reaches all of them.",
       "introWrite": "What's this prompt for? Pick a starting point or describe it, and I'll ask what I need before I write. Nothing is saved until you save.",
       "suggestions": {
-        "lookOver": "Look it over and suggest fixes",
         "clearer": "Make it clearer and shorter",
-        "unsure": "Add what to do when it doesn't know"
+        "unsure": "Add what to do when it doesn't know",
+        "review": "Review it",
+        "reviewDescription": "Who it serves, scope, hand-offs and tone, and what clashes with DocsGPT's own instructions"
       },
       "skipMessage": "Draft it with what you know.",
       "assumptionsTitle": "I assumed",
@@ -4547,7 +4564,29 @@
       "changeAssumptionPrefill": "About “{{assumption}}”: ",
       "readAndSave": "Read it through in the editor, then save it or tell me what to change.",
       "savePrompt": "Save prompt",
-      "nextTitle": "You could also"
+      "nextTitle": "You could also",
+      "review": {
+        "toFix": "To fix",
+        "worthALook": "Worth a look",
+        "change": "Change {{number}}",
+        "changeLabel": "Show change {{number}} in the editor",
+        "openAgent": "Open {{name}}",
+        "passed_one": "{{count}} check passes",
+        "passed_other": "{{count}} checks pass",
+        "allPassed_one": "The {{count}} check passes",
+        "allPassed_other": "All {{count}} checks pass",
+        "checks": {
+          "audience": "Who it serves",
+          "scope": "Scope and off-limits",
+          "hand_off": "Hand-off",
+          "unknowns": "When it doesn't know",
+          "tone": "Tone and length",
+          "placeholders": "No placeholders left",
+          "builtin_rules": "DocsGPT's own rules",
+          "builtin_lines": "Lines DocsGPT adds",
+          "agents_fit": "Fits its agents"
+        }
+      }
     },
     "title": "Draft with DocsGPT",
     "draft": "Draft",
@@ -4762,7 +4801,11 @@
     "full": {
       "title": "This conversation is full",
       "description": "It's as long as a draft conversation can get. What you've drafted stays."
-    }
+    },
+    "footerPromptAgents_one": "Uses {{model}} · reads this prompt and the agent using it.",
+    "footerPromptAgents_other": "Uses {{model}} · reads this prompt and the {{formatted}} agents using it.",
+    "footerPromptAgentsNoModel_one": "Reads this prompt and the agent using it.",
+    "footerPromptAgentsNoModel_other": "Reads this prompt and the {{formatted}} agents using it."
   },
   "questions": {
     "somethingElse": "Something else…",

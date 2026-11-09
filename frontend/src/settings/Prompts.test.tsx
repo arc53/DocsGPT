@@ -154,6 +154,11 @@ function Where() {
   return <div data-testid="where">{location.search}</div>;
 }
 
+function Elsewhere() {
+  const location = useLocation();
+  return <div data-testid="elsewhere">{location.pathname}</div>;
+}
+
 describe('Prompts page', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -206,6 +211,7 @@ describe('Prompts page', () => {
                   </>
                 }
               />
+              <Route path="*" element={<Elsewhere />} />
             </Routes>
           </MemoryRouter>
         </Provider>,
@@ -956,7 +962,10 @@ describe('Prompts page', () => {
       Array.from(panel()!.querySelectorAll('[data-suggestion]')).map((b) =>
         b.getAttribute('data-suggestion'),
       ),
-    ).toEqual(['lookOver', 'clearer', 'unsure']);
+    ).toEqual(['review', 'clearer', 'unsure']);
+    expect(panel()!.querySelector('[data-slot="list-row"]')!.textContent).toBe(
+      'drafter.prompt.suggestions.reviewdrafter.prompt.suggestions.reviewDescription',
+    );
   });
 
   it('offers Write on an empty new prompt, with three starting points', async () => {
@@ -1124,14 +1133,12 @@ describe('Prompts page', () => {
     await openCard('Vendor checks');
     await click(button('drafter.improve', view()!)!);
     await click(
-      panel()!.querySelector<HTMLButtonElement>(
-        '[data-suggestion="lookOver"]',
-      )!,
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
     );
     expect(drafter.requests[0]).toMatchObject({
       recipe: 'prompt',
       messages: [
-        { role: 'user', content: 'drafter.prompt.suggestions.lookOver' },
+        { role: 'user', content: 'drafter.prompt.suggestions.clearer' },
       ],
       context: {
         mode: 'improve',
@@ -1166,6 +1173,198 @@ describe('Prompts page', () => {
     expect(textArea()!.value).toBe('You check every vendor.');
     expect(button('drafter.prompt.acceptAll', panel()!)).toBeUndefined();
     expect(save().disabled).toBe(false);
+  });
+
+  const REVIEW = {
+    mode: 'review',
+    message: '2 things to fix and 1 worth a look.',
+    edits: [
+      {
+        id: 'e1',
+        find: 'You check vendors.',
+        replace: 'You check every vendor.',
+        reason: 'Clearer.',
+      },
+    ],
+    findings: [
+      {
+        id: 'f1',
+        check: 'placeholders',
+        severity: 'fix',
+        title: 'A placeholder is left in the hand-off',
+        detail: 'Customers would see the brackets.',
+        edit: null,
+        ask: { label: 'Add the address', prefill: 'The support email is ' },
+        agent: null,
+        source: 'model',
+      },
+      {
+        id: 'f2',
+        check: 'scope',
+        severity: 'fix',
+        title: 'It is vague about vendors',
+        detail: '',
+        edit: 'e1',
+        ask: null,
+        agent: null,
+        source: 'model',
+      },
+      {
+        id: 'f3',
+        check: 'agents_fit',
+        severity: 'look',
+        title: 'Procurement has no knowledge',
+        detail: '',
+        edit: null,
+        ask: null,
+        agent: { id: 'a2', name: 'Procurement' },
+        source: 'model',
+      },
+      {
+        id: 'f4',
+        check: 'builtin_rules',
+        severity: 'look',
+        title: '',
+        detail: '',
+        edit: null,
+        ask: null,
+        agent: null,
+        source: 'server',
+        code: 'boundaries_missing',
+        text: null,
+      },
+    ],
+    passed: ['audience', 'unknowns', 'tone'],
+    warnings: [],
+    checks: [],
+    suggestions: [],
+  };
+
+  it('reviews the prompt against the checklist and lists what it found', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [proposal(REVIEW), [{ type: 'end' }]];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="review"]')!,
+    );
+    expect(drafter.requests[0]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'drafter.prompt.suggestions.review' },
+      ],
+      context: { mode: 'review', prompt: { id: 'p-own' } },
+    });
+    const findings = panel()!.querySelector(
+      '[data-slot="prompt-review-findings"]',
+    )!;
+    const group = (severity: string) =>
+      findings.querySelector<HTMLElement>(`[data-severity="${severity}"]`)!;
+    expect(group('fix').querySelector('h3')!.textContent).toBe(
+      'drafter.prompt.review.toFix2',
+    );
+    expect(group('look').querySelector('h3')!.textContent).toBe(
+      'drafter.prompt.review.worthALook2',
+    );
+    const row = (id: string) =>
+      findings.querySelector<HTMLElement>(`[data-finding="${id}"]`)!;
+    expect(row('f1').textContent).toContain(
+      'A placeholder is left in the hand-offCustomers would see the brackets.',
+    );
+    // The server's own check is worded by its code.
+    expect(row('f4').textContent).toBe('prompts.checks.boundariesMissing');
+    // The changes are in the editor; "Change 1" steps its review there.
+    expect(view()!.querySelector('[data-slot="prompt-review"]')).not.toBeNull();
+    await click(
+      button('drafter.prompt.review.change:{"number":1}', row('f2'))!,
+    );
+    expect(
+      view()!
+        .querySelector('[data-edit-id="e1"]')!
+        .getAttribute('data-current'),
+    ).toBe('true');
+    // An ask puts its prefill in the ask bar.
+    await click(button('Add the address', row('f1'))!);
+    const composer = panel()!.querySelector<HTMLTextAreaElement>('textarea')!;
+    expect(composer.value).toBe('The support email is ');
+    // The passing checks fold away.
+    const passed = panel()!.querySelector(
+      '[data-slot="prompt-review-passed"]',
+    )!;
+    const toggle = passed.querySelector<HTMLButtonElement>('button')!;
+    expect(toggle.textContent).toBe('drafter.prompt.review.passed:{"count":3}');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(passed.querySelectorAll('li')).toHaveLength(3);
+    // Accept all, one by one and Discard, as for an improvement.
+    expect(button('drafter.prompt.acceptAll', panel()!)).toBeDefined();
+    // The next message goes back to improve.
+    await type(composer, 'The support email is help@example.com');
+    await act(async () => {
+      composer.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    expect(drafter.requests[1].context).toMatchObject({ mode: 'improve' });
+  });
+
+  it('opens an agent a finding is about through the leave guard', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      proposal({
+        ...REVIEW,
+        edits: [],
+        findings: [REVIEW.findings[2]],
+        passed: ['audience'],
+      }),
+    ];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="review"]')!,
+    );
+    // No change under review: no Accept all.
+    expect(button('drafter.prompt.acceptAll', panel()!)).toBeUndefined();
+    await click(
+      button(
+        'drafter.prompt.review.openAgent:{"name":"Procurement"}',
+        panel()!,
+      )!,
+    );
+    // A chat path: the caller may not edit Procurement.
+    expect(
+      container.querySelector('[data-testid="elsewhere"]')!.textContent,
+    ).toBe('/agents/a2/c/new');
+  });
+
+  it('says all checks pass for a clean prompt', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      proposal({
+        ...REVIEW,
+        edits: [],
+        findings: [],
+        passed: ['audience', 'tone'],
+      }),
+    ];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="review"]')!,
+    );
+    expect(
+      panel()!.querySelector(
+        '[data-slot="prompt-review-findings"] [data-severity]',
+      ),
+    ).toBeNull();
+    expect(
+      panel()!.querySelector('[data-slot="prompt-review-passed"] button')!
+        .textContent,
+    ).toBe('drafter.prompt.review.allPassed:{"count":2}');
   });
 
   it('ends an open review with the choices so far when a new request goes', async () => {
@@ -1219,9 +1418,7 @@ describe('Prompts page', () => {
     await openCard('Vendor checks');
     await click(button('drafter.improve', view()!)!);
     await click(
-      panel()!.querySelector<HTMLButtonElement>(
-        '[data-suggestion="lookOver"]',
-      )!,
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
     );
     const choose = (id: string, action: string) =>
       click(
@@ -1253,9 +1450,7 @@ describe('Prompts page', () => {
       );
     expect(startOver()).toBeNull();
     await click(
-      panel()!.querySelector<HTMLButtonElement>(
-        '[data-suggestion="lookOver"]',
-      )!,
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
     );
     expect(panel()!.textContent).toContain('It reads well.');
     await click(startOver()!);

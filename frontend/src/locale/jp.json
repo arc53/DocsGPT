@@ -4061,7 +4061,23 @@
     "closeAriaLabel": "通知を閉じる"
   },
   "prompts": {
-    "textAriaLabel": "プロンプトテキスト"
+    "textAriaLabel": "プロンプトテキスト",
+    "checks": {
+      "placeholder": "プレースホルダーが残っています：「{{text}}」",
+      "repeatsBuiltin": {
+        "date": "DocsGPT はすでにエージェントに日付を渡しています",
+        "citations": "DocsGPT はすでにエージェントに出典の示し方を伝えています",
+        "formatting": "DocsGPT はすでにエージェントに回答の書式を伝えています",
+        "data_guard": "DocsGPT はすでにエージェントに、ドキュメントを指示ではなくデータとして読むよう伝えています",
+        "other": "この行は DocsGPT がすでに追加しています"
+      },
+      "toolVariables_one": "{{variables}} はメッセージごとに事前にツールを実行します",
+      "toolVariables_other": "{{variables}} はメッセージごとに事前にツールを実行します",
+      "templateInvalid": "テンプレートを解析できません",
+      "boundariesMissing": "Boundaries セクションがないため、エージェントがドキュメントやツールの結果に隠れた指示に従うおそれがあります",
+      "citationsMissing": "source.citation_rules を使っていないため、回答で出典が [1]、[2] のように示されません",
+      "onLine": "{{check}}（{{line}} 行目）"
+    }
   },
   "common": {
     "close": "閉じる",
@@ -4490,14 +4506,15 @@
       "acceptAll": "すべて採用",
       "reviewOneByOne": "1 件ずつ確認",
       "discard": "破棄",
-      "introImprove": "このプロンプトを見直したり、特定の箇所を変更したりできます。保存するまで何も保存されません。",
-      "introImproveUsedBy_one": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はそちらにも反映されます。",
-      "introImproveUsedBy_other": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はすべてに反映されます。",
+      "introImprove": "このプロンプトをレビューしたり、特定の箇所を変更したりできます。保存するまで何も保存されません。",
+      "introImproveUsedBy_one": "このプロンプトをレビューしたり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はそちらにも反映されます。",
+      "introImproveUsedBy_other": "このプロンプトをレビューしたり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はすべてに反映されます。",
       "introWrite": "このプロンプトの用途は？ 出発点を選ぶか説明してください。書く前に必要なことを質問します。保存するまで何も保存されません。",
       "suggestions": {
-        "lookOver": "見直して修正点を提案して",
         "clearer": "もっと明確で短くして",
-        "unsure": "わからない時の対応を追加して"
+        "unsure": "わからない時の対応を追加して",
+        "review": "レビューして",
+        "reviewDescription": "対象、範囲、引き継ぎ、トーン、そして DocsGPT 自身の指示と矛盾する点"
       },
       "skipMessage": "わかっている内容で下書きしてください。",
       "assumptionsTitle": "想定したこと",
@@ -4506,7 +4523,29 @@
       "changeAssumptionPrefill": "「{{assumption}}」について: ",
       "readAndSave": "エディターで内容を確認し、保存するか、変更点を教えてください。",
       "savePrompt": "プロンプトを保存",
-      "nextTitle": "ほかにも"
+      "nextTitle": "ほかにも",
+      "review": {
+        "toFix": "修正が必要",
+        "worthALook": "確認推奨",
+        "change": "変更 {{number}}",
+        "changeLabel": "エディターで変更 {{number}} を表示",
+        "openAgent": "{{name}} を開く",
+        "passed_one": "{{count}} 件のチェックに合格",
+        "passed_other": "{{count}} 件のチェックに合格",
+        "allPassed_one": "{{count}} 件のチェックすべてに合格",
+        "allPassed_other": "{{count}} 件のチェックすべてに合格",
+        "checks": {
+          "audience": "対象ユーザー",
+          "scope": "範囲と対象外",
+          "hand_off": "引き継ぎ",
+          "unknowns": "わからないとき",
+          "tone": "トーンと長さ",
+          "placeholders": "プレースホルダーの残りなし",
+          "builtin_rules": "DocsGPT 自身のルール",
+          "builtin_lines": "DocsGPT が追加する行",
+          "agents_fit": "使用中のエージェントに合う"
+        }
+      }
     },
     "title": "DocsGPT で下書き",
     "draft": "下書き",
@@ -4707,7 +4746,11 @@
     "full": {
       "title": "この会話は上限に達しました",
       "description": "下書きの会話はこれ以上長くできません。下書きした内容はそのまま残ります。"
-    }
+    },
+    "footerPromptAgents_one": "{{model}} を使用 · このプロンプトと、それを使うエージェントを読み取ります。",
+    "footerPromptAgents_other": "{{model}} を使用 · このプロンプトと、それを使う {{formatted}} 個のエージェントを読み取ります。",
+    "footerPromptAgentsNoModel_one": "このプロンプトと、それを使うエージェントを読み取ります。",
+    "footerPromptAgentsNoModel_other": "このプロンプトと、それを使う {{formatted}} 個のエージェントを読み取ります。"
   },
   "questions": {
     "somethingElse": "その他…",

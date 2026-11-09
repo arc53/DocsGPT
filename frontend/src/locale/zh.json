@@ -4059,7 +4059,23 @@
     "closeAriaLabel": "关闭通知"
   },
   "prompts": {
-    "textAriaLabel": "提示文本"
+    "textAriaLabel": "提示文本",
+    "checks": {
+      "placeholder": "还留有占位符：“{{text}}”",
+      "repeatsBuiltin": {
+        "date": "DocsGPT 已经会告诉智能体日期",
+        "citations": "DocsGPT 已经会告诉智能体如何引用来源",
+        "formatting": "DocsGPT 已经会告诉智能体如何排版回答",
+        "data_guard": "DocsGPT 已经会告诉智能体把文档当作数据而不是指令",
+        "other": "DocsGPT 已经会添加这一行"
+      },
+      "toolVariables_one": "{{variables}} 会在每条消息之前运行它的工具",
+      "toolVariables_other": "{{variables}} 会在每条消息之前运行它们的工具",
+      "templateInvalid": "模板无法解析",
+      "boundariesMissing": "它没有 Boundaries 部分，智能体可能会执行隐藏在文档或工具结果中的指令",
+      "citationsMissing": "它没有使用 source.citation_rules，所以回答不会以 [1]、[2] 的形式引用来源",
+      "onLine": "{{check}}（第 {{line}} 行）"
+    }
   },
   "common": {
     "close": "关闭",
@@ -4488,14 +4504,15 @@
       "acceptAll": "全部接受",
       "reviewOneByOne": "逐条查看",
       "discard": "放弃",
-      "introImprove": "我可以检查这个提示词，或修改某个具体的地方。在你保存之前不会保存任何内容。",
-      "introImproveUsedBy_one": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改也会作用于它。",
-      "introImproveUsedBy_other": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改会作用于所有这些智能体。",
+      "introImprove": "我可以审阅这个提示词，或修改某个具体的地方。在你保存之前不会保存任何内容。",
+      "introImproveUsedBy_one": "我可以审阅这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改也会作用于它。",
+      "introImproveUsedBy_other": "我可以审阅这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改会作用于所有这些智能体。",
       "introWrite": "这个提示词是做什么用的？选择一个起点或描述一下，我会在写之前问清需要的信息。在你保存之前不会保存任何内容。",
       "suggestions": {
-        "lookOver": "检查一下并提出修改建议",
         "clearer": "写得更清楚、更简短",
-        "unsure": "补充不知道答案时该怎么做"
+        "unsure": "补充不知道答案时该怎么做",
+        "review": "审阅一下",
+        "reviewDescription": "服务对象、范围、转人工和语气，以及与 DocsGPT 自身指令冲突的地方"
       },
       "skipMessage": "就用你已知的信息起草吧。",
       "assumptionsTitle": "我的假设",
@@ -4504,7 +4521,29 @@
       "changeAssumptionPrefill": "关于“{{assumption}}”：",
       "readAndSave": "请在编辑器中通读，然后保存，或告诉我要改什么。",
       "savePrompt": "保存提示词",
-      "nextTitle": "你还可以"
+      "nextTitle": "你还可以",
+      "review": {
+        "toFix": "需要修正",
+        "worthALook": "值得一看",
+        "change": "更改 {{number}}",
+        "changeLabel": "在编辑器中显示更改 {{number}}",
+        "openAgent": "打开 {{name}}",
+        "passed_one": "{{count}} 项检查通过",
+        "passed_other": "{{count}} 项检查通过",
+        "allPassed_one": "全部 {{count}} 项检查通过",
+        "allPassed_other": "全部 {{count}} 项检查通过",
+        "checks": {
+          "audience": "服务对象",
+          "scope": "范围与禁区",
+          "hand_off": "转人工",
+          "unknowns": "不知道答案时",
+          "tone": "语气和篇幅",
+          "placeholders": "没有遗留占位符",
+          "builtin_rules": "DocsGPT 自身的规则",
+          "builtin_lines": "DocsGPT 会添加的内容",
+          "agents_fit": "适合使用它的智能体"
+        }
+      }
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",
@@ -4705,7 +4744,11 @@
     "full": {
       "title": "此对话已满",
       "description": "起草对话已达到最大长度。已起草的内容会保留。"
-    }
+    },
+    "footerPromptAgents_one": "使用 {{model}} · 读取此提示词和使用它的智能体。",
+    "footerPromptAgents_other": "使用 {{model}} · 读取此提示词和使用它的 {{formatted}} 个智能体。",
+    "footerPromptAgentsNoModel_one": "读取此提示词和使用它的智能体。",
+    "footerPromptAgentsNoModel_other": "读取此提示词和使用它的 {{formatted}} 个智能体。"
   },
   "questions": {
     "somethingElse": "其他…",
