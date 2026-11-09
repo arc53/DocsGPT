@@ -6,10 +6,18 @@ from celery.signals import beat_init
 from celery.utils.imports import symbol_by_name
 from redbeat.schedulers import RedBeatScheduler
 from redis.exceptions import ConnectionError as RedisConnectionError
-from redis.exceptions import LockError, LockNotOwnedError, ReadOnlyError
+from redis.exceptions import LockError, LockNotOwnedError, MasterDownError, ReadOnlyError
 
 from docsgpt import beat_scheduler
 from docsgpt.beat_scheduler import DocsGPTScheduler, standby_seconds
+
+
+# What Redis answers while it is down, failing over, or a replica has lost its primary.
+REDIS_OUTAGES = [
+    RedisConnectionError("Connection refused"),
+    ReadOnlyError("You can't write against a read only replica."),
+    MasterDownError("MASTERDOWN Link with MASTER is down and replica-serve-stale-data is set to 'no'."),
+]
 
 
 class FakeRedis:
@@ -123,13 +131,15 @@ def test_a_lock_left_by_a_dead_beat_is_taken_once_it_expires(scheduler, redis, m
 
 
 @pytest.mark.unit
-def test_redis_going_away_during_a_tick_stands_by(scheduler, monkeypatch):
+@pytest.mark.parametrize("outage", REDIS_OUTAGES, ids=lambda exc: type(exc).__name__)
+def test_redis_going_away_during_a_tick_stands_by(scheduler, monkeypatch, outage):
     scheduler.tick()
 
     def down(seconds):
-        raise RedisConnectionError("Connection refused")
+        raise outage
 
     monkeypatch.setattr(scheduler.lock, "extend", down)
+    _schedule_must_not_be_read(monkeypatch)
 
     assert scheduler.tick() == 15
     assert scheduler.holding_lock  # kept: the next tick extends it, or finds it lost and takes it back
@@ -149,13 +159,14 @@ def test_a_read_only_replica_during_failover_stands_by(scheduler, redis, monkeyp
 
 
 @pytest.mark.unit
-def test_setup_schedule_waits_for_redis(scheduler, monkeypatch):
+@pytest.mark.parametrize("outage", REDIS_OUTAGES, ids=lambda exc: type(exc).__name__)
+def test_setup_schedule_waits_for_redis(scheduler, monkeypatch, outage):
     calls = []
 
     def setup(self):
         calls.append(1)
         if len(calls) < 3:
-            raise RedisConnectionError("Connection refused")
+            raise outage
 
     sleeps = []
     monkeypatch.setattr(RedBeatScheduler, "setup_schedule", setup)
