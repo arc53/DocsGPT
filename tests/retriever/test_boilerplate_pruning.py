@@ -891,24 +891,36 @@ class TestCompressingRetrieverIntegration:
             assert "``python -m pytest``" in res9[0]["text"]
 
         # 10. Increased indentation (e.g. 4 spaces increased to 8 spaces) must fall back
+        # Uses an unrelated query so rejection is driven strictly by indented code check, not query-line check
         orig_increased = "Home > API\n    print(1)\nNext page"
         bad_increased = "Home > API\n        print(1)\nNext page"
         mock_module_10 = Mock(compress_for_turn=Mock(return_value=(bad_increased, Mock())))
         docs10 = [{"id": "10", "text": orig_increased}]
+        stats10: dict = {}
         with patch.dict("sys.modules", {"supercompress": mock_module_10}):
-            res10 = compress_retrieved_chunks(docs10, query="print")
-            assert "    print(1)" in res10[0]["text"]
-            assert "        print(1)" not in res10[0]["text"]
+            with patch("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", return_value=False):
+                res10 = compress_retrieved_chunks(docs10, query="unrelated topic", stats=stats10)
+                mock_module_10.compress_for_turn.assert_called_once()
+                assert stats10.get("safeguard_fallback") == 1
+                assert stats10.get("neural_success") == 0
+                assert "    print(1)" in res10[0]["text"]
+                assert "        print(1)" not in res10[0]["text"]
 
         # 11. Changed content after an embedded backtick (e.g. ``foo`bar`` changed to ``foo`baz``) must fall back
+        # Uses an unrelated query so rejection is driven strictly by inline code delimiter check, not query-line check
         orig_embedded = "Home > API\nUse ``foo`bar`` syntax.\nNext page"
         bad_embedded = "Home > API\nUse ``foo`baz`` syntax.\nNext page"
         mock_module_11 = Mock(compress_for_turn=Mock(return_value=(bad_embedded, Mock())))
         docs11 = [{"id": "11", "text": orig_embedded}]
+        stats11: dict = {}
         with patch.dict("sys.modules", {"supercompress": mock_module_11}):
-            res11 = compress_retrieved_chunks(docs11, query="syntax")
-            assert "``foo`bar``" in res11[0]["text"]
-            assert "``foo`baz``" not in res11[0]["text"]
+            with patch("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", return_value=False):
+                res11 = compress_retrieved_chunks(docs11, query="unrelated topic", stats=stats11)
+                mock_module_11.compress_for_turn.assert_called_once()
+                assert stats11.get("safeguard_fallback") == 1
+                assert stats11.get("neural_success") == 0
+                assert "``foo`bar``" in res11[0]["text"]
+                assert "``foo`baz``" not in res11[0]["text"]
 
     def test_supercompress_installed_api_when_present(self, monkeypatch):
         """Tests real installed SuperCompress API if present in environment, ensuring it reaches safeguards."""
