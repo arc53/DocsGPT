@@ -146,6 +146,20 @@ def test_redis_going_away_during_a_tick_stands_by(scheduler, monkeypatch, outage
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("outage", REDIS_OUTAGES, ids=lambda exc: type(exc).__name__)
+def test_redis_going_away_while_reading_the_schedule_stands_by(scheduler, monkeypatch, outage):
+    scheduler.tick()
+
+    def down(self):
+        raise outage
+
+    monkeypatch.setattr(RedBeatScheduler, "schedule", property(down))
+
+    assert scheduler.tick() == 15
+    assert scheduler.holding_lock
+
+
+@pytest.mark.unit
 def test_a_read_only_replica_during_failover_stands_by(scheduler, redis, monkeypatch):
     def read_only(blocking=True):
         raise ReadOnlyError("You can't write against a read only replica.")
@@ -165,7 +179,7 @@ def test_setup_schedule_waits_for_redis(scheduler, monkeypatch, outage):
 
     def setup(self):
         calls.append(1)
-        if len(calls) < 3:
+        if len(calls) < 8:
             raise outage
 
     sleeps = []
@@ -174,8 +188,8 @@ def test_setup_schedule_waits_for_redis(scheduler, monkeypatch, outage):
 
     scheduler.setup_schedule()
 
-    assert len(calls) == 3
-    assert sleeps == [1, 2]
+    assert len(calls) == 8
+    assert sleeps == [1, 2, 4, 8, 16, 30, 30]  # doubling, capped at STARTUP_RETRY_MAX_SECONDS
 
 
 @pytest.mark.unit
