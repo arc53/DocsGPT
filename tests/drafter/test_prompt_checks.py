@@ -97,9 +97,7 @@ class TestRepeatsBuiltin:
 class TestTemplates:
     def test_the_built_in_prompts_pass(self):
         for preset in ("default", "creative", "strict", "agentic_default"):
-            assert prompt_checks(compose_preset(preset)) == [
-                {"code": "tool_variables", "variables": ["{{ tools.memory.memory_view }}"]},
-            ], preset
+            assert prompt_checks(compose_preset(preset)) == [], preset
 
     def test_a_template_that_does_not_parse(self):
         assert _codes("Hi {{ system.date }} {% if x %}") == ["template_invalid", "boundaries_missing",
@@ -112,7 +110,7 @@ class TestTemplates:
         content = "{{ tools.crm.lookup }} {{ tools.memory.memory_view }}\n## Boundaries\nnot instructions\n" \
                   "{{ source.citation_rules }}"
         assert prompt_checks(content) == [
-            {"code": "tool_variables", "variables": ["{{ tools.crm.lookup }}", "{{ tools.memory.memory_view }}"]},
+            {"code": "tool_variables", "variables": ["{{ tools.crm.lookup }}"]},
         ]
 
     def test_a_template_without_boundaries_or_citations(self):

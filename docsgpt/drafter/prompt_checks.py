@@ -13,6 +13,7 @@ ordinary prose ("the delivery date") teaches people to ignore it.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Optional
 
 from docsgpt.drafter.catalog import is_template
@@ -38,6 +39,16 @@ TOOL_VARIABLES = "tool_variables"
 BOUNDARIES_MISSING = "boundaries_missing"
 CITATIONS_MISSING = "citations_missing"
 CODES = (PLACEHOLDER, REPEATS_BUILTIN, TEMPLATE_INVALID, TOOL_VARIABLES, BOUNDARIES_MISSING, CITATIONS_MISSING)
+
+
+
+@lru_cache(maxsize=1)
+def _builtin_tool_variables() -> frozenset:
+    """The tool variables DocsGPT's own prompts use: a copy of a built-in keeps them, so they aren't news."""
+    from docsgpt.prompts.composer import compose_preset, PRESET_VARIANTS
+
+    return frozenset(usage for preset in PRESET_VARIANTS for usage in tool_variables(compose_preset(preset)))
+
 
 # Text no blank is looked for in: template syntax, and code (inline or fenced) the prompt shows as an example.
 _MASKED = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}|```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`\n]+`", re.S)
@@ -185,7 +196,7 @@ def prompt_checks(content: str) -> list[dict]:
           a persona line DocsGPT already adds;
         - ``{"code": "template_invalid"}``: the template syntax doesn't parse;
         - ``{"code": "tool_variables", "variables": ["{{ tools.x.y }}"]}``: tools a template runs before every
-          message (informational);
+          message (informational), leaving out the ones DocsGPT's built-in prompts use;
         - ``{"code": "boundaries_missing"}`` / ``{"code": "citations_missing"}``: a template without the
           Boundaries section, or without ``{{ source.citation_rules }}``.
     """
@@ -200,7 +211,8 @@ def prompt_checks(content: str) -> list[dict]:
     else:
         if not template_parses(text):
             checks.append({"code": TEMPLATE_INVALID})
-        variables = sorted(tool_variables(text), key=lambda usage: (usage[0], usage[1] or ""))
+        variables = sorted(tool_variables(text) - _builtin_tool_variables(),
+                           key=lambda usage: (usage[0], usage[1] or ""))
         if variables:
             checks.append({"code": TOOL_VARIABLES, "variables": [tool_variable(usage) for usage in variables]})
         if not has_boundaries(text):
