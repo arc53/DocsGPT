@@ -67,6 +67,9 @@ const endpoints = {
     DRAFTER_STREAM: '/api/drafter/stream',
     DRAFTER_TURN_CANCEL: (turnId: string) =>
       `/api/drafter/turns/${encodeURIComponent(turnId)}/cancel`,
+    DRAFTER_AGENT_GAPS: (agentId: string) =>
+      `/api/drafter/agent_gaps?agent_id=${encodeURIComponent(agentId)}`,
+    CHECK_PROMPT: '/api/check_prompt',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',
