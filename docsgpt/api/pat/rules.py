@@ -312,6 +312,8 @@ RULES: dict[tuple[str, str], Rule] = {
     # Prompts
     ("/api/get_prompts", "GET"): _rule("prompts:read", listing=True),
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
+    # Checks the text in the body: no saved prompt is read.
+    ("/api/check_prompt", "POST"): _rule("prompts:read"),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
     # The caller's chat prompt and task model. The read answers with the parts the token's scopes
     # cover: the chat prompt for prompts:read, the task model for models:read. The stored prompt id
