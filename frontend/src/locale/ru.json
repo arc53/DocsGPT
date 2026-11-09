@@ -5045,7 +5045,9 @@
         "openSource": "Открыть {{name}}",
         "theSource": "источник",
         "seeInLogs": "Вопросы в журналах",
-        "quoted": "«{{text}}»"
+        "quoted": "«{{text}}»",
+        "improveAgent": "Улучшить агента",
+        "fromConversation": "Улучши агента по этому разговору"
       }
     },
     "topics": {

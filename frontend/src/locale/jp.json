@@ -4717,7 +4717,9 @@
         "openSource": "{{name}}を開く",
         "theSource": "ソース",
         "seeInLogs": "質問をログで表示",
-        "quoted": "「{{text}}」"
+        "quoted": "「{{text}}」",
+        "improveAgent": "エージェントを改善",
+        "fromConversation": "この会話をもとにエージェントを改善して"
       }
     },
     "topics": {

@@ -4764,7 +4764,9 @@
         "openSource": "Open {{name}}",
         "theSource": "the source",
         "seeInLogs": "See the questions in Logs",
-        "quoted": "“{{text}}”"
+        "quoted": "“{{text}}”",
+        "improveAgent": "Improve the agent",
+        "fromConversation": "Improve the agent from this conversation"
       }
     },
     "topics": {

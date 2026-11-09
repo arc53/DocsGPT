@@ -54,6 +54,10 @@ const FOOTER_KEYS = {
   workspace: ['drafter.footer', 'drafter.footerNoModel'],
   prompt: ['drafter.footerPrompt', 'drafter.footerPromptNoModel'],
   insights: ['drafter.footerInsights', 'drafter.footerInsightsNoModel'],
+  promptAgents: [
+    'drafter.footerPromptAgents',
+    'drafter.footerPromptAgentsNoModel',
+  ],
 } as const;
 
 // The order the "Looked at your workspace" line lists counts in.
@@ -100,6 +104,11 @@ export type DraftPanelProps = {
    * or only the prompt being drafted.
    */
   reads?: 'workspace' | 'prompt' | 'insights';
+  /**
+   * With `reads="prompt"`: how many agents use the prompt, which the recipe
+   * reads too ("reads this prompt and the 3 agents using it").
+   */
+  readsAgents?: number;
   /**
    * The days Insights reads over, for a `reading` status that read it
    * ("Read Insights: 412 conversations, last 30 days").
@@ -185,6 +194,7 @@ export function DraftPanel({
   session,
   modelName,
   reads = 'workspace',
+  readsAgents = 0,
   insightsDays = INSIGHTS_DAYS,
   onNavigate,
   intro,
@@ -257,6 +267,13 @@ export function DraftPanel({
     latestProposal?.kind === 'proposal' && announceProposal
       ? announceProposal(latestProposal.proposal)
       : null;
+
+  // A prompt's drawer that reads the agents using it says how many.
+  const readsPromptAgents = reads === 'prompt' && readsAgents > 0;
+  const footerKeys = FOOTER_KEYS[readsPromptAgents ? 'promptAgents' : reads];
+  const agentsRead = readsPromptAgents
+    ? { count: readsAgents, formatted: formatCount(readsAgents) }
+    : undefined;
 
   // A suggestion sends its text, unless the host runs it itself.
   const toRow = (suggestion: DraftSuggestion) => ({
@@ -475,11 +492,12 @@ export function DraftPanel({
           />
           <p className="text-muted-foreground text-xs">
             {modelName
-              ? t(FOOTER_KEYS[reads][0], {
+              ? t(footerKeys[0], {
                   model: modelName,
+                  ...agentsRead,
                   interpolation: { escapeValue: false },
                 })
-              : t(FOOTER_KEYS[reads][1])}{' '}
+              : t(footerKeys[1], agentsRead)}{' '}
             <Button variant="link" size="text" asChild>
               <Link to={TASK_MODEL_SETTINGS_PATH} onClick={onNavigate}>
                 {t('drafter.changeModel')}

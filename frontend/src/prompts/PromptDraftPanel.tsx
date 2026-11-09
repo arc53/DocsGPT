@@ -236,6 +236,7 @@ export function PromptDraftPanel({
       session={drafter.session}
       modelName={modelName}
       reads="prompt"
+      readsAgents={usedBy}
       onNavigate={onNavigate}
       intro={intro}
       suggestions={suggestions}

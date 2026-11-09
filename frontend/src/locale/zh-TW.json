@@ -4717,7 +4717,9 @@
         "openSource": "開啟 {{name}}",
         "theSource": "該知識來源",
         "seeInLogs": "在日誌中查看這些問題",
-        "quoted": "「{{text}}」"
+        "quoted": "「{{text}}」",
+        "improveAgent": "改進代理",
+        "fromConversation": "根據這段對話改進代理"
       }
     },
     "topics": {

@@ -886,6 +886,10 @@ describe('agentDraft', () => {
     expect(gapRequest(tr, { ...row, topic: null })).toBe(
       `drafter.agent.insights.fix(gap=${gap})`,
     );
+    // The topic question's catch-all reads as Insights shows it.
+    expect(gapTitle(tr, { ...row, topic: 'none of these' })).toBe(
+      'settings.analytics.insights.panels.noneOfThese',
+    );
     // A gap type a newer model added reads as its own key.
     expect(gapTitle(tr, { ...row, topic: null, gap_type: 'new kind' })).toBe(
       'new kind',

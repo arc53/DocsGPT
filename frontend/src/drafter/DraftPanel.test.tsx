@@ -85,6 +85,7 @@ function Host({
     | 'suggestionGroups'
     | 'notice'
     | 'insightsDays'
+    | 'readsAgents'
   >
 >) {
   const session = useDrafterSession({
@@ -208,6 +209,18 @@ describe('DraftPanel', () => {
       root.render(<Host reads="prompt" modelName={null} />),
     );
     expect(container.textContent).toContain('drafter.footerPromptNoModel');
+  });
+
+  it('names the agents a prompt drawer reads, when the prompt has any', async () => {
+    await act(async () => root.render(<Host reads="prompt" readsAgents={3} />));
+    // The test's t shows the count it was given.
+    expect(container.textContent).toContain('drafter.footerPromptAgents:3');
+    await act(async () =>
+      root.render(<Host reads="prompt" readsAgents={3} modelName={null} />),
+    );
+    expect(container.textContent).toContain(
+      'drafter.footerPromptAgentsNoModel:3',
+    );
   });
 
   it('draws the user message as a chat bubble and the workspace as one muted line', async () => {

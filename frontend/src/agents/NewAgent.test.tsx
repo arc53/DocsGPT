@@ -4449,6 +4449,150 @@ describe('NewAgent drafter', () => {
       expect(panel()!.querySelector('h3')).toBeNull();
     });
 
+    const renderAt = async (url: string) => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          description: 'Researches deals',
+          status: 'published',
+          agent_type: 'classic',
+          prompt_id: 'default',
+          allowed_actions: EDITOR,
+        }),
+      );
+      await act(async () => {
+        root.render(
+          <MemoryRouter initialEntries={[url]}>
+            <Routes>
+              <Route
+                path="/agents/edit/:agentId"
+                element={
+                  <>
+                    <NewAgent mode="edit" />
+                    <SearchProbe />
+                  </>
+                }
+              />
+            </Routes>
+          </MemoryRouter>,
+        );
+      });
+    };
+    const search = { value: '' };
+    function SearchProbe() {
+      search.value = useLocation().search;
+      return null;
+    }
+
+    it('opens on the gap the Docs gaps panel handed over, once', async () => {
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns&where=Returns&tab=x',
+      );
+      expect(panel()).not.toBeNull();
+      expect(drafter.requests).toHaveLength(1);
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fixIn' },
+      ]);
+      expect(lastRequest().context.gap).toEqual({
+        topic: 'Returns',
+        gap_type: 'docs missing',
+      });
+      // The hand-off leaves the URL; the rest of the query stays.
+      expect(search.value).toBe('?tab=x');
+    });
+
+    it('opens on the conversation a Logs row handed over', async () => {
+      const id = '0b6f3a52-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+      await renderAt(
+        `/agents/edit/agent-1?improve=conversation&conversation=${id}`,
+      );
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fromConversation' },
+      ]);
+      expect(lastRequest().context.conversation_id).toBe(id);
+      expect(lastRequest().context).not.toHaveProperty('gap');
+      expect(search.value).toBe('');
+    });
+
+    it('drops a hand-off it may not act on, sending nothing', async () => {
+      drafter.config = { enabled: false, model: null, reason: null };
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=Page',
+      );
+      expect(drafter.requests).toHaveLength(0);
+      expect(search.value).toBe('');
+    });
+
+    it('applies a monitor-only groundedness guardrail an improve sets for a gap', async () => {
+      drafter.gaps = GAPS;
+      drafter.scripts = [
+        [
+          {
+            type: 'proposal',
+            proposal: {
+              message: 'Watch for answers the docs do not back.',
+              fields: {
+                guardrails: {
+                  controls: [
+                    {
+                      check: 'groundedness',
+                      stage: 'output',
+                      action: 'block',
+                    },
+                  ],
+                },
+              },
+              reasons: [
+                { field: 'guardrails', summary: 'groundedness, monitor only' },
+              ],
+              notes: [],
+              dropped: [],
+              steps: [],
+              next_step: null,
+              gaps: [
+                {
+                  topic: 'Delivery windows',
+                  gap_type: 'confidently ungrounded',
+                  expected: 9,
+                  turns: 120,
+                  previous: 5,
+                  example: null,
+                  fields: ['guardrails'],
+                  needs: null,
+                  links: [],
+                },
+              ],
+            },
+          },
+          { type: 'end' },
+        ],
+      ];
+      await renderEdit(EDITOR);
+      await act(async () => wand()!.click());
+      await act(async () => suggestion('gap-2')!.click());
+      const guardrails = mocks.guardrailsProps.mock.calls.at(-1)![0] as {
+        drafted: boolean;
+        value: {
+          enabled: boolean;
+          mode: string;
+          controls: { check: string }[];
+        };
+      };
+      expect(guardrails.drafted).toBe(true);
+      expect(guardrails.value.enabled).toBe(true);
+      expect(guardrails.value.mode).toBe('monitor_only');
+      expect(guardrails.value.controls.map((c) => c.check)).toContain(
+        'groundedness',
+      );
+      const card = panel()!.querySelector('[data-slot="gap-card"]')!;
+      expect(
+        card.querySelector('[data-slot="filled-row"] p')!.getAttribute('title'),
+      ).toBe('agents.form.sections.guardrails · groundedness, monitor only');
+      // No example read: no quote.
+      expect(card.textContent).not.toContain('drafter.agent.insights.quoted');
+    });
+
     it('shows the gaps a proposal acts on as cards, before what it filled', async () => {
       drafter.gaps = GAPS;
       drafter.scripts = [

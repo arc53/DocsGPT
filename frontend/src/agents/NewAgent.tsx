@@ -185,6 +185,7 @@ import {
 } from './agentDraft';
 import { useAgentBuild } from './useAgentBuild';
 import { useAgentGaps } from './useAgentGaps';
+import { IMPROVE_PARAMS, readImproveHandoff } from './improveLink';
 import AgentGapCards from './AgentGapCards';
 
 import type { Model } from '../models/types';
@@ -273,7 +274,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const dispatch = useDispatch();
   const { agentId } = useParams();
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const folderIdFromUrl = searchParams.get('folder_id');
 
   const token = useSelector(selectToken);
@@ -1382,6 +1383,47 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     buildRowsRef.current.clear();
     setPromptUsed(false);
   };
+
+  // Opened from Insights or Logs ("Improve the agent"): once the agent has
+  // loaded and the drafter's config is known, the drawer opens in improve
+  // mode and sends the gap or conversation it came from; the query that
+  // carried it is dropped either way, so a reload or Back doesn't send it
+  // again.
+  const handoffReadRef = useRef(false);
+  useEffect(() => {
+    if (handoffReadRef.current || !searchParams.has('improve')) return;
+    if (!accessKnown || drafterConfig === null) return;
+    handoffReadRef.current = true;
+    const handoff = readImproveHandoff(searchParams);
+    const rest = new URLSearchParams(searchParams);
+    IMPROVE_PARAMS.forEach((key) => rest.delete(key));
+    setSearchParams(rest, { replace: true, state: location.state });
+    if (!handoff || !drafterEnabled || !agent.id || buildRef.current.guided)
+      return;
+    if (handoff.kind === 'gap') {
+      improveFocusRef.current = {
+        gap: { topic: handoff.topic, gap_type: handoff.gap_type },
+      };
+      drafterSessionRef.current.send(
+        gapRequest(t, { topic: handoff.where, gap_type: handoff.gap_type }),
+      );
+    } else {
+      improveFocusRef.current = { conversation_id: handoff.conversation_id };
+      drafterSessionRef.current.send(
+        t('drafter.agent.insights.fromConversation'),
+      );
+    }
+    setDrafterOpen(true);
+  }, [
+    searchParams,
+    setSearchParams,
+    location.state,
+    accessKnown,
+    drafterConfig,
+    drafterEnabled,
+    agent.id,
+    t,
+  ]);
 
   /** The step's Next: the saved prompt's turn end goes with the step. */
   const goNext = () => {

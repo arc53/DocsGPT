@@ -4894,7 +4894,9 @@
         "openSource": "Ouvrir {{name}}",
         "theSource": "la source",
         "seeInLogs": "Voir les questions dans les journaux",
-        "quoted": "« {{text}} »"
+        "quoted": "« {{text}} »",
+        "improveAgent": "Améliorer l’agent",
+        "fromConversation": "Améliore l’agent à partir de cette conversation"
       }
     },
     "topics": {

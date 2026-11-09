@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Download,
   Minus,
+  WandSparkles,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +35,12 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
+import {
+  agentImprovePath,
+  canImproveAgent,
+  useKnownAgent,
+} from '../agents/improveLink';
+import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
@@ -161,6 +168,14 @@ export default function DocsGaps({
   const labelledRef = useRef(labelled);
   labelledRef.current = labelled;
   const sectionRef = useRef<HTMLDivElement>(null);
+  // "Improve the agent" in a group's panel: only on an agent's own page,
+  // for a role that may edit it, while the drafter is on.
+  const drafterConfig = useDrafterConfig();
+  const knownAgent = useKnownAgent();
+  const improvable =
+    !!agentId &&
+    drafterConfig?.enabled === true &&
+    canImproveAgent(knownAgent(agentId));
 
   useEffect(() => {
     const id = ++requestId.current;
@@ -248,6 +263,21 @@ export default function DocsGaps({
   };
   const displayName = (index: number) =>
     nameOf(index) ?? t('settings.analytics.gaps.noPage');
+
+  /**
+   * The agent form, its drawer fixing this group's docs gap: the topic goes
+   * with it as the server names it (the catch-all as "none of these") when
+   * the rows are topics; the group's shown name words the message.
+   */
+  const improvePath = (index: number) => {
+    const row = rows[index];
+    return agentImprovePath(agentId as string, {
+      kind: 'gap',
+      gap_type: 'docs missing',
+      topic: groupBy === 'topic' ? row.name || row.key || null : null,
+      where: displayName(index),
+    });
+  };
 
   const exportCsv = () =>
     downloadCsv(
@@ -507,7 +537,21 @@ export default function DocsGaps({
                   groupLabel
                 )
               }
-            />
+            >
+              {improvable && (
+                <div>
+                  <Button variant="outline" size="sm" shape="pill" asChild>
+                    <Link
+                      to={improvePath(openIndex as number)}
+                      onClick={() => setOpenIndex(null)}
+                    >
+                      <WandSparkles />
+                      {t('drafter.agent.insights.improveAgent')}
+                    </Link>
+                  </Button>
+                </div>
+              )}
+            </PanelHeader>
             <PanelBody>
               <DescriptionList size="sm">
                 <DescriptionItem

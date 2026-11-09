@@ -9,7 +9,11 @@ import {
 import type { AgentGapRow } from '../drafter/drafterApi';
 import type { ProposalReasonRow } from '../drafter/ProposalSummary';
 import type { DrafterStarter } from '../drafter/starters';
-import { joinList, optionName } from '../settings/insights/format';
+import {
+  joinList,
+  NONE_OF_THESE,
+  optionName,
+} from '../settings/insights/format';
 import { isLogLabel, type LogLabel } from '../settings/logsLinks';
 import { formatCount } from '../utils/dateTimeUtils';
 import { getToolDisplayName } from '../utils/toolUtils';
@@ -904,9 +908,15 @@ export const MAX_GAP_ROWS = 3;
 export const gapName = (t: TFunction, gapType: string): string =>
   optionName((key) => t(key), 'gap_type', gapType);
 
+/** A topic as Insights shows it: the catch-all reads "None of these". */
+const topicName = (t: TFunction, topic: string): string =>
+  topic === NONE_OF_THESE
+    ? t('settings.analytics.insights.panels.noneOfThese')
+    : topic;
+
 /** A gap row's title: its topic, or the gap's name for an agent without topics. */
 export const gapTitle = (t: TFunction, row: AgentGapRow): string =>
-  row.topic || gapName(t, row.gap_type);
+  row.topic ? topicName(t, row.topic) : gapName(t, row.gap_type);
 
 /**
  * A gap row's line, from the data alone: "Docs gap · 23 of 160 questions",
@@ -957,7 +967,7 @@ export function gapRequest(
   return row.topic
     ? t('drafter.agent.insights.fixIn', {
         gap,
-        topic: row.topic,
+        topic: topicName(t, row.topic),
         interpolation: { escapeValue: false },
       })
     : t('drafter.agent.insights.fix', {

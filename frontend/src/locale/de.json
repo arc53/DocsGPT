@@ -4743,7 +4743,9 @@
         "openSource": "{{name}} öffnen",
         "theSource": "die Quelle",
         "seeInLogs": "Die Fragen in den Protokollen ansehen",
-        "quoted": "„{{text}}“"
+        "quoted": "„{{text}}“",
+        "improveAgent": "Agenten verbessern",
+        "fromConversation": "Verbessere den Agenten anhand dieser Unterhaltung"
       }
     },
     "topics": {

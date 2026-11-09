@@ -4715,7 +4715,9 @@
         "openSource": "打开 {{name}}",
         "theSource": "该知识源",
         "seeInLogs": "在日志中查看这些问题",
-        "quoted": "“{{text}}”"
+        "quoted": "“{{text}}”",
+        "improveAgent": "改进智能体",
+        "fromConversation": "根据这段对话改进智能体"
       }
     },
     "topics": {

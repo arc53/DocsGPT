@@ -1,15 +1,28 @@
-import { Activity, ChevronRight, ThumbsDown, ThumbsUp } from 'lucide-react';
+import {
+  Activity,
+  ChevronRight,
+  ThumbsDown,
+  ThumbsUp,
+  WandSparkles,
+} from 'lucide-react';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import {
   selectActivityRevision,
   selectRunningKey,
 } from '../activity/activitySlice';
 import { formatElapsed, workflowStep } from '../activity/format';
+import {
+  agentImprovePath,
+  canImproveAgent,
+  useKnownAgent,
+} from '../agents/improveLink';
+import type { Agent } from '../agents/types';
 import userService from '../api/services/userService';
+import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import CopyButton from '../components/CopyButton';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
@@ -84,8 +97,20 @@ const LABEL_KEYS: Record<(typeof LOG_LABELS)[number], string> = {
   negative_sentiment: 'negativeSentiment',
 };
 
+/**
+ * Labels that make a row worth improving the agent from: a docs gap, or an
+ * answer that needs attention (not answered, asked for a person). A
+ * thumbs-down counts too.
+ */
+const IMPROVE_LABELS = ['docs_gap', 'not_answered', 'asks_human'];
+
 type LogsProps = {
   agentId?: string;
+  /**
+   * The agent whose page this is (its access fields say who may improve
+   * it); the account's Logs find each row's agent among those it holds.
+   */
+  agent?: Agent;
   /**
    * An agent's analytics: whether its conversations are labelled (the label
    * filter shows only then) and its topics, offered as filters; those that
@@ -94,9 +119,32 @@ type LogsProps = {
   analytics?: { enabled: boolean; topics: AgentTopic[] };
 };
 
-export default function Logs({ agentId, analytics }: LogsProps) {
+export default function Logs({ agentId, analytics, agent }: LogsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  // An answer that went wrong opens its agent's drawer on that one
+  // conversation ("Improve the agent"): for a role that may edit the
+  // agent, while the drafter is on.
+  const drafterConfig = useDrafterConfig();
+  const knownAgent = useKnownAgent();
+  const improvePathOf = (log: LogData): string | null => {
+    if (drafterConfig?.enabled !== true) return null;
+    if (log.event_type !== 'chat' || log.running) return null;
+    const conversationId = log.conversation_id;
+    if (!conversationId || !UUID_RE.test(conversationId)) return null;
+    const flagged =
+      log.feedback?.text === 'dislike' ||
+      (log.labels ?? []).some((label) => IMPROVE_LABELS.includes(label));
+    if (!flagged) return null;
+    const id = log.agent_id || agentId;
+    if (!id) return null;
+    const record = agent?.id === id ? agent : knownAgent(id);
+    if (!canImproveAgent(record)) return null;
+    return agentImprovePath(id, {
+      kind: 'conversation',
+      conversation_id: conversationId,
+    });
+  };
   // The drill-down filters live in the URL, so a docs-gap example or a
   // shared link opens Logs already narrowed: `label`, `conversation` and the
   // `message` to open.
@@ -592,6 +640,7 @@ export default function Logs({ agentId, analytics }: LogsProps) {
           }
           targetMessageId={messageTarget}
           tagNames={tagNames}
+          improvePathOf={improvePathOf}
         />
       </div>
       <TraceSheet
@@ -630,6 +679,8 @@ type LogsTableProps = {
   /** A message to open and bring into view once its row has loaded. */
   targetMessageId: string | null;
   tagNames: Record<string, string>;
+  /** Where a row's "Improve the agent" goes; null offers none. */
+  improvePathOf: (log: LogData) => string | null;
 };
 function LogsTable({
   logs,
@@ -642,6 +693,7 @@ function LogsTable({
   emptyTitle,
   targetMessageId,
   tagNames,
+  improvePathOf,
 }: LogsTableProps) {
   const { t } = useTranslation();
   const [openLogId, setOpenLogId] = useState<string | null>(null);
@@ -728,6 +780,7 @@ function LogsTable({
             onToggle={handleLogToggle}
             onViewTrace={onViewTrace}
             tagNames={tagNames}
+            improvePath={improvePathOf(log)}
           />
         ))}
         <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
@@ -759,12 +812,15 @@ function Log({
   onToggle,
   onViewTrace,
   tagNames,
+  improvePath,
 }: {
   log: LogData;
   isOpen: boolean;
   onToggle: (id: string) => void;
   onViewTrace: (ref: TraceRef) => void;
   tagNames: Record<string, string>;
+  /** The agent form's drawer on this conversation; null offers none. */
+  improvePath: string | null;
 }) {
   const { t } = useTranslation();
   const bodyId = useId();
@@ -1040,24 +1096,36 @@ function Log({
       <Collapsible open={isOpen} id={bodyId}>
         {opened && (
           <div className="bg-secondary rounded-b-xl px-4 py-3">
-            {log.trace && (
+            {(log.trace || improvePath) && (
               <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => log.trace && onViewTrace(log.trace.ref)}
-                >
-                  <Activity />
-                  {log.trace.count > 1
-                    ? t('settings.logs.trace.viewRounds', {
-                        count: log.trace.count,
-                      })
-                    : t('settings.logs.trace.view')}
-                </Button>
-                <TraceChips
-                  durationMs={log.trace.duration_ms}
-                  counts={log.trace.summary}
-                />
+                {log.trace && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => log.trace && onViewTrace(log.trace.ref)}
+                  >
+                    <Activity />
+                    {log.trace.count > 1
+                      ? t('settings.logs.trace.viewRounds', {
+                          count: log.trace.count,
+                        })
+                      : t('settings.logs.trace.view')}
+                  </Button>
+                )}
+                {improvePath && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to={improvePath} data-slot="improve-agent">
+                      <WandSparkles />
+                      {t('drafter.agent.insights.improveAgent')}
+                    </Link>
+                  </Button>
+                )}
+                {log.trace && (
+                  <TraceChips
+                    durationMs={log.trace.duration_ms}
+                    counts={log.trace.summary}
+                  />
+                )}
               </div>
             )}
             {detailRows.length > 0 && (
