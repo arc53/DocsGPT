@@ -1,16 +1,25 @@
 """The drafter's read tools: detail the compact workspace catalog leaves out.
 
-Each is a lookup in the :class:`~docsgpt.drafter.catalog.Workspace` loaded for
+Most are lookups in the :class:`~docsgpt.drafter.catalog.Workspace` loaded for
 the caller before the draft started, so a tool can only return what the
 caller may open, and never touches the database or anything with side
-effects. Results go back to the model fenced as data.
+effects. The Insights reads (``get_gap_examples``, ``get_conversations``) are
+live but go through the workspace's ``insights_reader``, built for the one
+agent the caller may edit, and return a few capped rows of its conversations.
+Results go back to the model fenced as data; a result's ``shown`` is what the
+panel lists as read (``read`` event) and is not sent to the model.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Optional
 
 from docsgpt.drafter.catalog import Workspace
+from docsgpt.drafter.fencing import clean_text
+from docsgpt.storage.db.repositories.conversation_labels import LOG_LABELS, SUMMARY_GAP_TYPES
+
+logger = logging.getLogger(__name__)
 
 ReadTool = Callable[[Workspace, dict], dict]
 
@@ -49,6 +58,71 @@ def get_tool(ws: Workspace, args: dict) -> dict:
     return detail
 
 
+#: Characters of a topic argument.
+_TOPIC_CHARS = 200
+_NO_INSIGHTS = {"error": "This agent's Insights can't be read here."}
+_READ_FAILED = {"error": "Insights could not be read right now. Go by the summary."}
+
+
+def _topic_arg(args: dict) -> Optional[str]:
+    """The optional ``topic`` argument, cleaned; None when missing or empty."""
+    value = args.get("topic") if isinstance(args, dict) else None
+    return clean_text(value, _TOPIC_CHARS) or None
+
+
+def get_gap_examples(ws: Workspace, args: dict) -> dict:
+    """Up to five questions of the agent's users that were one gap type (in one topic), the likeliest first."""
+    reader = getattr(ws, "insights_reader", None)
+    if reader is None:
+        return dict(_NO_INSIGHTS)
+    gap_type = _id_arg(args, "gap_type")
+    if gap_type not in SUMMARY_GAP_TYPES:
+        return {"error": f"gap_type is one of: {', '.join(SUMMARY_GAP_TYPES)}."}
+    try:
+        questions = reader.gap_examples(gap_type, _topic_arg(args))
+    except Exception:
+        logger.warning("drafter: could not read gap examples", exc_info=True)
+        return dict(_READ_FAILED)
+    return {"questions": questions, "shown": list(questions)}
+
+
+def get_conversations(ws: Workspace, args: dict) -> dict:
+    """Up to five question-and-answer excerpts of the agent's conversations the Logs filter ``label`` selects."""
+    reader = getattr(ws, "insights_reader", None)
+    if reader is None:
+        return dict(_NO_INSIGHTS)
+    label = _id_arg(args, "label")
+    if label not in LOG_LABELS:
+        return {"error": f"label is one of: {', '.join(LOG_LABELS)}."}
+    try:
+        conversations = reader.conversations(label, _topic_arg(args))
+    except Exception:
+        logger.warning("drafter: could not read conversations", exc_info=True)
+        return dict(_READ_FAILED)
+    return {"conversations": conversations, "shown": [c["question"] for c in conversations if c["question"]]}
+
+
+def _insights_schema(name: str, description: str, param: str, values: tuple[str, ...], param_description: str
+                     ) -> dict:
+    """An Insights read tool's definition: one required choice and an optional topic."""
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    param: {"type": "string", "enum": list(values), "description": param_description},
+                    "topic": {"type": "string",
+                              "description": "Optional: a topic from the gap summary, exactly as it is named there."},
+                },
+                "required": [param],
+            },
+        },
+    }
+
+
 def _schema(name: str, description: str, param: str, param_description: str) -> dict:
     """A read tool's definition: one required string parameter."""
     return {
@@ -81,6 +155,19 @@ READ_TOOLS: dict[str, tuple[dict, ReadTool]] = {
         _schema("get_tool", "Read a tool's actions and what each one does.",
                 "tool_id", "The tool's id from the workspace."),
         get_tool,
+    ),
+    "get_gap_examples": (
+        _insights_schema("get_gap_examples", "Read up to 5 questions the agent's users asked that had this gap, "
+                         "the likeliest first. Read only the gaps you will act on.",
+                         "gap_type", SUMMARY_GAP_TYPES, "The gap type, as in the gap summary."),
+        get_gap_examples,
+    ),
+    "get_conversations": (
+        _insights_schema("get_conversations", "Read up to 5 of the agent's answered questions that Logs marks "
+                         "with this label, each with the start of its answer.",
+                         "label", tuple(LOG_LABELS), "docs_gap: the docs don't cover it; not_answered; "
+                         "negative_reaction, negative_sentiment, frustrated, asks_human: how the user reacted."),
+        get_conversations,
     ),
 }
 

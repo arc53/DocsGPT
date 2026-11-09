@@ -4,6 +4,11 @@ One shape serves the agent drawer's first screen (``GET /api/drafter/agent_gaps`
 mode and its read tools. It is Insights data only, read under the agent's scope (all its traffic, as its owner's
 Insights page reads it): expected counts summed from the decision model's ``gap_type`` probabilities, weighted
 by the turn's topic share when the agent asks a topic question. No model call.
+
+:class:`InsightsReader` serves the recipe's live read tools (``get_gap_examples``, ``get_conversations``) and
+:func:`conversation_excerpt` the one conversation a Logs row starts from: both read only the labels and
+conversations of one agent the caller may edit, a few capped rows at a time. What they return is end users' text,
+for the model fenced as data.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from __future__ import annotations
 import datetime
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from sqlalchemy import Connection
@@ -18,10 +24,15 @@ from sqlalchemy import Connection
 from docsgpt.analytics import schema as analytics_schema
 from docsgpt.analytics.insights import MIN_SAMPLE
 from docsgpt.drafter import topics_recipe
+from docsgpt.drafter.fencing import clean_text
 from docsgpt.storage.db.repositories.conversation_labels import (
     ConversationLabelsRepository,
+    LOG_LABELS,
+    log_label_keys,
     MIN_GROUP_GAPS,
     Scope,
+    SUMMARY_GAP_TYPES,
+    TAG_PREFIX,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +43,13 @@ DAYS = 30
 NEEDED = MIN_SAMPLE
 #: Most rows of the summary.
 MAX_ROWS = 10
+#: Most questions or conversations one read tool call returns, and the characters of each text.
+MAX_EXAMPLES = 5
+EXAMPLE_CHARS = 200
+EXCERPT_CHARS = 300
+#: Characters of the question and of the answer of the conversation a Logs row starts from, and the turns read.
+CONVERSATION_CHARS = 600
+CONVERSATION_TURNS = 20
 #: ``topics_recipe.insights_off`` reasons, as the summary names them.
 _REASONS = {"off_on_this_instance": "off_on_this_instance", "turned_off_for_this_agent": "agent_off"}
 
@@ -129,3 +147,132 @@ def agent_gaps_for(user_id: str, agent_id: str) -> dict:
 
     with db_readonly() as conn:
         return agent_gaps(conn, user_id, topics_recipe.editable_agent(conn, user_id, agent_id))
+
+
+def _question(value: Any, limit: int) -> str:
+    """One end user's text on one line, cleaned and cut."""
+    return clean_text(" ".join(str(value or "").split()), limit)
+
+
+@dataclass(frozen=True)
+class InsightsReader:
+    """Live, capped reads of one agent's labelled conversations, for the agent recipe's read tools.
+
+    Built only for an agent the caller may edit, while its summary is available. Each call opens its own
+    read-only transaction (the stream runs after the request's has closed) and reads only this agent's labels.
+
+    Attributes:
+        agent_id: The agent.
+        api_key: Its key (``None`` when it has none).
+        by_topic: Whether it asks a topic question, so a topic narrows the reads.
+        start: The window's start.
+        end: The window's end.
+    """
+
+    agent_id: str
+    api_key: Optional[str]
+    by_topic: bool
+    start: datetime.datetime
+    end: datetime.datetime
+
+    @classmethod
+    def for_summary(cls, agent: dict, summary: dict) -> "InsightsReader":
+        """A reader for ``agent`` over the window of its :func:`agent_gaps` ``summary``, narrowing by topic when
+        the summary is by topic."""
+        start, end = window()
+        by_topic = any(row["topic"] is not None for row in summary.get("rows") or [])
+        return cls(str(agent["id"]), agent.get("key") or None, by_topic, start, end)
+
+    def _scope(self) -> Scope:
+        return Scope(agent_id=self.agent_id, api_key=self.api_key)
+
+    def gap_examples(self, gap_type: str, topic: Optional[str] = None) -> list[str]:
+        """Up to :data:`MAX_EXAMPLES` distinct questions that were this gap type (in ``topic``), likeliest first.
+
+        Raises:
+            ValueError: ``gap_type`` is not one of ``SUMMARY_GAP_TYPES``.
+        """
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.session import db_readonly
+
+        if gap_type not in SUMMARY_GAP_TYPES:
+            raise ValueError(gap_type)
+        topic = topic if self.by_topic and topic else None
+        with db_readonly() as conn:
+            rows = ConversationLabelsRepository(conn).gap_examples(
+                "topic" if topic else "all", self._scope(), analytics_schema.SCHEMA_HASH, self.start, self.end,
+                [topic], settings.ANALYTICS_FILTER_MIN_PROBABILITY, MAX_EXAMPLES * 3, gap_type=gap_type,
+            )
+        out: list[str] = []
+        for row in rows:
+            text = _question(row.get("prompt"), EXAMPLE_CHARS)
+            if text and text.casefold() not in {q.casefold() for q in out}:
+                out.append(text)
+        return out[:MAX_EXAMPLES]
+
+    def conversations(self, label: str, topic: Optional[str] = None) -> list[dict]:
+        """Up to :data:`MAX_EXAMPLES` ``{question, answer}`` excerpts the Logs filter ``label`` selects.
+
+        Raises:
+            ValueError: ``label`` is not a ``LOG_LABELS`` key.
+        """
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.session import db_readonly
+
+        if label not in LOG_LABELS:
+            raise ValueError(label)
+        topic = topic if self.by_topic and topic else None
+        with db_readonly() as conn:
+            rows = ConversationLabelsRepository(conn).labelled_turns(
+                self._scope(), analytics_schema.SCHEMA_HASH, self.start, self.end, label,
+                settings.ANALYTICS_FILTER_MIN_PROBABILITY, MAX_EXAMPLES, topic=topic,
+            )
+        return [{"question": _question(row.get("prompt"), EXCERPT_CHARS),
+                 "answer": clean_text(row.get("response"), EXCERPT_CHARS)} for row in rows]
+
+
+def conversation_excerpt(conn: Connection, agent: dict, conversation_id: str) -> Optional[dict]:
+    """One of the agent's conversations as the model reads it: a question, its answer, and their Logs labels.
+
+    The turn is the first one that fell short by Insights' labels (a Logs label, or a likely gap type), else the
+    conversation's first question.
+
+    Args:
+        conn: A read-only connection.
+        agent: The agent row, one the caller may edit.
+        conversation_id: The conversation the user started from.
+
+    Returns:
+        ``{"question", "answer", "labels", "gap_type"}`` (each text at most :data:`CONVERSATION_CHARS`; ``labels``
+        the ``LOG_LABELS`` keys the turn carries, ``gap_type`` its likeliest gap type at the Logs filter's
+        odds or None), or None when it is not the agent's conversation.
+    """
+    from docsgpt.core.settings import settings
+    from docsgpt.storage.db.base_repository import looks_like_uuid
+
+    if not isinstance(conversation_id, str) or not looks_like_uuid(conversation_id):
+        return None
+    repo = ConversationLabelsRepository(conn)
+    turns = repo.agent_conversation_turns(conversation_id, str(agent["id"]), agent.get("key"), CONVERSATION_TURNS)
+    if not turns:
+        return None
+    rows: dict[str, list[dict]] = {}
+    for row in repo.log_rows([t["id"] for t in turns], analytics_schema.SCHEMA_HASH, agent_id=str(agent["id"])):
+        rows.setdefault(row["target"], []).append(row)
+    floor = settings.ANALYTICS_FILTER_MIN_PROBABILITY
+
+    def keys(turn: dict) -> list[str]:
+        return [k for k in log_label_keys(rows.get(turn["id"], []), floor) if not k.startswith(TAG_PREFIX)]
+
+    def gap_type(turn: dict) -> Optional[str]:
+        gap = next((r["probabilities"] or {} for r in rows.get(turn["id"], []) if r["label"] == "gap_type"), {})
+        likeliest = max(SUMMARY_GAP_TYPES, key=lambda g: float(gap.get(g) or 0))
+        return likeliest if float(gap.get(likeliest) or 0) >= floor else None
+
+    turn = next((t for t in turns if keys(t) or gap_type(t)), turns[0])
+    return {
+        "question": clean_text(turn.get("prompt"), CONVERSATION_CHARS),
+        "answer": clean_text(turn.get("response"), CONVERSATION_CHARS),
+        "labels": keys(turn),
+        "gap_type": gap_type(turn),
+    }

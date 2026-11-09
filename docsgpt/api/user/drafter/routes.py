@@ -113,7 +113,8 @@ class DrafterStream(Resource):
             "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, "
             "{\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a "
             "valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, "
-            "{\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an "
+            "{\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). "
+            "Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an "
             "error event in a 200 stream. Nothing is saved."
         ),
         responses={200: "text/event-stream of draft events", 401: "Not signed in"},
@@ -233,10 +234,10 @@ class DrafterAgentGaps(Resource):
         description=(
             "An agent's gap summary from Insights for Draft with DocsGPT's improve screen: expected gaps per topic "
             "and gap type over the last 30 days, the most first, read from the decision model's labels (no model "
-            "call). Returns {\"available\", \"reason\", \"conversations\", \"needed\", \"days\", \"rows\": [{\"topic\", "
-            "\"gap_type\", \"expected\", \"turns\", \"previous\"}]}: at most 10 rows, each with at least half an "
-            "expected gap, counts rounded as Insights shows them; topic is null for an agent without a topic "
-            "question, previous null until the period before has labelled answers. reason is disabled (the "
+            "call). Returns {\"available\", \"reason\", \"conversations\", \"needed\", \"days\", \"rows\": "
+            "[{\"topic\", \"gap_type\", \"expected\", \"turns\", \"previous\"}]}: at most 10 rows, each with at "
+            "least half an expected gap, counts rounded as Insights shows them; topic is null for an agent without "
+            "a topic question, previous null until the period before has labelled answers. reason is disabled (the "
             "drafter is off), off_on_this_instance, agent_off (Insights is off for the agent) or not_enough (fewer "
             "than needed analysed conversations; conversations counts them), else null. Needs edit access to the "
             "agent."

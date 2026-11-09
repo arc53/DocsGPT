@@ -362,7 +362,7 @@ class TestReadEvents:
                                                                                    "Can I return it?"]}
         monkeypatch.setitem(read_tools.READ_TOOLS, "fake_read", (definition, lambda ws, args: dict(result)))
         _, agent = _request()
-        return dataclasses.replace(agent, read_tools=("fake_read",))
+        return dataclasses.replace(agent, read_tools=("fake_read",), tools_for=None)
 
     def test_a_read_that_shows_items_emits_a_read_event_and_the_model_reads_them_once(self, shown_tool):
         fake = FakeLLM(calls(tool_call("fake_read", {})), calls(tool_call("submit_proposal", PROPOSAL)))
