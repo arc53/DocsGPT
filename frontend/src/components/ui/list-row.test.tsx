@@ -77,6 +77,20 @@ describe('ListRow', () => {
     expect(html).toContain('text-pretty');
   });
 
+  it('wraps a wrap row description too, with no title tooltip', () => {
+    const html = renderToStaticMarkup(
+      <ListRow
+        size="md"
+        wrap
+        title="Review it"
+        description="Who it serves, scope, hand-offs and tone"
+      />,
+    );
+    expect(html).not.toContain('truncate');
+    expect(html).not.toContain('title=');
+    expect(html).toContain('wrap-break-word');
+  });
+
   it('keeps the brand tint on a selected row, hover included', () => {
     const html = renderToStaticMarkup(
       <ListRow interactive selected asChild title="Carrier Rates MCP">

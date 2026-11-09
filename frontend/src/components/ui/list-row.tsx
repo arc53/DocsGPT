@@ -41,7 +41,7 @@ type ListRowProps = Omit<React.ComponentProps<'li'>, 'title'> & {
    */
   size?: 'default' | 'sm' | 'md';
   /**
-   * The title wraps instead of truncating, top-aligned, with no `title`
+   * The title and description wrap instead of truncating, top-aligned, with no `title`
    * tooltip: for text that is the whole point of the row (a suggested
    * question), not a name a tooltip can complete. Give `leading` and
    * `trailing` icons `mt-0.5` so they sit on the first line.
@@ -113,8 +113,12 @@ function ListRow({
         </p>
         {description ? (
           <p
-            className="text-muted-foreground truncate text-xs"
-            title={plainText(description)}
+            className={cn(
+              'text-muted-foreground',
+              wrap ? 'text-pretty wrap-break-word' : 'truncate',
+              'text-xs',
+            )}
+            title={wrap ? undefined : plainText(description)}
           >
             {description}
           </p>

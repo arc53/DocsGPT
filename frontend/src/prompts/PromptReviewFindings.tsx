@@ -137,15 +137,7 @@ export function PromptReviewFindings({
                   data-finding={finding.id}
                   wrap
                   title={titleOf(finding)}
-                  description={
-                    finding.detail ? (
-                      // The detail is the finding's reason, so it wraps:
-                      // ListRow's `wrap` wraps only the title.
-                      <span className="text-pretty wrap-break-word whitespace-normal">
-                        {finding.detail}
-                      </span>
-                    ) : undefined
-                  }
+                  description={finding.detail || undefined}
                   trailing={linkOf(finding)}
                 />
               ))}
