@@ -353,6 +353,7 @@ def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[
 
     return docs
 
+
 def _mac_torch_faiss_conflict() -> bool:
     """Check if loading PyTorch on macOS would collide with FAISS in the same process."""
     if sys.platform != "darwin":
@@ -368,13 +369,73 @@ def _mac_torch_faiss_conflict() -> bool:
 
 
 _SAFEGUARD_STOPWORDS = {
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "do", "does", "did", "have", "has", "had", "having",
-    "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them",
-    "how", "what", "why", "when", "where", "which", "who", "whom", "whose",
-    "to", "of", "in", "on", "for", "and", "or", "with", "at", "by", "from",
-    "my", "your", "his", "their", "our", "its", "this", "that", "these", "those",
-    "can", "could", "should", "would", "may", "might", "will", "shall",
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "do",
+    "does",
+    "did",
+    "have",
+    "has",
+    "had",
+    "having",
+    "i",
+    "you",
+    "he",
+    "she",
+    "it",
+    "we",
+    "they",
+    "me",
+    "him",
+    "her",
+    "us",
+    "them",
+    "how",
+    "what",
+    "why",
+    "when",
+    "where",
+    "which",
+    "who",
+    "whom",
+    "whose",
+    "to",
+    "of",
+    "in",
+    "on",
+    "for",
+    "and",
+    "or",
+    "with",
+    "at",
+    "by",
+    "from",
+    "my",
+    "your",
+    "his",
+    "their",
+    "our",
+    "its",
+    "this",
+    "that",
+    "these",
+    "those",
+    "can",
+    "could",
+    "should",
+    "would",
+    "may",
+    "might",
+    "will",
+    "shall",
 }
 
 
@@ -627,4 +688,3 @@ def compress_retrieved_chunks(
             stats["error_fallback"] += len(docs)
 
     return prune_boilerplate(docs, query=query or "")
-

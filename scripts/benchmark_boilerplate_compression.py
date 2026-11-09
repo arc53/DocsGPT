@@ -9,13 +9,12 @@ Isolates Baseline (OFF), In-Tree Pruning (Zero Dependencies), and Optional Super
 
 from __future__ import annotations
 
-import re
 import sys
 import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -25,7 +24,7 @@ import tiktoken
 
 from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
 from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks, prune_boilerplate
-from docsgpt.utils import get_encoding, num_tokens_from_string
+from docsgpt.utils import get_encoding
 
 # Representative technical documentation corpus across 3 sources (Core Guides, API Reference, Python SDK)
 # Includes navigation, breadcrumbs, tables of contents, pagination, code blocks, tables, and critical qualifiers
@@ -170,9 +169,7 @@ EVALUATION_QUERIES = [
         "stable_doc_id": "doc1",
         "target": 'curl -H "Authorization: Bearer $DOCSGPT_API_KEY" https://api.docsgpt.cloud/v1/chat',
         "expected_code_block": (
-            "```bash\n"
-            'curl -H "Authorization: Bearer $DOCSGPT_API_KEY" https://api.docsgpt.cloud/v1/chat\n'
-            "```"
+            '```bash\ncurl -H "Authorization: Bearer $DOCSGPT_API_KEY" https://api.docsgpt.cloud/v1/chat\n```'
         ),
         "expected_table_block": None,
         "qualifier": "must not share",
@@ -240,9 +237,7 @@ EVALUATION_QUERIES = [
         "stable_doc_id": "doc6",
         "target": '{"event": "source.indexed", "source_id": "src_12345", "status": "completed"}',
         "expected_code_block": (
-            "```json\n"
-            '{"event": "source.indexed", "source_id": "src_12345", "status": "completed"}\n'
-            "```"
+            '```json\n{"event": "source.indexed", "source_id": "src_12345", "status": "completed"}\n```'
         ),
         "expected_table_block": None,
         "qualifier": "must verify",
@@ -334,7 +329,6 @@ def run_pipeline_benchmark(
 
     for item in EVALUATION_QUERIES:
         query = item["query"]
-        target = item["target"]
         raw_corpus = deepcopy(REPRESENTATIVE_CORPUS)
 
         # Prepare documents for ClassicRAG ingestion and selection pipeline
@@ -361,6 +355,7 @@ def run_pipeline_benchmark(
         t0_ret = time.perf_counter()
         with patch.object(ClassicRAG, "_fetch_all", return_value=[(classic_docs, "similarity")]):
             with patch.object(ClassicRAG, "_plan_sources", return_value=[{"id": "docs_core", "src_k": 8}]):
+
                 def create_classic():
                     rag = ClassicRAG(source={"active_docs": ["docs_core"], "question": query}, chunks=8)
                     rag.vectorstores = ["docs_core"]
@@ -372,8 +367,13 @@ def run_pipeline_benchmark(
                         retrieved_docs = retriever.search(query)
                 else:  # Dispatcher (multi-group routing)
                     with patch("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True):
+
                         def make_group_retriever(group, budget):
-                            rag = ClassicRAG(source={"active_docs": group["doc_ids"], "question": query}, chunks=8, doc_token_limit=budget)
+                            rag = ClassicRAG(
+                                source={"active_docs": group["doc_ids"], "question": query},
+                                chunks=8,
+                                doc_token_limit=budget,
+                            )
                             rag.vectorstores = group["doc_ids"]
                             return rag
 
@@ -444,7 +444,8 @@ def run_pipeline_benchmark(
         # Content preservation checks against stable source document ID / filename
         target_doc = next(
             (
-                d for d in retrieved_docs
+                d
+                for d in retrieved_docs
                 if d.get("id") == item["stable_doc_id"]
                 or d.get("filename") in {item["stable_doc_id"], f"{item['stable_doc_id']}.md"}
             ),
@@ -469,7 +470,7 @@ def run_pipeline_benchmark(
     num_queries = len(EVALUATION_QUERIES)
     avg_prompt_tokens = total_prompt_tokens // num_queries
     avg_context_tokens = total_context_tokens // num_queries
-    cost_per_million = (avg_prompt_tokens * PROMPT_TOKEN_COST_PER_MILLION)
+    cost_per_million = avg_prompt_tokens * PROMPT_TOKEN_COST_PER_MILLION
     avg_ret_latency = sum(retrieval_latencies) / len(retrieval_latencies)
     avg_comp_latency = sum(compression_latencies) / len(compression_latencies)
     avg_prompt_latency = sum(prompt_latencies) / len(prompt_latencies)
@@ -529,8 +530,10 @@ def main():
     print("-" * 80)
     for res in [classic_off, classic_intree, classic_super, disp_off, disp_intree, disp_super]:
         mode_label = (
-            "Baseline (OFF)" if res["mode"] == "off"
-            else "In-Tree Pruning (Zero Dependencies)" if res["mode"] == "intree"
+            "Baseline (OFF)"
+            if res["mode"] == "off"
+            else "In-Tree Pruning (Zero Dependencies)"
+            if res["mode"] == "intree"
             else "SuperCompress (Optional Neural)"
         )
         print(f"[{res['pipeline']}] - {mode_label}:")
@@ -559,8 +562,12 @@ def main():
         print(f"  * Tables Preserved:         {res['table_pct']:.1f}%")
         print(f"  * Qualifiers Kept:          {res['qualifier_pct']:.1f}%\n")
 
-    classic_intree_token_savings = ((classic_off["avg_context_tokens"] - classic_intree["avg_context_tokens"]) / classic_off["avg_context_tokens"]) * 100
-    disp_intree_token_savings = ((disp_off["avg_context_tokens"] - disp_intree["avg_context_tokens"]) / disp_off["avg_context_tokens"]) * 100
+    classic_intree_token_savings = (
+        (classic_off["avg_context_tokens"] - classic_intree["avg_context_tokens"]) / classic_off["avg_context_tokens"]
+    ) * 100
+    disp_intree_token_savings = (
+        (disp_off["avg_context_tokens"] - disp_intree["avg_context_tokens"]) / disp_off["avg_context_tokens"]
+    ) * 100
     classic_intree_cost_savings = classic_off["cost_per_million"] - classic_intree["cost_per_million"]
     disp_intree_cost_savings = disp_off["cost_per_million"] - disp_intree["cost_per_million"]
 
