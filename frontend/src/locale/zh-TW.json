@@ -4206,7 +4206,7 @@
     },
     "marks": {
       "failed": "有失敗",
-      "needsYou": "等待你的核准",
+      "needsYou": "等待你處理",
       "working": "執行中",
       "unread": "未讀",
       "watching": "正在監控變化"

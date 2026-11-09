@@ -4341,7 +4341,7 @@
     },
     "marks": {
       "failed": "Un échec est survenu",
-      "needsYou": "En attente de votre approbation",
+      "needsYou": "Attend votre action",
       "working": "En cours",
       "unread": "Non lu",
       "watching": "Surveille les changements"

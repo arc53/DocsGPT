@@ -4341,7 +4341,7 @@
     },
     "marks": {
       "failed": "Algo falló",
-      "needsYou": "Esperando tu aprobación",
+      "needsYou": "Te está esperando",
       "working": "En curso",
       "unread": "Sin leer",
       "watching": "Vigilando cambios"

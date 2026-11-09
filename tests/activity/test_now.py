@@ -538,8 +538,8 @@ class TestNeedsYou:
         assert item["title"] == "Carrier onboarding"
         assert item["expires_at"] and item["created_at"]
         assert "tools" not in item
-        # Approvals keep their own list.
-        assert snap["approval_conversations"] == []
+        # The chat gets the sidebar's waiting mark, as an approval's does.
+        assert snap["approval_conversations"] == [conv]
 
     def test_an_expired_question_pause_is_not_listed(self, pg_conn):
         conv = _chat(pg_conn)

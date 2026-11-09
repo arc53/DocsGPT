@@ -750,7 +750,8 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
 
     Returns:
         ``{running, needs_you, up_next, approval_conversations,
-        failed_conversations, stats}``. ``running`` and ``needs_you`` items
+        failed_conversations, stats}``. ``approval_conversations`` lists the
+        chats paused on an approval or on clarifying questions. ``running`` and ``needs_you`` items
         carry a ``kind``; ``stats`` holds ``next_24h`` and ``failed_24h``.
         The running and needs-you counts are the client's: it adds what it
         alone knows (answers started since, connections to sign in to).
@@ -767,7 +768,8 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     running += _running_ingests(conn, user_id, markers)
 
     approvals = _approvals(conn, user_id)
-    needs_you = approvals + _questions(conn, user_id) + _autopaused_schedules(conn, user_id)
+    questions = _questions(conn, user_id)
+    needs_you = approvals + questions + _autopaused_schedules(conn, user_id)
     up_next = _up_next(conn, user_id, current)
     # Knowledge syncs join the schedules: one batch per frequency due today.
     syncs = due_batches(conn, user_id, current, current + UP_NEXT_WINDOW, next_sync_times())
@@ -781,7 +783,9 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
         "running": running,
         "needs_you": needs_you,
         "up_next": up_next,
-        "approval_conversations": [item["conversation_id"] for item in approvals],
+        # The sidebar's "waiting for you" mark: a turn paused on an approval
+        # or on clarifying questions both wait for the user.
+        "approval_conversations": [item["conversation_id"] for item in approvals + questions],
         "failed_conversations": _failed_conversations(conn, user_id),
         "stats": {
             "next_24h": sum(item["runs_in_window"] for item in up_next),

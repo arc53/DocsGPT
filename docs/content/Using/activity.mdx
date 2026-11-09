@@ -80,7 +80,7 @@ A chat in the sidebar shows at most one mark, the most urgent one. Hover over it
 | Mark | Means | Goes away when |
 | --- | --- | --- |
 | Red dot | Something failed while you were away: the last answer, or a background job | You open the chat |
-| Amber dot | A tool call waits for your approval | You approve or deny it, or it expires after 30 minutes |
+| Amber dot | A tool call waits for your approval, or [clarifying questions](/Using/web-app#clarifying-questions) wait for your answer | You approve or deny it, or answer or skip the questions, or it expires after 30 minutes |
 | Spinner | The chat is writing an answer or runs a background job | It finishes |
 | Purple dot | Something new arrived while you were away: an answer that finished after you left the chat, or a background job or monitor reporting back, including while the chat was open in a window you weren't looking at | You open the chat, or come back to the window that shows it |
 | Hollow ring | The chat has an active [monitor](/Tools/monitors) | The monitor ends or is paused |
@@ -89,7 +89,7 @@ The browser tab's title counts the chats with a red, amber or purple dot, so a t
 
 ## Over the API
 
-- `GET /api/activity/now` returns the Now page's running items, the approvals and paused schedules under **Needs you**, **Up next** and the 24-hour counts, plus the chats waiting for an approval or with a failure, for the sidebar marks. The page adds the rest itself: **Watching** comes from `GET /api/monitors` (see [Managing monitors](/Tools/monitors#managing-monitors)), and the connections to reconnect from your connections' state.
+- `GET /api/activity/now` returns the Now page's running items, the approvals and paused schedules under **Needs you**, **Up next** and the 24-hour counts, plus the chats waiting for an approval or an answer (`approval_conversations`) or with a failure, for the sidebar marks. The page adds the rest itself: **Watching** comes from `GET /api/monitors` (see [Managing monitors](/Tools/monitors#managing-monitors)), and the connections to reconnect from your connections' state.
 - `GET /api/activity/planned?from=<ISO 8601>&to=<ISO 8601>&tz=<zone>` returns a calendar window of at most 62 days: `events`, `monitors` and `truncated`. Each event has a `kind`: `schedule` (planned slots with `state` `planned` or `paused`, missed slots with `missed`, and runs with their status and `run_id`) or `sync` (a frequency's coming sync, with its `frequency` and `sources`). `tz` is the IANA time zone days are split in, `UTC` by default; an unknown zone answers `400`. A frequent schedule (hourly or more often) with more than 1,000 events in the window is summed up per day: one event per day and state, with `count` (how many runs) and `until` (the last one's time), while failed, timed-out and running runs stay events of their own. `truncated` lists the ids of schedules whose events were cut short.
 - `GET /api/activity/history` returns one page of finished runs, newest first, as `runs` and `has_more`. It takes `kind` (`schedule`, `webhook`, `workflow`, `job` or `monitor`), `status` (`failed` includes timed-out runs), `q` to search names, `days` (default 30, at most 90), `limit` (default 50, at most 200) and `offset`.
 - `POST /api/messages/<message_id>/cancel` stops a running answer. It answers `202` once the stop is requested, `409` when the answer isn't running or waits for a tool approval, and `503` without Redis.

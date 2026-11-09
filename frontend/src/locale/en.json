@@ -4247,7 +4247,7 @@
     },
     "marks": {
       "failed": "Something failed",
-      "needsYou": "Waiting for your approval",
+      "needsYou": "Waiting for you",
       "working": "Working",
       "unread": "Unread",
       "watching": "Watching for changes"

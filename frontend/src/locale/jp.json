@@ -4206,7 +4206,7 @@
     },
     "marks": {
       "failed": "失敗があります",
-      "needsYou": "承認待ち",
+      "needsYou": "あなたの対応待ち",
       "working": "実行中",
       "unread": "未読",
       "watching": "変更を監視中"
