@@ -47,7 +47,6 @@
   </a>
 </p>
 
-> 🎃 **Hacktoberfest 2026:** T-shirts for meaningful contributions, all October. See [HACKTOBERFEST.md](HACKTOBERFEST.md).
 
 <p align="center">
   <sub>Supported by</sub><br>
