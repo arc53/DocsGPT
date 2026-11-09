@@ -6,6 +6,7 @@ from celery.signals import beat_init
 from celery.utils.imports import symbol_by_name
 from redbeat.schedulers import RedBeatScheduler
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from redis.exceptions import LockError, LockNotOwnedError, MasterDownError, ReadOnlyError
 
 from docsgpt import beat_scheduler
@@ -15,6 +16,7 @@ from docsgpt.beat_scheduler import DocsGPTScheduler, standby_seconds
 # What Redis answers while it is down, failing over, or a replica has lost its primary.
 REDIS_OUTAGES = [
     RedisConnectionError("Connection refused"),
+    RedisTimeoutError("Timeout reading from socket"),
     ReadOnlyError("You can't write against a read only replica."),
     MasterDownError("MASTERDOWN Link with MASTER is down and replica-serve-stale-data is set to 'no'."),
 ]
@@ -149,14 +151,21 @@ def test_redis_going_away_during_a_tick_stands_by(scheduler, monkeypatch, outage
 @pytest.mark.parametrize("outage", REDIS_OUTAGES, ids=lambda exc: type(exc).__name__)
 def test_redis_going_away_while_reading_the_schedule_stands_by(scheduler, monkeypatch, outage):
     scheduler.tick()
+    reads = []
 
     def down(self):
+        reads.append(1)
         raise outage
 
     monkeypatch.setattr(RedBeatScheduler, "schedule", property(down))
 
     assert scheduler.tick() == 15
+    assert reads == [1]
     assert scheduler.holding_lock
+
+    # Redis is back: the next tick schedules again.
+    monkeypatch.setattr(RedBeatScheduler, "schedule", property(lambda self: {}))
+    assert scheduler.tick() == scheduler.max_interval
 
 
 @pytest.mark.unit
