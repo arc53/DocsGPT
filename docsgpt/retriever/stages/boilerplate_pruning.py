@@ -369,16 +369,19 @@ def _mac_torch_faiss_conflict() -> bool:
 
 def _extract_protected_elements(
     text: str,
+    query: str = "",
     initial_active_fence: Optional[Tuple[str, int]] = None,
-) -> Tuple[List[str], List[str], List[str]]:
-    """Extracts verbatim fenced code blocks, table rows, and qualifier/warning sentences."""
+) -> Tuple[List[str], List[str], List[str], List[str]]:
+    """Extracts verbatim fenced code blocks, table rows, qualifier/warning sentences, and query-bearing lines."""
     lines = text.split("\n")
     fenced_blocks: List[str] = []
     table_rows: List[str] = []
     warning_lines: List[str] = []
+    query_bearing_lines: List[str] = []
 
     active_fence = _normalize_fence_state(initial_active_fence)
     current_fence_lines: List[str] = []
+    query_tokens = _tokenize_query(query)
 
     for line in lines:
         stripped = line.strip()
@@ -387,21 +390,23 @@ def _extract_protected_elements(
         if active_fence is not None:
             current_fence_lines.append(line)
             char, length = active_fence
-            if stripped.startswith(char * length) and not stripped.strip(char):
-                fenced_blocks.append("\n".join(current_fence_lines))
-                current_fence_lines = []
-                active_fence = None
+            if fence_match and fence_match.group(1)[0] == char and len(fence_match.group(1)) >= length:
+                rest = stripped[len(fence_match.group(1)) :].strip()
+                if not rest:
+                    fenced_blocks.append("\n".join(current_fence_lines))
+                    current_fence_lines = []
+                    active_fence = None
             continue
 
         if fence_match:
-            char = fence_match.group(1)
-            length = len(fence_match.group(0))
+            char = fence_match.group(1)[0]
+            length = len(fence_match.group(1))
             active_fence = (char, length)
             current_fence_lines = [line]
             continue
 
-        # Table rows: lines with pipes separating columns or markdown table borders
-        if "|" in line and (stripped.startswith("|") or stripped.count("|") >= 2):
+        # Table rows: any line containing a pipe delimiter (e.g. '| col1 | col2 |' or 'Name | Type')
+        if "|" in line and not stripped.startswith("#"):
             table_rows.append(stripped)
 
         # Warning / qualifier sentences: lines containing protected qualifiers
@@ -409,10 +414,16 @@ def _extract_protected_elements(
         if words.intersection(_PROTECTED_QUALIFIERS):
             warning_lines.append(stripped)
 
+        # Query-bearing lines: factual lines matching query tokens (preserving numbers and details verbatim)
+        if query_tokens and not _NAV_CONTROL_RE.match(stripped) and not _BREADCRUMB_RE.match(stripped):
+            line_terms = query_tokens.intersection(_tokenize_terms(stripped.lower()))
+            if line_terms:
+                query_bearing_lines.append(stripped)
+
     if current_fence_lines:
         fenced_blocks.append("\n".join(current_fence_lines))
 
-    return fenced_blocks, table_rows, warning_lines
+    return fenced_blocks, table_rows, warning_lines, query_bearing_lines
 
 
 def _enforce_supercompress_safeguards(
@@ -421,23 +432,25 @@ def _enforce_supercompress_safeguards(
     query: str = "",
     initial_active_fence: Optional[Tuple[str, int]] = None,
 ) -> str:
-    """Enforces verbatim preservation of code blocks, tables, qualifiers, and query terms.
+    """Enforces verbatim preservation of code blocks, tables, qualifiers, and query-bearing lines.
 
     If the compressed text drops or alters protected content (code blocks, table rows,
-    warning/qualifier sentences, or any matched query terms), falls back to in-tree
+    warning/qualifier sentences, or query-bearing factual lines), falls back to in-tree
     boilerplate pruning for that chunk.
     """
     if not compressed_text or not isinstance(compressed_text, str):
         return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    orig_blocks, orig_tables, orig_warnings = _extract_protected_elements(original_text, initial_active_fence)
+    orig_blocks, orig_tables, orig_warnings, orig_query_lines = _extract_protected_elements(
+        original_text, query=query, initial_active_fence=initial_active_fence
+    )
 
     # 1. Code blocks must be preserved verbatim (not just fence presence)
     for block in orig_blocks:
         if block not in compressed_text:
             return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    # 2. Table rows must be preserved verbatim (no deleted or modified rows)
+    # 2. Table rows must be preserved verbatim (no deleted or modified rows like 'Name | Type')
     for row in orig_tables:
         if row not in compressed_text:
             return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
@@ -447,7 +460,12 @@ def _enforce_supercompress_safeguards(
         if warning not in compressed_text:
             return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    # 4. ALL query terms present in the original chunk must be preserved (not just one term)
+    # 4. Query-bearing factual lines must be preserved verbatim (e.g. preventing '24 hours' changing to '12 hours')
+    for qline in orig_query_lines:
+        if qline not in compressed_text:
+            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
+
+    # 5. ALL query terms present in the original chunk must be preserved (not just one term)
     query_tokens = _tokenize_query(query)
     if query_tokens:
         orig_query_terms = query_tokens.intersection(_tokenize_terms(original_text.lower()))

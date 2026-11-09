@@ -833,15 +833,47 @@ class TestCompressingRetrieverIntegration:
             assert "return 42" in res5[0]["text"]
             assert "return 99" not in res5[0]["text"]
 
-    def test_supercompress_installed_api_when_present(self):
-        """Tests real installed SuperCompress API if present in environment."""
-        pytest.importorskip("supercompress")
+        # 6. Altered query-bearing line (e.g. 24 hours -> 12 hours) must fall back to in-tree pruning
+        orig_query_line = "Home > API\nToken expires after 24 hours\nNext page: Config"
+        bad_compressed_line = "Home > API\nToken expires after 12 hours\nNext page: Config"
+        mock_module_6 = Mock(compress_for_turn=Mock(return_value=(bad_compressed_line, Mock())))
+        docs6 = [{"id": "6", "text": orig_query_line}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_6}):
+            res6 = compress_retrieved_chunks(docs6, query="token expires")
+            assert "Token expires after 24 hours" in res6[0]["text"]
+            assert "12 hours" not in res6[0]["text"]
+
+        # 7. Single-pipe table row (e.g. Name | Type) must be preserved verbatim or fall back
+        orig_single_pipe = "Home > API\nName | Type\nquery | string\nNext page"
+        bad_compressed_table = "Home > API\nquery | string\nNext page"  # dropped Name | Type
+        mock_module_7 = Mock(compress_for_turn=Mock(return_value=(bad_compressed_table, Mock())))
+        docs7 = [{"id": "7", "text": orig_single_pipe}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_7}):
+            res7 = compress_retrieved_chunks(docs7, query="query parameters")
+            assert "Name | Type" in res7[0]["text"]
+            assert "query | string" in res7[0]["text"]
+
+    def test_supercompress_installed_api_when_present(self, monkeypatch):
+        """Tests real installed SuperCompress API if present in environment, ensuring it reaches safeguards."""
+        supercompress = pytest.importorskip("supercompress")
         from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
 
+        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
+
         docs = [{"id": "d1", "text": "Home > API\nFactual chunk content.", "source": "s1"}]
-        res = compress_retrieved_chunks(docs, query="content")
-        assert len(res) == 1
-        assert "Factual chunk content." in res[0]["text"]
+        # 1. Direct call to installed package API
+        direct_out = supercompress.compress_for_turn(
+            context_blocks=[docs[0]["text"]],
+            user_query="content",
+        )
+        assert direct_out is not None
+
+        # 2. Call via compress_retrieved_chunks and verify compress_for_turn is invoked and output reaches safeguards
+        with patch.object(supercompress, "compress_for_turn", wraps=supercompress.compress_for_turn) as spy:
+            res = compress_retrieved_chunks(docs, query="content")
+            spy.assert_called_once()
+            assert len(res) == 1
+            assert "Factual chunk content." in res[0]["text"]
 
     def test_supercompress_explicit_package_absence_fallback(self):
         """Explicitly forces package absence and verifies graceful in-tree pruning fallback."""
@@ -861,10 +893,9 @@ class TestCompressingRetrieverIntegration:
     def test_on_off_near_budget_selection_and_parity(self, monkeypatch, retrieval_mode):
         """Asserts unchanged document IDs, order, and disabled text output under a restrictive token budget.
 
-        Tests single-group Dispatcher, multi-group Dispatcher, and legacy ClassicRAG.
-        Exercises the budget boundary and verifies excluded boundary candidates.
+        Exercises the real selection path in ClassicRAG and Dispatcher, testing the budget boundary.
         """
-        from docsgpt.utils import num_tokens_from_string
+        from docsgpt.retriever.classic_rag import ClassicRAG
 
         restrictive_budget = 110  # Cap: max(int(110 * 0.9), 100) = 100 tokens
 
@@ -872,122 +903,120 @@ class TestCompressingRetrieverIntegration:
             "id": "doc_a",
             "title": "Auth",
             "filename": "auth.md",
-            "text": "Home > Security > Auth\n" + ("Token expires in 3600 seconds for authentication. " * 3) + "\nNext page: Permissions",
-            "source": "s1",
+            "page_content": "Home > Security > Auth\n" + ("Token expires in 3600 seconds for authentication. " * 3) + "\nNext page: Permissions",
+            "metadata": {"source_id": "s1", "title": "Auth", "filename": "auth.md"},
         }
         doc_b = {
             "id": "doc_b",
             "title": "Permissions",
             "filename": "permissions.md",
-            "text": "Home > Security > Permissions\n" + ("Admin role is strictly required for write actions. " * 3) + "\nNext page: Logs",
-            "source": "s2",
+            "page_content": "Home > Security > Permissions\n" + ("Admin role is strictly required for write actions. " * 3) + "\nNext page: Logs",
+            "metadata": {"source_id": "s1", "title": "Permissions", "filename": "permissions.md"},
         }
         # doc_c is the boundary candidate: doc_a (41) + doc_b (38) = 79 tokens, doc_c (53 tokens) pushes total to 132 >= 100 cap -> EXCLUDED
         doc_c = {
             "id": "doc_c",
             "title": "Logs",
             "filename": "logs.md",
-            "text": "Home > Security > Logs\n" + ("Audit logs are retained for 90 days in compliance with security guidelines. " * 3) + "\nPrevious page: Permissions",
-            "source": "s3",
+            "page_content": "Home > Security > Logs\n" + ("Audit logs are retained for 90 days in compliance with security guidelines. " * 3) + "\nPrevious page: Permissions",
+            "metadata": {"source_id": "s1", "title": "Logs", "filename": "logs.md"},
         }
         raw_candidates = [doc_a, doc_b, doc_c]
 
-        cap = max(int(restrictive_budget * 0.9), 100)
+        # For legacy and single_group, patch ClassicRAG's source fetch to run its real selection loop
+        with patch.object(ClassicRAG, "_fetch_all", return_value=[(raw_candidates, "similarity")]):
+            with patch.object(ClassicRAG, "_plan_sources", return_value=[{"id": "s1", "src_k": 6}]):
+                def create_classic():
+                    rag = ClassicRAG(source={"active_docs": ["s1"], "question": "tokens"}, doc_token_limit=restrictive_budget)
+                    rag.vectorstores = ["s1"]
+                    return rag
 
-        def search_with_budget(*args, **kwargs):
-            cum = 0
-            res = []
-            for d in raw_candidates:
-                toks = num_tokens_from_string(d["text"])
-                if cum + toks < cap:
-                    res.append(dict(d))
-                    cum += toks
-                else:
-                    break
-            return res
+                # 1. Measure OFF: CHUNK_COMPRESSION_ENABLED = False
+                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
+                if retrieval_mode == "legacy":
+                    monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
+                    retriever_off = build_dispatcher(create_classic, doc_token_limit=restrictive_budget)
+                elif retrieval_mode == "single_group":
+                    monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+                    retriever_off = build_dispatcher(
+                        create_classic,
+                        source={"question": "tokens", "active_docs": ["s1"]},
+                        sources=[{"id": "s1", "retrieval": None}],
+                        doc_token_limit=restrictive_budget,
+                    )
+                else:  # multi_group
+                    monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+                    # For multi_group, let group retrievers return source-specific candidates and let Dispatcher's real merge enforce budget
+                    def make_group_retriever(group, budget):
+                        m = Mock()
+                        docs = [
+                            {"id": d["id"], "text": d["page_content"], "title": d["title"], "filename": d["filename"], "source_name": d["metadata"]["source_id"]}
+                            for d in raw_candidates if d["metadata"]["source_id"] in group["doc_ids"]
+                        ]
+                        m.search = Mock(return_value=docs)
+                        m.last_outcome = None
+                        return m
 
-        def make_group_retriever(group, budget):
-            m = Mock()
-            if retrieval_mode == "multi_group":
-                # For multi_group, return docs belonging to this group and let Dispatcher's real merge enforce the budget
-                docs = [dict(d) for d in raw_candidates if d["source"] in group["doc_ids"]]
-                m.search = Mock(return_value=docs)
-            else:
-                m.search = Mock(side_effect=search_with_budget)
-            m.last_outcome = None
-            return m
+                    patcher = patch.object(Dispatcher, "_build_group_retriever", side_effect=make_group_retriever)
+                    patcher.start()
 
-        with patch.object(Dispatcher, "_build_group_retriever", side_effect=make_group_retriever):
-            mock_retriever = Mock()
-            mock_retriever.search = Mock(side_effect=search_with_budget)
-            mock_retriever.last_outcome = None
+                    retriever_off = build_dispatcher(
+                        create_classic,
+                        source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
+                        sources=[
+                            {"id": "s1", "retrieval": {"retriever": "classic"}},
+                            {"id": "s2", "retrieval": {"retriever": "hybrid"}},
+                            {"id": "s3", "retrieval": {"retriever": "custom"}},
+                        ],
+                        doc_token_limit=restrictive_budget,
+                    )
 
-            # 1. Measure OFF: CHUNK_COMPRESSION_ENABLED = False
-            monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
-            if retrieval_mode == "legacy":
-                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
-                retriever_off = build_dispatcher(lambda: mock_retriever, doc_token_limit=restrictive_budget)
-            elif retrieval_mode == "single_group":
-                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
-                retriever_off = build_dispatcher(
-                    lambda: mock_retriever,
-                    source={"question": "tokens", "active_docs": ["s1"]},
-                    sources=[{"id": "s1", "retrieval": None}],
-                    doc_token_limit=restrictive_budget,
-                )
-            else:  # multi_group
-                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
-                retriever_off = build_dispatcher(
-                    lambda: mock_retriever,
-                    source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
-                    sources=[
-                        {"id": "s1", "retrieval": {"retriever": "classic"}},
-                        {"id": "s2", "retrieval": {"retriever": "hybrid"}},
-                        {"id": "s3", "retrieval": {"retriever": "custom"}},
-                    ],
-                    doc_token_limit=restrictive_budget,
-                )
+                res_off = retriever_off.search("tokens")
+                off_titles = [d.get("title") for d in res_off]
+                # Compare full disabled text output against original candidate text
+                assert res_off[0]["text"] == doc_a["page_content"]
+                assert res_off[1]["text"] == doc_b["page_content"]
+                assert "Home > Security > Auth" in res_off[0]["text"]
+                assert "Next page: Permissions" in res_off[0]["text"]
 
-            res_off = retriever_off.search("tokens")
-            off_ids = [d["id"] for d in res_off]
-            assert "Home > Security > Auth" in res_off[0]["text"]
-            assert "Next page: Permissions" in res_off[0]["text"]
+                # 2. Measure ON: CHUNK_COMPRESSION_ENABLED = True
+                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
+                if retrieval_mode == "legacy":
+                    retriever_on = build_dispatcher(create_classic, doc_token_limit=restrictive_budget)
+                elif retrieval_mode == "single_group":
+                    retriever_on = build_dispatcher(
+                        create_classic,
+                        source={"question": "tokens", "active_docs": ["s1"]},
+                        sources=[{"id": "s1", "retrieval": None}],
+                        doc_token_limit=restrictive_budget,
+                    )
+                else:  # multi_group
+                    retriever_on = build_dispatcher(
+                        create_classic,
+                        source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
+                        sources=[
+                            {"id": "s1", "retrieval": {"retriever": "classic"}},
+                            {"id": "s2", "retrieval": {"retriever": "hybrid"}},
+                            {"id": "s3", "retrieval": {"retriever": "custom"}},
+                        ],
+                        doc_token_limit=restrictive_budget,
+                    )
 
-            # 2. Measure ON: CHUNK_COMPRESSION_ENABLED = True
-            monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
-            if retrieval_mode == "legacy":
-                retriever_on = build_dispatcher(lambda: mock_retriever, doc_token_limit=restrictive_budget)
-            elif retrieval_mode == "single_group":
-                retriever_on = build_dispatcher(
-                    lambda: mock_retriever,
-                    source={"question": "tokens", "active_docs": ["s1"]},
-                    sources=[{"id": "s1", "retrieval": None}],
-                    doc_token_limit=restrictive_budget,
-                )
-            else:  # multi_group
-                retriever_on = build_dispatcher(
-                    lambda: mock_retriever,
-                    source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
-                    sources=[
-                        {"id": "s1", "retrieval": {"retriever": "classic"}},
-                        {"id": "s2", "retrieval": {"retriever": "hybrid"}},
-                        {"id": "s3", "retrieval": {"retriever": "custom"}},
-                    ],
-                    doc_token_limit=restrictive_budget,
-                )
+                res_on = retriever_on.search("tokens")
+                on_titles = [d.get("title") for d in res_on]
 
-            res_on = retriever_on.search("tokens")
-            on_ids = [d["id"] for d in res_on]
+                if retrieval_mode == "multi_group":
+                    patcher.stop()
 
-            # Invariant checks:
-            # A. Full list comparison: exact same documents and order (NOT sliced)
-            assert on_ids == off_ids == ["doc_a", "doc_b"]
-            # B. Verify boundary candidate doc_c was excluded by token budget
-            assert "doc_c" not in on_ids
-            assert "doc_c" not in off_ids
-            assert len(on_ids) == len(off_ids) == 2
-            # C. Enabled text output prunes navigation boilerplate
-            assert "Home > Security > Auth" not in res_on[0]["text"]
-            assert "Next page: Permissions" not in res_on[0]["text"]
-            assert "Token expires in 3600 seconds" in res_on[0]["text"]
+                # Invariant checks:
+                # A. Full list comparison: exact same documents and order (NOT sliced)
+                assert on_titles == off_titles == ["Auth", "Permissions"]
+                # B. Verify boundary candidate doc_c was excluded by token budget
+                assert "Logs" not in on_titles
+                assert "Logs" not in off_titles
+                assert len(on_titles) == len(off_titles) == 2
+                # C. Enabled text output prunes navigation boilerplate
+                assert "Home > Security > Auth" not in res_on[0]["text"]
+                assert "Next page: Permissions" not in res_on[0]["text"]
+                assert "Token expires in 3600 seconds" in res_on[0]["text"]
 

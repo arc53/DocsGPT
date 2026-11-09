@@ -276,6 +276,8 @@ def run_pipeline_benchmark(
     enc: tiktoken.Encoding,
 ) -> Dict[str, Any]:
     """Executes benchmark for either ClassicRAG or Dispatcher pipeline under specified compression mode."""
+    from docsgpt.retriever.classic_rag import ClassicRAG
+
     total_prompt_tokens = 0
     total_context_tokens = 0
     total_claims = 0
@@ -294,38 +296,60 @@ def run_pipeline_benchmark(
     prompt_latencies: List[float] = []
     e2e_latencies: List[float] = []
 
+    supercompress_ran = False
+
     for item in EVALUATION_QUERIES:
         query = item["query"]
         target = item["target"]
         raw_corpus = deepcopy(REPRESENTATIVE_CORPUS)
 
-        mock_retriever = Mock()
-        mock_retriever.search = Mock(side_effect=lambda *a, **k: [dict(d) for d in raw_corpus])
-        mock_retriever.last_outcome = None
+        # Prepare documents for ClassicRAG ingestion and selection pipeline
+        classic_docs = [
+            {
+                "id": d["id"],
+                "title": d["title"],
+                "url": d["url"],
+                "filename": f"{d['id']}.md",
+                "page_content": d["text"],
+                "metadata": {"source_id": d["source"], "title": d["title"], "url": d["url"]},
+            }
+            for d in raw_corpus
+        ]
 
         t_start_e2e = time.perf_counter()
 
-        # Step 1: Retrieval
+        # Step 1: Real Retrieval through ClassicRAG / Dispatcher
         t0_ret = time.perf_counter()
-        if pipeline_name == "ClassicRAG":
-            with patch("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False):
-                with patch("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False):
-                    retriever = build_dispatcher(lambda: mock_retriever)
-                    retrieved_docs = retriever.search(query)
-        else:  # Dispatcher
-            with patch("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False):
-                with patch("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True):
-                    with patch.object(Dispatcher, "_build_group_retriever", return_value=mock_retriever):
-                        retriever = build_dispatcher(
-                            lambda: mock_retriever,
-                            source={"question": query, "active_docs": ["docs_core", "docs_api", "docs_sdk"]},
-                            sources=[
-                                {"id": "docs_core", "retrieval": {"retriever": "classic"}},
-                                {"id": "docs_api", "retrieval": {"retriever": "classic"}},
-                                {"id": "docs_sdk", "retrieval": {"retriever": "hybrid"}},
-                            ],
-                        )
+        with patch.object(ClassicRAG, "_fetch_all", return_value=[(classic_docs, "similarity")]):
+            with patch.object(ClassicRAG, "_plan_sources", return_value=[{"id": "docs_core", "src_k": 8}]):
+                def create_classic():
+                    rag = ClassicRAG(source={"active_docs": ["docs_core"], "question": query}, chunks=8)
+                    rag.vectorstores = ["docs_core"]
+                    return rag
+
+                if pipeline_name == "ClassicRAG":
+                    with patch("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False):
+                        retriever = build_dispatcher(create_classic)
                         retrieved_docs = retriever.search(query)
+                else:  # Dispatcher (multi-group routing)
+                    with patch("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True):
+                        def make_group_retriever(group, budget):
+                            rag = ClassicRAG(source={"active_docs": group["doc_ids"], "question": query}, chunks=8, doc_token_limit=budget)
+                            rag.vectorstores = group["doc_ids"]
+                            return rag
+
+                        with patch.object(Dispatcher, "_build_group_retriever", side_effect=make_group_retriever):
+                            retriever = build_dispatcher(
+                                create_classic,
+                                source={"question": query, "active_docs": ["docs_core", "docs_api", "docs_sdk"]},
+                                sources=[
+                                    {"id": "docs_core", "retrieval": {"retriever": "classic"}},
+                                    {"id": "docs_api", "retrieval": {"retriever": "classic"}},
+                                    {"id": "docs_sdk", "retrieval": {"retriever": "hybrid"}},
+                                ],
+                            )
+                            retrieved_docs = retriever.search(query)
+
         t_ret = (time.perf_counter() - t0_ret) * 1000
         retrieval_latencies.append(t_ret)
 
@@ -336,10 +360,12 @@ def run_pipeline_benchmark(
         elif compression_mode == "intree":
             retrieved_docs = prune_boilerplate(retrieved_docs, query=query)
         elif compression_mode == "supercompress":
-            # Simulate or execute SuperCompress neural compression with in-tree safeguards
             try:
+                import supercompress  # noqa: F401
+                supercompress_ran = True
                 retrieved_docs = compress_retrieved_chunks(retrieved_docs, query=query)
-            except Exception:
+            except ImportError:
+                supercompress_ran = False
                 retrieved_docs = prune_boilerplate(retrieved_docs, query=query)
         t_comp = (time.perf_counter() - t0_comp) * 1000
         compression_latencies.append(t_comp)
@@ -408,6 +434,7 @@ def run_pipeline_benchmark(
     return {
         "pipeline": pipeline_name,
         "mode": compression_mode,
+        "supercompress_ran": supercompress_ran,
         "avg_prompt_tokens": avg_prompt_tokens,
         "avg_context_tokens": avg_context_tokens,
         "cost_per_million": cost_per_million,
@@ -453,6 +480,9 @@ def main():
             else "SuperCompress (Optional Neural)"
         )
         print(f"[{res['pipeline']}] - {mode_label}:")
+        if res["mode"] == "supercompress":
+            sc_status = "Ran successfully via neural model" if res["supercompress_ran"] else "Fell back to in-tree pruning (package not installed in environment)"
+            print(f"  * Execution Status:         {sc_status}")
         print(f"  * Context Tokens:           {res['avg_context_tokens']}")
         print(f"  * Full Prompt Tokens:       {res['avg_prompt_tokens']}")
         print(f"  * Prompt Cost / 1M Qs:      ${res['cost_per_million']:.2f}")
