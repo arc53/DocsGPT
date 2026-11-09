@@ -244,14 +244,14 @@ def assemble_full_rag_prompt(docs: List[Dict[str, Any]], query: str) -> str:
     return system_prompt + context_str + user_section
 
 
-def generate_and_verify_answer(
+def verify_context_and_citation_support(
     prompt: str,
     retrieved_docs: List[Dict[str, Any]],
     target: str,
     cited_doc_indices: List[int],
 ) -> Tuple[bool, bool]:
-    """Generates an answer based on prompt context and verifies factual support and citation grounding."""
-    # 1. Verify Citation Support: does the cited document in retrieved_docs support the claim?
+    """Verifies that cited document headers exist in prompt and that target factual text is retained in retrieved context."""
+    # 1. Verify Citation Header Presence: does the cited document in retrieved_docs have a corresponding prompt header?
     citation_supported = True
     for idx in cited_doc_indices:
         if idx <= len(retrieved_docs):
@@ -264,10 +264,10 @@ def generate_and_verify_answer(
             citation_supported = False
             break
 
-    # 2. Answer Accuracy: are key target facts retained in the retrieved context?
-    answer_accurate = any(target in d.get("text", "") for d in retrieved_docs)
+    # 2. Context Fact Check: is the key target factual string retained in the retrieved context?
+    context_fact_retained = any(target in d.get("text", "") for d in retrieved_docs)
 
-    return citation_supported, answer_accurate
+    return citation_supported, context_fact_retained
 
 
 def run_pipeline_benchmark(
@@ -297,6 +297,7 @@ def run_pipeline_benchmark(
     e2e_latencies: List[float] = []
 
     supercompress_ran = False
+    fallback_count = 0
 
     for item in EVALUATION_QUERIES:
         query = item["query"]
@@ -364,8 +365,9 @@ def run_pipeline_benchmark(
                 import supercompress  # noqa: F401
                 supercompress_ran = True
                 retrieved_docs = compress_retrieved_chunks(retrieved_docs, query=query)
-            except ImportError:
+            except (ImportError, Exception):
                 supercompress_ran = False
+                fallback_count += 1
                 retrieved_docs = prune_boilerplate(retrieved_docs, query=query)
         t_comp = (time.perf_counter() - t0_comp) * 1000
         compression_latencies.append(t_comp)
@@ -376,8 +378,8 @@ def run_pipeline_benchmark(
         t_prompt = (time.perf_counter() - t0_prompt) * 1000
         prompt_latencies.append(t_prompt)
 
-        # Step 4: Answer Generation & Citation Claim Verification
-        is_cited, is_accurate = generate_and_verify_answer(
+        # Step 4: Context Factual Retention & Citation Verification
+        is_cited, is_accurate = verify_context_and_citation_support(
             prompt=full_prompt,
             retrieved_docs=retrieved_docs,
             target=item["target"],
@@ -388,7 +390,7 @@ def run_pipeline_benchmark(
             supported_claims += 1
 
         total_oracle_checks += 1
-        if is_accurate and any(target in d.get("text", "") for d in retrieved_docs):
+        if is_accurate:
             oracle_accuracy_hits += 1
 
         t_e2e = (time.perf_counter() - t_start_e2e) * 1000
@@ -400,21 +402,25 @@ def run_pipeline_benchmark(
         total_prompt_tokens += prompt_tokens
         total_context_tokens += context_tokens
 
-        # Content preservation checks
-        if item["expected_code"]:
-            expected_code_blocks += 1
-            if any("```" in d.get("text", "") for d in retrieved_docs):
-                code_blocks_preserved += 1
+        # Content preservation checks against the specific retrieved source document
+        if item["cited_docs"] and item["cited_docs"][0] <= len(retrieved_docs):
+            cited_doc = retrieved_docs[item["cited_docs"][0] - 1]
+            doc_text = cited_doc.get("text", "")
 
-        if item["expected_table"]:
-            expected_tables += 1
-            if any("|" in d.get("text", "") for d in retrieved_docs):
-                tables_preserved += 1
+            if item["expected_code"]:
+                expected_code_blocks += 1
+                if item["target"] in doc_text and "```" in doc_text:
+                    code_blocks_preserved += 1
 
-        if item["qualifier"]:
-            expected_qualifiers += 1
-            if any(item["qualifier"].lower() in d.get("text", "").lower() for d in retrieved_docs):
-                qualifiers_preserved += 1
+            if item["expected_table"]:
+                expected_tables += 1
+                if item["target"] in doc_text and "|" in doc_text:
+                    tables_preserved += 1
+
+            if item["qualifier"]:
+                expected_qualifiers += 1
+                if item["qualifier"].lower() in doc_text.lower():
+                    qualifiers_preserved += 1
 
     num_queries = len(EVALUATION_QUERIES)
     avg_prompt_tokens = total_prompt_tokens // num_queries
@@ -435,6 +441,7 @@ def run_pipeline_benchmark(
         "pipeline": pipeline_name,
         "mode": compression_mode,
         "supercompress_ran": supercompress_ran,
+        "fallback_count": fallback_count,
         "avg_prompt_tokens": avg_prompt_tokens,
         "avg_context_tokens": avg_context_tokens,
         "cost_per_million": cost_per_million,
@@ -481,15 +488,18 @@ def main():
         )
         print(f"[{res['pipeline']}] - {mode_label}:")
         if res["mode"] == "supercompress":
-            sc_status = "Ran successfully via neural model" if res["supercompress_ran"] else "Fell back to in-tree pruning (package not installed in environment)"
+            if res["supercompress_ran"] and res["fallback_count"] == 0:
+                sc_status = "Ran successfully via neural model (0 fallbacks)"
+            else:
+                sc_status = f"Fell back to in-tree pruning ({res['fallback_count']}/{len(EVALUATION_QUERIES)} queries fell back; package not installed or rejected)"
             print(f"  * Execution Status:         {sc_status}")
         print(f"  * Context Tokens:           {res['avg_context_tokens']}")
         print(f"  * Full Prompt Tokens:       {res['avg_prompt_tokens']}")
         print(f"  * Prompt Cost / 1M Qs:      ${res['cost_per_million']:.2f}")
-        print(f"  * Pruning Overhead:         {res['avg_comp_latency']:.2f} ms")
-        print(f"  * Total End-to-End Latency: {res['avg_e2e_latency']:.2f} ms")
-        print(f"  * Answer Claim Accuracy:    {res['oracle_accuracy_pct']:.1f}%")
-        print(f"  * Supported Citations:      {res['supported_citations_pct']:.1f}%")
+        print(f"  * Pruning Overhead Latency: {res['avg_comp_latency']:.2f} ms")
+        print(f"  * Pipeline Latency (Synth): {res['avg_e2e_latency']:.2f} ms")
+        print(f"  * Context Fact Retention:   {res['oracle_accuracy_pct']:.1f}%")
+        print(f"  * Citation Header Grounding: {res['supported_citations_pct']:.1f}%")
         print(f"  * Code Blocks Kept:         {res['code_pct']:.1f}%")
         print(f"  * Tables Kept:              {res['table_pct']:.1f}%")
         print(f"  * Qualifiers Kept:          {res['qualifier_pct']:.1f}%\n")
@@ -507,13 +517,13 @@ def main():
         f"| **Context Tokens / Query** | {classic_off['avg_context_tokens']} | {classic_intree['avg_context_tokens']} | {disp_off['avg_context_tokens']} | {disp_intree['avg_context_tokens']} | **-{classic_intree_token_savings:.1f}% (Classic) / -{disp_intree_token_savings:.1f}% (Dispatcher)** |",
         f"| **Full Prompt Tokens** | {classic_off['avg_prompt_tokens']} | {classic_intree['avg_prompt_tokens']} | {disp_off['avg_prompt_tokens']} | {disp_intree['avg_prompt_tokens']} | **Direct token savings in prompt** |",
         f"| **Prompt Cost / 1M Queries** | ${classic_off['cost_per_million']:.2f} | ${classic_intree['cost_per_million']:.2f} | ${disp_off['cost_per_million']:.2f} | ${disp_intree['cost_per_million']:.2f} | **Save ${classic_intree_cost_savings:.2f} - ${disp_intree_cost_savings:.2f} per 1M Qs** |",
-        f"| **Generated Answer Accuracy** | {classic_off['oracle_accuracy_pct']:.1f}% | {classic_intree['oracle_accuracy_pct']:.1f}% | {disp_off['oracle_accuracy_pct']:.1f}% | {disp_intree['oracle_accuracy_pct']:.1f}% | **{classic_intree['oracle_accuracy_pct']:.1f}% factual accuracy preserved** |",
-        f"| **Supported Citations Ratio** | {classic_off['supported_citations_pct']:.1f}% | {classic_intree['supported_citations_pct']:.1f}% | {disp_off['supported_citations_pct']:.1f}% | {disp_intree['supported_citations_pct']:.1f}% | **{classic_intree['supported_citations_pct']:.1f}% claims grounded in cited sources** |",
-        f"| **Code Blocks Preserved** | {classic_off['code_pct']:.1f}% | {classic_intree['code_pct']:.1f}% | {disp_off['code_pct']:.1f}% | {disp_intree['code_pct']:.1f}% | **{classic_intree['code_pct']:.1f}% code blocks intact** |",
-        f"| **Markdown Tables Preserved** | {classic_off['table_pct']:.1f}% | {classic_intree['table_pct']:.1f}% | {disp_off['table_pct']:.1f}% | {disp_intree['table_pct']:.1f}% | **{classic_intree['table_pct']:.1f}% tables intact** |",
+        f"| **Context Fact Retention** | {classic_off['oracle_accuracy_pct']:.1f}% | {classic_intree['oracle_accuracy_pct']:.1f}% | {disp_off['oracle_accuracy_pct']:.1f}% | {disp_intree['oracle_accuracy_pct']:.1f}% | **{classic_intree['oracle_accuracy_pct']:.1f}% key facts retained** |",
+        f"| **Citation Header Grounding** | {classic_off['supported_citations_pct']:.1f}% | {classic_intree['supported_citations_pct']:.1f}% | {disp_off['supported_citations_pct']:.1f}% | {disp_intree['supported_citations_pct']:.1f}% | **{classic_intree['supported_citations_pct']:.1f}% headers grounded** |",
+        f"| **Code Blocks Preserved** | {classic_off['code_pct']:.1f}% | {classic_intree['code_pct']:.1f}% | {disp_off['code_pct']:.1f}% | {disp_intree['code_pct']:.1f}% | **{classic_intree['code_pct']:.1f}% code blocks intact in source** |",
+        f"| **Markdown Tables Preserved** | {classic_off['table_pct']:.1f}% | {classic_intree['table_pct']:.1f}% | {disp_off['table_pct']:.1f}% | {disp_intree['table_pct']:.1f}% | **{classic_intree['table_pct']:.1f}% tables intact in source** |",
         f"| **Qualifiers & Warnings Kept** | {classic_off['qualifier_pct']:.1f}% | {classic_intree['qualifier_pct']:.1f}% | {disp_off['qualifier_pct']:.1f}% | {disp_intree['qualifier_pct']:.1f}% | **{classic_intree['qualifier_pct']:.1f}% security warnings intact** |",
         f"| **Pruning Overhead Latency** | 0.00 ms | +{classic_intree['avg_comp_latency']:.2f} ms | 0.00 ms | +{disp_intree['avg_comp_latency']:.2f} ms | **Negligible (~{classic_intree['avg_comp_latency']:.2f}ms overhead)** |",
-        f"| **End-to-End Latency** | {classic_off['avg_e2e_latency']:.2f} ms | {classic_intree['avg_e2e_latency']:.2f} ms | {disp_off['avg_e2e_latency']:.2f} ms | {disp_intree['avg_e2e_latency']:.2f} ms | **Sub-5ms total pipeline latency** |",
+        f"| **Pipeline Latency (Synthetic)** | {classic_off['avg_e2e_latency']:.2f} ms | {classic_intree['avg_e2e_latency']:.2f} ms | {disp_off['avg_e2e_latency']:.2f} ms | {disp_intree['avg_e2e_latency']:.2f} ms | **Sub-10ms in-memory assembly latency** |",
     ]
     print("\n".join(table))
 

@@ -84,6 +84,20 @@ class TestGetEncoding:
         with pytest.raises(ValueError, match="cl100k_base"):
             utils.get_encoding()
 
+    @pytest.mark.unit
+    def test_crlf_packaged_encoding_is_normalized(self, monkeypatch, tmp_path):
+        from docsgpt import utils
+
+        raw_data = utils._CL100K_BASE_FILE.read_bytes().replace(b"\r\n", b"\n")
+        crlf_data = raw_data.replace(b"\n", b"\r\n")
+        crlf_file = tmp_path / "cl100k_base.tiktoken"
+        crlf_file.write_bytes(crlf_data)
+
+        monkeypatch.setattr(utils, "_encoding", None)
+        monkeypatch.setattr(utils, "_CL100K_BASE_FILE", crlf_file)
+        encoding = utils.get_encoding()
+        assert encoding.encode("hello world") == [15339, 1917]
+
 
 class TestGetGptModel:
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from unittest.mock import Mock, patch
 
 import pytest
@@ -322,6 +323,7 @@ class TestBoilerplatePruningRules:
         even with an unrelated query, because 'token' starts with lowercase 't'.
         """
         cases = [
+            "Next page token lifetime",
             "Next page token lifetime: 24 hours",
             "Next page token parameter: max 50 items",
             "Next page token expires after 24 hours",
@@ -332,11 +334,14 @@ class TestBoilerplatePruningRules:
             cleaned = prune_chunk_text(line, query="unrelated search query")
             assert cleaned == line, f"Factual line with navigation prefix was pruned: {line!r}"
 
-        # But true navigation labels with uppercase words should be pruned
+        # But true navigation labels with uppercase words should be pruned (including case-insensitive page)
         nav_cases = [
             "Next page Authentication",
             "Next page: Authentication",
+            "NEXT PAGE: Authentication",
             "Previous page Overview",
+            "Previous Page Overview",
+            "Next PAGE Authentication",
             "Next page: User Profile Settings",
         ]
         for line in nav_cases:
@@ -814,14 +819,18 @@ class TestCompressingRetrieverIntegration:
             assert "Home > API" not in res3[0]["text"]
 
         # 4. SuperCompress retains only 1 of 2 query terms -> falls back
-        orig_multi_query = "Home > API\nDatabase credentials must be rotated every 90 days.\nNext page"
+        # Use sentence without protected qualifier ("are rotated" instead of "must be rotated")
+        # to ensure rejection is purely driven by query-term safeguard
+        orig_multi_query = "Home > API\nDatabase credentials are rotated every 90 days.\nNext page"
         # Query contains "database credentials", but compressed dropped "credentials"
-        bad_supercompress_query = ("Home > API\nDatabase must be rotated every 90 days.\nNext page", Mock())
+        bad_supercompress_query = ("Home > API\nDatabase is rotated every 90 days.\nNext page", Mock())
         mock_module_4 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_query))
         docs4 = [{"id": "4", "text": orig_multi_query}]
         with patch.dict("sys.modules", {"supercompress": mock_module_4}):
-            res4 = compress_retrieved_chunks(docs4, query="database credentials")
-            assert "Database credentials must be rotated every 90 days." in res4[0]["text"]
+            with patch("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", return_value=False):
+                res4 = compress_retrieved_chunks(docs4, query="database credentials")
+                mock_module_4.compress_for_turn.assert_called_once()
+                assert "Database credentials are rotated every 90 days." in res4[0]["text"]
 
         # 5. Continuation-fence metadata preservation
         orig_continuation = "def run():\n    return 42\n```\nHome > API"
@@ -855,6 +864,10 @@ class TestCompressingRetrieverIntegration:
 
     def test_supercompress_installed_api_when_present(self, monkeypatch):
         """Tests real installed SuperCompress API if present in environment, ensuring it reaches safeguards."""
+        if sys.platform == "darwin":
+            from docsgpt.retriever.stages.boilerplate_pruning import _mac_torch_faiss_conflict
+            if _mac_torch_faiss_conflict():
+                pytest.skip("PyTorch and FAISS collide on macOS")
         supercompress = pytest.importorskip("supercompress")
         from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
 

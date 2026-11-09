@@ -83,8 +83,8 @@ _NAV_CONTROL_RE = re.compile(
     r"edit this page(?: on github)?|was this (?:page|article) helpful\??|"
     r"share this page|print this page|«\s*previous\s*|\s*next\s*»|"
     r"(?:previous|next)\s+page)|"
-    r"(?i:previous|next)\s+page:\s*" + _NAV_LABEL_COLON_PAT + r"|"
-    r"(?i:previous|next)\s+page\s+" + _NAV_LABEL_SPACE_PAT + r")$"
+    r"(?i:(?:previous|next)\s+page):\s*" + _NAV_LABEL_COLON_PAT + r"|"
+    r"(?i:(?:previous|next)\s+page)\s+" + _NAV_LABEL_SPACE_PAT + r")$"
 )
 
 _PAGINATION_LINK_RE = re.compile(r"^\[\s*(?:«?\s*previous|\s*next\s*»)\s*\]\([^\)]+\)$", re.IGNORECASE)
@@ -405,6 +405,14 @@ def _extract_protected_elements(
             current_fence_lines = [line]
             continue
 
+        # Indented code blocks (4+ spaces or tab) and inline code spans
+        if (line.startswith("    ") or line.startswith("\t")) and stripped:
+            fenced_blocks.append(stripped)
+        elif "`" in stripped:
+            for ic in re.findall(r"`+([^`]+)`+", stripped):
+                if ic.strip():
+                    fenced_blocks.append(f"`{ic.strip()}`")
+
         # Table rows: any line containing a pipe delimiter (e.g. '| col1 | col2 |' or 'Name | Type')
         if "|" in line and not stripped.startswith("#"):
             table_rows.append(stripped)
@@ -430,6 +438,7 @@ def _enforce_supercompress_safeguards(
     original_text: str,
     compressed_text: str,
     query: str = "",
+    seen_boilerplate: Optional[Set[str]] = None,
     initial_active_fence: Optional[Tuple[str, int]] = None,
 ) -> str:
     """Enforces verbatim preservation of code blocks, tables, qualifiers, and query-bearing lines.
@@ -439,7 +448,12 @@ def _enforce_supercompress_safeguards(
     boilerplate pruning for that chunk.
     """
     if not compressed_text or not isinstance(compressed_text, str):
-        return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
+        return prune_chunk_text(
+            original_text,
+            query=query,
+            seen_boilerplate=seen_boilerplate,
+            initial_active_fence=initial_active_fence,
+        )
 
     orig_blocks, orig_tables, orig_warnings, orig_query_lines = _extract_protected_elements(
         original_text, query=query, initial_active_fence=initial_active_fence
@@ -448,22 +462,42 @@ def _enforce_supercompress_safeguards(
     # 1. Code blocks must be preserved verbatim (not just fence presence)
     for block in orig_blocks:
         if block not in compressed_text:
-            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
+            return prune_chunk_text(
+                original_text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
 
     # 2. Table rows must be preserved verbatim (no deleted or modified rows like 'Name | Type')
     for row in orig_tables:
         if row not in compressed_text:
-            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
+            return prune_chunk_text(
+                original_text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
 
     # 3. Warning and qualifier-bearing lines must be preserved verbatim
     for warning in orig_warnings:
         if warning not in compressed_text:
-            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
+            return prune_chunk_text(
+                original_text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
 
     # 4. Query-bearing factual lines must be preserved verbatim (e.g. preventing '24 hours' changing to '12 hours')
     for qline in orig_query_lines:
         if qline not in compressed_text:
-            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
+            return prune_chunk_text(
+                original_text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
 
     # 5. ALL query terms present in the original chunk must be preserved (not just one term)
     query_tokens = _tokenize_query(query)
@@ -471,10 +505,20 @@ def _enforce_supercompress_safeguards(
         orig_query_terms = query_tokens.intersection(_tokenize_terms(original_text.lower()))
         comp_query_terms = query_tokens.intersection(_tokenize_terms(compressed_text.lower()))
         if not orig_query_terms.issubset(comp_query_terms):
-            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
+            return prune_chunk_text(
+                original_text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
 
-    # Apply in-tree boilerplate pruning on the compressed text as final pass
-    return prune_chunk_text(compressed_text, query=query, initial_active_fence=initial_active_fence)
+    # Apply in-tree boilerplate pruning on the compressed text as final pass with shared deduplication state
+    return prune_chunk_text(
+        compressed_text,
+        query=query,
+        seen_boilerplate=seen_boilerplate,
+        initial_active_fence=initial_active_fence,
+    )
 
 
 def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
@@ -510,9 +554,14 @@ def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> Li
             else:
                 compressed_texts.append(None)
 
+        seen_boilerplate: Set[str] = set()
         for doc, orig_text, comp_text in zip(docs, orig_texts, compressed_texts):
             if comp_text is not None:
-                metadata = doc.get("metadata") or doc.get("extra_info")
+                metadata = (
+                    doc.get("metadata")
+                    if isinstance(doc.get("metadata"), dict)
+                    else (doc.get("extra_info") if isinstance(doc.get("extra_info"), dict) else doc)
+                )
                 initial_active_fence = None
                 if isinstance(metadata, dict):
                     initial_active_fence = _normalize_fence_state(
@@ -525,6 +574,7 @@ def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> Li
                     original_text=orig_text,
                     compressed_text=comp_text,
                     query=query or "",
+                    seen_boilerplate=seen_boilerplate,
                     initial_active_fence=initial_active_fence,
                 )
         return docs
