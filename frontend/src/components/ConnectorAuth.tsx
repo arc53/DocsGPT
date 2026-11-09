@@ -266,9 +266,10 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
               <Button
                 type="button"
                 variant="link"
-                size="xs"
+                size="text"
+                tone="current"
                 onClick={onDisconnect}
-                className="-my-1 ml-2 shrink-0"
+                className="ml-2 shrink-0"
               >
                 {t('modals.uploadDoc.connectors.auth.disconnect')}
               </Button>

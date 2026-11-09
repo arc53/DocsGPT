@@ -2719,9 +2719,9 @@
     "stoppedTitle": "Stopped",
     "errors": {
       "contextLength": "This message and its attached files are too large for the model's context window. Send fewer or smaller files.",
-      "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or make them a Knowledge source the chat can search instead of sending them whole.",
       "contextLengthSized": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files.",
-      "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or make them a Knowledge source the chat can search instead of sending them whole.",
       "serverError": "Please try again later. We apologize for any inconvenience.",
       "clientDisconnect": "The response stopped before anything was produced. Try again.",
       "timeLimit": "Stopped: time limit. Progress so far is saved.",
@@ -4593,7 +4593,7 @@
       },
       "rate_limited": {
         "title": "Too many requests",
-        "description": "Wait a moment, then try again."
+        "description": "Wait a moment."
       },
       "quota": {
         "title": "Usage limit reached",
@@ -4610,7 +4610,7 @@
       "bad_request": {
         "title": "Couldn't send that",
         "description": "The request couldn't be read. Reload the page and try again.",
-        "startOver": "DocsGPT couldn't take this conversation. Start over to keep going: what you've drafted stays."
+        "startOver": "DocsGPT couldn't take this conversation. What you've drafted stays."
       }
     },
     "agent": {
@@ -4763,7 +4763,7 @@
     "startOver": "Start over",
     "full": {
       "title": "This conversation is full",
-      "description": "It's as long as a draft conversation can get. Start over to keep going: what you've drafted stays."
+      "description": "It's as long as a draft conversation can get. What you've drafted stays."
     }
   }
 }

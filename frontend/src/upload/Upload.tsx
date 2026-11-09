@@ -1158,22 +1158,22 @@ function Upload({
     githubConnector ? (
       <Alert variant="info" role="note">
         <AlertDescription>
-          {t('modals.uploadDoc.github.privateHint')}
+          <p>
+            {t('modals.uploadDoc.github.privateHint')}{' '}
+            <Button
+              type="button"
+              variant="link"
+              size="text"
+              tone="current"
+              onClick={() => {
+                setHandedOver(true);
+                launch(githubConnector, { purpose: 'knowledge' });
+              }}
+            >
+              {t('modals.uploadDoc.github.connect')}
+            </Button>
+          </p>
         </AlertDescription>
-        <div className="mt-2">
-          <Button
-            type="button"
-            size="sm"
-            shape="pill"
-            variant="outline"
-            onClick={() => {
-              setHandedOver(true);
-              launch(githubConnector, { purpose: 'knowledge' });
-            }}
-          >
-            {t('modals.uploadDoc.github.connect')}
-          </Button>
-        </div>
       </Alert>
     ) : null;
 

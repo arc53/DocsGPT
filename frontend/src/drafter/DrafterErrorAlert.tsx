@@ -15,27 +15,29 @@ export const RETRYABLE: DrafterErrorCode[] = [
 
 /**
  * A drafter turn's error: a destructive Alert with the code's title and
- * description, and Try again for the errors a second try can fix. The
- * DraftPanel draws its errors with it, and a screen shows one inline (the
- * Insights topic suggestions).
+ * description, and Try again for the errors a second try can fix, a link in
+ * the Alert's colour at the end of the text. The DraftPanel draws its errors
+ * with it, and a screen shows one inline (the Insights topic suggestions).
  *
  * Args:
  *   code: The error event's code.
  *   onRetry: Runs the turn again; left out where it can't (an older error).
  *   description: The recipe's own text in place of the code's description,
  *     which speaks of the agent form ("Nothing in the form changed").
- *   actions: More buttons after Try again (the panel's way on, Start over).
+ *   fix: Another link that fixes the error, after Try again (the panel's
+ *     Start over for a refused conversation). A way past the error that
+ *     isn't a fix goes under the Alert, not here.
  */
 export function DrafterErrorAlert({
   code,
   onRetry,
   description,
-  actions,
+  fix,
 }: {
   code: DrafterErrorCode;
   onRetry?: () => void;
   description?: string;
-  actions?: ReactNode;
+  fix?: ReactNode;
 }) {
   const { t } = useTranslation();
   const retry = onRetry && RETRYABLE.includes(code);
@@ -43,23 +45,24 @@ export function DrafterErrorAlert({
     <Alert variant="destructive" data-item="error">
       <AlertTitle>{t(`drafter.errors.${code}.title`)}</AlertTitle>
       <AlertDescription>
-        <p>{description ?? t(`drafter.errors.${code}.description`)}</p>
-        {(retry || actions) && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {retry && (
+        <p>
+          {description ?? t(`drafter.errors.${code}.description`)}
+          {retry && (
+            <>
+              {' '}
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
-                shape="pill"
+                variant="link"
+                size="text"
+                tone="current"
                 onClick={onRetry}
               >
                 {t('drafter.retry')}
               </Button>
-            )}
-            {actions}
-          </div>
-        )}
+            </>
+          )}
+          {fix && <> {fix}</>}
+        </p>
       </AlertDescription>
     </Alert>
   );

@@ -58,7 +58,8 @@ export function useSignInAgain({
 }
 
 /**
- * One line per connection that needs signing in again, each with Reconnect.
+ * One line per connection that needs signing in again, each ending in a
+ * Reconnect link in the notice's colour.
  * Sits in the tool pickers so a broken service is visible where it is used.
  */
 export default function SignInAgainNotice({
@@ -74,23 +75,22 @@ export default function SignInAgainNotice({
     <div className="flex flex-col gap-2">
       {connections.map((connection) => (
         <Alert key={connection.id} variant="warning">
-          <AlertDescription className="flex items-center justify-between">
-            <span className="mr-3 min-w-0">
+          <AlertDescription>
+            <p>
               {t('settings.connectors.health.pickerNotice', {
                 name: connection.name,
                 interpolation: { escapeValue: false },
-              })}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              className="shrink-0"
-              onClick={() => onReconnect(connection)}
-            >
-              {t('settings.connectors.status.reconnect')}
-            </Button>
+              })}{' '}
+              <Button
+                type="button"
+                variant="link"
+                size="text"
+                tone="current"
+                onClick={() => onReconnect(connection)}
+              >
+                {t('settings.connectors.status.reconnect')}
+              </Button>
+            </p>
           </AlertDescription>
         </Alert>
       ))}

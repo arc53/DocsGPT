@@ -882,7 +882,7 @@ describe('ConversationBubble', () => {
     expect(buttonByText('retry')).toBeDefined();
   });
 
-  it('shows a curated error as readable text, with its action under it', async () => {
+  it('shows a curated error as readable text, with its fix at the end of it', async () => {
     const curated =
       'This message and its attached files are too large for the model.';
     await render(
@@ -899,7 +899,9 @@ describe('ConversationBubble', () => {
     )!;
     expect(detail.textContent).toContain(curated);
     expect(detail.innerHTML).not.toContain('font-mono');
-    expect(buttonByText('add-knowledge')).toBeDefined();
+    const fix = buttonByText('add-knowledge')!;
+    expect(fix.parentElement!.tagName).toBe('P');
+    expect(fix.parentElement!.textContent).toBe(`${curated} add-knowledge`);
   });
 
   it('shows an answer the user stopped as a note, not a failure', async () => {

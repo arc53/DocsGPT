@@ -456,9 +456,11 @@ and the backend's error (often a raw provider exception) as `font-mono text-xs`
 detail in `AlertDescription`. Its action row is Retry (`RotateCcw`) and Copy,
 both `ghost-muted icon-sm pill` like every other answer action. An action
 that fixes the error (Add to Knowledge, when a turn's files overflowed the
-model) is an `outline sm pill` Button with a leading lucide icon under the
-message, in a `text-foreground` wrapper so its label is body text rather than
-the alert's red; a link in the alert's colour does not read as a control.
+model) is a link at the end of the message, in the alert's colour (`link
+text` with `tone="current"`, no icon; see DESIGN.md › Alert): the bubble's
+`errorAction` puts it in the message's paragraph, so it is inline content,
+and once the files are accepted it gives way to the "Ask again when they're
+ready" status.
 An answer its user stopped before it wrote anything (`error_code: "stopped"`)
 is the same block as a note, `Alert variant="info" role="note"` titled
 `conversation.stoppedTitle`, with the same Retry and Copy: nothing failed.

@@ -2719,9 +2719,9 @@
     "stoppedTitle": "Gestoppt",
     "errors": {
       "contextLength": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien.",
-      "contextLengthKnowledge": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
+      "contextLengthKnowledge": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien oder mach daraus eine Wissensquelle, die der Chat durchsuchen kann, statt sie vollständig zu senden.",
       "contextLengthSized": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien.",
-      "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
+      "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder mach daraus eine Wissensquelle, die der Chat durchsuchen kann, statt sie vollständig zu senden.",
       "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
       "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut.",
       "timeLimit": "Gestoppt: Zeitlimit erreicht. Der bisherige Fortschritt wurde gespeichert.",
@@ -4572,7 +4572,7 @@
       },
       "rate_limited": {
         "title": "Zu viele Anfragen",
-        "description": "Warte einen Moment und versuche es dann erneut."
+        "description": "Warte einen Moment."
       },
       "quota": {
         "title": "Nutzungslimit erreicht",
@@ -4589,7 +4589,7 @@
       "bad_request": {
         "title": "Senden nicht möglich",
         "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut.",
-        "startOver": "DocsGPT konnte diese Unterhaltung nicht annehmen. Beginne neu, um weiterzumachen – was du entworfen hast, bleibt."
+        "startOver": "DocsGPT konnte diese Unterhaltung nicht annehmen. Was du entworfen hast, bleibt."
       }
     },
     "agent": {
@@ -4742,7 +4742,7 @@
     "startOver": "Neu beginnen",
     "full": {
       "title": "Diese Unterhaltung ist voll",
-      "description": "Länger kann eine Entwurfsunterhaltung nicht werden. Beginne neu, um weiterzumachen – was du entworfen hast, bleibt."
+      "description": "Länger kann eine Entwurfsunterhaltung nicht werden. Was du entworfen hast, bleibt."
     }
   }
 }

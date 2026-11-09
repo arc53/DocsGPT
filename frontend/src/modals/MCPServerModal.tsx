@@ -810,33 +810,32 @@ export default function MCPServerModal({
             }
           >
             <AlertDescription>
-              <p>{testResult.message}</p>
-              {testResult.authorization_url && (
-                <Button
-                  variant="link"
-                  size="text"
-                  tone="current"
-                  asChild
-                  className="mt-1.5"
-                >
-                  <a
-                    href={testResult.authorization_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const popup = window.open(
-                        testResult.authorization_url,
-                        'oauthPopup',
-                        'width=600,height=700',
-                      );
-                      if (popup) oauthPopupRef.current = popup;
-                    }}
-                  >
-                    {t('settings.tools.mcp.openAuthPage')}
-                  </a>
-                </Button>
-              )}
+              <p>
+                {testResult.message}
+                {testResult.authorization_url && (
+                  <>
+                    {' '}
+                    <Button variant="link" size="text" tone="current" asChild>
+                      <a
+                        href={testResult.authorization_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          const popup = window.open(
+                            testResult.authorization_url,
+                            'oauthPopup',
+                            'width=600,height=700',
+                          );
+                          if (popup) oauthPopupRef.current = popup;
+                        }}
+                      >
+                        {t('settings.tools.mcp.openAuthPage')}
+                      </a>
+                    </Button>
+                  </>
+                )}
+              </p>
             </AlertDescription>
           </Alert>
         )}

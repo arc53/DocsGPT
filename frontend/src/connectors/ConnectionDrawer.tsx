@@ -1077,22 +1077,22 @@ function ServiceSection({
             with room to say what happened at any width. */}
         {shown && connectionNeedsSignIn(shown) && (
           <Alert variant="warning">
-            {/* The provider's own message stays on hover, for debugging. */}
+            {/* The provider's own message stays on hover, for debugging.
+                Reconnect fixes it: a link at the end of the text. */}
             <AlertDescription title={shown.last_error ?? undefined}>
-              {problem(shown)}
+              <p>
+                {problem(shown)}{' '}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="text"
+                  tone="current"
+                  onClick={() => handlers.onReconnect(shown)}
+                >
+                  {t('settings.connectors.status.reconnect')}
+                </Button>
+              </p>
             </AlertDescription>
-            <div className="mt-2">
-              <Button
-                type="button"
-                size="sm"
-                shape="pill"
-                variant="outline"
-                onClick={() => handlers.onReconnect(shown)}
-              >
-                <RefreshCw />
-                {t('settings.connectors.status.reconnect')}
-              </Button>
-            </div>
           </Alert>
         )}
       </div>

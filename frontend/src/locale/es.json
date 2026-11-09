@@ -2811,9 +2811,9 @@
     "stoppedTitle": "Detenida",
     "errors": {
       "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
-      "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o conviértelos en una fuente de conocimiento en la que el chat pueda buscar en lugar de enviarlos completos.",
       "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
-      "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o conviértelos en una fuente de conocimiento en la que el chat pueda buscar en lugar de enviarlos completos.",
       "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
       "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo.",
       "timeLimit": "Detenido: límite de tiempo alcanzado. El progreso se ha guardado.",
@@ -4706,7 +4706,7 @@
       },
       "rate_limited": {
         "title": "Demasiadas solicitudes",
-        "description": "Espera un momento y vuelve a intentarlo."
+        "description": "Espera un momento."
       },
       "quota": {
         "title": "Límite de uso alcanzado",
@@ -4723,7 +4723,7 @@
       "bad_request": {
         "title": "No se pudo enviar",
         "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo.",
-        "startOver": "DocsGPT no pudo aceptar esta conversación. Empieza de nuevo para continuar: lo que has redactado se mantiene."
+        "startOver": "DocsGPT no pudo aceptar esta conversación. Lo que has redactado se mantiene."
       }
     },
     "agent": {
@@ -4896,7 +4896,7 @@
     "startOver": "Empezar de nuevo",
     "full": {
       "title": "Esta conversación está llena",
-      "description": "Una conversación de borrador no puede ser más larga. Empieza de nuevo para continuar: lo que has redactado se mantiene."
+      "description": "Una conversación de borrador no puede ser más larga. Lo que has redactado se mantiene."
     }
   }
 }

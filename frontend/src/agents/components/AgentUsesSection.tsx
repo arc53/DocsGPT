@@ -209,27 +209,28 @@ export default function AgentUsesSection({
           {anyBlocked && (
             <Alert variant="warning">
               <AlertDescription>
-                {t(ownerReads ? `${K}.writesNote` : `${K}.writesNoteEditor`)}
-              </AlertDescription>
-              {/* Only the owner sets the allowlist. */}
-              {ownerReads && onOpenAccessDetails && (
-                <div className="mt-2 flex flex-col items-start gap-1.5">
-                  {/* Access details lists these writes once there is a key
-                      (a draft gets one when it is published). */}
-                  {!agent.key && (
-                    <p className="text-xs">{t(`${K}.accessDetailsNeedsKey`)}</p>
+                <p>
+                  {t(ownerReads ? `${K}.writesNote` : `${K}.writesNoteEditor`)}
+                  {/* Only the owner sets the allowlist: Open Access details
+                      fixes it, a link at the end of the text. */}
+                  {ownerReads && onOpenAccessDetails && (
+                    <>
+                      {/* Access details lists these writes once there is a
+                          key (a draft gets one when it is published). */}
+                      {!agent.key && <> {t(`${K}.accessDetailsNeedsKey`)}</>}{' '}
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="text"
+                        tone="current"
+                        onClick={onOpenAccessDetails}
+                      >
+                        {t(`${K}.openAccessDetails`)}
+                      </Button>
+                    </>
                   )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    shape="pill"
-                    variant="outline"
-                    onClick={onOpenAccessDetails}
-                  >
-                    {t(`${K}.openAccessDetails`)}
-                  </Button>
-                </div>
-              )}
+                </p>
+              </AlertDescription>
             </Alert>
           )}
         </div>

@@ -108,7 +108,10 @@ const ConversationBubble = forwardRef<
      * ``message`` as curated text for the user rather than a raw exception.
      */
     errorCode?: string;
-    /** An action offered under a failed turn's error (Add to Knowledge). */
+    /**
+     * A fix for a failed turn's error (Add to Knowledge): inline content, put
+     * at the end of the message's paragraph.
+     */
     errorAction?: React.ReactNode;
     questionNumber?: number;
     isStreaming?: boolean;
@@ -566,8 +569,10 @@ const ConversationBubble = forwardRef<
                     )}
                   >
                     {message}
+                    {/* A fix (Add to Knowledge) is a link at the end of
+                        the message, in the Alert's colour. */}
+                    {errorAction && <> {errorAction}</>}
                   </p>
-                  {errorAction}
                 </AlertDescription>
               </Alert>
             </div>

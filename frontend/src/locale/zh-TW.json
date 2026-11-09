@@ -2706,9 +2706,9 @@
     "stoppedTitle": "已停止",
     "errors": {
       "contextLength": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案。",
-      "contextLengthKnowledge": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
+      "contextLengthKnowledge": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案，或將它們設為聊天可搜尋的知識來源，而不是整個傳送。",
       "contextLengthSized": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案。",
-      "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
+      "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或將它們設為聊天可搜尋的知識來源，而不是整個傳送。",
       "serverError": "請稍後再試。造成不便，敬請見諒。",
       "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。",
       "timeLimit": "已停止：達到時間限制。目前進度已儲存。",
@@ -4547,7 +4547,7 @@
       },
       "rate_limited": {
         "title": "請求過多",
-        "description": "請稍候片刻再試。"
+        "description": "請稍候片刻。"
       },
       "quota": {
         "title": "已達使用上限",
@@ -4564,7 +4564,7 @@
       "bad_request": {
         "title": "無法送出",
         "description": "無法讀取該請求。請重新整理頁面後重試。",
-        "startOver": "DocsGPT 無法接收此對話。重新開始即可繼續，已草擬的內容會保留。"
+        "startOver": "DocsGPT 無法接收此對話。已草擬的內容會保留。"
       }
     },
     "agent": {
@@ -4708,7 +4708,7 @@
     "startOver": "重新開始",
     "full": {
       "title": "此對話已滿",
-      "description": "草擬對話已達最大長度。重新開始即可繼續，已草擬的內容會保留。"
+      "description": "草擬對話已達最大長度。已草擬的內容會保留。"
     }
   }
 }

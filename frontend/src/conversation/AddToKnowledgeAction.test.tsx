@@ -63,15 +63,15 @@ describe('AddToKnowledgeAction', () => {
     );
   });
 
-  it('is a bordered button with the Knowledge icon, not red link text', async () => {
+  it("is a link in the alert's own colour, inline with the message", async () => {
     await render();
     const button = container.querySelector('button')!;
-    expect(button.getAttribute('data-variant')).toBe('outline');
-    expect(button.getAttribute('data-shape')).toBe('pill');
-    expect(button.hasAttribute('data-tone')).toBe(false);
-    expect(button.querySelector('svg')).not.toBeNull();
-    // Body text, not the alert's red, so it reads as a control.
-    expect(button.parentElement?.className).toContain('text-foreground');
+    expect(button.getAttribute('data-variant')).toBe('link');
+    expect(button.getAttribute('data-size')).toBe('text');
+    expect(button.getAttribute('data-tone')).toBe('current');
+    expect(button.querySelector('svg')).toBeNull();
+    // Inline content only: it sits in the message's paragraph.
+    expect(container.querySelector('div, p')).toBeNull();
   });
 
   it('keeps the button when the server refused, with the reason', async () => {

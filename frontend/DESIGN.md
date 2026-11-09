@@ -1364,6 +1364,18 @@ a title with its description.
 A static note is `variant="info" role="note"` (see Where a message lives);
 `bg-muted` wells are for assets, not notes.
 
+An action that fixes what the Alert says (Try again, Reconnect, Start over,
+Open Access details, Add to Knowledge) is a link in the Alert's own colour
+at the end of its text: `Button variant="link" size="text" tone="current"`
+after the last sentence in the description's `<p>` ("… Nothing in the form
+changed. Try again"), with `asChild` around a router `<Link>` or an `<a>`
+when it navigates and `loading` while it runs. Never a framed Button
+(`outline`, `default`, `secondary`) inside an Alert: a filled or bordered
+control on the tinted box reads as a second surface stacked on the notice.
+A way past the problem that isn't a fix (the drafter's "Continue: <step>"
+during a guided build) goes under the Alert, as its own `flex flex-wrap
+gap-2` row with its own variant.
+
 Every variant is `role="alert"` except `success`, which is `role="status"` so a confirmation
 is announced politely; pass `role` only to override that. `onClose` adds a
 ghost `icon-xs` X in the top-right corner (named `close`) and pads the text

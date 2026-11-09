@@ -3386,9 +3386,10 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('A shipping agent');
-    const alert = panel()!.querySelector('[data-item="error"]')!;
+    // A way past the error, under it rather than in it.
+    const row = panel()!.querySelector('[data-slot="drafter-continue"]')!;
     await act(async () =>
-      buttonByText('drafter.agent.build.continueStep', alert)!.click(),
+      buttonByText('drafter.agent.build.continueStep', row)!.click(),
     );
     expect(lastRequest().messages.at(-1)).toEqual({
       role: 'user',

@@ -1,5 +1,6 @@
 import { ArrowUp, RotateCcw, ScanSearch, WandSparkles } from 'lucide-react';
 import {
+  Fragment,
   type MouseEvent,
   type ReactNode,
   type RefObject,
@@ -105,8 +106,9 @@ export type DraftPanelProps = {
   announceProposal?: (proposal: unknown) => string | null;
   /**
    * The way on after a turn was stopped or failed (a build's "Continue:
-   * Basics"): beside Retry in the latest error, and on its own row after
-   * Stop.
+   * Basics"): on its own row under the latest error, and after Stop. It
+   * keeps its own look: it is a way past the error, not a fix, so it never
+   * sits in the Alert.
    */
   continueAction?: ReactNode;
   /**
@@ -171,12 +173,14 @@ export function DraftPanel({
     setStopped(false);
     (onStartOver ?? session.reset)();
   };
-  const startOverButton = (
+  // Start over fixes a full or refused conversation, so it is a link in
+  // the notice's own text.
+  const startOverLink = (
     <Button
       type="button"
-      variant="outline"
-      size="sm"
-      shape="pill"
+      variant="link"
+      size="text"
+      tone="current"
       onClick={startOver}
     >
       {t('drafter.startOver')}
@@ -254,23 +258,26 @@ export function DraftPanel({
         // is: only a fresh conversation goes on.
         const refused = item.code === 'bad_request';
         const latest = index === items.length - 1;
+        // The way on isn't a fix for the error, so it goes under the Alert.
         return (
-          <DrafterErrorAlert
-            key={item.id}
-            code={item.code}
-            description={
-              refused ? t('drafter.errors.bad_request.startOver') : undefined
-            }
-            onRetry={latest ? session.retry : undefined}
-            actions={
-              latest && (refused || continueAction) ? (
-                <>
-                  {refused && startOverButton}
-                  {continueAction}
-                </>
-              ) : undefined
-            }
-          />
+          <Fragment key={item.id}>
+            <DrafterErrorAlert
+              code={item.code}
+              description={
+                refused ? t('drafter.errors.bad_request.startOver') : undefined
+              }
+              onRetry={latest ? session.retry : undefined}
+              fix={latest && refused ? startOverLink : undefined}
+            />
+            {latest && continueAction && (
+              <div
+                className="flex flex-wrap gap-2"
+                data-slot="drafter-continue"
+              >
+                {continueAction}
+              </div>
+            )}
+          </Fragment>
         );
       }
     }
@@ -341,10 +348,9 @@ export function DraftPanel({
             <Alert variant="info" data-slot="drafter-full">
               <AlertTitle>{t('drafter.full.title')}</AlertTitle>
               <AlertDescription>
-                <p>{t('drafter.full.description')}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {startOverButton}
-                </div>
+                <p>
+                  {t('drafter.full.description')} {startOverLink}
+                </p>
               </AlertDescription>
             </Alert>
           )}

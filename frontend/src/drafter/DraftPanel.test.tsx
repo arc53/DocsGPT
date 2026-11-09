@@ -348,7 +348,11 @@ describe('DraftPanel', () => {
     const alert = container.querySelector('[data-item="error"]')!;
     expect(alert.textContent).toContain('drafter.errors.bad_request.startOver');
     expect(button('drafter.retry')).toBeUndefined();
-    await act(async () => button('drafter.startOver')!.click());
+    // Start over fixes it: a link in the Alert's text, in its colour.
+    const startOver = button('drafter.startOver')!;
+    expect(alert.querySelector('p')!.contains(startOver)).toBe(true);
+    expect(startOver.dataset.tone).toBe('current');
+    await act(async () => startOver.click());
     expect(container.querySelector('[data-item]')).toBeNull();
     expect(container.textContent).toContain('Tell me');
   });
@@ -421,7 +425,7 @@ describe('DraftPanel', () => {
   });
 
   // Decision 63: after Stop or an error the step can go on (Continue).
-  it('offers the way on beside Retry in the latest error, and after a Stop', async () => {
+  it('offers the way on under the latest error, and after a Stop', async () => {
     await act(async () =>
       root.render(
         <Host continueAction={<button type="button">Continue</button>} />,
@@ -432,10 +436,17 @@ describe('DraftPanel', () => {
       [{ type: 'error', code: 'model_error' }, { type: 'end' }],
     ];
     await ask('Draft it');
+    // Try again fixes the error: a link in the Alert's text. Continue is a
+    // way past it, on its own row under the Alert.
     const alert = container.querySelector('[data-item="error"]')!;
-    const row = button('drafter.retry')!.parentElement!;
+    const retry = button('drafter.retry')!;
+    expect(alert.contains(retry)).toBe(true);
+    expect(retry.dataset.variant).toBe('link');
+    expect(retry.dataset.tone).toBe('current');
+    const row = container.querySelector('[data-slot="drafter-continue"]')!;
     expect(row.contains(button('Continue')!)).toBe(true);
-    expect(alert.contains(row)).toBe(true);
+    expect(alert.contains(button('Continue')!)).toBe(false);
+    expect(alert.nextElementSibling).toBe(row);
 
     stream.hold = true;
     await ask('Again');

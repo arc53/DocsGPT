@@ -1,4 +1,3 @@
-import { Database } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -9,9 +8,12 @@ import {
 } from '../upload/useAddToKnowledge';
 
 /**
- * Offered under a turn that failed because its files did not fit the model:
+ * Offered in a turn that failed because its files did not fit the model:
  * makes a Knowledge source of them and selects it for the chat once ready,
- * so the question can be asked again against the source.
+ * so the question can be asked again against the source. It fixes the
+ * error, so it is a link in the Alert's text and colour, after the message;
+ * the answer's bubble puts it there. Inline content only, since it sits in
+ * the message's paragraph.
  */
 export default function AddToKnowledgeAction({
   files,
@@ -27,20 +29,16 @@ export default function AddToKnowledgeAction({
 
   if (added) {
     return (
-      <p className="mt-2" role="status">
-        {t('conversation.attachments.knowledgeAdded')}
-      </p>
+      <span role="status">{t('conversation.attachments.knowledgeAdded')}</span>
     );
   }
   return (
-    // A real button under the alert's text, in body colour rather than the
-    // alert's red, so it reads as the way out of the error.
-    <div className="text-foreground mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+    <>
       <Button
         type="button"
-        variant="outline"
-        size="sm"
-        shape="pill"
+        variant="link"
+        size="text"
+        tone="current"
         loading={pending}
         onClick={async () => {
           if (await addToKnowledge(files)) {
@@ -49,10 +47,9 @@ export default function AddToKnowledgeAction({
           }
         }}
       >
-        <Database />
         {t('conversation.attachments.addToKnowledge')}
       </Button>
-      {error && <span className="text-destructive">{error}</span>}
-    </div>
+      {error && <> {error}</>}
+    </>
   );
 }
