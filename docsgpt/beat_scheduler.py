@@ -20,7 +20,7 @@ from typing import Callable
 from celery.signals import beat_init
 from redbeat.schedulers import LUA_EXTEND_TO_SCRIPT, RedBeatScheduler, acquire_distributed_beat_lock, get_redis
 from redis.exceptions import ConnectionError as RedisConnectionError
-from redis.exceptions import LockError
+from redis.exceptions import LockError, ReadOnlyError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 logger = logging.getLogger("celery.beat")
@@ -28,7 +28,9 @@ logger = logging.getLogger("celery.beat")
 # The lock is taken on the first tick instead, without blocking the beat loop.
 beat_init.disconnect(acquire_distributed_beat_lock)
 
-REDIS_UNAVAILABLE = (RedisConnectionError, RedisTimeoutError)
+# Redis down, slow, still loading its data (BusyLoadingError is a ConnectionError), or a replica
+# answering READONLY during a failover: all pass, so beat waits them out.
+REDIS_UNAVAILABLE = (RedisConnectionError, RedisTimeoutError, ReadOnlyError)
 #: Longest wait between attempts to reach Redis while beat starts.
 STARTUP_RETRY_MAX_SECONDS = 30
 

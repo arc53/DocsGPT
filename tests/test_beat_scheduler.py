@@ -6,7 +6,7 @@ from celery.signals import beat_init
 from celery.utils.imports import symbol_by_name
 from redbeat.schedulers import RedBeatScheduler
 from redis.exceptions import ConnectionError as RedisConnectionError
-from redis.exceptions import LockError, LockNotOwnedError
+from redis.exceptions import LockError, LockNotOwnedError, ReadOnlyError
 
 from docsgpt import beat_scheduler
 from docsgpt.beat_scheduler import DocsGPTScheduler, standby_seconds
@@ -133,6 +133,19 @@ def test_redis_going_away_during_a_tick_stands_by(scheduler, monkeypatch):
 
     assert scheduler.tick() == 15
     assert scheduler.holding_lock  # kept: the next tick extends it, or finds it lost and takes it back
+
+
+@pytest.mark.unit
+def test_a_read_only_replica_during_failover_stands_by(scheduler, redis, monkeypatch):
+    def read_only(blocking=True):
+        raise ReadOnlyError("You can't write against a read only replica.")
+
+    lock = FakeLock(redis, 90)
+    monkeypatch.setattr(lock, "acquire", read_only)
+    monkeypatch.setattr(scheduler, "_new_lock", lambda: lock)
+
+    assert scheduler.tick() == 15
+    assert not scheduler.holding_lock
 
 
 @pytest.mark.unit
