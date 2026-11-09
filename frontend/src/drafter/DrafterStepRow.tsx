@@ -88,11 +88,12 @@ export function DrafterStepRow({
 
 /**
  * One 28px row in a DrafterStepRow: its icon on the rule (a dot when it has
- * none), then "<label> · <value>" on one line, cut with the whole line as
- * its title.
+ * none), then "<label> · <value>" on one line, or the value alone (an
+ * example question it read), cut with the whole line as its title.
  *
  * Args:
- *   label: The field or step ("Name", "Knowledge and tools").
+ *   label: The field or step ("Name", "Knowledge and tools"); left out, the
+ *     row is its value alone.
  *   value: What it now holds.
  *   icon: A lucide icon for the row; a dot stands in without one.
  */
@@ -101,7 +102,7 @@ export function FilledRow({
   value,
   icon: Icon,
 }: {
-  label: string;
+  label?: string;
   value: string;
   icon?: LucideIcon;
 }) {
@@ -118,9 +119,15 @@ export function FilledRow({
           <span className="bg-muted-foreground/50 size-1.5 rounded-full" />
         )}
       </span>
-      <p className="min-w-0 truncate" title={`${label} · ${value}`}>
-        <span className="font-medium">{label}</span> · {value}
-      </p>
+      {label ? (
+        <p className="min-w-0 truncate" title={`${label} · ${value}`}>
+          <span className="font-medium">{label}</span> · {value}
+        </p>
+      ) : (
+        <p className="min-w-0 truncate" title={value}>
+          {value}
+        </p>
+      )}
     </div>
   );
 }

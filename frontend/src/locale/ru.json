@@ -5014,7 +5014,32 @@
         "unfit_other": "{{count}} изменения больше не подходят к тексту промпта"
       },
       "formEdited": "Вы изменили в форме: {{fields}}.",
-      "showInAgent": "Показать в агенте"
+      "showInAgent": "Показать в агенте",
+      "insights": {
+        "heading": "По его разговорам",
+        "window_one": "за последний {{count}} день",
+        "window_other": "за последние {{count}} дня",
+        "window_many": "за последние {{count}} дней",
+        "window_few": "за последние {{count}} дня",
+        "setupHeading": "По его настройке",
+        "gapLine_one": "{{gap}} · {{expected}} из {{formatted}} вопроса",
+        "gapLine_other": "{{gap}} · {{expected}} из {{formatted}} вопросов",
+        "gapLine_many": "{{gap}} · {{expected}} из {{formatted}} вопросов",
+        "gapLine_few": "{{gap}} · {{expected}} из {{formatted}} вопросов",
+        "upFrom": "было {{previous}}",
+        "downFrom": "было {{previous}}, меньше",
+        "fixIn": "Исправь «{{gap}}» в теме {{topic}}",
+        "fix": "Исправь: {{gap}}",
+        "findMore": "Найди, что ещё исправить",
+        "findMoreDescription": "Читает инсайты и несколько примеров разговоров",
+        "agentOff": "Инсайты для этого агента выключены, поэтому я могу опираться только на его настройку.",
+        "turnOn": "Включить инсайты",
+        "notEnough": "Когда у него будет {{needed}} проанализированных ответов за {{days}} дней (сейчас {{conversations}}), я смогу предложить исправления по вопросам пользователей.",
+        "openSource": "Открыть {{name}}",
+        "theSource": "источник",
+        "seeInLogs": "Вопросы в журналах",
+        "quoted": "«{{text}}»"
+      }
     },
     "topics": {
       "suggest": "Предложить по разговорам",
@@ -5102,7 +5127,17 @@
     "footerPromptAgentsNoModel_one": "Читает этот промпт и {{formatted}} агента, который его использует.",
     "footerPromptAgentsNoModel_other": "Читает этот промпт и {{formatted}} агента, которые его используют.",
     "footerPromptAgentsNoModel_few": "Читает этот промпт и {{formatted}} агента, которые его используют.",
-    "footerPromptAgentsNoModel_many": "Читает этот промпт и {{formatted}} агентов, которые его используют."
+    "footerPromptAgentsNoModel_many": "Читает этот промпт и {{formatted}} агентов, которые его используют.",
+    "footerInsights": "Использует {{model}} · может читать ваших агентов, знания, инструменты, промпты и инсайты этого агента.",
+    "footerInsightsNoModel": "Может читать ваших агентов, знания, инструменты, промпты и инсайты этого агента.",
+    "readInsights_one": "Прочитаны инсайты: {{formatted}} разговор за последние {{days}} дней",
+    "readInsights_other": "Прочитаны инсайты: {{formatted}} разговора за последние {{days}} дней",
+    "readInsights_many": "Прочитаны инсайты: {{formatted}} разговоров за последние {{days}} дней",
+    "readInsights_few": "Прочитаны инсайты: {{formatted}} разговора за последние {{days}} дней",
+    "readQuestions_one": "Прочитан {{count}} пример вопроса",
+    "readQuestions_other": "Прочитано {{count}} примера вопросов",
+    "readQuestions_many": "Прочитано {{count}} примеров вопросов",
+    "readQuestions_few": "Прочитано {{count}} примера вопросов"
   },
   "questions": {
     "somethingElse": "Другое…",

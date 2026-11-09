@@ -14,14 +14,17 @@ export type ProposalReasonRow = {
 };
 
 /**
- * What a draft did, as the panel shows it for the turn: the model's message
- * and notes as paragraphs, a "Filled N fields" step row that opens a line per
+ * What a draft did, as the panel shows it for the turn: the model's message,
+ * the recipe's cards (an improve's gaps, each with its evidence and fix),
+ * the notes as paragraphs, a "Filled N fields" step row that opens a line per
  * field, what the server left out, a muted footnote, and the turn's actions
  * (the step's Next) last. Undo lives on each field's Drafted badge. Recipes map their proposal
  * into these props.
  *
  * Args:
  *   message: The draft's short summary.
+ *   cards: Under the message, before everything else (the agent's gap
+ *     cards).
  *   rows: A row per filled field.
  *   notes: Things the user should know ("No ticketing tool is connected…").
  *   dropped: Lines naming what was left out and why.
@@ -31,6 +34,7 @@ export type ProposalReasonRow = {
  */
 export function ProposalSummary({
   message,
+  cards,
   rows,
   notes = [],
   dropped = [],
@@ -38,6 +42,7 @@ export function ProposalSummary({
   actions,
 }: {
   message?: string;
+  cards?: ReactNode;
   rows: ProposalReasonRow[];
   notes?: string[];
   dropped?: string[];
@@ -50,6 +55,7 @@ export function ProposalSummary({
       {message && (
         <p className="text-sm wrap-break-word whitespace-pre-wrap">{message}</p>
       )}
+      {cards}
       {notes.map((note, index) => (
         <p key={index} className="text-sm wrap-break-word whitespace-pre-wrap">
           {note}

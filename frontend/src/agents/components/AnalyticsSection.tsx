@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 import { DraftedBadge } from '../../drafter/DraftedBadge';
+import { revealElement } from '../../settings/logsLinks';
 import { analyticsOf, isDefaultAnalytics } from '../analyticsConfig';
 import type { AnalyticsConfig } from '../types';
 import InsightsSettingsBody from './InsightsSettingsBody';
@@ -32,6 +33,11 @@ type AnalyticsSectionProps = {
    */
   drafted?: boolean;
   onUndo?: () => void;
+  /**
+   * Bumped to open the section and bring it into view (the drawer's Turn on
+   * Insights); 0 asks nothing.
+   */
+  openSignal?: number;
 };
 
 /**
@@ -54,10 +60,19 @@ export default function AnalyticsSection({
   savedEnabled,
   drafted = false,
   onUndo,
+  openSignal = 0,
 }: AnalyticsSectionProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
   const bodyId = React.useId();
+  const cardRef = React.useRef<HTMLDivElement>(null);
+
+  // Asked from outside (the drawer's Turn on Insights): open and show it.
+  React.useEffect(() => {
+    if (!openSignal) return;
+    setExpanded(true);
+    revealElement(cardRef.current, 'start');
+  }, [openSignal]);
 
   // Drafted topics open the section, so they show without a click.
   React.useEffect(() => {
@@ -69,9 +84,10 @@ export default function AnalyticsSection({
 
   return (
     <Card
+      ref={cardRef}
       variant="subtle"
       padding="lg"
-      className="gap-5"
+      className="scroll-mt-4 gap-5"
       data-testid="analytics-section"
     >
       {/* The card's gap-5 sits inside the body, so it folds away with it. */}

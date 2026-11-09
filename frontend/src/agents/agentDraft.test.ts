@@ -8,6 +8,9 @@ import {
   agentDraftValues,
   agentProposalSummary,
   agentStepResult,
+  gapLine,
+  gapRequest,
+  gapTitle,
   improveSuggestions,
   isAgentFormEmpty,
   isSafetyUnset,
@@ -801,5 +804,128 @@ describe('agentDraft', () => {
     expect(agentStepResult('safety', form(), t, '')).toBe(
       'drafter.agent.build.result.noLimit',
     );
+  });
+
+  it('reads the gaps an improve acts on, keeping only fields it sets and links that exist', () => {
+    const proposal = parseAgentProposal({
+      fields: { prompt: { kind: 'existing', id: 'p1' }, starters: ['Hi'] },
+      gaps: [
+        {
+          topic: 'Order status',
+          gap_type: 'needs account data',
+          expected: 31,
+          turns: 96,
+          previous: null,
+          example: ' Where is shipment MRD-48213? ',
+          fields: ['prompt', 'guardrails', 'nope'],
+          needs: '  ',
+          links: [
+            { kind: 'source', id: 's1', name: 'Claims policy' },
+            { kind: 'source', id: '' },
+            { kind: 'logs', label: 'docs_gap' },
+            { kind: 'logs', label: 'everything' },
+            { kind: 'web', url: 'https://example.com' },
+          ],
+        },
+        { topic: 3, gap_type: 'docs missing' },
+        { gap_type: '' },
+        'junk',
+      ],
+    })!;
+    expect(proposal.gaps).toEqual([
+      {
+        topic: 'Order status',
+        gap_type: 'needs account data',
+        expected: 31,
+        turns: 96,
+        previous: null,
+        example: 'Where is shipment MRD-48213?',
+        fields: ['prompt'],
+        needs: null,
+        links: [
+          { kind: 'source', id: 's1', name: 'Claims policy' },
+          { kind: 'logs', label: 'docs_gap' },
+        ],
+      },
+    ]);
+    expect(parseAgentProposal({ fields: {} })!.gaps).toEqual([]);
+  });
+
+  it('words a gap row from the data alone, as Insights names it', () => {
+    const tr = ((key: string, options?: Record<string, unknown>) => {
+      if (!options) return key;
+      const shown = Object.entries(options)
+        .filter(([name]) => name !== 'interpolation' && name !== 'count')
+        .map(([name, value]) => `${name}=${value}`)
+        .join(',');
+      return `${key}(${shown})`;
+    }) as never;
+    const row = {
+      topic: 'Returns & claims',
+      gap_type: 'docs missing',
+      expected: 23,
+      turns: 160,
+      previous: 19,
+    };
+    const gap = 'settings.analytics.insights.options.gapType.docsMissing';
+    expect(gapTitle(tr, row)).toBe('Returns & claims');
+    expect(gapTitle(tr, { ...row, topic: null })).toBe(gap);
+    expect(gapLine(tr, row)).toBe(
+      `drafter.agent.insights.gapLine(gap=${gap},expected=23,formatted=160)` +
+        ' · drafter.agent.insights.upFrom(previous=19)',
+    );
+    // No change, no earlier window, and fewer than before.
+    expect(gapLine(tr, { ...row, previous: 23.2 })).not.toContain('From');
+    expect(gapLine(tr, { ...row, previous: null })).not.toContain('From');
+    expect(gapLine(tr, { ...row, previous: 30 })).toContain(
+      'drafter.agent.insights.downFrom(previous=30)',
+    );
+    expect(gapRequest(tr, row)).toBe(
+      `drafter.agent.insights.fixIn(gap=${gap},topic=Returns & claims)`,
+    );
+    expect(gapRequest(tr, { ...row, topic: null })).toBe(
+      `drafter.agent.insights.fix(gap=${gap})`,
+    );
+    // A gap type a newer model added reads as its own key.
+    expect(gapTitle(tr, { ...row, topic: null, gap_type: 'new kind' })).toBe(
+      'new kind',
+    );
+  });
+
+  it('sends the gap or conversation an improve started from, only for a saved agent outside a step', () => {
+    const focus = {
+      gap: { topic: 'Order status', gap_type: 'needs account data' },
+      conversation_id: 'c1',
+    };
+    const improving = agentDraftContext(
+      'a1',
+      form(),
+      { step: null, earlier: [] },
+      null,
+      focus,
+    );
+    expect(improving.gap).toEqual(focus.gap);
+    expect(improving.conversation_id).toBe('c1');
+    const fresh = agentDraftContext(
+      null,
+      form(),
+      { step: null, earlier: [] },
+      null,
+      focus,
+    );
+    expect(fresh).not.toHaveProperty('gap');
+    expect(fresh).not.toHaveProperty('conversation_id');
+    expect(
+      agentDraftContext(
+        'a1',
+        form(),
+        { step: 'safety', earlier: [] },
+        null,
+        focus,
+      ),
+    ).not.toHaveProperty('gap');
+    expect(
+      agentDraftContext('a1', form(), { step: null, earlier: [] }, null),
+    ).not.toHaveProperty('gap');
   });
 });

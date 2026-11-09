@@ -5,11 +5,13 @@ import {
   CircleMinus,
   CircleX,
   Eye,
+  MessageCircleWarning,
   MessageSquare,
   Pencil,
   PencilLine,
   Play,
   Scissors,
+  ScanSearch,
   ShieldCheck,
   SquarePen,
   type LucideIcon,
@@ -86,7 +88,11 @@ import { usePromptDetail } from '../prompts/usePromptDetail';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { useMediaQuery } from '../hooks';
-import { DraftPanel } from '../drafter/DraftPanel';
+import {
+  DraftPanel,
+  type DraftSuggestion,
+  type DraftSuggestionGroup,
+} from '../drafter/DraftPanel';
 import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField } from '../drafter/DraftedBadge';
 import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
@@ -157,6 +163,7 @@ import {
   type AgentBuildStep,
   type AgentDraftField,
   type AgentDraftForm,
+  type AgentImproveFocus,
   type AgentLimitsValue,
   type AgentProposal,
   type PromptDraft,
@@ -165,7 +172,11 @@ import {
   agentProposalSummary,
   agentStepResult,
   draftValueOf,
+  gapLine,
+  gapRequest,
+  gapTitle,
   isAgentFormEmpty,
+  MAX_GAP_ROWS,
   improveSuggestions,
   type ImproveSuggestion,
   isSafetyUnset,
@@ -173,6 +184,8 @@ import {
   planAgentPatch,
 } from './agentDraft';
 import { useAgentBuild } from './useAgentBuild';
+import { useAgentGaps } from './useAgentGaps';
+import AgentGapCards from './AgentGapCards';
 
 import type { Model } from '../models/types';
 
@@ -1091,6 +1104,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const drafterConfig = useDrafterConfig();
   const { isMobile } = useMediaQuery();
   const [drafterOpen, setDrafterOpen] = useState(false);
+  // Bumped by the drawer's Turn on Insights: the form's Insights section
+  // opens and comes into view.
+  const [insightsOpenSignal, setInsightsOpenSignal] = useState(0);
   const formColumnRef = useRef<HTMLDivElement>(null);
   // Hidden while the server says it is off, and from anyone who can't edit.
   // A saved agent's form holds a stub with no access fields (read as the
@@ -1278,6 +1294,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Turns run so far (each send and retry), so a save can tell one began
   // while it was out, even after a Start over emptied the drawer.
   const turnsRef = useRef(0);
+  // The gap or conversation an improve conversation started from in
+  // Insights: every turn of it sends it, until Start over.
+  const improveFocusRef = useRef<AgentImproveFocus>({});
   const drafterSession = useDrafterSession({
     recipe: 'agent',
     getContext: () => {
@@ -1293,6 +1312,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         draftFormRef.current,
         buildRef.current.context(),
         draftOfPrompt,
+        improveFocusRef.current,
       );
     },
     onProposal: applyDraft,
@@ -1332,6 +1352,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // improve mode, free-form.
   const buildable = formEmpty && !agent.id && !build.guided;
   const finishSetupText = t('drafter.agent.improve.finishSetup');
+  // Improve on a saved agent reads what Insights found each time the drawer
+  // opens (counts only, no model call): rows on the first screen, or why
+  // there are none. Not during a guided build, which has its own screen.
+  const agentGaps = useAgentGaps(
+    agent.id || null,
+    drafterEnabled && drafterOpen && !!agent.id && !build.guided,
+  );
+  const insightsShown = !!agentGaps?.available && !buildable;
   // What the panel sends: the first message on an empty new agent starts the
   // build, and Finish setup asks for limits and safety alone.
   const panelSession = {
@@ -1350,6 +1378,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const startDrafterOver = () => {
     drafterSession.reset();
     build.reset();
+    improveFocusRef.current = {};
     buildRowsRef.current.clear();
     setPromptUsed(false);
   };
@@ -1457,6 +1486,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             ),
           ]
         : proposal.notes;
+    // The gaps it acts on, each with its evidence and the fields it set.
+    const gapCards =
+      proposal.gaps.length > 0 && agent.id ? (
+        <AgentGapCards
+          gaps={proposal.gaps}
+          agentId={agent.id}
+          fieldRow={(field) =>
+            rows.find((row) => row.key.startsWith(`${field}-`)) ?? null
+          }
+          onNavigate={leaveGuard.onNavigate()}
+        />
+      ) : undefined;
     const review = promptReview.review;
     // The latest turn ends a review open from its own changes, or from
     // those that waited for the prompt to load.
@@ -1480,6 +1521,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     return (
       <ProposalSummary
         message={proposal.message}
+        cards={gapCards}
         rows={rows}
         notes={notes}
         dropped={dropped}
@@ -2351,6 +2393,117 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     ...suggestion,
     icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
   }));
+
+  /** Start an improve from Insights: from one gap, or from none of them. */
+  const improveFrom = (focus: AgentImproveFocus, text: string) => {
+    improveFocusRef.current = focus;
+    panelSession.send(text);
+  };
+  const findMoreText = t('drafter.agent.insights.findMore');
+  // With Insights to read, the first screen leads with its gaps (at most
+  // three, worded from the data alone) and "Find what else to fix", then
+  // the rows from the agent's setup under their own heading.
+  const drafterSuggestionGroups: DraftSuggestionGroup[] | undefined =
+    insightsShown && agentGaps
+      ? [
+          {
+            key: 'insights',
+            title: t('drafter.agent.insights.heading'),
+            count: t('drafter.agent.insights.window', {
+              count: agentGaps.days || 30,
+            }),
+            rows: [
+              ...agentGaps.rows
+                .slice(0, MAX_GAP_ROWS)
+                .map((row, index): DraftSuggestion => ({
+                  key: `gap-${index}`,
+                  icon: (
+                    <MessageCircleWarning
+                      className={suggestionIconClass}
+                      aria-hidden="true"
+                    />
+                  ),
+                  text: gapTitle(t, row),
+                  description: gapLine(t, row),
+                  onSelect: () =>
+                    improveFrom(
+                      { gap: { topic: row.topic, gap_type: row.gap_type } },
+                      gapRequest(t, row),
+                    ),
+                })),
+              {
+                key: 'findMore',
+                icon: (
+                  <ScanSearch
+                    className={suggestionIconClass}
+                    aria-hidden="true"
+                  />
+                ),
+                text: findMoreText,
+                description: t('drafter.agent.insights.findMoreDescription'),
+                onSelect: () => improveFrom({}, findMoreText),
+              },
+            ],
+          },
+          ...(drafterSuggestions.length > 0
+            ? [
+                {
+                  key: 'setup',
+                  title: t('drafter.agent.insights.setupHeading'),
+                  rows: drafterSuggestions,
+                },
+              ]
+            : []),
+        ]
+      : undefined;
+
+  // Why the first screen goes by the setup alone, once: Insights off for
+  // this agent (with the way to turn it on, for a role that may), or too few
+  // analyzed answers yet. Off on the whole instance says nothing.
+  const gapsReason =
+    !buildable && agentGaps && !agentGaps.available ? agentGaps.reason : null;
+  const turnOnInsights = () => {
+    if (promptViewOpen && !leavePromptView()) return;
+    // A phone's sheet covers the form the section is on.
+    if (isMobile) setDrafterOpen(false);
+    setInsightsOpenSignal((signal) => signal + 1);
+  };
+  const drafterNotice =
+    gapsReason === 'agent_off' ? (
+      <Alert variant="info" role="note" data-slot="drafter-insights-note">
+        <AlertDescription>
+          <p>
+            {t('drafter.agent.insights.agentOff')}
+            {canSubmit && (
+              <>
+                {' '}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="text"
+                  tone="current"
+                  onClick={turnOnInsights}
+                >
+                  {t('drafter.agent.insights.turnOn')}
+                </Button>
+              </>
+            )}
+          </p>
+        </AlertDescription>
+      </Alert>
+    ) : gapsReason === 'not_enough' && agentGaps ? (
+      <Alert variant="info" role="note" data-slot="drafter-insights-note">
+        <AlertDescription>
+          <p>
+            {t('drafter.agent.insights.notEnough', {
+              needed: agentGaps.needed,
+              days: agentGaps.days || 30,
+              conversations: agentGaps.conversations,
+            })}
+          </p>
+        </AlertDescription>
+      </Alert>
+    ) : undefined;
 
   // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
@@ -3301,6 +3454,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 disabled={!canSubmit}
                 drafted={drafted.isDrafted('analytics')}
                 onUndo={() => drafted.undo('analytics')}
+                openSignal={insightsOpenSignal}
                 onChange={(analytics) =>
                   setAgent((prev) => ({
                     ...prev,
@@ -3496,6 +3650,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           progress={progress}
           before={foldedSteps}
           suggestions={drafterSuggestions}
+          suggestionGroups={drafterSuggestionGroups}
+          notice={drafterNotice}
+          reads={insightsShown ? 'insights' : undefined}
+          insightsDays={agentGaps?.days || undefined}
           renderProposal={renderAgentProposal}
           continueAction={continueAction}
           after={drawerAfter}

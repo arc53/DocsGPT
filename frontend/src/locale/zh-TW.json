@@ -4692,7 +4692,28 @@
         "unfit_other": "{{count}} 處修改已與提示詞文字不符"
       },
       "formEdited": "你在表單中變更了 {{fields}}。",
-      "showInAgent": "在代理中檢視"
+      "showInAgent": "在代理中檢視",
+      "insights": {
+        "heading": "來自它的對話",
+        "window_one": "最近 {{count}} 天",
+        "window_other": "最近 {{count}} 天",
+        "setupHeading": "來自它的設定",
+        "gapLine_one": "{{gap}} · {{formatted}} 個問題中的 {{expected}} 個",
+        "gapLine_other": "{{gap}} · {{formatted}} 個問題中的 {{expected}} 個",
+        "upFrom": "此前為 {{previous}}，有所上升",
+        "downFrom": "此前為 {{previous}}，有所下降",
+        "fixIn": "修正 {{topic}} 中的「{{gap}}」",
+        "fix": "修正：{{gap}}",
+        "findMore": "找出還要修正的地方",
+        "findMoreDescription": "讀取洞察和幾個範例對話",
+        "agentOff": "此代理的洞察已關閉，所以我只能根據它的設定來判斷。",
+        "turnOn": "開啟洞察",
+        "notEnough": "等它在 {{days}} 天內有 {{needed}} 則已分析的回答（目前 {{conversations}} 則），我就能根據使用者的提問建議修正。",
+        "openSource": "開啟 {{name}}",
+        "theSource": "該知識來源",
+        "seeInLogs": "在日誌中查看這些問題",
+        "quoted": "「{{text}}」"
+      }
     },
     "topics": {
       "suggest": "根據對話建議",
@@ -4750,7 +4771,13 @@
     "footerPromptAgents_one": "使用 {{model}} · 讀取此提示詞和使用它的代理。",
     "footerPromptAgents_other": "使用 {{model}} · 讀取此提示詞和使用它的 {{formatted}} 個代理。",
     "footerPromptAgentsNoModel_one": "讀取此提示詞和使用它的代理。",
-    "footerPromptAgentsNoModel_other": "讀取此提示詞和使用它的 {{formatted}} 個代理。"
+    "footerPromptAgentsNoModel_other": "讀取此提示詞和使用它的 {{formatted}} 個代理。",
+    "footerInsights": "使用 {{model}} · 可讀取你的代理、知識、工具、提示詞和此代理的洞察。",
+    "footerInsightsNoModel": "可讀取你的代理、知識、工具、提示詞和此代理的洞察。",
+    "readInsights_one": "已讀取洞察：{{formatted}} 個對話，最近 {{days}} 天",
+    "readInsights_other": "已讀取洞察：{{formatted}} 個對話，最近 {{days}} 天",
+    "readQuestions_one": "已讀取 {{count}} 個範例問題",
+    "readQuestions_other": "已讀取 {{count}} 個範例問題"
   },
   "questions": {
     "somethingElse": "其他…",

@@ -4718,7 +4718,28 @@
         "unfit_other": "{{count}} Änderungen passen nicht mehr zum Text des Prompts"
       },
       "formEdited": "Du hast {{fields}} im Formular geändert.",
-      "showInAgent": "Im Agenten zeigen"
+      "showInAgent": "Im Agenten zeigen",
+      "insights": {
+        "heading": "Aus seinen Unterhaltungen",
+        "window_one": "letzter {{count}} Tag",
+        "window_other": "letzte {{count}} Tage",
+        "setupHeading": "Aus seiner Einrichtung",
+        "gapLine_one": "{{gap}} · {{expected}} von {{formatted}} Frage",
+        "gapLine_other": "{{gap}} · {{expected}} von {{formatted}} Fragen",
+        "upFrom": "vorher {{previous}}",
+        "downFrom": "vorher {{previous}}, weniger",
+        "fixIn": "Behebe „{{gap}}“ bei {{topic}}",
+        "fix": "Beheben: {{gap}}",
+        "findMore": "Finde, was sonst zu beheben ist",
+        "findMoreDescription": "Liest die Einblicke und einige Beispielunterhaltungen",
+        "agentOff": "Die Einblicke sind für diesen Agenten aus, daher kann ich mich nur nach seiner Einrichtung richten.",
+        "turnOn": "Einblicke einschalten",
+        "notEnough": "Sobald es {{needed}} analysierte Antworten in {{days}} Tagen gibt (bisher {{conversations}}), kann ich Korrekturen anhand der Fragen der Nutzer vorschlagen.",
+        "openSource": "{{name}} öffnen",
+        "theSource": "die Quelle",
+        "seeInLogs": "Die Fragen in den Protokollen ansehen",
+        "quoted": "„{{text}}“"
+      }
     },
     "topics": {
       "suggest": "Aus Gesprächen vorschlagen",
@@ -4784,7 +4805,13 @@
     "footerPromptAgents_one": "Verwendet {{model}} · liest diesen Prompt und den Agenten, der ihn nutzt.",
     "footerPromptAgents_other": "Verwendet {{model}} · liest diesen Prompt und die {{formatted}} Agenten, die ihn nutzen.",
     "footerPromptAgentsNoModel_one": "Liest diesen Prompt und den Agenten, der ihn nutzt.",
-    "footerPromptAgentsNoModel_other": "Liest diesen Prompt und die {{formatted}} Agenten, die ihn nutzen."
+    "footerPromptAgentsNoModel_other": "Liest diesen Prompt und die {{formatted}} Agenten, die ihn nutzen.",
+    "footerInsights": "Verwendet {{model}} · kann deine Agenten, Wissensquellen, Tools, Prompts und die Einblicke dieses Agenten lesen.",
+    "footerInsightsNoModel": "Kann deine Agenten, Wissensquellen, Tools, Prompts und die Einblicke dieses Agenten lesen.",
+    "readInsights_one": "Einblicke gelesen: {{formatted}} Unterhaltung, letzte {{days}} Tage",
+    "readInsights_other": "Einblicke gelesen: {{formatted}} Unterhaltungen, letzte {{days}} Tage",
+    "readQuestions_one": "{{count}} Beispielfrage gelesen",
+    "readQuestions_other": "{{count}} Beispielfragen gelesen"
   },
   "questions": {
     "somethingElse": "Etwas anderes…",

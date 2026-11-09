@@ -4692,7 +4692,28 @@
         "unfit_other": "{{count}} 件の変更がプロンプトの本文と合わなくなりました"
       },
       "formEdited": "フォームで {{fields}} を変更しました。",
-      "showInAgent": "エージェントで表示"
+      "showInAgent": "エージェントで表示",
+      "insights": {
+        "heading": "会話から",
+        "window_one": "過去 {{count}} 日間",
+        "window_other": "過去 {{count}} 日間",
+        "setupHeading": "設定から",
+        "gapLine_one": "{{gap}} · 質問 {{formatted}} 件中 {{expected}} 件",
+        "gapLine_other": "{{gap}} · 質問 {{formatted}} 件中 {{expected}} 件",
+        "upFrom": "前回 {{previous}} 件から増加",
+        "downFrom": "前回 {{previous}} 件から減少",
+        "fixIn": "{{topic}}の「{{gap}}」を直して",
+        "fix": "直して: {{gap}}",
+        "findMore": "ほかに直すべき点を探して",
+        "findMoreDescription": "インサイトと会話の例をいくつか読み取ります",
+        "agentOff": "このエージェントのインサイトはオフなので、設定だけを手がかりにします。",
+        "turnOn": "インサイトをオンにする",
+        "notEnough": "{{days}} 日間に分析済みの回答が {{needed}} 件たまれば（現在 {{conversations}} 件）、ユーザーの質問をもとに修正を提案できます。",
+        "openSource": "{{name}}を開く",
+        "theSource": "ソース",
+        "seeInLogs": "質問をログで表示",
+        "quoted": "「{{text}}」"
+      }
     },
     "topics": {
       "suggest": "会話から提案",
@@ -4750,7 +4771,13 @@
     "footerPromptAgents_one": "{{model}} を使用 · このプロンプトと、それを使うエージェントを読み取ります。",
     "footerPromptAgents_other": "{{model}} を使用 · このプロンプトと、それを使う {{formatted}} 個のエージェントを読み取ります。",
     "footerPromptAgentsNoModel_one": "このプロンプトと、それを使うエージェントを読み取ります。",
-    "footerPromptAgentsNoModel_other": "このプロンプトと、それを使う {{formatted}} 個のエージェントを読み取ります。"
+    "footerPromptAgentsNoModel_other": "このプロンプトと、それを使う {{formatted}} 個のエージェントを読み取ります。",
+    "footerInsights": "{{model}} を使用 · エージェント、ナレッジ、ツール、プロンプト、このエージェントのインサイトを読み取れます。",
+    "footerInsightsNoModel": "エージェント、ナレッジ、ツール、プロンプト、このエージェントのインサイトを読み取れます。",
+    "readInsights_one": "インサイトを読み取りました: 会話 {{formatted}} 件、過去 {{days}} 日間",
+    "readInsights_other": "インサイトを読み取りました: 会話 {{formatted}} 件、過去 {{days}} 日間",
+    "readQuestions_one": "質問の例を {{count}} 件読み取りました",
+    "readQuestions_other": "質問の例を {{count}} 件読み取りました"
   },
   "questions": {
     "somethingElse": "その他…",

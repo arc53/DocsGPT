@@ -21,6 +21,8 @@ export type DrafterItem =
   | { id: number; kind: 'user'; text: string }
   | { id: number; kind: 'status'; counts: DrafterCounts }
   | { id: number; kind: 'message'; text: string }
+  /** The example questions the turn read, all its reads in one item. */
+  | { id: number; kind: 'read'; items: string[] }
   | { id: number; kind: 'questions'; questions: DrafterQuestion[] }
   | { id: number; kind: 'proposal'; proposal: unknown }
   | { id: number; kind: 'error'; code: DrafterErrorCode; message?: string };
@@ -114,11 +116,37 @@ export function useDrafterSession({
   const latest = useRef({ getContext, onProposal, token });
   latest.current = { getContext, onProposal, token };
 
+  // The running attempt's `read` item, which its later reads add to.
+  const readItem = useRef<number | null>(null);
+
   const push = useCallback((item: NewItem) => {
     nextId.current += 1;
     const id = nextId.current;
     setItems((prev) => [...prev, { ...item, id } as DrafterItem]);
+    return id;
   }, []);
+
+  /** Add what a read showed to the turn's one `read` item, without repeats. */
+  const addRead = useCallback(
+    (questions: string[]) => {
+      const id = readItem.current;
+      if (id === null) {
+        readItem.current = push({
+          kind: 'read',
+          items: [...new Set(questions)],
+        });
+        return;
+      }
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id && item.kind === 'read'
+            ? { ...item, items: [...new Set([...item.items, ...questions])] }
+            : item,
+        ),
+      );
+    },
+    [push],
+  );
 
   /** Close the pending turn with the drafter's answer, into the history. */
   const answer = useCallback((content: string) => {
@@ -163,6 +191,9 @@ export function useDrafterSession({
             push({ kind: 'status', counts: event.counts ?? {} });
           } else setStep('drafting');
           return;
+        case 'read':
+          if (event.items.length > 0) addRead(event.items);
+          return;
         case 'message':
           if (!event.text) return;
           pending.current?.said.push(event.text);
@@ -199,7 +230,7 @@ export function useDrafterSession({
           return;
       }
     },
-    [answer, answerWithWords, cancelTurn, push],
+    [addRead, answer, answerWithWords, cancelTurn, push],
   );
 
   const run = useCallback(() => {
@@ -209,6 +240,7 @@ export function useDrafterSession({
     // A new attempt: what a failed one said is not part of its answer.
     failed.current = false;
     turn.said = [];
+    readItem.current = null;
     const current = new AbortController();
     controller.current = current;
     const id = newDrafterTurnId();

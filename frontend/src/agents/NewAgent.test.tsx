@@ -103,6 +103,9 @@ const drafter = vi.hoisted(() => ({
   },
   // A promise is a turn whose events land when it resolves.
   scripts: [] as (unknown[] | Promise<unknown[]>)[],
+  // The agent's gap summary (`GET /api/drafter/agent_gaps`), and who asked.
+  gaps: null as unknown,
+  gapsCalls: [] as string[],
   requests: [] as {
     recipe: string;
     messages: { role: string; content: string }[];
@@ -110,6 +113,8 @@ const drafter = vi.hoisted(() => ({
       agent_id: string | null;
       step?: string | null;
       earlier?: string[];
+      gap?: { topic: string | null; gap_type: string };
+      conversation_id?: string;
       form: Record<string, unknown>;
     };
   }[],
@@ -126,6 +131,19 @@ vi.mock('../drafter/drafterApi', async (importOriginal) => ({
   ) => {
     drafter.requests.push(JSON.parse(JSON.stringify(request)));
     (await (drafter.scripts.shift() ?? [{ type: 'end' }])).forEach(onEvent);
+  },
+  getAgentGaps: async (agentId: string) => {
+    drafter.gapsCalls.push(agentId);
+    return (
+      drafter.gaps ?? {
+        available: false,
+        reason: 'off_on_this_instance',
+        conversations: 0,
+        needed: 10,
+        days: 30,
+        rows: [],
+      }
+    );
   },
 }));
 
@@ -2421,6 +2439,8 @@ describe('NewAgent drafter', () => {
     drafter.config = null;
     drafter.scripts = [];
     drafter.requests = [];
+    drafter.gaps = null;
+    drafter.gapsCalls = [];
     mocks.createAgent.mockReset();
     mocks.createAgent.mockImplementation(() =>
       jsonResponse({ message: 'Name is taken' }, false),
@@ -4267,4 +4287,248 @@ describe('NewAgent drafter', () => {
       expect(viewWand()).toBeNull();
     });
   }
+
+  describe('from Insights', () => {
+    const EDITOR = ['edit', 'publish', 'use', 'view'];
+    const GAPS = {
+      available: true,
+      reason: null,
+      conversations: 412,
+      needed: 10,
+      days: 30,
+      rows: [
+        {
+          topic: 'Returns & claims',
+          gap_type: 'docs missing',
+          expected: 23,
+          turns: 160,
+          previous: 19,
+        },
+        {
+          topic: 'Order status',
+          gap_type: 'needs account data',
+          expected: 31,
+          turns: 96,
+          previous: null,
+        },
+        {
+          topic: 'Delivery windows',
+          gap_type: 'confidently ungrounded',
+          expected: 9,
+          turns: 120,
+          previous: 5,
+        },
+        {
+          topic: 'Billing',
+          gap_type: 'out of scope',
+          expected: 6,
+          turns: 40,
+          previous: null,
+        },
+      ],
+    };
+    const suggestion = (key: string) =>
+      panel()!.querySelector<HTMLButtonElement>(`[data-suggestion="${key}"]`);
+    const note = () =>
+      panel()!.querySelector('[data-slot="drafter-insights-note"]');
+
+    it('reads its gaps when the drawer opens and leads with at most three', async () => {
+      drafter.gaps = GAPS;
+      await renderEdit(EDITOR);
+      expect(drafter.gapsCalls).toEqual([]);
+      await act(async () => wand()!.click());
+      expect(drafter.gapsCalls).toEqual(['agent-1']);
+      const headings = Array.from(panel()!.querySelectorAll('h3')).map(
+        (h) => h.textContent,
+      );
+      expect(headings).toEqual([
+        'drafter.agent.insights.headingdrafter.agent.insights.window',
+        'drafter.agent.insights.setupHeading',
+      ]);
+      expect(suggestion('gap-0')!.textContent).toContain('Returns & claims');
+      expect(suggestion('gap-2')).not.toBeNull();
+      expect(suggestion('gap-3')).toBeNull();
+      expect(suggestion('findMore')).not.toBeNull();
+      expect(panel()!.textContent).toContain('drafter.footerInsights');
+      expect(note()).toBeNull();
+    });
+
+    it('sends a gap row with its gap, and keeps it for the conversation until Start over', async () => {
+      drafter.gaps = GAPS;
+      drafter.scripts = [
+        [{ type: 'message', text: 'On it.' }, { type: 'end' }],
+        [{ type: 'message', text: 'Done.' }, { type: 'end' }],
+      ];
+      await renderEdit(EDITOR);
+      await act(async () => wand()!.click());
+      await act(async () => suggestion('gap-1')!.click());
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fixIn' },
+      ]);
+      expect(lastRequest().context.gap).toEqual({
+        topic: 'Order status',
+        gap_type: 'needs account data',
+      });
+      await ask('Shorter, please');
+      expect(lastRequest().context.gap).toEqual({
+        topic: 'Order status',
+        gap_type: 'needs account data',
+      });
+      await act(async () =>
+        buttonByLabel('drafter.startOver', panel()!)!.click(),
+      );
+      await act(async () => suggestion('findMore')!.click());
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.findMore' },
+      ]);
+      expect(lastRequest().context).not.toHaveProperty('gap');
+    });
+
+    it('says once that Insights is off for the agent, with a way to turn it on', async () => {
+      drafter.gaps = {
+        ...GAPS,
+        available: false,
+        reason: 'agent_off',
+        rows: [],
+      };
+      await renderEdit(EDITOR, {
+        config: { analytics: { enabled: false, topics: [] } },
+      });
+      await act(async () => wand()!.click());
+      expect(note()!.textContent).toContain('drafter.agent.insights.agentOff');
+      expect(panel()!.querySelector('h3')).toBeNull();
+      expect(panel()!.textContent).toContain('drafter.footer');
+      expect(panel()!.textContent).not.toContain('drafter.footerInsights');
+      const toggle = () =>
+        container.querySelector<HTMLButtonElement>(
+          '[data-testid="analytics-toggle"]',
+        )!;
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      await act(async () =>
+        buttonByText('drafter.agent.insights.turnOn', note()!)!.click(),
+      );
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('offers no Turn on to a role that may not change the agent', async () => {
+      drafter.gaps = {
+        ...GAPS,
+        available: false,
+        reason: 'agent_off',
+        rows: [],
+      };
+      // A draft's main action is Publish, which this role may not do.
+      await renderEdit(['edit', 'use', 'view'], {
+        status: 'draft',
+        config: { analytics: { enabled: false, topics: [] } },
+      });
+      await act(async () => wand()!.click());
+      expect(note()!.textContent).toContain('drafter.agent.insights.agentOff');
+      expect(buttonByText('drafter.agent.insights.turnOn', note()!)).toBe(
+        undefined,
+      );
+    });
+
+    it('says how many answers it waits for, and nothing while the instance has Insights off', async () => {
+      drafter.gaps = {
+        ...GAPS,
+        available: false,
+        reason: 'not_enough',
+        conversations: 4,
+        rows: [],
+      };
+      await renderEdit(EDITOR);
+      await act(async () => wand()!.click());
+      expect(note()!.textContent).toBe('drafter.agent.insights.notEnough');
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      drafter.gaps = null;
+      await renderEdit(EDITOR);
+      await act(async () => wand()!.click());
+      expect(note()).toBeNull();
+      expect(panel()!.querySelector('h3')).toBeNull();
+    });
+
+    it('shows the gaps a proposal acts on as cards, before what it filled', async () => {
+      drafter.gaps = GAPS;
+      drafter.scripts = [
+        [
+          {
+            type: 'proposal',
+            proposal: {
+              message: 'Three gaps cost it the most.',
+              fields: { starters: ['Where is my order?'] },
+              reasons: [
+                { field: 'starters', summary: 'asks for the order id' },
+              ],
+              notes: [],
+              dropped: [],
+              steps: [],
+              next_step: null,
+              gaps: [
+                {
+                  topic: 'Order status',
+                  gap_type: 'needs account data',
+                  expected: 31,
+                  turns: 96,
+                  previous: null,
+                  example: 'Where is shipment MRD-48213?',
+                  fields: ['starters'],
+                  needs: null,
+                  links: [],
+                },
+                {
+                  topic: 'Returns & claims',
+                  gap_type: 'docs missing',
+                  expected: 23,
+                  turns: 160,
+                  previous: 19,
+                  example: 'How long do I have to file a damage claim?',
+                  fields: [],
+                  needs: 'The Claims policy source has no page on deadlines.',
+                  links: [
+                    { kind: 'source', id: 's1', name: 'Claims policy' },
+                    { kind: 'logs', label: 'docs_gap' },
+                  ],
+                },
+              ],
+            },
+          },
+          { type: 'end' },
+        ],
+      ];
+      await renderEdit(EDITOR);
+      await act(async () => wand()!.click());
+      await act(async () => suggestion('findMore')!.click());
+      const cards = Array.from(
+        panel()!.querySelectorAll('[data-slot="gap-card"]'),
+      );
+      expect(cards).toHaveLength(2);
+      expect(cards[0].querySelector('h3')!.textContent).toBe('Order status');
+      expect(cards[0].textContent).toContain('drafter.agent.insights.quoted');
+      expect(
+        cards[0]
+          .querySelector('[data-slot="filled-row"] p')!
+          .getAttribute('title'),
+      ).toBe('agents.form.sections.starters · asks for the order id');
+      expect(cards[1].textContent).toContain(
+        'The Claims policy source has no page on deadlines.',
+      );
+      const links = Array.from(cards[1].querySelectorAll('a')).map((a) =>
+        a.getAttribute('href'),
+      );
+      expect(links).toEqual([
+        '/settings/knowledge?source=s1',
+        '/agents/manage/logs/agent-1?label=docs_gap#logs',
+      ]);
+      // The cards come before the Filled row.
+      const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
+      const order = Array.from(
+        summary.querySelectorAll(
+          '[data-slot="gap-cards"], [data-slot="drafter-step-row"]',
+        ),
+      ).map((el) => el.getAttribute('data-slot'));
+      expect(order).toEqual(['gap-cards', 'drafter-step-row']);
+    });
+  });
 });

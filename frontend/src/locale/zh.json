@@ -4690,7 +4690,28 @@
         "unfit_other": "{{count}} 处修改已与提示词文本不符"
       },
       "formEdited": "你在表单中更改了 {{fields}}。",
-      "showInAgent": "在智能体中查看"
+      "showInAgent": "在智能体中查看",
+      "insights": {
+        "heading": "来自它的对话",
+        "window_one": "最近 {{count}} 天",
+        "window_other": "最近 {{count}} 天",
+        "setupHeading": "来自它的设置",
+        "gapLine_one": "{{gap}} · {{formatted}} 个问题中的 {{expected}} 个",
+        "gapLine_other": "{{gap}} · {{formatted}} 个问题中的 {{expected}} 个",
+        "upFrom": "此前为 {{previous}}，有所上升",
+        "downFrom": "此前为 {{previous}}，有所下降",
+        "fixIn": "修复 {{topic}} 中的“{{gap}}”",
+        "fix": "修复：{{gap}}",
+        "findMore": "找出还要修复的地方",
+        "findMoreDescription": "读取洞察和几个示例对话",
+        "agentOff": "此智能体的洞察已关闭，所以我只能根据它的设置来判断。",
+        "turnOn": "开启洞察",
+        "notEnough": "等它在 {{days}} 天内有 {{needed}} 条已分析的回答（目前 {{conversations}} 条），我就能根据用户的提问建议修复。",
+        "openSource": "打开 {{name}}",
+        "theSource": "该知识源",
+        "seeInLogs": "在日志中查看这些问题",
+        "quoted": "“{{text}}”"
+      }
     },
     "topics": {
       "suggest": "根据对话建议",
@@ -4748,7 +4769,13 @@
     "footerPromptAgents_one": "使用 {{model}} · 读取此提示词和使用它的智能体。",
     "footerPromptAgents_other": "使用 {{model}} · 读取此提示词和使用它的 {{formatted}} 个智能体。",
     "footerPromptAgentsNoModel_one": "读取此提示词和使用它的智能体。",
-    "footerPromptAgentsNoModel_other": "读取此提示词和使用它的 {{formatted}} 个智能体。"
+    "footerPromptAgentsNoModel_other": "读取此提示词和使用它的 {{formatted}} 个智能体。",
+    "footerInsights": "使用 {{model}} · 可读取你的智能体、知识、工具、提示词和此智能体的洞察。",
+    "footerInsightsNoModel": "可读取你的智能体、知识、工具、提示词和此智能体的洞察。",
+    "readInsights_one": "已读取洞察：{{formatted}} 个对话，最近 {{days}} 天",
+    "readInsights_other": "已读取洞察：{{formatted}} 个对话，最近 {{days}} 天",
+    "readQuestions_one": "已读取 {{count}} 个示例问题",
+    "readQuestions_other": "已读取 {{count}} 个示例问题"
   },
   "questions": {
     "somethingElse": "其他…",

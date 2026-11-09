@@ -4,6 +4,7 @@ vi.mock('../api/client', () => ({ default: client }));
 import {
   cancelDrafterTurn,
   type DrafterEvent,
+  getAgentGaps,
   getDrafterConfig,
   newDrafterTurnId,
   parseDrafterEvent,
@@ -236,5 +237,113 @@ describe('drafterApi', () => {
     expect(parseDrafterEvent('{"type":"thought"}')).toBeNull();
     expect(parseDrafterEvent('not json')).toBeNull();
     expect(parseDrafterEvent('{"type":"end"}')).toEqual({ type: 'end' });
+  });
+
+  it('reads what a read tool showed, keeping only the question text', () => {
+    expect(
+      parseDrafterEvent(
+        JSON.stringify({
+          type: 'read',
+          kind: 'questions',
+          items: ['How long do I have?', 7, '  ', 'Can I return it?'],
+        }),
+      ),
+    ).toEqual({
+      type: 'read',
+      kind: 'questions',
+      items: ['How long do I have?', 'Can I return it?'],
+    });
+    expect(
+      parseDrafterEvent('{"type":"read","kind":"answers","items":[]}'),
+    ).toBeNull();
+    expect(parseDrafterEvent('{"type":"read","kind":"questions"}')).toBeNull();
+  });
+
+  it("reads an agent's gap summary, leaving malformed rows out", async () => {
+    client.get.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          available: true,
+          reason: null,
+          conversations: 412,
+          needed: 10,
+          days: 30,
+          rows: [
+            {
+              topic: 'Returns & claims',
+              gap_type: 'docs missing',
+              expected: 23,
+              turns: 160,
+              previous: 19,
+            },
+            {
+              topic: null,
+              gap_type: 'out of scope',
+              expected: 4,
+              turns: 412,
+              previous: null,
+            },
+            { topic: 'Broken', gap_type: '', expected: 1, turns: 2 },
+            { topic: 'NaN', gap_type: 'docs missing', expected: 'x', turns: 2 },
+          ],
+        }),
+      ),
+    );
+    const gaps = await getAgentGaps('agent-1', 'tok');
+    expect(client.get.mock.calls[0][0]).toBe(
+      '/api/drafter/agent_gaps?agent_id=agent-1',
+    );
+    expect(gaps).toEqual({
+      available: true,
+      reason: null,
+      conversations: 412,
+      needed: 10,
+      days: 30,
+      rows: [
+        {
+          topic: 'Returns & claims',
+          gap_type: 'docs missing',
+          expected: 23,
+          turns: 160,
+          previous: 19,
+        },
+        {
+          topic: null,
+          gap_type: 'out of scope',
+          expected: 4,
+          turns: 412,
+          previous: null,
+        },
+      ],
+    });
+  });
+
+  it('reads a gap summary that is off, or unreadable, as unavailable', async () => {
+    client.get.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          available: false,
+          reason: 'not_enough',
+          conversations: 4,
+          needed: 10,
+          days: 30,
+          rows: [],
+        }),
+      ),
+    );
+    expect(await getAgentGaps('agent-1', 'tok')).toMatchObject({
+      available: false,
+      reason: 'not_enough',
+      conversations: 4,
+      needed: 10,
+    });
+    client.get.mockResolvedValueOnce(new Response('{}', { status: 404 }));
+    expect(await getAgentGaps('agent-1', 'tok')).toMatchObject({
+      available: false,
+      reason: 'unavailable',
+      rows: [],
+    });
+    client.get.mockRejectedValueOnce(new Error('offline'));
+    expect((await getAgentGaps('agent-1', 'tok')).reason).toBe('unavailable');
   });
 });

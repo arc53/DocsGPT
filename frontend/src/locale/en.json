@@ -4739,7 +4739,28 @@
         "unfit_other": "{{count}} changes no longer fit the prompt's text"
       },
       "formEdited": "You changed {{fields}} in the form.",
-      "showInAgent": "Show in agent"
+      "showInAgent": "Show in agent",
+      "insights": {
+        "heading": "From its conversations",
+        "window_one": "last {{count}} day",
+        "window_other": "last {{count}} days",
+        "setupHeading": "From its setup",
+        "gapLine_one": "{{gap}} · {{expected}} of {{formatted}} question",
+        "gapLine_other": "{{gap}} · {{expected}} of {{formatted}} questions",
+        "upFrom": "up from {{previous}}",
+        "downFrom": "down from {{previous}}",
+        "fixIn": "Fix “{{gap}}” in {{topic}}",
+        "fix": "Fix: {{gap}}",
+        "findMore": "Find what else to fix",
+        "findMoreDescription": "Reads Insights and a few example conversations",
+        "agentOff": "Insights is off for this agent, so I can only go by its setup.",
+        "turnOn": "Turn on Insights",
+        "notEnough": "Once it has {{needed}} analyzed answers in {{days}} days (it has {{conversations}}), I can suggest fixes from what users asked.",
+        "openSource": "Open {{name}}",
+        "theSource": "the source",
+        "seeInLogs": "See the questions in Logs",
+        "quoted": "“{{text}}”"
+      }
     },
     "topics": {
       "suggest": "Suggest from conversations",
@@ -4805,7 +4826,13 @@
     "footerPromptAgents_one": "Uses {{model}} · reads this prompt and the agent using it.",
     "footerPromptAgents_other": "Uses {{model}} · reads this prompt and the {{formatted}} agents using it.",
     "footerPromptAgentsNoModel_one": "Reads this prompt and the agent using it.",
-    "footerPromptAgentsNoModel_other": "Reads this prompt and the {{formatted}} agents using it."
+    "footerPromptAgentsNoModel_other": "Reads this prompt and the {{formatted}} agents using it.",
+    "footerInsights": "Uses {{model}} · can read your agents, knowledge, tools, prompts and this agent's Insights.",
+    "footerInsightsNoModel": "Can read your agents, knowledge, tools, prompts and this agent's Insights.",
+    "readInsights_one": "Read Insights: {{formatted}} conversation, last {{days}} days",
+    "readInsights_other": "Read Insights: {{formatted}} conversations, last {{days}} days",
+    "readQuestions_one": "Read {{count}} example question",
+    "readQuestions_other": "Read {{count}} example questions"
   },
   "questions": {
     "somethingElse": "Something else…",

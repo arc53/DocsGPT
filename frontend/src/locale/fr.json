@@ -4866,7 +4866,30 @@
         "unfit_many": "{{count}} modifications ne correspondent plus au texte du prompt"
       },
       "formEdited": "Vous avez modifié {{fields}} dans le formulaire.",
-      "showInAgent": "Voir dans l’agent"
+      "showInAgent": "Voir dans l’agent",
+      "insights": {
+        "heading": "D’après ses conversations",
+        "window_one": "dernier jour",
+        "window_other": "{{count}} derniers jours",
+        "window_many": "{{count}} derniers jours",
+        "setupHeading": "D’après sa configuration",
+        "gapLine_one": "{{gap}} · {{expected}} sur {{formatted}} question",
+        "gapLine_other": "{{gap}} · {{expected}} sur {{formatted}} questions",
+        "gapLine_many": "{{gap}} · {{expected}} sur {{formatted}} questions",
+        "upFrom": "contre {{previous}} avant",
+        "downFrom": "en baisse, contre {{previous}} avant",
+        "fixIn": "Corrige « {{gap}} » dans {{topic}}",
+        "fix": "À corriger : {{gap}}",
+        "findMore": "Trouve ce qu’il reste à corriger",
+        "findMoreDescription": "Lit les Analyses et quelques conversations d’exemple",
+        "agentOff": "Les Analyses sont désactivées pour cet agent, je ne peux donc me fier qu’à sa configuration.",
+        "turnOn": "Activer les Analyses",
+        "notEnough": "Dès qu’il aura {{needed}} réponses analysées sur {{days}} jours (il en a {{conversations}}), je pourrai proposer des corrections d’après ce que les utilisateurs ont demandé.",
+        "openSource": "Ouvrir {{name}}",
+        "theSource": "la source",
+        "seeInLogs": "Voir les questions dans les journaux",
+        "quoted": "« {{text}} »"
+      }
     },
     "topics": {
       "suggest": "Suggérer à partir des conversations",
@@ -4943,7 +4966,15 @@
     "footerPromptAgents_many": "Utilise {{model}} · lit ce prompt et les {{formatted}} agents qui l’utilisent.",
     "footerPromptAgentsNoModel_one": "Lit ce prompt et l’agent qui l’utilise.",
     "footerPromptAgentsNoModel_other": "Lit ce prompt et les {{formatted}} agents qui l’utilisent.",
-    "footerPromptAgentsNoModel_many": "Lit ce prompt et les {{formatted}} agents qui l’utilisent."
+    "footerPromptAgentsNoModel_many": "Lit ce prompt et les {{formatted}} agents qui l’utilisent.",
+    "footerInsights": "Utilise {{model}} · peut lire vos agents, connaissances, outils, prompts et les Analyses de cet agent.",
+    "footerInsightsNoModel": "Peut lire vos agents, connaissances, outils, prompts et les Analyses de cet agent.",
+    "readInsights_one": "Analyses lues : {{formatted}} conversation, {{days}} derniers jours",
+    "readInsights_other": "Analyses lues : {{formatted}} conversations, {{days}} derniers jours",
+    "readInsights_many": "Analyses lues : {{formatted}} conversations, {{days}} derniers jours",
+    "readQuestions_one": "{{count}} exemple de question lu",
+    "readQuestions_other": "{{count}} exemples de questions lus",
+    "readQuestions_many": "{{count}} exemples de questions lus"
   },
   "questions": {
     "somethingElse": "Autre chose…",

@@ -45,9 +45,21 @@ export type DrafterErrorCode =
   | 'model_error'
   | 'bad_request';
 
-/** The counts a `reading` status reports ("6 knowledge sources, 11 tools…"). */
+/**
+ * The counts a `reading` status reports ("6 knowledge sources, 11 tools…");
+ * `insights_conversations` is the analyzed conversations it read from the
+ * agent's Insights.
+ */
 export type DrafterCounts = Partial<
-  Record<'sources' | 'tools' | 'prompts' | 'models' | 'agents', number>
+  Record<
+    | 'sources'
+    | 'tools'
+    | 'prompts'
+    | 'models'
+    | 'agents'
+    | 'insights_conversations',
+    number
+  >
 >;
 
 /**
@@ -60,6 +72,8 @@ export type DrafterEvent =
   | { type: 'status'; step: 'reading'; counts?: DrafterCounts }
   | { type: 'status'; step: 'drafting' }
   | { type: 'message'; text: string }
+  /** What a read tool showed the model: end users' questions, as data. */
+  | { type: 'read'; kind: 'questions'; items: string[] }
   | { type: 'questions'; questions: DrafterQuestion[] }
   | { type: 'proposal'; proposal: unknown }
   | { type: 'error'; code: DrafterErrorCode; message?: string }
@@ -122,6 +136,124 @@ export async function getDrafterConfig(
   }
 }
 
+/** Why an agent's Insights can't back the drawer's first screen. */
+export type AgentGapsReason =
+  /** Decision analytics is off on this instance. */
+  | 'off_on_this_instance'
+  /** The agent's own Insights switch is off. */
+  | 'agent_off'
+  /** Fewer analyzed conversations than `needed` in the window. */
+  | 'not_enough'
+  /** Drafting is off. */
+  | 'disabled'
+  /** The client's own: the summary couldn't be read. */
+  | 'unavailable';
+
+/** One (topic, gap type) of an agent's gap summary. */
+export type AgentGapRow = {
+  /** The topic's name as Insights shows it; null for an agent without topics. */
+  topic: string | null;
+  /** A `gap_type` option ("docs missing"). */
+  gap_type: string;
+  /** Expected gaps in the window, rounded. */
+  expected: number;
+  /** The questions it counts from (the topic's, or every labelled one). */
+  turns: number;
+  /** The previous window's expected gaps; null until it has labelled answers. */
+  previous: number | null;
+};
+
+/** `GET /api/drafter/agent_gaps`: what Insights found, for the improve drawer. */
+export type AgentGaps = {
+  available: boolean;
+  reason: AgentGapsReason | null;
+  /** Analyzed conversations in the window. */
+  conversations: number;
+  /** Analyzed conversations it takes (`MIN_SAMPLE`). */
+  needed: number;
+  /** The window, in days. */
+  days: number;
+  rows: AgentGapRow[];
+};
+
+const isCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+const GAPS_REASONS: AgentGapsReason[] = [
+  'off_on_this_instance',
+  'agent_off',
+  'not_enough',
+  'disabled',
+];
+
+/**
+ * Read an agent's gap summary (counts only; the server makes no model call).
+ * Any failure (an older server, a role that can't edit the agent, a network
+ * error) reads as unavailable, so the drawer shows its setup rows alone.
+ *
+ * Args:
+ *   agentId: The saved agent.
+ *   token: The session token.
+ *   signal: Aborts the request.
+ *
+ * Returns:
+ *   The summary; malformed rows are left out.
+ */
+export async function getAgentGaps(
+  agentId: string,
+  token: string | null,
+  signal?: AbortSignal,
+): Promise<AgentGaps> {
+  const unavailable: AgentGaps = {
+    available: false,
+    reason: 'unavailable',
+    conversations: 0,
+    needed: 0,
+    days: 0,
+    rows: [],
+  };
+  try {
+    const response: Response = await apiClient.get(
+      endpoints.USER.DRAFTER_AGENT_GAPS(agentId),
+      token,
+      {},
+      signal,
+    );
+    if (!response?.ok) return unavailable;
+    const data = (await response.json()) as Record<string, unknown> | null;
+    if (!data || typeof data !== 'object') return unavailable;
+    const rows = (Array.isArray(data.rows) ? data.rows : []).filter(
+      (row): row is AgentGapRow =>
+        !!row &&
+        typeof row.gap_type === 'string' &&
+        !!row.gap_type &&
+        (row.topic === null || typeof row.topic === 'string') &&
+        isCount(row.expected) &&
+        isCount(row.turns) &&
+        (row.previous === null || isCount(row.previous)),
+    );
+    const reason = GAPS_REASONS.includes(data.reason as AgentGapsReason)
+      ? (data.reason as AgentGapsReason)
+      : null;
+    return {
+      available: data.available === true,
+      reason: data.available === true ? null : (reason ?? 'unavailable'),
+      conversations: isCount(data.conversations) ? data.conversations : 0,
+      needed: isCount(data.needed) ? data.needed : 0,
+      days: isCount(data.days) ? data.days : 0,
+      rows: rows.map(({ topic, gap_type, expected, turns, previous }) => ({
+        topic: topic || null,
+        gap_type,
+        expected,
+        turns,
+        previous,
+      })),
+    };
+  } catch {
+    return unavailable;
+  }
+}
+
 /** The error code for a refused request that never became a stream. */
 function codeForStatus(status: number, body: unknown): DrafterErrorCode {
   if (isQuotaError(body)) return 'quota';
@@ -142,6 +274,17 @@ export function parseDrafterEvent(data: string): DrafterEvent | null {
     switch (parsed.type) {
       case 'turn':
         return typeof parsed.id === 'string' ? (parsed as DrafterEvent) : null;
+      case 'read': {
+        const { kind, items } = parsed as { kind?: unknown; items?: unknown };
+        if (kind !== 'questions' || !Array.isArray(items)) return null;
+        return {
+          type: 'read',
+          kind,
+          items: items.filter(
+            (item): item is string => typeof item === 'string' && !!item.trim(),
+          ),
+        };
+      }
       case 'status':
       case 'message':
       case 'questions':

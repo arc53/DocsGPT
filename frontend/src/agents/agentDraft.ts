@@ -6,9 +6,12 @@ import {
   readPromptChecks,
   readPromptEdits,
 } from '../drafter/promptDraft';
+import type { AgentGapRow } from '../drafter/drafterApi';
 import type { ProposalReasonRow } from '../drafter/ProposalSummary';
 import type { DrafterStarter } from '../drafter/starters';
-import { joinList } from '../settings/insights/format';
+import { joinList, optionName } from '../settings/insights/format';
+import { isLogLabel, type LogLabel } from '../settings/logsLinks';
+import { formatCount } from '../utils/dateTimeUtils';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { newTopicId } from './analyticsConfig';
 import {
@@ -110,9 +113,31 @@ export type AgentProposalFields = {
   analytics?: { topics: { name: string; description: string }[] };
 };
 
+/** Where a gap's fix sends the user: a source to add a page to, or Logs. */
+export type AgentGapLink =
+  | { kind: 'source'; id: string; name: string }
+  | { kind: 'logs'; label: LogLabel };
+
+/**
+ * One gap an improve proposal acts on: the summary row it came from (the
+ * server's counts), a question it read, the fields its fix set, and what it
+ * can't fix itself.
+ */
+export type AgentProposalGap = AgentGapRow & {
+  /** One question the model read for it. */
+  example: string;
+  /** The proposal's fields its fix set. */
+  fields: AgentDraftField[];
+  /** What the user has to do ("Add a page… then sync the source."). */
+  needs: string | null;
+  links: AgentGapLink[];
+};
+
 export type AgentProposal = {
   message?: string;
   fields: AgentProposalFields;
+  /** The gaps from Insights it acts on (improve mode); none otherwise. */
+  gaps: AgentProposalGap[];
   reasons: { field: string; summary: string }[];
   notes: string[];
   dropped: { field: string; id?: string; reason?: string }[];
@@ -206,6 +231,61 @@ function parseTopics(raw: unknown): AgentProposalFields['analytics'] {
   return parsed.length > 0 ? { topics: parsed } : undefined;
 }
 
+const isCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+function parseGapLinks(raw: unknown): AgentGapLink[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((link): AgentGapLink[] => {
+    if (link?.kind === 'source' && isString(link.id) && link.id)
+      return [
+        {
+          kind: 'source',
+          id: link.id,
+          name: isString(link.name) ? link.name : '',
+        },
+      ];
+    if (link?.kind === 'logs' && isLogLabel(link.label))
+      return [{ kind: 'logs', label: link.label }];
+    return [];
+  });
+}
+
+/** The proposal's gaps, each naming only fields the proposal sets. */
+function parseGaps(
+  raw: unknown,
+  fields: AgentProposalFields,
+): AgentProposalGap[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((gap): AgentProposalGap[] => {
+    if (
+      !gap ||
+      !isString(gap.gap_type) ||
+      !gap.gap_type ||
+      !(gap.topic === null || gap.topic === undefined || isString(gap.topic))
+    )
+      return [];
+    return [
+      {
+        topic: gap.topic || null,
+        gap_type: gap.gap_type,
+        expected: isCount(gap.expected) ? gap.expected : 0,
+        turns: isCount(gap.turns) ? gap.turns : 0,
+        previous: isCount(gap.previous) ? gap.previous : null,
+        example: isString(gap.example) ? gap.example.trim() : '',
+        fields: (stringList(gap.fields) ?? []).filter(
+          (field): field is AgentDraftField =>
+            field in fields &&
+            AGENT_DRAFT_FIELDS.includes(field as AgentDraftField),
+        ),
+        needs:
+          isString(gap.needs) && gap.needs.trim() ? gap.needs.trim() : null,
+        links: parseGapLinks(gap.links),
+      },
+    ];
+  });
+}
+
 /**
  * Read an agent proposal defensively: anything malformed is left out, so a
  * bad field never reaches the form.
@@ -271,6 +351,7 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
   return {
     message: isString(source.message) ? source.message : undefined,
     fields,
+    gaps: parseGaps(source.gaps, fields),
     reasons: list(source.reasons)
       .filter(
         (reason): reason is AgentProposal['reasons'][number] =>
@@ -548,8 +629,17 @@ function limitsContext(limits: AgentLimitsValue) {
 }
 
 /**
- * The agent recipe's `context`: the form as it is now, and where the guided
- * build stands.
+ * Where an improve conversation started from in Insights: a gap (a drawer
+ * row, the Docs gaps panel) or one conversation in Logs.
+ */
+export type AgentImproveFocus = {
+  gap?: { topic: string | null; gap_type: string };
+  conversation_id?: string;
+};
+
+/**
+ * The agent recipe's `context`: the form as it is now, where the guided
+ * build stands, and in improve mode the gap or conversation it started from.
  *
  * Args:
  *   agentId: The saved agent's id, or null for a new one.
@@ -557,9 +647,12 @@ function limitsContext(limits: AgentLimitsValue) {
  *   build: The running step (null in improve mode), what the user wrote
  *     in the finished steps, and the starting point the build began from.
  *   promptDraft: The prompt view's unsaved name and text, or null.
+ *   focus: The gap or conversation an improve started from; only a saved
+ *     agent outside a step sends it.
  *
  * Returns:
- *   `{ agent_id, step, earlier, starter, form }` as the drafter contract describes it.
+ *   `{ agent_id, step, earlier, starter, form }` as the drafter contract
+ *   describes it, with `gap` and `conversation_id` when they apply.
  */
 export function agentDraftContext(
   agentId: string | null,
@@ -570,13 +663,19 @@ export function agentDraftContext(
     starter?: DrafterStarter | null;
   },
   promptDraft: PromptDraft | null,
+  focus: AgentImproveFocus = {},
 ) {
   const guardrails = form.guardrails ?? DEFAULT_GUARDRAILS;
+  const improving = !!agentId && build.step === null;
   return {
     agent_id: agentId || null,
     step: build.step,
     earlier: build.earlier,
     starter: build.starter ?? null,
+    ...(improving && focus.gap ? { gap: focus.gap } : {}),
+    ...(improving && focus.conversation_id
+      ? { conversation_id: focus.conversation_id }
+      : {}),
     form: {
       name: form.name,
       description: form.description,
@@ -796,4 +895,73 @@ export function agentStepResult(
   return parts.length > 0
     ? joinList(parts)
     : t('drafter.agent.build.result.none');
+}
+
+/** Most gap rows the improve drawer offers. */
+export const MAX_GAP_ROWS = 3;
+
+/** A gap type's name as Insights shows it ("Docs gap"). */
+export const gapName = (t: TFunction, gapType: string): string =>
+  optionName((key) => t(key), 'gap_type', gapType);
+
+/** A gap row's title: its topic, or the gap's name for an agent without topics. */
+export const gapTitle = (t: TFunction, row: AgentGapRow): string =>
+  row.topic || gapName(t, row.gap_type);
+
+/**
+ * A gap row's line, from the data alone: "Docs gap · 23 of 160 questions",
+ * then the change once the previous window was labelled (" · up from 19").
+ *
+ * Args:
+ *   t: The translator.
+ *   row: The summary row (or a proposal's gap, which carries its counts).
+ *
+ * Returns:
+ *   The line, worded like the Insights page.
+ */
+export function gapLine(t: TFunction, row: AgentGapRow): string {
+  const parts = [
+    t('drafter.agent.insights.gapLine', {
+      gap: gapName(t, row.gap_type),
+      expected: formatCount(Math.round(row.expected)),
+      count: row.turns,
+      formatted: formatCount(row.turns),
+      interpolation: { escapeValue: false },
+    }),
+  ];
+  if (row.previous !== null) {
+    const now = Math.round(row.expected);
+    const before = Math.round(row.previous);
+    if (now !== before)
+      parts.push(
+        t(
+          now > before
+            ? 'drafter.agent.insights.upFrom'
+            : 'drafter.agent.insights.downFrom',
+          { previous: formatCount(before) },
+        ),
+      );
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * What a gap row sends: "Fix the Docs gap in Returns & claims", or "Fix:
+ * Docs gap" for an agent without topics.
+ */
+export function gapRequest(
+  t: TFunction,
+  row: Pick<AgentGapRow, 'topic' | 'gap_type'>,
+): string {
+  const gap = gapName(t, row.gap_type);
+  return row.topic
+    ? t('drafter.agent.insights.fixIn', {
+        gap,
+        topic: row.topic,
+        interpolation: { escapeValue: false },
+      })
+    : t('drafter.agent.insights.fix', {
+        gap,
+        interpolation: { escapeValue: false },
+      });
 }

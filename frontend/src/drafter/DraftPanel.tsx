@@ -1,4 +1,11 @@
-import { ArrowUp, RotateCcw, ScanSearch, WandSparkles } from 'lucide-react';
+import {
+  ArrowUp,
+  ChartNoAxesColumn,
+  MessagesSquare,
+  RotateCcw,
+  ScanSearch,
+  WandSparkles,
+} from 'lucide-react';
 import {
   Fragment,
   type MouseEvent,
@@ -16,6 +23,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { Progress } from '@/components/ui/progress';
+import { SectionHeader } from '@/components/ui/section-header';
 import {
   PanelBody,
   PanelFooter,
@@ -28,13 +36,25 @@ import { QuestionCards } from '../components/QuestionCards';
 import StreamingStatusLine from '../conversation/StreamingStatusLine';
 import SuggestionRows from '../hero/SuggestionRows';
 import { useMediaQuery } from '../hooks';
+import { formatCount } from '../utils/dateTimeUtils';
 
 import { type DrafterCounts, DRAFTER_USER_MESSAGE_CHARS } from './drafterApi';
 import { DrafterErrorAlert } from './DrafterErrorAlert';
+import { DrafterStepRow, FilledRow } from './DrafterStepRow';
 import type { DrafterItem, DrafterSession } from './useDrafterSession';
 
 /** Where the footer's model note links: the task model lives on General. */
 export const TASK_MODEL_SETTINGS_PATH = '/settings/general';
+
+/** The window Insights reads over when the host doesn't say (agent_gaps' `days`). */
+const INSIGHTS_DAYS = 30;
+
+/** The footer's line, by what the recipe reads, with a model and without. */
+const FOOTER_KEYS = {
+  workspace: ['drafter.footer', 'drafter.footerNoModel'],
+  prompt: ['drafter.footerPrompt', 'drafter.footerPromptNoModel'],
+  insights: ['drafter.footerInsights', 'drafter.footerInsightsNoModel'],
+} as const;
 
 // The order the "Looked at your workspace" line lists counts in.
 const COUNT_KEYS = ['sources', 'tools', 'prompts', 'models', 'agents'] as const;
@@ -53,6 +73,15 @@ export type DraftSuggestion = {
   onSelect?: () => void;
 };
 
+/** A titled group of first-screen suggestions ("From its conversations"). */
+export type DraftSuggestionGroup = {
+  key: string;
+  title: string;
+  /** A muted tally after the title ("last 30 days"). */
+  count?: string;
+  rows: DraftSuggestion[];
+};
+
 /** What a rendered proposal can do in the panel. */
 export type DraftPanelHelpers = {
   /** Put `text` in the ask bar and focus it, for the user to finish. */
@@ -67,9 +96,15 @@ export type DraftPanelProps = {
   modelName: string | null;
   /**
    * What the footer says the recipe reads: the workspace (agents, knowledge,
-   * tools and prompts; the default) or only the prompt being drafted.
+   * tools and prompts; the default), the workspace and the agent's Insights,
+   * or only the prompt being drafted.
    */
-  reads?: 'workspace' | 'prompt';
+  reads?: 'workspace' | 'prompt' | 'insights';
+  /**
+   * The days Insights reads over, for a `reading` status that read it
+   * ("Read Insights: 412 conversations, last 30 days").
+   */
+  insightsDays?: number;
   /**
    * The footer link's click handler, so a builder can ask before leaving
    * unsaved work (useLeaveGuard's `onNavigate()`).
@@ -79,6 +114,13 @@ export type DraftPanelProps = {
   intro: string;
   /** Suggestion rows under the greeting; a click sends the row's text. */
   suggestions?: DraftSuggestion[];
+  /**
+   * Suggestions in titled groups, in place of `suggestions` (an improve's
+   * rows from Insights, then those from the agent's setup).
+   */
+  suggestionGroups?: DraftSuggestionGroup[];
+  /** Under the first screen's rows: a note on what it can't read, say. */
+  notice?: ReactNode;
   /**
    * Where a guided build stands: the header's description is `label` and a
    * small bar under it shows `value` (0 to 100).
@@ -143,9 +185,12 @@ export function DraftPanel({
   session,
   modelName,
   reads = 'workspace',
+  insightsDays = INSIGHTS_DAYS,
   onNavigate,
   intro,
   suggestions = [],
+  suggestionGroups,
+  notice,
   progress,
   before,
   placeholder,
@@ -213,6 +258,13 @@ export function DraftPanel({
       ? announceProposal(latestProposal.proposal)
       : null;
 
+  // A suggestion sends its text, unless the host runs it itself.
+  const toRow = (suggestion: DraftSuggestion) => ({
+    ...suggestion,
+    asks: true,
+    onSelect: suggestion.onSelect ?? (() => session.send(suggestion.text)),
+  });
+
   const renderItem = (item: DrafterItem, index: number) => {
     switch (item.kind) {
       case 'user':
@@ -226,7 +278,31 @@ export function DraftPanel({
           </p>
         );
       case 'status':
-        return <WorkspaceLine key={item.id} counts={item.counts} />;
+        return typeof item.counts.insights_conversations === 'number' ? (
+          <div key={item.id} className="flex flex-col gap-1">
+            <WorkspaceLine counts={item.counts} />
+            <InsightsLine
+              count={item.counts.insights_conversations}
+              days={insightsDays}
+            />
+          </div>
+        ) : (
+          <WorkspaceLine key={item.id} counts={item.counts} />
+        );
+      case 'read':
+        // End users' questions, shown as the text they are.
+        return (
+          <div key={item.id} data-item="read">
+            <DrafterStepRow
+              icon={MessagesSquare}
+              label={t('drafter.readQuestions', { count: item.items.length })}
+            >
+              {item.items.map((question, at) => (
+                <FilledRow key={at} value={question} />
+              ))}
+            </DrafterStepRow>
+          </div>
+        );
       case 'message':
         return (
           <p
@@ -325,17 +401,32 @@ export function DraftPanel({
               <p className="text-sm wrap-break-word whitespace-pre-wrap">
                 {intro}
               </p>
-              <SuggestionRows
-                label={t('drafter.suggestionsLabel')}
-                className="-mx-3"
-                rows={suggestions.map((suggestion) => ({
-                  ...suggestion,
-                  asks: true,
-                  onSelect:
-                    suggestion.onSelect ??
-                    (() => session.send(suggestion.text)),
-                }))}
-              />
+              {suggestionGroups ? (
+                <div className="flex flex-col gap-4">
+                  {suggestionGroups.map((group) => (
+                    <div key={group.key} className="flex flex-col gap-1">
+                      <SectionHeader
+                        as="h3"
+                        size="xs"
+                        title={group.title}
+                        count={group.count}
+                      />
+                      <SuggestionRows
+                        label={group.title}
+                        className="-mx-3"
+                        rows={group.rows.map(toRow)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <SuggestionRows
+                  label={t('drafter.suggestionsLabel')}
+                  className="-mx-3"
+                  rows={suggestions.map(toRow)}
+                />
+              )}
+              {notice}
             </div>
           )}
           {items.map(renderItem)}
@@ -384,20 +475,11 @@ export function DraftPanel({
           />
           <p className="text-muted-foreground text-xs">
             {modelName
-              ? t(
-                  reads === 'prompt'
-                    ? 'drafter.footerPrompt'
-                    : 'drafter.footer',
-                  {
-                    model: modelName,
-                    interpolation: { escapeValue: false },
-                  },
-                )
-              : t(
-                  reads === 'prompt'
-                    ? 'drafter.footerPromptNoModel'
-                    : 'drafter.footerNoModel',
-                )}{' '}
+              ? t(FOOTER_KEYS[reads][0], {
+                  model: modelName,
+                  interpolation: { escapeValue: false },
+                })
+              : t(FOOTER_KEYS[reads][1])}{' '}
             <Button variant="link" size="text" asChild>
               <Link to={TASK_MODEL_SETTINGS_PATH} onClick={onNavigate}>
                 {t('drafter.changeModel')}
@@ -508,6 +590,32 @@ function Composer({
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Read Insights: 412 conversations, last 30 days", the workspace line's
+ * twin under it when the turn read the agent's Insights.
+ */
+function InsightsLine({ count, days }: { count: number; days: number }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      data-item="insights"
+      className="text-muted-foreground flex items-start gap-2 text-sm"
+    >
+      <ChartNoAxesColumn
+        className="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <p className="min-w-0 wrap-break-word">
+        {t('drafter.readInsights', {
+          count,
+          formatted: formatCount(count),
+          days,
+        })}
+      </p>
     </div>
   );
 }

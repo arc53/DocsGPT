@@ -82,6 +82,9 @@ function Host({
     | 'reads'
     | 'modelName'
     | 'onStartOver'
+    | 'suggestionGroups'
+    | 'notice'
+    | 'insightsDays'
   >
 >) {
   const session = useDrafterSession({
@@ -231,6 +234,125 @@ describe('DraftPanel', () => {
     );
     expect(line.className).toContain('text-muted-foreground');
     expect(container.textContent).toContain('Two questions first.');
+  });
+
+  it('says when it reads the agent’s Insights too', async () => {
+    await act(async () => root.render(<Host reads="insights" />));
+    expect(container.textContent).toContain(
+      'drafter.footerInsights:Fast model',
+    );
+    await act(async () =>
+      root.render(<Host reads="insights" modelName={null} />),
+    );
+    expect(container.textContent).toContain('drafter.footerInsightsNoModel');
+  });
+
+  it('groups the first screen’s rows under their headings, with a note under them', async () => {
+    const onGap = vi.fn();
+    await act(async () =>
+      root.render(
+        <Host
+          suggestionGroups={[
+            {
+              key: 'insights',
+              title: 'From its conversations',
+              count: 'last 30 days',
+              rows: [
+                {
+                  key: 'gap-0',
+                  icon: <Headset aria-hidden="true" />,
+                  text: 'Returns & claims',
+                  description: 'Docs gap · 23 of 160 questions',
+                  onSelect: onGap,
+                },
+              ],
+            },
+            {
+              key: 'setup',
+              title: 'From its setup',
+              rows: [
+                {
+                  key: 'starters',
+                  icon: <Headset aria-hidden="true" />,
+                  text: 'Suggest conversation starters',
+                },
+              ],
+            },
+          ]}
+          notice={<p data-testid="notice">Insights is off</p>}
+        />,
+      ),
+    );
+    const headings = Array.from(container.querySelectorAll('h3')).map(
+      (h) => h.textContent,
+    );
+    expect(headings).toEqual([
+      'From its conversationslast 30 days',
+      'From its setup',
+    ]);
+    const lists = Array.from(container.querySelectorAll('ul[aria-label]'));
+    expect(lists.map((list) => list.getAttribute('aria-label'))).toEqual([
+      'From its conversations',
+      'From its setup',
+    ]);
+    // The flat list gives way to the groups.
+    expect(container.querySelector('[data-suggestion="support"]')).toBeNull();
+    expect(container.textContent).toContain('Docs gap · 23 of 160 questions');
+    expect(container.querySelector('[data-testid="notice"]')).not.toBeNull();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-suggestion="gap-0"]')!
+        .click(),
+    );
+    expect(onGap).toHaveBeenCalledTimes(1);
+    expect(stream.requests).toHaveLength(0);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-suggestion="starters"]')!
+        .click(),
+    );
+    expect(stream.requests[0].messages).toEqual([
+      { role: 'user', content: 'Suggest conversation starters' },
+    ]);
+  });
+
+  it('adds a line for the Insights it read, and folds the example questions it read', async () => {
+    await act(async () => root.render(<Host insightsDays={28} />));
+    stream.scripts = [
+      [
+        {
+          type: 'status',
+          step: 'reading',
+          counts: { sources: 6, insights_conversations: 412 },
+        },
+        {
+          type: 'read',
+          kind: 'questions',
+          items: ['How long do I have to file a damage claim?', 'Who pays?'],
+        },
+        { type: 'end' },
+      ],
+    ];
+    await ask('Fix the docs gap');
+    expect(container.querySelector('[data-item="status"]')!.textContent).toBe(
+      'drafter.lookedAtWorkspaceCounts:drafter.counts.sources:6',
+    );
+    expect(container.querySelector('[data-item="insights"]')!.textContent).toBe(
+      'drafter.readInsights:412',
+    );
+    const read = container.querySelector('[data-item="read"]')!;
+    const toggle = read.querySelector<HTMLButtonElement>('button')!;
+    expect(toggle.textContent).toBe('drafter.readQuestions:2');
+    // Closed until opened; each question is a row cut to one line.
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => toggle.click());
+    const rows = Array.from(
+      read.querySelectorAll('[data-slot="filled-row"] p'),
+    );
+    expect(rows.map((row) => row.getAttribute('title'))).toEqual([
+      'How long do I have to file a damage claim?',
+      'Who pays?',
+    ]);
   });
 
   it('says only that it looked when the server counted nothing', async () => {

@@ -309,4 +309,28 @@ describe('useDrafterSession', () => {
     expect(session.userTexts()).toEqual([]);
     expect(session.items).toEqual([]);
   });
+
+  it('gathers a turn’s reads into one item, and gives the next turn its own', async () => {
+    stream.scripts = [
+      [
+        { type: 'status', step: 'reading', counts: {} },
+        { type: 'read', kind: 'questions', items: ['A?', 'B?'] },
+        { type: 'read', kind: 'questions', items: ['B?', 'C?'] },
+        { type: 'end' },
+      ],
+      [{ type: 'read', kind: 'questions', items: ['D?'] }, { type: 'end' }],
+    ];
+    await act(async () => session.send('Fix the docs gap'));
+    const reads = () => session.items.filter((item) => item.kind === 'read');
+    expect(reads()).toEqual([
+      expect.objectContaining({ kind: 'read', items: ['A?', 'B?', 'C?'] }),
+    ]);
+    await act(async () => session.send('And the rest'));
+    expect(reads().map((item) => item.kind === 'read' && item.items)).toEqual([
+      ['A?', 'B?', 'C?'],
+      ['D?'],
+    ]);
+    // A read is no answer: a turn that only read sends nothing back.
+    expect(sent(1)).toEqual([{ role: 'user', content: 'And the rest' }]);
+  });
 });
