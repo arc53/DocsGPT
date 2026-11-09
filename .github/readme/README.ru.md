@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 298ec2a0297af9fb740062f8d13afbfa967fdb7f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 96e6e4a0d2ff45c1cffe0df1eec4338c5222fab9 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -49,7 +49,6 @@
   </a>
 </p>
 
-> 🎃 **Hacktoberfest 2026:** футболки за значимый вклад весь октябрь. Подробнее в [HACKTOBERFEST.md](../../HACKTOBERFEST.md).
 
 <p align="center">
   <sub>При поддержке</sub><br>
@@ -200,5 +199,6 @@ docsgpt down       # остановка (данные и настройки со
 ## Лицензия
 
 DocsGPT распространяется по [лицензии MIT](../../LICENSE).
+
 
 
