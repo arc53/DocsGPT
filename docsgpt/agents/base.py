@@ -578,12 +578,15 @@ class BaseAgent(ABC):
         chain_key = chain_key_factory() if callable(chain_key_factory) else None
         exporter = getattr(self.llm, "export_responses_state", None)
         state = exporter() if callable(exporter) else None
+        # A turn that ended on questions shown as text never sent its last
+        # call's output to the provider; chaining onto it would be rejected.
+        ended_on_questions = getattr(getattr(self, "tool_executor", None), "questions_shown_as_text", False) is True
         stored_metadata = (
             {
                 "response_id": response_id,
                 "response_chain_key": chain_key,
             }
-            if settings.OPENAI_RESPONSES_STORE
+            if settings.OPENAI_RESPONSES_STORE and not ended_on_questions
             else {}
         )
         metadata = {
@@ -837,6 +840,9 @@ class BaseAgent(ABC):
             call_id = pending["call_id"]
             args = pending["arguments"]
             action = actions_by_id.get(call_id)
+            if not action and pending.get("pause_type") == "awaiting_answer":
+                # Questions nobody answered: the model goes ahead without them.
+                action = {"call_id": call_id, "skipped": True}
             if not action:
                 action = {
                     "call_id": call_id,
@@ -844,7 +850,10 @@ class BaseAgent(ABC):
                     "comment": "No response provided",
                 }
 
-            if action.get("decision") == "approved":
+            if pending.get("pause_type") == "awaiting_answer":
+                yield from self._resume_question_call(pending, action, messages)
+
+            elif action.get("decision") == "approved":
                 approved = getattr(self.tool_executor, "approved_call_ids", None)
                 if isinstance(approved, set):
                     approved.add(call_id)
@@ -966,6 +975,47 @@ class BaseAgent(ABC):
         yield {"tool_calls": self._get_truncated_tool_calls()}
         yield from self._emit_responses_metadata()
 
+    def _resume_question_call(
+        self, pending: Dict[str, Any], action: Dict[str, Any], messages: List[Dict]
+    ) -> Generator[Dict, None, None]:
+        """Answer a paused ``ask_user`` call with what the user replied, or with their skipping it.
+
+        The answer is the user's text, so it is scanned and capped like a
+        client's tool result. The call is kept on the message with the
+        normalized questions as its arguments, so a reload can draw the cards.
+
+        Args:
+            pending: The paused call (``awaiting_answer``).
+            action: The client's action for it: ``answer`` or ``skipped``.
+            messages: The resumed messages; the tool result is appended.
+
+        Yields:
+            The call's ``tool_call`` event.
+        """
+        from docsgpt.agents.questions import ANSWER_CHARS
+        from docsgpt.agents.tools.ask_user import SKIPPED_TEXT
+        from docsgpt.drafter.fencing import clean_text
+
+        call_id = pending["call_id"]
+        answer = clean_text(action.get("answer"), ANSWER_CHARS) if action.get("skipped") is not True else ""
+        if answer:
+            result, status = self._guard_tool_result_text(answer), "success"
+        else:
+            result, status = SKIPPED_TEXT, "skipped"
+        tc = ToolCall(id=call_id, name=pending["name"], arguments=pending["arguments"])
+        messages.append(self.llm_handler.create_tool_message(tc, _bound_tool_response_for_llm(result)))
+        data = {
+            "tool_name": pending.get("tool_name") or "ask_user",
+            "call_id": call_id,
+            "action_name": pending.get("llm_name", pending["name"]),
+            "arguments": {"message": pending.get("message"), "questions": pending.get("questions") or []},
+            "result": truncate_tool_result(result),
+            "status": status,
+        }
+        trace_unexecuted_tool_call(tc, data)
+        self.tool_calls.append(data)
+        yield {"type": "tool_call", "data": data}
+
     # ---- Tool delegation (thin wrappers around ToolExecutor) ----
 
     @property
@@ -997,6 +1047,10 @@ class BaseAgent(ABC):
 
             if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
                 add_check_job_tool(tools_dict)
+        # An interactive chat turn can ask the user clarifying questions.
+        from docsgpt.agents.tools.ask_user import add_ask_user_tool
+
+        add_ask_user_tool(tools_dict, enabled=self._offers_questions())
         # The executor gates tool calls itself, so it needs this run's engine,
         # and the search tools screen their hits as retrieved documents and
         # the source names their result lists as those documents' names.
@@ -1006,6 +1060,28 @@ class BaseAgent(ABC):
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
         self._sync_attachments_tool()
+
+    def _offers_questions(self) -> bool:
+        """Whether this turn offers ``ask_user``.
+
+        Only an interactive chat turn whose request set a questions mode
+        (``ToolExecutor.questions``), on a model that takes tools. Never a
+        headless run, a workflow node (its tools are an explicit scope) or a
+        turn whose answer must be structured output.
+
+        Returns:
+            True when the tool is attached.
+        """
+        from docsgpt.agents.tools.ask_user import QUESTION_MODES
+
+        executor = self.tool_executor
+        if getattr(executor, "questions", None) not in QUESTION_MODES:
+            return False
+        if getattr(executor, "headless", False) is True or getattr(executor, "allowed_tool_ids", None) is not None:
+            return False
+        if self.json_schema is not None or self.json_object:
+            return False
+        return self._llm_supports_tools()
 
     def _add_attachments_tool(self, tools_dict: Dict) -> None:
         """Add the server-side attachments tool when the conversation has files.
@@ -2448,7 +2524,9 @@ class BaseAgent(ABC):
             lists the ids an attachment control withheld, which the resume
             keeps out of every tool), ``last_compression_at``,
             ``backup_models``, ``decisions`` (None when nothing was
-            recorded) and ``context_window_limit``; all JSON-safe.
+            recorded), ``context_window_limit``, ``questions`` (the turn's
+            questions mode, None when it offers none) and ``questions_asked``;
+            all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [
@@ -2472,6 +2550,10 @@ class BaseAgent(ABC):
                 "withheld": sorted(self.withheld_attachments),
             }
         backup_models = getattr(self.llm, "_backup_models", None)
+        from docsgpt.agents.tools.ask_user import QUESTION_MODES
+
+        executor = getattr(self, "tool_executor", None)
+        questions = getattr(executor, "questions", None)
         return {
             "attachments": files,
             "last_compression_at": _epoch_text(getattr(self, "last_compression_at", None)),
@@ -2480,6 +2562,10 @@ class BaseAgent(ABC):
             ),
             "decisions": decision_record.snapshot(),
             "context_window_limit": getattr(self, "context_window_limit", None),
+            # Whether the turn offers questions, and whether it asked already:
+            # one question round per user message, resumes included.
+            "questions": questions if questions in QUESTION_MODES else None,
+            "questions_asked": getattr(executor, "questions_asked", False) is True,
         }
 
     def resume_paused_attachments(

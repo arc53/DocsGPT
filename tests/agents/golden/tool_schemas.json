@@ -56,6 +56,47 @@
       }
     }
   },
+  "ask_user.ask_user": {
+    "type": "object",
+    "required": [
+      "questions"
+    ],
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "questions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "text",
+            "options"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "multi": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "placeholder": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
   "attachments.attachments_list": {
     "type": "object",
     "required": [],

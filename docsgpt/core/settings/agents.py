@@ -26,7 +26,8 @@ class AgentSettings(SettingsGroup):
             "dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add "
             "code_executor and artifact_generator once a sandbox runner is configured; both execute through "
             "it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): "
-            "every turn that can hand calls off to a background job gets it. monitor is offered only while "
+            "every turn that can hand calls off to a background job gets it; nor is ask_user, which every "
+            "interactive chat turn gets. monitor is offered only while "
             "MONITORS_ENABLED is on."
         ),
     )

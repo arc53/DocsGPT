@@ -506,6 +506,54 @@ def _approvals(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     return out
 
 
+def _questions(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Paused turns waiting for the user to answer the assistant's questions, soonest to expire first.
+
+    Shaped like an approval (``_approvals``) without ``tools``; a turn paused
+    on both an approval and questions is listed under each.
+
+    Args:
+        conn: A read-only connection.
+        user_id: Whose turns.
+
+    Returns:
+        ``question`` items, ``id`` ``question:<conversation_id>``.
+    """
+    rows = query_rows(
+        conn,
+        """
+        SELECT p.conversation_id, p.created_at, p.expires_at,
+               c.name AS conversation_name, c.agent_id, a.name AS agent_name
+        FROM pending_tool_state p
+        JOIN conversations c ON c.id = p.conversation_id
+        LEFT JOIN agents a ON a.id = c.agent_id
+        WHERE p.user_id = :user_id
+          AND p.status = 'pending'
+          AND p.expires_at > now()
+          AND EXISTS (
+              SELECT 1 FROM json_array_elements(p.pending_tool_calls) e
+              WHERE e ->> 'pause_type' = 'awaiting_answer'
+          )
+        ORDER BY p.expires_at ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+    )
+    return [
+        {
+            "kind": "question",
+            "id": f"question:{r['conversation_id']}",
+            "conversation_id": _str(r["conversation_id"]),
+            "title": r.get("conversation_name") or None,
+            "agent_id": _str(r.get("agent_id")),
+            "agent_name": r.get("agent_name"),
+            "created_at": _iso(r.get("created_at")),
+            "expires_at": _iso(r.get("expires_at")),
+        }
+        for r in rows
+    ]
+
+
 def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Schedules the scheduler paused after repeated failures, with their last error.
 
@@ -719,7 +767,7 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     running += _running_ingests(conn, user_id, markers)
 
     approvals = _approvals(conn, user_id)
-    needs_you = approvals + _autopaused_schedules(conn, user_id)
+    needs_you = approvals + _questions(conn, user_id) + _autopaused_schedules(conn, user_id)
     up_next = _up_next(conn, user_id, current)
     # Knowledge syncs join the schedules: one batch per frequency due today.
     syncs = due_batches(conn, user_id, current, current + UP_NEXT_WINDOW, next_sync_times())

@@ -1393,6 +1393,11 @@ class LLMHandler(ABC):
                 updated_messages.append(batch_assistant)
             batch_assistant["tool_calls"].append(tool_call_obj)
 
+        # ``ask_user`` is honoured only as the round's one call.
+        executor = getattr(agent, "tool_executor", None)
+        if executor is not None:
+            executor.calls_this_round = len(tool_calls)
+
         for i, call in enumerate(tool_calls):
             # Check context limit before executing tool call
             if hasattr(agent, '_check_context_limit') and agent._check_context_limit(updated_messages):
@@ -1547,6 +1552,9 @@ class LLMHandler(ABC):
 
                     deny_reason = pause_info.get("deny_reason") or "This tool can't run here."
                     model_text, journal_error = refusal_texts(agent.tool_executor, deny_reason)
+                    # A refusal worded for the model already (``ask_user``) is sent as it is.
+                    if isinstance(pause_info.get("model_text"), str):
+                        model_text = pause_info["model_text"]
                     args_str = (
                         json.dumps(call.arguments)
                         if isinstance(call.arguments, dict)
@@ -1616,6 +1624,10 @@ class LLMHandler(ABC):
                 for key in ("connector_key", "connector_name", "access"):
                     if pause_info.get(key):
                         pause_data[key] = pause_info[key]
+                # Questions for the user (``ask_user``): the client draws them as cards.
+                if pause_info["pause_type"] == "awaiting_answer":
+                    pause_data["message"] = pause_info.get("message")
+                    pause_data["questions"] = pause_info.get("questions") or []
                 trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
@@ -1738,6 +1750,23 @@ class LLMHandler(ABC):
                 }
         return updated_messages, pending_actions if pending_actions else None
 
+    @staticmethod
+    def _take_questions_text(agent: Any) -> Optional[str]:
+        """The questions a text-path ``ask_user`` call rendered this round, taken so they are emitted once.
+
+        Args:
+            agent: The agent running the turn.
+
+        Returns:
+            The markdown, or None when no questions were shown this round.
+        """
+        executor = getattr(agent, "tool_executor", None)
+        text = getattr(executor, "questions_text", None)
+        if not isinstance(text, str) or not text:
+            return None
+        executor.questions_text = None
+        return text
+
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
     ) -> Generator:
@@ -1787,6 +1816,11 @@ class LLMHandler(ABC):
                     "data": {"pending_tool_calls": pending_actions},
                 }
                 return ""
+
+            # The questions were shown as the answer: the turn ends on them.
+            questions_text = self._take_questions_text(agent)
+            if questions_text is not None:
+                return questions_text
 
             # Cap reached: force one final tool-less call so the stream
             # always ends with content rather than cutting off. The
@@ -2099,6 +2133,13 @@ class LLMHandler(ABC):
                 "type": "tool_calls_pending",
                 "data": {"pending_tool_calls": pending_actions},
             }
+            return
+
+        # The questions were shown as the answer: the turn ends on them,
+        # without another model call.
+        questions_text = self._take_questions_text(agent)
+        if questions_text is not None:
+            yield questions_text
             return
 
         next_iteration = _iteration + 1

@@ -43,6 +43,7 @@ from docsgpt.core.model_utils import (
     get_token_limit,
     validate_model_id,
 )
+from docsgpt.agents.tools.ask_user import QUESTION_MODES, questions_mode
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
@@ -387,6 +388,10 @@ def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
 
 #: Agent types that build a tools_dict and so can carry the Wiki tool.
 WIKI_AGENT_TYPES = ("classic", "agentic", "research")
+
+#: Agent types whose chat turn can ask the user clarifying questions (``ask_user``).
+#: A research agent's steps and a workflow's nodes can't stop for an answer.
+QUESTION_AGENT_TYPES = ("classic", "react", "agentic")
 
 
 def wiki_tool_config(
@@ -2322,10 +2327,12 @@ class StreamProcessor:
             mode and ignored elsewhere.
         """
         from docsgpt.api.answer.services.continuation_service import (
+            AWAITING_ANSWER,
             NOT_PENDING_MESSAGE,
             ContinuationNotPendingError,
             ContinuationService,
             answered_call_ids,
+            question_action_problem,
         )
         from docsgpt.agents.agent_creator import AgentCreator
         from docsgpt.agents.tool_executor import ToolExecutor
@@ -2402,6 +2409,15 @@ class StreamProcessor:
             except Exception:
                 logger.warning("Failed to release a refused resume claim", exc_info=True)
             raise ContinuationNotPendingError(NOT_PENDING_MESSAGE)
+        # Questions take an answer (or skipping them), approvals a decision,
+        # client calls a result; a mixed-up action is refused before anything runs.
+        problem = question_action_problem(state.get("pending_tool_calls"), tool_actions)
+        if problem:
+            try:
+                cont_service.release_claim(conversation_id, self.initial_user_id)
+            except Exception:
+                logger.warning("Failed to release a refused resume claim", exc_info=True)
+            raise ValueError(problem)
 
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]
@@ -2456,6 +2472,14 @@ class StreamProcessor:
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
+        # A turn that offered questions still does after its resume, shown the
+        # way the resuming request asks; one that asked already can't again.
+        if agent_config.get("questions") in QUESTION_MODES:
+            tool_executor.questions = questions_mode(self.data.get("questions"))
+        tool_executor.questions_asked = bool(agent_config.get("questions_asked")) or any(
+            isinstance(call, dict) and call.get("pause_type") == AWAITING_ANSWER
+            for call in pending_tool_calls or []
+        )
         # Restore client tools so they stay available for subsequent LLM calls
         saved_client_tools = state.get("client_tools")
         if saved_client_tools:
@@ -2790,6 +2814,10 @@ class StreamProcessor:
             api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
+        # A chat agent can ask the user clarifying questions, as cards when the
+        # request asks for them (the web app), else as its answer's text.
+        if str(agent_type or "").strip().lower() in QUESTION_AGENT_TYPES:
+            tool_executor.questions = questions_mode(self.data.get("questions"))
         # Pass client-side tools so they get merged in get_tools()
         client_tools = self.data.get("client_tools")
         if client_tools:
