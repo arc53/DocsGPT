@@ -5,12 +5,11 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-import type { DrafterQuestion } from './drafterApi';
-import { composeAnswers, DrafterQuestions } from './DrafterQuestions';
+import { composeAnswers, type Question, QuestionCards } from './QuestionCards';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const QUESTIONS: DrafterQuestion[] = [
+const QUESTIONS: Question[] = [
   {
     id: 'q1',
     text: 'Where should refunds go?',
@@ -41,7 +40,7 @@ const setValue = (el: HTMLInputElement, value: string) => {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 };
 
-describe('DrafterQuestions', () => {
+describe('QuestionCards', () => {
   let container: HTMLDivElement;
   let root: Root;
   const onAnswer = vi.fn();
@@ -49,7 +48,7 @@ describe('DrafterQuestions', () => {
   const render = (active: boolean) =>
     act(async () =>
       root.render(
-        <DrafterQuestions
+        <QuestionCards
           questions={QUESTIONS}
           active={active}
           onAnswer={onAnswer}
@@ -79,7 +78,7 @@ describe('DrafterQuestions', () => {
   };
   const sendButton = () =>
     Array.from(container.querySelectorAll('button')).find(
-      (b) => b.textContent === 'drafter.sendAnswers',
+      (b) => b.textContent === 'questions.sendAnswers',
     );
 
   it('asks a one-pick question as radios and a pick-any one as checkboxes', () => {
@@ -95,7 +94,7 @@ describe('DrafterQuestions', () => {
     expect(labels).toEqual([
       'Help Center',
       'Shipping',
-      'drafter.somethingElse',
+      'questions.somethingElse',
     ]);
     expect(card('q1').textContent).toContain('No ticketing tool is connected.');
   });
@@ -110,7 +109,7 @@ describe('DrafterQuestions', () => {
     await act(async () => control('q2', 'Help Center').click());
     await act(async () => control('q2', 'Shipping').click());
     expect(card('q2').querySelector('input')).toBeNull();
-    await act(async () => control('q2', 'drafter.somethingElse').click());
+    await act(async () => control('q2', 'questions.somethingElse').click());
     const input = card('q2').querySelector('input')!;
     // Indented under its row, in line with the label.
     expect(input.closest('.pl-7')).not.toBeNull();
@@ -123,7 +122,7 @@ describe('DrafterQuestions', () => {
   });
 
   it('sends from the free-text field with Enter', async () => {
-    await act(async () => control('q1', 'drafter.somethingElse').click());
+    await act(async () => control('q1', 'questions.somethingElse').click());
     const input = card('q1').querySelector('input')!;
     await act(async () => setValue(input, 'To the shop'));
     // Enter that picks an IME candidate (Japanese, Chinese) doesn't send.
@@ -156,15 +155,15 @@ describe('DrafterQuestions', () => {
     expect(card('q1').textContent).toContain('Where should refunds go?');
     expect(card('q1').textContent).toContain('Email support');
     expect(card('q1').textContent).not.toContain('Stop');
-    expect(card('q2').textContent).toContain('drafter.notAnswered');
+    expect(card('q2').textContent).toContain('questions.notAnswered');
   });
 });
 
-describe('DrafterQuestions, a typed answer', () => {
+describe('QuestionCards, a typed answer', () => {
   let container: HTMLDivElement;
   let root: Root;
   const onAnswer = vi.fn();
-  const TYPED: DrafterQuestion[] = [
+  const TYPED: Question[] = [
     {
       id: 'q1',
       text: 'Which company is it for?',
@@ -182,7 +181,7 @@ describe('DrafterQuestions, a typed answer', () => {
     root = createRoot(container);
     await act(async () =>
       root.render(
-        <DrafterQuestions questions={TYPED} active onAnswer={onAnswer} />,
+        <QuestionCards questions={TYPED} active onAnswer={onAnswer} />,
       ),
     );
   });
@@ -218,11 +217,7 @@ describe('DrafterQuestions, a typed answer', () => {
     await act(async () => setValue(input, 'Meridian'));
     await act(async () =>
       root.render(
-        <DrafterQuestions
-          questions={TYPED}
-          active={false}
-          onAnswer={onAnswer}
-        />,
+        <QuestionCards questions={TYPED} active={false} onAnswer={onAnswer} />,
       ),
     );
     expect(container.querySelector('input')).toBeNull();
@@ -238,5 +233,70 @@ describe('composeAnswers', () => {
       composeAnswers(QUESTIONS, { q2: { picked: ['s'], other: '  ' } }),
     ).toBe('Which knowledge? → Shipping');
     expect(composeAnswers(QUESTIONS, {})).toBe('');
+  });
+});
+
+describe('QuestionCards, as the chat draws them', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it("labels the skip button with the caller's words", async () => {
+    const onSkip = vi.fn();
+    await act(async () =>
+      root.render(
+        <QuestionCards
+          questions={QUESTIONS}
+          active
+          onAnswer={vi.fn()}
+          onSkip={onSkip}
+          skipLabel="Just answer"
+        />,
+      ),
+    );
+    const skip = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Just answer',
+    )!;
+    await act(async () => skip.click());
+    expect(onSkip).toHaveBeenCalled();
+  });
+
+  it('shows answers given from outside, and a chosen empty line', async () => {
+    await act(async () =>
+      root.render(
+        <QuestionCards
+          questions={QUESTIONS}
+          active={false}
+          onAnswer={vi.fn()}
+          answers={{ q2: 'Shipping' }}
+          emptyLabel="Skipped"
+        />,
+      ),
+    );
+    const card = (id: string) =>
+      container.querySelector(`[data-question="${id}"]`)!.textContent;
+    expect(card('q1')).toContain('Skipped');
+    expect(card('q2')).toContain('Shipping');
+    await act(async () =>
+      root.render(
+        <QuestionCards
+          questions={QUESTIONS}
+          active={false}
+          onAnswer={vi.fn()}
+          answers={{}}
+          emptyLabel={null}
+        />,
+      ),
+    );
+    expect(card('q1')).toBe('1. Where should refunds go?');
   });
 });

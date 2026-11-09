@@ -4245,6 +4245,9 @@
       "expires": "{{time}}过期",
       "approval": "批准",
       "review": "查看",
+      "waitingForAnswer": "等待你的回答",
+      "question": "问题",
+      "answer": "回答",
       "pausedAfter_one": "{{name}} 失败 {{formatted}} 次后已暂停",
       "pausedAfter_other": "{{name}} 失败 {{formatted}} 次后已暂停",
       "errorType": {
@@ -4508,10 +4511,6 @@
     "improve": "改进",
     "drafted": "已起草",
     "undoField": "撤销{{field}}",
-    "somethingElse": "其他…",
-    "somethingElseLabel": "你的回答",
-    "somethingElsePlaceholder": "输入你自己的回答",
-    "sendAnswers": "发送回答",
     "droppedTitle": "已省略",
     "retry": "重试",
     "steps": {
@@ -4684,7 +4683,6 @@
     "lookedAtWorkspaceCounts": "已查看你的工作区：{{counts}}",
     "filled_one": "已填写 {{count}} 个字段",
     "filled_other": "已填写 {{count}} 个字段",
-    "notAnswered": "未回答",
     "suggestionsLabel": "开始方式",
     "skipQuestions": "跳过并起草",
     "starters": {
@@ -4708,5 +4706,16 @@
       "title": "此对话已满",
       "description": "起草对话已达到最大长度。已起草的内容会保留。"
     }
+  },
+  "questions": {
+    "somethingElse": "其他…",
+    "somethingElseLabel": "你的回答",
+    "somethingElsePlaceholder": "输入你自己的回答",
+    "sendAnswers": "发送回答",
+    "notAnswered": "未回答",
+    "justAnswer": "直接回答",
+    "skipped": "已跳过",
+    "yourAnswer": "你的回答",
+    "typeAnswer": "或输入你的回答…"
   }
 }

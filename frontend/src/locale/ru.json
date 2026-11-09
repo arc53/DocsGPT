@@ -4501,6 +4501,9 @@
       "expires": "истекает {{time}}",
       "approval": "Одобрение",
       "review": "Проверить",
+      "waitingForAnswer": "Ждёт вашего ответа",
+      "question": "Вопрос",
+      "answer": "Ответить",
       "pausedAfter_one": "{{name}}: пауза после {{formatted}} сбоя",
       "pausedAfter_few": "{{name}}: пауза после {{formatted}} сбоев",
       "pausedAfter_many": "{{name}}: пауза после {{formatted}} сбоев",
@@ -4788,10 +4791,6 @@
     "improve": "Улучшить",
     "drafted": "Черновик",
     "undoField": "Отменить: {{field}}",
-    "somethingElse": "Другое…",
-    "somethingElseLabel": "Ваш ответ",
-    "somethingElsePlaceholder": "Введите свой ответ",
-    "sendAnswers": "Отправить ответы",
     "droppedTitle": "Пропущено",
     "retry": "Повторить",
     "steps": {
@@ -5028,7 +5027,6 @@
     "filled_few": "Заполнено {{count}} поля",
     "filled_many": "Заполнено {{count}} полей",
     "filled_other": "Заполнено {{count}} поля",
-    "notAnswered": "Без ответа",
     "suggestionsLabel": "С чего начать",
     "skipQuestions": "Пропустить и написать",
     "starters": {
@@ -5052,5 +5050,16 @@
       "title": "Разговор заполнен",
       "description": "Разговор о черновике не может быть длиннее. Всё, что уже составлено, останется."
     }
+  },
+  "questions": {
+    "somethingElse": "Другое…",
+    "somethingElseLabel": "Ваш ответ",
+    "somethingElsePlaceholder": "Введите свой ответ",
+    "sendAnswers": "Отправить ответы",
+    "notAnswered": "Без ответа",
+    "justAnswer": "Просто ответь",
+    "skipped": "Пропущен",
+    "yourAnswer": "Ваш ответ",
+    "typeAnswer": "Или введите свой ответ…"
   }
 }

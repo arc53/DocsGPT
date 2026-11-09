@@ -43,6 +43,7 @@ import reducer, {
   setConversation,
   setConversationId,
   setStatus,
+  resumeQuestion,
   submitToolActions,
   tailInFlightMessage,
   updateConversationId,
@@ -1201,5 +1202,97 @@ it('hydrates supporting details and order from a failed time-limit tail', () => 
       { kind: 'tool', call_id: 'done' },
       { kind: 'text', text: 'Saved progress' },
     ],
+  });
+});
+
+describe('resumeQuestion', () => {
+  const pausedTurn = {
+    prompt: 'write the QBR deck',
+    tool_calls: [
+      {
+        tool_name: 'ask_user',
+        action_name: 'ask_user',
+        call_id: 'ask-1',
+        arguments: {},
+        status: 'awaiting_answer' as const,
+        message: 'Two things change what goes in it:',
+        questions: [
+          {
+            id: 'q1',
+            text: 'Which quarter?',
+            note: null,
+            multi: false,
+            options: [{ id: 'a', label: 'Q3' }],
+          },
+        ],
+      },
+    ],
+  };
+  const makeStore = () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(setConversation([pausedTurn]));
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+    return store;
+  };
+
+  beforeEach(() => {
+    vi.mocked(handleSubmitToolActions)
+      .mockReset()
+      .mockResolvedValue(undefined as never);
+  });
+
+  it('resumes the paused turn with the answer and folds the cards', async () => {
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({
+        callId: 'ask-1',
+        action: { answer: 'Which quarter? → Q3' },
+      }),
+    );
+    const [conversationId, actions] = vi.mocked(handleSubmitToolActions).mock
+      .calls[0];
+    expect(conversationId).toBe('conv-1');
+    expect(actions).toEqual([
+      { call_id: 'ask-1', answer: 'Which quarter? → Q3' },
+    ]);
+    const call = store.getState().conversation.queries[0].tool_calls![0];
+    expect(call).toMatchObject({
+      status: 'success',
+      result: 'Which quarter? → Q3',
+      arguments: { message: 'Two things change what goes in it:' },
+    });
+    // The answer is the tool's result, not a new turn.
+    expect(store.getState().conversation.queries).toHaveLength(1);
+  });
+
+  it('sends Just answer as skipped', async () => {
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { skipped: true } }),
+    );
+    expect(vi.mocked(handleSubmitToolActions).mock.calls[0][1]).toEqual([
+      { call_id: 'ask-1', skipped: true },
+    ]);
+    expect(store.getState().conversation.queries[0].tool_calls![0].status).toBe(
+      'skipped',
+    );
+  });
+
+  it('retires waiting questions when a new message goes out', () => {
+    const state = reducer(
+      reducer(undefined, setConversation([pausedTurn])),
+      fetchAnswer.pending('req-1', { question: 'never mind' }),
+    );
+    expect(state.queries[0].tool_calls![0]).toMatchObject({
+      status: 'denied',
+      not_run: 'moved_on',
+    });
   });
 });

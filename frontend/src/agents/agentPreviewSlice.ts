@@ -1,5 +1,10 @@
 import { envVar } from '@/env';
-import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import {
+  createAsyncThunk,
+  createSlice,
+  type Dispatch,
+  PayloadAction,
+} from '@reduxjs/toolkit';
 
 import {
   appendAnswerText,
@@ -9,6 +14,7 @@ import {
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
+  handleSubmitToolActions,
 } from '../conversation/conversationHandlers';
 import {
   Answer,
@@ -21,6 +27,10 @@ import {
   readStreamError,
   setErrorDetail,
 } from '../conversation/curatedError';
+import {
+  answeredCall,
+  type QuestionAction,
+} from '../conversation/questionCall';
 import store from '../store';
 import {
   clearAttachments,
@@ -74,61 +84,10 @@ export const fetchPreviewAnswer = createAsyncThunk<
           null, // No conversation ID for previews
           state.preference.prompt.id,
           state.preference.chunks,
-          (event: MessageEvent) => {
-            const data = JSON.parse(event.data);
-            const targetIndex = indx ?? state.agentPreview.queries.length - 1;
-
-            if (data.type === 'end') {
-              dispatch(agentPreviewSlice.actions.setStatus('idle'));
-            } else if (data.type === 'thought') {
-              dispatch(
-                updateThought({
-                  index: targetIndex,
-                  query: { thought: data.thought },
-                }),
-              );
-            } else if (data.type === 'source') {
-              dispatch(
-                updateStreamingSource({
-                  index: targetIndex,
-                  query: { sources: data.source ?? [] },
-                }),
-              );
-            } else if (data.type === 'tool_call') {
-              dispatch(
-                updateToolCall({
-                  index: targetIndex,
-                  tool_call: data.data,
-                }),
-              );
-            } else if (data.type === 'error') {
-              dispatch(agentPreviewSlice.actions.setStatus('failed'));
-              dispatch(
-                agentPreviewSlice.actions.raiseError({
-                  index: targetIndex,
-                  ...readStreamError(data),
-                }),
-              );
-            } else if (data.type === 'structured_answer') {
-              dispatch(
-                updateStreamingQuery({
-                  index: targetIndex,
-                  query: {
-                    response: data.answer,
-                    structured: data.structured,
-                    schema: data.schema,
-                  },
-                }),
-              );
-            } else {
-              dispatch(
-                updateStreamingQuery({
-                  index: targetIndex,
-                  query: { response: data.answer },
-                }),
-              );
-            }
-          },
+          previewEventHandler(
+            dispatch,
+            indx ?? state.agentPreview.queries.length - 1,
+          ),
           indx,
           state.preference.selectedAgent?.id,
           attachmentIds,
@@ -192,6 +151,120 @@ export const fetchPreviewAnswer = createAsyncThunk<
       sources: [],
       tool_calls: [],
     };
+  },
+);
+
+/**
+ * Applies one event of a preview stream (a new turn, or a turn resumed with
+ * the answers to its questions) to the turn at ``targetIndex``.
+ */
+function previewEventHandler(
+  dispatch: Dispatch,
+  targetIndex: number,
+): (event: MessageEvent) => void {
+  return (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === 'end') {
+      dispatch(agentPreviewSlice.actions.setStatus('idle'));
+    } else if (data.type === 'id') {
+      // Each preview turn is its own hidden conversation; a turn paused on
+      // questions resumes in it.
+      if (data.id)
+        dispatch(
+          updateQuery({
+            index: targetIndex,
+            query: { conversationId: data.id },
+          }),
+        );
+    } else if (data.type === 'thought') {
+      dispatch(
+        updateThought({
+          index: targetIndex,
+          query: { thought: data.thought },
+        }),
+      );
+    } else if (data.type === 'source') {
+      dispatch(
+        updateStreamingSource({
+          index: targetIndex,
+          query: { sources: data.source ?? [] },
+        }),
+      );
+    } else if (data.type === 'tool_call') {
+      dispatch(
+        updateToolCall({
+          index: targetIndex,
+          tool_call: data.data,
+        }),
+      );
+    } else if (data.type === 'tool_calls_pending') {
+      // Nothing generates while the turn waits for the user.
+      dispatch(agentPreviewSlice.actions.setStatus('awaiting_tool_actions'));
+    } else if (data.type === 'error') {
+      dispatch(agentPreviewSlice.actions.setStatus('failed'));
+      dispatch(
+        agentPreviewSlice.actions.raiseError({
+          index: targetIndex,
+          ...readStreamError(data),
+        }),
+      );
+    } else if (data.type === 'structured_answer') {
+      dispatch(
+        updateStreamingQuery({
+          index: targetIndex,
+          query: {
+            response: data.answer,
+            structured: data.structured,
+            schema: data.schema,
+          },
+        }),
+      );
+    } else {
+      dispatch(
+        updateStreamingQuery({
+          index: targetIndex,
+          query: { response: data.answer },
+        }),
+      );
+    }
+  };
+}
+
+/**
+ * Resume a preview turn paused on clarifying questions (`ask_user`) with the
+ * answers, or with Just answer, in the turn's own conversation.
+ */
+export const resumePreviewQuestion = createAsyncThunk<
+  void,
+  { callId: string; action: QuestionAction }
+>(
+  'agentPreview/resumeQuestion',
+  async ({ callId, action }, { dispatch, getState }) => {
+    const state = getState() as RootState;
+    const { queries } = state.agentPreview;
+    const index = queries.findIndex((query) =>
+      query.tool_calls?.some((call) => call.call_id === callId),
+    );
+    const call = queries[index]?.tool_calls?.find(
+      (candidate) => candidate.call_id === callId,
+    );
+    const conversationId = queries[index]?.conversationId;
+    if (!call || !conversationId) return;
+
+    if (abortController) abortController.abort();
+    abortController = new AbortController();
+    const { signal } = abortController;
+
+    dispatch(updateToolCall({ index, tool_call: answeredCall(call, action) }));
+    dispatch(agentPreviewSlice.actions.setStatus('loading'));
+    await handleSubmitToolActions(
+      conversationId,
+      [{ call_id: callId, ...action }],
+      state.preference.token,
+      signal,
+      previewEventHandler(dispatch, index),
+    );
   },
 );
 
@@ -338,6 +411,18 @@ export const agentPreviewSlice = createSlice({
     builder
       .addCase(fetchPreviewAnswer.pending, (state) => {
         state.status = 'loading';
+        // A new message moves past questions still waiting for an answer.
+        state.queries.forEach((query) => {
+          query.tool_calls?.forEach((call) => {
+            if (call.status === 'awaiting_answer') {
+              call.status = 'denied';
+              call.not_run = 'moved_on';
+            }
+          });
+        });
+      })
+      .addCase(resumePreviewQuestion.rejected, (state, action) => {
+        state.status = action.meta.aborted ? 'idle' : 'failed';
       })
       .addCase(fetchPreviewAnswer.rejected, (state, action) => {
         if (action.meta.aborted) {

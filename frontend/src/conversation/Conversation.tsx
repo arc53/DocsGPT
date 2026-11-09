@@ -34,6 +34,7 @@ import { AgentCardSkeleton } from './ChatLoadingSkeleton';
 import ConversationMessages from './ConversationMessages';
 import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
+import { pendingQuestionCall, type QuestionAction } from './questionCall';
 import { composerSubmitTarget, resendPlan } from './turnSubmission';
 import { ToolCallsType } from './types';
 import {
@@ -42,6 +43,7 @@ import {
   loadConversation,
   resendQuery,
   resetConversation,
+  resumeQuestion,
   selectQueries,
   selectStatus,
   submitToolActions,
@@ -216,6 +218,15 @@ export default function Conversation() {
     },
     [dispatch],
   );
+
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      dispatch(resumeQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them.
+  const waitingQuestion = pendingQuestionCall(queries);
 
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
   // The mount key the auto-open below last saw; a new one is a chat
@@ -395,7 +406,11 @@ export default function Conversation() {
         lastQueryReturnedErr,
         composerFileCount: sendableAttachments.length,
       });
-      if (target.kind === 'retry') {
+      if (target.kind === 'answer') {
+        // What is typed answers the questions; it resumes the paused turn
+        // instead of starting a new one.
+        handleQuestionAction(target.callId, { answer: question.trim() });
+      } else if (target.kind === 'retry') {
         // Different prompt = new logical action, fresh idempotency key.
         if (!target.samePrompt) {
           dispatch(
@@ -578,6 +593,7 @@ export default function Conversation() {
                 starters={selectedAgent?.starters}
                 onOpenArtifact={handleOpenArtifact}
                 onToolAction={handleToolAction}
+                onQuestionAction={handleQuestionAction}
                 isSplitView={isCompanionDocked}
                 agentId={selectedAgent?.id}
                 // Same rule as the composer's Knowledge picker: an agent's
@@ -635,6 +651,9 @@ export default function Conversation() {
                 queuedQuestion={queuedQuestion}
                 onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
                 loading={status === 'loading'}
+                placeholder={
+                  waitingQuestion ? t('questions.typeAnswer') : undefined
+                }
                 // A send now would go to the chat still applied, not the URL's.
                 sendBlocked={isLoadingUrlChat}
                 showSourceButton={selectedAgent ? false : true}

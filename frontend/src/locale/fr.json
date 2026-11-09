@@ -4384,6 +4384,9 @@
       "expires": "expire {{time}}",
       "approval": "Approbation",
       "review": "Examiner",
+      "waitingForAnswer": "En attente de votre réponse",
+      "question": "Question",
+      "answer": "Répondre",
       "pausedAfter_one": "{{name}} mis en pause après {{formatted}} échec",
       "pausedAfter_other": "{{name}} mis en pause après {{formatted}} échecs",
       "pausedAfter_many": "{{name}} mis en pause après {{formatted}} échecs",
@@ -4659,10 +4662,6 @@
     "improve": "Améliorer",
     "drafted": "Rédigé",
     "undoField": "Annuler {{field}}",
-    "somethingElse": "Autre chose…",
-    "somethingElseLabel": "Votre réponse",
-    "somethingElsePlaceholder": "Saisissez votre propre réponse",
-    "sendAnswers": "Envoyer les réponses",
     "droppedTitle": "Laissé de côté",
     "retry": "Réessayer",
     "steps": {
@@ -4874,7 +4873,6 @@
     "filled_one": "{{count}} champ rempli",
     "filled_many": "{{count}} champs remplis",
     "filled_other": "{{count}} champs remplis",
-    "notAnswered": "Sans réponse",
     "suggestionsLabel": "Pour commencer",
     "skipQuestions": "Passer et rédiger",
     "starters": {
@@ -4898,5 +4896,16 @@
       "title": "Cette conversation est pleine",
       "description": "Une conversation de brouillon ne peut pas être plus longue. Ce que vous avez rédigé reste."
     }
+  },
+  "questions": {
+    "somethingElse": "Autre chose…",
+    "somethingElseLabel": "Votre réponse",
+    "somethingElsePlaceholder": "Saisissez votre propre réponse",
+    "sendAnswers": "Envoyer les réponses",
+    "notAnswered": "Sans réponse",
+    "justAnswer": "Répondre directement",
+    "skipped": "Passée",
+    "yourAnswer": "Votre réponse",
+    "typeAnswer": "Ou saisissez votre réponse…"
   }
 }

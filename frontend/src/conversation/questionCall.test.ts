@@ -1,0 +1,159 @@
+import { describe, expect, it } from 'vitest';
+
+import type { Query } from './conversationModels';
+import {
+  answeredCall,
+  isHiddenCall,
+  pendingQuestionCall,
+  questionState,
+  readAnswers,
+  readQuestions,
+} from './questionCall';
+import type { ToolCallsType } from './types';
+
+const QUESTIONS = [
+  {
+    id: 'q1',
+    text: 'Which quarter?',
+    note: null,
+    multi: false,
+    options: [
+      { id: 'a', label: 'Q3 2026' },
+      { id: 'b', label: 'Q4 2026 so far' },
+    ],
+  },
+  {
+    id: 'q2',
+    text: "Who's it for?",
+    note: 'Margins stay internal.',
+    multi: false,
+    options: [
+      { id: 'a', label: 'External' },
+      { id: 'b', label: 'Internal' },
+    ],
+  },
+];
+
+const askUser = (overrides: Partial<ToolCallsType> = {}): ToolCallsType => ({
+  tool_name: 'ask_user',
+  action_name: 'ask_user',
+  call_id: 'ask-1',
+  arguments: {},
+  status: 'awaiting_answer',
+  message: 'Two things change what goes in it:',
+  questions: QUESTIONS,
+  ...overrides,
+});
+
+describe('questionState', () => {
+  it('reads a paused, answered, skipped and retired call', () => {
+    expect(questionState(askUser())).toBe('awaiting');
+    const saved = {
+      questions: undefined,
+      message: undefined,
+      arguments: { message: 'Lead', questions: QUESTIONS },
+    };
+    expect(
+      questionState(askUser({ ...saved, status: 'success', result: {} })),
+    ).toBe('answered');
+    expect(questionState(askUser({ ...saved, status: 'skipped' }))).toBe(
+      'skipped',
+    );
+    expect(
+      questionState(
+        askUser({ ...saved, status: 'denied', not_run: 'moved_on' }),
+      ),
+    ).toBe('not_run');
+  });
+
+  it('leaves other calls, refusals and the text path as steps', () => {
+    expect(
+      questionState({ ...askUser(), tool_name: 'notes', action_name: 'add' }),
+    ).toBeNull();
+    const refused = askUser({
+      status: 'error',
+      error_type: 'questions_not_asked',
+    });
+    expect(questionState(refused)).toBeNull();
+    expect(isHiddenCall(refused)).toBe(true);
+    expect(isHiddenCall(askUser())).toBe(false);
+    const asText = askUser({
+      status: 'success',
+      result:
+        'Shown to the user as text; their next message is the answer.' as never,
+    });
+    expect(questionState(asText)).toBeNull();
+  });
+});
+
+describe('readQuestions', () => {
+  it('keeps usable questions and reads string options', () => {
+    expect(
+      readQuestions([
+        { text: 'Pick', options: ['One', 'Two'], multi: true },
+        { text: '' },
+        'nope',
+      ]),
+    ).toEqual([
+      {
+        id: 'q1',
+        text: 'Pick',
+        note: null,
+        multi: true,
+        options: [
+          { id: '0', label: 'One' },
+          { id: '1', label: 'Two' },
+        ],
+        placeholder: null,
+      },
+    ]);
+    expect(readQuestions(null)).toEqual([]);
+  });
+});
+
+describe('readAnswers', () => {
+  const questions = readQuestions(QUESTIONS);
+
+  it('reads each answered question from its line', () => {
+    expect(readAnswers(questions, 'Which quarter? → Q3 2026')).toEqual({
+      answers: { q1: 'Q3 2026' },
+      reply: null,
+    });
+  });
+
+  it('takes a typed reply as the answer of a lone question', () => {
+    expect(readAnswers(questions.slice(0, 1), 'last one')).toEqual({
+      answers: { q1: 'last one' },
+      reply: null,
+    });
+    expect(readAnswers(questions, 'Q3, for them')).toEqual({
+      answers: {},
+      reply: 'Q3, for them',
+    });
+  });
+});
+
+describe('pendingQuestionCall', () => {
+  it('finds the question the latest turn waits on', () => {
+    const turn: Query = { prompt: 'deck', tool_calls: [askUser()] };
+    expect(pendingQuestionCall([turn])?.call_id).toBe('ask-1');
+    expect(
+      pendingQuestionCall([turn, { prompt: 'next', response: 'ok' }]),
+    ).toBeNull();
+  });
+});
+
+describe('answeredCall', () => {
+  it('records the answer with the questions as arguments', () => {
+    expect(answeredCall(askUser(), { answer: 'Which quarter? → Q3' })).toEqual({
+      call_id: 'ask-1',
+      arguments: {
+        message: 'Two things change what goes in it:',
+        questions: readQuestions(QUESTIONS),
+      },
+      status: 'success',
+      result: 'Which quarter? → Q3',
+    });
+    expect(answeredCall(askUser(), { skipped: true }).status).toBe('skipped');
+  });
+});

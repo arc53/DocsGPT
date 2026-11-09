@@ -155,4 +155,6 @@ export interface RetrievalPayload {
   save_conversation?: boolean;
   visibility?: 'listed' | 'hidden';
   model_id?: string;
+  /** `cards`: clarifying questions pause the turn as cards (else they're text). */
+  questions?: 'cards';
 }

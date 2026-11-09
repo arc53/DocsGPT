@@ -495,8 +495,9 @@ that order into blocks:
   `h-21` window holding the newest three rows (`mask-t-from-50%`, `inert`), so
   arriving steps never resize the page; it closes when anything follows it. A
   click on the header wins over both from then on.
-- One or two calls stay single step rows. Approval bars, wiki-write cards and
-  the scheduler card carry actions, so they end a run and stay in the column.
+- One or two calls stay single step rows. Approval bars, question blocks,
+  wiki-write cards and the scheduler card carry actions (or a record), so they
+  end a run and stay in the column.
 - Labels name the action and its target (`describeToolCall`: "Read wiki page
   /sales/pricing.md", "Added todo “…”", "Updated the note", "Checked the BTC
   price in EUR"); a tool without its own case is "Used {tool}: {action}", and
@@ -508,6 +509,27 @@ that order into blocks:
   icon is a brand mark in its own colours, or that has none, draws a lucide
   stand-in (wiki `BookOpen`, Brave and DuckDuckGo `Search`, Telegram `Send`,
   ntfy `Bell`, Postgres `Database`). The Tools page keeps the brand marks.
+
+A turn can pause on clarifying questions: the model's `ask_user` call
+(`conversation/QuestionBlock`, read by `questionCall.ts`). The web app asks
+for them as cards on every `/stream` request (`questions: "cards"`). While
+the call is `awaiting_answer`, its block sits on the `mr-5 ml-6` column: the
+model's lead-in `message` as answer text, then `components/QuestionCards`,
+the drafter's cards (`Card variant="subtle" padding="sm"`, the place
+surface; radios, checkboxes or a typed field, "Something else…" last), then
+Send answers (`default sm pill`) and Just answer (`ghost sm pill`). Send
+answers resumes the turn through the tool-actions path with `{call_id,
+answer}` (`composeAnswers`: a "<question> → <answer>" line each), Just answer
+with `{call_id, skipped: true}`. While it waits, the composer's placeholder is
+"Or type your answer…", and a message sent from it is the answer (`answer`
+is the typed text), not a new turn; with files attached it goes out as a new
+message, which moves past the questions. Afterwards, and in a reloaded chat,
+the block is the record, with no extra user bubble: each question with its
+answer read back from the result's lines (a reply typed for several questions
+shows once, under "Your answer"), muted "Skipped" after Just answer, and "Not
+answered" for questions the chat moved past or that expired. A round the
+server refused (`error_type: "questions_not_asked"`) is internal and shows
+nowhere. Activity › Now lists a paused turn as "Waiting for your answer".
 
 An answer's artifacts (files and notes its tool calls made, and its
 workflow run's files) are cards between the answer and its action row

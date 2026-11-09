@@ -24,13 +24,13 @@ import {
 } from '@/components/ui/side-panel';
 import { cn } from '@/lib/utils';
 
+import { QuestionCards } from '../components/QuestionCards';
 import StreamingStatusLine from '../conversation/StreamingStatusLine';
 import SuggestionRows from '../hero/SuggestionRows';
 import { useMediaQuery } from '../hooks';
 
 import { type DrafterCounts, DRAFTER_USER_MESSAGE_CHARS } from './drafterApi';
 import { DrafterErrorAlert } from './DrafterErrorAlert';
-import { DrafterQuestions } from './DrafterQuestions';
 import type { DrafterItem, DrafterSession } from './useDrafterSession';
 
 /** Where the footer's model note links: the task model lives on General. */
@@ -239,12 +239,13 @@ export function DraftPanel({
         );
       case 'questions':
         return (
-          <DrafterQuestions
+          <QuestionCards
             key={item.id}
             questions={item.questions}
             active={!streaming && index > lastUser}
             onAnswer={(message) => session.send(message)}
             onSkip={onSkipQuestions}
+            skipLabel={t('drafter.skipQuestions')}
           />
         );
       case 'proposal':

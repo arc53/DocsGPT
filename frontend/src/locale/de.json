@@ -4267,6 +4267,9 @@
       "expires": "läuft ab {{time}}",
       "approval": "Freigabe",
       "review": "Prüfen",
+      "waitingForAnswer": "Wartet auf deine Antwort",
+      "question": "Frage",
+      "answer": "Antworten",
       "pausedAfter_one": "{{name}} nach {{formatted}} Fehler pausiert",
       "pausedAfter_other": "{{name}} nach {{formatted}} Fehlern pausiert",
       "errorType": {
@@ -4530,10 +4533,6 @@
     "improve": "Verbessern",
     "drafted": "Entworfen",
     "undoField": "{{field}} rückgängig machen",
-    "somethingElse": "Etwas anderes…",
-    "somethingElseLabel": "Deine Antwort",
-    "somethingElsePlaceholder": "Eigene Antwort eingeben",
-    "sendAnswers": "Antworten senden",
     "droppedTitle": "Weggelassen",
     "retry": "Erneut versuchen",
     "steps": {
@@ -4720,7 +4719,6 @@
     "lookedAtWorkspaceCounts": "Deinen Arbeitsbereich angesehen: {{counts}}",
     "filled_one": "{{count}} Feld ausgefüllt",
     "filled_other": "{{count}} Felder ausgefüllt",
-    "notAnswered": "Nicht beantwortet",
     "suggestionsLabel": "Möglichkeiten zum Einstieg",
     "skipQuestions": "Überspringen und entwerfen",
     "starters": {
@@ -4744,5 +4742,16 @@
       "title": "Diese Unterhaltung ist voll",
       "description": "Länger kann eine Entwurfsunterhaltung nicht werden. Was du entworfen hast, bleibt."
     }
+  },
+  "questions": {
+    "somethingElse": "Etwas anderes…",
+    "somethingElseLabel": "Deine Antwort",
+    "somethingElsePlaceholder": "Eigene Antwort eingeben",
+    "sendAnswers": "Antworten senden",
+    "notAnswered": "Nicht beantwortet",
+    "justAnswer": "Einfach antworten",
+    "skipped": "Übersprungen",
+    "yourAnswer": "Deine Antwort",
+    "typeAnswer": "Oder gib deine Antwort ein…"
   }
 }

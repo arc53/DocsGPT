@@ -1,4 +1,5 @@
 import { AnswerSegment } from './answerSegments';
+import { isHiddenCall, isQuestionCall } from './questionCall';
 import { ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
 
@@ -22,13 +23,15 @@ export type FlowItem =
   | { kind: 'group'; entries: GroupEntry[]; index: number };
 
 /**
- * Whether a call can sit in a step group. Approvals, wiki writes, the
- * scheduler, background jobs and MCP App views render as cards that carry
- * actions, so they stay in the column.
+ * Whether a call can sit in a step group. Approvals, clarifying questions
+ * (`ask_user`, waiting or answered), wiki writes, the scheduler, background
+ * jobs and MCP App views render as cards that carry actions or a record, so
+ * they stay in the column.
  */
 export function isGroupable(call: ToolCallsType): boolean {
   return (
     call.status !== 'awaiting_approval' &&
+    !isQuestionCall(call) &&
     !isWikiWriteCall(call) &&
     call.tool_name !== 'scheduler' &&
     !call.job_id &&
@@ -83,7 +86,8 @@ export function layoutAnswer(
   steps.forEach((step, index) => {
     if (step.kind === 'tool') {
       const call = callById.get(step.call_id);
-      if (!call) return;
+      // A refused question round is the model's business, not the user's.
+      if (!call || isHiddenCall(call)) return;
       if (!isGroupable(call)) {
         flush();
         items.push({ kind: 'call', call, index });

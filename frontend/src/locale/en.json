@@ -4288,6 +4288,9 @@
       "expires": "expires {{time}}",
       "approval": "Approval",
       "review": "Review",
+      "waitingForAnswer": "Waiting for your answer",
+      "question": "Question",
+      "answer": "Answer",
       "pausedAfter_one": "{{name}} paused after {{formatted}} failure",
       "pausedAfter_other": "{{name}} paused after {{formatted}} failures",
       "errorType": {
@@ -4551,10 +4554,6 @@
     "improve": "Improve",
     "drafted": "Drafted",
     "undoField": "Undo {{field}}",
-    "somethingElse": "Something else…",
-    "somethingElseLabel": "Your answer",
-    "somethingElsePlaceholder": "Type your own answer",
-    "sendAnswers": "Send answers",
     "droppedTitle": "Left out",
     "retry": "Try again",
     "steps": {
@@ -4741,7 +4740,6 @@
     "lookedAtWorkspaceCounts": "Looked at your workspace: {{counts}}",
     "filled_one": "Filled {{count}} field",
     "filled_other": "Filled {{count}} fields",
-    "notAnswered": "Not answered",
     "suggestionsLabel": "Ways to start",
     "skipQuestions": "Skip and draft",
     "starters": {
@@ -4765,5 +4763,16 @@
       "title": "This conversation is full",
       "description": "It's as long as a draft conversation can get. What you've drafted stays."
     }
+  },
+  "questions": {
+    "somethingElse": "Something else…",
+    "somethingElseLabel": "Your answer",
+    "somethingElsePlaceholder": "Type your own answer",
+    "sendAnswers": "Send answers",
+    "notAnswered": "Not answered",
+    "justAnswer": "Just answer",
+    "skipped": "Skipped",
+    "yourAnswer": "Your answer",
+    "typeAnswer": "Or type your answer…"
   }
 }

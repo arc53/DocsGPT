@@ -8,15 +8,28 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { cn } from '@/lib/utils';
 
-import type { DrafterQuestion } from './drafterApi';
+export type QuestionOption = { id: string; label: string };
+
+/** A clarifying question a model asks: the drafter's, or the chat's `ask_user`. */
+export type Question = {
+  id: string;
+  text: string;
+  note: string | null;
+  multi: boolean;
+  /** Empty for a question the user answers by typing. */
+  options: QuestionOption[];
+  /** A typed-answer question's example, shown in the empty field. */
+  placeholder?: string | null;
+};
 
 type Answer = { picked: string[]; other: string | null };
 
 const NO_ANSWER: Answer = { picked: [], other: null };
 
 /** A question's answer as text: the picked labels, then the free text. */
-function answerParts(question: DrafterQuestion, answer: Answer): string[] {
+function answerParts(question: Question, answer: Answer): string[] {
   const parts = question.options
     .filter((option) => answer.picked.includes(option.id))
     .map((option) => option.label);
@@ -37,7 +50,7 @@ function answerParts(question: DrafterQuestion, answer: Answer): string[] {
  *   The message, or an empty string when nothing was answered.
  */
 export function composeAnswers(
-  questions: DrafterQuestion[],
+  questions: Question[],
   answers: Record<string, Answer>,
 ): string {
   return questions
@@ -52,30 +65,45 @@ export function composeAnswers(
 }
 
 /**
- * The drafter's questions as cards of option rows: radios for a one-pick
+ * Clarifying questions as cards of option rows: radios for a one-pick
  * question, checkboxes for a pick-any one (`multi`), and "Something else…"
  * last, which opens a free-text field under it. A question with no options
  * is a text field alone. One Send answers button sends
  * every answer as one message. An answered (or passed-over) card shows only
- * the question and what was picked.
+ * the question and what was picked. The drafter and the chat's `ask_user`
+ * both draw them.
  *
  * Args:
  *   questions: At most three questions, two to five options each (or none).
  *   active: Whether they can still be answered.
  *   onAnswer: Sends the composed answers.
- *   onSkip: When given, a Skip button beside Send answers drafts without
+ *   onSkip: When given, a Skip button beside Send answers goes on without
  *     answering.
+ *   skipLabel: The Skip button's label ("Skip and draft", "Just answer").
+ *   answers: Once not active, each question's answer as text, by question
+ *     id, in place of what was picked here (an answer saved with a chat).
+ *   emptyLabel: Once not active, the line under a question with no answer:
+ *     "Not answered" by default; null shows the question alone.
+ *   className: Layout only (the gap between the cards).
  */
-export function DrafterQuestions({
+export function QuestionCards({
   questions,
   active,
   onAnswer,
   onSkip,
+  skipLabel,
+  answers: givenAnswers,
+  emptyLabel,
+  className,
 }: {
-  questions: DrafterQuestion[];
+  questions: Question[];
   active: boolean;
   onAnswer: (message: string) => void;
   onSkip?: () => void;
+  skipLabel?: string;
+  answers?: Record<string, string | null | undefined>;
+  emptyLabel?: string | null;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const baseId = useId();
@@ -87,7 +115,7 @@ export function DrafterQuestions({
 
   // One pick: an option replaces the other choice and closes "Something
   // else"; `optionId` null is "Something else" itself.
-  const pickOne = (question: DrafterQuestion, optionId: string | null) =>
+  const pickOne = (question: Question, optionId: string | null) =>
     update(
       question.id,
       optionId === null
@@ -95,7 +123,7 @@ export function DrafterQuestions({
         : { picked: [optionId], other: null },
     );
 
-  const toggle = (question: DrafterQuestion, optionId: string, on: boolean) => {
+  const toggle = (question: Question, optionId: string, on: boolean) => {
     const answer = answerOf(question.id);
     update(question.id, {
       ...answer,
@@ -108,7 +136,10 @@ export function DrafterQuestions({
   const message = composeAnswers(questions, answers);
 
   return (
-    <div className="flex flex-col gap-3" data-slot="drafter-questions">
+    <div
+      className={cn('flex flex-col gap-3', className)}
+      data-slot="question-cards"
+    >
       {questions.map((question, index) => {
         const answer = answerOf(question.id);
         // Rows go by position (the radio values too): the option ids are
@@ -122,7 +153,14 @@ export function DrafterQuestions({
         );
 
         if (!active) {
-          const parts = answerParts(question, answer);
+          const given = givenAnswers?.[question.id];
+          const parts = givenAnswers
+            ? given
+              ? [given]
+              : []
+            : answerParts(question, answer);
+          const empty =
+            emptyLabel === undefined ? t('questions.notAnswered') : emptyLabel;
           return (
             <Card
               key={question.id}
@@ -133,11 +171,13 @@ export function DrafterQuestions({
             >
               {title}
               {parts.length > 0 ? (
-                <p className="text-sm wrap-break-word">{parts.join(', ')}</p>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  {t('drafter.notAnswered')}
+                <p className="text-sm wrap-break-word whitespace-pre-wrap">
+                  {parts.join(', ')}
                 </p>
+              ) : (
+                empty && (
+                  <p className="text-muted-foreground text-sm">{empty}</p>
+                )
               )}
             </Card>
           );
@@ -193,7 +233,7 @@ export function DrafterQuestions({
               {textField(
                 answer.other ?? '',
                 question.text,
-                question.placeholder || t('drafter.somethingElsePlaceholder'),
+                question.placeholder || t('questions.somethingElsePlaceholder'),
                 index === 0,
               )}
               {note}
@@ -204,7 +244,7 @@ export function DrafterQuestions({
         // Each option, then "Something else" (id null) last.
         const rows = [
           ...question.options.map(({ id, label }) => ({ id, label })),
-          { id: null, label: t('drafter.somethingElse') },
+          { id: null, label: t('questions.somethingElse') },
         ];
         const otherRow = question.options.length;
         const row = (index: number, label: string, control: ReactNode) => (
@@ -297,8 +337,8 @@ export function DrafterQuestions({
               <div className="pl-7">
                 {textField(
                   answer.other,
-                  t('drafter.somethingElseLabel'),
-                  t('drafter.somethingElsePlaceholder'),
+                  t('questions.somethingElseLabel'),
+                  t('questions.somethingElsePlaceholder'),
                   true,
                 )}
               </div>
@@ -316,7 +356,7 @@ export function DrafterQuestions({
             disabled={!message}
             onClick={() => onAnswer(message)}
           >
-            {t('drafter.sendAnswers')}
+            {t('questions.sendAnswers')}
           </Button>
           {onSkip && (
             <Button
@@ -326,7 +366,7 @@ export function DrafterQuestions({
               shape="pill"
               onClick={onSkip}
             >
-              {t('drafter.skipQuestions')}
+              {skipLabel}
             </Button>
           )}
         </div>

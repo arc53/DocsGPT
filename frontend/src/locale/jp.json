@@ -4247,6 +4247,9 @@
       "expires": "{{time}}に期限切れ",
       "approval": "承認",
       "review": "確認",
+      "waitingForAnswer": "回答を待っています",
+      "question": "質問",
+      "answer": "回答する",
       "pausedAfter_one": "{{name}} は {{formatted}} 回失敗したため一時停止中",
       "pausedAfter_other": "{{name}} は {{formatted}} 回失敗したため一時停止中",
       "errorType": {
@@ -4510,10 +4513,6 @@
     "improve": "改善",
     "drafted": "下書き済み",
     "undoField": "{{field}} を元に戻す",
-    "somethingElse": "その他…",
-    "somethingElseLabel": "あなたの回答",
-    "somethingElsePlaceholder": "回答を入力",
-    "sendAnswers": "回答を送信",
     "droppedTitle": "除外した項目",
     "retry": "再試行",
     "steps": {
@@ -4686,7 +4685,6 @@
     "lookedAtWorkspaceCounts": "ワークスペースを確認しました: {{counts}}",
     "filled_one": "{{count}} 個のフィールドを入力しました",
     "filled_other": "{{count}} 個のフィールドを入力しました",
-    "notAnswered": "未回答",
     "suggestionsLabel": "始め方の例",
     "skipQuestions": "スキップして下書き",
     "starters": {
@@ -4710,5 +4708,16 @@
       "title": "この会話は上限に達しました",
       "description": "下書きの会話はこれ以上長くできません。下書きした内容はそのまま残ります。"
     }
+  },
+  "questions": {
+    "somethingElse": "その他…",
+    "somethingElseLabel": "あなたの回答",
+    "somethingElsePlaceholder": "回答を入力",
+    "sendAnswers": "回答を送信",
+    "notAnswered": "未回答",
+    "justAnswer": "そのまま回答",
+    "skipped": "スキップ済み",
+    "yourAnswer": "あなたの回答",
+    "typeAnswer": "または回答を入力…"
   }
 }

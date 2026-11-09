@@ -45,6 +45,7 @@ import {
   handleFetchAnswerSteaming,
   handleSubmitToolActions,
   handleV1ChatCompletionStreaming,
+  type ToolAction,
 } from './conversationHandlers';
 import {
   Answer,
@@ -55,6 +56,7 @@ import {
   ResearchStep,
   Status,
 } from './conversationModels';
+import { answeredCall, type QuestionAction } from './questionCall';
 import { ToolCallsType } from './types';
 import {
   applyLoopItem,
@@ -839,13 +841,14 @@ export const NOT_PENDING_CODE = 'tool_call_not_pending';
 /** Why a ``tool.approval.cleared`` means the open chat shows a stale approval. */
 const APPROVAL_RETIRED_REASONS = new Set(['moved_on', 'expired']);
 
-/** Whether a turn's calls include one paused for the user to decide or run. */
+/** Whether a turn's calls include one paused for the user to decide, answer or run. */
 export function isWaitingOnUser(toolCalls: unknown): boolean {
   return (
     Array.isArray(toolCalls) &&
     toolCalls.some(
       (call) =>
         call?.status === 'awaiting_approval' ||
+        call?.status === 'awaiting_answer' ||
         call?.status === 'requires_client_execution',
     )
   );
@@ -941,18 +944,41 @@ export const tailInFlightMessage = createAsyncThunk<
 );
 
 type SubmitToolActionsArgs = {
-  toolActions: {
-    call_id: string;
-    decision?: 'approved' | 'denied';
-    comment?: string;
-    result?: Record<string, any>;
-  }[];
+  toolActions: ToolAction[];
 };
 
 export const submitToolActions = createAsyncThunk<void, SubmitToolActionsArgs>(
   'submitToolActions',
   streamed(sendToolActions),
 );
+
+/**
+ * Resume a turn paused on clarifying questions (`ask_user`) with the user's
+ * answers, or with Just answer. The cards fold into their record at once
+ * (`answeredCall`); the resumed stream then writes the answer below them.
+ */
+export const resumeQuestion = createAsyncThunk<
+  void,
+  { callId: string; action: QuestionAction }
+>('resumeQuestion', async ({ callId, action }, { dispatch, getState }) => {
+  const { queries } = (getState() as RootState).conversation;
+  const index = queries.findIndex((query) =>
+    query.tool_calls?.some((call) => call.call_id === callId),
+  );
+  const call = queries[index]?.tool_calls?.find(
+    (candidate) => candidate.call_id === callId,
+  );
+  if (call)
+    dispatch(
+      conversationSlice.actions.updateToolCall({
+        index,
+        tool_call: answeredCall(call, action),
+      }),
+    );
+  await dispatch(
+    submitToolActions({ toolActions: [{ call_id: callId, ...action }] }),
+  );
+});
 
 async function sendToolActions(
   { toolActions }: SubmitToolActionsArgs,

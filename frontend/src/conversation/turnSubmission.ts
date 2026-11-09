@@ -1,4 +1,5 @@
 import type { Query } from './conversationModels';
+import { pendingQuestionCall } from './questionCall';
 
 /** How a retry or an edit of an existing turn goes out. */
 export interface ResendPlan {
@@ -46,10 +47,18 @@ export function resendPlan(
 
 /** Where a question typed into the composer goes. */
 export type ComposerSubmitTarget =
-  { kind: 'new' } | { kind: 'retry'; index: number; samePrompt: boolean };
+  | { kind: 'new' }
+  | { kind: 'retry'; index: number; samePrompt: boolean }
+  | { kind: 'answer'; callId: string };
 
 /**
- * Decide whether a composer send starts a new turn or retries the last one.
+ * Decide whether a composer send starts a new turn, retries the last one, or
+ * answers the questions the last turn is paused on.
+ *
+ * While the last turn waits on clarifying questions, what is typed is their
+ * answer and resumes that turn. Not with files in the composer: an answer
+ * carries no files, so those start a new turn (which moves past the
+ * questions).
  *
  * After a failed turn the next question replaces it. Not when the composer
  * holds files of its own: retrying would re-send the failed row's files
@@ -63,8 +72,8 @@ export type ComposerSubmitTarget =
  *   options.composerFileCount: Files ready to send from the composer.
  *
  * Returns:
- *   A new turn, or the index of the failed turn and whether the prompt is
- *   unchanged.
+ *   A new turn, the index of the failed turn and whether the prompt is
+ *   unchanged, or the question call the text answers.
  */
 export function composerSubmitTarget(options: {
   question: string;
@@ -74,6 +83,10 @@ export function composerSubmitTarget(options: {
 }): ComposerSubmitTarget {
   const { question, queries, lastQueryReturnedErr, composerFileCount } =
     options;
+  const waiting = pendingQuestionCall(queries);
+  if (waiting && composerFileCount === 0) {
+    return { kind: 'answer', callId: waiting.call_id };
+  }
   if (!lastQueryReturnedErr || queries.length === 0 || composerFileCount > 0) {
     return { kind: 'new' };
   }

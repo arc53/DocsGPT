@@ -1,6 +1,7 @@
 import apiClient from '../api/client';
 import endpoints from '../api/endpoints';
 import { isQuotaError } from '../conversation/quotaError';
+import type { Question, QuestionOption } from '../components/QuestionCards';
 import { readSSEStream } from '../events/eventStreamClient';
 
 /**
@@ -30,18 +31,10 @@ export type DrafterConfig = {
  */
 export type DrafterMessage = { role: 'user' | 'assistant'; content: string };
 
-export type DrafterOption = { id: string; label: string };
+// The shape the chat's `ask_user` questions share (components/QuestionCards).
+export type DrafterOption = QuestionOption;
 
-export type DrafterQuestion = {
-  id: string;
-  text: string;
-  note: string | null;
-  multi: boolean;
-  /** Empty for a question the user answers by typing. */
-  options: DrafterOption[];
-  /** A typed-answer question's example, shown in the empty field. */
-  placeholder?: string | null;
-};
+export type DrafterQuestion = Question;
 
 export type DrafterErrorCode =
   | 'disabled'

@@ -214,6 +214,27 @@ describe('Now page', () => {
     expect(container.textContent).toContain('activity.now.reconnect');
   });
 
+  it('lists a chat waiting on its questions, counted with the rest', async () => {
+    const question = {
+      kind: 'question' as const,
+      id: 'question:c3',
+      conversation_id: 'c3',
+      title: 'Halvorsen QBR',
+      agent_name: 'Account desk',
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    await render({ ...SNAPSHOT, needs_you: [...SNAPSHOT.needs_you, question] });
+    expect(container.textContent).toContain('activity.now.waitingForAnswer');
+    expect(container.textContent).toContain('Halvorsen QBR');
+    expect(container.textContent).toContain('activity.now.question');
+    expect(button('activity.now.answer')).toBeDefined();
+    // Three items and the connection to reconnect.
+    const needsYou = Array.from(container.querySelectorAll('h2, h3'))
+      .find((h) => h.textContent?.startsWith('activity.now.needsYou'))
+      ?.querySelector('[data-slot="count"]')?.textContent;
+    expect(needsYou).toContain('4');
+  });
+
   it('counts what runs as the sidebar does, a chat just started included', async () => {
     const store = makeStore();
     await act(async () => {

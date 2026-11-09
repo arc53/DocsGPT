@@ -271,7 +271,7 @@ describe('DraftPanel', () => {
       container.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
     )[1];
     await act(async () => radio.click());
-    await act(async () => button('drafter.sendAnswers')!.click());
+    await act(async () => button('questions.sendAnswers')!.click());
     expect(stream.requests[1].messages).toEqual([
       { role: 'user', content: 'A shipping agent' },
       { role: 'assistant', content: JSON.stringify(questions) },
@@ -280,7 +280,7 @@ describe('DraftPanel', () => {
     expect(onProposal).toHaveBeenCalledWith(proposal);
     expect(container.textContent).toContain('Draft is in the form.');
     // Answered questions can't be sent again.
-    expect(button('drafter.sendAnswers')).toBeUndefined();
+    expect(button('questions.sendAnswers')).toBeUndefined();
   });
 
   it('shows a proposal as its message, notes, a Filled row and the turn actions', async () => {

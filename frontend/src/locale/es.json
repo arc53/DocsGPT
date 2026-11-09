@@ -4384,6 +4384,9 @@
       "expires": "caduca {{time}}",
       "approval": "Aprobación",
       "review": "Revisar",
+      "waitingForAnswer": "Esperando tu respuesta",
+      "question": "Pregunta",
+      "answer": "Responder",
       "pausedAfter_one": "{{name}} en pausa tras {{formatted}} fallo",
       "pausedAfter_other": "{{name}} en pausa tras {{formatted}} fallos",
       "pausedAfter_many": "{{name}} en pausa tras {{formatted}} fallos",
@@ -4659,10 +4662,6 @@
     "improve": "Mejorar",
     "drafted": "Redactado",
     "undoField": "Deshacer {{field}}",
-    "somethingElse": "Otra cosa…",
-    "somethingElseLabel": "Tu respuesta",
-    "somethingElsePlaceholder": "Escribe tu propia respuesta",
-    "sendAnswers": "Enviar respuestas",
     "droppedTitle": "Se dejó fuera",
     "retry": "Reintentar",
     "steps": {
@@ -4874,7 +4873,6 @@
     "filled_one": "Se rellenó {{count}} campo",
     "filled_many": "Se rellenaron {{count}} campos",
     "filled_other": "Se rellenaron {{count}} campos",
-    "notAnswered": "Sin responder",
     "suggestionsLabel": "Formas de empezar",
     "skipQuestions": "Omitir y redactar",
     "starters": {
@@ -4898,5 +4896,16 @@
       "title": "Esta conversación está llena",
       "description": "Una conversación de borrador no puede ser más larga. Lo que has redactado se mantiene."
     }
+  },
+  "questions": {
+    "somethingElse": "Otra cosa…",
+    "somethingElseLabel": "Tu respuesta",
+    "somethingElsePlaceholder": "Escribe tu propia respuesta",
+    "sendAnswers": "Enviar respuestas",
+    "notAnswered": "Sin responder",
+    "justAnswer": "Solo responde",
+    "skipped": "Omitida",
+    "yourAnswer": "Tu respuesta",
+    "typeAnswer": "O escribe tu respuesta…"
   }
 }

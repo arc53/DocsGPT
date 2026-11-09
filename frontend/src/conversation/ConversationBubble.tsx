@@ -77,6 +77,8 @@ import ResearchProgress from './ResearchProgress';
 import WorkflowRunProgress from './WorkflowRunProgress';
 import SourcesPanel from './SourcesPanel';
 import ToolCallCard from './ToolCallCard';
+import QuestionBlock from './QuestionBlock';
+import type { QuestionAction } from './questionCall';
 import { shownArguments, ToolCallsType } from './types';
 import { useRunArtifacts } from './useRunArtifacts';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
@@ -133,6 +135,11 @@ const ConversationBubble = forwardRef<
       decision: 'approved' | 'denied',
       comment?: string,
     ) => void;
+    /**
+     * Resumes a turn paused on clarifying questions (`ask_user`) with the
+     * answers or Just answer; without it the questions can't be answered.
+     */
+    onQuestionAction?: (callId: string, action: QuestionAction) => void;
     /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
     agentId?: string;
     /** The saved message behind this answer, for an MCP App view to read its result back. */
@@ -162,6 +169,7 @@ const ConversationBubble = forwardRef<
     conversationArtifacts,
     onOpenArtifact,
     onToolAction,
+    onQuestionAction,
     agentId,
     messageId,
   },
@@ -625,6 +633,13 @@ const ConversationBubble = forwardRef<
                   )}
                 </div>
               </div>
+            )}
+            renderQuestion={(toolCall: ToolCallsType) => (
+              <QuestionBlock
+                call={toolCall}
+                onAction={onQuestionAction}
+                disabled={isStreaming}
+              />
             )}
             renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
               <WikiWriteToolCallCard toolCall={toolCall} isLive={isLive} />

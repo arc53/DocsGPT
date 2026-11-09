@@ -155,6 +155,13 @@ async function _drainSseBody(
   }
 }
 
+/**
+ * The web app draws clarifying questions as cards and resumes the turn with
+ * the answer, so every ``/stream`` request it makes asks for them; without
+ * this the server writes the questions into the answer as text.
+ */
+export const QUESTIONS_AS_CARDS = 'cards';
+
 export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
@@ -278,6 +285,7 @@ export function handleFetchAnswerSteaming(
     // explicitly opts into the sidebar; save_conversation alone no longer
     // lists it.
     visibility: save_conversation ? 'listed' : 'hidden',
+    questions: QUESTIONS_AS_CARDS,
   };
 
   if (modelId) {
@@ -453,14 +461,22 @@ export function handleFetchAnswerSteaming(
   });
 }
 
+/**
+ * One action on a paused call: an approval's decision, a client tool's
+ * result, or a clarifying question's answer (or ``skipped``).
+ */
+export type ToolAction = {
+  call_id: string;
+  decision?: 'approved' | 'denied';
+  comment?: string;
+  result?: Record<string, any>;
+  answer?: string;
+  skipped?: true;
+};
+
 export function handleSubmitToolActions(
   conversationId: string,
-  toolActions: {
-    call_id: string;
-    decision?: 'approved' | 'denied';
-    comment?: string;
-    result?: Record<string, any>;
-  }[],
+  toolActions: ToolAction[],
   token: string | null,
   signal: AbortSignal,
   onEvent: (event: MessageEvent) => void,
@@ -469,6 +485,7 @@ export function handleSubmitToolActions(
   const payload = {
     conversation_id: conversationId,
     tool_actions: toolActions,
+    questions: QUESTIONS_AS_CARDS,
   };
 
   const headers: Record<string, string> = {};

@@ -38,6 +38,7 @@ import {
 } from './conversationModels';
 import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
+import type { QuestionAction } from './questionCall';
 import { cn } from '@/lib/utils';
 
 type ConversationMessagesProps = {
@@ -69,6 +70,8 @@ type ConversationMessagesProps = {
     decision: 'approved' | 'denied',
     comment?: string,
   ) => void;
+  /** Resumes a turn paused on clarifying questions; see ConversationBubble. */
+  onQuestionAction?: (callId: string, action: QuestionAction) => void;
   isSplitView?: boolean;
   /** Active agent id; threaded into SchedulerToolCallCard. */
   agentId?: string;
@@ -132,6 +135,7 @@ export default function ConversationMessages({
   headerContent,
   onOpenArtifact,
   onToolAction,
+  onQuestionAction,
   isSplitView = false,
   agentId,
   canAddToKnowledge = false,
@@ -434,6 +438,7 @@ export default function ConversationMessages({
               conversationArtifacts={conversationArtifacts}
               onOpenArtifact={onOpenArtifact}
               onToolAction={onToolAction}
+              onQuestionAction={onQuestionAction}
               agentId={agentId}
               messageId={query.messageId}
               isStreaming={false}
@@ -504,6 +509,7 @@ export default function ConversationMessages({
             conversationArtifacts={conversationArtifacts}
             onOpenArtifact={onOpenArtifact}
             onToolAction={onToolAction}
+            onQuestionAction={onQuestionAction}
             feedback={query.feedback}
             isStreaming={isCurrentlyStreaming}
             agentId={agentId}
