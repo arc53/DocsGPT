@@ -166,6 +166,18 @@
       ],
       "type": "object"
     },
+    "CheckPromptModel": {
+      "properties": {
+        "content": {
+          "description": "The prompt's text as the editor holds it, at most 100,000 characters",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
     "ConnectorAuthCompleteModel": {
       "properties": {
         "code": {
@@ -3341,6 +3353,36 @@
         ]
       }
     },
+    "/api/check_prompt": {
+      "post": {
+        "description": "Check a prompt's text without a model: blanks left in, lines DocsGPT already adds to a persona, and a template that doesn't parse, runs tool variables, or lacks the Boundaries section or citation rules. Each check is a code the client words; works with the drafter off",
+        "operationId": "post_check_prompt",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CheckPromptModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "checks: at most 20 of {code, ...}: placeholder {text, line}, repeats_builtin {topic, line}, template_invalid, tool_variables {variables}, boundaries_missing, citations_missing"
+          },
+          "400": {
+            "description": "content is missing, not text, or too long"
+          }
+        },
+        "tags": [
+          "prompts"
+        ],
+        "x-pat-scopes": [
+          "prompts:read"
+        ]
+      }
+    },
     "/api/combine": {
       "get": {
         "description": "Redirects /api/combine to /api/sources for backward compatibility",
@@ -4214,6 +4256,42 @@
         ]
       }
     },
+    "/api/drafter/agent_gaps": {
+      "get": {
+        "description": "An agent's gap summary from Insights for Draft with DocsGPT's improve screen: expected gaps per topic and gap type over the last 30 days, the most first, read from the decision model's labels (no model call). Returns {\"available\", \"reason\", \"conversations\", \"needed\", \"days\", \"rows\": [{\"topic\", \"gap_type\", \"expected\", \"turns\", \"previous\"}]}: at most 10 rows, each with at least half an expected gap, counts rounded as Insights shows them; topic is null for an agent without a topic question, previous null until the period before has labelled answers. reason is disabled (the drafter is off), off_on_this_instance, agent_off (Insights is off for the agent) or not_enough (fewer than needed analysed conversations; conversations counts them), else null. Needs edit access to the agent.",
+        "operationId": "get_drafter_agent_gaps",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's gap summary"
+          },
+          "400": {
+            "description": "No agent_id"
+          },
+          "401": {
+            "description": "Not signed in"
+          },
+          "404": {
+            "description": "No agent the caller may edit"
+          },
+          "500": {
+            "description": "The summary could not be read"
+          }
+        },
+        "summary": "Report an agent's gap summary",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/drafter/config": {
       "get": {
         "description": "Whether Draft with DocsGPT is offered to the caller, and the model it runs on (the task model). Returns {\"enabled\", \"model\": {\"id\", \"display_name\"} | null, \"reason\": \"disabled\" | \"no_model\" | null}.",
@@ -4235,7 +4313,7 @@
     },
     "/api/drafter/stream": {
       "post": {
-        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, {\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a valid one; absent when the server can't stop turns), status, message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream. Nothing is saved.",
+        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, {\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, {\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream. Nothing is saved.",
         "operationId": "post_drafter_stream",
         "parameters": [
           {
