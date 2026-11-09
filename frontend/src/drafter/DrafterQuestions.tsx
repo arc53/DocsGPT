@@ -210,6 +210,9 @@ export function DrafterQuestions({
         const row = (index: number, label: string, control: ReactNode) => (
           <div key={index} className="flex items-start gap-3">
             {control}
+            {/* An answer reads as a sentence, not a field name: normal weight,
+                and normal leading for a label that wraps (DESIGN.md ›
+                Approved exceptions). */}
             <Label
               htmlFor={rowId(index)}
               className="leading-normal font-normal wrap-break-word"

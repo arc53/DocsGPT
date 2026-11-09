@@ -69,7 +69,7 @@ export function ProposalSummary({
         <Alert variant="warning" role="status">
           <AlertTitle>{t('drafter.droppedTitle')}</AlertTitle>
           <AlertDescription>
-            <ul className="flex flex-col gap-1">
+            <ul className="flex list-disc flex-col gap-1 pl-4">
               {dropped.map((line, index) => (
                 <li key={index}>{line}</li>
               ))}

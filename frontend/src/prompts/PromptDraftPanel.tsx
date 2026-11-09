@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { SectionHeader } from '../components/ui/section-header';
 import { DraftPanel, type DraftPanelHelpers } from '../drafter/DraftPanel';
 import { readPromptProposal } from '../drafter/promptDraft';
 import { DRAFTER_STARTERS } from '../drafter/starters';
@@ -266,9 +267,11 @@ function PromptResult({
           className="flex flex-col gap-1"
           data-slot="prompt-draft-assumptions"
         >
-          <p className="text-sm font-medium">
-            {t('drafter.prompt.assumptionsTitle')}
-          </p>
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('drafter.prompt.assumptionsTitle')}
+          />
           <ul className="flex list-disc flex-col gap-1 pl-4 text-sm">
             {assumptions.map((assumption, index) => (
               <li key={index} className="wrap-break-word">
@@ -295,9 +298,11 @@ function PromptResult({
       )}
       {next.length > 0 && (
         <div className="flex flex-col gap-1 pt-1" data-slot="prompt-draft-next">
-          <p className="text-muted-foreground text-sm">
-            {t('drafter.prompt.nextTitle')}
-          </p>
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('drafter.prompt.nextTitle')}
+          />
           <SuggestionRows
             label={t('drafter.prompt.nextTitle')}
             className="-mx-3"
