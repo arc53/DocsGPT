@@ -90,6 +90,7 @@ _NAV_CONTROL_RE = re.compile(
 _PAGINATION_LINK_RE = re.compile(r"^\[\s*(?:«?\s*previous|\s*next\s*»)\s*\]\([^\)]+\)$", re.IGNORECASE)
 
 _FENCE_START_RE = re.compile(r"^(`{3,}|~{3,})")
+_INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 
 
 _TERM_RE = re.compile(r"\b\w+(?:[+#]+(?=\W|$))?")
@@ -443,10 +444,12 @@ def _extract_protected_elements(
     text: str,
     query: str = "",
     initial_active_fence: Optional[Tuple[str, int]] = None,
-) -> Tuple[List[str], List[str], List[str], List[str]]:
-    """Extracts verbatim fenced code blocks, table rows, qualifier/warning sentences, and query-bearing lines."""
+) -> Tuple[List[str], List[str], List[str], List[str], List[str], List[str]]:
+    """Extracts verbatim fenced code blocks, indented code lines, inline code spans, table rows, qualifiers, and query lines."""
     lines = text.split("\n")
     fenced_blocks: List[str] = []
+    indented_lines: List[str] = []
+    inline_spans: List[str] = []
     table_rows: List[str] = []
     warning_lines: List[str] = []
     query_bearing_lines: List[str] = []
@@ -478,13 +481,13 @@ def _extract_protected_elements(
             current_fence_lines = [line]
             continue
 
-        # Indented code blocks (4+ spaces or tab): preserve verbatim with original indentation
+        # Indented code blocks (4+ spaces or tab): preserve exact line with original indentation
         if (line.startswith("    ") or line.startswith("\t")) and stripped:
-            fenced_blocks.append(line.rstrip("\r\n"))
+            indented_lines.append(line.rstrip("\r\n"))
         elif "`" in stripped:
-            # Inline code spans: preserve exact multi-backtick delimiters and content
-            for span in re.findall(r"`+[^`]+`+", line):
-                fenced_blocks.append(span)
+            # Inline code spans: preserve exact matching delimiters and full span (including embedded backticks)
+            for m in _INLINE_CODE_RE.finditer(line):
+                inline_spans.append(m.group(0))
 
         # Table rows: any line containing a pipe delimiter (e.g. '| col1 | col2 |' or 'Name | Type')
         if "|" in line and not stripped.startswith("#"):
@@ -504,7 +507,7 @@ def _extract_protected_elements(
     if current_fence_lines:
         fenced_blocks.append("\n".join(current_fence_lines))
 
-    return fenced_blocks, table_rows, warning_lines, query_bearing_lines
+    return fenced_blocks, indented_lines, inline_spans, table_rows, warning_lines, query_bearing_lines
 
 
 def _enforce_supercompress_safeguards(
@@ -531,13 +534,40 @@ def _enforce_supercompress_safeguards(
             initial_active_fence=initial_active_fence,
         )
 
-    orig_blocks, orig_tables, orig_warnings, orig_query_lines = _extract_protected_elements(
+    orig_fenced, orig_indented, orig_inline, orig_tables, orig_warnings, orig_query_lines = _extract_protected_elements(
         original_text, query=query, initial_active_fence=initial_active_fence
     )
 
-    # 1. Code blocks must be preserved verbatim (including original indentation and backtick delimiters)
-    for block in orig_blocks:
+    # 1. Fenced code blocks must be preserved verbatim in full
+    for block in orig_fenced:
         if block not in compressed_text:
+            if stats is not None:
+                stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
+            return prune_chunk_text(
+                original_text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
+
+    # 2. Indented code lines must appear as exact lines with original indentation
+    # (prevents both de-indentation and increased indentation, e.g. 'print(1)' matching '    print(1)')
+    compressed_lines = {line_item.rstrip("\r\n") for line_item in compressed_text.split("\n")}
+    for line in orig_indented:
+        if line not in compressed_lines:
+            if stats is not None:
+                stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
+            return prune_chunk_text(
+                original_text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
+
+    # 3. Inline code spans with matching delimiters must be preserved verbatim
+    # (preserves embedded backticks e.g. ``foo`bar`` without truncating after embedded backticks)
+    for span in orig_inline:
+        if span not in compressed_text:
             if stats is not None:
                 stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
             return prune_chunk_text(

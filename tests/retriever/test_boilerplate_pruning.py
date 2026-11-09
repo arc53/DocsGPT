@@ -890,6 +890,26 @@ class TestCompressingRetrieverIntegration:
             res9 = compress_retrieved_chunks(docs9, query="pytest")
             assert "``python -m pytest``" in res9[0]["text"]
 
+        # 10. Increased indentation (e.g. 4 spaces increased to 8 spaces) must fall back
+        orig_increased = "Home > API\n    print(1)\nNext page"
+        bad_increased = "Home > API\n        print(1)\nNext page"
+        mock_module_10 = Mock(compress_for_turn=Mock(return_value=(bad_increased, Mock())))
+        docs10 = [{"id": "10", "text": orig_increased}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_10}):
+            res10 = compress_retrieved_chunks(docs10, query="print")
+            assert "    print(1)" in res10[0]["text"]
+            assert "        print(1)" not in res10[0]["text"]
+
+        # 11. Changed content after an embedded backtick (e.g. ``foo`bar`` changed to ``foo`baz``) must fall back
+        orig_embedded = "Home > API\nUse ``foo`bar`` syntax.\nNext page"
+        bad_embedded = "Home > API\nUse ``foo`baz`` syntax.\nNext page"
+        mock_module_11 = Mock(compress_for_turn=Mock(return_value=(bad_embedded, Mock())))
+        docs11 = [{"id": "11", "text": orig_embedded}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_11}):
+            res11 = compress_retrieved_chunks(docs11, query="syntax")
+            assert "``foo`bar``" in res11[0]["text"]
+            assert "``foo`baz``" not in res11[0]["text"]
+
     def test_supercompress_installed_api_when_present(self, monkeypatch):
         """Tests real installed SuperCompress API if present in environment, ensuring it reaches safeguards."""
         if sys.platform == "darwin":
@@ -921,7 +941,10 @@ class TestCompressingRetrieverIntegration:
         ) as spy_safeguard:
             res = compress_retrieved_chunks(docs, query="content", stats=stats)
             spy_safeguard.assert_called_once()
+            assert stats.get("neural_success", 0) == 1
+            assert stats.get("safeguard_fallback", 0) == 0
             assert stats.get("error_fallback", 0) == 0
+            assert stats.get("conflict_fallback", 0) == 0
             assert len(res) == 1
             assert "Factual chunk content." in res[0]["text"]
 
@@ -979,8 +1002,18 @@ class TestCompressingRetrieverIntegration:
         }
         raw_candidates = [doc_a, doc_b, doc_c]
 
+        from docsgpt.core.settings import settings
+
+        # Track actual observed candidate pool counts across all three modes
+        observed_legacy_pool = {"off": 0, "on": 0}
+
+        def spied_fetch_all(plans):
+            tag = "on" if getattr(settings, "CHUNK_COMPRESSION_ENABLED", False) else "off"
+            observed_legacy_pool[tag] += len(raw_candidates)
+            return [(raw_candidates, "similarity")]
+
         # For legacy and single_group, patch ClassicRAG's source fetch to run its real selection loop
-        with patch.object(ClassicRAG, "_fetch_all", return_value=[(raw_candidates, "similarity")]):
+        with patch.object(ClassicRAG, "_fetch_all", side_effect=spied_fetch_all):
             with patch.object(ClassicRAG, "_plan_sources", return_value=[{"id": "s1", "src_k": 6}]):
 
                 def create_classic():
@@ -1078,8 +1111,21 @@ class TestCompressingRetrieverIntegration:
                 on_files = [d.get("filename") for d in res_on]
 
                 # Invariant checks:
-                # A. Candidate pool size and returned selection count
-                assert len(raw_candidates) == 3
+                # A. Actual observed candidate count parity in all three modes (on vs off)
+                observed_pool_off = (
+                    retriever_off.last_candidate_count
+                    if retrieval_mode in ("single_group", "multi_group")
+                    else observed_legacy_pool["off"]
+                )
+                observed_pool_on = (
+                    retriever_on.last_candidate_count
+                    if retrieval_mode in ("single_group", "multi_group")
+                    else observed_legacy_pool["on"]
+                )
+                expected_pool = 2 if retrieval_mode == "single_group" else 3
+                assert observed_pool_off == expected_pool
+                assert observed_pool_on == expected_pool
+                assert observed_pool_on == observed_pool_off
                 assert len(on_titles) == len(off_titles) == 2
 
                 # B. Full list comparison: exact same stable document titles/filenames and order (NOT sliced)
