@@ -1528,7 +1528,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             ),
           ]
         : proposal.notes;
-    // The gaps it acts on, each with its evidence and the fields it set.
+    // The gaps it acts on, each with its evidence and the fields it set; the
+    // Filled row then lists only what no card shows.
+    const cardFields = new Set(
+      proposal.gaps
+        .flatMap((gap) =>
+          gap.fields.flatMap((field) =>
+            rows.filter((row) => row.key.startsWith(`${field}-`)),
+          ),
+        )
+        .map((row) => row.key),
+    );
     const gapCards =
       proposal.gaps.length > 0 && agent.id ? (
         <AgentGapCards
@@ -1564,7 +1574,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       <ProposalSummary
         message={proposal.message}
         cards={gapCards}
-        rows={rows}
+        rows={gapCards ? rows.filter((row) => !cardFields.has(row.key)) : rows}
         notes={notes}
         dropped={dropped}
         footnote={

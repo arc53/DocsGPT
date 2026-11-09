@@ -4601,9 +4601,13 @@ describe('NewAgent drafter', () => {
             type: 'proposal',
             proposal: {
               message: 'Three gaps cost it the most.',
-              fields: { starters: ['Where is my order?'] },
+              fields: {
+                starters: ['Where is my order?'],
+                description: 'Answers shipping questions for customers.',
+              },
               reasons: [
                 { field: 'starters', summary: 'asks for the order id' },
+                { field: 'description', summary: 'says who it serves' },
               ],
               notes: [],
               dropped: [],
@@ -4665,7 +4669,8 @@ describe('NewAgent drafter', () => {
         '/settings/knowledge?source=s1',
         '/agents/manage/logs/agent-1?label=docs_gap#logs',
       ]);
-      // The cards come before the Filled row.
+      // The cards come before the Filled row, which lists only what no card
+      // shows.
       const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
       const order = Array.from(
         summary.querySelectorAll(
@@ -4673,6 +4678,14 @@ describe('NewAgent drafter', () => {
         ),
       ).map((el) => el.getAttribute('data-slot'));
       expect(order).toEqual(['gap-cards', 'drafter-step-row']);
+      const filled = Array.from(
+        summary.querySelectorAll(
+          '[data-slot="drafter-step-row"] [data-slot="filled-row"] p',
+        ),
+      ).map((p) => p.getAttribute('title'));
+      expect(filled).toEqual([
+        'agents.form.labels.description · says who it serves',
+      ]);
     });
   });
 });
