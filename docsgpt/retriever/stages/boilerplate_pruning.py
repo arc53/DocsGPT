@@ -61,33 +61,30 @@ _NAV_VERBS = (
 # short word sequences (up to 6 words) that do not contain a known verb.
 _NAV_LABEL_COLON_PAT = (
     r"(?:"
-    r"\[(?!.*?\b(?:" + _NAV_VERBS + r")\b)[^\]\r\n.!?]{1,60}\](?:\([^\)]+\))?|"
+    r"\[(?!.*?\b(?i:" + _NAV_VERBS + r")\b)[^\]\r\n.!?]{1,60}\](?:\([^\)]+\))?|"
     r"[«»<>‹›←→]|\d+|"
-    r"(?!.*?\b(?:" + _NAV_VERBS + r")\b)[\w\-&/]+(?:\s+[\w\-&/]+){0,5}"
+    r"(?!.*?\b(?i:" + _NAV_VERBS + r")\b)[\w\-&/]+(?:\s+[\w\-&/]+){0,5}"
     r")"
 )
 
-# Navigation label without a colon: same structure but the first word must
-# start with an uppercase letter so that factual prose (e.g. "Next page token
-# expires after 24 hours") is not mistaken for a navigation label.
+# Navigation label without a colon: strictly requires an uppercase initial letter
+# so factual text (e.g. "Next page token lifetime: 24 hours") is preserved.
 _NAV_LABEL_SPACE_PAT = (
     r"(?:"
-    r"\[(?!.*?\b(?:" + _NAV_VERBS + r")\b)[^\]\r\n.!?]{1,60}\](?:\([^\)]+\))?|"
+    r"\[(?!.*?\b(?i:" + _NAV_VERBS + r")\b)[^\]\r\n.!?]{1,60}\](?:\([^\)]+\))?|"
     r"[«»<>‹›←→]|\d+|"
-    r"(?!.*?\b(?:" + _NAV_VERBS + r")\b)[A-Z][\w\-&/]*(?:\s+[\w\-&/]+){0,5}"
+    r"(?!.*?\b(?i:" + _NAV_VERBS + r")\b)[A-Z][\w\-&/]*(?:\s+[\w\-&/]+){0,5}"
     r")"
 )
 
 _NAV_CONTROL_RE = re.compile(
-    r"^(?:#+\s*)?(?:table of contents|on this page|in this article|quick links|"
+    r"^(?:#+\s*)?(?:(?i:table of contents|on this page|in this article|quick links|"
     r"skip to (?:main )?content|back to top|return to top|"
-    r"(?:previous|next)\s+page:\s*" + _NAV_LABEL_COLON_PAT + r"|"
-    r"(?:previous|next)\s+page\s+" + _NAV_LABEL_SPACE_PAT + r"|"
-    r"(?:previous|next)\s+page|"
-    r"«\s*previous\s*|\s*next\s*»|"
     r"edit this page(?: on github)?|was this (?:page|article) helpful\??|"
-    r"share this page|print this page)$",
-    re.IGNORECASE,
+    r"share this page|print this page|«\s*previous\s*|\s*next\s*»|"
+    r"(?:previous|next)\s+page)|"
+    r"(?i:previous|next)\s+page:\s*" + _NAV_LABEL_COLON_PAT + r"|"
+    r"(?i:previous|next)\s+page\s+" + _NAV_LABEL_SPACE_PAT + r")$"
 )
 
 _PAGINATION_LINK_RE = re.compile(r"^\[\s*(?:«?\s*previous|\s*next\s*»)\s*\]\([^\)]+\)$", re.IGNORECASE)
@@ -370,6 +367,51 @@ def _mac_torch_faiss_conflict() -> bool:
         return True
 
 
+def _enforce_supercompress_safeguards(original_text: str, compressed_text: str, query: str = "") -> str:
+    """Enforces code blocks, tables, qualifiers, and query-term preservation on SuperCompress outputs.
+
+    If the compressed text strips critical safeguards present in the original text, falls back
+    to in-tree boilerplate pruning for that chunk.
+    """
+    if not compressed_text or not isinstance(compressed_text, str):
+        return prune_chunk_text(original_text, query=query)
+
+    orig_lines = original_text.split("\n")
+
+    # 1. Code blocks preservation: if original had code fences, compressed must keep them
+    orig_has_fence = any(_FENCE_START_RE.match(l.strip()) for l in orig_lines)
+    comp_has_fence = any(_FENCE_START_RE.match(l.strip()) for l in compressed_text.split("\n"))
+    if orig_has_fence and not comp_has_fence:
+        return prune_chunk_text(original_text, query=query)
+
+    # 2. Markdown tables preservation: if original had tables, compressed must keep them
+    orig_has_table = any(l.strip().startswith("|") for l in orig_lines)
+    comp_has_table = any(l.strip().startswith("|") for l in compressed_text.split("\n"))
+    if orig_has_table and not comp_has_table:
+        return prune_chunk_text(original_text, query=query)
+
+    # 3. Protected qualifiers preservation (caution, warning, never, deprecated, don't, etc.)
+    orig_qualifiers: Set[str] = set()
+    for line in orig_lines:
+        words = set(re.findall(r"\b[\w']+\b", line.lower().replace("\u2019", "'").replace("\u2018", "'")))
+        orig_qualifiers.update(words.intersection(_PROTECTED_QUALIFIERS))
+
+    comp_words = set(re.findall(r"\b[\w']+\b", compressed_text.lower().replace("\u2019", "'").replace("\u2018", "'")))
+    if not orig_qualifiers.issubset(comp_words):
+        return prune_chunk_text(original_text, query=query)
+
+    # 4. Query-term preservation: if query terms were present in original, they must not be eliminated
+    query_tokens = _tokenize_query(query)
+    if query_tokens:
+        orig_query_terms = query_tokens.intersection(_tokenize_terms(original_text.lower()))
+        comp_query_terms = query_tokens.intersection(_tokenize_terms(compressed_text.lower()))
+        if orig_query_terms and not comp_query_terms:
+            return prune_chunk_text(original_text, query=query)
+
+    # Apply in-tree boilerplate pruning on the compressed text as an additional pass
+    return prune_chunk_text(compressed_text, query=query)
+
+
 def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
     """Compresses retrieved chunks using SuperCompress when available, falling back to in-tree boilerplate pruning."""
     if not docs:
@@ -383,9 +425,9 @@ def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> Li
     try:
         from supercompress import compress_for_turn
 
+        orig_texts = [doc.get("text", "") for doc in docs]
         compressed_texts = []
-        for doc in docs:
-            text = doc.get("text", "")
+        for text in orig_texts:
             if text:
                 res = compress_for_turn(
                     context_blocks=[text],
@@ -403,9 +445,13 @@ def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> Li
             else:
                 compressed_texts.append(None)
 
-        for doc, comp_text in zip(docs, compressed_texts):
+        for doc, orig_text, comp_text in zip(docs, orig_texts, compressed_texts):
             if comp_text is not None:
-                doc["text"] = comp_text
+                doc["text"] = _enforce_supercompress_safeguards(
+                    original_text=orig_text,
+                    compressed_text=comp_text,
+                    query=query or "",
+                )
         return docs
     except (ImportError, Exception):
         pass

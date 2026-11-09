@@ -315,6 +315,33 @@ class TestBoilerplatePruningRules:
         for line in cases:
             assert prune_chunk_text(line, query="") == "", f"Navigation line was not pruned: {line!r}"
 
+    def test_nav_control_regex_preserves_factual_tokens_under_case_guard(self):
+        """Regression test: uppercase-label guard in _NAV_CONTROL_RE must not match lowercase words.
+
+        Lines like 'Next page token lifetime: 24 hours' must be preserved as factual text
+        even with an unrelated query, because 'token' starts with lowercase 't'.
+        """
+        cases = [
+            "Next page token lifetime: 24 hours",
+            "Next page token parameter: max 50 items",
+            "Next page token expires after 24 hours",
+            "Next page token is required for pagination",
+            "Previous page cursor value: xyz123",
+        ]
+        for line in cases:
+            cleaned = prune_chunk_text(line, query="unrelated search query")
+            assert cleaned == line, f"Factual line with navigation prefix was pruned: {line!r}"
+
+        # But true navigation labels with uppercase words should be pruned
+        nav_cases = [
+            "Next page Authentication",
+            "Next page: Authentication",
+            "Previous page Overview",
+            "Next page: User Profile Settings",
+        ]
+        for line in nav_cases:
+            assert prune_chunk_text(line, query="unrelated search query") == "", f"Navigation line was not pruned: {line!r}"
+
     def test_preserves_indented_markdown_code_and_pipe_tables(self):
         """Four-space indented lines and tables without edge pipes must survive pruning."""
         raw = (
@@ -749,4 +776,151 @@ class TestCompressingRetrieverIntegration:
         # 2. Token Reduction: Non-essential navigation lines must be stripped
         pruned_chars = sum(len(d["text"]) for d in pruned)
         assert pruned_chars < orig_chars
+
+    def test_supercompress_safeguards_enforce_code_table_qualifier_query_preservation(self):
+        """SuperCompress successful path must enforce safeguards or fall back to in-tree pruning."""
+        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+
+        # 1. SuperCompress drops code fences -> falls back to in-tree pruning
+        orig_code = "Home > API\n```python\nprint('hello')\n```\nNext page"
+        bad_supercompress_output_1 = ("Home > API\nprint('hello')\nNext page", Mock())
+        mock_module_1 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_1))
+        docs = [{"id": "1", "text": orig_code}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_1}):
+            res = compress_retrieved_chunks(docs, query="python")
+            assert "```python\nprint('hello')\n```" in res[0]["text"]
+            assert "Home > API" not in res[0]["text"]
+
+        # 2. SuperCompress drops markdown table -> falls back to in-tree pruning
+        orig_table = "Home > API\n| col1 | col2 |\n| --- | --- |\n| a | b |\nNext page"
+        bad_supercompress_output_2 = ("Just a plain text summary without tables.", Mock())
+        mock_module_2 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_2))
+        docs2 = [{"id": "2", "text": orig_table}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_2}):
+            res2 = compress_retrieved_chunks(docs2, query="summary")
+            assert "| col1 | col2 |" in res2[0]["text"]
+
+        # 3. SuperCompress drops protected qualifiers (e.g. 'must not') -> falls back
+        orig_qualifier = "Home > API\nUsers must not share secrets under any circumstances.\nNext page"
+        bad_supercompress_output_3 = ("Users share secrets easily.", Mock())
+        mock_module_3 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_3))
+        docs3 = [{"id": "3", "text": orig_qualifier}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_3}):
+            res3 = compress_retrieved_chunks(docs3, query="secrets")
+            assert "must not share secrets" in res3[0]["text"]
+
+        # 4. SuperCompress drops critical query terms -> falls back
+        orig_query_term = "Home > API\nConfiguring the OAuth2 token endpoint is mandatory.\nNext page"
+        bad_supercompress_output_4 = ("Configuring things is mandatory.", Mock())
+        mock_module_4 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_4))
+        docs4 = [{"id": "4", "text": orig_query_term}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_4}):
+            res4 = compress_retrieved_chunks(docs4, query="OAuth2 endpoint")
+            assert "OAuth2 token endpoint" in res4[0]["text"]
+
+    def test_supercompress_explicit_package_absence_fallback(self):
+        """Explicitly forces package absence and verifies graceful in-tree pruning fallback."""
+        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+
+        docs = [
+            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
+            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
+        ]
+        with patch.dict("sys.modules", {"supercompress": None}):
+            out = compress_retrieved_chunks(docs, query="authentication")
+            assert len(out) == 2
+            assert out[0]["text"] == "Factual chunk 1."
+            assert out[1]["text"] == "Factual chunk 2."
+
+    @pytest.mark.parametrize("retrieval_mode", ["legacy", "single_group", "multi_group"])
+    def test_on_off_near_budget_selection_and_parity(self, monkeypatch, retrieval_mode):
+        """Asserts unchanged document IDs, order, and disabled text output under near-budget selection.
+
+        Tests single-group Dispatcher, multi-group Dispatcher, and legacy ClassicRAG.
+        """
+        doc_a = {
+            "id": "doc_a",
+            "title": "Auth",
+            "text": "Home > Security > Auth\nToken expires in 3600 seconds.\nNext page: Permissions",
+            "source": "s1",
+        }
+        doc_b = {
+            "id": "doc_b",
+            "title": "Permissions",
+            "text": "Home > Security > Permissions\nAdmin role required for write actions.\nNext page: Logs",
+            "source": "s2" if retrieval_mode == "multi_group" else "s1",
+        }
+        doc_c = {
+            "id": "doc_c",
+            "title": "Logs",
+            "text": "Home > Security > Logs\nAudit logs are retained for 90 days.\nPrevious page: Permissions",
+            "source": "s3" if retrieval_mode == "multi_group" else "s1",
+        }
+        raw_candidates = [doc_a, doc_b, doc_c]
+
+        mock_retriever = Mock()
+        mock_retriever.search = Mock(side_effect=lambda *a, **k: [dict(d) for d in raw_candidates])
+        mock_retriever.last_outcome = None
+
+        with patch.object(Dispatcher, "_build_group_retriever", return_value=mock_retriever):
+            # 1. Measure OFF: CHUNK_COMPRESSION_ENABLED = False
+            monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
+            if retrieval_mode == "legacy":
+                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
+                retriever_off = build_dispatcher(lambda: mock_retriever)
+            elif retrieval_mode == "single_group":
+                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+                retriever_off = build_dispatcher(
+                    lambda: mock_retriever,
+                    source={"question": "tokens", "active_docs": ["s1"]},
+                    sources=[{"id": "s1", "retrieval": None}],
+                )
+            else:  # multi_group
+                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+                retriever_off = build_dispatcher(
+                    lambda: mock_retriever,
+                    source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
+                    sources=[
+                        {"id": "s1", "retrieval": {"retriever": "classic"}},
+                        {"id": "s2", "retrieval": {"retriever": "hybrid"}},
+                    ],
+                )
+
+            res_off = retriever_off.search("tokens")
+            off_ids = [d["id"] for d in res_off]
+            assert "Home > Security > Auth" in res_off[0]["text"]
+            assert "Next page: Permissions" in res_off[0]["text"]
+
+            # 2. Measure ON: CHUNK_COMPRESSION_ENABLED = True
+            monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
+            if retrieval_mode == "legacy":
+                retriever_on = build_dispatcher(lambda: mock_retriever)
+            elif retrieval_mode == "single_group":
+                retriever_on = build_dispatcher(
+                    lambda: mock_retriever,
+                    source={"question": "tokens", "active_docs": ["s1"]},
+                    sources=[{"id": "s1", "retrieval": None}],
+                )
+            else:  # multi_group
+                retriever_on = build_dispatcher(
+                    lambda: mock_retriever,
+                    source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
+                    sources=[
+                        {"id": "s1", "retrieval": {"retriever": "classic"}},
+                        {"id": "s2", "retrieval": {"retriever": "hybrid"}},
+                    ],
+                )
+
+            res_on = retriever_on.search("tokens")
+            on_ids = [d["id"] for d in res_on]
+
+            # Invariant checks:
+            # A. Unchanged document IDs and ordering between ON and OFF
+            assert on_ids[:3] == off_ids[:3]
+            # B. Enabled text output prunes navigation boilerplate
+            assert "Home > Security > Auth" not in res_on[0]["text"]
+            assert "Next page: Permissions" not in res_on[0]["text"]
+            assert "Token expires in 3600 seconds." in res_on[0]["text"]
+            # C. Parity across candidate pool
+            assert len(res_on) == len(res_off)
 
