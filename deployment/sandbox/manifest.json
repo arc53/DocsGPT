@@ -92,7 +92,7 @@
       "use": "PDF text layout (pdfplumber's engine)"
     },
     {
-      "spec": "pypdfium2==5.15.1",
+      "spec": "pypdfium2==5.15.2",
       "import": "pypdfium2",
       "use": "render PDF pages to images"
     },

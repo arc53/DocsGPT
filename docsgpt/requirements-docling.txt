@@ -763,7 +763,7 @@ pyparsing==3.3.3
     # via httplib2
 pypdf==7.0.0
     # via docsgpt
-pypdfium2==5.15.1
+pypdfium2==5.15.2
     # via
     #   docling-slim
     #   docsgpt

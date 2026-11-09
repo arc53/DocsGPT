@@ -113,6 +113,12 @@
     },
     "eslint-plugin-react": {
       "eslint": "$eslint"
+    },
+    "@eslint/config-array": {
+      "minimatch": "^11.0.1"
+    },
+    "eslint": {
+      "minimatch": "^11.0.1"
     }
   }
 }

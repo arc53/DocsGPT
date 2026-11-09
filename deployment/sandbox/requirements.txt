@@ -18,7 +18,7 @@ PyYAML==6.0.3
 pypdf==7.0.0
 pdfplumber==0.11.10
 pdfminer.six==20260107
-pypdfium2==5.15.1
+pypdfium2==5.15.2
 pytesseract==0.3.13
 imageio==2.38.1
 jupyter-kernel-gateway==3.0.1
