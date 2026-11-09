@@ -2,17 +2,17 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
+import type { Agent } from '../agents/types';
 import examples from './insights/fixtures/apiExamples.json';
 import type { DocsGapRow } from './types';
 
-// The store's agents (with their access fields) and the drafter's config.
+// The drafter's config.
 const store = vi.hoisted(() => ({
-  agents: [] as unknown[],
   drafter: null as null | { enabled: boolean },
 }));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
-    selector({ preference: { token: 'token', agents: store.agents } }),
+    selector({ preference: { token: 'token' } }),
 }));
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => store.drafter,
@@ -98,7 +98,6 @@ describe('DocsGaps', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
-    store.agents = [];
     store.drafter = null;
   });
 
@@ -485,7 +484,9 @@ describe('DocsGaps', () => {
       name: 'Fintech bot',
       agent_type: 'classic',
       allowed_actions: ['edit', 'use', 'view'],
-    };
+    } as unknown as Agent;
+    const agentWith = (over: Record<string, unknown>) =>
+      ({ ...editor, ...over }) as unknown as Agent;
     const openFirst = async () => {
       await act(async () =>
         container.querySelector<HTMLTableRowElement>('tbody tr')!.click(),
@@ -498,10 +499,9 @@ describe('DocsGaps', () => {
       );
 
     it('opens the agent form on the gap, from the panel header', async () => {
-      store.agents = [editor];
       store.drafter = { enabled: true };
       respond({ rows: [row()] });
-      await render();
+      await render({ agent: editor });
       const dialog = await openFirst();
       const link = improve(dialog)!;
       expect(dialog.querySelector('[data-slot="panel-header"]')).toContain(
@@ -517,11 +517,10 @@ describe('DocsGaps', () => {
     });
 
     it('carries the topic when the rows are topics', async () => {
-      store.agents = [editor];
       store.drafter = { enabled: true };
       localStorage.setItem('DocsGPTDocsGapsGroup', 'topic');
       respond({ rows: [row({ key: 'Returns', name: 'Returns' })] });
-      await render({ hasTopics: true });
+      await render({ agent: editor, hasTopics: true });
       const url = new URL(
         improve(await openFirst())!.getAttribute('href')!,
         'http://x',
@@ -530,30 +529,41 @@ describe('DocsGaps', () => {
       expect(url.searchParams.get('where')).toBe('Returns');
     });
 
-    it('offers none to a viewer, a workflow, with the drafter off, or across agents', async () => {
+    it('offers none to a viewer, a workflow, with the drafter off, before the agent loads, or across agents', async () => {
       respond({ rows: [row()] });
       store.drafter = { enabled: true };
-      store.agents = [{ ...editor, allowed_actions: ['use', 'view'] }];
-      await render();
+      await render({ agent: agentWith({ allowed_actions: ['use', 'view'] }) });
       expect(improve(await openFirst())).toBeUndefined();
       await act(async () => root.unmount());
       root = createRoot(container);
 
-      store.agents = [{ ...editor, agent_type: 'workflow' }];
-      await render();
+      await render({ agent: agentWith({ agent_type: 'workflow' }) });
       expect(improve(await openFirst())).toBeUndefined();
       await act(async () => root.unmount());
       root = createRoot(container);
 
-      store.agents = [editor];
       store.drafter = { enabled: false };
+      await render({ agent: editor });
+      expect(improve(await openFirst())).toBeUndefined();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+
+      // The page's agent hasn't loaded yet.
+      store.drafter = { enabled: true };
       await render();
       expect(improve(await openFirst())).toBeUndefined();
       await act(async () => root.unmount());
       root = createRoot(container);
 
+      await render({ agentId: undefined, agent: editor });
+      expect(improve(await openFirst())).toBeUndefined();
+    });
+
+    it('goes by the agent the page loaded, not another record of it', async () => {
       store.drafter = { enabled: true };
-      await render({ agentId: undefined });
+      respond({ rows: [row()] });
+      // Another agent's record, or one the page didn't load, doesn't count.
+      await render({ agent: agentWith({ id: 'a2' }) });
       expect(improve(await openFirst())).toBeUndefined();
     });
   });

@@ -35,11 +35,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
-import {
-  agentImprovePath,
-  canImproveAgent,
-  useKnownAgent,
-} from '../agents/improveLink';
+import { agentImprovePath, canImproveAgent } from '../agents/improveLink';
+import type { Agent } from '../agents/types';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -86,6 +83,11 @@ function writeGroup(group: DocsGapsGroup) {
 
 type DocsGapsProps = {
   agentId?: string;
+  /**
+   * The agent whose page this is, as the page loaded it: "Improve the agent"
+   * goes by its role. Undefined while it loads, and in Settings › Insights.
+   */
+  agent?: Agent;
   /** For the CSV's file name. */
   agentName?: string;
   filterOption: string;
@@ -140,6 +142,7 @@ async function fetchDocsGaps(
  */
 export default function DocsGaps({
   agentId,
+  agent,
   agentName,
   filterOption,
   hasTopics,
@@ -171,11 +174,11 @@ export default function DocsGaps({
   // "Improve the agent" in a group's panel: only on an agent's own page,
   // for a role that may edit it, while the drafter is on.
   const drafterConfig = useDrafterConfig();
-  const knownAgent = useKnownAgent();
   const improvable =
     !!agentId &&
+    agent?.id === agentId &&
     drafterConfig?.enabled === true &&
-    canImproveAgent(knownAgent(agentId));
+    canImproveAgent(agent);
 
   useEffect(() => {
     const id = ++requestId.current;
