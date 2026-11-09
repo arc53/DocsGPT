@@ -4213,6 +4213,12 @@
       "boundariesMissing": "No tiene la sección Boundaries, así que el agente podría seguir instrucciones ocultas en documentos o en resultados de herramientas",
       "citationsMissing": "No usa source.citation_rules, así que las respuestas no citarán fuentes como [1], [2]",
       "onLine": "{{check}} (línea {{line}})"
+    },
+    "checksHint": {
+      "count_one": "{{count}} cosa por revisar",
+      "count_other": "{{count}} cosas por revisar",
+      "count_many": "{{count}} cosas por revisar",
+      "review": "Revisar todo el prompt con DocsGPT"
     }
   },
   "common": {

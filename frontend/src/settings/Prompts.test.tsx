@@ -69,6 +69,15 @@ vi.mock('../drafter/drafterApi', async (importOriginal) => ({
   },
 }));
 
+// The checks hint's server read, as it stands once typing pauses.
+const promptChecks = vi.hoisted(() => ({
+  value: [] as { code: string; text?: string }[],
+}));
+vi.mock('../prompts/usePromptChecks', () => ({
+  usePromptChecks: (content: string, enabled: boolean) =>
+    enabled && content.trim() ? promptChecks.value : [],
+}));
+
 const confirm = vi.hoisted(() => ({
   props: null as null | {
     message: string;
@@ -180,6 +189,7 @@ describe('Prompts page', () => {
     );
     service.getUserTools.mockImplementation(() => response({ success: false }));
     drafter.config = null;
+    promptChecks.value = [];
     drafter.scripts = [];
     drafter.requests = [];
     shareModalProps.mockReset();
@@ -1365,6 +1375,32 @@ describe('Prompts page', () => {
       panel()!.querySelector('[data-slot="prompt-review-passed"] button')!
         .textContent,
     ).toBe('drafter.prompt.review.allPassed:{"count":2}');
+  });
+
+  it("sends a review from the editor's checks hint, with the drawer opening on it", async () => {
+    promptChecks.value = [{ code: 'placeholder', text: '[support email]' }];
+    withText('Email us at [support email].');
+    await render();
+    await openCard('Vendor checks');
+    const hint = () =>
+      view()!.querySelector<HTMLElement>('[data-slot="prompt-checks"]')!;
+    // Off with the drafter: the checks show, the review link doesn't.
+    expect(hint().textContent).not.toContain('prompts.checksHint.review');
+    act(() => root.unmount());
+    root = createRoot(container);
+    drafter.config = { enabled: true };
+    drafter.scripts = [proposal({ ...REVIEW, edits: [], findings: [] })];
+    await render();
+    await openCard('Vendor checks');
+    expect(panel()).toBeNull();
+    await click(button('prompts.checksHint.review', hint())!);
+    expect(panel()).not.toBeNull();
+    expect(drafter.requests[0]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'drafter.prompt.suggestions.review' },
+      ],
+      context: { mode: 'review' },
+    });
   });
 
   it('ends an open review with the choices so far when a new request goes', async () => {

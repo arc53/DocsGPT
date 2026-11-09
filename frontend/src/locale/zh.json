@@ -4075,6 +4075,11 @@
       "boundariesMissing": "它没有 Boundaries 部分，智能体可能会执行隐藏在文档或工具结果中的指令",
       "citationsMissing": "它没有使用 source.citation_rules，所以回答不会以 [1]、[2] 的形式引用来源",
       "onLine": "{{check}}（第 {{line}} 行）"
+    },
+    "checksHint": {
+      "count_one": "{{count}} 处需要检查",
+      "count_other": "{{count}} 处需要检查",
+      "review": "用 DocsGPT 审阅整个提示词"
     }
   },
   "common": {

@@ -4097,6 +4097,11 @@
       "boundariesMissing": "Es fehlt der Abschnitt „Boundaries“, daher könnte der Agent Anweisungen befolgen, die in Dokumenten oder Tool-Ergebnissen versteckt sind",
       "citationsMissing": "Es nutzt source.citation_rules nicht, daher zitieren Antworten keine Quellen als [1], [2]",
       "onLine": "{{check}} (Zeile {{line}})"
+    },
+    "checksHint": {
+      "count_one": "{{count}} Punkt zum Prüfen",
+      "count_other": "{{count}} Punkte zum Prüfen",
+      "review": "Den ganzen Prompt mit DocsGPT prüfen"
     }
   },
   "common": {

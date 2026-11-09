@@ -4077,6 +4077,11 @@
       "boundariesMissing": "Boundaries セクションがないため、エージェントがドキュメントやツールの結果に隠れた指示に従うおそれがあります",
       "citationsMissing": "source.citation_rules を使っていないため、回答で出典が [1]、[2] のように示されません",
       "onLine": "{{check}}（{{line}} 行目）"
+    },
+    "checksHint": {
+      "count_one": "確認事項 {{count}} 件",
+      "count_other": "確認事項 {{count}} 件",
+      "review": "プロンプト全体を DocsGPT でレビュー"
     }
   },
   "common": {

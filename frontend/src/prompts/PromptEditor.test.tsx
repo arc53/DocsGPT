@@ -7,8 +7,18 @@ vi.mock('react-redux', () => ({
   useSelector: () => 'token',
 }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => {
+      const { interpolation: _i, ...rest } = opts ?? {};
+      void _i;
+      return Object.keys(rest).length ? `${key}:${JSON.stringify(rest)}` : key;
+    },
+  }),
 }));
+const checks = vi.hoisted(() => ({
+  check: vi.fn(),
+}));
+vi.mock('./promptChecks', () => ({ checkPrompt: checks.check }));
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
@@ -34,6 +44,8 @@ describe('PromptEditor', () => {
   let root: Root;
 
   beforeEach(() => {
+    checks.check.mockReset();
+    checks.check.mockResolvedValue([]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -115,7 +127,7 @@ describe('PromptEditor', () => {
     const onUndo = vi.fn();
     await render({ draftedContent: { drafted: true, onUndo } });
     const undo = container.querySelector<HTMLButtonElement>(
-      '[aria-label="drafter.undoField"]',
+      '[aria-label^="drafter.undoField"]',
     );
     expect(undo).not.toBeNull();
     await act(async () => undo!.click());
@@ -148,7 +160,7 @@ describe('PromptEditor', () => {
     for (const menu of menus())
       expect((menu as HTMLButtonElement).disabled).toBe(true);
     const undos = container.querySelectorAll<HTMLButtonElement>(
-      '[aria-label="drafter.undoField"]',
+      '[aria-label^="drafter.undoField"]',
     );
     expect(undos).toHaveLength(2);
     for (const undo of undos) {
@@ -156,5 +168,99 @@ describe('PromptEditor', () => {
       await act(async () => undo.click());
     }
     expect(onUndo).not.toHaveBeenCalled();
+  });
+
+  // ---- The checks hint (no model) ----
+
+  const PLACEHOLDER = { code: 'placeholder', text: '[support email]', line: 4 };
+  const DATE = { code: 'repeats_builtin', topic: 'date', line: 3 };
+  const hint = () =>
+    container.querySelector<HTMLElement>('[data-slot="prompt-checks"]');
+  const settle = () =>
+    act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+
+  describe('checks hint', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('checks the text once typing pauses, and folds what it found', async () => {
+      checks.check.mockResolvedValue([
+        PLACEHOLDER,
+        DATE,
+        // The field's own error says this one.
+        { code: 'template_invalid' },
+        { code: 'from_a_newer_server' },
+      ]);
+      await render({ content: 'Hello' });
+      await render({ content: 'Hello there' });
+      expect(checks.check).not.toHaveBeenCalled();
+      await settle();
+      // Only the text it rested on is checked, the older one was dropped.
+      expect(checks.check).toHaveBeenCalledTimes(1);
+      expect(checks.check.mock.calls[0][0]).toBe('Hello there');
+      const toggle = hint()!.querySelector<HTMLButtonElement>('button')!;
+      expect(toggle.textContent).toBe('prompts.checksHint.count:{"count":2}');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      await act(async () => toggle.click());
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(
+        Array.from(hint()!.querySelectorAll('li')).map((li) => li.textContent),
+      ).toEqual([
+        'prompts.checks.placeholder:{"text":"[support email]"}',
+        'prompts.checks.onLine:{"check":"prompts.checks.repeatsBuiltin.date","line":3}',
+      ]);
+      // No review link unless the host can send one.
+      expect(hint()!.querySelectorAll('button')).toHaveLength(1);
+    });
+
+    it('aborts the request a newer text replaced', async () => {
+      const signals: AbortSignal[] = [];
+      checks.check.mockImplementation(
+        (_content: string, _token: string, signal: AbortSignal) => {
+          signals.push(signal);
+          return new Promise(() => undefined);
+        },
+      );
+      await render({ content: 'One' });
+      await settle();
+      await render({ content: 'Two' });
+      expect(signals[0].aborted).toBe(true);
+    });
+
+    it('shows nothing when nothing is found or the check fails', async () => {
+      await render({ content: 'Hello' });
+      await settle();
+      expect(hint()).toBeNull();
+      checks.check.mockResolvedValue(null);
+      await render({ content: 'Hello again' });
+      await settle();
+      expect(hint()).toBeNull();
+    });
+
+    it('offers a full review with the drafter, except while a draft runs', async () => {
+      checks.check.mockResolvedValue([PLACEHOLDER]);
+      const onReview = vi.fn();
+      await render({ onReview });
+      await settle();
+      const link = Array.from(
+        hint()!.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent === 'prompts.checksHint.review')!;
+      await act(async () => link.click());
+      expect(onReview).toHaveBeenCalled();
+      await render({ onReview, locked: true });
+      expect(hint()!.textContent).not.toContain('prompts.checksHint.review');
+    });
+
+    it('checks nothing on a prompt to view or under review', async () => {
+      checks.check.mockResolvedValue([PLACEHOLDER]);
+      await render({ isReadOnly: true });
+      await settle();
+      await render({ review: REVIEW, onDecide: () => undefined });
+      await settle();
+      expect(checks.check).not.toHaveBeenCalled();
+      expect(hint()).toBeNull();
+    });
   });
 });

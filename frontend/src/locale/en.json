@@ -4097,6 +4097,11 @@
       "boundariesMissing": "It has no Boundaries section, so the agent may follow instructions hidden in documents or tool results",
       "citationsMissing": "It doesn't use source.citation_rules, so answers won't cite sources as [1], [2]",
       "onLine": "{{check}} (line {{line}})"
+    },
+    "checksHint": {
+      "count_one": "{{count}} thing to check",
+      "count_other": "{{count}} things to check",
+      "review": "Review the whole prompt with DocsGPT"
     }
   },
   "admin": {

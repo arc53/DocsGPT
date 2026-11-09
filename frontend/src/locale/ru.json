@@ -4329,6 +4329,13 @@
       "boundariesMissing": "В нём нет раздела Boundaries, поэтому агент может выполнить инструкции, спрятанные в документах или результатах инструментов",
       "citationsMissing": "В нём нет source.citation_rules, поэтому ответы не будут ссылаться на источники как [1], [2]",
       "onLine": "{{check}} (строка {{line}})"
+    },
+    "checksHint": {
+      "count_one": "{{count}} пункт для проверки",
+      "count_other": "{{count}} пункта для проверки",
+      "count_few": "{{count}} пункта для проверки",
+      "count_many": "{{count}} пунктов для проверки",
+      "review": "Проверить весь промпт с DocsGPT"
     }
   },
   "common": {

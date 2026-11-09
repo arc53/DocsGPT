@@ -52,11 +52,10 @@ export function promptCheckText(
       );
       break;
     case 'tool_variables': {
+      // A review's server finding carries them joined with ", ".
       const variables = facts.variables?.length
         ? facts.variables
-        : facts.text
-          ? [facts.text]
-          : [];
+        : (facts.text ?? '').split(', ').filter(Boolean);
       text = t('prompts.checks.toolVariables', {
         count: Math.max(variables.length, 1),
         variables: variables.join(', '),

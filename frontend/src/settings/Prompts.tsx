@@ -515,6 +515,15 @@ function PromptDetailPage({
 
   const back = () => (detail.dirty ? setLeaving(true) : detail.close());
 
+  // The checks hint's way to a full review: the drawer opens on it.
+  const reviewFromHint =
+    drafterOn && !readOnly && mode === 'improve'
+      ? () => {
+          setDrawerOpen(true);
+          drafter.startReview(t('drafter.prompt.suggestions.review'));
+        }
+      : undefined;
+
   // A review finding's agent opens as the used-by list opens it: its editor
   // for one the caller may edit, else its chat.
   const openAgent = ({ id }: { id: string }) => {
@@ -619,6 +628,7 @@ function PromptDetailPage({
                 : undefined
             }
             locked={streaming}
+            onReview={reviewFromHint}
           />
           {dialogs}
           {leaveGuard.dialog}

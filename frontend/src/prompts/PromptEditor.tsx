@@ -20,6 +20,7 @@ import { PromptEditReview } from '../drafter/PromptEditReview';
 import type { PromptDecision, PromptReview } from '../drafter/usePromptDrafter';
 import { selectToken } from '../preferences/preferenceSlice';
 import { UserToolType } from '../settings/types';
+import { PromptChecksHint } from './PromptChecksHint';
 import { templateBroken } from './promptTemplate';
 
 const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
@@ -336,6 +337,12 @@ export type PromptEditorProps = {
    * for the text it was sent with.
    */
   locked?: boolean;
+  /**
+   * The checks hint's "Review the whole prompt with DocsGPT": opens the
+   * drafter's drawer and sends Review it. Give it only while the drafter is
+   * on; without it the hint has no link.
+   */
+  onReview?: () => void;
 };
 
 /**
@@ -345,8 +352,10 @@ export type PromptEditorProps = {
  * cursor; a template that won't parse says so under the text (its Save is
  * off: usePromptDetail's `canSave`). The drafter's parts: the Drafted marks with undo, an improve
  * proposal's review in place of the text (its per-change Accept and Reject
- * inline), and `locked` while a draft runs. A prompt to view has the name
- * disabled, the text read-only and no menus.
+ * inline), and `locked` while a draft runs. Under the text, the checks that
+ * need no model (PromptChecksHint) are a folded hint, with a way to the
+ * drafter's review when the host gives one. A prompt to view has the name
+ * disabled, the text read-only, no menus and no hint.
  */
 export function PromptEditor({
   idPrefix,
@@ -362,6 +371,7 @@ export function PromptEditor({
   draftedContent,
   nameError,
   locked = false,
+  onReview,
 }: PromptEditorProps) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -399,29 +409,36 @@ export function PromptEditor({
         {review && onDecide ? (
           <PromptEditReview review={review} onDecide={onDecide} />
         ) : (
-          <DraftedField
-            drafted={draftedContent?.drafted ?? false}
-            onUndo={draftedContent?.onUndo ?? (() => undefined)}
-            undoDisabled={locked}
-            fieldLabel={t('modals.prompts.promptText')}
-          >
-            <FormField
-              label={t('modals.prompts.promptText')}
-              labelSurface="background"
-              error={
-                templateBroken(content)
-                  ? t('modals.prompts.templateBroken')
-                  : undefined
-              }
+          <div className="flex flex-col gap-1.5">
+            <DraftedField
+              drafted={draftedContent?.drafted ?? false}
+              onUndo={draftedContent?.onUndo ?? (() => undefined)}
+              undoDisabled={locked}
+              fieldLabel={t('modals.prompts.promptText')}
             >
-              <PromptTextarea
-                id={textareaId}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                readOnly={isReadOnly || locked}
-              />
-            </FormField>
-          </DraftedField>
+              <FormField
+                label={t('modals.prompts.promptText')}
+                labelSurface="background"
+                error={
+                  templateBroken(content)
+                    ? t('modals.prompts.templateBroken')
+                    : undefined
+                }
+              >
+                <PromptTextarea
+                  id={textareaId}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  readOnly={isReadOnly || locked}
+                />
+              </FormField>
+            </DraftedField>
+            <PromptChecksHint
+              content={content}
+              enabled={!isReadOnly}
+              onReview={locked ? undefined : onReview}
+            />
+          </div>
         )}
       </div>
 
