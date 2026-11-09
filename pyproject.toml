@@ -175,7 +175,7 @@ Changelog = "https://github.com/arc53/DocsGPT/releases"
 [dependency-groups]
 # Mirrors tests/requirements.txt for `uv sync`; pip users install that file.
 dev = [
-  "pytest>=8.0.0",
+  "pytest>=9.0.3",
   "pytest-asyncio>=0.23",
   "pytest-cov>=4.1.0",
   "pytest-xdist>=3.5",
