@@ -167,54 +167,84 @@ REPRESENTATIVE_CORPUS: List[Dict[str, Any]] = [
 EVALUATION_QUERIES = [
     {
         "query": "authentication bearer token",
+        "stable_doc_id": "doc1",
         "target": 'curl -H "Authorization: Bearer $DOCSGPT_API_KEY" https://api.docsgpt.cloud/v1/chat',
-        "expected_code": True,
-        "expected_table": False,
+        "expected_code_block": (
+            "```bash\n"
+            'curl -H "Authorization: Bearer $DOCSGPT_API_KEY" https://api.docsgpt.cloud/v1/chat\n'
+            "```"
+        ),
+        "expected_table_block": None,
         "qualifier": "must not share",
         "expected_claim": "Authenticate via bearer token using curl with the Authorization header [Doc 1]. Keys must not be shared [Doc 1].",
         "cited_docs": [1],
     },
     {
         "query": "api endpoints query parameters",
+        "stable_doc_id": "doc2",
         "target": "| query | string | true | The search question |",
-        "expected_code": False,
-        "expected_table": True,
+        "expected_code_block": None,
+        "expected_table_block": (
+            "| Parameter | Type | Required | Description |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            "| query | string | true | The search question |\n"
+            "| stream | boolean | false | Enable streaming |"
+        ),
         "qualifier": "Never transmit",
         "expected_claim": "The query parameter is a required string for search [Doc 2]. Passwords must never be transmitted over unencrypted HTTP [Doc 2].",
         "cited_docs": [2],
     },
     {
         "query": "rate limits index endpoint",
+        "stable_doc_id": "doc3",
         "target": "Rate limiting applies: maximum 60 requests per minute.",
-        "expected_code": False,
-        "expected_table": False,
+        "expected_code_block": None,
+        "expected_table_block": None,
         "qualifier": None,
         "expected_claim": "The /v1/index endpoint allows rebuilding indices with rate limiting of 60 requests per minute [Doc 3].",
         "cited_docs": [3],
     },
     {
         "query": "Python SDK initialization",
+        "stable_doc_id": "doc4",
         "target": "client = DocsGPTClient(api_key='your-api-key')",
-        "expected_code": True,
-        "expected_table": False,
+        "expected_code_block": (
+            "```python\n"
+            "from docsgpt import DocsGPTClient\n\n"
+            "client = DocsGPTClient(api_key='your-api-key')\n"
+            "response = client.ask('How do I configure vector storage?')\n"
+            "```"
+        ),
+        "expected_table_block": None,
         "qualifier": "Deprecated",
         "expected_claim": "Initialize the Python client with DocsGPTClient(api_key=...) [Doc 4]. Deprecated v1 methods should not be used [Doc 4].",
         "cited_docs": [4],
     },
     {
         "query": "vector shard dimensions and metric",
+        "stable_doc_id": "doc5",
         "target": "| shard-01 | 1536 | cosine | ACTIVE |",
-        "expected_code": False,
-        "expected_table": True,
+        "expected_code_block": None,
+        "expected_table_block": (
+            "| Shard ID | Dimension | Metric | Status |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            "| shard-01 | 1536 | cosine | ACTIVE |\n"
+            "| shard-02 | 1536 | cosine | ACTIVE |"
+        ),
         "qualifier": "must not be interrupted",
         "expected_claim": "Vector shards use dimension 1536 and cosine metric [Doc 5]. Shard rebalancing must not be interrupted [Doc 5].",
         "cited_docs": [5],
     },
     {
         "query": "webhook signature payload",
+        "stable_doc_id": "doc6",
         "target": '{"event": "source.indexed", "source_id": "src_12345", "status": "completed"}',
-        "expected_code": True,
-        "expected_table": False,
+        "expected_code_block": (
+            "```json\n"
+            '{"event": "source.indexed", "source_id": "src_12345", "status": "completed"}\n'
+            "```"
+        ),
+        "expected_table_block": None,
         "qualifier": "must verify",
         "expected_claim": "Webhook events use HMAC-SHA256 signatures which recipients must verify before processing [Doc 6].",
         "cited_docs": [6],
@@ -298,6 +328,9 @@ def run_pipeline_benchmark(
 
     supercompress_ran = False
     fallback_count = 0
+    total_safeguard_fallbacks = 0
+    total_conflict_fallbacks = 0
+    total_error_fallbacks = 0
 
     for item in EVALUATION_QUERIES:
         query = item["query"]
@@ -312,7 +345,12 @@ def run_pipeline_benchmark(
                 "url": d["url"],
                 "filename": f"{d['id']}.md",
                 "page_content": d["text"],
-                "metadata": {"source_id": d["source"], "title": d["title"], "url": d["url"]},
+                "metadata": {
+                    "source_id": d["source"],
+                    "title": d["title"],
+                    "url": d["url"],
+                    "filename": f"{d['id']}.md",
+                },
             }
             for d in raw_corpus
         ]
@@ -354,21 +392,22 @@ def run_pipeline_benchmark(
         t_ret = (time.perf_counter() - t0_ret) * 1000
         retrieval_latencies.append(t_ret)
 
-        # Step 2: Compression / Boilerplate Pruning
+        # Step 2: Compression / Boilerplate Pruning with internal fallback tracking
         t0_comp = time.perf_counter()
+        query_stats: Dict[str, int] = {}
         if compression_mode == "off":
             pass  # Uncompressed baseline
         elif compression_mode == "intree":
             retrieved_docs = prune_boilerplate(retrieved_docs, query=query)
         elif compression_mode == "supercompress":
-            try:
-                import supercompress  # noqa: F401
+            retrieved_docs = compress_retrieved_chunks(retrieved_docs, query=query, stats=query_stats)
+            if query_stats.get("neural_success", 0) > 0 and query_stats.get("safeguard_fallback", 0) == 0:
                 supercompress_ran = True
-                retrieved_docs = compress_retrieved_chunks(retrieved_docs, query=query)
-            except (ImportError, Exception):
-                supercompress_ran = False
+            else:
                 fallback_count += 1
-                retrieved_docs = prune_boilerplate(retrieved_docs, query=query)
+            total_safeguard_fallbacks += query_stats.get("safeguard_fallback", 0)
+            total_conflict_fallbacks += query_stats.get("conflict_fallback", 0)
+            total_error_fallbacks += query_stats.get("error_fallback", 0)
         t_comp = (time.perf_counter() - t0_comp) * 1000
         compression_latencies.append(t_comp)
 
@@ -402,25 +441,30 @@ def run_pipeline_benchmark(
         total_prompt_tokens += prompt_tokens
         total_context_tokens += context_tokens
 
-        # Content preservation checks against the specific retrieved source document
-        if item["cited_docs"] and item["cited_docs"][0] <= len(retrieved_docs):
-            cited_doc = retrieved_docs[item["cited_docs"][0] - 1]
-            doc_text = cited_doc.get("text", "")
+        # Content preservation checks against stable source document ID / filename
+        target_doc = next(
+            (
+                d for d in retrieved_docs
+                if d.get("id") == item["stable_doc_id"]
+                or d.get("filename") in {item["stable_doc_id"], f"{item['stable_doc_id']}.md"}
+            ),
+            None,
+        )
 
-            if item["expected_code"]:
-                expected_code_blocks += 1
-                if item["target"] in doc_text and "```" in doc_text:
-                    code_blocks_preserved += 1
+        if item.get("expected_code_block"):
+            expected_code_blocks += 1
+            if target_doc is not None and item["expected_code_block"] in target_doc.get("text", ""):
+                code_blocks_preserved += 1
 
-            if item["expected_table"]:
-                expected_tables += 1
-                if item["target"] in doc_text and "|" in doc_text:
-                    tables_preserved += 1
+        if item.get("expected_table_block"):
+            expected_tables += 1
+            if target_doc is not None and item["expected_table_block"] in target_doc.get("text", ""):
+                tables_preserved += 1
 
-            if item["qualifier"]:
-                expected_qualifiers += 1
-                if item["qualifier"].lower() in doc_text.lower():
-                    qualifiers_preserved += 1
+        if item.get("qualifier"):
+            expected_qualifiers += 1
+            if target_doc is not None and item["qualifier"].lower() in target_doc.get("text", "").lower():
+                qualifiers_preserved += 1
 
     num_queries = len(EVALUATION_QUERIES)
     avg_prompt_tokens = total_prompt_tokens // num_queries
@@ -442,6 +486,9 @@ def run_pipeline_benchmark(
         "mode": compression_mode,
         "supercompress_ran": supercompress_ran,
         "fallback_count": fallback_count,
+        "safeguard_fallbacks": total_safeguard_fallbacks,
+        "conflict_fallbacks": total_conflict_fallbacks,
+        "error_fallbacks": total_error_fallbacks,
         "avg_prompt_tokens": avg_prompt_tokens,
         "avg_context_tokens": avg_context_tokens,
         "cost_per_million": cost_per_million,
@@ -491,7 +538,15 @@ def main():
             if res["supercompress_ran"] and res["fallback_count"] == 0:
                 sc_status = "Ran successfully via neural model (0 fallbacks)"
             else:
-                sc_status = f"Fell back to in-tree pruning ({res['fallback_count']}/{len(EVALUATION_QUERIES)} queries fell back; package not installed or rejected)"
+                reasons = []
+                if res["error_fallbacks"]:
+                    reasons.append(f"{res['error_fallbacks']} package absent/error")
+                if res["safeguard_fallbacks"]:
+                    reasons.append(f"{res['safeguard_fallbacks']} safeguard rejected")
+                if res["conflict_fallbacks"]:
+                    reasons.append(f"{res['conflict_fallbacks']} macOS conflict")
+                reason_str = ", ".join(reasons) if reasons else "package absent"
+                sc_status = f"Fell back to in-tree pruning ({res['fallback_count']}/{len(EVALUATION_QUERIES)} queries fell back: {reason_str})"
             print(f"  * Execution Status:         {sc_status}")
         print(f"  * Context Tokens:           {res['avg_context_tokens']}")
         print(f"  * Full Prompt Tokens:       {res['avg_prompt_tokens']}")
@@ -500,8 +555,8 @@ def main():
         print(f"  * Pipeline Latency (Synth): {res['avg_e2e_latency']:.2f} ms")
         print(f"  * Context Fact Retention:   {res['oracle_accuracy_pct']:.1f}%")
         print(f"  * Citation Header Grounding: {res['supported_citations_pct']:.1f}%")
-        print(f"  * Code Blocks Kept:         {res['code_pct']:.1f}%")
-        print(f"  * Tables Kept:              {res['table_pct']:.1f}%")
+        print(f"  * Code Blocks Preserved:    {res['code_pct']:.1f}%")
+        print(f"  * Tables Preserved:         {res['table_pct']:.1f}%")
         print(f"  * Qualifiers Kept:          {res['qualifier_pct']:.1f}%\n")
 
     classic_intree_token_savings = ((classic_off["avg_context_tokens"] - classic_intree["avg_context_tokens"]) / classic_off["avg_context_tokens"]) * 100
@@ -519,11 +574,11 @@ def main():
         f"| **Prompt Cost / 1M Queries** | ${classic_off['cost_per_million']:.2f} | ${classic_intree['cost_per_million']:.2f} | ${disp_off['cost_per_million']:.2f} | ${disp_intree['cost_per_million']:.2f} | **Save ${classic_intree_cost_savings:.2f} - ${disp_intree_cost_savings:.2f} per 1M Qs** |",
         f"| **Context Fact Retention** | {classic_off['oracle_accuracy_pct']:.1f}% | {classic_intree['oracle_accuracy_pct']:.1f}% | {disp_off['oracle_accuracy_pct']:.1f}% | {disp_intree['oracle_accuracy_pct']:.1f}% | **{classic_intree['oracle_accuracy_pct']:.1f}% key facts retained** |",
         f"| **Citation Header Grounding** | {classic_off['supported_citations_pct']:.1f}% | {classic_intree['supported_citations_pct']:.1f}% | {disp_off['supported_citations_pct']:.1f}% | {disp_intree['supported_citations_pct']:.1f}% | **{classic_intree['supported_citations_pct']:.1f}% headers grounded** |",
-        f"| **Code Blocks Preserved** | {classic_off['code_pct']:.1f}% | {classic_intree['code_pct']:.1f}% | {disp_off['code_pct']:.1f}% | {disp_intree['code_pct']:.1f}% | **{classic_intree['code_pct']:.1f}% code blocks intact in source** |",
-        f"| **Markdown Tables Preserved** | {classic_off['table_pct']:.1f}% | {classic_intree['table_pct']:.1f}% | {disp_off['table_pct']:.1f}% | {disp_intree['table_pct']:.1f}% | **{classic_intree['table_pct']:.1f}% tables intact in source** |",
+        f"| **Code Blocks Preserved** | {classic_off['code_pct']:.1f}% | {classic_intree['code_pct']:.1f}% | {disp_off['code_pct']:.1f}% | {disp_intree['code_pct']:.1f}% | **{classic_intree['code_pct']:.1f}% complete code blocks intact** |",
+        f"| **Markdown Tables Preserved** | {classic_off['table_pct']:.1f}% | {classic_intree['table_pct']:.1f}% | {disp_off['table_pct']:.1f}% | {disp_intree['table_pct']:.1f}% | **{classic_intree['table_pct']:.1f}% complete tables intact** |",
         f"| **Qualifiers & Warnings Kept** | {classic_off['qualifier_pct']:.1f}% | {classic_intree['qualifier_pct']:.1f}% | {disp_off['qualifier_pct']:.1f}% | {disp_intree['qualifier_pct']:.1f}% | **{classic_intree['qualifier_pct']:.1f}% security warnings intact** |",
         f"| **Pruning Overhead Latency** | 0.00 ms | +{classic_intree['avg_comp_latency']:.2f} ms | 0.00 ms | +{disp_intree['avg_comp_latency']:.2f} ms | **Negligible (~{classic_intree['avg_comp_latency']:.2f}ms overhead)** |",
-        f"| **Pipeline Latency (Synthetic)** | {classic_off['avg_e2e_latency']:.2f} ms | {classic_intree['avg_e2e_latency']:.2f} ms | {disp_off['avg_e2e_latency']:.2f} ms | {disp_intree['avg_e2e_latency']:.2f} ms | **Sub-10ms in-memory assembly latency** |",
+        f"| **Pipeline Latency (Synthetic)** | {classic_off['avg_e2e_latency']:.2f} ms | {classic_intree['avg_e2e_latency']:.2f} ms | {disp_off['avg_e2e_latency']:.2f} ms | {disp_intree['avg_e2e_latency']:.2f} ms | **Pruning adds ~{classic_intree['avg_comp_latency']:.2f}ms in-memory overhead** |",
     ]
     print("\n".join(table))
 

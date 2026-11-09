@@ -367,6 +367,17 @@ def _mac_torch_faiss_conflict() -> bool:
         return True
 
 
+_SAFEGUARD_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "do", "does", "did", "have", "has", "had", "having",
+    "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them",
+    "how", "what", "why", "when", "where", "which", "who", "whom", "whose",
+    "to", "of", "in", "on", "for", "and", "or", "with", "at", "by", "from",
+    "my", "your", "his", "their", "our", "its", "this", "that", "these", "those",
+    "can", "could", "should", "would", "may", "might", "will", "shall",
+}
+
+
 def _extract_protected_elements(
     text: str,
     query: str = "",
@@ -382,6 +393,7 @@ def _extract_protected_elements(
     active_fence = _normalize_fence_state(initial_active_fence)
     current_fence_lines: List[str] = []
     query_tokens = _tokenize_query(query)
+    content_query_tokens = {t for t in query_tokens if t not in _SAFEGUARD_STOPWORDS}
 
     for line in lines:
         stripped = line.strip()
@@ -405,13 +417,13 @@ def _extract_protected_elements(
             current_fence_lines = [line]
             continue
 
-        # Indented code blocks (4+ spaces or tab) and inline code spans
+        # Indented code blocks (4+ spaces or tab): preserve verbatim with original indentation
         if (line.startswith("    ") or line.startswith("\t")) and stripped:
-            fenced_blocks.append(stripped)
+            fenced_blocks.append(line.rstrip("\r\n"))
         elif "`" in stripped:
-            for ic in re.findall(r"`+([^`]+)`+", stripped):
-                if ic.strip():
-                    fenced_blocks.append(f"`{ic.strip()}`")
+            # Inline code spans: preserve exact multi-backtick delimiters and content
+            for span in re.findall(r"`+[^`]+`+", line):
+                fenced_blocks.append(span)
 
         # Table rows: any line containing a pipe delimiter (e.g. '| col1 | col2 |' or 'Name | Type')
         if "|" in line and not stripped.startswith("#"):
@@ -422,9 +434,9 @@ def _extract_protected_elements(
         if words.intersection(_PROTECTED_QUALIFIERS):
             warning_lines.append(stripped)
 
-        # Query-bearing lines: factual lines matching query tokens (preserving numbers and details verbatim)
-        if query_tokens and not _NAV_CONTROL_RE.match(stripped) and not _BREADCRUMB_RE.match(stripped):
-            line_terms = query_tokens.intersection(_tokenize_terms(stripped.lower()))
+        # Query-bearing lines: factual lines matching content query tokens (preserving numbers and details verbatim)
+        if content_query_tokens and not _NAV_CONTROL_RE.match(stripped) and not _BREADCRUMB_RE.match(stripped):
+            line_terms = content_query_tokens.intersection(_tokenize_terms(stripped.lower()))
             if line_terms:
                 query_bearing_lines.append(stripped)
 
@@ -440,6 +452,7 @@ def _enforce_supercompress_safeguards(
     query: str = "",
     seen_boilerplate: Optional[Set[str]] = None,
     initial_active_fence: Optional[Tuple[str, int]] = None,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """Enforces verbatim preservation of code blocks, tables, qualifiers, and query-bearing lines.
 
@@ -448,6 +461,8 @@ def _enforce_supercompress_safeguards(
     boilerplate pruning for that chunk.
     """
     if not compressed_text or not isinstance(compressed_text, str):
+        if stats is not None:
+            stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
         return prune_chunk_text(
             original_text,
             query=query,
@@ -459,9 +474,11 @@ def _enforce_supercompress_safeguards(
         original_text, query=query, initial_active_fence=initial_active_fence
     )
 
-    # 1. Code blocks must be preserved verbatim (not just fence presence)
+    # 1. Code blocks must be preserved verbatim (including original indentation and backtick delimiters)
     for block in orig_blocks:
         if block not in compressed_text:
+            if stats is not None:
+                stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
             return prune_chunk_text(
                 original_text,
                 query=query,
@@ -472,6 +489,8 @@ def _enforce_supercompress_safeguards(
     # 2. Table rows must be preserved verbatim (no deleted or modified rows like 'Name | Type')
     for row in orig_tables:
         if row not in compressed_text:
+            if stats is not None:
+                stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
             return prune_chunk_text(
                 original_text,
                 query=query,
@@ -482,6 +501,8 @@ def _enforce_supercompress_safeguards(
     # 3. Warning and qualifier-bearing lines must be preserved verbatim
     for warning in orig_warnings:
         if warning not in compressed_text:
+            if stats is not None:
+                stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
             return prune_chunk_text(
                 original_text,
                 query=query,
@@ -492,6 +513,8 @@ def _enforce_supercompress_safeguards(
     # 4. Query-bearing factual lines must be preserved verbatim (e.g. preventing '24 hours' changing to '12 hours')
     for qline in orig_query_lines:
         if qline not in compressed_text:
+            if stats is not None:
+                stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
             return prune_chunk_text(
                 original_text,
                 query=query,
@@ -499,18 +522,24 @@ def _enforce_supercompress_safeguards(
                 initial_active_fence=initial_active_fence,
             )
 
-    # 5. ALL query terms present in the original chunk must be preserved (not just one term)
+    # 5. ALL content-bearing query terms present in the original chunk must be preserved (excluding stopwords)
     query_tokens = _tokenize_query(query)
-    if query_tokens:
-        orig_query_terms = query_tokens.intersection(_tokenize_terms(original_text.lower()))
-        comp_query_terms = query_tokens.intersection(_tokenize_terms(compressed_text.lower()))
+    content_query_tokens = {t for t in query_tokens if t not in _SAFEGUARD_STOPWORDS}
+    if content_query_tokens:
+        orig_query_terms = content_query_tokens.intersection(_tokenize_terms(original_text.lower()))
+        comp_query_terms = content_query_tokens.intersection(_tokenize_terms(compressed_text.lower()))
         if not orig_query_terms.issubset(comp_query_terms):
+            if stats is not None:
+                stats["safeguard_fallback"] = stats.get("safeguard_fallback", 0) + 1
             return prune_chunk_text(
                 original_text,
                 query=query,
                 seen_boilerplate=seen_boilerplate,
                 initial_active_fence=initial_active_fence,
             )
+
+    if stats is not None:
+        stats["neural_success"] = stats.get("neural_success", 0) + 1
 
     # Apply in-tree boilerplate pruning on the compressed text as final pass with shared deduplication state
     return prune_chunk_text(
@@ -521,14 +550,28 @@ def _enforce_supercompress_safeguards(
     )
 
 
-def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
+def compress_retrieved_chunks(
+    docs: List[Dict[str, Any]],
+    query: str = "",
+    stats: Optional[Dict[str, int]] = None,
+) -> List[Dict[str, Any]]:
     """Compresses retrieved chunks using SuperCompress when available, falling back to in-tree boilerplate pruning."""
     if not docs:
         return docs
 
+    if stats is not None:
+        stats.setdefault("attempted", 0)
+        stats.setdefault("neural_success", 0)
+        stats.setdefault("safeguard_fallback", 0)
+        stats.setdefault("conflict_fallback", 0)
+        stats.setdefault("error_fallback", 0)
+        stats["attempted"] += len(docs)
+
     # On macOS, PyTorch and FAISS cannot share the same process without aborting.
     # Fall back to in-tree boilerplate pruning when they would share a macOS process.
     if _mac_torch_faiss_conflict():
+        if stats is not None:
+            stats["conflict_fallback"] += len(docs)
         return prune_boilerplate(docs, query=query or "")
 
     try:
@@ -576,10 +619,12 @@ def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> Li
                     query=query or "",
                     seen_boilerplate=seen_boilerplate,
                     initial_active_fence=initial_active_fence,
+                    stats=stats,
                 )
         return docs
     except (ImportError, Exception):
-        pass
+        if stats is not None:
+            stats["error_fallback"] += len(docs)
 
     return prune_boilerplate(docs, query=query or "")
 

@@ -862,6 +862,25 @@ class TestCompressingRetrieverIntegration:
             assert "Name | Type" in res7[0]["text"]
             assert "query | string" in res7[0]["text"]
 
+        # 8. De-indented code block (e.g. 4 spaces de-indented to 0 spaces) must fall back
+        orig_indented = "Home > API\n    def execute():\n        return True\nNext page"
+        bad_deindented = "Home > API\ndef execute():\nreturn True\nNext page"
+        mock_module_8 = Mock(compress_for_turn=Mock(return_value=(bad_deindented, Mock())))
+        docs8 = [{"id": "8", "text": orig_indented}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_8}):
+            res8 = compress_retrieved_chunks(docs8, query="execute function")
+            assert "    def execute():" in res8[0]["text"]
+            assert "        return True" in res8[0]["text"]
+
+        # 9. Multi-backtick inline code span (e.g. ``foo`bar`` changed to `foo`) must fall back
+        orig_multibacktick = "Home > API\nUse ``python -m pytest`` to test.\nNext page"
+        bad_multibacktick = "Home > API\nUse `python -m pytest` to test.\nNext page"
+        mock_module_9 = Mock(compress_for_turn=Mock(return_value=(bad_multibacktick, Mock())))
+        docs9 = [{"id": "9", "text": orig_multibacktick}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_9}):
+            res9 = compress_retrieved_chunks(docs9, query="pytest")
+            assert "``python -m pytest``" in res9[0]["text"]
+
     def test_supercompress_installed_api_when_present(self, monkeypatch):
         """Tests real installed SuperCompress API if present in environment, ensuring it reaches safeguards."""
         if sys.platform == "darwin":
@@ -869,7 +888,10 @@ class TestCompressingRetrieverIntegration:
             if _mac_torch_faiss_conflict():
                 pytest.skip("PyTorch and FAISS collide on macOS")
         supercompress = pytest.importorskip("supercompress")
-        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+        from docsgpt.retriever.stages.boilerplate_pruning import (
+            _enforce_supercompress_safeguards,
+            compress_retrieved_chunks,
+        )
 
         monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
 
@@ -882,9 +904,11 @@ class TestCompressingRetrieverIntegration:
         assert direct_out is not None
 
         # 2. Call via compress_retrieved_chunks and verify compress_for_turn is invoked and output reaches safeguards
-        with patch.object(supercompress, "compress_for_turn", wraps=supercompress.compress_for_turn) as spy:
-            res = compress_retrieved_chunks(docs, query="content")
-            spy.assert_called_once()
+        stats: dict = {}
+        with patch("docsgpt.retriever.stages.boilerplate_pruning._enforce_supercompress_safeguards", wraps=_enforce_supercompress_safeguards) as spy_safeguard:
+            res = compress_retrieved_chunks(docs, query="content", stats=stats)
+            spy_safeguard.assert_called_once()
+            assert stats.get("error_fallback", 0) == 0
             assert len(res) == 1
             assert "Factual chunk content." in res[0]["text"]
 
@@ -970,8 +994,7 @@ class TestCompressingRetrieverIntegration:
                         m.last_outcome = None
                         return m
 
-                    patcher = patch.object(Dispatcher, "_build_group_retriever", side_effect=make_group_retriever)
-                    patcher.start()
+                    monkeypatch.setattr(Dispatcher, "_build_group_retriever", lambda self, group, budget: make_group_retriever(group, budget))
 
                     retriever_off = build_dispatcher(
                         create_classic,
@@ -986,6 +1009,7 @@ class TestCompressingRetrieverIntegration:
 
                 res_off = retriever_off.search("tokens")
                 off_titles = [d.get("title") for d in res_off]
+                off_files = [d.get("filename") for d in res_off]
                 # Compare full disabled text output against original candidate text
                 assert res_off[0]["text"] == doc_a["page_content"]
                 assert res_off[1]["text"] == doc_b["page_content"]
@@ -1017,18 +1041,22 @@ class TestCompressingRetrieverIntegration:
 
                 res_on = retriever_on.search("tokens")
                 on_titles = [d.get("title") for d in res_on]
-
-                if retrieval_mode == "multi_group":
-                    patcher.stop()
+                on_files = [d.get("filename") for d in res_on]
 
                 # Invariant checks:
-                # A. Full list comparison: exact same documents and order (NOT sliced)
-                assert on_titles == off_titles == ["Auth", "Permissions"]
-                # B. Verify boundary candidate doc_c was excluded by token budget
-                assert "Logs" not in on_titles
-                assert "Logs" not in off_titles
+                # A. Candidate pool size and returned selection count
+                assert len(raw_candidates) == 3
                 assert len(on_titles) == len(off_titles) == 2
-                # C. Enabled text output prunes navigation boilerplate
+
+                # B. Full list comparison: exact same stable document titles/filenames and order (NOT sliced)
+                assert on_files == off_files == ["auth.md", "permissions.md"]
+                assert on_titles == off_titles == ["Auth", "Permissions"]
+
+                # C. Verify boundary candidate doc_c was excluded by real token budget selection
+                assert "logs.md" not in on_files and "logs.md" not in off_files
+                assert "Logs" not in on_titles and "Logs" not in off_titles
+
+                # D. Enabled text output prunes navigation boilerplate while disabled text preserves it
                 assert "Home > Security > Auth" not in res_on[0]["text"]
                 assert "Next page: Permissions" not in res_on[0]["text"]
                 assert "Token expires in 3600 seconds" in res_on[0]["text"]
