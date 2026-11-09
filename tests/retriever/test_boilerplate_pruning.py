@@ -509,16 +509,34 @@ class TestCompressingRetrieverIntegration:
         res = retriever.search("setup")
         assert res[0]["text"] == "Setup guide."
 
-    def test_candidate_snapshot_preserves_pre_pruning_text_and_identity(self):
+    def test_candidate_snapshot_preserves_pre_pruning_text_and_identity(self, monkeypatch):
+        """Candidate recording through Dispatcher preserves pre-pruning text in candidate snapshots."""
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
+
         doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1."}
-        mock_inner = Mock()
-        mock_inner.search.return_value = [doc1]
-        mock_inner.last_candidates = [{"doc": doc1, "snapshot": dict(doc1), "base": True, "relevance": 0.9}]
-        retriever = CompressingRetriever(mock_inner)
+        mock_group_retriever = Mock()
+        mock_group_retriever.search.return_value = [doc1]
+        mock_group_retriever.last_outcome = None
+
+        monkeypatch.setattr(
+            Dispatcher,
+            "_build_group_retriever",
+            lambda self, group, budget: mock_group_retriever,
+        )
+
+        retriever = build_dispatcher(
+            lambda: None,
+            source={"active_docs": ["s1"], "question": "chunk"},
+            record_candidates=True,
+        )
+        assert isinstance(retriever, CompressingDispatcher)
         res = retriever.search("chunk")
+
         assert res[0] is doc1
         assert res[0]["text"] == "Factual chunk 1."
         assert retriever.last_candidates[0]["doc"] is doc1
+        # Snapshot was recorded by Dispatcher._stage_group before pruning ran and retains original text
         assert retriever.last_candidates[0]["snapshot"]["text"] == "Home > API\nFactual chunk 1."
 
     def test_compressing_retriever_delegates_last_outcome(self):
@@ -601,6 +619,7 @@ class TestCompressingRetrieverIntegration:
         monkeypatch.setattr(type(engine), "_authorized_node_sources", lambda self, s: list(s or []))
         monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
         monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
+        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
 
         mock_result = ("SuperCompressed workflow text", Mock())
         mock_compress_for_turn = Mock(return_value=mock_result)
@@ -630,8 +649,9 @@ class TestCompressingRetrieverIntegration:
         assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
         assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
 
-    def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self):
+    def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self, monkeypatch):
         """Integrate SuperCompress between retrieval and generation with automated delegation tests."""
+        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
         mock_result_1 = ("SuperCompressed chunk 1", Mock())
         mock_result_2 = ("SuperCompressed chunk 2", Mock())
         mock_compress_for_turn = Mock(side_effect=[mock_result_1, mock_result_2])
@@ -694,8 +714,9 @@ class TestCompressingRetrieverIntegration:
             assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
             assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
 
-    def test_compress_retrieved_chunks_handles_tuple_and_object_returns(self):
+    def test_compress_retrieved_chunks_handles_tuple_and_object_returns(self, monkeypatch):
         """SuperCompress 0.5.0 returns a tuple (compressed_text, CompressResult); text must be extracted."""
+        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
         from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
 
         # Tuple return (SuperCompress 0.5.0 API)
