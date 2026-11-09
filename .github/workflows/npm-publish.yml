@@ -10,14 +10,15 @@ on:
         required: true
         default: patch
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
     environment: npm-release
     defaults:
       run:

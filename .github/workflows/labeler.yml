@@ -2,6 +2,8 @@
 name: Pull Request Labeler
 on:
   - pull_request_target
+permissions: {}
+
 jobs:
   triage:
     if: github.repository == 'arc53/DocsGPT'
