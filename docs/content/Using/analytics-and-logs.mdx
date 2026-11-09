@@ -1,7 +1,7 @@
 ---
 title: Analytics and Logs
 description: Read the Analytics charts, the Insights figures and docs gaps, filter the Logs list by label and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-11-06
+lastUpdated: 2026-11-09
 ---
 
 import { Callout } from 'nextra/components'
@@ -177,7 +177,7 @@ A page is listed by its title, without the ending every listed title shares (suc
 | **Change** | Against the period of the same length just before: an up arrow and the rise (more gaps), a down arrow and the fall, **New**, or a minus sign for no change. Only the arrows are coloured: up red, down green. It shows **—** while the period before has no analyzed answers, as in the first weeks. |
 | **Example question** | The likeliest gap in the group. |
 
-Groups with less than half an expected gap are left out, and the table lists up to 25. Select a row for its figures (**Gaps**, **Share of questions** and **Previous period**) and up to five example questions: answers in the group that are a gap at even odds or better, likeliest first. Grouped by page, the panel names the page, then its source, then its URL. An example opens Logs on that conversation; **See every docs gap in Logs** opens Logs filtered to docs gaps.
+Groups with less than half an expected gap are left out, and the table lists up to 25. Select a row for its figures (**Gaps**, **Share of questions** and **Previous period**) and up to five example questions: answers in the group that are a gap at even odds or better, likeliest first. Grouped by page, the panel names the page, then its source, then its URL. An example opens Logs on that conversation; **See every docs gap in Logs** opens Logs filtered to docs gaps. On an agent's own Insights page, someone who can edit the agent also gets **Improve the agent** under the panel's title, which opens the agent with [Draft with DocsGPT](/Agents/draft-with-docsgpt#fix-what-insights-found) already working on that gap.
 
 **Export CSV** downloads the table for the current grouping and period, with each page's full title and source, unrounded numbers, each figure's range (`gaps_low`, `gaps_high`, `share_low`, `share_high`) and the example questions. A cell that a spreadsheet would read as a formula is prefixed with `'`.
 
@@ -253,6 +253,7 @@ A row has a label when the model gives it even odds or better (`ANALYTICS_FILTER
 - **Docs gap** takes the place of **Not fully answered** on the same row, since a gap is one kind of it, and **Frustrated** takes the place of **Negative sentiment**.
 - A row shows up to three chips, and **+2** for the rest.
 - An example question under [Docs gaps](#docs-gaps) opens Logs on its conversation, shown as a **Conversation** chip in the filter row. Remove the chip to see every conversation again.
+- An expanded chat row with an amber label or a thumbs-down has **Improve the agent** next to **View trace**, for someone who can edit that row's agent: it opens the agent with [Draft with DocsGPT](/Agents/draft-with-docsgpt#fix-what-insights-found) working from that conversation.
 
 ## Execution traces
 
