@@ -367,49 +367,96 @@ def _mac_torch_faiss_conflict() -> bool:
         return True
 
 
-def _enforce_supercompress_safeguards(original_text: str, compressed_text: str, query: str = "") -> str:
-    """Enforces code blocks, tables, qualifiers, and query-term preservation on SuperCompress outputs.
+def _extract_protected_elements(
+    text: str,
+    initial_active_fence: Optional[Tuple[str, int]] = None,
+) -> Tuple[List[str], List[str], List[str]]:
+    """Extracts verbatim fenced code blocks, table rows, and qualifier/warning sentences."""
+    lines = text.split("\n")
+    fenced_blocks: List[str] = []
+    table_rows: List[str] = []
+    warning_lines: List[str] = []
 
-    If the compressed text strips critical safeguards present in the original text, falls back
-    to in-tree boilerplate pruning for that chunk.
+    active_fence = _normalize_fence_state(initial_active_fence)
+    current_fence_lines: List[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        fence_match = _FENCE_START_RE.match(stripped)
+
+        if active_fence is not None:
+            current_fence_lines.append(line)
+            char, length = active_fence
+            if stripped.startswith(char * length) and not stripped.strip(char):
+                fenced_blocks.append("\n".join(current_fence_lines))
+                current_fence_lines = []
+                active_fence = None
+            continue
+
+        if fence_match:
+            char = fence_match.group(1)
+            length = len(fence_match.group(0))
+            active_fence = (char, length)
+            current_fence_lines = [line]
+            continue
+
+        # Table rows: lines with pipes separating columns or markdown table borders
+        if "|" in line and (stripped.startswith("|") or stripped.count("|") >= 2):
+            table_rows.append(stripped)
+
+        # Warning / qualifier sentences: lines containing protected qualifiers
+        words = set(re.findall(r"\b[\w']+\b", stripped.lower().replace("\u2019", "'").replace("\u2018", "'")))
+        if words.intersection(_PROTECTED_QUALIFIERS):
+            warning_lines.append(stripped)
+
+    if current_fence_lines:
+        fenced_blocks.append("\n".join(current_fence_lines))
+
+    return fenced_blocks, table_rows, warning_lines
+
+
+def _enforce_supercompress_safeguards(
+    original_text: str,
+    compressed_text: str,
+    query: str = "",
+    initial_active_fence: Optional[Tuple[str, int]] = None,
+) -> str:
+    """Enforces verbatim preservation of code blocks, tables, qualifiers, and query terms.
+
+    If the compressed text drops or alters protected content (code blocks, table rows,
+    warning/qualifier sentences, or any matched query terms), falls back to in-tree
+    boilerplate pruning for that chunk.
     """
     if not compressed_text or not isinstance(compressed_text, str):
-        return prune_chunk_text(original_text, query=query)
+        return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    orig_lines = original_text.split("\n")
+    orig_blocks, orig_tables, orig_warnings = _extract_protected_elements(original_text, initial_active_fence)
 
-    # 1. Code blocks preservation: if original had code fences, compressed must keep them
-    orig_has_fence = any(_FENCE_START_RE.match(l.strip()) for l in orig_lines)
-    comp_has_fence = any(_FENCE_START_RE.match(l.strip()) for l in compressed_text.split("\n"))
-    if orig_has_fence and not comp_has_fence:
-        return prune_chunk_text(original_text, query=query)
+    # 1. Code blocks must be preserved verbatim (not just fence presence)
+    for block in orig_blocks:
+        if block not in compressed_text:
+            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    # 2. Markdown tables preservation: if original had tables, compressed must keep them
-    orig_has_table = any(l.strip().startswith("|") for l in orig_lines)
-    comp_has_table = any(l.strip().startswith("|") for l in compressed_text.split("\n"))
-    if orig_has_table and not comp_has_table:
-        return prune_chunk_text(original_text, query=query)
+    # 2. Table rows must be preserved verbatim (no deleted or modified rows)
+    for row in orig_tables:
+        if row not in compressed_text:
+            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    # 3. Protected qualifiers preservation (caution, warning, never, deprecated, don't, etc.)
-    orig_qualifiers: Set[str] = set()
-    for line in orig_lines:
-        words = set(re.findall(r"\b[\w']+\b", line.lower().replace("\u2019", "'").replace("\u2018", "'")))
-        orig_qualifiers.update(words.intersection(_PROTECTED_QUALIFIERS))
+    # 3. Warning and qualifier-bearing lines must be preserved verbatim
+    for warning in orig_warnings:
+        if warning not in compressed_text:
+            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    comp_words = set(re.findall(r"\b[\w']+\b", compressed_text.lower().replace("\u2019", "'").replace("\u2018", "'")))
-    if not orig_qualifiers.issubset(comp_words):
-        return prune_chunk_text(original_text, query=query)
-
-    # 4. Query-term preservation: if query terms were present in original, they must not be eliminated
+    # 4. ALL query terms present in the original chunk must be preserved (not just one term)
     query_tokens = _tokenize_query(query)
     if query_tokens:
         orig_query_terms = query_tokens.intersection(_tokenize_terms(original_text.lower()))
         comp_query_terms = query_tokens.intersection(_tokenize_terms(compressed_text.lower()))
-        if orig_query_terms and not comp_query_terms:
-            return prune_chunk_text(original_text, query=query)
+        if not orig_query_terms.issubset(comp_query_terms):
+            return prune_chunk_text(original_text, query=query, initial_active_fence=initial_active_fence)
 
-    # Apply in-tree boilerplate pruning on the compressed text as an additional pass
-    return prune_chunk_text(compressed_text, query=query)
+    # Apply in-tree boilerplate pruning on the compressed text as final pass
+    return prune_chunk_text(compressed_text, query=query, initial_active_fence=initial_active_fence)
 
 
 def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
@@ -447,10 +494,20 @@ def compress_retrieved_chunks(docs: List[Dict[str, Any]], query: str = "") -> Li
 
         for doc, orig_text, comp_text in zip(docs, orig_texts, compressed_texts):
             if comp_text is not None:
+                metadata = doc.get("metadata") or doc.get("extra_info")
+                initial_active_fence = None
+                if isinstance(metadata, dict):
+                    initial_active_fence = _normalize_fence_state(
+                        metadata.get("active_fence")
+                        or metadata.get("in_code_fence")
+                        or metadata.get("fenced_code")
+                        or metadata.get("in_code_block")
+                    )
                 doc["text"] = _enforce_supercompress_safeguards(
                     original_text=orig_text,
                     compressed_text=comp_text,
                     query=query or "",
+                    initial_active_fence=initial_active_fence,
                 )
         return docs
     except (ImportError, Exception):

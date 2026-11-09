@@ -781,42 +781,67 @@ class TestCompressingRetrieverIntegration:
         """SuperCompress successful path must enforce safeguards or fall back to in-tree pruning."""
         from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
 
-        # 1. SuperCompress drops code fences -> falls back to in-tree pruning
-        orig_code = "Home > API\n```python\nprint('hello')\n```\nNext page"
-        bad_supercompress_output_1 = ("Home > API\nprint('hello')\nNext page", Mock())
-        mock_module_1 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_1))
-        docs = [{"id": "1", "text": orig_code}]
+        # 1. SuperCompress alters code inside fence (e.g. print(1) -> print(2)) -> falls back to in-tree
+        orig_code = "Home > API\n```python\nprint(1)\n```\nNext page"
+        bad_supercompress_code = ("Home > API\n```python\nprint(2)\n```\nNext page", Mock())
+        mock_module_1 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_code))
+        docs1 = [{"id": "1", "text": orig_code}]
         with patch.dict("sys.modules", {"supercompress": mock_module_1}):
-            res = compress_retrieved_chunks(docs, query="python")
-            assert "```python\nprint('hello')\n```" in res[0]["text"]
-            assert "Home > API" not in res[0]["text"]
+            res1 = compress_retrieved_chunks(docs1, query="python")
+            # In-tree fallback preserves verbatim code block print(1) and prunes nav
+            assert "```python\nprint(1)\n```" in res1[0]["text"]
+            assert "print(2)" not in res1[0]["text"]
+            assert "Home > API" not in res1[0]["text"]
 
-        # 2. SuperCompress drops markdown table -> falls back to in-tree pruning
-        orig_table = "Home > API\n| col1 | col2 |\n| --- | --- |\n| a | b |\nNext page"
-        bad_supercompress_output_2 = ("Just a plain text summary without tables.", Mock())
-        mock_module_2 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_2))
+        # 2. SuperCompress drops a markdown table row -> falls back to in-tree
+        orig_table = "Home > API\n| col1 | col2 |\n| --- | --- |\n| row1_a | row1_b |\n| row2_a | row2_b |\nNext page"
+        bad_supercompress_table = ("Home > API\n| col1 | col2 |\n| --- | --- |\n| row1_a | row1_b |\nNext page", Mock())
+        mock_module_2 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_table))
         docs2 = [{"id": "2", "text": orig_table}]
         with patch.dict("sys.modules", {"supercompress": mock_module_2}):
             res2 = compress_retrieved_chunks(docs2, query="summary")
-            assert "| col1 | col2 |" in res2[0]["text"]
+            assert "| row2_a | row2_b |" in res2[0]["text"]
+            assert "Home > API" not in res2[0]["text"]
 
-        # 3. SuperCompress drops protected qualifiers (e.g. 'must not') -> falls back
-        orig_qualifier = "Home > API\nUsers must not share secrets under any circumstances.\nNext page"
-        bad_supercompress_output_3 = ("Users share secrets easily.", Mock())
-        mock_module_3 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_3))
-        docs3 = [{"id": "3", "text": orig_qualifier}]
+        # 3. SuperCompress drops or alters a warning sentence -> falls back
+        orig_warning = "Home > API\nCritical: Never transmit production passwords over unencrypted HTTP.\nNext page"
+        bad_supercompress_warning = ("Home > API\nTransmit production passwords over unencrypted HTTP.\nNext page", Mock())
+        mock_module_3 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_warning))
+        docs3 = [{"id": "3", "text": orig_warning}]
         with patch.dict("sys.modules", {"supercompress": mock_module_3}):
-            res3 = compress_retrieved_chunks(docs3, query="secrets")
-            assert "must not share secrets" in res3[0]["text"]
+            res3 = compress_retrieved_chunks(docs3, query="security")
+            assert "Critical: Never transmit production passwords over unencrypted HTTP." in res3[0]["text"]
+            assert "Home > API" not in res3[0]["text"]
 
-        # 4. SuperCompress drops critical query terms -> falls back
-        orig_query_term = "Home > API\nConfiguring the OAuth2 token endpoint is mandatory.\nNext page"
-        bad_supercompress_output_4 = ("Configuring things is mandatory.", Mock())
-        mock_module_4 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_output_4))
-        docs4 = [{"id": "4", "text": orig_query_term}]
+        # 4. SuperCompress retains only 1 of 2 query terms -> falls back
+        orig_multi_query = "Home > API\nDatabase credentials must be rotated every 90 days.\nNext page"
+        # Query contains "database credentials", but compressed dropped "credentials"
+        bad_supercompress_query = ("Home > API\nDatabase must be rotated every 90 days.\nNext page", Mock())
+        mock_module_4 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_query))
+        docs4 = [{"id": "4", "text": orig_multi_query}]
         with patch.dict("sys.modules", {"supercompress": mock_module_4}):
-            res4 = compress_retrieved_chunks(docs4, query="OAuth2 endpoint")
-            assert "OAuth2 token endpoint" in res4[0]["text"]
+            res4 = compress_retrieved_chunks(docs4, query="database credentials")
+            assert "Database credentials must be rotated every 90 days." in res4[0]["text"]
+
+        # 5. Continuation-fence metadata preservation
+        orig_continuation = "def run():\n    return 42\n```\nHome > API"
+        bad_continuation = "def run():\n    return 99\n```\nHome > API"
+        mock_module_5 = Mock(compress_for_turn=Mock(return_value=(bad_continuation, Mock())))
+        docs5 = [{"id": "5", "text": orig_continuation, "metadata": {"active_fence": ("`", 3)}}]
+        with patch.dict("sys.modules", {"supercompress": mock_module_5}):
+            res5 = compress_retrieved_chunks(docs5, query="run")
+            assert "return 42" in res5[0]["text"]
+            assert "return 99" not in res5[0]["text"]
+
+    def test_supercompress_installed_api_when_present(self):
+        """Tests real installed SuperCompress API if present in environment."""
+        pytest.importorskip("supercompress")
+        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
+
+        docs = [{"id": "d1", "text": "Home > API\nFactual chunk content.", "source": "s1"}]
+        res = compress_retrieved_chunks(docs, query="content")
+        assert len(res) == 1
+        assert "Factual chunk content." in res[0]["text"]
 
     def test_supercompress_explicit_package_absence_fallback(self):
         """Explicitly forces package absence and verifies graceful in-tree pruning fallback."""
@@ -834,46 +859,81 @@ class TestCompressingRetrieverIntegration:
 
     @pytest.mark.parametrize("retrieval_mode", ["legacy", "single_group", "multi_group"])
     def test_on_off_near_budget_selection_and_parity(self, monkeypatch, retrieval_mode):
-        """Asserts unchanged document IDs, order, and disabled text output under near-budget selection.
+        """Asserts unchanged document IDs, order, and disabled text output under a restrictive token budget.
 
         Tests single-group Dispatcher, multi-group Dispatcher, and legacy ClassicRAG.
+        Exercises the budget boundary and verifies excluded boundary candidates.
         """
+        from docsgpt.utils import num_tokens_from_string
+
+        restrictive_budget = 110  # Cap: max(int(110 * 0.9), 100) = 100 tokens
+
         doc_a = {
             "id": "doc_a",
             "title": "Auth",
-            "text": "Home > Security > Auth\nToken expires in 3600 seconds.\nNext page: Permissions",
+            "filename": "auth.md",
+            "text": "Home > Security > Auth\n" + ("Token expires in 3600 seconds for authentication. " * 3) + "\nNext page: Permissions",
             "source": "s1",
         }
         doc_b = {
             "id": "doc_b",
             "title": "Permissions",
-            "text": "Home > Security > Permissions\nAdmin role required for write actions.\nNext page: Logs",
-            "source": "s2" if retrieval_mode == "multi_group" else "s1",
+            "filename": "permissions.md",
+            "text": "Home > Security > Permissions\n" + ("Admin role is strictly required for write actions. " * 3) + "\nNext page: Logs",
+            "source": "s2",
         }
+        # doc_c is the boundary candidate: doc_a (41) + doc_b (38) = 79 tokens, doc_c (53 tokens) pushes total to 132 >= 100 cap -> EXCLUDED
         doc_c = {
             "id": "doc_c",
             "title": "Logs",
-            "text": "Home > Security > Logs\nAudit logs are retained for 90 days.\nPrevious page: Permissions",
-            "source": "s3" if retrieval_mode == "multi_group" else "s1",
+            "filename": "logs.md",
+            "text": "Home > Security > Logs\n" + ("Audit logs are retained for 90 days in compliance with security guidelines. " * 3) + "\nPrevious page: Permissions",
+            "source": "s3",
         }
         raw_candidates = [doc_a, doc_b, doc_c]
 
-        mock_retriever = Mock()
-        mock_retriever.search = Mock(side_effect=lambda *a, **k: [dict(d) for d in raw_candidates])
-        mock_retriever.last_outcome = None
+        cap = max(int(restrictive_budget * 0.9), 100)
 
-        with patch.object(Dispatcher, "_build_group_retriever", return_value=mock_retriever):
+        def search_with_budget(*args, **kwargs):
+            cum = 0
+            res = []
+            for d in raw_candidates:
+                toks = num_tokens_from_string(d["text"])
+                if cum + toks < cap:
+                    res.append(dict(d))
+                    cum += toks
+                else:
+                    break
+            return res
+
+        def make_group_retriever(group, budget):
+            m = Mock()
+            if retrieval_mode == "multi_group":
+                # For multi_group, return docs belonging to this group and let Dispatcher's real merge enforce the budget
+                docs = [dict(d) for d in raw_candidates if d["source"] in group["doc_ids"]]
+                m.search = Mock(return_value=docs)
+            else:
+                m.search = Mock(side_effect=search_with_budget)
+            m.last_outcome = None
+            return m
+
+        with patch.object(Dispatcher, "_build_group_retriever", side_effect=make_group_retriever):
+            mock_retriever = Mock()
+            mock_retriever.search = Mock(side_effect=search_with_budget)
+            mock_retriever.last_outcome = None
+
             # 1. Measure OFF: CHUNK_COMPRESSION_ENABLED = False
             monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
             if retrieval_mode == "legacy":
                 monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
-                retriever_off = build_dispatcher(lambda: mock_retriever)
+                retriever_off = build_dispatcher(lambda: mock_retriever, doc_token_limit=restrictive_budget)
             elif retrieval_mode == "single_group":
                 monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
                 retriever_off = build_dispatcher(
                     lambda: mock_retriever,
                     source={"question": "tokens", "active_docs": ["s1"]},
                     sources=[{"id": "s1", "retrieval": None}],
+                    doc_token_limit=restrictive_budget,
                 )
             else:  # multi_group
                 monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
@@ -883,7 +943,9 @@ class TestCompressingRetrieverIntegration:
                     sources=[
                         {"id": "s1", "retrieval": {"retriever": "classic"}},
                         {"id": "s2", "retrieval": {"retriever": "hybrid"}},
+                        {"id": "s3", "retrieval": {"retriever": "custom"}},
                     ],
+                    doc_token_limit=restrictive_budget,
                 )
 
             res_off = retriever_off.search("tokens")
@@ -894,12 +956,13 @@ class TestCompressingRetrieverIntegration:
             # 2. Measure ON: CHUNK_COMPRESSION_ENABLED = True
             monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
             if retrieval_mode == "legacy":
-                retriever_on = build_dispatcher(lambda: mock_retriever)
+                retriever_on = build_dispatcher(lambda: mock_retriever, doc_token_limit=restrictive_budget)
             elif retrieval_mode == "single_group":
                 retriever_on = build_dispatcher(
                     lambda: mock_retriever,
                     source={"question": "tokens", "active_docs": ["s1"]},
                     sources=[{"id": "s1", "retrieval": None}],
+                    doc_token_limit=restrictive_budget,
                 )
             else:  # multi_group
                 retriever_on = build_dispatcher(
@@ -908,19 +971,23 @@ class TestCompressingRetrieverIntegration:
                     sources=[
                         {"id": "s1", "retrieval": {"retriever": "classic"}},
                         {"id": "s2", "retrieval": {"retriever": "hybrid"}},
+                        {"id": "s3", "retrieval": {"retriever": "custom"}},
                     ],
+                    doc_token_limit=restrictive_budget,
                 )
 
             res_on = retriever_on.search("tokens")
             on_ids = [d["id"] for d in res_on]
 
             # Invariant checks:
-            # A. Unchanged document IDs and ordering between ON and OFF
-            assert on_ids[:3] == off_ids[:3]
-            # B. Enabled text output prunes navigation boilerplate
+            # A. Full list comparison: exact same documents and order (NOT sliced)
+            assert on_ids == off_ids == ["doc_a", "doc_b"]
+            # B. Verify boundary candidate doc_c was excluded by token budget
+            assert "doc_c" not in on_ids
+            assert "doc_c" not in off_ids
+            assert len(on_ids) == len(off_ids) == 2
+            # C. Enabled text output prunes navigation boilerplate
             assert "Home > Security > Auth" not in res_on[0]["text"]
             assert "Next page: Permissions" not in res_on[0]["text"]
-            assert "Token expires in 3600 seconds." in res_on[0]["text"]
-            # C. Parity across candidate pool
-            assert len(res_on) == len(res_off)
+            assert "Token expires in 3600 seconds" in res_on[0]["text"]
 
