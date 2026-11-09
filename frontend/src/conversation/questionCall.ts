@@ -5,12 +5,6 @@ import type { ToolCallsType } from './types';
 /** The chat's clarifying-questions tool (docsgpt/agents/tools/ask_user.py). */
 export const ASK_USER = 'ask_user';
 
-/**
- * The result the server records when it showed the questions as answer text
- * (a caller without question cards): the questions are in the answer already.
- */
-const SHOWN_AS_TEXT = 'Shown to the user as text';
-
 /** What a resume sends for a question call: the answers, or Just answer. */
 export type QuestionAction = { answer: string } | { skipped: true };
 
@@ -101,8 +95,9 @@ export function questionState(call: ToolCallsType): QuestionState | null {
     case 'completed':
     case 'pending':
     case undefined: {
-      const result = resultText(call);
-      return result?.startsWith(SHOWN_AS_TEXT) ? null : 'answered';
+      // Shown as answer text to a caller without question cards: the
+      // questions are in the answer already, so it stays a step row.
+      return call.shown_as === 'text' ? null : 'answered';
     }
     default:
       return null;

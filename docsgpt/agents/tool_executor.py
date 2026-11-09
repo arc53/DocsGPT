@@ -1770,6 +1770,9 @@ class ToolExecutor:
                     "arguments": {"message": message, "questions": questions},
                     "result": ask_user.SHOWN_AS_TEXT,
                     "status": "success",
+                    # The chat tells this record from an answered one by
+                    # this, never by the result's wording.
+                    "shown_as": "text",
                 }
             )
         yield {"type": "tool_call", "data": dict(record)}
@@ -2789,7 +2792,7 @@ class ToolExecutor:
     # after a reload as it did live.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
-        "job_id", "error", "error_type",
+        "job_id", "error", "error_type", "shown_as",
     )
 
     @staticmethod

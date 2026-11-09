@@ -77,12 +77,20 @@ describe('questionState', () => {
     expect(questionState(refused)).toBeNull();
     expect(isHiddenCall(refused)).toBe(true);
     expect(isHiddenCall(askUser())).toBe(false);
+    // Shown as answer text by a caller without cards: the server marks it,
+    // whatever its result says.
     const asText = askUser({
       status: 'success',
-      result:
-        'Shown to the user as text; their next message is the answer.' as never,
+      shown_as: 'text',
+      result: 'Reworded later.' as never,
     });
     expect(questionState(asText)).toBeNull();
+    // An answered call whose answer happens to start like that is still one.
+    const answered = askUser({
+      status: 'success',
+      result: 'Shown to the user as text, please → Yes' as never,
+    });
+    expect(questionState(answered)).toBe('answered');
   });
 });
 

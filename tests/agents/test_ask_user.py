@@ -286,8 +286,12 @@ class TestHandler:
         (record,) = executor.tool_calls
         assert record["status"] == "success"
         assert record["result"] == SHOWN_AS_TEXT
+        assert record["shown_as"] == "text"
         assert record["arguments"]["questions"][0]["id"] == "q1"
         assert executor.questions_shown_as_text is True
+        # The marker survives the projection the chat reloads.
+        (saved,) = executor.get_truncated_tool_calls()
+        assert saved["shown_as"] == "text"
 
     def test_text_non_streaming_ends_the_turn_with_the_questions(self):
         executor, tools = _executor("text")

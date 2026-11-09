@@ -17,6 +17,11 @@ export type ToolCallsType = {
    * instead of answering it, or the request expired. Its status is ``denied``.
    */
   not_run?: 'moved_on' | 'expired';
+  /**
+   * An ``ask_user`` call the server showed as answer text, to a caller
+   * without question cards.
+   */
+  shown_as?: 'text';
   status?:
     | 'pending'
     | 'completed'

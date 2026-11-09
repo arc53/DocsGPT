@@ -369,7 +369,7 @@ Write actions on the owner's accounts or credentials never reach this pause for 
 
 When an answer depends on something neither the conversation nor the sources settle, the assistant can ask the user up to three short questions, once per user message. How they reach your client depends on the `questions` field:
 
-- **Without it** (the default), the questions are the turn's answer, written as text: the assistant's lead-in line, then each question in bold with its options as `a)`, `b)` and so on. The turn ends, and the user's next message is the answer.
+- **Without it** (the default), the questions are the turn's answer, written as text: the assistant's lead-in line, then each question in bold with its options as `a)`, `b)` and so on. The turn ends, and the user's next message is the answer. The turn's `ask_user` tool call carries `"shown_as": "text"`.
 - **With `"questions": "cards"`**, the turn pauses as in [Tools that need approval](#tools-that-need-approval). The `tool_call` event has `"status": "awaiting_answer"`, a `message` (the lead-in, or `null`) and a `questions` list; the pending call's `pause_type` is `awaiting_answer`.
 
 Each entry in `questions` has an `id` (`q1`, `q2`, `q3`), its `text`, an optional `note`, `multi` (whether several options may be picked) and `options`, each with an `id` (`a`, `b`, ...) and a `label`. A question with no options takes a typed answer and may carry a `placeholder`.
