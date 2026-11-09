@@ -4,6 +4,7 @@
 - ``POST /api/drafter/stream`` -- one draft turn as server-sent events.
 - ``POST /api/drafter/turns/<turn_id>/cancel`` -- stop the caller's running turn.
 - ``GET /api/drafter/topics/status`` -- whether an agent has enough conversations for topic suggestions.
+- ``GET /api/drafter/agent_gaps`` -- an agent's gap summary from Insights, for the drawer's first screen.
 
 All are session-only: ``docsgpt/api/pat/rules.py`` lists them in ``DENIED``,
 so an access token gets 403. Nothing is stored: the client sends the whole
@@ -224,6 +225,48 @@ class DrafterTopicsStatus(Resource):
             logger.exception("drafter: could not read the topics status")
             return make_response(jsonify({"success": False}), 500)
         return make_response(jsonify(status), 200)
+
+
+@drafter_ns.route("/drafter/agent_gaps")
+class DrafterAgentGaps(Resource):
+    @api.doc(
+        description=(
+            "An agent's gap summary from Insights for Draft with DocsGPT's improve screen: expected gaps per topic "
+            "and gap type over the last 30 days, the most first, read from the decision model's labels (no model "
+            "call). Returns {\"available\", \"reason\", \"conversations\", \"needed\", \"days\", \"rows\": [{\"topic\", "
+            "\"gap_type\", \"expected\", \"turns\", \"previous\"}]}: at most 10 rows, each with at least half an "
+            "expected gap, counts rounded as Insights shows them; topic is null for an agent without a topic "
+            "question, previous null until the period before has labelled answers. reason is disabled (the "
+            "drafter is off), off_on_this_instance, agent_off (Insights is off for the agent) or not_enough (fewer "
+            "than needed analysed conversations; conversations counts them), else null. Needs edit access to the "
+            "agent."
+        ),
+        params={"agent_id": "Agent id"},
+        responses={200: "The agent's gap summary", 400: "No agent_id", 401: "Not signed in",
+                   404: "No agent the caller may edit", 500: "The summary could not be read"},
+    )
+    def get(self) -> Response:
+        """Report an agent's gap summary."""
+        from docsgpt.api.user.resource_access import AccessDenied
+        from docsgpt.drafter.gaps import agent_gaps_for, unavailable
+
+        user_id = _user_id()
+        if not user_id:
+            return make_response(jsonify({"success": False}), 401)
+        agent_id = (request.args.get("agent_id") or "").strip()
+        if not agent_id:
+            return make_response(jsonify({"success": False, "message": "agent_id is required"}), 400)
+        if not settings.DRAFTER_ENABLED:
+            return make_response(jsonify(unavailable("disabled")), 200)
+        try:
+            summary = agent_gaps_for(user_id, agent_id)
+        except AccessDenied:
+            # A viewer is told no more than a stranger: the summary reads the agent's users' traffic.
+            return make_response(jsonify({"success": False, "message": "Agent not found"}), 404)
+        except Exception:
+            logger.exception("drafter: could not read the agent's gap summary")
+            return make_response(jsonify({"success": False}), 500)
+        return make_response(jsonify(summary), 200)
 
 
 def _stream(draft: DraftRequest, recipe: Recipe, workspace: Workspace, model: dict,
