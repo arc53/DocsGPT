@@ -98,6 +98,11 @@ type SidePanelBaseProps = {
    * to shrink.
    */
   onClosed?: () => void;
+  /**
+   * Docked: where focus goes on close when what opened the panel has left
+   * the page. Without it focus is left where it lands.
+   */
+  focusFallback?: () => HTMLElement | null | undefined;
   /** Layout only. */
   className?: string;
   children: React.ReactNode;
@@ -153,6 +158,7 @@ function SidePanel({
   className,
   children,
   onOpenAutoFocus,
+  focusFallback,
   ...contentProps
 }: SidePanelProps) {
   const { isMobile } = useMediaQuery();
@@ -217,7 +223,8 @@ function SidePanel({
   // A docked panel gives focus back to what opened it, as a dialog does:
   // closing (its X, Escape, a button inside) otherwise leaves focus on the
   // inert panel or <body>. Its own effects run before the page's, so the
-  // opener is still focused when it opens.
+  // opener is still focused when it opens. An opener that has left the
+  // page hands over to `focusFallback`.
   const asideRef = React.useRef<HTMLElement>(null);
   const opener = React.useRef<HTMLElement | null>(null);
   React.useLayoutEffect(() => {
@@ -237,7 +244,9 @@ function SidePanel({
       !active ||
       active === document.body ||
       (asideRef.current?.contains(active) ?? false);
-    if (back?.isConnected && lost) back.focus();
+    if (!lost || !back) return;
+    if (back.isConnected) back.focus();
+    else focusFallback?.()?.focus();
   }, [open, dialog]);
 
   const context = React.useMemo<SidePanelContextValue>(

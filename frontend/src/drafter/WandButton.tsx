@@ -79,14 +79,24 @@ export function WandButton({
           onClick={onClick}
         />
       )}
-      {label ? (
-        <Tooltip>
-          <TooltipTrigger asChild>{button}</TooltipTrigger>
-          <TooltipContent side="bottom">{label}</TooltipContent>
-        </Tooltip>
-      ) : (
-        button
-      )}
+      {/* Always the same wrapper, only the tip comes and goes: Resume
+          turning into Build must keep the button's node, or a docked panel
+          closing can't give focus back to it. */}
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        {label && <TooltipContent side="bottom">{label}</TooltipContent>}
+      </Tooltip>
     </>
   );
+}
+
+/**
+ * The page's wand, the one showing at this width (the phone's icon button or
+ * the labelled pill): where focus goes when what opened the drafter leaves
+ * the page, such as the agent's phone strip as its Next opens the sheet.
+ */
+export function wandEntry(): HTMLElement | undefined {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[data-drafter-entry]'),
+  ).find((el) => el.checkVisibility?.() !== false);
 }

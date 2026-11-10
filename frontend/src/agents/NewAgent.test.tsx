@@ -3326,7 +3326,13 @@ describe('NewAgent drafter', () => {
       expect(viewText().value).toBe('Friendlier text.');
       expect(viewDrafted()).toContain('modals.prompts.promptText');
 
+      use().focus();
       await act(async () => use().click());
+      await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+      // Focus lands on the Prompt field it set, not <body>.
+      expect(
+        document.activeElement?.closest('[data-publish-blocker="prompt"]'),
+      ).not.toBeNull();
       expect(mocks.createPrompt.mock.calls).toEqual([
         [{ name: 'Shipping support', content: 'Friendlier text.' }, null],
       ]);
@@ -3639,12 +3645,25 @@ describe('NewAgent drafter', () => {
     // Closed again, the strip is back; its Next runs the step's Next.
     await act(async () => wand()!.click());
     expect(panel()).toBeNull();
-    await act(async () =>
-      buttonByText('drafter.agent.build.nextShort', strip()!)!.click(),
-    );
+    const stripNext = buttonByText('drafter.agent.build.nextShort', strip()!)!;
+    stripNext.focus();
+    await act(async () => stripNext.click());
     expect(lastRequest().context.step).toBe('knowledge');
     // In the open sheet, where the turn shows it runs.
     expect(panel()).not.toBeNull();
+    // Closed, focus goes to the wand: the Next that opened it is gone.
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="sidePanel.close"]',
+        )!
+        .click(),
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(panel()).toBeNull();
+    expect(document.activeElement?.hasAttribute('data-drafter-entry')).toBe(
+      true,
+    );
   });
 
   it("opens the sheet for a phone strip's Finish", async () => {
@@ -4103,14 +4122,18 @@ describe('NewAgent drafter', () => {
           review()!.querySelector('[data-change-id="e2"]')!,
         )!.click(),
       );
-      await act(async () =>
-        buttonByText('drafter.prompt.acceptAll', panel()!)!.click(),
-      );
+      const acceptAll = buttonByText('drafter.prompt.acceptAll', panel()!)!;
+      acceptAll.focus();
+      await act(async () => acceptAll.click());
       expect(review()).toBeNull();
       expect(viewText().value).toBe('Words of p1');
       expect(
         buttonByText('drafter.prompt.acceptAll', panel()!),
       ).toBeUndefined();
+      // Focus goes on to the ask bar, not <body>, as the button goes.
+      expect(document.activeElement).toBe(
+        panel()!.querySelector('textarea[aria-label="drafter.askLabel"]'),
+      );
       await act(async () => save()!.click());
       expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
         id: 'p1',

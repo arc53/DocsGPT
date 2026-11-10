@@ -127,7 +127,7 @@ export function PromptDraftPanel({
   const renderProposal = (
     raw: unknown,
     latest: boolean,
-    { compose }: DraftPanelHelpers,
+    { compose, keepFocus }: DraftPanelHelpers,
   ): ReactNode => {
     const proposal = readPromptProposal(raw);
     if (!proposal) return null;
@@ -194,6 +194,7 @@ export function PromptDraftPanel({
                 disabled={save.disabled}
                 loading={save.saving}
                 onClick={save.onSave}
+                data-drafter-next-focus=""
               >
                 {t('drafter.prompt.savePrompt')}
               </Button>
@@ -204,7 +205,7 @@ export function PromptDraftPanel({
                 type="button"
                 size="sm"
                 shape="pill"
-                onClick={drafter.acceptAll}
+                onClick={() => keepFocus(drafter.acceptAll)}
               >
                 {t('drafter.prompt.acceptAll')}
               </Button>
@@ -224,7 +225,7 @@ export function PromptDraftPanel({
                 variant="ghost"
                 size="sm"
                 shape="pill"
-                onClick={drafter.discard}
+                onClick={() => keepFocus(drafter.discard)}
               >
                 {t('drafter.prompt.discard')}
               </Button>

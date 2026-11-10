@@ -12,7 +12,8 @@ type AutoFocusHandler = (event: Event) => void;
  * the trigger would light up with a focus-visible ring out of nowhere. After a
  * keyboard open the trigger did have focus and gets it back as before, and a
  * dialog opened without a trigger (a Modal from a menu row) now returns focus
- * to where the user was instead of dropping it on <body>.
+ * to where the user was instead of dropping it on <body>: for a menu row, the
+ * button that opened the menu.
  *
  * Returns the two handlers to pass to the Radix Content. The caller's own
  * handlers run first; a caller that calls `preventDefault()` on close keeps
@@ -30,8 +31,13 @@ function useFocusReturn(
       const active = document.activeElement;
       returnTo.current =
         active instanceof HTMLElement && active !== document.body
-          ? active
-          : null;
+          ? menuOpener(active)
+          : // A menu that closed without an exit animation already took
+            // its focused row away.
+            lastMenuOpener?.isConnected
+            ? lastMenuOpener
+            : null;
+      lastMenuOpener = null;
       onOpenAutoFocus?.(event);
     },
     [onOpenAutoFocus],
@@ -53,6 +59,40 @@ function useFocusReturn(
     onOpenAutoFocus: handleOpenAutoFocus,
     onCloseAutoFocus: handleCloseAutoFocus,
   };
+}
+
+/**
+ * A dialog opened from a menu item (Preview in a ⋯) returns focus to the
+ * button that opened the menu: the item is gone once the menu closes. Radix
+ * labels a menu by its trigger, a submenu by the item that opened it.
+ */
+function menuOpener(element: HTMLElement): HTMLElement {
+  let current = element;
+  for (;;) {
+    const menu = current.closest('[role="menu"]');
+    const id = menu?.getAttribute('aria-labelledby');
+    const trigger = id ? document.getElementById(id) : null;
+    if (!trigger || trigger === current) return current;
+    current = trigger;
+  }
+}
+
+// The button that opened the menu whose row had focus last, while focus is
+// still in that menu (null once it moved elsewhere).
+let lastMenuOpener: HTMLElement | null = null;
+
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'focusin',
+    (event) => {
+      const target = event.target;
+      lastMenuOpener =
+        target instanceof HTMLElement && target.closest('[role="menu"]')
+          ? menuOpener(target)
+          : null;
+    },
+    true,
+  );
 }
 
 export { useFocusReturn };

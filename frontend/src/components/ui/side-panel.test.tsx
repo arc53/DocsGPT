@@ -173,6 +173,27 @@ describe('SidePanel variant="docked"', () => {
     }
   });
 
+  // Live check C07: a strip's Next opened it, then went away.
+  it('focuses its fallback when what opened it is gone', async () => {
+    const opener = document.createElement('button');
+    const wand = document.createElement('button');
+    document.body.append(opener, wand);
+    try {
+      opener.focus();
+      await render(panel({ variant: 'docked', open: false }));
+      await render(panel({ variant: 'docked', focusFallback: () => wand }));
+      button('sidePanel.close')!.focus();
+      opener.remove();
+      await render(
+        panel({ variant: 'docked', open: false, focusFallback: () => wand }),
+      );
+      expect(document.activeElement).toBe(wand);
+    } finally {
+      opener.remove();
+      wand.remove();
+    }
+  });
+
   it('leaves focus alone on close when it is outside the panel', async () => {
     const opener = document.createElement('button');
     const elsewhere = document.createElement('input');

@@ -91,6 +91,7 @@ import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { useMediaQuery } from '../hooks';
 import {
   DraftPanel,
+  type DraftPanelHelpers,
   type DraftSuggestion,
   type DraftSuggestionGroup,
 } from '../drafter/DraftPanel';
@@ -709,12 +710,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     promptReview.clear();
     promptDetail.close();
     if (viewInHistory) navigate(-1);
-    // Back on the form where the prompt is picked.
-    requestAnimationFrame(() =>
-      document
-        .getElementById(promptPickerId)
-        ?.scrollIntoView?.({ block: 'center' }),
-    );
+    // Back on the form where the prompt is picked, with focus there when
+    // the view's button that closed it (Use this prompt) took it along.
+    requestAnimationFrame(() => {
+      const picker = document.getElementById(promptPickerId);
+      picker?.scrollIntoView?.({ block: 'center' });
+      const active = document.activeElement;
+      if (!active || active === document.body || !active.isConnected)
+        picker?.focus({ preventScroll: true });
+    });
   };
 
   /**
@@ -1624,7 +1628,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       : undefined;
   };
 
-  const renderAgentProposal = (raw: unknown, latest: boolean) => {
+  const renderAgentProposal = (
+    raw: unknown,
+    latest: boolean,
+    { keepFocus }: DraftPanelHelpers,
+  ) => {
     const proposal = proposalOf(raw);
     if (!proposal) return null;
     const { rows, dropped } = agentProposalSummary(
@@ -1707,7 +1715,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 type="button"
                 size="sm"
                 shape="pill"
-                onClick={promptReview.acceptAll}
+                onClick={() => keepFocus(promptReview.acceptAll)}
               >
                 {t('drafter.prompt.acceptAll')}
               </Button>
@@ -1727,7 +1735,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 variant="ghost"
                 size="sm"
                 shape="pill"
-                onClick={promptReview.discard}
+                onClick={() => keepFocus(promptReview.discard)}
               >
                 {t('drafter.prompt.discard')}
               </Button>

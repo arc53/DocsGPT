@@ -2047,7 +2047,9 @@ shows.
   only to the element that had it when they opened (`ui/use-focus-return.ts`).
   A tap on iOS, and a click in Safari, doesn't focus the trigger, so Radix's
   default `trigger.focus()` lit it with a ring nobody asked for; after a
-  keyboard open the trigger did have focus and still gets it back. Don't pass
+  keyboard open the trigger did have focus and still gets it back. One opened
+  from a menu row (Preview in a ⋯) gives it to the button that opened the
+  menu, since the row leaves with the menu. Don't pass
   `onCloseAutoFocus` from app code to remember focus yourself (ESLint rejects
   it); the primitive already does. `onOpenAutoFocus` with `preventDefault()`
   is still how a phone picker keeps the keyboard down (`MultiSelectPopover`),

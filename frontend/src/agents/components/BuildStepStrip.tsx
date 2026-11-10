@@ -1,14 +1,17 @@
 import { ArrowRight } from 'lucide-react';
+import { useRef } from 'react';
 
 import { BottomTintReset } from '@/components/ui/bar-tint-reset';
 import { Button } from '@/components/ui/button';
+import { wandEntry } from '@/drafter/WandButton';
 
 /**
  * The phone's in-page strip while the drafter's sheet steps aside after a
  * step: the whole strip is a stretched button that brings the sheet back
  * (Card `interactive="within"`'s recipe), with the step's Next lifted over it.
  * Fixed to the bottom edge below `lg`; Safari's bottom bar is re-sampled
- * when it goes.
+ * when it goes. The strip leaves as the sheet opens, so a focused button of
+ * its hands focus to the wand first, where the sheet's close gives it back.
  *
  * Args:
  *   title: What to do ("Check Basics").
@@ -30,15 +33,21 @@ export function BuildStepStrip({
   onOpen: () => void;
   onNext: () => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const handOff = (action: () => void) => () => {
+    if (ref.current?.contains(document.activeElement)) wandEntry()?.focus();
+    action();
+  };
   return (
     <div
+      ref={ref}
       data-slot="build-step-strip"
       className="bg-background border-border hover:bg-accent has-[>button:focus-visible]:ring-ring/50 pb-safe fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t px-4 pt-3 transition-colors has-[>button:focus-visible]:ring-3 has-[>button:focus-visible]:ring-inset lg:hidden"
     >
       <BottomTintReset />
       <button
         type="button"
-        onClick={onOpen}
+        onClick={handOff(onOpen)}
         className="flex min-w-0 flex-1 cursor-pointer flex-col text-left outline-none after:absolute after:inset-0"
       >
         <span className="truncate text-sm font-medium" title={title}>
@@ -51,7 +60,7 @@ export function BuildStepStrip({
       {/* Lifted over the stretched button, and out of the strip's focus
           ring, which follows the stretched button alone. */}
       <div className="relative z-10 shrink-0">
-        <Button type="button" size="sm" shape="pill" onClick={onNext}>
+        <Button type="button" size="sm" shape="pill" onClick={handOff(onNext)}>
           {nextLabel}
           <ArrowRight />
         </Button>

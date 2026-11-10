@@ -1,5 +1,5 @@
 import { Undo2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
@@ -33,12 +33,14 @@ export function DraftedBadge({
   className?: string;
 }) {
   const { t } = useTranslation();
+  const ref = useRef<HTMLSpanElement>(null);
   const label = t('drafter.undoField', {
     field: fieldLabel,
     interpolation: { escapeValue: false },
   });
   return (
     <span
+      ref={ref}
       data-slot="drafted-badge"
       className={cn('bg-background inline-flex rounded-full', className)}
     >
@@ -49,7 +51,12 @@ export function DraftedBadge({
             <button
               type="button"
               aria-label={label}
-              onClick={onUndo}
+              onClick={() => {
+                // The badge goes away with the undo: move focus first to the
+                // control it restored, or it drops to <body>.
+                if (ref.current) restoredControl(ref.current)?.focus();
+                onUndo();
+              }}
               disabled={undoDisabled}
               className={cn(
                 focusRing,
@@ -63,6 +70,26 @@ export function DraftedBadge({
         </Tooltip>
       </Badge>
     </span>
+  );
+}
+
+const FOCUSABLE =
+  'input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * The control a badge's undo restored: the first focusable one in its
+ * DraftedField or SettingRow, else beside the badge, never the badge's own.
+ */
+function restoredControl(badge: HTMLElement): HTMLElement | null {
+  const scope =
+    badge.closest<HTMLElement>(
+      '[data-slot=drafted-field], [data-slot=setting-row]',
+    ) ?? badge.parentElement;
+  if (!scope) return null;
+  return (
+    Array.from(scope.querySelectorAll<HTMLElement>(FOCUSABLE)).find(
+      (el) => !badge.contains(el),
+    ) ?? null
   );
 }
 

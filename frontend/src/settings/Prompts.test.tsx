@@ -1292,19 +1292,29 @@ describe('Prompts page', () => {
     );
     // Not while the review is open: the text holds only the choices so far.
     expect(button('drafter.prompt.savePrompt', panel()!)).toBeUndefined();
-    // Discarded, the saved prompt is unchanged: nothing to save.
-    await click(button('drafter.prompt.discard', panel()!)!);
+    // Discarded, the saved prompt is unchanged: nothing to save. Focus
+    // goes on to the ask bar, not <body>, as the buttons go.
+    const discard = button('drafter.prompt.discard', panel()!)!;
+    discard.focus();
+    await click(discard);
     expect(button('drafter.prompt.savePrompt', panel()!)).toBeUndefined();
-    // Accepted after a follow-up, the improvement offers the save.
     const composer = panel()!.querySelector<HTMLTextAreaElement>('textarea')!;
+    expect(document.activeElement).toBe(composer);
+    // Accepted after a follow-up, the improvement offers the save.
     await type(composer, 'Make it clearer');
     await act(async () => {
       composer.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
       );
     });
-    await click(button('drafter.prompt.acceptAll', panel()!)!);
+    const acceptAll = button('drafter.prompt.acceptAll', panel()!)!;
+    acceptAll.focus();
+    await click(acceptAll);
     expect(panel()!.textContent).toContain('drafter.prompt.readAndSave');
+    // Focus moves on to Save prompt, which takes Accept all's place.
+    expect(document.activeElement).toBe(
+      button('drafter.prompt.savePrompt', panel()!),
+    );
     expect(
       panel()!.querySelectorAll('[data-slot="prompt-result"]').length,
     ).toBe(2);

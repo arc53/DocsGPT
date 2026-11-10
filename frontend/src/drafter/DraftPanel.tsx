@@ -16,6 +16,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import isEqual from 'lodash/isEqual';
@@ -46,6 +47,7 @@ import {
 } from './DrafterErrorAlert';
 import { DrafterStepRow, FilledRow } from './DrafterStepRow';
 import type { DrafterItem, DrafterSession } from './useDrafterSession';
+import { wandEntry } from './WandButton';
 
 /** The window Insights reads over when the host doesn't say (agent_gaps' `days`). */
 const INSIGHTS_DAYS = 30;
@@ -92,6 +94,12 @@ export type DraftSuggestionGroup = {
 export type DraftPanelHelpers = {
   /** Put `text` in the ask bar and focus it, for the user to finish. */
   compose: (text: string) => void;
+  /**
+   * Run a button's action that takes the button away (Accept all,
+   * Discard), then, if focus dropped to <body>, move it on to the panel's
+   * `data-drafter-next-focus` control or else the ask bar (on a desktop).
+   */
+  keepFocus: (action: () => void) => void;
 };
 
 export type DraftPanelProps = {
@@ -230,6 +238,19 @@ export function DraftPanel({
     compose: (text) => {
       setDraft(text);
       inputRef.current?.focus();
+    },
+    keepFocus: (action) => {
+      const scope =
+        endRef.current?.closest<HTMLElement>('[data-slot="side-panel"]') ??
+        endRef.current?.parentElement;
+      flushSync(action);
+      const active = document.activeElement;
+      if (active && active !== document.body && active.isConnected) return;
+      const next = scope?.querySelector<HTMLElement>(
+        '[data-drafter-next-focus]',
+      );
+      if (next) next.focus();
+      else if (isDesktop) inputRef.current?.focus();
     },
   };
   const { items, step, streaming, waiting, full } = session;
@@ -512,7 +533,12 @@ export function DraftPanel({
   };
 
   return (
-    <SidePanel variant="docked" open={open} onOpenChange={onOpenChange}>
+    <SidePanel
+      variant="docked"
+      open={open}
+      onOpenChange={onOpenChange}
+      focusFallback={wandEntry}
+    >
       <PanelHeader
         title={t('drafter.title')}
         description={progress?.label}
