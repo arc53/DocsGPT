@@ -1805,7 +1805,10 @@ class ToolExecutor:
 
     def _note_cannot_complete(self, data: Dict) -> None:
         """Keep the reason of the first ``report_cannot_complete`` call that ran."""
-        if self.cannot_complete or data.get("tool_name") != REPORT_CANNOT_COMPLETE or data.get("status") == "error":
+        if data.get("tool_name") != REPORT_CANNOT_COMPLETE or data.get("status") == "error":
+            return
+        # Read with a default: some callers build an executor without ``__init__``.
+        if getattr(self, "cannot_complete", None):
             return
         arguments = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
         reason = " ".join(str(arguments.get("reason") or "").split())
