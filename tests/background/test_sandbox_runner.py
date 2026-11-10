@@ -130,6 +130,8 @@ class TestPollJob:
         row = _get(bg_db, job_id)
         assert row["status"] == "failed"
         assert json.loads(row["result"]["text"])["error"].startswith("ValueError")
+        # The script's own exception, so the wake may offer one fixed re-run.
+        assert row["result"]["script_error"] == "ValueError"
 
     def test_a_timed_out_run_is_reported_as_a_background_run(self, bg_db, conversation, polls, delivered, monkeypatch):
         """The poller finishes a run that was handed off: its timeout must not invite a re-run."""
@@ -141,6 +143,7 @@ class TestPollJob:
         payload = json.loads(_get(bg_db, job_id)["result"]["text"])
         assert "only if the user asks" in payload["error"]
         assert "run it again with background=true" not in payload["error"]
+        assert "script_error" not in _get(bg_db, job_id)["result"]
 
     def test_persist_false_closes_the_session_after_the_run(self, bg_db, conversation, polls, delivered, monkeypatch):
         job_id = _sandbox_job(*conversation, keep_alive=False)

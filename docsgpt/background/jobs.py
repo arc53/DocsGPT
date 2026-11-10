@@ -89,6 +89,9 @@ def create_job(
     Returns:
         ``(row, created)``.
     """
+    if context.continuation:
+        # A woken turn's own job: its wake offers no fixed re-run, so a crashing script can't loop.
+        external = {**(external or {}), "started_by_continuation": True}
     with db_session() as conn:
         row, created = BackgroundJobsRepository(conn).create(
             user_id=context.user_id,
@@ -210,6 +213,8 @@ def complete_from_tool(
     artifact_id, artifacts = tool_outputs(tool, action_name, parameters)
     text_value = bound_result_full(result_text(result))
     in_band = result_status(result)
+    script_error_of = getattr(tool, "job_script_error", None)
+    script_error = script_error_of() if callable(script_error_of) and in_band == "error" else None
     with db_readonly() as conn:
         row = BackgroundJobsRepository(conn).get(job_id)
     if row is not None:
@@ -217,7 +222,9 @@ def complete_from_tool(
     return finalize(
         job_id,
         status="completed" if in_band == "completed" else "failed",
-        result=stored_result(text_value, status=in_band, artifacts=artifacts, artifact_id=artifact_id),
+        result=stored_result(
+            text_value, status=in_band, artifacts=artifacts, artifact_id=artifact_id, script_error=script_error
+        ),
     )
 
 
@@ -336,7 +343,8 @@ def _guard_final(
         return result, output_tail
     guarded_text, guarded_tail = guard_job_texts(job, text_value, output_tail)
     if guarded_text != text_value:
-        result = {**result, "text": guarded_text}
+        # A result the guardrails changed is not offered for a re-run.
+        result = {**{k: v for k, v in result.items() if k != "script_error"}, "text": guarded_text}
     return result, guarded_tail
 
 
