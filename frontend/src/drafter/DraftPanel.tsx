@@ -269,6 +269,13 @@ export function DraftPanel({
     </Button>
   );
   const bodyRef = useRef<HTMLDivElement>(null);
+  // The body as state too: a phone sheet mounts its content a render after
+  // it opens (Radix's portal), so the effects below run again once it's in.
+  const [bodyNode, setBodyNode] = useState<HTMLDivElement | null>(null);
+  const attachBody = (node: HTMLDivElement | null) => {
+    bodyRef.current = node;
+    setBodyNode(node);
+  };
   const columnRef = useRef<HTMLDivElement>(null);
   // The body was scrolled to its end: what renders late (a review's
   // actions, a field opening in a question) keeps the end in view.
@@ -295,7 +302,7 @@ export function DraftPanel({
         block: 'nearest',
       });
     }
-  }, [items.length, step, open]);
+  }, [items.length, step, open, bodyNode]);
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -317,7 +324,7 @@ export function DraftPanel({
       body.removeEventListener('scroll', onScroll);
       observer?.disconnect();
     };
-  }, [open]);
+  }, [open, bodyNode]);
 
   // Focus never drops to <body> in the docked panel (a sheet keeps it
   // itself): a send whose button goes (Send answers, a starter) or a Stop
@@ -570,7 +577,7 @@ export function DraftPanel({
           />
         )}
       </PanelHeader>
-      <PanelBody ref={bodyRef}>
+      <PanelBody ref={attachBody}>
         <div ref={columnRef} className="flex flex-col gap-4">
           {before}
           {items.length === 0 && !streaming && (

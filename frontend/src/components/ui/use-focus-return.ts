@@ -15,6 +15,8 @@ type AutoFocusHandler = (event: Event) => void;
  * to where the user was instead of dropping it on <body>: for a menu row, the
  * button that opened the menu.
  *
+ * Focus the page moved on its own as the dialog closed (outside it) stays.
+ *
  * Returns the two handlers to pass to the Radix Content. The caller's own
  * handlers run first; a caller that calls `preventDefault()` on close keeps
  * control of focus.
@@ -50,6 +52,10 @@ function useFocusReturn(
       returnTo.current = null;
       if (event.defaultPrevented) return;
       event.preventDefault();
+      // The page already moved focus on as the dialog closed (a phone sheet
+      // stepping aside for a control in the page): leave it there.
+      const active = document.activeElement;
+      if (active && active !== document.body && active.isConnected) return;
       if (target?.isConnected) target.focus();
     },
     [onCloseAutoFocus],

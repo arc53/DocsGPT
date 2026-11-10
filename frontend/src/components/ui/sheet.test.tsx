@@ -246,6 +246,30 @@ describe('SheetContent focus', () => {
     expect(document.activeElement).toBe(trigger());
   });
 
+  // Live check 100: Review one by one closes the phone sheet and focuses
+  // change 1's Accept; the sheet's return mustn't take that back.
+  it('leaves focus where the page moved it as the sheet closed', async () => {
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    try {
+      await renderWithTrigger();
+      trigger().focus();
+      await act(async () => trigger().click());
+      await act(async () => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+        elsewhere.focus();
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(document.activeElement).toBe(elsewhere);
+    } finally {
+      elsewhere.remove();
+    }
+  });
+
   // Live check I03: Preview from a toolbar ⋯ left focus on <body>.
   it("returns focus to a menu's trigger when one of its items opened the sheet", async () => {
     function Harness() {

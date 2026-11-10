@@ -1216,6 +1216,7 @@ describe('Prompts page', () => {
     await render();
     await openCard('Vendor checks');
     const improve = button('drafter.improve', view()!)!;
+    improve.focus();
     await click(improve);
     const sheet = () =>
       document.querySelector<HTMLElement>('[data-slot="sheet-content"]');
@@ -1223,7 +1224,9 @@ describe('Prompts page', () => {
       sheet()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
     );
     await click(button('drafter.prompt.reviewOneByOne', sheet()!)!);
-    // The sheet goes aside and the page lands on change 1.
+    // The sheet goes aside and the page lands on change 1, where focus
+    // stays once the sheet has closed (not back on the wand).
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(improve.getAttribute('aria-expanded')).toBe('false');
     const review = view()!.querySelector('[data-slot="prompt-review"]')!;
     expect(

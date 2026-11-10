@@ -816,6 +816,35 @@ describe('DraftPanel', () => {
     }
   });
 
+  // Live check C13: a phone sheet came back at the top of the conversation.
+  it('scrolls to the latest item when a phone sheet comes back', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    await act(async () => root.render(<Host />));
+    stream.scripts = [proposalTurn({ message: 'Done.' })];
+    const ask = document.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="drafter.askLabel"]',
+    )!;
+    await act(async () => setValue(ask, 'Draft it'));
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label="drafter.send"]')!
+        .click(),
+    );
+    await act(async () => root.render(<Host open={false} />));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      await act(async () => root.render(<Host open />));
+      expect(document.body.textContent).toContain('Done.');
+      expect(scroll).toHaveBeenCalledWith({ block: 'end' });
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('announces the step and each applied draft, not the whole conversation', async () => {
     const announce = (p: unknown) => (p as Proposal).note ?? null;
     await act(async () => root.render(<Host announceProposal={announce} />));
