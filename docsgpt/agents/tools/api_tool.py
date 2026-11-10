@@ -22,7 +22,10 @@ def _strip_userinfo(url: str) -> str:
     """Remove userinfo (username:password) from URL to prevent credential leakage in messages."""
     parsed = urlsplit(url)
     if parsed.username or parsed.password:
-        netloc = parsed.hostname or ""
+        host = parsed.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        netloc = host
         if parsed.port:
             netloc = f"{netloc}:{parsed.port}"
         return urlunsplit(
@@ -159,9 +162,10 @@ class APITool(Tool):
                         "Call that URL directly instead."
                     )
                 else:
+                    target_url = ""
                     msg = "URL responded with a redirect but no target location."
                 logger.error(
-                    f"API call redirect (not followed): {response.status_code} -> {raw_location}"
+                    f"API call redirect (not followed): {response.status_code} -> {target_url}"
                 )
                 return {
                     "status": "error",
