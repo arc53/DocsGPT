@@ -40,6 +40,9 @@ class DraftRequest:
         messages: The conversation so far, cleaned: ``[{role, content}]``, ending with a user message.
         context: The recipe's cleaned context (its ``parse_context`` output).
         request_id: The id the draft's LLM calls are recorded under.
+        can_correct: Whether a :class:`ProposalInvalid` from the answer being validated still gets the turn's
+            corrected try (the runner keeps it current). A check that guards wording rather than the draft raises
+            only while this is True, so it never costs the turn.
     """
 
     user_id: str
@@ -47,6 +50,7 @@ class DraftRequest:
     messages: list[dict]
     context: dict
     request_id: str
+    can_correct: bool = True
 
     def user_text(self) -> str:
         """Everything the user wrote in this conversation, joined (for "did they ask for X" checks)."""

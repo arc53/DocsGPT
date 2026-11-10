@@ -130,6 +130,11 @@ ASK_FIRST = (
     "Ask the user first: call ask_user with a question for each part of this step their words leave open ({parts}), "
     "the recommended option first, then set what they pick and what they said."
 )
+SKIPPED_OPEN = (
+    "The user skipped the questions, so set only what their own words state: leave {parts} out of fields, and "
+    "don't say in your message that you set them; say they are not set and the user can set them in the form's "
+    "Safety section."
+)
 #: How a part of the safety step is named in :data:`ASK_FIRST`.
 _PART_NAMES = {"limits": "limits", "guardrails": "guardrails", "analytics": "topics"}
 #: Words that name a guardrail check in the user's own text, besides its id.
@@ -758,8 +763,10 @@ safety step leave that part out."""
 
 #: A turn the user sent with Skip on the questions (``skip_questions``): it takes no questions.
 SKIPPED = """The user skipped your questions: draft now with what you know and say in your message what you \
-assumed. In the safety step, set only what the user's words settle and leave the other parts out, saying they can \
-set them in the form."""
+assumed. Your message describes only what your fields set (or the form already holds): never say you set or picked \
+a value, a check, a topic or a source that isn't in fields. In the safety step, set only what the user's words \
+settle and leave the other parts out of fields; say in one line that those parts are not set and the user can set \
+them in the form's Safety section."""
 
 STEP_GUIDES = {
     "basics": """Step basics: draft the name and the description from the user's description, and say in the \
@@ -1290,7 +1297,11 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
             wanted.append(key)
     open_parts = [key for key in wanted if not _stated(key, raw_fields[key], req)]
     if req.context.get("skip_questions"):
-        # The user skipped the questions: only what their own words state is set.
+        # The user skipped the questions: only what their own words state is set. A message written for the parts
+        # left open would claim them, so the model hears it once; with no correction left they are dropped.
+        if open_parts and req.can_correct:
+            parts = ", ".join(_PART_NAMES[key] for key in open_parts)
+            raise ProposalInvalid([SKIPPED_OPEN.format(parts=parts)])
         wanted = [key for key in wanted if key not in open_parts]
     elif open_parts and not question_rounds(req.messages):
         raise ProposalInvalid([ASK_FIRST.format(parts=", ".join(_PART_NAMES[key] for key in open_parts))])
@@ -1530,9 +1541,14 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             continue
         # Only the summary shows in the panel: a detail a model still sends is dropped.
         reasons.append({"field": reason["field"], "summary": summary})
+    message = clean_text(args.get("message"), MESSAGE_MAX)
+    if step and req.can_correct:
+        unbacked = _unbacked_claims(message, step, fields, form)
+        if unbacked:
+            raise ProposalInvalid([CLAIMS_UNSET.format(parts=", ".join(unbacked))])
     steps, next_step = _progress(step, fields, form)
     proposal = {
-        "message": clean_text(args.get("message"), MESSAGE_MAX),
+        "message": message,
         "fields": fields,
         "reasons": reasons[:MAX_REASONS],
         "notes": notes,
@@ -1543,6 +1559,67 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     if not step:
         proposal["gaps"] = gaps
     return proposal
+
+
+CLAIMS_UNSET = (
+    "Your message says you set {parts}, but fields doesn't set it and the form doesn't have it. Describe only what "
+    "fields sets: add it to fields if you meant to set it, or leave it out of the message."
+)
+#: A sentence that says something was set, as opposed to one that only suggests it.
+_CLAIM_VERBS = re.compile(r"\b(?:set|picked|added|attached|chose|chosen|selected|drafted|included|enabled|"
+                          r"turned on|switched on)\b", re.I)
+_HEDGES = re.compile(r"\b(?:if you|could|would|might|consider|suggest\w*|starting point)\b", re.I)
+_COUNT = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|a few|several)"
+#: What a sentence names, per field, in English: a request or token budget, a number of topics, sources, tools.
+_CLAIM_MENTIONS = {
+    "limits": re.compile(r"\d[\d,.\s\u00a0\u202f']*k?\s*-?\s*(?:requests?|tokens?)\b", re.I),
+    "analytics": re.compile(rf"\b{_COUNT}\s+(?:new\s+|starting\s+|insights\s+)*topics?\b", re.I),
+    "sources": re.compile(r"\bsources?\b", re.I),
+    "tools": re.compile(r"\btools?\b", re.I),
+}
+_NONE_OF = re.compile(r"\b(?:no|without|not)\s+(?:\w+\s+){0,2}(?:sources?|tools?)\b", re.I)
+#: The fields each step's message is read for, and how a missing one is named back to the model.
+_CLAIM_FIELDS = {"safety": ("limits", "guardrails", "analytics"), "knowledge": ("sources", "tools")}
+_CLAIM_NAMES = {"limits": "a usage limit", "guardrails": "guardrail checks", "analytics": "Insights topics",
+                "sources": "sources", "tools": "tools"}
+
+
+def _unbacked_claims(message: str, step: str, fields: dict, form: dict) -> list[str]:
+    """What a guided step's message says it set that neither ``fields`` nor the form holds.
+
+    Read in English only, sentence by sentence: a sentence counts when it says something was set ("I picked",
+    "added", "drafted") and doesn't only suggest it ("if you'd like", "a good starting point"). A miss costs
+    nothing; a false alarm costs a correction, so the caller asks only while one is left.
+
+    Args:
+        message: The proposal's message.
+        step: The guided step; only the safety and knowledge steps are read.
+        fields: The checked fields.
+        form: The form's values.
+
+    Returns:
+        The names (:data:`_CLAIM_NAMES`) of the parts claimed but not set, in field order.
+    """
+    have = {
+        "limits": "limits" in fields or form["limits"]["mode"] != "none",
+        "analytics": "analytics" in fields or bool(form["analytics"]["topics"]),
+        "sources": "sources" in fields or bool(form["sources"]),
+        "tools": "tools" in fields or bool(form["tools"]),
+    }
+    checks_on = _checks_on(form["guardrails"])
+    claimed: set[str] = set()
+    for sentence in re.split(r"(?<=[.!?])\s+", message):
+        if not _CLAIM_VERBS.search(sentence) or _HEDGES.search(sentence):
+            continue
+        words = re.sub(r"[-\u2010\u2011]", " ", sentence).casefold()
+        for key in _CLAIM_FIELDS.get(step, ()):
+            if key == "guardrails":
+                named = {check for check, names in _CHECK_WORDS.items() if any(n in words for n in names)}
+                if named and "guardrails" not in fields and not named <= checks_on:
+                    claimed.add(key)
+            elif not have[key] and _CLAIM_MENTIONS[key].search(sentence) and not _NONE_OF.search(sentence):
+                claimed.add(key)
+    return [_CLAIM_NAMES[key] for key in _CLAIM_FIELDS.get(step, ()) if key in claimed]
 
 
 def _drop_unchanged(fields: dict, form: dict) -> None:

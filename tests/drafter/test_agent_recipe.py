@@ -1054,9 +1054,11 @@ class TestSafety:
     STATED = ("Build a public support bot. Limit it to 1,000 requests a day, with PII and injection guardrails, "
               "no Insights topics.")
 
-    def _stated(self, fields, *, earlier=(STATED,), message="Continue with Limits and safety.", skip=False):
+    def _stated(self, fields, *, earlier=(STATED,), message="Continue with Limits and safety.", skip=False,
+                can_correct=True):
         context = parse_context({"form": {}, "step": "safety", "earlier": list(earlier), "skip_questions": skip})
         req = DraftRequest("alice", "agent", [{"role": "user", "content": message}], context, "drafter:t")
+        req.can_correct = can_correct
         return validate({"message": "Set as you said.", "fields": fields}, req, _ws())
 
     def test_what_the_users_words_settle_is_set_without_asking(self):
@@ -1089,9 +1091,78 @@ class TestSafety:
         proposal = self._stated({"limits": {"mode": "requests", "value": 1000}}, skip=True,
                                 message="Draft it with what you know.")
         assert proposal["fields"] == {"limits": {"mode": "requests", "value": 1000}}
+        # A part their words leave open goes back once, so the message stops claiming it ...
+        with pytest.raises(ProposalInvalid, match="skipped the questions") as raised:
+            self._stated({"limits": {"mode": "requests", "value": 500}}, earlier=["A support bot"],
+                         skip=True, message="Draft it with what you know.")
+        assert "limits" in str(raised.value) and "don't say" in str(raised.value)
+        # ... and with no correction left it is dropped, as before.
         proposal = self._stated({"limits": {"mode": "requests", "value": 500}}, earlier=["A support bot"],
-                                skip=True, message="Draft it with what you know.")
+                                skip=True, message="Draft it with what you know.", can_correct=False)
         assert proposal["fields"] == {}
+
+    # Messages from the live re-check (safety_vague_r1/r3, build_vague_skip_r1): fields came back empty.
+    VAGUE_R1 = ("Safety defaults drafted: 500 requests a day, personal-data and prompt-injection checks in "
+                "monitor-only mode, and three Insights topics. Change any of it in the form before saving.")
+    VAGUE_R3 = ("Since you left the choices to me, I set the recommended safety defaults for a public-facing "
+                "chatbot: 500 requests per day shared by all users, and PII redaction plus prompt-injection "
+                "blocking (monitor-only at first, so you can review before enforcing). I also added three Insights "
+                "topics matching what customers ask — tracking, customs paperwork and delivery times. "
+                "Everything is adjustable in the form's safety section.")
+    HONEST = ("Since you skipped the safety questions, I left all three parts as they are: no daily limit, no extra "
+              "safety checks, and no Insights topics. If you'd like, a good starting point is 500 requests a day "
+              "plus the personal-data and injection checks — you can set all of this in the form's Safety "
+              "section.")
+    KNOWLEDGE = ("Knowledge step: I picked the four sources that match what your description promises — "
+                 "services, policies and customs rules for your own staff — and left out everything else. No "
+                 "tools needed for this.")
+
+    def _said(self, message, fields=None, *, step="safety", form=None, skip=True, can_correct=True):
+        context = parse_context({"form": form or {}, "step": step, "earlier": ["A support bot"],
+                                 "skip_questions": skip})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "Draft it with what you know."}], context,
+                           "drafter:t")
+        req.can_correct = can_correct
+        return validate({"message": message, "fields": fields or {}}, req, _ws())
+
+    @pytest.mark.parametrize("message", [VAGUE_R1, VAGUE_R3])
+    def test_a_message_claiming_settings_fields_leave_out_goes_back(self, message):
+        with pytest.raises(ProposalInvalid, match="Describe only what fields sets") as raised:
+            self._said(message)
+        for part in ("limit", "guardrail", "topics"):
+            assert part in str(raised.value)
+        # With no correction left the proposal still goes through.
+        assert self._said(message, can_correct=False)["fields"] == {}
+
+    def test_an_honest_skipped_message_with_a_suggestion_is_accepted(self):
+        assert self._said(self.HONEST)["message"].startswith("Since you skipped")
+
+    def test_a_claim_the_form_already_holds_is_accepted(self):
+        form = {"limits": {"mode": "requests", "value": 500},
+                "guardrails": {"enabled": True, "controls": [_on("pii", "input"), _on("pii", "output")]},
+                "analytics": {"enabled": True, "topics": ["Tracking", "Customs", "Delivery"]}}
+        message = "I kept 500 requests a day, set the PII check and added three Insights topics."
+        assert self._said(message, form=form, skip=False)["fields"] == {}
+
+    def test_a_knowledge_message_naming_sources_it_did_not_set_goes_back(self):
+        with pytest.raises(ProposalInvalid, match="sources"):
+            self._said(self.KNOWLEDGE, step="knowledge", skip=False)
+        proposal = self._said(self.KNOWLEDGE, {"sources": [SOURCE_ID]}, step="knowledge", skip=False)
+        assert proposal["fields"] == {"sources": [SOURCE_ID]}
+        assert self._said(self.KNOWLEDGE, step="knowledge", form={"sources": [SOURCE_ID]}, skip=False)
+        assert self._said("No sources fit yet; I set the agent type only.", {"agent_type": "classic"},
+                          step="knowledge", skip=False)
+
+    def test_other_steps_messages_are_not_read_for_policy(self):
+        message = "I set a plain tone so answers stay grounded, and added four starters."
+        assert self._said(message, step="prompt", skip=False)["message"] == message
+
+    def test_the_skipped_rule_says_the_message_names_only_what_fields_set(self):
+        context = parse_context({"step": "safety", "skip_questions": True})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "Draft it with what you know."}], context,
+                           "drafter:t")
+        text = instructions(req, _ws())
+        assert "never say you set" in text and "Safety section" in text
 
     def test_limits_are_either_or(self):
         proposal = _validate({"limits": {"mode": "requests", "value": 500}}, step="safety", asked=True,
@@ -1235,3 +1306,19 @@ def test_the_loop_sends_an_unasked_policy_proposal_back_to_ask():
                             {"id": "m", "display_name": "M", "supports_tools": True}, llm_factory=fake.factory))
     assert [e["type"] for e in events][-1] == "questions"
     assert "Ask the user first" in fake.calls[1]["messages"][-1]["content"]
+
+
+@pytest.mark.unit
+def test_a_claiming_message_costs_the_one_correction_but_never_the_turn():
+    from docsgpt.drafter.runner import run_draft
+    from tests.drafter.fakes import calls, FakeLLM, tool_call
+
+    claim = {"message": TestSafety.VAGUE_R1, "fields": {"limits": {"mode": "requests", "value": 500}}}
+    fake = FakeLLM(calls(tool_call("submit_proposal", claim)), calls(tool_call("submit_proposal", claim)))
+    context = parse_context({"form": {}, "step": "safety", "earlier": ["A support bot"], "skip_questions": True})
+    req = DraftRequest("alice", "agent", [{"role": "user", "content": "Draft it with what you know."}], context,
+                       "drafter:t")
+    events = list(run_draft(req, AGENT_RECIPE, _ws(), {"id": "m", "display_name": "M", "supports_tools": True},
+                            llm_factory=fake.factory))
+    assert "skipped the questions" in fake.calls[1]["messages"][-1]["content"]
+    assert events[-1]["type"] == "proposal" and events[-1]["proposal"]["fields"] == {}

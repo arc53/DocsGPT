@@ -434,6 +434,7 @@ class _Turn:
         Raises:
             ProposalInvalid: The answer breaks a rule the model can fix.
         """
+        self.req.can_correct = self.corrections < MAX_CORRECTIONS
         events = self._terminal_events(name, arguments, lead_in)
         if echo_length(events[-1]) > EVENT_CHARS:
             raise ProposalInvalid(["The answer is too long to hand over. Send it shorter: fewer and smaller edits, "
