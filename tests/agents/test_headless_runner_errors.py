@@ -16,11 +16,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _run(events, monkeypatch):
+def _run(events, monkeypatch, **agent_attrs):
     """Drive ``run_agent_headless`` over a canned agent event stream."""
     from docsgpt.agents import headless_runner as hr
 
-    agent = MagicMock(name="agent")
+    agent = MagicMock(name="agent", **agent_attrs)
     agent.gen.return_value = iter(events)
     agent.llm.token_usage = {"prompt_tokens": 7, "generated_tokens": 0}
 
@@ -97,3 +97,16 @@ class TestHeadlessRunnerStreamError:
         assert outcome.get("error") is None
         assert outcome["answer"] == "all good"
         assert outcome["sources"] == [{"title": "s"}]
+
+
+@pytest.mark.unit
+class TestHeadlessRunnerCannotComplete:
+    def test_a_workflow_nodes_report_reaches_the_outcome(self, monkeypatch):
+        outcome = _run([{"answer": "Prices fetched."}], monkeypatch, cannot_complete="Mail: no email tool")
+
+        assert outcome["cannot_complete"] == "Mail: no email tool"
+
+    def test_an_agent_that_notes_nothing_reports_nothing(self, monkeypatch):
+        outcome = _run([{"answer": "all good"}], monkeypatch)
+
+        assert outcome["cannot_complete"] is None

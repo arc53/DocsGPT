@@ -1114,6 +1114,56 @@ class TestSynthesisPhase:
         answer_events = [e for e in events if isinstance(e, dict) and "answer" in e]
         assert len(answer_events) == 1
 
+    @pytest.mark.parametrize("endpoint, noted", [("schedule", True), ("stream", False)])
+    def test_only_a_scheduled_synthesis_is_told_it_is_the_scheduled_run(
+        self,
+        endpoint,
+        noted,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        log_context,
+    ):
+        """The report is the run's answer, so it carries the marker rule ``_build_messages`` adds elsewhere."""
+        agent_base_params["endpoint"] = endpoint
+        agent = ResearchAgent(**agent_base_params)
+        agent._start_time = time.monotonic()
+        mock_llm.gen_stream = Mock(return_value=iter([]))
+
+        with patch.object(agent, "_handle_response", return_value=iter([])):
+            list(agent._synthesis_phase("check the site", [], [], {}, log_context))
+
+        system = mock_llm.gen_stream.call_args.kwargs["messages"][0]["content"]
+        assert ("CANNOT_COMPLETE:" in system) is noted
+
+
+@pytest.mark.unit
+class TestScheduledResearchRun:
+    def test_a_scheduled_run_asks_no_clarifying_question(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        log_context,
+    ):
+        """Nobody is there to answer one: the run would end on the question and record it as its result."""
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(**agent_base_params)
+        clarify = Mock(return_value="Which site?")
+
+        with patch.object(agent, "_setup_tools", return_value={}), \
+             patch.object(agent, "_clarification_phase", clarify), \
+             patch.object(agent, "_planning_phase", return_value=([{"query": "q", "rationale": "r"}], "simple")), \
+             patch.object(agent, "_research_step", return_value="findings"), \
+             patch.object(agent, "_synthesis_phase", return_value=iter([{"answer": "report"}])), \
+             patch.object(agent, "_get_truncated_tool_calls", return_value=[]):
+            events = list(agent._gen_inner("check the site", log_context))
+
+        clarify.assert_not_called()
+        assert [e["answer"] for e in events if "answer" in e] == ["report"]
+
 
 # =====================================================================
 # _research_step and _research_step_with_executor

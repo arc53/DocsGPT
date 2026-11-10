@@ -18,6 +18,7 @@ from docsgpt.agents.attachment_budget import (
     plan_listing,
 )
 from docsgpt.agents.attachment_dispatch import AttachmentDispatch
+from docsgpt.agents.cannot_complete import CANNOT_COMPLETE_MARKER
 from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
 from docsgpt.agents.tools.view_image import add_view_image_tool
@@ -2031,8 +2032,11 @@ class BaseAgent(ABC):
         "The user's message is that task, not a request to schedule it. You are the "
         "reminder or the recurring check, so carry the task out now and report the "
         "result, in the language the task is written in. Do not tell the user that "
-        "you cannot schedule, remind or repeat tasks: this run is that. If a step "
-        "needs something you do not have (a tool, an account), say which step and why."
+        "you cannot schedule, remind or repeat tasks: this run is that. If the task, "
+        "or a step it needs, cannot be done with what you have (a tool, an account, "
+        f"access), begin your answer with {CANNOT_COMPLETE_MARKER} and one line naming "
+        "that step and what is missing; anything you could still do goes after that "
+        f"line. Never begin with {CANNOT_COMPLETE_MARKER} when you did the task."
     )
 
     def _build_messages(

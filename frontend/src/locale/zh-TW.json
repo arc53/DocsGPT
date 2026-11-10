@@ -4250,7 +4250,8 @@
         "missed": "錯過了執行時間",
         "overlap": "上一次執行仍在進行",
         "stream_error": "回答串流中斷",
-        "empty_output": "沒有產生任何輸出"
+        "empty_output": "沒有產生任何輸出",
+        "cannot_complete": "代理無法完成此任務"
       },
       "viewRuns": "查看執行",
       "fromChat": "來自 {{name}}",

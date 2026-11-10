@@ -4388,7 +4388,8 @@
         "missed": "se perdió su hora",
         "overlap": "la ejecución anterior seguía en curso",
         "stream_error": "se cortó la respuesta",
-        "empty_output": "no produjo nada"
+        "empty_output": "no produjo nada",
+        "cannot_complete": "el agente no puede hacer esta tarea"
       },
       "viewRuns": "Ver ejecuciones",
       "fromChat": "De {{name}}",

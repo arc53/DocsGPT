@@ -188,8 +188,9 @@ class ResearchAgent(BaseAgent):
         self._start_time = time.monotonic()
         tools_dict = self._setup_tools()
 
-        # Phase 0: Clarification (skip if user is responding to a prior clarification)
-        if not self._is_follow_up():
+        # Phase 0: Clarification (skip if user is responding to a prior clarification).
+        # A scheduled run has nobody to answer a question, so it goes straight on.
+        if not self._is_follow_up() and self.endpoint != "schedule":
             with _phase_span("clarify"):
                 clarification = self._clarification_phase(query)
             if clarification:
@@ -812,6 +813,9 @@ class ResearchAgent(BaseAgent):
         synthesis_prompt = synthesis_prompt.replace("{plan_summary}", plan_summary)
         synthesis_prompt = synthesis_prompt.replace("{findings}", findings)
         synthesis_prompt = synthesis_prompt.replace("{references}", references)
+        if self.endpoint == "schedule":
+            # This prompt replaces the one ``_build_messages`` would extend.
+            synthesis_prompt = f"{synthesis_prompt}\n\n---\n\n{self.SCHEDULED_RUN_NOTE}"
 
         messages = [
             {"role": "system", "content": synthesis_prompt},

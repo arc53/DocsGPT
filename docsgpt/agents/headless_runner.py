@@ -579,6 +579,10 @@ def _run_agent_headless(
     except Exception:
         logger.exception("Guardrail audit flush failed for headless agent %s", agent_id)
 
+    # A workflow node can report it cannot do its step without its text
+    # opening the run's answer, so the engine notes it on the agent.
+    cannot_complete = getattr(agent, "cannot_complete", None)
+
     # Use the LLM accumulator (gen_token_usage / stream_token_usage decorators);
     # current_token_count is a context-size sentinel, not a usage tally.
     llm_usage = getattr(getattr(agent, "llm", None), "token_usage", None) or {}
@@ -596,6 +600,7 @@ def _run_agent_headless(
         "error_type": error_type,
         "error": error,
         "steps_completed": steps_completed,
+        "cannot_complete": cannot_complete if isinstance(cannot_complete, str) else None,
         "model_id": model_id,
         "metadata": message_metadata,
         "stopped": stopped,

@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text as sql_text
 
+from docsgpt.agents.cannot_complete import cannot_complete_reason, drop_cannot_complete_marker
 from docsgpt.agents.headless_runner import run_agent_headless
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
@@ -401,6 +402,19 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         error_type = str(outcome["error_type"])
         error_text = str(outcome.get("error") or "") or error_type
 
+    # The agent says it has no way to do the task (the scheduled-run note asks
+    # it to open its answer with the marker). Without this a schedule that can
+    # never work answers "I can't" every time as a success and never pauses.
+    cannot_complete = (
+        None if error_type else outcome.get("cannot_complete") or cannot_complete_reason(outcome.get("answer"))
+    )
+    if cannot_complete:
+        error_type = "cannot_complete"
+        error_text = cannot_complete
+        # The marker is for the worker; the stored answer and any chat turn
+        # read as the agent's explanation.
+        outcome = {**outcome, "answer": drop_cannot_complete_marker(outcome.get("answer") or "")}
+
     prompt_tokens = int(outcome.get("prompt_tokens", 0) or 0)
     generated_tokens = int(outcome.get("generated_tokens", 0) or 0)
     used_tokens = prompt_tokens + generated_tokens
@@ -483,9 +497,11 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             )
 
     appended: Optional[Dict[str, Any]] = None
+    # A task set from a chat that the agent cannot do still answers there, so
+    # the user learns why instead of hearing nothing.
     if (
         schedule.get("trigger_type") == "once"
-        and new_status == "success"
+        and (new_status == "success" or error_type == "cannot_complete")
         and schedule.get("origin_conversation_id")
     ):
         try:

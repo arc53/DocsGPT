@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
 
 from docsgpt import tracing
+from docsgpt.agents.cannot_complete import cannot_complete_reason
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from docsgpt.agents.workflows.retry import (
@@ -1070,6 +1071,9 @@ class WorkflowEngine:
             output_value = parsed_structured
             self._validate_structured_output(node_json_schema, output_value)
 
+        if getattr(self.agent, "endpoint", None) == "schedule" and isinstance(output_value, str):
+            self._note_cannot_complete(node, output_value)
+
         if streams_to_user:
             for event in held_events:
                 if first_chunk and hasattr(self, "_has_streamed"):
@@ -1083,6 +1087,16 @@ class WorkflowEngine:
 
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
+
+    def _note_cannot_complete(self, node: WorkflowNode, output: str) -> None:
+        """Record the first agent node of a scheduled run that reports it cannot do its step.
+
+        A node's answer reaches the run's answer only if it streams, and not
+        necessarily first, so the scheduler can't find the marker there alone.
+        """
+        reason = cannot_complete_reason(output)
+        if reason and not getattr(self.agent, "cannot_complete", None):
+            self.agent.cannot_complete = f"{node.title}: {reason}"
 
     def _execute_code_node(
         self, node: WorkflowNode

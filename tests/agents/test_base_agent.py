@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from unittest.mock import Mock, call, patch
 
 import pytest
+from docsgpt.agents.agentic_agent import AgenticAgent
 from docsgpt.agents.classic_agent import ClassicAgent
 from docsgpt.llm.anthropic import AnthropicLLM
 from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
@@ -233,6 +234,19 @@ class TestBaseAgentBuildMessages:
         assert "firing now" in system
         # The task itself is left as the user's message, untouched.
         assert messages[-1]["content"] == "Remind me: call Anil at 5pm"
+
+    @pytest.mark.parametrize("agent_class", [ClassicAgent, AgenticAgent])
+    def test_scheduled_run_is_told_how_to_report_a_task_it_cannot_do(
+        self, agent_class, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Without a marker the worker can't tell "no tool for this" from a
+        # result, so a schedule that can never work runs forever as a success.
+        agent_base_params["endpoint"] = "schedule"
+        agent = agent_class(**agent_base_params)
+
+        system = agent._build_messages("System prompt", "open the site and email me")[0]["content"]
+
+        assert "begin your answer with CANNOT_COMPLETE:" in system
 
     def test_scheduled_run_note_needs_no_system_prompt(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator

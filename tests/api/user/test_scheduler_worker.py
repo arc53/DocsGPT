@@ -701,6 +701,131 @@ class TestOneTimeRunNotifies:
         assert notified == []
 
 
+def _outcome(answer: str, **extra) -> dict:
+    return {
+        "answer": answer, "tool_calls": [], "sources": [], "thought": "", "prompt_tokens": 40,
+        "generated_tokens": 12, "denied": [], "error_type": None, "model_id": "fake", **extra,
+    }
+
+
+def _execute_with(run, outcome: dict) -> dict:
+    with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", return_value=outcome):
+        return execute_scheduled_run_body(str(run["id"]), "celery-cc")
+
+
+class TestCannotComplete:
+    """An agent that answers it has no way to do the task fails the run, so the schedule can pause."""
+
+    def test_the_marker_fails_the_run_with_its_reason(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            schedule, run, _ = _make_pending_run(conn)
+
+        result = _execute_with(run, _outcome(
+            "**CANNOT_COMPLETE:** Step 1 (open the site): no browser tool.\n\nNothing else was checked."
+        ))
+
+        assert result == {"status": "failed", "run_id": str(run["id"]), "error_type": "cannot_complete"}
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert row["status"] == "failed"
+        assert row["error_type"] == "cannot_complete"
+        assert row["error"] == "Step 1 (open the site): no browser tool."
+        assert row["output"] == "Step 1 (open the site): no browser tool.\n\nNothing else was checked."
+        assert sched["consecutive_failure_count"] == 1
+        failed = next(e[1] for e in stub_events if e[0] == "schedule.run.failed")
+        assert failed["error_type"] == "cannot_complete"
+        assert failed["error"] == "Step 1 (open the site): no browser tool."
+
+    def test_the_third_one_in_a_row_pauses_a_recurring_schedule(
+        self, pg_engine, patched_engine, stub_events, monkeypatch,
+    ):
+        from docsgpt.api.user import scheduler_worker
+
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_AUTOPAUSE_FAILURES", 3)
+        with pg_engine.begin() as conn:
+            schedule, first, agent_id = _make_pending_run(conn)
+            later = [
+                ScheduleRunsRepository(conn).record_pending(
+                    str(schedule["id"]), "u1", agent_id, _now() + timedelta(minutes=i),
+                )
+                for i in (1, 2)
+            ]
+
+        for index, run in enumerate([first, *later]):
+            _execute_with(run, _outcome("CANNOT_COMPLETE: no email tool to send the report"))
+            with pg_engine.connect() as conn:
+                sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+            assert sched["consecutive_failure_count"] == index + 1
+            assert sched["status"] == ("paused" if index == 2 else "active")
+        assert [e[0] for e in stub_events].count("schedule.autopaused") == 1
+
+    def test_an_answer_that_only_mentions_cannot_succeeds(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            schedule, run, _ = _make_pending_run(conn)
+            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+        answer = "The site is up. I cannot complete the login check without an account, so I skipped it."
+
+        result = _execute_with(run, _outcome(answer))
+
+        assert result["status"] == "success"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert row["error_type"] is None
+        assert row["output"] == answer
+        assert sched["consecutive_failure_count"] == 0
+
+    def test_a_workflow_node_that_cannot_do_its_step_fails_the_run(self, pg_engine, patched_engine, stub_events):
+        # The node's text did not stream, or not first; the runner reports it instead.
+        with pg_engine.begin() as conn:
+            _schedule, run, _ = _make_pending_run(conn)
+
+        _execute_with(run, _outcome("Prices fetched.", steps_completed=3, cannot_complete="Mail: no email tool"))
+
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["error_type"] == "cannot_complete"
+        assert row["error"] == "Mail: no email tool"
+        assert row["output"] == "Prices fetched."
+
+    def test_a_run_that_already_failed_keeps_its_error(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            _schedule, run, _ = _make_pending_run(conn)
+
+        _execute_with(run, _outcome("CANNOT_COMPLETE: no email tool", error_type="stream_error", error="peer closed"))
+
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["error_type"] == "stream_error"
+        assert row["error"] == "peer closed"
+
+    def test_a_one_time_task_from_a_chat_fails_but_still_explains_there(
+        self, pg_engine, patched_engine, stub_events, monkeypatch,
+    ):
+        notified = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        with pg_engine.begin() as conn:
+            conv_id, run = TestOneTimeRunNotifies()._once(conn, name="Morning check")
+
+        result = _execute_with(run, _outcome("CANNOT_COMPLETE: no browser tool to open the site"))
+
+        assert result["status"] == "failed"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            messages = conn.execute(
+                text("SELECT response FROM conversation_messages WHERE conversation_id = CAST(:c AS uuid)"),
+                {"c": conv_id},
+            ).fetchall()
+            sched = SchedulesRepository(conn).get_internal(str(row["schedule_id"]))
+        assert row["error_type"] == "cannot_complete"
+        assert row["message_id"] is not None
+        assert str(row["conversation_id"]) == conv_id
+        assert [m[0] for m in messages] == ["no browser tool to open the site"]
+        assert notified[0]["body"] == "no browser tool to open the site"
+        assert sched["status"] == "completed"
+
+
 class TestRunAsOwnerAccessRecheck:
     """A schedule someone set on another user's agent re-checks their access
     on every run; the run itself always executes as the agent's owner."""
