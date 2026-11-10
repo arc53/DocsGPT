@@ -66,6 +66,13 @@ describe('SelectItem', () => {
     // Beside the item's text (which the trigger copies), not inside it.
     expect(suffix.parentElement).toBe(item);
     expect(item.textContent).toBe('A· key refused');
+    // A long name gives way with "…"; the suffix always shows (D07).
+    const text = suffix.previousElementSibling as HTMLElement;
+    expect(text.textContent).toBe('A');
+    expect(text.className.split(' ')).toEqual(
+      expect.arrayContaining(['min-w-0', 'truncate']),
+    );
+    expect(suffix.className.split(' ')).toContain('shrink-0');
   });
 });
 

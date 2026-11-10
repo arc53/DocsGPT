@@ -158,7 +158,8 @@ function SelectItem({
   suffix,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item> & {
-  /** A muted note after the name, in the list only (the trigger copies the name alone). */
+  /** A muted note after the name, in the list only (the trigger copies the
+   *  name alone). It always shows: a long name truncates before it. */
   suffix?: React.ReactNode;
 }) {
   return (
@@ -178,7 +179,15 @@ function SelectItem({
           <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {/* With a suffix the name gives way ("…"), so the suffix always
+          shows. Radix drops an ItemText's className, so a span wraps it. */}
+      {suffix ? (
+        <span data-slot="select-item-text" className="min-w-0 truncate">
+          <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+        </span>
+      ) : (
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      )}
       {suffix && (
         <span
           data-slot="select-item-suffix"

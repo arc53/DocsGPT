@@ -67,8 +67,16 @@ vi.mock('../components/ui/select', () => ({
     </div>
   ),
   SelectValue: () => null,
-  SelectContent: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
+  SelectContent: ({
+    children,
+    fit,
+  }: {
+    children: React.ReactNode;
+    fit?: boolean;
+  }) => (
+    <div data-testid="content" data-fit={fit || undefined}>
+      {children}
+    </div>
   ),
   SelectGroup: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="group">{children}</div>
@@ -355,8 +363,14 @@ describe('Task model row', () => {
       '[data-testid="trigger"]',
     )!;
     expect(trigger.className.split(' ')).toEqual(
-      expect.arrayContaining(['sm:w-auto', 'sm:min-w-56', 'sm:max-w-80']),
+      expect.arrayContaining(['sm:w-auto', 'sm:min-w-56', 'sm:max-w-96']),
     );
+    // The list sizes to its options (a "· key refused" suffix fits).
+    expect(
+      container
+        .querySelector('[data-testid="content"]')!
+        .hasAttribute('data-fit'),
+    ).toBe(true);
     expect(trigger.className).not.toContain('sm:w-56');
     expect(trigger.title).toBe('My Llama');
     expect(item('mine').querySelector('span.truncate')?.textContent).toBe(

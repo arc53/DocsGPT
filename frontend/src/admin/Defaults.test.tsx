@@ -385,7 +385,8 @@ describe('Admin Defaults', () => {
     const trigger = container.querySelector<HTMLElement>(
       '#defaults-task-model',
     )!;
-    expect(trigger.className).toContain('sm:max-w-80');
+    // Room for the Not set label's model name (B01, D08).
+    expect(trigger.className).toContain('sm:max-w-96');
     expect(trigger.getAttribute('title')).toBe('Not set (GPT B)');
     await act(async () => {
       trigger.dispatchEvent(
@@ -401,6 +402,12 @@ describe('Admin Defaults', () => {
         document.body.querySelectorAll<HTMLElement>('[role="option"]'),
       ).map((o) => o.textContent),
     ).toEqual(['Not set (GPT B)', 'GPT A', 'GPT B· key refused']);
+    // The list sizes to its options, not the trigger, so the suffix fits.
+    expect(
+      document.body
+        .querySelector<HTMLElement>('[data-slot="select-content"]')!
+        .className.split(' '),
+    ).toContain('w-auto');
   });
 
   it('shows no refusal for a model that runs', async () => {

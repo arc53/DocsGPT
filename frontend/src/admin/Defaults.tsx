@@ -449,15 +449,16 @@ export default function Defaults() {
               >
                 <SelectTrigger
                   id="defaults-task-model"
-                  // Grows to its value, up to 320px, then ends in "…".
-                  className="w-full sm:w-auto sm:max-w-80 sm:min-w-56"
+                  // Grows to its value, up to 384px (the Not set label with its
+                  // model's name fits), then ends in "…".
+                  className="w-full sm:w-auto sm:max-w-96 sm:min-w-56"
                   size="field"
                   shape="pill"
                   title={pickedLabel}
                 >
                   <SelectValue placeholder="Unavailable model" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent fit>
                   <SelectItem value={TASK_MODEL_UNSET}>
                     <span className="truncate">{unsetLabel}</span>
                   </SelectItem>

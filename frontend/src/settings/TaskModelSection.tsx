@@ -285,9 +285,10 @@ export default function TaskModelSection() {
           >
             <SelectTrigger
               id={id}
-              // Grows to its value, up to 320px, then ends in "…" (the
+              // Grows to its value, up to 384px (room for the instance
+              // default's label with its model), then ends in "…" (the
               // whole name as its title).
-              className="w-full sm:w-auto sm:max-w-80 sm:min-w-56"
+              className="w-full sm:w-auto sm:max-w-96 sm:min-w-56"
               size="field"
               shape="pill"
               title={pickedLabel}
@@ -296,7 +297,7 @@ export default function TaskModelSection() {
                 placeholder={t('settings.general.taskModelUnavailableValue')}
               />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent fit>
               <SelectItem value={INSTANCE_DEFAULT}>
                 <span className="truncate">{instanceLabel}</span>
               </SelectItem>
