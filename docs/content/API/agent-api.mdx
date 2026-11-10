@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-11-09
+lastUpdated: 2026-11-10
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -372,7 +372,7 @@ When an answer depends on something neither the conversation nor the sources set
 - **Without it** (the default), the questions are the turn's answer, written as text: the assistant's lead-in line, then each question in bold with its options as `a)`, `b)` and so on. The turn ends, and the user's next message is the answer. The turn's `ask_user` tool call carries `"shown_as": "text"`.
 - **With `"questions": "cards"`**, the turn pauses as in [Tools that need approval](#tools-that-need-approval). The `tool_call` event has `"status": "awaiting_answer"`, a `message` (the lead-in, or `null`) and a `questions` list; the pending call's `pause_type` is `awaiting_answer`.
 
-Each entry in `questions` has an `id` (`q1`, `q2`, `q3`), its `text`, an optional `note`, `multi` (whether several options may be picked) and `options`, each with an `id` (`a`, `b`, ...) and a `label`. A question with no options takes a typed answer and may carry a `placeholder`.
+Each entry in `questions` has an `id` (`q1`, `q2`, `q3`), its `text`, an optional `note`, `multi` (whether several options may be picked) and `options`, each with an `id` (`a`, `b`, ...), a `label`, `input` and `exclusive`. `input` is the placeholder of a field that picking the option opens for the rest (send the answer as `<label>: <typed text>`), or `null`. `exclusive` is `true` for at most one option of a `multi` question, listed last: picking it rules out the others ("None of these"). A question with no options takes a typed answer and may carry a `placeholder`. Written as text, an option with an `input` is followed by its placeholder in italics.
 
 Resume with `tool_actions`, one action for the call:
 

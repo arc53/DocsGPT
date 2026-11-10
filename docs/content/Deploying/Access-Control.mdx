@@ -1,7 +1,7 @@
 ---
 title: Access Control, Roles & Teams
 description: How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
-lastUpdated: 2026-11-06
+lastUpdated: 2026-11-10
 ---
 
 import { Callout } from 'nextra/components'
@@ -126,7 +126,7 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` `PUT` | `/api/admin/guardrails` | **Admin → Guardrails**: the [rules every agent follows](/Agents/guardrails#the-instance-floor) (the instance floor, existing agents included), the [MCP tool-description warnings](/Agents/guardrails#mcp-tool-descriptions) toggle, and what the prompt-injection model costs on this server. |
 | `GET` `PUT` | `/api/admin/defaults/sources` | **Admin → Defaults**, new sources: the [retrieval settings new sources start with](/Sources/Per-source-configuration#defaults-for-new-sources), relevance included, and what the relevance model costs per answer on this server. Saving never changes an existing source. |
 | `GET` `PUT` | `/api/admin/defaults/agents` | **Admin → Defaults**, new agents: the [guardrails new agents start with](/Agents/guardrails#defaults-for-new-agents). Saving never changes an existing agent. |
-| `GET` `PUT` | `/api/admin/defaults/models` | **Admin → Defaults**, models: the instance [task model](/Using/web-app#task-model), a built-in model for users who picked none (`{"task_model_id": null}` or a blank id clears it; spaces around an id are ignored). It applies at once. A stored model that can no longer run reads as `task_model_id: null` with `task_model_unavailable: true`, and the page shows **Unavailable model** until it is replaced. |
+| `GET` `PUT` | `/api/admin/defaults/models` | **Admin → Defaults**, models: the instance [task model](/Using/web-app#task-model), a built-in model for users who picked none (`{"task_model_id": null}` or a blank id clears it; spaces around an id are ignored). It applies at once. A stored model that can no longer run reads as `task_model_id: null` with `task_model_unavailable: true`, and the page shows **Unavailable model** until it is replaced. `task_model_error` is `{"model_id", "code", "at"}` when the model that runs for users without a choice failed a draft because its provider refused the key (code `model_auth`), else `null`; the page then marks it **· key refused**, and a draft that works on it or any change here clears it. |
 
 <Callout type="info" emoji="ℹ️">
 Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.

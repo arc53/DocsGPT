@@ -1,7 +1,7 @@
 ---
 title: Using the Web App
 description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language, and the clarifying questions an assistant can ask in a chat.
-lastUpdated: 2026-11-09
+lastUpdated: 2026-11-10
 ---
 
 import { Callout } from 'nextra/components'
@@ -92,11 +92,13 @@ The list starts with **Use instance default**, which names in brackets the model
 
 Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model, unless it is disabled. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. Settings then shows **Unavailable model** and a note that the instance default runs; your choice is kept and runs again if the model comes back, until you pick **Use instance default** or another model. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
 
-Over the API, `GET /api/user/preferences` returns `task_model_id` (`null` when you have no choice, or can no longer use it), `task_model_unavailable` (`true` when a choice is stored that can no longer run) and `instance_task_model_id` (the model that runs without one, `null` when no model can), and `PUT /api/user/preferences` with `{"task_model_id": "<model id>"}` sets it; `null` goes back to the instance default, and a model you can't use answers `400` (`invalid_model`). A [personal access token](/API/personal-access-tokens#scopes) reads these fields with `models:read` and sets the task model with `models:write`.
+When a draft fails because the model's provider refused its API key, DocsGPT remembers it: the list marks that model **· key refused** (you can still pick it, since an admin may fix the key), and while it is the model that runs, a warning under the field names it. The mark goes once a draft on that model works or you pick a model; the instance's task model gets the same mark under **Admin → Defaults**.
+
+Over the API, `GET /api/user/preferences` returns `task_model_id` (`null` when you have no choice, or can no longer use it), `task_model_unavailable` (`true` when a choice is stored that can no longer run), `task_model_error` (`{"model_id", "code", "at"}` when the task model that runs now failed its last draft because its provider refused the key, code `model_auth`; otherwise `null`; a draft that works on it, or setting the task model, clears it) and `instance_task_model_id` (the model that runs without one, `null` when no model can), and `PUT /api/user/preferences` with `{"task_model_id": "<model id>"}` sets it; `null` goes back to the instance default, and a model you can't use answers `400` (`invalid_model`). A [personal access token](/API/personal-access-tokens#scopes) reads these fields with `models:read` and sets the task model with `models:write`.
 
 ## Clarifying questions
 
-When your answer depends on something neither the chat nor your sources settle (which quarter, who a document is for), the assistant can ask first instead of guessing. It asks at most three short questions, once per message, and only when the answer would really differ. Each question has a few options to pick, one or several, and **Something else…** for your own words, or a field to type in when only you know the answer (a name, an order number).
+When your answer depends on something neither the chat nor your sources settle (which quarter, who a document is for), the assistant can ask first instead of guessing. The same goes for a request that needs your own specifics: asked for a shipping policy without the regions, times or costs, it asks for them rather than writing a template full of blanks. It asks at most three short questions, once per message, and only when the answer would really differ. Each question has a few options to pick, one or several, and **Something else…** for your own words, or a field to type in when only you know the answer (a name, an order number). Picking some options opens a field under the option for the rest, such as **Another city** with the city's name, and in a question that takes several picks, an option such as **None of these** comes last and rules out the others.
 
 - **Send answers** sends your picks, and the same answer carries on.
 - **Just answer** skips the questions: the assistant goes ahead with its best guess and says what it assumed.
