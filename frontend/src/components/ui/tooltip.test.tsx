@@ -71,3 +71,42 @@ describe('Tooltip wrapping', () => {
     host.remove();
   });
 });
+
+describe('Tooltip on focus', () => {
+  async function focusTrigger(visible: boolean) {
+    const { act } = await import('react');
+    const { createRoot } = await import('react-dom/client');
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button">Resume</button>
+          </TooltipTrigger>
+          <TooltipContent>Resume drafting</TooltipContent>
+        </Tooltip>,
+      ),
+    );
+    const button = host.querySelector('button')!;
+    const matches = button.matches.bind(button);
+    button.matches = (selector: string) =>
+      selector === ':focus-visible' ? visible : matches(selector);
+    await act(async () => button.focus());
+    const state = button.getAttribute('data-state');
+    await act(async () => root.unmount());
+    host.remove();
+    return state;
+  }
+
+  it('opens when the keyboard brings focus to its trigger', async () => {
+    expect(await focusTrigger(true)).not.toBe('closed');
+  });
+
+  it('stays closed when focus returns to its trigger after a tap or click', async () => {
+    // A sheet closing on a phone hands focus back to the button that opened it.
+    expect(await focusTrigger(false)).toBe('closed');
+  });
+});
