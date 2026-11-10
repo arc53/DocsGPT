@@ -11,7 +11,7 @@ from docsgpt.cache import gen_cache, stream_cache
 from docsgpt.core.settings import settings
 from docsgpt.core.run_budget import check_round, is_budget_exhausted
 from docsgpt.llm.deadlines import StreamStalledError, timed_stream
-from docsgpt.error import bounded_error_text
+from docsgpt.error import bounded_error_text, provider_failure_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
 logger = logging.getLogger(__name__)
@@ -717,7 +717,7 @@ class BaseLLM(ABC):
             if is_budget_exhausted(e):
                 raise
             if not self.fallback_llm:
-                logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
+                logger.error("Primary LLM failed and no fallback configured: %s", provider_failure_text(e))
                 raise
             fallback = self.fallback_llm
             fallback_kwargs = self._fallback_request(fallback, kwargs, e)
@@ -725,8 +725,7 @@ class BaseLLM(ABC):
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
-                f"Primary LLM failed. Falling back to "
-                f"{fallback.model_id}. Error: {str(e)}"
+                "Primary LLM failed. Falling back to %s. Error: %s", fallback.model_id, provider_failure_text(e)
             )
 
             # Mirror the streaming path: emit the fallback's own start event so
@@ -879,9 +878,7 @@ class BaseLLM(ABC):
                 logger.warning(f"Primary LLM stalled after delivering output; not engaging fallback. Error: {str(e)}")
                 raise e
             if not self.fallback_llm:
-                logger.error(
-                    f"Primary LLM failed and no fallback configured: {str(e)}"
-                )
+                logger.error("Primary LLM failed and no fallback configured: %s", provider_failure_text(e))
                 raise
             fallback = self.fallback_llm
             fallback_kwargs = self._fallback_request(fallback, kwargs, e)
@@ -889,8 +886,8 @@ class BaseLLM(ABC):
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
-                f"Primary LLM failed mid-stream. Falling back to "
-                f"{fallback.model_id}. Error: {str(e)}"
+                "Primary LLM failed mid-stream. Falling back to %s. Error: %s",
+                fallback.model_id, provider_failure_text(e),
             )
             # Apply decorators to fallback's raw stream method directly —
             # calling fallback.gen_stream() would re-enter the orchestrator

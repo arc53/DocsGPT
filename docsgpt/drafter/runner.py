@@ -43,6 +43,7 @@ from docsgpt.drafter.output import (
 )
 from docsgpt.drafter.read_tools import run_read_tool, tool_definitions
 from docsgpt.drafter.recipe import DraftRequest, ProposalInvalid, Recipe
+from docsgpt.error import is_auth_failure
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,6 @@ _now = time.monotonic
 TIMED_OUT = "The model took too long to answer. Try again in a moment."
 UNREACHABLE = "The model could not be reached. Try again in a moment."
 KEY_REFUSED = "The task model's provider refused its key. Change the task model, or ask an admin to check the key."
-#: Error class names the provider SDKs raise for a refused key (OpenAI, Anthropic, Groq…).
-_AUTH_ERROR_NAMES = frozenset({"AuthenticationError", "PermissionDeniedError"})
-#: Lower-cased phrases of the errors an SDK raises for a key that is missing when it is built or called.
-_MISSING_KEY_PHRASES = ("api_key client option must be set", "could not resolve authentication method")
 
 COMMON_RULES = f"""You are the DocsGPT drafter. A user describes what they want, and you fill a form in the DocsGPT \
 app for them. You never save, publish or delete anything: the user reviews your draft in the form and saves it \
@@ -261,31 +258,6 @@ def build_messages(
             content = f"{data}\n\nThe user's request:\n{content}"
         messages.append({"role": message["role"], "content": content})
     return messages
-
-
-def is_auth_failure(error: BaseException) -> bool:
-    """Whether a model call failed because the provider refused, or never got, the model's key.
-
-    A 401 or 403 from the provider, an SDK's authentication or permission
-    error, or an SDK that can't find a key to send. Such a failure doesn't go
-    away on retry: the user has to change the task model or its key.
-
-    Args:
-        error: What the call (or building the model) raised.
-
-    Returns:
-        True for a key problem.
-    """
-    status = getattr(error, "status_code", None)
-    if status is None:
-        status = getattr(getattr(error, "response", None), "status_code", None)
-    if status is None:
-        # google-genai's APIError carries the HTTP status as ``code``.
-        status = getattr(error, "code", None)
-    if status in (401, 403) or type(error).__name__ in _AUTH_ERROR_NAMES:
-        return True
-    message = str(error).lower()
-    return any(phrase in message for phrase in _MISSING_KEY_PHRASES)
 
 
 def _failure_event(error: BaseException, fallback: str) -> dict:

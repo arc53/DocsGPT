@@ -272,6 +272,59 @@ class TestNonStreamingFallback:
             primary.gen(**CALL_ARGS)
 
 
+class _RefusedKey(Exception):
+    """A provider's 401, its body quoting the refused key."""
+
+    status_code = 401
+
+    def __init__(self, message="Error code: 401 - {'error': {'message': 'Invalid API key sk-live-123'}}"):
+        super().__init__(message)
+
+
+class _KeyRefusedLLM(FakeLLM):
+    def _raw_gen(self, baseself, model, messages, stream, tools=None, **kwargs):
+        raise _RefusedKey()
+
+
+@pytest.mark.unit
+class TestNoFallbackFailureLog:
+    """The "no fallback configured" line names an auth failure by type and status only."""
+
+    @pytest.fixture(autouse=True)
+    def _no_fallback(self, monkeypatch):
+        monkeypatch.setattr(
+            "docsgpt.llm.base.settings",
+            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
+        )
+
+    @staticmethod
+    def _failure_lines(caplog):
+        return [r.getMessage() for r in caplog.records if "no fallback configured" in r.getMessage()]
+
+    def test_a_refused_key_logs_no_provider_body(self, caplog):
+        with caplog.at_level(logging.ERROR), pytest.raises(_RefusedKey):
+            _KeyRefusedLLM(backup_models=[]).gen(**CALL_ARGS)
+        [line] = self._failure_lines(caplog)
+        assert "_RefusedKey (HTTP 401)" in line and "sk-live" not in line and "Invalid API key" not in line
+
+    def test_a_refused_key_mid_stream_logs_no_provider_body(self, caplog):
+        primary = FakeLLM(stream_chunks=["x"], fail_at=0, backup_models=[], error_class=_RefusedKey)
+        with caplog.at_level(logging.ERROR), pytest.raises(_RefusedKey):
+            list(primary.gen_stream(**CALL_ARGS))
+        [line] = self._failure_lines(caplog)
+        assert "_RefusedKey (HTTP 401)" in line and "sk-live" not in line
+
+    def test_another_failure_keeps_a_capped_message(self, caplog):
+        class _Timeout(FakeLLM):
+            def _raw_gen(self, baseself, model, messages, stream, tools=None, **kwargs):
+                raise RuntimeError("Error code: 524 - " + "{'title': 'A timeout occurred'} " * 200)
+
+        with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
+            _Timeout(backup_models=[]).gen(**CALL_ARGS)
+        [line] = self._failure_lines(caplog)
+        assert "RuntimeError: Error code: 524" in line and len(line) < 600
+
+
 # Tests — streaming fallback (gen_stream)
 
 

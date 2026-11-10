@@ -16,6 +16,12 @@ SERVER_ERROR = "server_error"
 MAX_ERROR_TEXT_CHARS = 2_000
 # A run this long of base64 characters is a payload, not a message.
 _BASE64_RUN = re.compile(r"(?:base64,)?[A-Za-z0-9+/=_-]{200,}")
+# Longest provider error text a model-call failure log line keeps.
+MAX_PROVIDER_FAILURE_CHARS = 300
+# Error class names the provider SDKs raise for a refused key (OpenAI, Anthropic, Groq…).
+_AUTH_ERROR_NAMES = frozenset({"AuthenticationError", "PermissionDeniedError"})
+# Lower-cased phrases of the errors an SDK raises for a key that is missing when it is built or called.
+_MISSING_KEY_PHRASES = ("api_key client option must be set", "could not resolve authentication method")
 
 
 def response_error(code_status, message=None):
@@ -178,4 +184,63 @@ def bounded_error_text(error: BaseException) -> str:
     text = _BASE64_RUN.sub("[payload]", f"{type(error).__name__}: {error}")
     if len(text) > MAX_ERROR_TEXT_CHARS:
         text = text[: MAX_ERROR_TEXT_CHARS - 1] + "…"
+    return text
+
+
+def http_status(error: BaseException) -> Optional[int]:
+    """The HTTP status a provider SDK's error carries, or None.
+
+    Args:
+        error: The exception.
+
+    Returns:
+        ``status_code`` (openai, anthropic), the response's status, or google-genai's ``code``; None without one.
+    """
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    if status is None:
+        # google-genai's APIError carries the HTTP status as ``code``.
+        status = getattr(error, "code", None)
+    return status if isinstance(status, int) and not isinstance(status, bool) else None
+
+
+def is_auth_failure(error: BaseException) -> bool:
+    """Whether a model call failed because the provider refused, or never got, the model's key.
+
+    A 401 or 403 from the provider, an SDK's authentication or permission
+    error, or an SDK that can't find a key to send. Such a failure doesn't go
+    away on retry: the user has to change the model or its key.
+
+    Args:
+        error: What the call (or building the model) raised.
+
+    Returns:
+        True for a key problem.
+    """
+    if http_status(error) in (401, 403) or type(error).__name__ in _AUTH_ERROR_NAMES:
+        return True
+    message = str(error).lower()
+    return any(phrase in message for phrase in _MISSING_KEY_PHRASES)
+
+
+def provider_failure_text(error: BaseException) -> str:
+    """A failed model call, as an operator log line may quote it.
+
+    A refused key is named by its type and HTTP status only: the provider's
+    body can quote the key or the account. Other failures keep their message,
+    payloads cut out and cut to :data:`MAX_PROVIDER_FAILURE_CHARS`.
+
+    Args:
+        error: What the model call raised.
+
+    Returns:
+        ``Type (HTTP 401)`` for a key problem, else ``Type: message``.
+    """
+    if is_auth_failure(error):
+        status = http_status(error)
+        return type(error).__name__ + (f" (HTTP {status})" if status is not None else "")
+    text = bounded_error_text(error)
+    if len(text) > MAX_PROVIDER_FAILURE_CHARS:
+        text = text[: MAX_PROVIDER_FAILURE_CHARS - 1] + "…"
     return text

@@ -183,3 +183,37 @@ class TestBoundedErrorText:
 
     def test_long_text_is_capped(self):
         assert len(bounded_error_text(ValueError("x " * 10_000))) <= 2_000
+
+
+class _StatusError(Exception):
+    """A provider error carrying an HTTP status, as the openai and anthropic SDKs raise."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+@pytest.mark.unit
+class TestProviderFailureText:
+    def test_a_refused_key_is_an_auth_failure(self):
+        from docsgpt.error import is_auth_failure
+
+        assert is_auth_failure(_StatusError("Invalid API key", 401))
+        assert is_auth_failure(_StatusError("forbidden", 403))
+        assert not is_auth_failure(_StatusError("timeout", 524))
+        assert is_auth_failure(RuntimeError("The api_key client option must be set"))
+
+    def test_an_auth_failure_logs_only_its_type_and_status(self):
+        from docsgpt.error import provider_failure_text
+
+        body = "Error code: 401 - {'error': {'message': 'Invalid API key provided: sk-abc123', 'code': 'invalid_api_key'}}"
+        text = provider_failure_text(_StatusError(body, 401))
+        assert text == "_StatusError (HTTP 401)"
+
+    def test_another_failure_keeps_its_message_cut_short(self):
+        from docsgpt.error import MAX_PROVIDER_FAILURE_CHARS, provider_failure_text
+
+        text = provider_failure_text(_StatusError("Error code: 524 - " + "{'detail': 'timeout'} " * 200, 524))
+        assert text.startswith("_StatusError: Error code: 524 - {'detail'")
+        assert len(text) <= MAX_PROVIDER_FAILURE_CHARS
+        assert provider_failure_text(RuntimeError("boom")) == "RuntimeError: boom"
