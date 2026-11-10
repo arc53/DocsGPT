@@ -178,6 +178,19 @@ class TestQuestionsShape:
             assert "input" in text
         assert "Something else" in options and "contact" in options
 
+    def test_the_description_steers_when_and_how_to_ask(self):
+        from docsgpt.agents.tools.ask_user import AskUserTool
+
+        description = AskUserTool().get_actions_metadata()[0]["description"]
+        # Ask for the user's specifics rather than writing a template full of placeholders.
+        assert "placeholder" in description and "shipping policy" in description
+        # Ask with the tool, never as prose.
+        assert "never as questions written in your answer" in description
+        # multi when several options can apply, no "Multiple X" option.
+        assert "multi" in description and "several of these" in description.lower()
+        # Clear requests are still answered without asking.
+        assert "Never ask for small talk or about something already clear" in description
+
     def test_only_cards_asks_for_cards(self):
         assert questions_mode("cards") == "cards"
         assert questions_mode(None) == "text"

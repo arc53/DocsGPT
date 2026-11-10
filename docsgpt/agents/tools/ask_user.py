@@ -137,11 +137,16 @@ class AskUserTool(Tool):
                     f"Ask the user up to {MAX_QUESTIONS} short clarifying questions, then stop. Ask only when your "
                     "answer would be materially different depending on something neither the conversation nor "
                     "the sources settle; otherwise answer with a sensible assumption and say what you assumed. "
-                    "Never ask for small talk or about something already clear. Give each question 2-5 short "
+                    "That includes a request that needs the user's own specifics: rather than writing a template "
+                    "full of placeholders to fill in (\"write me a shipping policy\" without the regions, times "
+                    "or costs), ask for them. Never ask for small talk or about something already clear. Ask "
+                    "with this tool, never as questions written in your answer. Give each question 2-5 short "
                     "options (the user can always type their own), or none for something only the user can "
-                    "type. An option that needs a detail typed gets an input instead of asking to type; never "
-                    "invent contact details as options. Call it alone, with no other tool call in the same round, and write nothing else in "
-                    "that turn: the user's reply comes back to you. One round of questions per user message."
+                    "type. Set multi when more than one option can apply, instead of an option like \"Several "
+                    "of these\". An option that needs a detail typed gets an input instead of asking to type; "
+                    "never invent contact details as options. Call it alone, with no other tool call in the same "
+                    "round, and write nothing else in that turn: the user's reply comes back to you. One round "
+                    "of questions per user message."
                 ),
                 "parameters": copy.deepcopy(CHAT_QUESTIONS_SCHEMA),
             }
