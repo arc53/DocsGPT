@@ -335,7 +335,7 @@ class TestCheckPause:
         assert pause["pause_type"] == "awaiting_answer"
         assert pause["message"] == "Two things first:"
         assert [q["id"] for q in pause["questions"]] == ["q1", "q2"]
-        assert pause["arguments"] == ARGS
+        assert pause["arguments"] == {"message": pause["message"], "questions": pause["questions"]}
         assert executor.questions_asked is True
 
     def test_text_runs_the_call(self):
@@ -794,6 +794,68 @@ class TestQuestionOutputGuardrails(_ResumeHarness):
         executor, tools, _agent_ = self._cards(BLOCK_OUTPUT)
         pause = executor.check_pause(tools, _call(args={**ARGS, "questions": [ARGS["questions"][1]]}), "MockLLM")
 
+        message, questions = normalize_questions({**ARGS, "questions": [ARGS["questions"][1]]})
         assert pause["pause_type"] == "awaiting_answer"
-        assert pause["arguments"] == {**ARGS, "questions": [ARGS["questions"][1]]}
-        assert pause["questions"] == normalize_questions({**ARGS, "questions": [ARGS["questions"][1]]})[1]
+        assert pause["arguments"] == {"message": message, "questions": questions}
+        assert pause["questions"] == questions
+
+    def test_what_the_cards_leave_out_never_reaches_the_client_or_the_paused_state(self):
+        # A 4th question and an extra key are dropped from the cards, so the
+        # screen never sees them: neither may ride along in the arguments.
+        args = {**ARGS, "leak": "seats secret", "questions": [
+            ARGS["questions"][1],
+            {"text": "Role?", "options": []},
+            {"text": "Region?", "options": []},
+            {"text": "How many seats?", "options": []},
+        ]}
+        executor, tools, agent = self._cards(BLOCK_OUTPUT)
+        events = list(Handler().handle_streaming(agent, _tool_round(_call(args=args)), tools, []))
+
+        (pause,) = [e for e in events if isinstance(e, dict) and e.get("type") == "tool_call"]
+        stored = agent._pending_continuation["pending_tool_calls"][0]
+        for shown in (pause["data"], stored):
+            assert "seats" not in json.dumps(shown)
+            assert set(shown["arguments"]) == {"message", "questions"}
+            assert len(shown["arguments"]["questions"]) == 3
+
+    def _text(self, guardrails: Dict) -> tuple[ToolExecutor, Dict, Mock]:
+        screening_agent, _ = self._agent(guardrails)
+        executor, tools = _executor("text")
+        executor.question_screen = screening_agent._screen_questions
+        return executor, tools, _agent(executor)
+
+    def test_redacted_text_questions_show_and_keep_the_redacted_text(self):
+        args = {**ARGS, "message": "Mail ada@example.com or answer:", "questions": [
+            {"text": "Team size?", "options": ["1-10", "bob@example.com"]},
+        ]}
+        executor, tools, agent = self._text(REDACT_OUTPUT)
+        events = list(Handler().handle_streaming(agent, _tool_round(_call(args=args)), tools, []))
+
+        assert "@example.com" not in json.dumps([e for e in events if isinstance(e, dict)])
+        assert "@example.com" not in events[-1]
+        assert "Mail [EMAIL] or answer:" in events[-1]
+        (record,) = executor.tool_calls
+        assert "@example.com" not in json.dumps(record)
+        assert record["arguments"]["message"] == "Mail [EMAIL] or answer:"
+
+    def test_blocked_text_questions_end_the_turn_like_a_blocked_answer(self):
+        executor, tools, agent = self._text(BLOCK_OUTPUT)
+        events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
+
+        assert events[-1]["type"] == "error"
+        assert events[-1]["guardrail"]["stage"] == "output"
+        assert not [e for e in events if isinstance(e, dict) and e.get("type") == "tool_call"]
+        assert "seats" not in json.dumps([e for e in events if isinstance(e, dict)])
+        assert not [e for e in events if isinstance(e, str)]
+        assert executor.tool_calls == []
+        agent.llm.gen_stream.assert_not_called()
+
+    def test_blocked_text_questions_end_the_non_streamed_turn(self):
+        executor, tools, agent = self._text(BLOCK_OUTPUT)
+        first = LLMResponse(content="", tool_calls=[_call()], finish_reason="tool_calls", raw_response={})
+        events, final = _drain(Handler().handle_non_streaming(agent, first, tools, []))
+
+        assert [e for e in events if e.get("type") == "error"][0]["guardrail"]["stage"] == "output"
+        assert not [e for e in events if e.get("type") == "tool_call"]
+        assert not final
+        agent.llm.gen.assert_not_called()

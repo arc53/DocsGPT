@@ -1737,17 +1737,39 @@ class ToolExecutor:
         if self.questions != ask_user.CARDS:
             return None
         self.questions_asked = True
-        if self.question_screen is not None:
-            screened_message, screened, block = self.question_screen(message, questions)
-            if block is not None:
-                self.questions_blocked = block
-                return {**base, "arguments": {}, "pause_type": ask_user.QUESTIONS_BLOCKED}
-            if (screened_message, screened) != (message, questions):
-                # The model's own wording must not reach the client or the
-                # paused state either: the arguments become the redacted cards.
-                message, questions = screened_message, screened
-                base["arguments"] = {"message": message, "questions": questions}
+        screened = self._screened_questions(message, questions)
+        if screened is None:
+            return {**base, "arguments": {}, "pause_type": ask_user.QUESTIONS_BLOCKED}
+        message, questions = screened
+        # The model's own wording must not reach the client or the paused
+        # state: the arguments are the screened cards, so whatever the cards
+        # leave out (a fourth question, an extra key, text past a cap) and the
+        # screen therefore never saw stays out too.
+        base["arguments"] = {"message": message, "questions": questions}
         return {**base, "pause_type": ask_user.AWAITING_ANSWER, "message": message, "questions": questions}
+
+    def _screened_questions(
+        self, message: Optional[str], questions: List[Dict]
+    ) -> Optional[Tuple[Optional[str], List[Dict]]]:
+        """The normalized questions after the turn's output controls, or None when a control blocked them.
+
+        A block is left in :attr:`questions_blocked`, which ends the turn as a
+        blocked answer does.
+
+        Args:
+            message: The cards' lead-in line.
+            questions: The normalized questions.
+
+        Returns:
+            ``(message, questions)`` as they may be shown, or None.
+        """
+        if self.question_screen is None:
+            return message, questions
+        screened_message, screened, block = self.question_screen(message, questions)
+        if block is not None:
+            self.questions_blocked = block
+            return None
+        return screened_message, screened
 
     def _ask_user_as_text(self, call_id: str, llm_name: str, call_args: Any):
         """Run an ``ask_user`` call for a client without question cards: the questions become the answer.
@@ -1779,6 +1801,13 @@ class ToolExecutor:
             record.update({"result": model_text, "error": f"Questions not asked: {reason}.", "status": "error"})
         else:
             self.questions_asked = True
+            # The questions are shown as the answer, so they get its output
+            # controls before the call's event and record carry them; a block
+            # shows and keeps nothing of the call (``questions_blocked``).
+            screened = self._screened_questions(message, questions)
+            if screened is None:
+                return ask_user.SHOWN_AS_TEXT, call_id
+            message, questions = screened
             self.questions_text = render_questions_text(message, questions)
             self.questions_shown_as_text = True
             record.update(
