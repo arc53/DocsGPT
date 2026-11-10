@@ -92,8 +92,10 @@ describe('Tooltip on focus', () => {
     );
     const button = host.querySelector('button')!;
     const matches = button.matches.bind(button);
-    button.matches = (selector: string) =>
-      selector === ':focus-visible' ? visible : matches(selector);
+    Object.defineProperty(button, 'matches', {
+      value: (selector: string) =>
+        selector === ':focus-visible' ? visible : matches(selector),
+    });
     await act(async () => button.focus());
     const state = button.getAttribute('data-state');
     await act(async () => root.unmount());
