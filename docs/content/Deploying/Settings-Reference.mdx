@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -2200,6 +2200,12 @@ Seconds past the due time within which a missed run still fires.
 Type `int`, default `3`.
 
 Consecutive failures after which a schedule is paused automatically.
+
+### `SCHEDULE_NOTIFY_RECURRING_FAILURES`
+
+Type `bool`, default `false`.
+
+Also notify the owner of a recurring schedule on the first failed run in a row, not only when the schedule pauses itself.
 
 ### `SCHEDULE_ONCE_MAX_HORIZON`
 

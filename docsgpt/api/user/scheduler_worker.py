@@ -175,14 +175,53 @@ def _notify_appended(schedule: Dict[str, Any], message: Dict[str, Any], outcome:
     from docsgpt.notifications.notify import notify_user
 
     conversation_id = str(message["conversation_id"])
-    title = (schedule.get("name") or "").strip() or plain_preview(schedule.get("instruction") or "", 120)
     notify_user(
         user_id=str(schedule.get("user_id")),
         conversation_id=conversation_id,
         kind="schedule",
-        title=title or "Scheduled task",
+        title=_schedule_title(schedule),
         body=plain_preview(outcome.get("answer") or ""),
         url=f"/c/{conversation_id}",
+    )
+
+
+def _schedule_title(schedule: Dict[str, Any]) -> str:
+    """A schedule as a notification names it: its name, else the head of its instruction."""
+    from docsgpt.notifications.kinds import plain_preview
+
+    title = (schedule.get("name") or "").strip() or plain_preview(schedule.get("instruction") or "", 120)
+    return title or "Scheduled task"
+
+
+#: Characters of a run's error a notification shows.
+_FAILURE_LINE_CHARS = 200
+
+
+def _failure_line(error_type: Optional[str], error_text: Optional[str]) -> str:
+    """A failed run's error as one line: its first line (a traceback's message, not its frames)."""
+    from docsgpt.notifications.kinds import plain_preview
+
+    first = next((line for line in str(error_text or "").splitlines() if line.strip()), "")
+    return plain_preview(first or error_type or "", _FAILURE_LINE_CHARS)
+
+
+def _notify_failing(schedule: Dict[str, Any], kind: str, error_type: Optional[str], error_text: Optional[str]) -> None:
+    """Tell a recurring schedule's owner it paused itself (``schedule_paused``) or started failing.
+
+    A recurring run has no conversation to land in, so without this only an
+    open tab ever learns of it. Open goes to the schedule. Never raises.
+    """
+    from docsgpt.notifications.notify import notify_user
+
+    schedule_id = str(schedule["id"])
+    notify_user(
+        user_id=str(schedule.get("user_id")),
+        conversation_id=None,
+        kind=kind,
+        title=_schedule_title(schedule)[:200],
+        body=_failure_line(error_type, error_text),
+        url=f"/activity/schedules?schedule={schedule_id}",
+        schedule_id=schedule_id,
     )
 
 
@@ -468,6 +507,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         # counted every token twice. The run's own total stays on its row.
         schedules_repo = SchedulesRepository(conn)
         autopaused = False
+        count = 0
         if new_status == "success":
             schedules_repo.reset_failure_count(str(schedule["id"]))
         elif new_status in ("failed", "timeout"):
@@ -546,6 +586,16 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             schedule,
             consecutive_failure_count=settings.SCHEDULE_AUTOPAUSE_FAILURES,
         )
+        # Once per pause: ``autopause`` flips only an active schedule, so the
+        # runs a paused one still gets (Run now) don't notify again.
+        _notify_failing(schedule, "schedule_paused", error_type, error_text)
+    elif (
+        count == 1
+        and settings.SCHEDULE_NOTIFY_RECURRING_FAILURES
+        and schedule.get("trigger_type") == "recurring"
+        and run.get("trigger_source") != "manual"
+    ):
+        _notify_failing(schedule, "schedule_failed", error_type, error_text)
 
     return {
         "status": new_status,
