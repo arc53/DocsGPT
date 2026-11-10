@@ -331,6 +331,28 @@ class TestErrorHandling:
         )
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_strips_credentials_from_target(self, mock_pinned):
+        tool = APITool(
+            config={
+                "url": "https://user:secret@api.example.com/data",
+                "method": "GET",
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {"Location": "/v2/orders/"}
+        mock_pinned.return_value = mock_resp
+
+        result = tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 307
+        assert "user" not in result["message"]
+        assert "secret" not in result["message"]
+        assert (
+            "URL redirects to 'https://api.example.com/v2/orders/'" in result["message"]
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_redirect_3xx_without_location(self, mock_pinned, get_tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 301

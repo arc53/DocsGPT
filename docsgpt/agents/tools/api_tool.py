@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Optional
-from urllib.parse import quote, urlencode, urljoin
+from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -16,6 +16,19 @@ from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 90  # seconds
+
+
+def _strip_userinfo(url: str) -> str:
+    """Remove userinfo (username:password) from URL to prevent credential leakage in messages."""
+    parsed = urlsplit(url)
+    if parsed.username or parsed.password:
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunsplit(
+            (parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)
+        )
+    return url
 
 
 class APITool(Tool):
@@ -140,7 +153,7 @@ class APITool(Tool):
             if 300 <= response.status_code < 400:
                 raw_location = response.headers.get("Location", "")
                 if raw_location:
-                    target_url = urljoin(request_url, raw_location)
+                    target_url = _strip_userinfo(urljoin(request_url, raw_location))
                     msg = (
                         f"URL redirects to '{target_url}'. "
                         "Call that URL directly instead."
