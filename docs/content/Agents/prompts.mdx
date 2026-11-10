@@ -42,7 +42,7 @@ Over the API, `GET /api/user/preferences` returns the pick as `chat_prompt_id` (
 
 A template prompt (one with `{{ }}`) that won't run shows an error under the text, and **Save** stays off until you fix it: a tag, variable or comment left open (`{{ variable }`, `{% if x %`), or block tags that don't pair up, such as an `{% if %}` without its `{% endif %}`. Chats with such a prompt would fail. Accepting only some of a DocsGPT review's changes can leave a template this way.
 
-Leaving a prompt with unsaved changes asks first: **Save and leave** or **Leave without saving**. When the prompt can't be saved yet (it has no name, another prompt has that name, it has no text, its template won't run, or a DocsGPT review is still open), the dialog stays open and says why.
+Leaving a prompt with unsaved changes asks first: **Save and leave** or **Leave without saving**. When the prompt can't be saved yet (it has no name, another prompt has that name, it has no text, its template won't run, or a DocsGPT review is still open), the dialog stays open and says why. When someone else saved the prompt while you edited it, the page says so and your changes can't replace their version: **Save** becomes **Save as a copy**, which keeps your text as a new prompt, and the dialog offers **Save as a copy and leave**; to see their version, leave and reopen the prompt.
 
 **N agents** on a card counts the agents that use the prompt; click it for a list with a link to each agent you can open, and a count of your teammates' agents. Deleting a prompt says which agents, and whether your chats, use it: they go back to the default prompt.
 
