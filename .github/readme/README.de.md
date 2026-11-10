@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 298ec2a0297af9fb740062f8d13afbfa967fdb7f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 96e6e4a0d2ff45c1cffe0df1eec4338c5222fab9 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -11,6 +11,7 @@
   <a href="https://github.com/arc53/DocsGPT"><img src="https://img.shields.io/github/stars/arc53/docsgpt?style=social" alt="GitHub-Stars"></a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE"><img src="https://img.shields.io/github/license/arc53/docsgpt" alt="MIT-Lizenz"></a>
   <a href="https://www.bestpractices.dev/projects/9907"><img src="https://www.bestpractices.dev/projects/9907/badge" alt="OpenSSF Best Practices"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/arc53/DocsGPT"><img src="https://api.scorecard.dev/projects/github.com/arc53/DocsGPT/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://discord.gg/vN7YFfdMpj"><img src="https://img.shields.io/discord/1070046503302877216" alt="Discord"></a>
   <a href="https://x.com/docsgptai"><img src="https://img.shields.io/twitter/follow/docsgptai" alt="Auf X folgen"></a>
 </p>
@@ -48,7 +49,6 @@
   </a>
 </p>
 
-> 🎃 **Hacktoberfest 2026:** T-Shirts für wertvolle Beiträge den ganzen Oktober über. Siehe [HACKTOBERFEST.md](../../HACKTOBERFEST.md).
 
 <p align="center">
   <sub>Unterstützt von</sub><br>

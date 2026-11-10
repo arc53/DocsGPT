@@ -61,7 +61,7 @@ import {
   orderArtifactCards,
   type OpenArtifactRequest,
 } from './artifactCards';
-import { deriveArtifactChips } from './artifactChips';
+import { deriveArtifactChips, type JobArtifact } from './artifactChips';
 import {
   type AnswerSource,
   sourceHref,
@@ -124,6 +124,8 @@ const ConversationBubble = forwardRef<
      * The chip RAIL still uses this turn's artifacts only.
      */
     conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
+    /** Files of the background jobs this answer reports; shown in its rail. */
+    jobArtifacts?: JobArtifact[];
     onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
     onToolAction?: (
       callId: string,
@@ -132,6 +134,8 @@ const ConversationBubble = forwardRef<
     ) => void;
     /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
     agentId?: string;
+    /** The saved message behind this answer, for an MCP App view to read its result back. */
+    messageId?: string;
   }
 >(function ConversationBubble(
   {
@@ -155,9 +159,11 @@ const ConversationBubble = forwardRef<
     handleUpdatedQuestionSubmission,
     filesAttached,
     conversationArtifacts,
+    jobArtifacts,
     onOpenArtifact,
     onToolAction,
     agentId,
+    messageId,
   },
   ref,
 ) {
@@ -191,7 +197,7 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const completedArtifacts = deriveArtifactChips(toolCalls);
+  const completedArtifacts = deriveArtifactChips(toolCalls, jobArtifacts);
   // Only a view that can open an artifact lists the run's (a shared chat
   // can't, and its reader may not own the run).
   const runArtifacts = useRunArtifacts(
@@ -202,10 +208,10 @@ const ConversationBubble = forwardRef<
   const artifactCards = useMemo(
     () =>
       orderArtifactCards([
-        ...cardsFromToolCalls(toolCalls),
+        ...cardsFromToolCalls(toolCalls, jobArtifacts),
         ...runArtifacts.items,
       ]),
-    [toolCalls, runArtifacts.items],
+    [toolCalls, jobArtifacts, runArtifacts.items],
   );
   // Names this answer's artifact list in the side panel.
   const artifactListKey = useId();
@@ -581,6 +587,7 @@ const ConversationBubble = forwardRef<
             sourceCount={showSources ? (sources?.length ?? 0) : 0}
             onOpenSource={openSources}
             agentId={agentId}
+            messageId={messageId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
             suppressStatusLine={

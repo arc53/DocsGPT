@@ -11,6 +11,17 @@
 # Each exported file is a complete environment (core plus the named extra),
 # so `pip install -r docsgpt/requirements-docling.txt` on its own works,
 # and installing it on top of requirements.txt only adds the extra's packages.
+# tests/requirements.txt is core plus the docling extra plus the dev group.
+#
+# Every pin carries its hashes from uv.lock, so pip installs these files in
+# hash-checking mode. Install a file on its own; mixing it with unhashed
+# requirements in one pip command fails.
+#
+# The sandbox runner image pins its direct packages in
+# deployment/sandbox/requirements.txt (generated from docsgpt/sandbox/manifest.py).
+# This script resolves them, with hashes, into deployment/sandbox/requirements.lock.
+# The existing lock is reused as the preferred versions, so a run only changes
+# it when the direct pins changed; delete the lock to re-resolve everything.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -35,7 +46,7 @@ export_file() {
     # uv export records the wheel's origin in uv.lock but writes no index
     # directive; pip needs one to find the +cpu torch build.
     if [ -n "$index_url" ]; then echo "--extra-index-url $index_url"; echo; fi
-    "${UV[@]}" export --frozen --no-hashes --no-dev --no-emit-project --no-header --quiet "$@"
+    "${UV[@]}" export --frozen --no-emit-project --no-header --quiet "$@"
   } > "$out"
   echo "wrote $out ($(grep -cE '^[A-Za-z0-9]' "$out") packages)"
 }
@@ -44,7 +55,8 @@ export_file docsgpt/requirements.txt \
 "Core runtime. Optional extras live in requirements-<extra>.txt:
   docling          DOC_PARSER_ENGINE=docling, docling OCR backend, read_document structured output
   milvus           VECTOR_STORE=milvus
-  decisions-torch  docsgpt decide-server --device mps|cuda (native installs only)"
+  decisions-torch  docsgpt decide-server --device mps|cuda (native installs only)" \
+  --no-dev
 
 INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-docling.txt \
 "Core runtime plus the docling extra: DOC_PARSER_ENGINE=docling, the docling
@@ -60,7 +72,7 @@ first index that lists it, and the PyTorch index carries stale copies of
 common packages, so with uv either run 'uv sync --extra docling' (the lock
 pins the index per package) or set UV_INDEX_STRATEGY=unsafe-best-match.
 Docker: --build-arg EXTRAS=docling" \
-  --extra docling
+  --no-dev --extra docling
 
 INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-decisions-torch.txt \
 "Core runtime plus the decisions-torch extra: torch and transformers for
@@ -70,16 +82,27 @@ and the worker never import torch (it cannot share a macOS process with faiss).
 On Linux torch comes from the CPU-only PyTorch index; for --device cuda,
 reinstall torch from PyPI on top. With uv, prefer
 'uv sync --extra decisions-torch' (see requirements-docling.txt for why)." \
-  --extra decisions-torch
+  --no-dev --extra decisions-torch
 
 export_file docsgpt/requirements-milvus.txt \
 "Core runtime plus the milvus extra (VECTOR_STORE=milvus): pymilvus and the
 embedded milvus-lite server, which pulls pyarrow.
 Docker: --build-arg EXTRAS=milvus" \
-  --extra milvus
+  --no-dev --extra milvus
 
 INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-supercompress.txt \
 "Core runtime plus the supercompress extra: query-aware context compression
 between retrieval and generation.
 Docker: --build-arg EXTRAS=supercompress" \
-  --extra supercompress
+  --no-dev --extra supercompress
+
+INDEX_URL=https://download.pytorch.org/whl/cpu export_file tests/requirements.txt \
+"Test environment: core runtime, the docling extra (so its parser tests run)
+and the dev group from pyproject.toml (pytest and plugins, the renderers the
+artifact tests use, ruff). With uv, 'uv sync --extra docling' installs the same." \
+  --extra docling
+
+"${UV[@]}" pip compile --quiet --universal --python-version 3.12 --generate-hashes \
+  --custom-compile-command "bash scripts/export_requirements.sh" \
+  deployment/sandbox/requirements.txt -o deployment/sandbox/requirements.lock
+echo "wrote deployment/sandbox/requirements.lock ($(grep -cE '^[A-Za-z0-9]' deployment/sandbox/requirements.lock) packages)"

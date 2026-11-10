@@ -49,3 +49,23 @@ updates:
       actions:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+
+  # Dockerfile base images are pinned by digest next to their tag. Dependabot
+  # refreshes the digest behind each tag; moving to a new Python, Node, nginx
+  # or Ubuntu release is a deliberate change, so version bumps are ignored.
+  - package-ecosystem: "docker"
+    directories:
+      - "/.devcontainer"
+      - "/deployment/sandbox"
+      - "/docsgpt"
+      - "/frontend"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      docker:
+        patterns: ["*"]
