@@ -100,10 +100,11 @@ export type PromptProposal =
 
 /**
  * `improve` for a prompt with text, `write` for an empty one, saved or new
- * (the server has nothing to improve in an empty prompt).
+ * (the server has nothing to improve in an empty prompt). Empty as the
+ * server reads it: zero-width and control characters count as nothing.
  */
 export function promptDrafterMode(content: string): 'improve' | 'write' {
-  return content.trim() ? 'improve' : 'write';
+  return promptAsRead(content) ? 'improve' : 'write';
 }
 
 const isString = (value: unknown): value is string => typeof value === 'string';

@@ -250,6 +250,20 @@ describe('drafterApi', () => {
     expect(parseDrafterEvent('{"type":"end"}')).toEqual({ type: 'end' });
   });
 
+  it('reads an error code it does not know as a model error', () => {
+    expect(
+      parseDrafterEvent('{"type":"error","code":"quota","message":"Out"}'),
+    ).toEqual({ type: 'error', code: 'quota', message: 'Out' });
+    expect(parseDrafterEvent('{"type":"error","code":"overheated"}')).toEqual({
+      type: 'error',
+      code: 'model_error',
+    });
+    expect(parseDrafterEvent('{"type":"error","code":7}')).toEqual({
+      type: 'error',
+      code: 'model_error',
+    });
+  });
+
   it('reads what a read tool showed, keeping only the question text', () => {
     expect(
       parseDrafterEvent(

@@ -104,6 +104,9 @@ describe('agentDraft', () => {
             { check: 'pii', stage: 'later', action: 'redact' },
             { check: 'pii', stage: 'output', action: 'erase' },
             { stage: 'input', action: 'block' },
+            // Keys an object only inherits name no stage or action.
+            { check: 'pii', stage: 'toString', action: 'redact' },
+            { check: 'pii', stage: 'input', action: 'constructor' },
             7,
           ],
         },

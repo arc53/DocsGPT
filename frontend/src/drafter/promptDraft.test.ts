@@ -25,6 +25,8 @@ describe('promptDrafterMode', () => {
     expect(promptDrafterMode('Some text')).toBe('improve');
     expect(promptDrafterMode('')).toBe('write');
     expect(promptDrafterMode('  ')).toBe('write');
+    // What the server reads: zero-width and control characters drop too.
+    expect(promptDrafterMode('\u200b\u200b \u0007')).toBe('write');
   });
 });
 

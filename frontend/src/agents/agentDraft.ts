@@ -204,8 +204,8 @@ function parseGuardrails(raw: unknown): AgentProposalFields['guardrails'] {
       !!control &&
       isString(control.check) &&
       !!control.check &&
-      control.stage in STAGE_KEYS &&
-      control.action in ACTION_KEYS,
+      Object.hasOwn(STAGE_KEYS, control.stage) &&
+      Object.hasOwn(ACTION_KEYS, control.action),
   );
   return parsed.length > 0
     ? {

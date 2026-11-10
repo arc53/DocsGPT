@@ -257,12 +257,14 @@ export async function getAgentGaps(
   }
 }
 
+const isErrorCode = (code: unknown): code is DrafterErrorCode =>
+  typeof code === 'string' && ERROR_CODES.includes(code as DrafterErrorCode);
+
 /** The error code for a refused request that never became a stream. */
 function codeForStatus(status: number, body: unknown): DrafterErrorCode {
   if (isQuotaError(body)) return 'quota';
   const code = (body as { code?: unknown } | null)?.code;
-  if (typeof code === 'string' && ERROR_CODES.includes(code as never))
-    return code as DrafterErrorCode;
+  if (isErrorCode(code)) return code;
   if (status === 429) return 'rate_limited';
   if (status === 400 || status === 422) return 'bad_request';
   if (status === 403 || status === 404) return 'disabled';
@@ -288,11 +290,22 @@ export function parseDrafterEvent(data: string): DrafterEvent | null {
           ),
         };
       }
+      case 'error': {
+        // A code this client has no words for reads as a model error.
+        const { code, message } = parsed as {
+          code?: unknown;
+          message?: unknown;
+        };
+        return {
+          type: 'error',
+          code: isErrorCode(code) ? code : 'model_error',
+          ...(typeof message === 'string' ? { message } : {}),
+        };
+      }
       case 'status':
       case 'message':
       case 'questions':
       case 'proposal':
-      case 'error':
       case 'end':
         return parsed as DrafterEvent;
       default:
