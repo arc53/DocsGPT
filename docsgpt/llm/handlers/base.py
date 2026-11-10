@@ -4,7 +4,7 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Union
 
 from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
@@ -135,6 +135,143 @@ def _is_restated_payload(existing: str, incoming: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def merge_tool_call(tool_calls: Dict[Any, ToolCall], call: ToolCall) -> None:
+    """Fold one streamed tool-call chunk into the calls read so far.
+
+    Args:
+        tool_calls: The calls so far, keyed by stream index (index-less complete calls get keys of their own).
+        call: The chunk's call: a delta of an indexed call, or a complete one.
+    """
+    if call.index is None:
+        # Providers like Google emit each parallel call as
+        # a COMPLETE, index-less ToolCall per chunk. They
+        # must never be merged into one another (dict
+        # arguments would even raise on ``+=``).
+        tool_calls[("complete", len(tool_calls))] = call
+        return
+    if call.index not in tool_calls:
+        tool_calls[call.index] = call
+    else:
+        existing = tool_calls[call.index]
+        # Decide BEFORE the id/name overwrite below: a gateway
+        # that reuses one index for sequential DISTINCT calls
+        # is indistinguishable from a restatement once the
+        # identity is gone. Restatement frames carry neither
+        # id nor name, so a differing one means a new call.
+        is_new_call = bool(
+            (call.id and existing.id and call.id != existing.id)
+            or (call.name and existing.name and call.name != existing.name)
+        )
+        if is_new_call:
+            logger.warning(
+                "tool_call_index_reused_by_distinct_call",
+                extra={
+                    "index": call.index,
+                    "previous_call": f"{existing.id}/{existing.name}",
+                    "incoming_call": f"{call.id}/{call.name}",
+                    "dropped_prefix": str(existing.arguments)[:120],
+                },
+            )
+        if call.id:
+            existing.id = call.id
+        if call.name:
+            existing.name = call.name
+        if call.arguments:
+            if existing.arguments is None:
+                existing.arguments = call.arguments
+            elif isinstance(existing.arguments, str) and isinstance(
+                call.arguments, str
+            ):
+                if (
+                    _is_restated_payload(
+                        existing.arguments, call.arguments
+                    )
+                    and not is_new_call
+                ):
+                    # Some OpenAI-compatible gateways restate
+                    # the WHOLE argument payload on the finish
+                    # frame for an index instead of streaming
+                    # deltas. Appending produced '{...}{...}',
+                    # which never parses, so the tool call
+                    # failed on every one of the turn's
+                    # MAX_TOOL_ITERATIONS rounds while the turn
+                    # still reported status='complete'.
+                    existing.arguments = call.arguments
+                else:
+                    existing.arguments += call.arguments
+            else:
+                # Complete (non-delta) payloads: latest wins.
+                existing.arguments = call.arguments
+        # Preserve thought_signature for Google Gemini 3 models
+        if call.thought_signature:
+            existing.thought_signature = call.thought_signature
+
+
+def collect_stream(
+    chunks: Iterable[Any],
+    parse: Callable[[Any], LLMResponse],
+    finished: Callable[[], bool] = lambda: False,
+) -> LLMResponse:
+    """Read a whole ``gen_stream`` into one answer: its text, tool calls and reasoning.
+
+    For a caller that needs the answer a non-streaming call returns but
+    streams anyway, so the connection carries data while the model writes
+    (a proxy cuts a request that stays silent for minutes). A failure once
+    the answer is complete (a trailing usage frame or ``[DONE]``) keeps the
+    answer, as :meth:`LLMHandler.handle_streaming` does.
+
+    Args:
+        chunks: The stream: text strings, ``{"type": "thought"}`` dicts and provider chunks.
+        parse: Parses a provider chunk (the handler of the provider that answered).
+        finished: True once the provider sent its finish signal (``_stream_reached_finish``).
+
+    Returns:
+        The answer, with ``finish_reason`` ``tool_calls`` when the model called tools.
+    """
+    content: List[str] = []
+    reasoning: List[str] = []
+    tool_calls: Dict[Any, ToolCall] = {}
+    finish_reason = None
+    iterator = iter(chunks)
+    try:
+        while True:
+            try:
+                chunk = next(iterator)
+            except StopIteration:
+                break
+            except Exception as exc:
+                if is_budget_exhausted(exc) or (finish_reason is None and not finished()):
+                    raise
+                logger.warning("Provider stream failed after finish; keeping the answer", exc_info=True)
+                break
+            if isinstance(chunk, dict) and chunk.get("type") == "thought":
+                reasoning.append(chunk.get("thought") or "")
+                continue
+            if isinstance(chunk, str):
+                content.append(chunk)
+                continue
+            parsed = parse(chunk)
+            if parsed.reasoning_content:
+                reasoning.append(parsed.reasoning_content)
+            for call in parsed.tool_calls or []:
+                merge_tool_call(tool_calls, call)
+            if parsed.content:
+                content.append(parsed.content)
+            if parsed.finish_reason == "tool_calls":
+                finish_reason = "tool_calls"
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            close()
+    return LLMResponse(
+        content="".join(content),
+        tool_calls=list(tool_calls.values()),
+        finish_reason=finish_reason or ("tool_calls" if tool_calls else "stop"),
+        raw_response=None,
+        reasoning_content="".join(reasoning),
+    )
 
 
 def take_tool_images(executor: Any, message: Dict) -> Dict:
@@ -1996,69 +2133,7 @@ class LLMHandler(ABC):
 
             if parsed.tool_calls:
                 for call in parsed.tool_calls:
-                    if call.index is None:
-                        # Providers like Google emit each parallel call as
-                        # a COMPLETE, index-less ToolCall per chunk. They
-                        # must never be merged into one another (dict
-                        # arguments would even raise on ``+=``).
-                        tool_calls[("complete", len(tool_calls))] = call
-                        continue
-                    if call.index not in tool_calls:
-                        tool_calls[call.index] = call
-                    else:
-                        existing = tool_calls[call.index]
-                        # Decide BEFORE the id/name overwrite below: a gateway
-                        # that reuses one index for sequential DISTINCT calls
-                        # is indistinguishable from a restatement once the
-                        # identity is gone. Restatement frames carry neither
-                        # id nor name, so a differing one means a new call.
-                        is_new_call = bool(
-                            (call.id and existing.id and call.id != existing.id)
-                            or (call.name and existing.name and call.name != existing.name)
-                        )
-                        if is_new_call:
-                            logger.warning(
-                                "tool_call_index_reused_by_distinct_call",
-                                extra={
-                                    "index": call.index,
-                                    "previous_call": f"{existing.id}/{existing.name}",
-                                    "incoming_call": f"{call.id}/{call.name}",
-                                    "dropped_prefix": str(existing.arguments)[:120],
-                                },
-                            )
-                        if call.id:
-                            existing.id = call.id
-                        if call.name:
-                            existing.name = call.name
-                        if call.arguments:
-                            if existing.arguments is None:
-                                existing.arguments = call.arguments
-                            elif isinstance(existing.arguments, str) and isinstance(
-                                call.arguments, str
-                            ):
-                                if (
-                                    _is_restated_payload(
-                                        existing.arguments, call.arguments
-                                    )
-                                    and not is_new_call
-                                ):
-                                    # Some OpenAI-compatible gateways restate
-                                    # the WHOLE argument payload on the finish
-                                    # frame for an index instead of streaming
-                                    # deltas. Appending produced '{...}{...}',
-                                    # which never parses, so the tool call
-                                    # failed on every one of the turn's
-                                    # MAX_TOOL_ITERATIONS rounds while the turn
-                                    # still reported status='complete'.
-                                    existing.arguments = call.arguments
-                                else:
-                                    existing.arguments += call.arguments
-                            else:
-                                # Complete (non-delta) payloads: latest wins.
-                                existing.arguments = call.arguments
-                        # Preserve thought_signature for Google Gemini 3 models
-                        if call.thought_signature:
-                            existing.thought_signature = call.thought_signature
+                    merge_tool_call(tool_calls, call)
             if parsed.finish_reason == "tool_calls":
                 finish_reason = "tool_calls"
                 continue
