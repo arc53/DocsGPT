@@ -9,18 +9,24 @@ import secrets
 import threading
 import time
 import weakref
+from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass, replace
+from http import HTTPStatus
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
+from fastmcp.client.transports.base import TransportOptions
 from fastmcp.client.transports import (
     SSETransport,
     StdioTransport,
     StreamableHttpTransport,
 )
 import httpx2
+from mcp import ClientSession
 from mcp.client import advertise
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.auth.utils import (
@@ -32,6 +38,8 @@ from mcp.client.auth.utils import (
     issuers_match,
     validate_metadata_issuer,
 )
+from mcp.shared.dispatcher import CallOptions
+from mcp.shared.jsonrpc_dispatcher import JSONRPCDispatcher
 from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
 from mcp.shared.inbound import (
     MCP_PARAM_HEADER_PREFIX,
@@ -41,7 +49,7 @@ from mcp.shared.inbound import (
     x_mcp_header_map,
 )
 from mcp.shared.exceptions import MCPError
-from mcp.types import HEADER_MISMATCH
+from mcp.types import HEADER_MISMATCH, RequestId
 from mcp.shared.auth import (
     AuthorizationCodeResult,
     OAuthClientInformationFull,
@@ -91,16 +99,18 @@ def _is_http_401_error(error_msg: str) -> bool:
     )
 
 
-_mcp_http_statuses: ContextVar[Optional[Dict[str, int]]] = ContextVar(
-    "mcp_http_statuses",
-    default=None,
-)
+@dataclass
+class _MCPRequestStatus:
+    status_code: int | None = None
+
+
+_mcp_request_status: ContextVar[_MCPRequestStatus | None] = ContextVar("_mcp_request_status", default=None)
 
 
 async def _capture_mcp_http_status(response: httpx2.Response) -> None:
-    """Record HTTP response statuses for the active MCP operation."""
-    statuses = _mcp_http_statuses.get()
-    if statuses is None or response.request.method != "POST":
+    """Record the HTTP status for the RPC that sent this POST."""
+    status = _mcp_request_status.get()
+    if status is None or response.request.method != "POST":
         return
     try:
         payload = json.loads(response.request.content)
@@ -108,11 +118,56 @@ async def _capture_mcp_http_status(response: httpx2.Response) -> None:
         return
     if not isinstance(payload, dict):
         return
-    request_id = payload.get("id")
-    if not isinstance(request_id, (str, int)):
+    if not isinstance(payload.get("id"), (str, int)):
         return
-    statuses.clear()
-    statuses[str(request_id)] = response.status_code
+
+    # An auth retry can produce a later response for this same RPC.
+    status.status_code = response.status_code
+
+
+class _MCPHTTPDispatcher(JSONRPCDispatcher):
+    async def send_raw_request(
+        self,
+        method: str,
+        params: Mapping[str, Any] | None,
+        opts: CallOptions | None = None,
+        *,
+        _related_request_id: RequestId | None = None,
+    ) -> dict[str, Any]:
+        status = _MCPRequestStatus()
+        token = _mcp_request_status.set(status)
+        try:
+            return await super().send_raw_request(method, params, opts, _related_request_id=_related_request_id)
+        except MCPError as exc:
+            if status.status_code == HTTPStatus.UNAUTHORIZED:
+                exc.docsgpt_http_status = status.status_code
+            raise
+        finally:
+            _mcp_request_status.reset(token)
+
+
+class _MCPHTTPSession(ClientSession):
+    def __init__(self, read_stream, write_stream, **session_kwargs):
+        super().__init__(
+            dispatcher=_MCPHTTPDispatcher(read_stream, write_stream),
+            **session_kwargs,
+        )
+
+
+class _MCPStreamableHTTPTransport(StreamableHttpTransport):
+    @asynccontextmanager
+    async def connect_session(
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs,
+    ):
+        options = replace(
+            transport_options or TransportOptions(),
+            session_class=_MCPHTTPSession,
+        )
+        async with super().connect_session(transport_options=options, **session_kwargs) as session:
+            yield session
 
 
 def _mcp_http_client(
@@ -516,7 +571,7 @@ class MCPTool(Tool):
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
         elif transport_type == "http":
-            return StreamableHttpTransport(
+            return _MCPStreamableHTTPTransport(
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
         elif transport_type == "stdio":
@@ -525,7 +580,7 @@ class MCPTool(Tool):
             env = self.auth_credentials if self.auth_credentials else None
             return StdioTransport(command=command, args=args, env=env)
         else:
-            return StreamableHttpTransport(
+            return _MCPStreamableHTTPTransport(
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
 
@@ -593,43 +648,36 @@ class MCPTool(Tool):
 
     async def _execute_on(self, client: Client, operation: str, /, *args, **kwargs):
         """Run ``operation`` in a session of its own on ``client``."""
-        statuses: Dict[str, int] = {}
-        token = _mcp_http_statuses.set(statuses)
-
         try:
-            try:
-                async with client:
-                    if operation == "ping":
-                        return await client.ping()
-                    elif operation == "list_tools":
-                        tools_response = await client.list_tools()
-                        self.available_tools = self._format_tools(tools_response)
-                        self._refresh_param_headers(self.available_tools)
-                        return self.available_tools
-                    elif operation == "call_tool":
-                        tool_name = args[0]
-                        tool_args = kwargs
-                        return await client.call_tool(tool_name, tool_args)
-                    elif operation == "call_tool_raw":
-                        # An MCP App's own call: a failed tool comes back
-                        # as its result, not an exception.
-                        return await client.call_tool(
-                            args[0], args[1], raise_on_error=False
-                        )
-                    elif operation == "read_resource":
-                        return await client.read_resource(args[0])
-                    elif operation == "list_resources":
-                        return await client.list_resources()
-                    elif operation == "list_prompts":
-                        return await client.list_prompts()
-                    else:
-                        raise Exception(f"Unknown operation: {operation}")
-            except Exception as exc:
-                if 401 in statuses.values():
-                    raise Exception("HTTP 401 Unauthorized") from exc
-                raise
-        finally:
-            _mcp_http_statuses.reset(token)
+            async with client:
+                if operation == "ping":
+                    return await client.ping()
+                elif operation == "list_tools":
+                    tools_response = await client.list_tools()
+                    self.available_tools = self._format_tools(tools_response)
+                    self._refresh_param_headers(self.available_tools)
+                    return self.available_tools
+                elif operation == "call_tool":
+                    tool_name = args[0]
+                    tool_args = kwargs
+                    return await client.call_tool(tool_name, tool_args)
+                elif operation == "call_tool_raw":
+                    # An MCP App's own call: a failed tool comes back as its result, not an exception.
+                    return await client.call_tool(
+                        args[0], args[1], raise_on_error=False
+                    )
+                elif operation == "read_resource":
+                    return await client.read_resource(args[0])
+                elif operation == "list_resources":
+                    return await client.list_resources()
+                elif operation == "list_prompts":
+                    return await client.list_prompts()
+                else:
+                    raise Exception(f"Unknown operation: {operation}")
+        except MCPError as exc:
+            if getattr(exc, "docsgpt_http_status", None) == HTTPStatus.UNAUTHORIZED:
+                raise Exception("HTTP 401 Unauthorized") from exc
+            raise
 
     _ERROR_MAP = [
         (concurrent.futures.TimeoutError, lambda op, t, _: f"Timed out after {t}s"),

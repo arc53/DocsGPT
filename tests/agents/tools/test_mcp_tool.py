@@ -653,6 +653,168 @@ class TestExecuteAction:
         assert call_kwargs["param3"] == "real"
 
     @pytest.mark.parametrize(
+        "operation, args, expected",
+        [
+            pytest.param(
+                "call_tool_raw",
+                ("read_ticket", {"ticket_id": "123"}),
+                "raw-result",
+                id="call-tool-raw",
+            ),
+            pytest.param(
+                "read_resource",
+                ("resource://example",),
+                "resource-result",
+                id="read-resource",
+            ),
+        ],
+    )
+    def test_execute_on_remaining_operation_branches(self, mcp_config, operation, args, expected):
+
+        tool = _make_tool(mcp_config)
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def call_tool(self, name, arguments, raise_on_error=True):
+                assert name == "read_ticket"
+                assert arguments == {"ticket_id": "123"}
+                assert raise_on_error is False
+                return "raw-result"
+
+            async def read_resource(self, uri):
+                assert uri == "resource://example"
+                return "resource-result"
+
+        result = asyncio.run(
+            tool._execute_on(
+                FakeClient(),
+                operation,
+                *args,
+            )
+        )
+
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "method, content",
+        [
+            pytest.param(
+                "GET",
+                '{"jsonrpc": "2.0", "id": 1}',
+                id="non-post-request",
+            ),
+            pytest.param(
+                "POST",
+                "not valid json",
+                id="malformed-json",
+            ),
+            pytest.param(
+                "POST",
+                '["not", "an", "object"]',
+                id="json-array",
+            ),
+            pytest.param(
+                "POST",
+                '{"jsonrpc": "2.0", "method": "ping"}',
+                id="missing-request-id",
+            ),
+            pytest.param(
+                "POST",
+                '{"jsonrpc": "2.0", "id": null}',
+                id="null-request-id",
+            ),
+        ],
+    )
+    def test_capture_mcp_http_status_ignores_invalid_requests(self, method, content):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import (
+            _MCPRequestStatus,
+            _capture_mcp_http_status,
+            _mcp_request_status,
+        )
+
+        request = httpx2.Request(
+            method,
+            "https://mcp.example.com/api",
+            content=content,
+        )
+        response = httpx2.Response(
+            401,
+            request=request,
+        )
+
+        status = _MCPRequestStatus()
+        token = _mcp_request_status.set(status)
+
+        try:
+            asyncio.run(_capture_mcp_http_status(response))
+            assert status.status_code is None
+        finally:
+            _mcp_request_status.reset(token)
+
+    def test_capture_mcp_http_status_records_valid_request(self):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import (
+            _MCPRequestStatus,
+            _capture_mcp_http_status,
+            _mcp_request_status,
+        )
+
+        request = httpx2.Request(
+            "POST",
+            "https://mcp.example.com/api",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+            },
+        )
+
+        status = _MCPRequestStatus()
+        token = _mcp_request_status.set(status)
+
+        try:
+            asyncio.run(_capture_mcp_http_status(httpx2.Response(401, request=request)))
+            assert status.status_code == 401
+
+            asyncio.run(_capture_mcp_http_status(httpx2.Response(200, request=request)))
+            assert status.status_code == 200
+        finally:
+            _mcp_request_status.reset(token)
+
+    def test_capture_mcp_http_status_without_active_request(self):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import (
+            _capture_mcp_http_status,
+            _mcp_request_status,
+        )
+
+        request = httpx2.Request(
+            "POST",
+            "https://mcp.example.com/api",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "ping",
+            },
+        )
+
+        token = _mcp_request_status.set(None)
+
+        try:
+            asyncio.run(_capture_mcp_http_status(httpx2.Response(401, request=request)))
+        finally:
+            _mcp_request_status.reset(token)
+
+    @pytest.mark.parametrize(
         "error_message",
         [
             "Ticket 401 could not be found",
@@ -661,9 +823,7 @@ class TestExecuteAction:
         ],
     )
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
-    def test_non_auth_error_containing_401_does_not_retry(
-        self, mock_run, mcp_config, error_message
-    ):
+    def test_non_auth_error_containing_401_does_not_retry(self, mock_run, mcp_config, error_message):
         from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool(mcp_config)
@@ -718,22 +878,45 @@ class TestExecuteAction:
     ):
         import httpx2
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        requests_seen = []
+        methods_seen = []
+
         def handler(request):
-            requests_seen.append(request)
+            if request.method == "GET":
+                return httpx2.Response(405)
+
+            assert request.method == "POST"
             payload = json.loads(request.content)
-            return httpx2.Response(
-                401,
-                headers={"content-type": "application/json"},
-                json={
-                    "jsonrpc": "2.0",
-                    "id": payload.get("id"),
+            method = payload["method"]
+            methods_seen.append(method)
+
+            if method == "server/discover":
+                # Tell FastMCP to fall back to the initialize handshake.
+                status = 200
+                reply = {
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+            elif method == "initialize":
+                status = 200
+                reply = {
+                    "result": {
+                        "protocolVersion": payload["params"]["protocolVersion"],
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                    },
+                }
+            elif method == "notifications/initialized":
+                return httpx2.Response(202)
+            else:
+                assert method == "tools/call", method
+                status = 401
+                reply = {
                     "error": {
                         "code": -32000,
                         "message": "Request could not be completed",
                     },
-                },
-            )
+                }
+
+            return httpx2.Response(status, json={"jsonrpc": "2.0", "id": payload["id"], **reply},)
 
         def mock_http_client(**kwargs):
             return httpx2.AsyncClient(
@@ -755,20 +938,235 @@ class TestExecuteAction:
 
             mock_setup.assert_called_once()
 
-        assert requests_seen
-        assert all(
-            request.method == "POST"
-            for request in requests_seen
+        assert "initialize" in methods_seen
+        assert "tools/call" in methods_seen
+        assert methods_seen.index("initialize") < methods_seen.index("tools/call")
+
+    def test_transport_resolved_http_401_preserves_unrelated_rpc_error(self, monkeypatch, mcp_config):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        methods_seen = []
+        tool_call_attempts = []
+
+        class ChallengeAuth(httpx2.Auth):
+            def auth_flow(self, request):
+                response = yield request
+                if response.status_code == 401:
+                    request.headers["Authorization"] = "Bearer refreshed-test-token"
+                    yield request
+
+        def handler(request):
+            if request.method == "GET":
+                return httpx2.Response(405)
+
+            assert request.method == "POST"
+            payload = json.loads(request.content)
+            method = payload["method"]
+            methods_seen.append(method)
+
+            if method == "server/discover":
+                # Tell FastMCP to fall back to the initialize handshake.
+                status = 200
+                reply = {
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+            elif method == "initialize":
+                status = 200
+                reply = {
+                    "result": {
+                        "protocolVersion": payload["params"]["protocolVersion"],
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                    },
+                }
+            elif method == "notifications/initialized":
+                return httpx2.Response(202)
+            else:
+                assert method == "tools/call", method
+                authenticated = request.headers.get("Authorization") == "Bearer refreshed-test-token"
+                status = 200 if authenticated else 401
+                tool_call_attempts.append((payload["id"], status))
+                reply = {
+                    "error": {
+                        "code": -32000,
+                        "message": ("Unrelated RPC failure" if authenticated else "Request could not be completed"),
+                    },
+                }
+
+            return httpx2.Response(
+                status,
+                json={"jsonrpc": "2.0", "id": payload["id"], **reply},
+            )
+
+        def mock_http_client(**kwargs):
+            kwargs["auth"] = ChallengeAuth()
+            return httpx2.AsyncClient(
+                transport=httpx2.MockTransport(handler),
+                **kwargs,
+            )
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+            mock_http_client,
         )
 
-    def test_resolved_http_401_does_not_mask_unrelated_error(
-        self, mcp_config
+        tool = _make_tool(mcp_config)
+        tool._client = tool._build_client()
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            with pytest.raises(Exception, match=r"^Failed to execute action 'read_ticket': Unrelated RPC failure$"):
+                tool.execute_action("read_ticket")
+
+            mock_setup.assert_not_called()
+
+        assert methods_seen.index("initialize") < methods_seen.index("tools/call")
+        assert [status for _, status in tool_call_attempts] == [401, 200]
+        assert tool_call_attempts[0][0] == tool_call_attempts[1][0]
+
+    @pytest.mark.parametrize(
+        "first_status, second_status, expected_error",
+        [
+            pytest.param(401, 200, "HTTP 401 Unauthorized", id="401-then-200"),
+            pytest.param(200, 401, "Unrelated RPC failure", id="200-then-401"),
+        ],
+    )
+    def test_transport_correlates_status_with_failing_request(
+        self, monkeypatch, mcp_config, first_status, second_status, expected_error
     ):
+        import asyncio
+        import httpx2
+        from mcp import MCPError
+
+        def run():
+            first_in_flight = asyncio.Event()
+            second_in_flight = asyncio.Event()
+            release_second = asyncio.Event()
+            ping_ids = []
+
+            async def handler(request):
+                if request.method == "GET":
+                    return httpx2.Response(405)
+
+                assert request.method == "POST"
+                payload = json.loads(request.content)
+                method = payload["method"]
+                envelope = {"jsonrpc": "2.0", "id": payload.get("id")}
+
+                if method == "server/discover":
+                    return httpx2.Response(
+                        200,
+                        json={
+                            **envelope,
+                            "error": {"code": -32601, "message": "Method not found"},
+                        },
+                    )
+                if method == "initialize":
+                    return httpx2.Response(
+                        200,
+                        json={
+                            **envelope,
+                            "result": {
+                                "protocolVersion": payload["params"]["protocolVersion"],
+                                "capabilities": {},
+                                "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                            },
+                        },
+                    )
+                if method == "notifications/initialized":
+                    return httpx2.Response(202)
+
+                assert method == "ping", method
+                ping_ids.append(payload["id"])
+
+                if len(ping_ids) == 1:
+                    first_in_flight.set()
+                    await second_in_flight.wait()
+                    message = "Request could not be completed" if first_status == 401 else "Unrelated RPC failure"
+                    return httpx2.Response(
+                        first_status,
+                        json={
+                            **envelope,
+                            "error": {"code": -32000, "message": message},
+                        },
+                    )
+
+                assert len(ping_ids) == 2
+                second_in_flight.set()
+                await release_second.wait()
+                if second_status == 401:
+                    return httpx2.Response(
+                        401,
+                        json={
+                            **envelope,
+                            "error": {
+                                "code": -32000,
+                                "message": "Request could not be completed",
+                            },
+                        },
+                    )
+                return httpx2.Response(200, json={**envelope, "result": {}})
+
+            def mock_http_client(**kwargs):
+                return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
+
+            monkeypatch.setattr(
+                "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+                mock_http_client,
+            )
+            tool = _make_tool(mcp_config)
+            client = tool._build_client()
+
+            async def ping_with_overlapping_request(client):
+                assert client.initialize_result is not None
+                async with asyncio.TaskGroup() as tasks:
+
+                    async def capture_ping():
+                        try:
+                            return await client.session.send_ping()
+                        except MCPError as exc:
+                            return exc
+
+                    first = tasks.create_task(capture_ping())
+                    await first_in_flight.wait()
+                    second = tasks.create_task(capture_ping())
+
+                    first_error = await first
+                    release_second.set()
+                    second_outcome = await second
+
+                assert len(set(ping_ids)) == 2
+                assert isinstance(first_error, MCPError)
+                assert first_error.message == (
+                    "Request could not be completed" if first_status == 401 else "Unrelated RPC failure"
+                )
+                assert isinstance(second_outcome, MCPError) == (second_status == 401)
+                raise first_error
+
+            monkeypatch.setattr(type(client), "ping", ping_with_overlapping_request)
+
+            async def execute():
+                # Capture the outcome so a timeout or failed setup assertion
+                # cannot accidentally satisfy the classification assertion.
+                try:
+                    await asyncio.wait_for(tool._execute_on(client, "ping"), timeout=5)
+                except Exception as exc:
+                    return exc
+                pytest.fail("Expected the first ping to fail")
+
+            return asyncio.run(execute())
+
+        error = run()
+        assert str(error) == expected_error
+
+    def test_resolved_http_401_does_not_mask_unrelated_error(self, mcp_config):
         import httpx2
         from docsgpt.agents.tools.mcp_tool import (
             _capture_mcp_http_status,
         )
         tool = _make_tool(mcp_config)
+
         class FakeClient:
             async def __aenter__(self):
                 return self
@@ -859,74 +1257,101 @@ class TestExecuteAction:
             )
 
     def test_concurrent_operations_isolate_http_statuses(
-        self, mcp_config
+        self,monkeypatch, mcp_config
     ):
+        import asyncio
         import httpx2
-        from docsgpt.agents.tools.mcp_tool import _capture_mcp_http_status
-        tool = _make_tool(mcp_config)
+        from mcp import MCPError
+        auth_host = "auth.mcp.example.com"
+        unrelated_host = "unrelated.mcp.example.com"
+        generic_error = "Request could not be completed"
+        unrelated_error = "Unrelated RPC failure"
 
-        async def run_concurrently():
-            ready = asyncio.Event()
-            started = 0
+        async def run():
+            both_pings_arrived = asyncio.Event()
+            ping_ids = {}
 
-            class FakeClient:
-                def __init__(self, status):
-                    self.status = status
+            async def handler(request):
+                if request.method == "GET":
+                    return httpx2.Response(405)
 
-                async def __aenter__(self):
-                    return self
+                assert request.method == "POST"
+                payload = json.loads(request.content)
+                method = payload["method"]
+                envelope = {"jsonrpc": "2.0", "id": payload.get("id")}
 
-                async def __aexit__(self, exc_type, exc, tb):
-                    return False
-
-                async def call_tool(self, name, arguments):
-                    nonlocal started
-
-                    request = httpx2.Request(
-                        "POST",
-                        "https://mcp.example.com/api",
+                if method == "server/discover":
+                    return httpx2.Response(
+                        200,
                         json={
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "tools/call",
+                            **envelope,
+                            "error": {"code": -32601, "message": "Method not found"},
                         },
                     )
-
-                    await _capture_mcp_http_status(
-                        httpx2.Response(self.status, request=request)
+                if method == "initialize":
+                    return httpx2.Response(
+                        200,
+                        json={
+                            **envelope,
+                            "result": {
+                                "protocolVersion": payload["params"]["protocolVersion"],
+                                "capabilities": {},
+                                "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                            },
+                        },
                     )
+                if method == "notifications/initialized":
+                    return httpx2.Response(202)
 
-                    started += 1
+                assert method == "ping", method
+                host = request.url.host
+                assert host in (auth_host, unrelated_host)
+                assert host not in ping_ids
+                ping_ids[host] = payload["id"]
+                if len(ping_ids) == 2:
+                    both_pings_arrived.set()
+                await both_pings_arrived.wait()
 
-                    if started == 2:
-                        ready.set()
+                status, message = (401, generic_error) if host == auth_host else (200, unrelated_error)
+                return httpx2.Response(
+                    status,
+                    json={
+                        **envelope,
+                        "error": {"code": -32000, "message": message},
+                    },
+                )
 
-                    await ready.wait()
+            def mock_http_client(**kwargs):
+                return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
 
-                    raise ValueError(
-                        f"Operation failed: {self.status}"
-                    )
-
-            return await asyncio.gather(
-                tool._execute_on(
-                    FakeClient(401),
-                    "call_tool",
-                    "action_a",
-                ),
-                tool._execute_on(
-                    FakeClient(200),
-                    "call_tool",
-                    "action_b",
-                ),
-                return_exceptions=True,
+            monkeypatch.setattr(
+                "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+                mock_http_client,
             )
 
-        errors = asyncio.run(run_concurrently())
+            async def ping(host):
+                tool = _make_tool({**mcp_config, "server_url": f"https://{host}/mcp"})
+                return await tool._execute_on(tool._build_client(), "ping")
 
-        assert len(errors) == 2
-        assert "HTTP 401 Unauthorized" in str(errors[0])
-        assert isinstance(errors[1], ValueError)
-        assert str(errors[1]) == "Operation failed: 200"
+            errors = await asyncio.wait_for(
+                asyncio.gather(
+                    ping(auth_host),
+                    ping(unrelated_host),
+                    return_exceptions=True,
+                ),
+                timeout=10,
+            )
+            assert set(ping_ids) == {auth_host, unrelated_host}
+            assert ping_ids[auth_host] == ping_ids[unrelated_host]
+            return errors
+
+        auth_error, ordinary_error = asyncio.run(run())
+
+        assert str(auth_error) == "HTTP 401 Unauthorized"
+        assert isinstance(auth_error.__cause__, MCPError)
+        assert auth_error.__cause__.message == generic_error
+        assert isinstance(ordinary_error, MCPError)
+        assert ordinary_error.message == unrelated_error
 
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_auth_error_retries_for_non_oauth(self, mock_run, mcp_config):
@@ -1278,7 +1703,7 @@ class TestSetupClient:
 
         mock_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client):
+            patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client):
             tool._setup_client()
             assert tool._client is mock_client
 
@@ -2763,7 +3188,7 @@ class TestRegularConnectionExtended:
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
         mock_run.side_effect = [None]  # ping ok
-        with patch.object(tool, "discover_tools", return_value=[
+        with patch.object(tool,"discover_tools",return_value=[
             {"name": "t1", "description": "d1"},
             {"name": "t2", "description": "d2"},
         ]):
