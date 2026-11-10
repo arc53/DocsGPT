@@ -4796,7 +4796,7 @@
         "other_step": "un cambio para otro paso"
       },
       "build": {
-        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento y las herramientas, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige un punto de partida o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
+        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige un punto de partida o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
         "describePlaceholder": "Describe el agente…",
         "changePlaceholder": "O dime qué cambiar…",
         "steps": {

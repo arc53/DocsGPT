@@ -4678,7 +4678,7 @@
         "other_step": "a change for another step"
       },
       "build": {
-        "intro": "Let's build this agent together, one part at a time: basics, knowledge and tools, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
         "describePlaceholder": "Describe the agent…",
         "changePlaceholder": "Or tell me what to change…",
         "steps": {
