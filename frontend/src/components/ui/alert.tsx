@@ -101,10 +101,15 @@ function AlertDescription({
   className,
   ...props
 }: React.ComponentProps<'div'>) {
+  // A link in the text has the Alert's colour (tone="current"), so only
+  // its underline, at rest too, tells it apart from the words around it.
   return (
     <div
       data-slot="alert-description"
-      className={cn('text-sm [&_p]:leading-relaxed', className)}
+      className={cn(
+        'text-sm [&_[data-slot=button][data-variant=link][data-tone=current]]:underline [&_p]:leading-relaxed',
+        className,
+      )}
       {...props}
     />
   );

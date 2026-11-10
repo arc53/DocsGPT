@@ -1371,7 +1371,9 @@ Open Access details, Add to Knowledge) is a link in the Alert's own colour
 at the end of its text: `Button variant="link" size="text" tone="current"`
 after the last sentence in the description's `<p>` ("… Nothing in the form
 changed. Try again"), with `asChild` around a router `<Link>` or an `<a>`
-when it navigates and `loading` while it runs. Never a framed Button
+when it navigates and `loading` while it runs. `AlertDescription` underlines
+it at rest, not only on hover: in the text's own colour, the underline is all
+that marks it as a link. Never a framed Button
 (`outline`, `default`, `secondary`) inside an Alert: a filled or bordered
 control on the tinted box reads as a second surface stacked on the notice.
 A way past the problem that isn't a fix (the drafter's "Continue: <step>"

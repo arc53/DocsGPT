@@ -113,6 +113,22 @@ describe('Alert layout', () => {
   });
 });
 
+describe('Alert description', () => {
+  it('underlines a link at rest, since it has the colour of the text around it', async () => {
+    await render(
+      <Alert variant="destructive">
+        <AlertDescription>Failed.</AlertDescription>
+      </Alert>,
+    );
+    const description = container.querySelector(
+      '[data-slot="alert-description"]',
+    )!;
+    expect(description.className.split(' ')).toContain(
+      '[&_[data-slot=button][data-variant=link][data-tone=current]]:underline',
+    );
+  });
+});
+
 describe('Alert surface', () => {
   it('has 14px corners, like a popover', async () => {
     await render(
