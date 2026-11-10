@@ -88,34 +88,41 @@ export function PromptEditReview({
         data-edit-id={edit.id}
         data-decision={decision}
         data-current={current === edit.id || undefined}
-        // An underline, not a ring: a change can wrap over several lines.
-        className={cn(
-          current === edit.id &&
-            'decoration-primary underline decoration-2 underline-offset-4',
-        )}
       >
         {kept.before}
         <sup className="text-link px-0.5 text-xs font-semibold">{number}</sup>
-        {decision === 'rejected' ? (
-          removed
-        ) : (
-          <>
-            {decision !== 'accepted' && removed && (
-              <del className="text-muted-foreground line-through">
-                <span className="sr-only">
-                  {t('drafter.prompt.removedText')}
-                </span>
-                {removed}
-              </del>
-            )}
-            {added && (
-              <ins className="bg-secondary text-foreground rounded-sm no-underline">
-                <span className="sr-only">{t('drafter.prompt.addedText')}</span>
-                {added}
-              </ins>
-            )}
-          </>
-        )}
+        {/* The current change's underline (not a ring: a change can wrap
+            over several lines) runs under what goes and comes only, not
+            the words it keeps. */}
+        <span
+          className={cn(
+            current === edit.id &&
+              'decoration-primary underline decoration-2 underline-offset-4',
+          )}
+        >
+          {decision === 'rejected' ? (
+            removed
+          ) : (
+            <>
+              {decision !== 'accepted' && removed && (
+                <del className="text-muted-foreground line-through">
+                  <span className="sr-only">
+                    {t('drafter.prompt.removedText')}
+                  </span>
+                  {removed}
+                </del>
+              )}
+              {added && (
+                <ins className="bg-secondary text-foreground rounded-sm no-underline">
+                  <span className="sr-only">
+                    {t('drafter.prompt.addedText')}
+                  </span>
+                  {added}
+                </ins>
+              )}
+            </>
+          )}
+        </span>
         {kept.after}
       </span>
     );

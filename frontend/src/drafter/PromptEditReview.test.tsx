@@ -68,6 +68,36 @@ describe('PromptEditReview', () => {
     );
   });
 
+  // Live check 101: the current change's underline ran under the words it
+  // keeps too.
+  it('underlines only the changed words of the current change', async () => {
+    await act(async () =>
+      root.render(
+        <PromptEditReview
+          review={reviewOf(
+            [
+              {
+                id: 'e1',
+                find: 'Keep it short.',
+                replace: 'Keep it short and plain.',
+                reason: 'Plainer.',
+              },
+            ],
+            'e1',
+          )}
+          onDecide={() => undefined}
+        />,
+      ),
+    );
+    const change = container.querySelector('[data-edit-id="e1"]')!;
+    expect(change.className).not.toContain('underline');
+    const marked = Array.from(change.querySelectorAll('.underline'));
+    expect(marked).toHaveLength(1);
+    // Only what comes and goes; the shared "Keep it short" stays plain.
+    expect(marked[0].textContent).not.toContain('Keep it short');
+    expect(marked[0].textContent).toContain('and plain');
+  });
+
   it('opens on change 1, scrolled to the top of the box, focus left alone', async () => {
     const scrolled = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
