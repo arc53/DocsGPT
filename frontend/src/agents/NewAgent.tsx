@@ -10,6 +10,7 @@ import {
   Pencil,
   PencilLine,
   Play,
+  Save,
   Scissors,
   ScanSearch,
   ShieldCheck,
@@ -2731,17 +2732,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     return ((await response.json()) as Agent).config;
   }, [agent.id, token]);
 
+  // Save Draft (a draft) and Preview lead the ⋯, so the row keeps Cancel,
+  // the wand and the main button at every width (PATTERNS.md › Agent pages).
   const agentMenu = useAgentMenu({
     agent,
-    lead: isPublished
-      ? []
-      : [
-          {
-            label: t('agents.form.sections.preview'),
-            icon: Play,
-            onClick: () => setPreviewOpen(true),
-          },
-        ],
+    lead: [
+      ...(modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit')
+        ? [
+            {
+              label: t('agents.form.buttons.saveDraft'),
+              icon: Save,
+              disabled: isDraftBlocked() || publishLoading || draftLoading,
+              onClick: () => void handleSaveDraft(),
+            },
+          ]
+        : []),
+      {
+        label: t('agents.form.sections.preview'),
+        icon: Play,
+        onClick: () => setPreviewOpen(true),
+      },
+    ],
     shareable: modeConfig[effectiveMode].showAccessDetails,
     openAccessDetails: (apiWrites) => {
       setDetailsOnApiWrites(apiWrites);
@@ -2752,22 +2763,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   // At most three buttons, so the row fits a phone; the main one stretches
   // across it there.
-  // The drawer's entry, on the toolbar and on the prompt view's crumb row.
+  // The drawer's entry, on the toolbar and on the prompt view's crumb row:
+  // Build where the drawer builds (a new agent's empty form, or its build
+  // while open), Resume only while a build waits behind the closed drawer.
+  const resumable = build.guided && !build.done && !drafterOpen;
   const wandProps = {
-    // Draft only where the drawer would build (a new agent's empty form).
-    mode:
-      build.guided && !build.done
-        ? ('resume' as const)
-        : formEmpty && !agent.id
-          ? ('draft' as const)
-          : ('improve' as const),
-    label:
-      build.guided && !build.done
-        ? t('drafter.agent.build.resumeLabel', {
-            number: build.number,
-            total: build.total,
-          })
-        : undefined,
+    mode: resumable
+      ? ('resume' as const)
+      : (formEmpty && !agent.id) || (build.guided && !build.done)
+        ? ('draft' as const)
+        : ('improve' as const),
+    label: resumable
+      ? t('drafter.agent.build.resumeLabel', {
+          number: build.number,
+          total: build.total,
+        })
+      : undefined,
     open: drafterOpen,
     compactOnPhone: true,
   };
@@ -2889,31 +2900,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           {...wandProps}
           onClick={() => setDrafterOpen((open) => !open)}
         />
-      )}
-      {modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit') && (
-        <Button
-          type="button"
-          variant="outline"
-          size="field"
-          shape="pill"
-          disabled={isDraftBlocked() || publishLoading}
-          loading={draftLoading}
-          onClick={handleSaveDraft}
-        >
-          {t('agents.form.buttons.saveDraft')}
-        </Button>
-      )}
-      {isPublished && (
-        <Button
-          type="button"
-          variant="outline"
-          size="field"
-          shape="pill"
-          onClick={() => setPreviewOpen(true)}
-        >
-          <Play />
-          {t('agents.form.sections.preview')}
-        </Button>
       )}
       {canSubmit && (
         <Button

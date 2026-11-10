@@ -4817,7 +4817,8 @@
       "previous": "元に戻しました（以前の値）"
     },
     "stillWaiting": "モデルの応答を待っています。遅いモデルでは数分かかることがあります。停止するとこのターンを終了します。",
-    "stoppedDescription": "このターンを停止しました。フォームは変更されていません。"
+    "stoppedDescription": "このターンを停止しました。フォームは変更されていません。",
+    "build": "作成"
   },
   "questions": {
     "somethingElse": "その他…",

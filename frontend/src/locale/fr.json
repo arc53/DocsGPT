@@ -5017,7 +5017,8 @@
       "previous": "Annulé, retour à la valeur précédente"
     },
     "stillWaiting": "Toujours en attente du modèle. Les modèles lents peuvent prendre quelques minutes ; Arrêter met fin au tour.",
-    "stoppedDescription": "Vous avez arrêté ce tour. Le formulaire n’a pas changé."
+    "stoppedDescription": "Vous avez arrêté ce tour. Le formulaire n’a pas changé.",
+    "build": "Construire"
   },
   "questions": {
     "somethingElse": "Autre chose…",

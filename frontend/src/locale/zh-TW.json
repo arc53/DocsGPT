@@ -4817,7 +4817,8 @@
       "previous": "已復原，恢復為先前的值"
     },
     "stillWaiting": "仍在等待模型。較慢的模型可能需要幾分鐘；按「停止」可結束這一輪。",
-    "stoppedDescription": "你停止了這一輪。表單沒有變更。"
+    "stoppedDescription": "你停止了這一輪。表單沒有變更。",
+    "build": "建置"
   },
   "questions": {
     "somethingElse": "其他…",

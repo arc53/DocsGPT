@@ -5017,7 +5017,8 @@
       "previous": "Deshecho, vuelve al valor anterior"
     },
     "stillWaiting": "Aún esperando al modelo. Los modelos lentos pueden tardar unos minutos; Detener termina el turno.",
-    "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado."
+    "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado.",
+    "build": "Construir"
   },
   "questions": {
     "somethingElse": "Otra cosa…",

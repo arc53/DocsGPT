@@ -382,6 +382,29 @@ const setNativeValue = (
   el.dispatchEvent(new Event('input', { bubbles: true }));
 };
 
+/** Open the toolbar's ⋯ and its items' labels. */
+const openToolbarMenu = async (root: ParentNode) => {
+  const trigger = root.querySelector<HTMLButtonElement>(
+    'button[aria-label="agents.form.buttons.moreActions"]',
+  )!;
+  await act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+    );
+  });
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  );
+};
+
+/** Pick an item from the toolbar's ⋯ (Save Draft, Preview). */
+const pickMenuItem = async (root: ParentNode, label: string) => {
+  const item = (await openToolbarMenu(root)).find(
+    (row) => row.textContent === label,
+  )!;
+  await act(async () => item.click());
+};
+
 describe('NewAgent form', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -956,9 +979,7 @@ describe('NewAgent form', () => {
     );
     await render();
     await typeName('Support bot');
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
     await act(async () => goToTools().click());
     expect(asked()).toBe(false);
@@ -974,7 +995,7 @@ describe('NewAgent form', () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' });
     await act(async () => mocks.fileUploadProps!.onUpload([file]));
     const saveDraft = () =>
-      act(async () => buttonByText('agents.form.buttons.saveDraft').click());
+      pickMenuItem(container, 'agents.form.buttons.saveDraft');
     await saveDraft();
     const created = (
       mocks.createAgent.mock.calls.at(-1) as unknown as [FormData]
@@ -998,9 +1019,7 @@ describe('NewAgent form', () => {
     );
     await render();
     await typeName('Support bot');
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
     const guardrails = { controls: [{ id: 'pii' }] };
     mocks.getAgent.mockImplementationOnce(() =>
@@ -1084,9 +1103,7 @@ describe('NewAgent form', () => {
         'Helps',
       ),
     );
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     const publish = buttonByText('agents.form.buttons.publish');
     expect(publish.disabled).toBe(true);
     await act(async () => publish.click());
@@ -1778,9 +1795,7 @@ describe('NewAgent form', () => {
     mocks.createAgent.mockImplementationOnce(() =>
       jsonResponse({ id: 'agent-1' }),
     );
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     expect(container.querySelector('h1')?.textContent).not.toBe(
       'agents.newAgent',
     );
@@ -1825,12 +1840,15 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('offers Preview from the toolbar menu until the agent is published', async () => {
+  it('offers Save Draft and Preview first in the toolbar menu', async () => {
     await render();
     const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    // The row keeps Cancel, the wand and the main button.
     expect(
-      Array.from(toolbar.querySelectorAll('button')).some((b) =>
-        b.textContent?.includes('agents.form.sections.preview'),
+      Array.from(toolbar.querySelectorAll('button')).some(
+        (b) =>
+          b.textContent?.includes('agents.form.sections.preview') ||
+          b.textContent?.includes('agents.form.buttons.saveDraft'),
       ),
     ).toBe(false);
     const menu = container.querySelector<HTMLButtonElement>(
@@ -1840,14 +1858,12 @@ describe('NewAgent form', () => {
     // Last in the toolbar row, after the page's buttons.
     expect(menu.closest('[data-slot="page-toolbar"]')).toBe(toolbar);
     expect(menu.parentElement!.lastElementChild).toBe(menu);
-    await act(async () => {
-      menu.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-    });
-    const preview = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === 'agents.form.sections.preview')!;
+    const items = await openToolbarMenu(container);
+    expect(items.map((item) => item.textContent).slice(0, 2)).toEqual([
+      'agents.form.buttons.saveDraft',
+      'agents.form.sections.preview',
+    ]);
+    const preview = items[1];
     await act(async () => preview.click());
     const sheet = document.querySelector('[data-slot="sheet-content"]')!;
     expect(sheet.textContent).toContain('agents.form.preview.publishTitle');
@@ -2037,13 +2053,9 @@ describe('NewAgent form', () => {
     expect(badge?.getAttribute('data-variant')).toBe('success');
   });
 
-  it('renders Save draft and Publish as pill button variants', async () => {
+  it('renders Publish as a pill button', async () => {
     await render();
     // A4: one purple button per page; every header button is field pill.
-    const draft = buttonByText('agents.form.buttons.saveDraft');
-    expect(draft.getAttribute('data-variant')).toBe('outline');
-    expect(draft.getAttribute('data-size')).toBe('field');
-    expect(draft.getAttribute('data-shape')).toBe('pill');
     const publish = buttonByText('agents.form.buttons.publish');
     expect(publish.getAttribute('data-variant')).toBe('default');
     expect(publish.getAttribute('data-size')).toBe('field');
@@ -2066,8 +2078,7 @@ describe('NewAgent form', () => {
 
   it('shows a failed save as a destructive alert with an icon', async () => {
     await render();
-    const draft = buttonByText('agents.form.buttons.saveDraft');
-    await act(async () => draft.click());
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('Name is taken');
     // ui/alert's destructive variant.
@@ -2076,7 +2087,8 @@ describe('NewAgent form', () => {
     expect(alert.querySelector('svg.lucide-circle-alert')).not.toBeNull();
     // Decision 69 (b): the notice sits above the form panel, not in the
     // header's button row.
-    expect(draft.parentElement?.contains(alert)).toBe(false);
+    const publish = buttonByText('agents.form.buttons.publish');
+    expect(publish.parentElement?.contains(alert)).toBe(false);
   });
 
   it('marks JSON schema validity with token colours and lucide icons', async () => {
@@ -2244,6 +2256,7 @@ describe('NewAgent gating by role', () => {
   it('gives the owner Access details, Share and Delete', async () => {
     await renderEdit('owner', OWNER);
     expect(await menuLabels()).toEqual([
+      'agents.form.sections.preview',
       'agents.form.buttons.accessDetails',
       'agents.shareWithTeam',
       'agents.form.buttons.delete',
@@ -2266,7 +2279,10 @@ describe('NewAgent gating by role', () => {
 
   it('hides Share and Delete from an editor but keeps Access details', async () => {
     await renderEdit('editor', EDITOR);
-    expect(await menuLabels()).toEqual(['agents.form.buttons.accessDetails']);
+    expect(await menuLabels()).toEqual([
+      'agents.form.sections.preview',
+      'agents.form.buttons.accessDetails',
+    ]);
   });
 
   it('lets an editor change guardrails and quotas', async () => {
@@ -2366,12 +2382,8 @@ describe('NewAgent gating by role', () => {
       'editor',
       EDITOR.filter((a) => a !== 'manage_access_details'),
     );
-    // With nothing to offer, the ⋯ isn't drawn.
-    expect(
-      container.querySelector(
-        'button[aria-label="agents.form.buttons.moreActions"]',
-      ),
-    ).toBeNull();
+    // The ⋯ holds only the page's Preview.
+    expect(await menuLabels()).toEqual(['agents.form.sections.preview']);
   });
 
   it('keeps a failed delete in the dialog with the server message', async () => {
@@ -2627,14 +2639,17 @@ describe('NewAgent drafter', () => {
     warn.mockRestore();
   });
 
-  it('offers Improve on a filled agent, left of Preview', async () => {
+  it('offers Improve on a filled agent, and Preview first in the ⋯', async () => {
     await renderEdit(['edit', 'publish', 'use', 'view']);
     expect(wand()!.textContent).toContain('drafter.improve');
-    const row = buttons().filter(
-      (b) =>
-        b === wand() || b.textContent?.includes('agents.form.sections.preview'),
-    );
-    expect(row[0]).toBe(wand());
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(
+      buttons(toolbar).some((b) =>
+        b.textContent?.includes('agents.form.sections.preview'),
+      ),
+    ).toBe(false);
+    const items = await openToolbarMenu(container);
+    expect(items[0].textContent).toBe('agents.form.sections.preview');
   });
 
   it('greets an empty new agent with the plan and starts at Basics', async () => {
@@ -3049,6 +3064,9 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('A shipping agent');
+    // Open, the drawer is the build itself: no Resume.
+    expect(wand()!.textContent).not.toContain('drafter.agent.build.resume');
+    expect(wand()!.hasAttribute('aria-label')).toBe(false);
     await act(async () => wand()!.click());
     expect(panel()).toBeNull();
     expect(wand()!.textContent).toContain('drafter.agent.build.resume');
