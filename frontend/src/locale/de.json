@@ -4685,9 +4685,22 @@
           "checks_one": "{{count}} Prüfung im Modus {{mode}}",
           "checks_other": "{{count}} Prüfungen im Modus {{mode}}",
           "topics_one": "{{count}} Thema für Einblicke",
-          "topics_other": "{{count}} Themen für Einblicke"
+          "topics_other": "{{count}} Themen für Einblicke",
+          "noName": "noch kein Name"
         },
-        "continueStep": "Fortsetzen: {{step}}"
+        "continueStep": "Fortsetzen: {{step}}",
+        "doneBlocked": "Das waren alle Schritte, aber Veröffentlichen bleibt aus, bis der Agent {{missing}} hat. Am Agenten ist noch nichts gespeichert.",
+        "goTo": "Zu {{field}}",
+        "missing": {
+          "name": "einen Namen",
+          "description": "eine Beschreibung",
+          "prompt": "einen Prompt",
+          "agentType": "einen Agententyp",
+          "jsonSchema": "ein gültiges JSON-Antwortschema",
+          "contextLimit": "ein gültiges Kontextlimit",
+          "origins": "seine erlaubten Ursprünge",
+          "guardrails": "eingerichtete Guardrail-Prüfungen"
+        }
       },
       "improve": {
         "intro": "Was soll sich an {{name}} ändern?",

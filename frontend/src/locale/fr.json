@@ -4830,9 +4830,22 @@
           "checks_many": "{{count}} contrôles en mode {{mode}}",
           "topics_one": "{{count}} sujet d’analyse",
           "topics_other": "{{count}} sujets d’analyse",
-          "topics_many": "{{count}} sujets d’analyse"
+          "topics_many": "{{count}} sujets d’analyse",
+          "noName": "pas encore de nom"
         },
-        "continueStep": "Continuer : {{step}}"
+        "continueStep": "Continuer : {{step}}",
+        "doneBlocked": "Toutes les parties sont faites, mais Publier reste désactivé tant que l’agent n’a pas {{missing}}. Rien n’est encore enregistré pour cet agent.",
+        "goTo": "Aller à {{field}}",
+        "missing": {
+          "name": "de nom",
+          "description": "de description",
+          "prompt": "de prompt",
+          "agentType": "de type d’agent",
+          "jsonSchema": "de schéma de réponse JSON valide",
+          "contextLimit": "de limite de contexte valide",
+          "origins": "ses origines autorisées",
+          "guardrails": "ses garde-fous configurés"
+        }
       },
       "improve": {
         "intro": "Que faut-il changer dans {{name}} ?",

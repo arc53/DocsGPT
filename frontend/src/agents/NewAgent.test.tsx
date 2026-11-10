@@ -2952,6 +2952,41 @@ describe('NewAgent drafter', () => {
     expect(panel()!.textContent).toContain('drafter.agent.build.allFilled');
   });
 
+  it('says what Publish needs when the build ends without it', async () => {
+    drafter.scripts = [
+      [
+        proposal(
+          { description: 'Helps with shipping' },
+          { steps: ['basics', 'knowledge', 'prompt', 'safety'] },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    await act(async () => next()!.click());
+    const doneLine = () =>
+      panel()!.querySelector<HTMLElement>('[data-slot="build-done"]')!;
+    // A warning in place of the done line, with the way to the field.
+    const alert = doneLine().querySelector('[data-slot="alert"]')!;
+    expect(alert.textContent).toContain('drafter.agent.build.doneBlocked');
+    expect(panel()!.textContent).not.toContain('drafter.agent.build.done ');
+    // The folded step reads the form: no name yet.
+    expect(nameInput().value).toBe('');
+    await act(async () =>
+      buttonByText('drafter.agent.build.goTo', alert)!.click(),
+    );
+    await act(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+    expect(document.activeElement).toBe(nameInput());
+    // Once it has a name, the done line is back.
+    await act(async () => setNativeValue(nameInput(), 'Shipping help'));
+    expect(doneLine().querySelector('[data-slot="alert"]')).toBeNull();
+    expect(doneLine().textContent).toBe('drafter.agent.build.done');
+  });
+
   it('reads an agent as unchanged once its drafted guardrails are undone', async () => {
     drafter.scripts = [
       [
@@ -3475,7 +3510,7 @@ describe('NewAgent drafter', () => {
     drafter.scripts = [
       [
         proposal(
-          { name: 'Shipping help' },
+          { name: 'Shipping help', description: 'Helps with shipping' },
           { steps: ['basics', 'knowledge', 'prompt', 'safety'] },
         ),
         { type: 'end' },
@@ -3491,7 +3526,9 @@ describe('NewAgent drafter', () => {
     );
     // The done message lands in the open sheet.
     expect(panel()).not.toBeNull();
-    expect(panel()!.textContent).toContain('drafter.agent.build.done');
+    expect(
+      panel()!.querySelector('[data-slot="build-done"]')!.textContent,
+    ).toBe('drafter.agent.build.done');
   });
 
   // The picker's Add prompt and each row's Edit or View open the same
@@ -4615,7 +4652,7 @@ describe('NewAgent drafter', () => {
       );
       const card = panel()!.querySelector('[data-slot="gap-card"]')!;
       expect(
-        card.querySelector('[data-slot="filled-row"] p')!.getAttribute('title'),
+        card.querySelector('[data-slot="filled-row"] p')!.textContent,
       ).toBe('agents.form.sections.guardrails · groundedness, monitor only');
       // No example read: no quote.
       expect(card.textContent).not.toContain('drafter.agent.insights.quoted');
@@ -4683,9 +4720,7 @@ describe('NewAgent drafter', () => {
       expect(cards[0].querySelector('h3')!.textContent).toBe('Order status');
       expect(cards[0].textContent).toContain('drafter.agent.insights.quoted');
       expect(
-        cards[0]
-          .querySelector('[data-slot="filled-row"] p')!
-          .getAttribute('title'),
+        cards[0].querySelector('[data-slot="filled-row"] p')!.textContent,
       ).toBe('agents.form.sections.starters · asks for the order id');
       expect(cards[1].textContent).toContain(
         'The Claims policy source has no page on deadlines.',
@@ -4710,7 +4745,7 @@ describe('NewAgent drafter', () => {
         summary.querySelectorAll(
           '[data-slot="drafter-step-row"] [data-slot="filled-row"] p',
         ),
-      ).map((p) => p.getAttribute('title'));
+      ).map((p) => p.textContent);
       expect(filled).toEqual([
         'agents.form.labels.description · says who it serves',
       ]);

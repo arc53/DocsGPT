@@ -4659,9 +4659,22 @@
           "checks_one": "{{count}} 項檢查（{{mode}}）",
           "checks_other": "{{count}} 項檢查（{{mode}}）",
           "topics_one": "{{count}} 個洞察主題",
-          "topics_other": "{{count}} 個洞察主題"
+          "topics_other": "{{count}} 個洞察主題",
+          "noName": "還沒有名稱"
         },
-        "continueStep": "繼續：{{step}}"
+        "continueStep": "繼續：{{step}}",
+        "doneBlocked": "所有部分都完成了，但在代理有{{missing}}之前無法發佈。代理還沒有儲存。",
+        "goTo": "前往{{field}}",
+        "missing": {
+          "name": "名稱",
+          "description": "描述",
+          "prompt": "提示詞",
+          "agentType": "代理類型",
+          "jsonSchema": "有效的JSON回應架構",
+          "contextLimit": "有效的上下文上限",
+          "origins": "允許的來源",
+          "guardrails": "設定好的防護機制檢查"
+        }
       },
       "improve": {
         "intro": "{{name}} 需要改什麼？",

@@ -4830,9 +4830,22 @@
           "checks_many": "{{count}} comprobaciones en modo {{mode}}",
           "topics_one": "{{count}} tema de Información",
           "topics_other": "{{count}} temas de Información",
-          "topics_many": "{{count}} temas de Información"
+          "topics_many": "{{count}} temas de Información",
+          "noName": "aún sin nombre"
         },
-        "continueStep": "Continuar: {{step}}"
+        "continueStep": "Continuar: {{step}}",
+        "doneBlocked": "Ya están todas las partes, pero Publicar sigue desactivado hasta que el agente tenga {{missing}}. Todavía no se ha guardado nada del agente.",
+        "goTo": "Ir a {{field}}",
+        "missing": {
+          "name": "un nombre",
+          "description": "una descripción",
+          "prompt": "un prompt",
+          "agentType": "un tipo de agente",
+          "jsonSchema": "un esquema de respuesta JSON válido",
+          "contextLimit": "un límite de contexto válido",
+          "origins": "sus orígenes permitidos",
+          "guardrails": "sus controles de barreras de protección configurados"
+        }
       },
       "improve": {
         "intro": "¿Qué debería cambiar en {{name}}?",

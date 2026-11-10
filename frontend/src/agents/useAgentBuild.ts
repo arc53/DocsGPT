@@ -56,8 +56,6 @@ export type AgentBuildOptions = {
   skipped: AgentBuildStep[];
   /** The hidden message that starts a step ("Continue with Knowledge and tools."). */
   continueText: (step: AgentBuildStep) => string;
-  /** The drawer's message once every step is done. */
-  doneText: string;
   /**
    * Something on the form waits for the user (changes to a prompt under
    * review): an approval's Next waits for it.
@@ -154,7 +152,6 @@ export function useAgentBuild({
   session,
   skipped,
   continueText,
-  doneText,
   hold = false,
 }: AgentBuildOptions): AgentBuild {
   const [state, setRendered] = useState<BuildState>(IDLE);
@@ -163,8 +160,8 @@ export function useAgentBuild({
     stateRef.current = next;
     setRendered(next);
   }, []);
-  const latest = useRef({ session, skipped, continueText, doneText });
-  latest.current = { session, skipped, continueText, doneText };
+  const latest = useRef({ session, skipped, continueText });
+  latest.current = { session, skipped, continueText };
 
   const start = useCallback(
     (starter?: DrafterStarter) => {
@@ -211,7 +208,7 @@ export function useAgentBuild({
   const next = useCallback(() => {
     const current = stateRef.current;
     if (current.mode !== 'guided' || !current.step) return;
-    const { session, skipped, continueText, doneText } = latest.current;
+    const { session, skipped, continueText } = latest.current;
     const target = nextOf(current, skipped);
     const filled = new Set([
       ...current.finished,
@@ -232,8 +229,9 @@ export function useAgentBuild({
       approved: false,
     });
     session.reset();
+    // The last step's Next leaves an empty session: the caller shows the
+    // done line, which reads the form as it is now.
     if (target) session.send(continueText(target), { hidden: true });
-    else session.addMessage(doneText);
   }, [setState]);
 
   const reset = useCallback(() => setState(IDLE), [setState]);

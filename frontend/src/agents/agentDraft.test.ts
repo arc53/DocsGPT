@@ -776,8 +776,9 @@ describe('agentDraft', () => {
       },
     });
     expect(agentStepResult('basics', filled, t, '')).toBe('Shipping help desk');
+    // Not the page's fallback name: the agent has none yet.
     expect(agentStepResult('basics', form(), t, '')).toBe(
-      'agents.pageHeader.fallbackName',
+      'drafter.agent.build.result.noName',
     );
     expect(agentStepResult('knowledge', filled, t, '')).toBe(
       'drafter.counts.sources:2 and Tracking API',

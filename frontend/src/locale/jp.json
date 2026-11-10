@@ -4659,9 +4659,22 @@
           "checks_one": "{{count}} 件のチェック（{{mode}}）",
           "checks_other": "{{count}} 件のチェック（{{mode}}）",
           "topics_one": "インサイトのトピック {{count}} 件",
-          "topics_other": "インサイトのトピック {{count}} 件"
+          "topics_other": "インサイトのトピック {{count}} 件",
+          "noName": "名前はまだありません"
         },
-        "continueStep": "続ける: {{step}}"
+        "continueStep": "続ける: {{step}}",
+        "doneBlocked": "これですべてのステップが終わりましたが、エージェントに{{missing}}がそろうまで公開できません。エージェントはまだ保存されていません。",
+        "goTo": "{{field}}へ移動",
+        "missing": {
+          "name": "名前",
+          "description": "説明",
+          "prompt": "プロンプト",
+          "agentType": "エージェントタイプ",
+          "jsonSchema": "有効なJSON応答スキーマ",
+          "contextLimit": "有効なコンテキスト上限",
+          "origins": "許可するオリジン",
+          "guardrails": "設定済みのガードレール"
+        }
       },
       "improve": {
         "intro": "{{name}} の何を変更しますか？",

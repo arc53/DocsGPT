@@ -221,6 +221,39 @@ const LEAVE_ERRORS: Record<string, string> = {
 };
 
 /** A field a proposal changed: what it held before and what the draft set. */
+/** A part of the form that keeps Publish off. */
+type PublishBlocker =
+  | 'name'
+  | 'description'
+  | 'prompt'
+  | 'agentType'
+  | 'jsonSchema'
+  | 'contextLimit'
+  | 'origins'
+  | 'guardrails';
+/** Each blocker's field label, for "Go to Name". */
+const BLOCKER_LABEL_KEYS: Record<PublishBlocker, string> = {
+  name: 'agents.form.labels.name',
+  description: 'agents.form.labels.description',
+  prompt: 'agents.form.sections.prompt',
+  agentType: 'agents.form.sections.agentType',
+  jsonSchema: 'agents.form.advanced.jsonSchema',
+  contextLimit: 'agents.form.advanced.contextLimit',
+  origins: 'agents.form.advanced.origins.label',
+  guardrails: 'agents.form.sections.guardrails',
+};
+/** Blockers inside the Advanced section, which opens to show them. */
+const ADVANCED_BLOCKERS: PublishBlocker[] = [
+  'jsonSchema',
+  'contextLimit',
+  'origins',
+];
+/** A phone sheet's slide out (300ms), after which it hands focus back. */
+const SHEET_CLOSE_MS = 350;
+/** What "Go to" focuses inside a blocker's part of the form. */
+const FOCUSABLE =
+  'input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 type AppliedChange = {
   field: AgentDraftField;
   previous: unknown;
@@ -434,22 +467,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.config?.context_window_limit,
     );
 
-  const isPublishable = () => {
-    const hasRequiredFields =
-      agent.name && agent.description && agent.prompt_id && agent.agent_type;
-    const isJsonSchemaValidOrEmpty =
-      jsonSchemaText.trim() === '' || jsonSchemaValid;
-    const guardrailsOk = !guardrailsIncomplete(agent.config?.guardrails);
+  /**
+   * What keeps Publish off, in form order: the drafter's done line names
+   * them and goes to the first.
+   */
+  const publishBlockers = (): PublishBlocker[] => {
     // Sources are optional: an agent without one answers from the model and
     // its tools only.
-    return (
-      hasRequiredFields &&
-      isJsonSchemaValidOrEmpty &&
-      guardrailsOk &&
-      !originsIncomplete(agent.config) &&
-      !contextLimitInvalid
-    );
+    const blockers: PublishBlocker[] = [];
+    if (!agent.name) blockers.push('name');
+    if (!agent.description) blockers.push('description');
+    if (!agent.prompt_id) blockers.push('prompt');
+    if (!agent.agent_type) blockers.push('agentType');
+    if (jsonSchemaText.trim() !== '' && !jsonSchemaValid)
+      blockers.push('jsonSchema');
+    if (contextLimitInvalid) blockers.push('contextLimit');
+    if (originsIncomplete(agent.config)) blockers.push('origins');
+    if (guardrailsIncomplete(agent.config?.guardrails))
+      blockers.push('guardrails');
+    return blockers;
   };
+  const isPublishable = () => publishBlockers().length === 0;
 
   const isJsonSchemaInvalid = () => {
     return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
@@ -1341,7 +1379,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         step: stepName(step),
         interpolation: { escapeValue: false },
       }),
-    doneText: t('drafter.agent.build.done'),
     // Changes to a prompt under review, or on their way to it, come first.
     hold: promptReview.review !== null || pendingEdits !== null,
   });
@@ -1804,6 +1841,81 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ))}
       </div>
     ) : undefined;
+
+  /**
+   * Bring a part of the form that keeps Publish off into view and focus its
+   * field (the invalid one in a section). A phone's sheet closes first.
+   */
+  const goToBlocker = (blocker: PublishBlocker) => {
+    const advanced = ADVANCED_BLOCKERS.includes(blocker);
+    if (advanced) setIsAdvancedSectionExpanded(true);
+    if (isMobile) setDrafterOpen(false);
+    const find = () => {
+      const part = advanced
+        ? document.getElementById(advancedSectionId)
+        : formColumnRef.current?.querySelector(
+            `[data-publish-blocker="${blocker}"]`,
+          );
+      return (
+        part?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+        part?.querySelector<HTMLElement>(FOCUSABLE) ??
+        null
+      );
+    };
+    requestAnimationFrame(() => {
+      const control = find();
+      control?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      if (!isMobile) control?.focus({ preventScroll: true });
+    });
+    // The sheet hands focus back to its opener once it has slid out.
+    if (isMobile)
+      window.setTimeout(
+        () => find()?.focus({ preventScroll: true }),
+        SHEET_CLOSE_MS,
+      );
+  };
+
+  // The build's last line: done, or what Publish still needs. It reads the
+  // form as it is now, so filling the field brings the done line back.
+  const blockers = build.done ? publishBlockers() : [];
+  const doneLine = build.done ? (
+    <div data-slot="build-done">
+      {blockers.length > 0 ? (
+        <Alert variant="warning">
+          <AlertDescription>
+            <p>
+              {t('drafter.agent.build.doneBlocked', {
+                missing: joinList(
+                  blockers.map((blocker) =>
+                    t(`drafter.agent.build.missing.${blocker}`),
+                  ),
+                ),
+                interpolation: { escapeValue: false },
+              })}{' '}
+              <Button
+                type="button"
+                variant="link"
+                size="text"
+                tone="current"
+                onClick={() => goToBlocker(blockers[0])}
+              >
+                {t('drafter.agent.build.goTo', {
+                  field: t(BLOCKER_LABEL_KEYS[blockers[0]]),
+                  interpolation: { escapeValue: false },
+                })}
+              </Button>
+            </p>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <p className="text-sm wrap-break-word whitespace-pre-wrap">
+          {t('drafter.agent.build.done')}
+        </p>
+      )}
+    </div>
+  ) : null;
+  // Done, the session starts empty: the done line stands in for the intro.
+  const doneOnly = build.done && drafterSession.items.length === 0;
 
   // A phone's sheet covers the form: when a turn ends on a proposal the
   // sheet steps aside (once per proposal), and a step's Next waits in the
@@ -2832,43 +2944,47 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     uploadText={t('agents.form.labels.avatar')}
                     className="sm:row-span-2"
                   />
-                  <DraftedField {...draftedProps('name')}>
-                    <FormField
-                      labelSurface="background"
-                      label={t('agents.form.labels.name')}
+                  <div className="contents" data-publish-blocker="name">
+                    <DraftedField {...draftedProps('name')}>
+                      <FormField
+                        labelSurface="background"
+                        label={t('agents.form.labels.name')}
+                      >
+                        <Input
+                          type="text"
+                          value={agent.name}
+                          placeholder={t('agents.form.placeholders.agentName')}
+                          onChange={(e) => {
+                            const name = e.target.value;
+                            setAgent((prev) => ({ ...prev, name }));
+                          }}
+                        />
+                      </FormField>
+                    </DraftedField>
+                  </div>
+                  <div className="contents" data-publish-blocker="description">
+                    <DraftedField
+                      {...draftedProps('description')}
+                      className="col-span-2 sm:col-span-1 sm:col-start-2"
                     >
-                      <Input
-                        type="text"
-                        value={agent.name}
-                        placeholder={t('agents.form.placeholders.agentName')}
-                        onChange={(e) => {
-                          const name = e.target.value;
-                          setAgent((prev) => ({ ...prev, name }));
-                        }}
-                      />
-                    </FormField>
-                  </DraftedField>
-                  <DraftedField
-                    {...draftedProps('description')}
-                    className="col-span-2 sm:col-span-1 sm:col-start-2"
-                  >
-                    <FormField
-                      labelSurface="background"
-                      label={t('agents.form.labels.description')}
-                    >
-                      <Textarea
-                        className="h-32 sm:h-24"
-                        placeholder={t(
-                          'agents.form.placeholders.describeAgent',
-                        )}
-                        value={agent.description}
-                        onChange={(e) => {
-                          const description = e.target.value;
-                          setAgent((prev) => ({ ...prev, description }));
-                        }}
-                      />
-                    </FormField>
-                  </DraftedField>
+                      <FormField
+                        labelSurface="background"
+                        label={t('agents.form.labels.description')}
+                      >
+                        <Textarea
+                          className="h-32 sm:h-24"
+                          placeholder={t(
+                            'agents.form.placeholders.describeAgent',
+                          )}
+                          value={agent.description}
+                          onChange={(e) => {
+                            const description = e.target.value;
+                            setAgent((prev) => ({ ...prev, description }));
+                          }}
+                        />
+                      </FormField>
+                    </DraftedField>
+                  </div>
                 </div>
               </Card>
               <Card variant="subtle" padding="lg" className="gap-5">
@@ -3012,66 +3128,68 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     </FormField>
                   </DraftedField>
                   <div className="flex flex-col">
-                    <DraftedField {...draftedProps('prompt')}>
-                      <FormField
-                        id={promptPickerId}
-                        label={t('agents.form.sections.prompt')}
-                        labelSurface="background"
-                      >
-                        <Combobox
-                          open={isPromptPickerOpen}
-                          onOpenChange={setIsPromptPickerOpen}
-                          title={t('agents.form.sections.prompt')}
-                          mobileSheet
-                          filters={promptKinds.filters}
-                          groups={promptGroups}
-                          value={agent.prompt_id || 'default'}
-                          valueOption={promptValueOption}
-                          onValueChange={(id) =>
-                            setAgent((prev) => ({ ...prev, prompt_id: id }))
-                          }
-                          // Any listed prompt opens in the prompt view
-                          // from its row, without picking it.
-                          rowAction={(option) => {
-                            const prompt = prompts.find(
-                              (item) => item.id === option.value,
-                            );
-                            if (!prompt) return undefined;
-                            const editable = canEditPrompt(prompt);
-                            return {
-                              label: t(
-                                editable
-                                  ? 'settings.prompts.editNamed'
-                                  : 'settings.prompts.viewNamed',
-                                {
-                                  name: prompt.name,
-                                  interpolation: { escapeValue: false },
-                                },
-                              ),
-                              icon: editable ? <Pencil /> : <Eye />,
-                              onSelect: () => openPickerPrompt(prompt),
-                            };
-                          }}
-                          placeholder={t('settings.prompts.select')}
-                          searchPlaceholder={t(
-                            'settings.prompts.searchPlaceholder',
-                          )}
-                          emptyText={t('settings.prompts.noPromptsFound')}
-                          footer={({ close }) => (
-                            <PickerFooter
-                              to="/settings/prompts"
-                              linkLabel={t('settings.prompts.manage')}
-                              onNavigate={leaveGuard.onNavigate(close)}
-                              actionLabel={t('settings.prompts.addPrompt')}
-                              onAction={() => {
-                                close();
-                                addPickerPrompt();
-                              }}
-                            />
-                          )}
-                        />
-                      </FormField>
-                    </DraftedField>
+                    <div className="contents" data-publish-blocker="prompt">
+                      <DraftedField {...draftedProps('prompt')}>
+                        <FormField
+                          id={promptPickerId}
+                          label={t('agents.form.sections.prompt')}
+                          labelSurface="background"
+                        >
+                          <Combobox
+                            open={isPromptPickerOpen}
+                            onOpenChange={setIsPromptPickerOpen}
+                            title={t('agents.form.sections.prompt')}
+                            mobileSheet
+                            filters={promptKinds.filters}
+                            groups={promptGroups}
+                            value={agent.prompt_id || 'default'}
+                            valueOption={promptValueOption}
+                            onValueChange={(id) =>
+                              setAgent((prev) => ({ ...prev, prompt_id: id }))
+                            }
+                            // Any listed prompt opens in the prompt view
+                            // from its row, without picking it.
+                            rowAction={(option) => {
+                              const prompt = prompts.find(
+                                (item) => item.id === option.value,
+                              );
+                              if (!prompt) return undefined;
+                              const editable = canEditPrompt(prompt);
+                              return {
+                                label: t(
+                                  editable
+                                    ? 'settings.prompts.editNamed'
+                                    : 'settings.prompts.viewNamed',
+                                  {
+                                    name: prompt.name,
+                                    interpolation: { escapeValue: false },
+                                  },
+                                ),
+                                icon: editable ? <Pencil /> : <Eye />,
+                                onSelect: () => openPickerPrompt(prompt),
+                              };
+                            }}
+                            placeholder={t('settings.prompts.select')}
+                            searchPlaceholder={t(
+                              'settings.prompts.searchPlaceholder',
+                            )}
+                            emptyText={t('settings.prompts.noPromptsFound')}
+                            footer={({ close }) => (
+                              <PickerFooter
+                                to="/settings/prompts"
+                                linkLabel={t('settings.prompts.manage')}
+                                onNavigate={leaveGuard.onNavigate(close)}
+                                actionLabel={t('settings.prompts.addPrompt')}
+                                onAction={() => {
+                                  close();
+                                  addPickerPrompt();
+                                }}
+                              />
+                            )}
+                          />
+                        </FormField>
+                      </DraftedField>
+                    </div>
                     {/* The mark of the prompt running with an editor's
                   access is a hint, seen without opening the picker. */}
                     {promptAddedBy && (
@@ -3096,34 +3214,36 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <Card variant="subtle" padding="lg" className="gap-5">
                 <SectionHeader title={t('agents.form.sections.model')} />
                 <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
-                  <DraftedField {...draftedProps('agent_type')}>
-                    <FormField
-                      labelSurface="background"
-                      label={t('agents.form.sections.agentType')}
-                    >
-                      <Select
-                        value={agent.agent_type || undefined}
-                        onValueChange={(value) =>
-                          setAgent((prev) => ({ ...prev, agent_type: value }))
-                        }
+                  <div className="contents" data-publish-blocker="agentType">
+                    <DraftedField {...draftedProps('agent_type')}>
+                      <FormField
+                        labelSurface="background"
+                        label={t('agents.form.sections.agentType')}
                       >
-                        <SelectTrigger className="w-full" size="field">
-                          <SelectValue
-                            placeholder={t(
-                              'agents.form.placeholders.selectType',
-                            )}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {agentTypes.map((type) => (
-                            <SelectItem key={type.value} value={type.value}>
-                              {type.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormField>
-                  </DraftedField>
+                        <Select
+                          value={agent.agent_type || undefined}
+                          onValueChange={(value) =>
+                            setAgent((prev) => ({ ...prev, agent_type: value }))
+                          }
+                        >
+                          <SelectTrigger className="w-full" size="field">
+                            <SelectValue
+                              placeholder={t(
+                                'agents.form.placeholders.selectType',
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {agentTypes.map((type) => (
+                              <SelectItem key={type.value} value={type.value}>
+                                {type.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+                    </DraftedField>
+                  </div>
                   <FormField
                     id={modelsPickerId}
                     labelSurface="background"
@@ -3476,21 +3596,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   </Collapsible>
                 </div>
               </Card>
-              <GuardrailsSection
-                value={agent.config?.guardrails}
-                token={token}
-                // Guardrails are policy (`edit_policy`): editors and the owner
-                // change them; anyone else sees them read-only.
-                disabled={!canEditPolicy}
-                drafted={drafted.isDrafted('guardrails')}
-                onUndo={() => drafted.undo('guardrails')}
-                onChange={(guardrails) =>
-                  setAgent({
-                    ...agent,
-                    config: { ...(agent.config ?? {}), guardrails },
-                  })
-                }
-              />
+              <div className="contents" data-publish-blocker="guardrails">
+                <GuardrailsSection
+                  value={agent.config?.guardrails}
+                  token={token}
+                  // Guardrails are policy (`edit_policy`): editors and the owner
+                  // change them; anyone else sees them read-only.
+                  disabled={!canEditPolicy}
+                  drafted={drafted.isDrafted('guardrails')}
+                  onUndo={() => drafted.undo('guardrails')}
+                  onChange={(guardrails) =>
+                    setAgent({
+                      ...agent,
+                      config: { ...(agent.config ?? {}), guardrails },
+                    })
+                  }
+                />
+              </div>
               <AnalyticsSection
                 value={agent.config?.analytics}
                 token={token}
@@ -3695,7 +3817,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           onStartOver={startDrafterOver}
           modelName={drafterConfig?.model?.display_name ?? null}
           announceProposal={announceAgentProposal}
-          intro={drafterIntro}
+          intro={doneOnly ? '' : drafterIntro}
           placeholder={
             buildable
               ? t('drafter.agent.build.describePlaceholder')
@@ -3706,10 +3828,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   : undefined
           }
           progress={progress}
-          before={foldedSteps}
-          suggestions={drafterSuggestions}
-          suggestionGroups={drafterSuggestionGroups}
-          notice={drafterNotice}
+          before={
+            foldedSteps || doneLine ? (
+              <>
+                {foldedSteps}
+                {doneLine}
+              </>
+            ) : undefined
+          }
+          suggestions={doneOnly ? [] : drafterSuggestions}
+          suggestionGroups={doneOnly ? undefined : drafterSuggestionGroups}
+          notice={doneOnly ? undefined : drafterNotice}
           reads={insightsShown ? 'insights' : undefined}
           insightsDays={agentGaps?.days || undefined}
           renderProposal={renderAgentProposal}

@@ -4975,9 +4975,22 @@
           "topics_one": "{{count}} тема инсайтов",
           "topics_other": "{{count}} темы инсайтов",
           "topics_many": "{{count}} тем инсайтов",
-          "topics_few": "{{count}} темы инсайтов"
+          "topics_few": "{{count}} темы инсайтов",
+          "noName": "имени пока нет"
         },
-        "continueStep": "Продолжить: {{step}}"
+        "continueStep": "Продолжить: {{step}}",
+        "doneBlocked": "Это все шаги, но «Опубликовать» недоступно, пока у агента нет {{missing}}. Агент ещё не сохранён.",
+        "goTo": "Перейти к полю «{{field}}»",
+        "missing": {
+          "name": "имени",
+          "description": "описания",
+          "prompt": "промпта",
+          "agentType": "типа агента",
+          "jsonSchema": "корректной схемы ответа JSON",
+          "contextLimit": "корректного лимита контекста",
+          "origins": "разрешённых источников",
+          "guardrails": "настроенных ограничителей"
+        }
       },
       "improve": {
         "intro": "Что изменить в агенте {{name}}?",

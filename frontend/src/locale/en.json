@@ -4706,9 +4706,22 @@
           "checks_one": "{{count}} check in {{mode}}",
           "checks_other": "{{count}} checks in {{mode}}",
           "topics_one": "{{count}} Insights topic",
-          "topics_other": "{{count}} Insights topics"
+          "topics_other": "{{count}} Insights topics",
+          "noName": "no name yet"
         },
-        "continueStep": "Continue: {{step}}"
+        "continueStep": "Continue: {{step}}",
+        "doneBlocked": "That's every part, but Publish stays off until the agent has {{missing}}. Nothing about the agent is saved yet.",
+        "goTo": "Go to {{field}}",
+        "missing": {
+          "name": "a name",
+          "description": "a description",
+          "prompt": "a prompt",
+          "agentType": "an agent type",
+          "jsonSchema": "a valid JSON response schema",
+          "contextLimit": "a valid context limit",
+          "origins": "its allowed origins",
+          "guardrails": "its guardrail checks set up"
+        }
       },
       "improve": {
         "intro": "What should change in {{name}}?",

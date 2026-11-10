@@ -4657,9 +4657,22 @@
           "checks_one": "{{count}} 项检查（{{mode}}）",
           "checks_other": "{{count}} 项检查（{{mode}}）",
           "topics_one": "{{count}} 个洞察主题",
-          "topics_other": "{{count}} 个洞察主题"
+          "topics_other": "{{count}} 个洞察主题",
+          "noName": "还没有名称"
         },
-        "continueStep": "继续：{{step}}"
+        "continueStep": "继续：{{step}}",
+        "doneBlocked": "所有部分都完成了，但在智能体有{{missing}}之前无法发布。智能体还没有保存。",
+        "goTo": "前往{{field}}",
+        "missing": {
+          "name": "名称",
+          "description": "描述",
+          "prompt": "提示词",
+          "agentType": "智能体类型",
+          "jsonSchema": "有效的JSON响应架构",
+          "contextLimit": "有效的上下文上限",
+          "origins": "允许的来源",
+          "guardrails": "设置好的防护栏检查"
+        }
       },
       "improve": {
         "intro": "{{name}} 需要改什么？",

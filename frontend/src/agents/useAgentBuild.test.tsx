@@ -46,7 +46,6 @@ describe('useAgentBuild', () => {
       session: fake.session as unknown as DrafterSession,
       skipped,
       continueText: (step) => `Continue with ${step}.`,
-      doneText: 'All done.',
       hold,
     });
     return null;
@@ -214,7 +213,7 @@ describe('useAgentBuild', () => {
     expect(build.step).toBe('knowledge');
   });
 
-  it('finishes after the last step with a message, and then reads as done', async () => {
+  it('finishes after the last step on an empty session, and then reads as done', async () => {
     await act(async () => build.start());
     for (const [step, nextStep] of [
       ['basics', 'knowledge'],
@@ -227,7 +226,9 @@ describe('useAgentBuild', () => {
       );
       await act(async () => build.next());
     }
-    expect(fake.calls.at(-1)).toBe('message:All done.');
+    // The caller shows the done line: it reads the form as it is now.
+    expect(fake.calls.at(-1)).toBe('reset');
+    expect(fake.session.addMessage).not.toHaveBeenCalled();
     expect(build).toMatchObject({
       done: true,
       step: null,

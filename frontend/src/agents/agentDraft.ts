@@ -844,7 +844,7 @@ export function agentStepResult(
   const parts: string[] = [];
   switch (step) {
     case 'basics':
-      return form.name.trim() || t('agents.pageHeader.fallbackName');
+      return form.name.trim() || t('drafter.agent.build.result.noName');
     case 'knowledge': {
       if (form.sources.length > 0)
         parts.push(t('drafter.counts.sources', { count: form.sources.length }));
