@@ -305,4 +305,120 @@ describe('QuestionCards, as the chat draws them', () => {
     );
     expect(card('q1')).toBe('1. Where should refunds go?');
   });
+
+  // Decision 95: an option that takes a value, and one that rules out the rest.
+});
+
+describe('QuestionCards, options that take a value or rule out the others', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const onAnswer = vi.fn();
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    onAnswer.mockReset();
+  });
+  const card = (id: string) =>
+    container.querySelector<HTMLElement>(`[data-question="${id}"]`)!;
+  const control = (id: string, label: string) => {
+    const labelEl = Array.from(card(id).querySelectorAll('label')).find(
+      (el) => el.textContent === label,
+    )!;
+    return document.getElementById(labelEl.htmlFor)!;
+  };
+  const sendButton = () =>
+    Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'questions.sendAnswers',
+    );
+  const VALUED: Question[] = [
+    {
+      id: 'hr',
+      text: 'Where should it send HR cases?',
+      note: null,
+      multi: false,
+      options: [
+        { id: 'm', label: 'Their manager', input: null, exclusive: false },
+        { id: 'e', label: 'HR team email', input: 'hr@example.com' },
+      ],
+    },
+    {
+      id: 'topics',
+      text: 'Any topics?',
+      note: null,
+      multi: true,
+      options: [
+        { id: 'none', label: 'No topics', exclusive: true },
+        { id: 'leave', label: 'Leave' },
+        { id: 'pay', label: 'Payroll' },
+      ],
+    },
+  ];
+  beforeEach(async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root.render(
+        <QuestionCards questions={VALUED} active onAnswer={onAnswer} />,
+      ),
+    );
+  });
+
+  it('opens a field under an option that takes a value, and sends "label: value"', async () => {
+    expect(card('hr').querySelector('input')).toBeNull();
+    await act(async () => control('hr', 'HR team email').click());
+    const input = card('hr').querySelector('input')!;
+    expect(input.getAttribute('placeholder')).toBe('hr@example.com');
+    expect(input.getAttribute('aria-label')).toBe('HR team email');
+    expect(input.closest('.pl-7')).not.toBeNull();
+    // Right under its own row, before Something else.
+    const field = input.closest('.pl-7')!;
+    expect(field.previousElementSibling?.textContent).toBe('HR team email');
+    await act(async () => setValue(input, 'hr@meridian.example'));
+    await act(async () => sendButton()!.click());
+    expect(onAnswer).toHaveBeenCalledWith(
+      'Where should it send HR cases? → HR team email: hr@meridian.example',
+      { hr: 'HR team email: hr@meridian.example' },
+    );
+  });
+
+  it('closes the field when another option is picked', async () => {
+    await act(async () => control('hr', 'HR team email').click());
+    await act(async () => control('hr', 'Their manager').click());
+    expect(card('hr').querySelector('input')).toBeNull();
+  });
+
+  it('puts the exclusive option last, after a rule, and lets it rule out the rest', async () => {
+    const labels = Array.from(card('topics').querySelectorAll('label')).map(
+      (el) => el.textContent,
+    );
+    expect(labels).toEqual([
+      'Leave',
+      'Payroll',
+      'questions.somethingElse',
+      'No topics',
+    ]);
+    const rule = card('topics').querySelector('[data-slot="separator"]')!;
+    expect(rule.nextElementSibling?.textContent).toBe('No topics');
+    const checked = (label: string) =>
+      control('topics', label).getAttribute('aria-checked');
+
+    await act(async () => control('topics', 'Leave').click());
+    await act(async () => control('topics', 'questions.somethingElse').click());
+    await act(async () => control('topics', 'No topics').click());
+    expect(checked('No topics')).toBe('true');
+    expect(checked('Leave')).toBe('false');
+    expect(checked('questions.somethingElse')).toBe('false');
+    expect(card('topics').querySelector('input')).toBeNull();
+
+    await act(async () => control('topics', 'Payroll').click());
+    expect(checked('No topics')).toBe('false');
+    expect(checked('Payroll')).toBe('true');
+    await act(async () => control('topics', 'questions.somethingElse').click());
+    await act(async () => control('topics', 'No topics').click());
+    await act(async () => sendButton()!.click());
+    expect(onAnswer).toHaveBeenCalledWith('Any topics? → No topics', {
+      topics: 'No topics',
+    });
+  });
 });

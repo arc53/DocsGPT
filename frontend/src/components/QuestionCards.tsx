@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react';
-import { type ReactNode, useId, useState } from 'react';
+import { Fragment, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
@@ -8,9 +8,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
-export type QuestionOption = { id: string; label: string };
+/**
+ * One option. `input` is a placeholder: picking the option opens a field for
+ * its value ("HR team email" → "hr@…"), sent as "<label>: <value>".
+ * `exclusive` rules out the others in a pick-any question ("No topics").
+ */
+export type QuestionOption = {
+  id: string;
+  label: string;
+  input?: string | null;
+  exclusive?: boolean;
+};
 
 /** A clarifying question a model asks: the drafter's, or the chat's `ask_user`. */
 export type Question = {
@@ -24,15 +35,26 @@ export type Question = {
   placeholder?: string | null;
 };
 
-type Answer = { picked: string[]; other: string | null };
+/** Picked option ids, "Something else"'s text, and each picked option's value. */
+type Answer = {
+  picked: string[];
+  other: string | null;
+  values?: Record<string, string>;
+};
 
 const NO_ANSWER: Answer = { picked: [], other: null };
 
-/** A question's answer as text: the picked labels, then the free text. */
+/**
+ * A question's answer as text: the picked labels ("<label>: <value>" for one
+ * that takes a value), then the free text.
+ */
 function answerParts(question: Question, answer: Answer): string[] {
   const parts = question.options
     .filter((option) => answer.picked.includes(option.id))
-    .map((option) => option.label);
+    .map((option) => {
+      const value = option.input ? answer.values?.[option.id]?.trim() : '';
+      return value ? `${option.label}: ${value}` : option.label;
+    });
   const other = answer.other?.trim();
   if (other) parts.push(other);
   return parts;
@@ -77,8 +99,10 @@ function answerTexts(
 /**
  * Clarifying questions as cards of option rows: radios for a one-pick
  * question, checkboxes for a pick-any one (`multi`), and "Something else…"
- * last, which opens a free-text field under it. A question with no options
- * is a text field alone. One Send answers button sends
+ * after them, which opens a free-text field under it. An option that takes a
+ * value opens its own field under it once picked; an exclusive one ("No
+ * topics") goes last, after a rule, and ticking it clears the others (and
+ * the other way round). A question with no options is a text field alone. One Send answers button sends
  * every answer as one message. An answered (or passed-over) card shows only
  * the question and what was picked. The drafter and the chat's `ask_user`
  * both draw them.
@@ -125,22 +149,56 @@ export function QuestionCards({
     setAnswers((prev) => ({ ...prev, [id]: next }));
 
   // One pick: an option replaces the other choice and closes "Something
-  // else"; `optionId` null is "Something else" itself.
-  const pickOne = (question: Question, optionId: string | null) =>
+  // else"; `optionId` null is "Something else" itself. A typed value stays
+  // in case the user comes back to its option.
+  const pickOne = (question: Question, optionId: string | null) => {
+    const answer = answerOf(question.id);
     update(
       question.id,
       optionId === null
-        ? { picked: [], other: answerOf(question.id).other ?? '' }
-        : { picked: [optionId], other: null },
+        ? { ...answer, picked: [], other: answer.other ?? '' }
+        : { ...answer, picked: [optionId], other: null },
     );
+  };
 
-  const toggle = (question: Question, optionId: string, on: boolean) => {
+  const exclusiveIds = (question: Question) =>
+    question.options.filter((option) => option.exclusive).map(({ id }) => id);
+
+  // Pick any; an exclusive option clears the rest, and anything else clears
+  // the exclusive one. `optionId` null is "Something else".
+  const toggle = (question: Question, optionId: string | null, on: boolean) => {
+    const answer = answerOf(question.id);
+    if (!on) {
+      update(
+        question.id,
+        optionId === null
+          ? { ...answer, other: null }
+          : {
+              ...answer,
+              picked: answer.picked.filter((id) => id !== optionId),
+            },
+      );
+      return;
+    }
+    const exclusive = exclusiveIds(question);
+    if (optionId !== null && exclusive.includes(optionId)) {
+      update(question.id, { ...answer, picked: [optionId], other: null });
+      return;
+    }
+    const picked = answer.picked.filter((id) => !exclusive.includes(id));
+    update(
+      question.id,
+      optionId === null
+        ? { ...answer, picked, other: answer.other ?? '' }
+        : { ...answer, picked: [...picked, optionId] },
+    );
+  };
+
+  const setValue = (question: Question, optionId: string, value: string) => {
     const answer = answerOf(question.id);
     update(question.id, {
       ...answer,
-      picked: on
-        ? [...answer.picked, optionId]
-        : answer.picked.filter((id) => id !== optionId),
+      values: { ...answer.values, [optionId]: value },
     });
   };
 
@@ -156,7 +214,7 @@ export function QuestionCards({
         const answer = answerOf(question.id);
         // Rows go by position (the radio values too): the option ids are
         // the model's own and could be anything.
-        const rowId = (row: number) => `${baseId}-${question.id}-${row}`;
+        const rowId = (row: string) => `${baseId}-${question.id}-${row}`;
         const title = (
           <p className="text-sm font-medium wrap-break-word">
             {questions.length > 1 ? `${index + 1}. ` : ''}
@@ -206,6 +264,8 @@ export function QuestionCards({
           label: string,
           placeholder: string,
           autoFocus: boolean,
+          onChange: (value: string) => void = (next) =>
+            update(question.id, { ...answer, other: next }),
         ) => (
           <Input
             size="sm"
@@ -213,9 +273,7 @@ export function QuestionCards({
             value={value}
             aria-label={label}
             placeholder={placeholder}
-            onChange={(event) =>
-              update(question.id, { ...answer, other: event.target.value })
-            }
+            onChange={(event) => onChange(event.target.value)}
             onKeyDown={(event) => {
               // Not the Enter that picks an IME candidate (Japanese, Chinese).
               if (
@@ -253,25 +311,94 @@ export function QuestionCards({
           );
         }
 
-        // Each option, then "Something else" (id null) last.
-        const rows = [
-          ...question.options.map(({ id, label }) => ({ id, label })),
-          { id: null, label: t('questions.somethingElse') },
+        // The options, "Something else" (id null), then the exclusive ones
+        // after a rule. Rows go by the option's position (the radio values
+        // too), "other" for Something else.
+        type Row = { key: string; id: string | null; option?: QuestionOption };
+        const toRow = (option: QuestionOption): Row => ({
+          key: String(question.options.indexOf(option)),
+          id: option.id,
+          option,
+        });
+        const rows: Row[] = [
+          ...question.options.filter((option) => !option.exclusive).map(toRow),
+          { key: 'other', id: null },
         ];
-        const otherRow = question.options.length;
-        const row = (index: number, label: string, control: ReactNode) => (
-          <div key={index} className="flex items-start gap-3">
-            {control}
-            {/* An answer reads as a sentence, not a field name: normal weight,
-                and normal leading for a label that wraps (DESIGN.md ›
-                Approved exceptions). */}
-            <Label
-              htmlFor={rowId(index)}
-              className="leading-normal font-normal wrap-break-word"
-            >
-              {label}
-            </Label>
-          </div>
+        const lastRows = question.options
+          .filter((option) => option.exclusive)
+          .map(toRow);
+        const isOn = (row: Row) =>
+          row.id === null
+            ? answer.other !== null
+            : answer.picked.includes(row.id);
+
+        // A picked row's field, in line with the row labels (the 16px control
+        // and its gap-3): Something else's free text, or an option's value.
+        const fieldOf = (row: Row) => {
+          if (!isOn(row)) return null;
+          if (row.id === null)
+            return textField(
+              answer.other ?? '',
+              t('questions.somethingElseLabel'),
+              t('questions.somethingElsePlaceholder'),
+              true,
+            );
+          const { option } = row;
+          if (!option?.input) return null;
+          return textField(
+            answer.values?.[option.id] ?? '',
+            option.label,
+            option.input,
+            true,
+            (value) => setValue(question, option.id, value),
+          );
+        };
+        const renderRow = (row: Row) => {
+          const label = row.option?.label ?? t('questions.somethingElse');
+          const control = question.multi ? (
+            <Checkbox
+              id={rowId(row.key)}
+              className="mt-0.5"
+              checked={isOn(row)}
+              onCheckedChange={(checked) =>
+                toggle(question, row.id, checked === true)
+              }
+            />
+          ) : (
+            <RadioGroupItem
+              id={rowId(row.key)}
+              value={row.key}
+              className="mt-0.5"
+            />
+          );
+          const field = fieldOf(row);
+          return (
+            <Fragment key={row.key}>
+              <div className="flex items-start gap-3">
+                {control}
+                {/* An answer reads as a sentence, not a field name: normal
+                    weight, and normal leading for a label that wraps
+                    (DESIGN.md › Approved exceptions). */}
+                <Label
+                  htmlFor={rowId(row.key)}
+                  className="leading-normal font-normal wrap-break-word"
+                >
+                  {label}
+                </Label>
+              </div>
+              {field && <div className="pl-7">{field}</div>}
+            </Fragment>
+          );
+        };
+        const options = (
+          <>
+            {rows.map(renderRow)}
+            {lastRows.length > 0 && <Separator />}
+            {lastRows.map(renderRow)}
+          </>
+        );
+        const pickedRow = [...rows, ...lastRows].find(
+          (row) => row.id !== null && answer.picked[0] === row.id,
         );
 
         return (
@@ -289,71 +416,23 @@ export function QuestionCards({
                 aria-label={question.text}
                 className="grid gap-3"
               >
-                {rows.map(({ id, label }, rowIndex) =>
-                  row(
-                    rowIndex,
-                    label,
-                    <Checkbox
-                      id={rowId(rowIndex)}
-                      className="mt-0.5"
-                      checked={
-                        id === null
-                          ? answer.other !== null
-                          : answer.picked.includes(id)
-                      }
-                      onCheckedChange={(checked) =>
-                        id === null
-                          ? update(question.id, {
-                              ...answer,
-                              other: checked === true ? '' : null,
-                            })
-                          : toggle(question, id, checked === true)
-                      }
-                    />,
-                  ),
-                )}
+                {options}
               </div>
             ) : (
               <RadioGroup
                 aria-label={question.text}
-                value={
-                  answer.other !== null
-                    ? String(otherRow)
-                    : answer.picked.length > 0
-                      ? String(
-                          question.options.findIndex(
-                            (option) => option.id === answer.picked[0],
-                          ),
-                        )
-                      : ''
-                }
+                value={answer.other !== null ? 'other' : (pickedRow?.key ?? '')}
                 onValueChange={(value) =>
-                  pickOne(question, rows[Number(value)].id)
+                  pickOne(
+                    question,
+                    value === 'other'
+                      ? null
+                      : (question.options[Number(value)]?.id ?? null),
+                  )
                 }
               >
-                {rows.map(({ label }, rowIndex) =>
-                  row(
-                    rowIndex,
-                    label,
-                    <RadioGroupItem
-                      id={rowId(rowIndex)}
-                      value={String(rowIndex)}
-                      className="mt-0.5"
-                    />,
-                  ),
-                )}
+                {options}
               </RadioGroup>
-            )}
-            {answer.other !== null && (
-              // In line with the row labels: the 16px control and its gap-3.
-              <div className="pl-7">
-                {textField(
-                  answer.other,
-                  t('questions.somethingElseLabel'),
-                  t('questions.somethingElsePlaceholder'),
-                  true,
-                )}
-              </div>
             )}
             {note}
           </Card>
