@@ -536,7 +536,9 @@ page byline (a muted `text-sm` paragraph).
 A title with controls beside it (Add, a filter Select, Import spec) passes
 them as `actions`, never a hand-rolled `flex justify-between` row around the
 header: the row centres the title on the buttons and wraps them under it on
-a phone (`flex-wrap items-center gap-x-4 gap-y-2`). Panel and chart titles
+a phone (`flex-wrap items-center gap-x-4 gap-y-2`); the actions wrap among
+themselves too when they don't fit side by side (Add topic and Suggest from
+conversations in a phone's Insights sheet), so no label is cut. Panel and chart titles
 are `size="xs"`, `as="h3"` under a section heading and `as="h2"` for a panel
 straight under the page's title (`ChartPanel` on Analytics and Insights, and
 Insights' share-bar panels); a title row that also holds a legend or a
