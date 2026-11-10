@@ -148,6 +148,47 @@ describe('readAnswers', () => {
     });
   });
 
+  // The server keeps line breaks inside a question's text, and a typed
+  // answer can have them too: lines alone can't tell the answers apart.
+  it('reads answers whose question or answer runs over several lines', () => {
+    const multiline = readQuestions([
+      {
+        ...QUESTIONS[0],
+        text: 'Which quarter?\nPick the one the deck covers.',
+      },
+      { ...QUESTIONS[1], text: "Who's it for?\nMargins stay internal." },
+    ]);
+    const composed =
+      'Which quarter?\nPick the one the deck covers. → Q3 2026\n' +
+      "Who's it for?\nMargins stay internal. → External, the board\nand the CFO";
+    expect(readAnswers(multiline, composed)).toEqual({
+      answers: { q1: 'Q3 2026', q2: 'External, the board\nand the CFO' },
+      reply: null,
+    });
+    expect(
+      readAnswers(
+        multiline.slice(0, 1),
+        'Which quarter?\nPick the one the deck covers. → Q3 2026',
+      ),
+    ).toEqual({ answers: { q1: 'Q3 2026' }, reply: null });
+    // Only the second answered.
+    expect(
+      readAnswers(
+        multiline,
+        "Who's it for?\nMargins stay internal. → Internal",
+      ),
+    ).toEqual({ answers: { q2: 'Internal' }, reply: null });
+  });
+
+  it('reads several answered questions in order', () => {
+    expect(
+      readAnswers(
+        questions,
+        "Which quarter? → Q3 2026\nWho's it for? → Internal",
+      ),
+    ).toEqual({ answers: { q1: 'Q3 2026', q2: 'Internal' }, reply: null });
+  });
+
   it('takes a typed reply as the answer of a lone question', () => {
     expect(readAnswers(questions.slice(0, 1), 'last one')).toEqual({
       answers: { q1: 'last one' },

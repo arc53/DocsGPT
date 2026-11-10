@@ -133,9 +133,12 @@ export function resultText(call: ToolCallsType): string | null {
 
 /**
  * Each question's answer, read back from the answer text the client sent
- * (`composeAnswers`: a line per answered question, "<question> → <answer>").
- * A message typed in the composer instead has no such lines: with one
- * question it is that question's answer, with more it is returned whole.
+ * (`composeAnswers`: "<question> → <answer>" per answered question, in order,
+ * joined by line breaks). A question's text and an answer can hold line
+ * breaks of their own, so each answer runs up to the next answered
+ * question's "<question> → ", not to the end of its line. A message typed in
+ * the composer instead has no such parts: with one question it is that
+ * question's answer, with more it is returned whole.
  *
  * Args:
  *   questions: The questions as asked.
@@ -151,11 +154,24 @@ export function readAnswers(
   const answers: Record<string, string> = {};
   const text = result?.trim() ?? '';
   if (!text) return { answers, reply: null };
-  const lines = text.split('\n');
-  for (const question of questions) {
-    const prefix = `${question.text} → `;
-    const line = lines.find((candidate) => candidate.startsWith(prefix));
-    if (line) answers[question.id] = line.slice(prefix.length).trim();
+  const prefix = (question: Question) => `${question.text} → `;
+  let rest = text;
+  let left = questions;
+  while (left.length > 0) {
+    const at = left.findIndex((question) => rest.startsWith(prefix(question)));
+    if (at === -1) break;
+    const question = left[at];
+    left = left.slice(at + 1);
+    rest = rest.slice(prefix(question).length);
+    // The answer ends where a later answered question starts.
+    const end = Math.min(
+      rest.length,
+      ...left
+        .map((later) => rest.indexOf(`\n${prefix(later)}`))
+        .filter((index) => index !== -1),
+    );
+    answers[question.id] = rest.slice(0, end).trim();
+    rest = rest.slice(end + 1);
   }
   if (Object.keys(answers).length > 0) return { answers, reply: null };
   if (questions.length === 1)
