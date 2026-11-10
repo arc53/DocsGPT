@@ -51,7 +51,10 @@ def _builtin_tool_variables() -> frozenset:
 
 
 # Text no blank is looked for in: template syntax, and code (inline or fenced) the prompt shows as an example.
-_MASKED = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}|```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`\n]+`", re.S)
+# Where each masked span starts; ``_masked`` finds where it ends, by hand, so many unclosed ``{{`` stay linear.
+_MASK_OPENER = re.compile(r"\{\{|\{%|\{#|```|~~~|`[^`\n]+`")
+#: A template opener's closer. One with no closer after it isn't masked: the text reads on as plain prose.
+_TEMPLATE_CLOSERS = {"{{": "}}", "{%": "%}", "{#": "#}"}
 
 # ``[support email]``: not a markdown link (``[text](url)``, ``[text][ref]``, ``[ref]: url``), a citation (``[1]``)
 # or a checkbox (``[ ]``, ``[x]``).
@@ -106,8 +109,34 @@ _CLAUSE_END = re.compile(r"[.!?;:\n]")
 
 
 def _masked(text: str) -> str:
-    """``text`` with template syntax and code blanked out, keeping every offset and line break."""
-    return _MASKED.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    """``text`` with template syntax and code blanked out, keeping every offset and line break.
+
+    Masks ``{{ … }}``, ``{% … %}``, ``{# … #}``, inline code, and fenced code (an unclosed fence runs to the
+    end). Linear in the text: once a closer is missing after one opener it is missing after every later one.
+    """
+    parts: list[str] = []
+    done = pos = 0
+    missing: set[str] = set()
+    while (match := _MASK_OPENER.search(text, pos)) is not None:
+        start, opener = match.start(), match.group(0)
+        closer = _TEMPLATE_CLOSERS.get(opener)
+        if closer is not None:
+            found = -1 if closer in missing else text.find(closer, start + 2)
+            if found < 0:
+                missing.add(closer)
+                pos = start + 1
+                continue
+            end = found + 2
+        elif opener in ("```", "~~~"):
+            found = text.find(opener, start + 3)
+            end = len(text) if found < 0 else found + 3
+        else:
+            end = match.end()
+        parts.append(text[done:start])
+        parts.append(re.sub(r"[^\n]", " ", text[start:end]))
+        done = pos = end
+    parts.append(text[done:])
+    return "".join(parts)
 
 
 def _line(text: str, offset: int) -> int:

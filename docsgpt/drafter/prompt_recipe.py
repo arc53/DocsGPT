@@ -782,7 +782,8 @@ def _whole_number(value: Any) -> Optional[int]:
 #: The codes a review may leak into what the user reads: its checklist and the server's checks.
 _CODES = frozenset(REVIEW_CHECKS) | frozenset(SERVER_CHECKS)
 #: A parenthesis naming codes, with or without "server check:" before them: "(server check: boundaries_missing)".
-_CODE_NOTE = re.compile(r"\s*\((\s*(?:server\s+)?checks?(?:\s+codes?)?\s*:)?\s*([a-z][a-z0-9_]*(?:\s*,\s*[a-z][a-z0-9_]*)*)"
+#: It starts where a run of spaces starts, so a long run isn't rescanned from each of its spaces.
+_CODE_NOTE = re.compile(r"(?<!\s)\s*\((\s*(?:server\s+)?checks?(?:\s+codes?)?\s*:)?\s*([a-z][a-z0-9_]*(?:\s*,\s*[a-z][a-z0-9_]*)*)"
                         r"\s*\)", re.I)
 HAND_OFF_ASK = ("Finding {number}: a hand_off finding without an edit needs an ask: a short button label and the "
                 "start of the sentence the user completes with the real contact.")

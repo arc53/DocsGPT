@@ -1356,11 +1356,18 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
             fields["analytics"] = {"topics": topics}
 
 
+#: Longer runs of digits aren't a limit anyone means; skipping them keeps ``int()`` within Python's digit cap.
+_MAX_NUMBER_DIGITS = 18
+#: A run of a number's digits and separators, read to its end once: a ``\s*`` after it would split the same
+#: spaces every way (quadratic on "1 1 1 …"). Starts only where a run starts and holds a digit.
+_NUMBER_RUN = r"(?<![\d,.\s\u00a0\u202f'])(?=[\d,.\s\u00a0\u202f']*?\d)[\d,.\s\u00a0\u202f']*+"
+
+
 def _numbers(text: str) -> set[int]:
     """The whole numbers a text names, however they are grouped: ``1,000``, ``1.000``, ``1 000``, ``1000``, ``1k``."""
     grouped = re.sub(r"(?<=\d)[,.\s\u00a0\u202f'](?=\d{3}(?!\d))", "", text)
-    out = {int(n) for n in re.findall(r"\d+", grouped)}
-    out |= {int(n) * 1000 for n in re.findall(r"(\d+)\s*k\b", grouped, flags=re.I)}
+    out = {int(n) for n in re.findall(r"\d+", grouped) if len(n) <= _MAX_NUMBER_DIGITS}
+    out |= {int(n) * 1000 for n in re.findall(rf"(?<!\d)(\d{{1,{_MAX_NUMBER_DIGITS}}})\s*k\b", grouped, flags=re.I)}
     return out
 
 
@@ -1408,9 +1415,10 @@ _DECLINED = {
     "analytics": re.compile(r"\b(?:no|without(?: any)?)\s+(?:insights\s+)?topics?\b"),
 }
 _STATED = {
-    "limits": re.compile(r"\d[\d,.\s\u00a0\u202f']*k?\s*(?:requests?|tokens?)\b"),
+    "limits": re.compile(rf"{_NUMBER_RUN}k?\s*(?:requests?|tokens?)\b"),
+    # "guardrails … pii" on one line: from the line's first "guardrail" only, so repeats don't each rescan it.
     "guardrails": re.compile(rf"\b{_CHECK_NAMES}\b(?:\s+(?:and|or|,)?\s*\w+){{0,3}}\s+(?:checks?|guardrails?)\b"
-                             rf"|\bguardrails?\b.*\b{_CHECK_NAMES}\b"),
+                             rf"|^(?>.*?\bguardrails?\b).*\b{_CHECK_NAMES}\b", re.M),
 }
 #: Topics asked for again after being declined reopen them.
 _TOPICS = re.compile(r"\btopics?\b")
@@ -1792,7 +1800,7 @@ _HEDGES = re.compile(r"\b(?:if you|could|would|might|consider|suggest\w*|startin
 _COUNT = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|a few|several)"
 #: What a sentence names, per field, in English: a request or token budget, a number of topics, sources, tools.
 _CLAIM_MENTIONS = {
-    "limits": re.compile(r"\d[\d,.\s\u00a0\u202f']*k?\s*-?\s*(?:requests?|tokens?)\b", re.I),
+    "limits": re.compile(rf"{_NUMBER_RUN}k?\s*-?\s*(?:requests?|tokens?)\b", re.I),
     "analytics": re.compile(rf"\b{_COUNT}\s+(?:new\s+|starting\s+|insights\s+)*topics?\b", re.I),
     "sources": re.compile(r"\bsources?\b", re.I),
     "tools": re.compile(r"\btools?\b", re.I),
