@@ -29,6 +29,13 @@ TAG=1.2.0  # the release to check
 gh release download "$TAG" --repo arc53/DocsGPT --pattern install.sh --pattern docsgpt.intoto.jsonl
 slsa-verifier verify-artifact install.sh \
   --provenance-path docsgpt.intoto.jsonl \
-  --source-uri github.com/arc53/DocsGPT
+  --source-uri github.com/arc53/DocsGPT \
+  --print-provenance > provenance.json
+# The provenance must name the commit the release tag points at.
+built=$(jq -r '.predicate.invocation.configSource.digest.sha1' provenance.json)
+tagged=$(gh api "repos/arc53/DocsGPT/commits/$TAG" --jq .sha)
+[ "$built" = "$tagged" ] && echo "install.sh is from $TAG" || echo "install.sh is NOT from $TAG"
 ```
+
+`--source-uri` alone proves the asset was built by this repository's release workflow, not which release it belongs to; the commit check binds it to `$TAG`.
 
