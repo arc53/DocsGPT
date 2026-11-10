@@ -28,6 +28,10 @@ from docsgpt.drafter.recipe import ProposalInvalid
 #: 20000. The runner sends a longer event back to the model, so whatever the server emits comes back whole.
 EVENT_CHARS = 120_000
 
+#: Most ``{`` a text answer is read from before it counts as holding no object. Each failed try costs time in
+#: the text's length, so an answer of nothing but braces would otherwise take time in its square.
+MAX_OBJECT_STARTS = 64
+
 #: Arguments of the ``ask_user`` terminal tool.
 QUESTIONS_SCHEMA: dict = questions_schema(
     message="One short line shown above the questions, in the user's language.",
@@ -57,19 +61,43 @@ def parse_json_object(raw: Any) -> Optional[dict]:
     try:
         value = json.loads(text)
         return value if isinstance(value, dict) else None
-    except ValueError:
+    except (ValueError, RecursionError):
         pass
     decoder = json.JSONDecoder()
     start = text.find("{")
-    while start != -1:
+    for _ in range(MAX_OBJECT_STARTS):
+        if start == -1:
+            break
         try:
-            value, _ = decoder.raw_decode(text, start)
-        except ValueError:
+            value, _end = decoder.raw_decode(text, start)
+        except (ValueError, RecursionError):
             value = None
         if isinstance(value, dict):
             return value
         start = text.find("{", start + 1)
     return None
+
+
+def parse_echoed_event(raw: Any) -> Optional[dict]:
+    """An earlier drafter event the panel sent back as an assistant message, or None.
+
+    The panel sends events back as ``JSON.stringify`` output, so the content
+    is read as one JSON object and never scanned for one: history is the
+    client's to send, and a scan of it would cost time in its square.
+
+    Args:
+        raw: The assistant message's content.
+
+    Returns:
+        The event, or None when the content is not one JSON object.
+    """
+    if not isinstance(raw, str):
+        return None
+    try:
+        value = json.loads(raw)
+    except (ValueError, RecursionError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def echo_length(event: dict) -> int:

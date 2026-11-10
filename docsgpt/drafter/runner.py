@@ -35,6 +35,7 @@ from docsgpt.drafter.output import (
     MESSAGE_CHARS,
     normalize_questions,
     parse_arguments,
+    parse_echoed_event,
     parse_json_object,
     QUESTIONS_SCHEMA,
     schema_problems,
@@ -165,7 +166,7 @@ def question_rounds(messages: list[dict]) -> int:
     for message in messages:
         if message.get("role") != "assistant":
             continue
-        payload = parse_json_object(message.get("content"))
+        payload = parse_echoed_event(message.get("content"))
         if isinstance(payload, dict) and isinstance(payload.get("questions"), list):
             rounds += 1
     return rounds
@@ -182,7 +183,7 @@ def _replayed_turn(recipe: Recipe, content: Any) -> Optional[tuple[str, dict]]:
     Returns:
         ``(tool name, arguments)``, or None when the content is no such event.
     """
-    event = parse_json_object(content)
+    event = parse_echoed_event(content)
     if not isinstance(event, dict):
         return None
     if event.get("type") == "questions" and isinstance(event.get("questions"), list):

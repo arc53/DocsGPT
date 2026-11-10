@@ -815,3 +815,19 @@ class TestDrafterRetries:
         events = _run(fake, should_stop=lambda: len(fake.calls) > 0 and bool(waits))
         assert [e["type"] for e in events] == ["status", "status"]
         assert len(fake.calls) == 1
+
+
+@pytest.mark.unit
+class TestEchoedHistory:
+    def test_question_rounds_read_history_strictly_and_fast(self):
+        import time
+        hostile = "x{" * 60_000
+        messages = [{"role": "user", "content": "x"}, {"role": "assistant", "content": hostile}] * 5
+        started = time.perf_counter()
+        assert question_rounds(messages) == 0
+        assert time.perf_counter() - started < 0.5
+
+    def test_a_question_round_in_prose_is_not_counted(self):
+        messages = [{"role": "user", "content": "x"},
+                    {"role": "assistant", "content": 'Here: {"questions": []}'}]
+        assert question_rounds(messages) == 0
