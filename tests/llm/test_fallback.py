@@ -1320,6 +1320,37 @@ class TestNoRestreamAfterFinish:
         assert out == ["fallback chunk"]
         assert backup.gen_stream_called is True
 
+    def test_a_finish_from_the_previous_call_does_not_count_for_this_one(self, patch_model_utils):
+        # Adapters clear the flag only once their own setup has run; an error
+        # before that (building the request) must still fall back.
+        backup = FakeLLM(stream_chunks=["fallback chunk"])
+        patch_model_utils(
+            get_provider=lambda mid, **_kw: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+        primary = FakeLLM(fail_at=0, backup_models=["backup-model"])
+        primary._stream_reached_finish = True
+        primary._last_finish_reason = "stop"
+
+        out = list(primary.gen_stream(**CALL_ARGS))
+
+        assert out == ["fallback chunk"]
+        assert backup.gen_stream_called is True
+
+    def test_a_stale_finish_does_not_turn_an_early_error_into_an_empty_answer(self):
+        from docsgpt.llm.handlers.base import collect_stream
+
+        primary = FakeLLM(fail_at=0)
+        primary._stream_reached_finish = True
+
+        with pytest.raises(RuntimeError):
+            collect_stream(
+                primary.gen_stream(**CALL_ARGS),
+                lambda chunk: chunk,
+                finished=lambda: primary._stream_reached_finish,
+            )
+
 
 # Tests — fallback message reshaping (parts arrays prepared for the primary)
 #

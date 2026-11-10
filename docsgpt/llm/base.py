@@ -89,6 +89,16 @@ def optional_int(value) -> Optional[int]:
         return None
 
 
+def _clear_finish(llm: Any) -> None:
+    """Forget the finish signal of ``llm``'s previous streamed call before the next one starts.
+
+    Args:
+        llm: The LLM about to stream.
+    """
+    llm._stream_reached_finish = False
+    llm._last_finish_reason = None
+
+
 class BaseLLM(ABC):
     # Stamped onto the ``llm_stream_start`` event so dashboards can group
     # calls by vendor. Subclasses override.
@@ -796,6 +806,12 @@ class BaseLLM(ABC):
         as before.
         """
         self._responding_provider = self.provider_name
+        # A finish signal belongs to the call that received it. Adapters clear
+        # the flag only once their own setup has run, so an error before that
+        # (building the request) would read the previous call's finish and be
+        # taken for a trailing-frame failure: no fallback, and an empty answer
+        # kept as complete.
+        _clear_finish(self)
         chunks_yielded = 0
         primary_model = kwargs.get("model")
         try:
@@ -906,6 +922,7 @@ class BaseLLM(ABC):
             fallback_method = getattr(fallback, method_name)
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
+            _clear_finish(fallback)
             try:
                 yield from self._noting_answer(
                     fallback._timed_stream(lambda: fallback_method(fallback, *args, **fallback_kwargs)),
