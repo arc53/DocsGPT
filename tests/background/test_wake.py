@@ -204,7 +204,7 @@ class TestScriptErrorRetry:
             "never re-run a failed, timed-out or interrupted job or repeat an action with side effects unless the "
             "user asks or it only reads data" in out
         )
-        assert "its event says to fix the script and run it once more" in out
+        assert "the one exception is a failed job whose event says to fix the script and run it once more" in out
 
 
 class TestRendering:
