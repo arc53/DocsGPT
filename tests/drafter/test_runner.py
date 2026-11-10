@@ -831,3 +831,40 @@ class TestEchoedHistory:
         messages = [{"role": "user", "content": "x"},
                     {"role": "assistant", "content": 'Here: {"questions": []}'}]
         assert question_rounds(messages) == 0
+
+
+@pytest.mark.unit
+class TestStopPolling:
+    """A streaming call asks whether its turn was stopped a few times a second, not once per chunk."""
+
+    def _interrupter(self, monkeypatch, should_stop, deadline=None):
+        from docsgpt.drafter import runner
+
+        now = [100.0]
+        monkeypatch.setattr(runner, "_now", lambda: now[0])
+        return runner._interrupter(should_stop, deadline), now
+
+    def test_checks_within_the_interval_ask_once(self, monkeypatch):
+        asked = []
+        check, now = self._interrupter(monkeypatch, lambda: asked.append(1) or False)
+        assert [check() for _ in range(5000)] == [None] * 5000
+        assert len(asked) == 1
+        now[0] += 0.25
+        assert check() is None and len(asked) == 2
+
+    def test_a_stop_is_seen_by_the_next_poll(self, monkeypatch):
+        from docsgpt.drafter import runner
+
+        stops = [False, True]
+        check, now = self._interrupter(monkeypatch, lambda: stops.pop(0))
+        assert check() is None
+        now[0] += 0.25
+        assert isinstance(check(), runner._Stopped)
+
+    def test_the_deadline_is_read_every_time(self, monkeypatch):
+        from docsgpt.drafter import runner
+
+        check, now = self._interrupter(monkeypatch, lambda: False, deadline=100.1)
+        assert check() is None
+        now[0] += 0.15
+        assert isinstance(check(), runner._TimedOut)

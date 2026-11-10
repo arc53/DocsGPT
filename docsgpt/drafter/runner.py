@@ -79,6 +79,9 @@ MAX_RETRY_WAIT_SECONDS = 10.0
 MIN_RETRY_SECONDS = 30.0
 #: Seconds between the stop checks while a retry waits.
 STOP_CHECK_SECONDS = 0.25
+#: Least seconds between two stop checks while a call streams. The stream checks before every chunk and on
+#: provider events, and a check is a Redis read; under a stream's 0.25-second wait each wait still checks.
+STOP_POLL_SECONDS = 0.2
 
 #: The clock the turn and call deadlines run on, and the sleep a retry waits with.
 _now = time.monotonic
@@ -377,13 +380,28 @@ def _deadline_after(seconds: float) -> Optional[float]:
     return _now() + seconds if seconds and seconds > 0 else None
 
 
-def _interruption(should_stop: Callable[[], bool], deadline: Optional[float]) -> Optional[BaseException]:
-    """What ends a streaming model call now: :class:`_Stopped`, :class:`_TimedOut`, or None to keep reading."""
-    if should_stop():
-        return _Stopped()
-    if deadline is not None and _now() >= deadline:
-        return _TimedOut()
-    return None
+def _interrupter(should_stop: Callable[[], bool],
+                 deadline: Optional[float]) -> Callable[[], Optional[BaseException]]:
+    """The check that ends a streaming model call: :class:`_Stopped`, :class:`_TimedOut`, or None to keep reading.
+
+    ``should_stop`` is asked at most once per :data:`STOP_POLL_SECONDS`, so a
+    long answer makes a few stop reads a second rather than one per chunk; the
+    deadline is read on every check. The turn's own checks, before and after
+    each call, ask ``should_stop`` directly.
+    """
+    asked: list[Optional[float]] = [None]
+
+    def check() -> Optional[BaseException]:
+        now = _now()
+        if asked[0] is None or now - asked[0] >= STOP_POLL_SECONDS:
+            asked[0] = now
+            if should_stop():
+                return _Stopped()
+        if deadline is not None and now >= deadline:
+            return _TimedOut()
+        return None
+
+    return check
 
 
 def _retry_wait(error: Exception, attempt: int, deadline: Optional[float]) -> Optional[float]:
@@ -565,7 +583,7 @@ class _Turn:
         model = getattr(self.llm, "model_id", None) or self.model_id
         stream = self.llm.gen_stream(model=model, messages=list(self.messages), tools=tools)
         return collect_stream(
-            noted(interruptible(stream, lambda: _interruption(should_stop, deadline))),
+            noted(interruptible(stream, _interrupter(should_stop, deadline))),
             lambda chunk: _parse_response(self.llm, chunk),
             finished=lambda: bool(getattr(self.llm, "_stream_reached_finish", False)),
         )
