@@ -568,6 +568,24 @@ class TestModelAuth:
         events = list(run_draft(req, recipe, Workspace(), MODEL, llm_factory=factory))
         assert events[-1]["code"] == "model_auth"
 
+    def test_a_refused_key_logs_one_line_without_a_traceback(self, caplog):
+        from docsgpt.drafter.runner import run_draft
+
+        def factory(*args):
+            raise _Status(401)
+
+        with caplog.at_level("WARNING", logger="docsgpt.drafter.runner"):
+            _run(FakeLLM(_Status(401)))
+            req, recipe = _request()
+            list(run_draft(req, recipe, Workspace(), MODEL, llm_factory=factory))
+        records = [r for r in caplog.records if r.name == "docsgpt.drafter.runner"]
+        assert len(records) == 2 and all(r.exc_info is None for r in records)
+        assert all("model_auth" in r.getMessage() and "sk-secret" not in r.getMessage() for r in records)
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="docsgpt.drafter.runner"):
+            _run(FakeLLM(_Status(500)))
+        assert [r.exc_info is not None for r in caplog.records if r.name == "docsgpt.drafter.runner"] == [True]
+
     def test_other_failures_stay_model_error(self):
         assert _run(FakeLLM(_Status(500)))[-1]["code"] == "model_error"
         assert _run(FakeLLM(RuntimeError("boom")))[-1]["code"] == "model_error"

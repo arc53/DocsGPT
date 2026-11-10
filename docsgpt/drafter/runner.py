@@ -295,6 +295,17 @@ def _failure_event(error: BaseException, fallback: str) -> dict:
     return _error("model_error", fallback)
 
 
+def _log_failure(what: str, error: BaseException) -> None:
+    """Log a failed model call or build: one line for a refused key (``model_auth``, an expected setup problem whose
+    message may quote the key), the traceback for anything else."""
+    if is_auth_failure(error):
+        status = getattr(error, "status_code", None)
+        logger.warning("drafter: %s: model_auth (%s%s)", what, type(error).__name__,
+                       f", HTTP {status}" if isinstance(status, int) else "")
+        return
+    logger.warning("drafter: %s: %s", what, type(error).__name__, exc_info=True)
+
+
 def _limit_retries(llm: Any, retries: int) -> None:
     """Cap the SDK retries of the drafter's clients (OpenAI-compatible ``client``, Anthropic ``anthropic``)."""
     for attr in ("client", "anthropic"):
@@ -604,7 +615,7 @@ class _Turn:
                 yield _error("model_error", TIMED_OUT)
                 return
             except Exception as exc:
-                logger.warning("drafter: model call failed: %s", type(exc).__name__, exc_info=True)
+                _log_failure("model call failed", exc)
                 yield _failure_event(exc, UNREACHABLE)
                 return
             if should_stop():
@@ -738,7 +749,7 @@ def run_draft(
     try:
         llm = (llm_factory or build_llm)(req.user_id, model["id"], req.request_id)
     except Exception as exc:
-        logger.warning("drafter: could not build the model: %s", type(exc).__name__, exc_info=True)
+        _log_failure("could not build the model", exc)
         yield _failure_event(exc, "The drafting model is not available.")
         return
     turn = _Turn(req, recipe, ws, llm, model["id"], tool_mode=bool(model.get("supports_tools")))
