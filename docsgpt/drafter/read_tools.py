@@ -41,11 +41,20 @@ def get_prompt(ws: Workspace, args: dict) -> dict:
 
 
 def get_source(ws: Workspace, args: dict) -> dict:
-    """A source's details: its catalog row and up to 50 of its file paths."""
+    """A source's details: its catalog row and up to 50 of its file paths.
+
+    A workspace that caps the turn's source reads (``source_reads_left``, the agent recipe's improve mode) counts
+    each read down and refuses the ones past it.
+    """
     source_id = _id_arg(args, "source_id")
     row = next((s for s in ws.sources if s["id"] == source_id), None)
     if row is None:
         return {"error": "No source with that id in the workspace."}
+    left = getattr(ws, "source_reads_left", None)
+    if left is not None:
+        if left <= 0:
+            return {"error": "You have read enough sources for this turn: draft from what you read."}
+        ws.source_reads_left = left - 1
     return {**row, "file_paths": ws.source_files.get(source_id, [])}
 
 
@@ -142,7 +151,8 @@ def _schema(name: str, description: str, param: str, param_description: str) -> 
 #: name -> (tool definition, implementation)
 READ_TOOLS: dict[str, tuple[dict, ReadTool]] = {
     "get_prompt": (
-        _schema("get_prompt", "Read a prompt's full text. Use it before reusing or changing a prompt.",
+        _schema("get_prompt", "Read a prompt's full text. Use it before reusing or changing a prompt, but not a "
+                "prompt whose whole text the form data already holds (its content is there).",
                 "prompt_id", "The prompt's id from the workspace (default, creative, strict or a uuid)."),
         get_prompt,
     ),

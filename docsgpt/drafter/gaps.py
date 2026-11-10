@@ -13,6 +13,7 @@ for the model fenced as data.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import logging
 import math
@@ -50,6 +51,8 @@ EXCERPT_CHARS = 300
 #: Characters of the question and of the answer of the conversation a Logs row starts from, and the turns read.
 CONVERSATION_CHARS = 600
 CONVERSATION_TURNS = 20
+#: The Docs gaps groupings a focus gap may name besides its topic (``analytics/routes.py`` ``get_docs_gaps``).
+PAGE_GROUPS = ("page", "source")
 #: ``topics_recipe.insights_off`` reasons, as the summary names them.
 _REASONS = {"off_on_this_instance": "off_on_this_instance", "turned_off_for_this_agent": "agent_off"}
 
@@ -167,6 +170,9 @@ class InsightsReader:
         by_topic: Whether it asks a topic question, so a topic narrows the reads.
         start: The window's start.
         end: The window's end.
+        focus: The gap the user started from when it is a Docs gaps row by page or source:
+            ``(gap_type, "page" | "source", row key)``, the key None for the row of answers with no source.
+            That gap type's examples are read from that row, whatever topic is asked for.
     """
 
     agent_id: str
@@ -174,6 +180,7 @@ class InsightsReader:
     by_topic: bool
     start: datetime.datetime
     end: datetime.datetime
+    focus: Optional[tuple[str, str, Optional[str]]] = None
 
     @classmethod
     def for_summary(cls, agent: dict, summary: dict) -> "InsightsReader":
@@ -183,11 +190,19 @@ class InsightsReader:
         by_topic = any(row["topic"] is not None for row in summary.get("rows") or [])
         return cls(str(agent["id"]), agent.get("key") or None, by_topic, start, end)
 
+    def focused(self, gap: Optional[dict]) -> "InsightsReader":
+        """This reader narrowed to the focus gap's page or source row, when the gap has one."""
+        if not gap or gap.get("group_by") not in PAGE_GROUPS:
+            return self
+        return dataclasses.replace(self, focus=(gap["gap_type"], gap["group_by"], gap.get("group_key")))
+
     def _scope(self) -> Scope:
         return Scope(agent_id=self.agent_id, api_key=self.api_key)
 
     def gap_examples(self, gap_type: str, topic: Optional[str] = None) -> list[str]:
         """Up to :data:`MAX_EXAMPLES` distinct questions that were this gap type (in ``topic``), likeliest first.
+
+        The focus gap's type is read from its page or source row (:attr:`focus`) instead of a topic.
 
         Raises:
             ValueError: ``gap_type`` is not one of ``SUMMARY_GAP_TYPES``.
@@ -198,10 +213,13 @@ class InsightsReader:
         if gap_type not in SUMMARY_GAP_TYPES:
             raise ValueError(gap_type)
         topic = topic if self.by_topic and topic else None
+        group, key = ("topic" if topic else "all"), topic
+        if self.focus and self.focus[0] == gap_type:
+            _, group, key = self.focus
         with db_readonly() as conn:
             rows = ConversationLabelsRepository(conn).gap_examples(
-                "topic" if topic else "all", self._scope(), analytics_schema.SCHEMA_HASH, self.start, self.end,
-                [topic], settings.ANALYTICS_FILTER_MIN_PROBABILITY, MAX_EXAMPLES * 3, gap_type=gap_type,
+                group, self._scope(), analytics_schema.SCHEMA_HASH, self.start, self.end,
+                [key], settings.ANALYTICS_FILTER_MIN_PROBABILITY, MAX_EXAMPLES * 3, gap_type=gap_type,
             )
         out: list[str] = []
         for row in rows:

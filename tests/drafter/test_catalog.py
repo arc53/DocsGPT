@@ -194,3 +194,11 @@ def test_text_is_cleaned_and_capped(pg_conn):
     assert row["name"] == "Bellname"
     assert len(row["preview"]) <= 160
     assert len(ws.prompt_texts[row["id"]]) <= 12000
+
+
+@pytest.mark.unit
+def test_get_prompt_is_not_for_a_prompt_the_form_already_holds_whole():
+    from docsgpt.drafter.read_tools import tool_definitions
+
+    [definition] = tool_definitions(("get_prompt",))
+    assert "not a prompt whose whole text the form data already holds" in definition["function"]["description"]

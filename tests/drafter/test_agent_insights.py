@@ -3,6 +3,7 @@ and groundedness guardrail."""
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -87,6 +88,21 @@ class TestContext:
         stepped = parse_context({"step": "basics", "gap": {"gap_type": "docs missing"}, "conversation_id": "c1"})
         assert stepped["gap"] is None and stepped["conversation_id"] is None
 
+    def test_a_gap_from_a_page_or_source_row_carries_its_group(self):
+        page = parse_context({"gap": {"topic": None, "gap_type": "docs missing", "group_by": "page",
+                                      "group_key": " https://docs.example.com/settings "}})
+        assert page["gap"] == {"topic": None, "gap_type": "docs missing", "group_by": "page",
+                               "group_key": "https://docs.example.com/settings"}
+        source = parse_context({"gap": {"gap_type": "docs missing", "group_by": "source", "group_key": SOURCE_ID}})
+        assert source["gap"]["group_by"] == "source" and source["gap"]["group_key"] == SOURCE_ID
+        # No source retrieved: the row's key is null.
+        unsourced = parse_context({"gap": {"gap_type": "docs missing", "group_by": "page", "group_key": None}})
+        assert unsourced["gap"]["group_by"] == "page" and unsourced["gap"]["group_key"] is None
+        for group_by in ("topic", "agent", 3):
+            gap = parse_context({"gap": {"topic": "Returns", "gap_type": "docs missing", "group_by": group_by,
+                                         "group_key": "x"}})["gap"]
+            assert gap == {"topic": "Returns", "gap_type": "docs missing"}
+
     @pytest.mark.parametrize("gap", [{"gap_type": "other"}, {"gap_type": "nope"}, "docs missing", {"topic": "x"}])
     def test_a_gap_that_is_not_a_summary_gap_type_is_left_out(self, gap):
         assert parse_context({"gap": gap})["gap"] is None
@@ -104,6 +120,10 @@ class TestContext:
         ws = _ws(conversation=conversation)
         data = context_data(_req({"gap": {"topic": "Returns & claims", "gap_type": "docs missing"}}), ws)
         assert data["focus_gap"] == {"topic": "Returns & claims", "gap_type": "docs missing"}
+        page = context_data(_req({"gap": {"gap_type": "docs missing", "group_by": "page", "group_key": "/settings"}}),
+                            ws)
+        assert page["focus_gap"] == {"topic": None, "gap_type": "docs missing", "group_by": "page",
+                                     "group_key": "/settings"}
         assert data["conversation_from_logs"] == conversation
         assert data["guardrail_from_insights"] == {"available": True, "check": "groundedness"}
         assert context_data(_req(), _ws(policy_editable=False))["guardrail_from_insights"]["why"] == "no_access"
@@ -125,6 +145,31 @@ class TestInstructionsAndTools:
         stepped = DraftRequest("alice", "agent", [{"role": "user", "content": "x"}],
                                parse_context({"step": "basics"}), "t")
         assert read_tools_for(stepped, _ws()) == WORKSPACE_READS
+
+    def test_improve_with_insights_reads_narrowly_and_grounds_its_reasons(self):
+        text = instructions(_req(), _ws())
+        for rule in ("docs missing: draft nothing for it", "even one that would fill part of it",
+                     "each reason names the question you read that it rests on",
+                     "a change no question you read backs is left out", "at most 2 sources",
+                     "A focus_gap with group_by page or source"):
+            assert rule in text, rule
+        conversation = _ws(conversation={"question": "q", "answer": "a", "labels": [], "gap_type": None})
+        assert "Read only the agent's own sources" in instructions(_req(), conversation)
+
+    def test_the_schema_states_the_gap_text_caps(self):
+        gap = agent_recipe.PROPOSAL_SCHEMA["properties"]["gaps"]["items"]["properties"]
+        assert f"at most {agent_recipe.GAP_NEEDS_MAX} characters" in gap["needs"]["description"]
+        assert f"at most {agent_recipe.GAP_EXAMPLE_MAX} characters" in gap["example"]["description"]
+
+    def test_improve_reads_at_most_a_few_sources(self):
+        ws = _ws(source_reads_left=agent_recipe.IMPROVE_SOURCE_READS)
+        results = [run_read_tool("get_source", ws, {"source_id": SOURCE_ID})
+                   for _ in range(agent_recipe.IMPROVE_SOURCE_READS + 1)]
+        assert all("error" not in r for r in results[:-1])
+        assert "enough sources" in results[-1]["error"]
+        # A guided step's workspace has no cap.
+        free = _ws()
+        assert all("error" not in run_read_tool("get_source", free, {"source_id": SOURCE_ID}) for _ in range(6))
 
     def test_a_conversation_from_logs_adds_its_rules(self):
         ws = _ws(conversation={"question": "q", "answer": "a", "labels": [], "gap_type": None})
@@ -325,3 +370,35 @@ def test_a_turn_reads_insights_and_shows_the_questions_it_read(pg_conn, insights
     [gap] = events[-1]["proposal"]["gaps"]
     assert (gap["gap_type"], gap["expected"], gap["links"]) == ("docs missing", 9, [{"kind": "logs",
                                                                                      "label": "docs_gap"}])
+
+
+def _set_page(conn, message_id: str, page: str, source_id: str) -> None:
+    from sqlalchemy import text
+
+    conn.execute(text("UPDATE conversation_messages SET sources = CAST(:s AS jsonb) WHERE id = CAST(:m AS uuid)"),
+                 {"s": json.dumps([{"source": page, "title": page, "source_id": source_id}]), "m": message_id})
+
+
+@pytest.mark.unit
+def test_a_page_or_source_focus_gap_reads_that_rows_examples(pg_conn, insights_on):
+    bot = seed.agent(pg_conn, owner="alice")
+    aid = str(bot["id"])
+    for i in range(NEEDED):
+        _, mid = seed.turn(pg_conn, aid, f"Deploy question {i}?", gap={"docs missing": 0.9})
+        _set_page(pg_conn, mid, "/deploying", SOURCE_ID)
+    _, mid = seed.turn(pg_conn, aid, "Where is the settings page?", gap={"docs missing": 0.9})
+    _set_page(pg_conn, mid, "/settings", "33333333-3333-3333-3333-333333333333")
+    page = _load(pg_conn, "alice", {"agent_id": aid, "gap": {"gap_type": "docs missing", "group_by": "page",
+                                                              "group_key": "/settings"}})
+    source = _load(pg_conn, "alice", {"agent_id": aid, "gap": {"gap_type": "docs missing", "group_by": "source",
+                                                                "group_key": SOURCE_ID}})
+    plain = _load(pg_conn, "alice", {"agent_id": aid, "gap": {"gap_type": "docs missing"}})
+    with _db(pg_conn):
+        by_page = run_read_tool("get_gap_examples", page, {"gap_type": "docs missing", "topic": "unrelated"})
+        by_source = run_read_tool("get_gap_examples", source, {"gap_type": "docs missing"})
+        other_type = run_read_tool("get_gap_examples", page, {"gap_type": "answer missed"})
+        everything = run_read_tool("get_gap_examples", plain, {"gap_type": "docs missing"})
+    assert by_page["questions"] == ["Where is the settings page?"]
+    assert len(by_source["questions"]) == 5 and all(q.startswith("Deploy question") for q in by_source["questions"])
+    assert other_type["questions"] == []
+    assert len(everything["questions"]) == 5
