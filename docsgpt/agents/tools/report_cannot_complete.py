@@ -21,9 +21,7 @@ def add_report_cannot_complete_tool(tools_dict: Dict[str, Any]) -> bool:
     if REPORT_CANNOT_COMPLETE_TOOL_ID in tools_dict:
         return True
     tools = [t for t in tools_dict.values() if isinstance(t, dict)]
-    if any(
-        a.get("name") == REPORT_CANNOT_COMPLETE for t in tools for a in t.get("actions") or [] if isinstance(a, dict)
-    ):
+    if any(REPORT_CANNOT_COMPLETE in _action_names(t) for t in tools):
         return False
     actions = [{**meta, "active": True} for meta in ReportCannotCompleteTool().get_actions_metadata()]
     tools_dict[REPORT_CANNOT_COMPLETE_TOOL_ID] = {
@@ -33,6 +31,14 @@ def add_report_cannot_complete_tool(tools_dict: Dict[str, Any]) -> bool:
         "config": {},
     }
     return True
+
+
+def _action_names(tool: Dict[str, Any]) -> List[str]:
+    """A tool's action names; an API tool keeps its actions in its config."""
+    names = [a.get("name") for a in tool.get("actions") or [] if isinstance(a, dict)]
+    if tool.get("name") == "api_tool":
+        names.extend((tool.get("config") or {}).get("actions") or {})
+    return names
 
 
 class ReportCannotCompleteTool(Tool):

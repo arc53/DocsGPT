@@ -91,7 +91,7 @@ A scheduled run can report that the task, or a step it needs, can't be done with
 - A model that can call tools gets a `report_cannot_complete` tool in scheduled runs only, even when the agent has no other tools, and is told to call it in that case.
 - A model without tool calling is told to start its answer with `CANNOT_COMPLETE:` and the reason instead. Only the start of its final answer counts, so an answer that merely says "cannot" stays a success.
 - If a tool the schedule doesn't allow was refused in the same run, the run fails with `tool_not_allowed`, which names that tool.
-- **Research agents:** the research steps, which are what call tools, can report it. The final report can't, and a scheduled research run skips its clarifying questions, since nobody is there to answer them.
+- **Research agents:** the research steps, which are what call tools, can report it (with the marker on a model without tool calling). The final report can't, and a scheduled research run skips its clarifying questions, since nobody is there to answer them.
 - **Workflows:** every agent node can report it, and the last agent node the run reaches decides. A later agent node, such as a fallback or a branch that handles the failure, clears an earlier report, and loop items never fail the run. A node with a JSON schema can report it only when it has other tools: some providers refuse tools beside a response schema.
 
 This relies on the model reporting it: it catches a missing tool or account, not a run that does the task wrong.

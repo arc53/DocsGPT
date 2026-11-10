@@ -37,6 +37,12 @@ class TestAddTool:
         assert add_report_cannot_complete_tool(tools_dict) is False
         assert list(tools_dict) == ["mcp"]
 
+    def test_an_api_action_of_that_name_keeps_it(self):
+        tools_dict = {"api": {"name": "api_tool", "config": {"actions": {REPORT_CANNOT_COMPLETE: {"active": True}}}}}
+
+        assert add_report_cannot_complete_tool(tools_dict) is False
+        assert list(tools_dict) == ["api"]
+
     def test_it_never_runs_in_the_background(self):
         assert REPORT_CANNOT_COMPLETE in NEVER_BACKGROUND_TOOLS
 

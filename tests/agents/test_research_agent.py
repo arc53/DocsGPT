@@ -1190,6 +1190,37 @@ class TestScheduledResearchRun:
 
         system = mock_llm.gen.call_args.kwargs["messages"][0]["content"]
         assert ("call report_cannot_complete" in system) is offered
+        assert ("begin your answer with CANNOT_COMPLETE:" in system) is not offered
+
+    def test_a_step_without_tool_calling_reports_with_the_marker(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """Its report is noted on the executor as a tool call's would be, and the step keeps its findings."""
+        from docsgpt.llm.handlers.base import LLMResponse
+
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(**agent_base_params)
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm.gen = Mock(return_value=Mock())
+        mock_llm_handler._parse_for_response = Mock(
+            return_value=LLMResponse(
+                content="CANNOT_COMPLETE: no browser tool to open the status page\n\nNothing else found.",
+                tool_calls=[],
+                finish_reason="stop",
+                raw_response=None,
+            )
+        )
+
+        report = agent._research_step("Is the status page green?", {})
+
+        assert agent.tool_executor.cannot_complete == "no browser tool to open the status page"
+        assert report == "no browser tool to open the status page\n\nNothing else found."
 
 
 # =====================================================================

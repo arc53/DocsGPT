@@ -8,6 +8,7 @@ from typing import Any, Dict, Generator, List, Optional
 from docsgpt import tracing
 from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.base import BaseAgent
+from docsgpt.agents.cannot_complete import cannot_complete_reason, drop_cannot_complete_marker
 from docsgpt.agents.tool_executor import ToolExecutor, record_refused_call, refusal_texts
 from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
@@ -529,9 +530,12 @@ class ResearchAgent(BaseAgent):
     ) -> str:
         """Core research loop. Works with any ToolExecutor instance."""
         system_prompt = STEP_PROMPT.replace("{step_query}", step_query)
+        # The steps are what call tools, so they are what can find a step impossible.
+        marks_answer = self.endpoint == "schedule" and not getattr(self, "reports_cannot_complete_by_tool", False)
         if getattr(self, "reports_cannot_complete_by_tool", False):
-            # The steps are what call tools, so they are what can find a step impossible.
             system_prompt = f"{system_prompt}\n\n{self.CANNOT_COMPLETE_TOOL_NOTE}"
+        elif marks_answer:
+            system_prompt = f"{system_prompt}\n\n{self.CANNOT_COMPLETE_MARKER_NOTE}"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": step_query},
@@ -576,7 +580,8 @@ class ResearchAgent(BaseAgent):
             parsed = self.llm_handler._parse_for_response(self, response)
 
             if not parsed.requires_tool_call:
-                return parsed.content or "No findings for this step."
+                report = parsed.content or "No findings for this step."
+                return self._take_step_marker(report, executor) if marks_answer else report
 
             # Execute tool calls
             messages, last_search_empty = self._execute_step_tools_with_refinement(
@@ -604,6 +609,16 @@ class ResearchAgent(BaseAgent):
             if is_budget_exhausted(exc):
                 raise
             return "Research step completed."
+
+    @staticmethod
+    def _take_step_marker(report: str, executor: ToolExecutor) -> str:
+        """Note a marked step report on the executor, as the tool would, and return it unmarked."""
+        reason = cannot_complete_reason(report)
+        if reason is None:
+            return report
+        if not getattr(executor, "cannot_complete", None):
+            executor.cannot_complete = reason
+        return drop_cannot_complete_marker(report) or report
 
     def _execute_step_tools_with_refinement(
         self,
