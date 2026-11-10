@@ -868,3 +868,39 @@ class TestStopPolling:
         assert check() is None
         now[0] += 0.15
         assert isinstance(check(), runner._TimedOut)
+
+
+@pytest.mark.unit
+class TestFallbackFinish:
+    """An answer the fallback model finished is kept when only its trailing frame fails, as in chat."""
+
+    class _TrailingFailure(FakeLLM):
+        finishes = None
+
+        def chunks(self, answer):
+            yield from super().chunks(answer)
+            if self.finishes is not None:
+                self.finishes._stream_reached_finish = True
+            raise ConnectionError("the trailing usage frame failed")
+
+    def test_a_finished_fallback_answer_is_kept(self):
+        from types import SimpleNamespace
+
+        fake = self._TrailingFailure(text(json.dumps(PROPOSAL)))
+        fake._fallback_llm = fake.finishes = SimpleNamespace(_stream_reached_finish=False)
+        events = _run(fake)
+        assert [e["type"] for e in events if e["type"] in ("proposal", "error")] == ["proposal"]
+
+    def test_a_flag_left_from_an_earlier_call_does_not_keep_an_unfinished_answer(self):
+        from types import SimpleNamespace
+
+        fake = self._TrailingFailure(text(json.dumps(PROPOSAL)))
+        fake._stream_reached_finish = True
+        fake._fallback_llm = SimpleNamespace(_stream_reached_finish=True)
+        events = _run(fake)
+        assert events[-1]["type"] == "error"
+
+    def test_an_unfinished_answer_still_fails(self):
+        fake = self._TrailingFailure(text(json.dumps(PROPOSAL)))
+        events = _run(fake)
+        assert events[-1]["type"] == "error"

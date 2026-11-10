@@ -404,6 +404,12 @@ def _interrupter(should_stop: Callable[[], bool],
     return check
 
 
+def _reached_finish(llm: Any) -> bool:
+    """Whether the model that answered sent its finish signal: the call's model, or the fallback it handed to."""
+    fallback = getattr(llm, "_fallback_llm", None)
+    return bool(getattr(llm, "_stream_reached_finish", False) or getattr(fallback, "_stream_reached_finish", False))
+
+
 def _retry_wait(error: Exception, attempt: int, deadline: Optional[float]) -> Optional[float]:
     """Seconds to wait before retrying a model call that failed before it answered, or None to give up now.
 
@@ -581,11 +587,15 @@ class _Turn:
                 chunks.close()
 
         model = getattr(self.llm, "model_id", None) or self.model_id
+        # A flag left from the turn's last call would keep an answer that failed before it finished.
+        for llm in (self.llm, getattr(self.llm, "_fallback_llm", None)):
+            if llm is not None and getattr(llm, "_stream_reached_finish", False):
+                llm._stream_reached_finish = False
         stream = self.llm.gen_stream(model=model, messages=list(self.messages), tools=tools)
         return collect_stream(
             noted(interruptible(stream, _interrupter(should_stop, deadline))),
             lambda chunk: _parse_response(self.llm, chunk),
-            finished=lambda: bool(getattr(self.llm, "_stream_reached_finish", False)),
+            finished=lambda: _reached_finish(self.llm),
         )
 
     def _correct_calls(self, assistant: dict, problems: list[str]) -> None:
