@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 298ec2a0297af9fb740062f8d13afbfa967fdb7f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 96e6e4a0d2ff45c1cffe0df1eec4338c5222fab9 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -49,7 +49,6 @@
   </a>
 </p>
 
-> 🎃 **Hacktoberfest 2026**：整個 10 月，只要有實質貢獻就送 T 恤。請參閱 [HACKTOBERFEST.md](../../HACKTOBERFEST.md)。
 
 <p align="center">
   <sub>支援單位</sub><br>
@@ -200,5 +199,6 @@ docsgpt down       # 停止（資料與設定會保留）
 ## 授權條款
 
 DocsGPT 採用 [MIT 授權條款](../../LICENSE)。
+
 
 
