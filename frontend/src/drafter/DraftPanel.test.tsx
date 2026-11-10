@@ -596,6 +596,19 @@ describe('DraftPanel', () => {
     expect(container.textContent).toContain('Tell me');
   });
 
+  it("says a too-long prompt's limit as the refusal named it", async () => {
+    stream.scripts = [
+      [
+        { type: 'error', code: 'prompt_too_long', limit: 12000 },
+        { type: 'end' },
+      ],
+    ];
+    await ask('Draft it');
+    expect(
+      container.querySelector('[data-item="error"]')!.textContent,
+    ).toContain('drafter.errors.prompt_too_long.description:12000');
+  });
+
   it.each([
     ['prompt_too_long', 'drafter.errors.prompt_too_long.description:100000'],
     ['empty_message', 'drafter.errors.empty_message.description'],

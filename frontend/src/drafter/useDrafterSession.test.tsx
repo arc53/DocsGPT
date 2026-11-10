@@ -120,6 +120,21 @@ describe('useDrafterSession', () => {
     });
   });
 
+  it("keeps a refusal's limit on its error", async () => {
+    stream.scripts = [
+      [
+        { type: 'error', code: 'prompt_too_long', limit: 12000 },
+        { type: 'end' },
+      ],
+    ];
+    await act(async () => session.send('Draft it'));
+    expect(session.items.at(-1)).toMatchObject({
+      kind: 'error',
+      code: 'prompt_too_long',
+      limit: 12000,
+    });
+  });
+
   it('runs a failed turn again on Retry, and sends no unanswered message after it', async () => {
     stream.scripts = [
       [{ type: 'error', code: 'model_error' }, { type: 'end' }],

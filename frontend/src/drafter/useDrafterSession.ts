@@ -36,7 +36,14 @@ export type DrafterItem =
       answers?: Record<string, string>;
     }
   | { id: number; kind: 'proposal'; proposal: unknown }
-  | { id: number; kind: 'error'; code: DrafterErrorCode; message?: string }
+  | {
+      id: number;
+      kind: 'error';
+      code: DrafterErrorCode;
+      message?: string;
+      /** A too-long prompt's limit in characters, when the refusal named it. */
+      limit?: number;
+    }
   /** The user stopped the turn running here. */
   | { id: number; kind: 'stopped' };
 
@@ -274,7 +281,12 @@ export function useDrafterSession({
           return;
         case 'error':
           failed.current = true;
-          push({ kind: 'error', code: event.code, message: event.message });
+          push({
+            kind: 'error',
+            code: event.code,
+            message: event.message,
+            ...(event.limit !== undefined ? { limit: event.limit } : {}),
+          });
           return;
         case 'end':
           // After an error the turn stays pending for Retry. The server may still

@@ -529,6 +529,7 @@ export function DraftPanel({
           <Fragment key={item.id}>
             <DrafterErrorAlert
               code={item.code}
+              limit={item.limit}
               description={
                 refused ? t('drafter.errors.bad_request.startOver') : undefined
               }
