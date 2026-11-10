@@ -31,6 +31,7 @@ from docsgpt.core.model_registry import ModelRegistry
 from docsgpt.core.model_utils import model_is_usable, resolve_task_model_id
 from docsgpt.core.settings import settings
 from docsgpt.decisions import features
+from docsgpt.drafter.service import forget_model_failure, model_failure
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db import agent_defaults, model_defaults, source_defaults
@@ -156,15 +157,19 @@ def _models_body(conn) -> dict:
 
     ``task_model_id`` is the stored model while it can still run, else
     ``None``; ``task_model_unavailable`` is true when a model is stored that
-    can't run (disabled or removed), which only a null ``PUT`` clears.
+    can't run (disabled or removed), which only a null ``PUT`` clears;
+    ``task_model_error`` is the last refused-key failure of the model that
+    runs for members without a choice (``{model_id, code, at}``), else ``None``.
     """
     stored = model_defaults.stored_task_model(conn)
     usable = model_is_usable(stored)
+    fallback = resolve_task_model_id(None, None, None)
     return {
         "success": True,
         "task_model_id": stored if usable else None,
         "task_model_unavailable": stored is not None and not usable,
-        "fallback_model_id": resolve_task_model_id(None, None, None),
+        "task_model_error": model_failure(None, stored if usable else fallback),
+        "fallback_model_id": fallback,
         "models": _builtin_models(),
     }
 
@@ -176,7 +181,9 @@ class AdminModelDefaultsResource(Resource):
         """The instance task model, what runs when it is unset (TASK_MODEL_ID or the default), the built-ins.
 
         `task_model_id` is null when none is stored or the stored one can't run; `task_model_unavailable`
-        is then true for the latter, and a PUT with null clears it.
+        is then true for the latter, and a PUT with null clears it. `task_model_error` is {model_id, code, at}
+        when the model that runs for members without a choice failed a draft because its provider refused the
+        key (code model_auth), else null; a draft that works on it, or any PUT, clears it.
         """
         with db_readonly() as conn:
             body = _models_body(conn)
@@ -200,6 +207,8 @@ class AdminModelDefaultsResource(Resource):
             changes = _changes({"task_model_id": before}, {"task_model_id": model_id})
             if changes:
                 audit(conn, "model_defaults_set", changes)
+            # A failure of the model it replaces no longer applies.
+            forget_model_failure(None)
             after = _models_body(conn)
         logger.info("model_defaults_updated", extra={"admin": _actor(), "fields": sorted(changes)})
         return make_response(jsonify(after), 200)

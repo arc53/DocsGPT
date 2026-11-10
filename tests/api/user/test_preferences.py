@@ -317,6 +317,38 @@ class TestTaskModel:
         assert "task_model_id" not in UsersRepository(pg_conn).get(ALICE)["tool_preferences"]
         assert _call(app, pg_conn, "get").json["task_model_unavailable"] is False
 
+    @pytest.fixture
+    def failures(self, monkeypatch):
+        from tests.activity.conftest import FakeRedis
+
+        class _Redis(FakeRedis):
+            def get(self, key):
+                return self.kv.get(key) if self._alive(key) else None
+
+        fake = _Redis()
+        monkeypatch.setattr("docsgpt.drafter.service._turn_store", lambda: fake)
+        return fake
+
+    def test_a_refused_key_of_the_running_task_model_is_reported(self, app, pg_conn, failures):
+        from docsgpt.drafter.service import record_model_failure
+
+        assert _call(app, pg_conn, "get").json["task_model_error"] is None
+        record_model_failure(ALICE, "gpt-default", "model_auth")
+        error = _call(app, pg_conn, "get").json["task_model_error"]
+        assert error["model_id"] == "gpt-default" and error["code"] == "model_auth" and error["at"]
+        assert _call(app, pg_conn, "get", user=BOB).json["task_model_error"] is None
+
+    def test_changing_the_task_model_clears_the_failure(self, app, pg_conn, failures):
+        from docsgpt.drafter.service import record_model_failure
+
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        record_model_failure(ALICE, "gpt-a", "model_auth")
+        assert _call(app, pg_conn, "get").json["task_model_error"]["model_id"] == "gpt-a"
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-b"})
+        assert _call(app, pg_conn, "get").json["task_model_error"] is None
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        assert _call(app, pg_conn, "get").json["task_model_error"] is None, "forgotten, not hidden"
+
     def test_keeps_the_chat_prompt(self, app, pg_conn):
         _call(app, pg_conn, "put", json={"chat_prompt_id": "strict"})
         _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
@@ -372,6 +404,7 @@ class TestTaskModel:
             "success": True,
             "task_model_id": "gpt-a",
             "task_model_unavailable": False,
+            "task_model_error": None,
             "instance_task_model_id": "gpt-default",
         }
         prompts_only = self._get_as_token(app, pg_conn, ["prompts:read"]).json
@@ -388,5 +421,6 @@ class TestTaskModel:
             "success": True,
             "task_model_id": "gpt-a",
             "task_model_unavailable": False,
+            "task_model_error": None,
             "instance_task_model_id": "gpt-default",
         }

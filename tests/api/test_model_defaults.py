@@ -196,6 +196,38 @@ class TestAdminModelDefaults:
         assert resp.status_code == 200 and resp.json["task_model_unavailable"] is False
         assert model_defaults.stored_task_model(db) is None
 
+    @pytest.fixture
+    def failures(self, monkeypatch):
+        from tests.activity.conftest import FakeRedis
+
+        class _Redis(FakeRedis):
+            def get(self, key):
+                return self.kv.get(key) if self._alive(key) else None
+
+        fake = _Redis()
+        monkeypatch.setattr("docsgpt.drafter.service._turn_store", lambda: fake)
+        return fake
+
+    def test_a_refused_key_of_the_instance_model_is_reported(self, client, db, failures):
+        from docsgpt.drafter.service import record_model_failure
+
+        with _admin():
+            assert client.get(URL).json["task_model_error"] is None
+            record_model_failure("someone", "gpt-default", "model_auth", instance=True)
+            error = client.get(URL).json["task_model_error"]
+        assert error["model_id"] == "gpt-default" and error["code"] == "model_auth"
+
+    def test_changing_the_instance_model_clears_the_failure(self, client, db, failures):
+        from docsgpt.drafter.service import record_model_failure
+
+        with _admin():
+            client.put(URL, json={"task_model_id": "gpt-a"})
+            record_model_failure("someone", "gpt-a", "model_auth", instance=True)
+            assert client.get(URL).json["task_model_error"]["model_id"] == "gpt-a"
+            assert client.put(URL, json={"task_model_id": "gpt-b"}).json["task_model_error"] is None
+            client.put(URL, json={"task_model_id": "gpt-a"})
+            assert client.get(URL).json["task_model_error"] is None
+
     def test_tokens_are_refused(self):
         from docsgpt.api.pat.rules import is_denied
 

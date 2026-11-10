@@ -19,8 +19,11 @@ otherwise reports ``invalid_output``.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
+import threading
+import time
 import uuid
 from typing import Any, Callable, Iterator, Optional
 
@@ -63,6 +66,19 @@ MAX_READ_CALLS = 5
 #: Most items, and characters of one, a ``read`` event lists.
 READ_EVENT_ITEMS = 10
 READ_ITEM_CHARS = 300
+#: Seconds between the stop and deadline checks while a model call runs.
+STOP_POLL_SECONDS = 0.25
+
+#: The clock the turn and call deadlines run on.
+_now = time.monotonic
+
+TIMED_OUT = "The model took too long to answer. Try again in a moment."
+UNREACHABLE = "The model could not be reached. Try again in a moment."
+KEY_REFUSED = "The task model's provider refused its key. Change the task model, or ask an admin to check the key."
+#: Error class names the provider SDKs raise for a refused key (OpenAI, Anthropic, Groq…).
+_AUTH_ERROR_NAMES = frozenset({"AuthenticationError", "PermissionDeniedError"})
+#: Lower-cased phrases of the errors an SDK raises for a key that is missing when it is built or called.
+_MISSING_KEY_PHRASES = ("api_key client option must be set", "could not resolve authentication method")
 
 COMMON_RULES = f"""You are the DocsGPT drafter. A user describes what they want, and you fill a form in the DocsGPT \
 app for them. You never save, publish or delete anything: the user reviews your draft in the form and saves it \
@@ -238,8 +254,53 @@ def build_messages(
     return messages
 
 
+def is_auth_failure(error: BaseException) -> bool:
+    """Whether a model call failed because the provider refused, or never got, the model's key.
+
+    A 401 or 403 from the provider, an SDK's authentication or permission
+    error, or an SDK that can't find a key to send. Such a failure doesn't go
+    away on retry: the user has to change the task model or its key.
+
+    Args:
+        error: What the call (or building the model) raised.
+
+    Returns:
+        True for a key problem.
+    """
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    if status is None:
+        # google-genai's APIError carries the HTTP status as ``code``.
+        status = getattr(error, "code", None)
+    if status in (401, 403) or type(error).__name__ in _AUTH_ERROR_NAMES:
+        return True
+    message = str(error).lower()
+    return any(phrase in message for phrase in _MISSING_KEY_PHRASES)
+
+
+def _failure_event(error: BaseException, fallback: str) -> dict:
+    """The ``error`` event for a failed model call: ``model_auth`` for a key problem, else ``model_error``."""
+    if is_auth_failure(error):
+        return _error("model_auth", KEY_REFUSED)
+    return _error("model_error", fallback)
+
+
+def _limit_retries(llm: Any, retries: int) -> None:
+    """Cap the SDK retries of the drafter's clients (OpenAI-compatible ``client``, Anthropic ``anthropic``)."""
+    for attr in ("client", "anthropic"):
+        client = getattr(llm, attr, None)
+        with_options = getattr(client, "with_options", None)
+        if callable(with_options) and hasattr(client, "max_retries"):
+            setattr(llm, attr, with_options(max_retries=retries))
+
+
 def build_llm(user_id: str, model_id: str, request_id: str) -> Any:
-    """The drafter's LLM: the task model under the caller, stateless, billed as ``drafter``."""
+    """The drafter's LLM: the task model under the caller, stateless, billed as ``drafter``.
+
+    Its SDK retries are capped at ``DRAFTER_MODEL_RETRIES``: a provider's
+    Retry-After can hold one retry for minutes, which a draft can't wait out.
+    """
     from docsgpt.core.model_utils import get_api_key_for_provider, get_provider_from_model_id
     from docsgpt.llm.llm_creator import LLMCreator
 
@@ -256,6 +317,7 @@ def build_llm(user_id: str, model_id: str, request_id: str) -> Any:
     llm._token_usage_source = TOKEN_USAGE_SOURCE
     llm._request_id = request_id
     llm._drafter_provider = provider
+    _limit_retries(llm, int(settings.DRAFTER_MODEL_RETRIES))
     return llm
 
 
@@ -272,6 +334,62 @@ def _parse_response(llm: Any, response: Any) -> Any:
 def _error(code: str, message: str) -> dict:
     """An ``error`` event with a code the panel maps and a message safe to show."""
     return {"type": "error", "code": code, "message": message}
+
+
+class _Stopped(Exception):
+    """The turn was stopped while a model call ran."""
+
+
+class _TimedOut(Exception):
+    """A model call ran past its deadline, or the turn past its own."""
+
+
+def _deadline_after(seconds: float) -> Optional[float]:
+    """The clock reading ``seconds`` from now, or None when ``seconds`` is 0 (no limit)."""
+    return _now() + seconds if seconds and seconds > 0 else None
+
+
+def _call(fn: Callable[[], Any], should_stop: Callable[[], bool], deadline: Optional[float]) -> Any:
+    """Run one model call on its own thread and wait for it, checking for a stop and the deadline meanwhile.
+
+    A provider call can't be interrupted, so on a stop or a missed deadline
+    the call is left to finish (or time out in its SDK) on its thread, and
+    whatever it returns is dropped.
+
+    Args:
+        fn: The call.
+        should_stop: True ends the wait with :class:`_Stopped`.
+        deadline: The clock reading the call must finish by, or None.
+
+    Returns:
+        What ``fn`` returned.
+
+    Raises:
+        _Stopped: The turn was stopped first.
+        _TimedOut: The deadline passed first.
+        Exception: Whatever ``fn`` raised.
+    """
+    outcome: dict = {}
+    done = threading.Event()
+
+    def target() -> None:
+        try:
+            outcome["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 - handed to the waiting thread
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    context = contextvars.copy_context()
+    threading.Thread(target=context.run, args=(target,), name="drafter-model-call", daemon=True).start()
+    while not done.wait(STOP_POLL_SECONDS):
+        if should_stop():
+            raise _Stopped()
+        if deadline is not None and _now() >= deadline:
+            raise _TimedOut()
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 class _Turn:
@@ -344,11 +462,15 @@ class _Turn:
         proposal = self.recipe.validate(args, self.req, self.ws)
         return [{"type": "proposal", "proposal": proposal}]
 
-    def gen(self, final: bool) -> Any:
+    def gen(self, final: bool, should_stop: Callable[[], bool] = lambda: False,
+            turn_deadline: Optional[float] = None) -> Any:
         """Call the model once and return its parsed answer.
 
         Args:
             final: The last call of the turn: only the terminal tools are offered.
+            should_stop: Asked while the call runs; True abandons it (:class:`_Stopped`).
+            turn_deadline: When the turn must end; the call ends by then or by its own deadline, whichever
+                comes first (:class:`_TimedOut`).
 
         Returns:
             The handler's ``LLMResponse``.
@@ -360,11 +482,11 @@ class _Turn:
             tools = _terminal_definitions(self.recipe, self.allow_questions)
             if not final:
                 tools = tool_definitions(self.read_tools) + tools
-        response = self.llm.gen(
-            model=getattr(self.llm, "model_id", None) or self.model_id,
-            messages=self.messages,
-            tools=tools,
-        )
+        deadlines = [d for d in (_deadline_after(settings.DRAFTER_CALL_TIMEOUT_SECONDS), turn_deadline) if d]
+        model = getattr(self.llm, "model_id", None) or self.model_id
+        messages = list(self.messages)
+        response = _call(lambda: self.llm.gen(model=model, messages=messages, tools=tools), should_stop,
+                         min(deadlines) if deadlines else None)
         return _parse_response(self.llm, response)
 
     def _correct_calls(self, assistant: dict, problems: list[str]) -> None:
@@ -449,18 +571,29 @@ class _Turn:
             ``read`` events as the model reads, then ``message``, ``questions``, ``proposal`` or ``error`` events.
         """
         problems: list[str] = []
+        turn_deadline = _deadline_after(settings.DRAFTER_TURN_TIMEOUT_SECONDS)
         for step in range(MAX_LLM_CALLS):
             if should_stop():
+                return
+            if turn_deadline is not None and _now() >= turn_deadline:
+                logger.warning("drafter: the turn ran past its deadline after %d model call(s)", step)
+                yield _error("model_error", TIMED_OUT)
                 return
             final = step == MAX_LLM_CALLS - 1
             if final and self.tool_mode:
                 self.messages.append({"role": "user", "content": "Stop reading now and finish with "
                                       f"{_finish_hint(self.allow_questions)}."})
             try:
-                parsed = self.gen(final)
+                parsed = self.gen(final, should_stop, turn_deadline)
+            except _Stopped:
+                return
+            except _TimedOut:
+                logger.warning("drafter: a model call ran past its deadline")
+                yield _error("model_error", TIMED_OUT)
+                return
             except Exception as exc:
                 logger.warning("drafter: model call failed: %s", type(exc).__name__, exc_info=True)
-                yield _error("model_error", "The model could not be reached. Try again in a moment.")
+                yield _failure_event(exc, UNREACHABLE)
                 return
             if should_stop():
                 return
@@ -594,7 +727,7 @@ def run_draft(
         llm = (llm_factory or build_llm)(req.user_id, model["id"], req.request_id)
     except Exception as exc:
         logger.warning("drafter: could not build the model: %s", type(exc).__name__, exc_info=True)
-        yield _error("model_error", "The drafting model is not available.")
+        yield _failure_event(exc, "The drafting model is not available.")
         return
     turn = _Turn(req, recipe, ws, llm, model["id"], tool_mode=bool(model.get("supports_tools")))
     yield from turn.run(stop)

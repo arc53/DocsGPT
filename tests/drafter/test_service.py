@@ -75,3 +75,68 @@ class TestRateAndQuota:
             refusal, *_ = prepare("alice", _body())
         assert refusal.code == "rate_limited"
         limiter.assert_called_once_with("drafter", "alice", 10)
+
+
+@pytest.fixture
+def store(monkeypatch):
+    from tests.activity.conftest import FakeRedis
+
+    class _Redis(FakeRedis):
+        def get(self, key):
+            return self.kv.get(key) if self._alive(key) else None
+
+    fake = _Redis()
+    monkeypatch.setattr("docsgpt.drafter.service._turn_store", lambda: fake)
+    return fake
+
+
+@pytest.mark.unit
+class TestModelFailures:
+    """The last key failure of a task model, remembered for Settings and Admin > Defaults."""
+
+    def test_a_recorded_failure_reads_back_for_its_model(self, store):
+        from docsgpt.drafter.service import model_failure, record_model_failure
+
+        record_model_failure("alice", "gpt-a", "model_auth")
+        failure = model_failure("alice", "gpt-a")
+        assert failure["model_id"] == "gpt-a" and failure["code"] == "model_auth"
+        assert failure["at"].endswith("+00:00") or failure["at"].endswith("Z")
+
+    def test_a_failure_of_another_model_reads_as_none(self, store):
+        from docsgpt.drafter.service import model_failure, record_model_failure
+
+        record_model_failure("alice", "gpt-a", "model_auth")
+        assert model_failure("alice", "gpt-b") is None
+        assert model_failure("bob", "gpt-a") is None
+
+    def test_the_instance_keeps_its_own(self, store):
+        from docsgpt.drafter.service import model_failure, record_model_failure
+
+        record_model_failure("alice", "gpt-a", "model_auth", instance=True)
+        assert model_failure(None, "gpt-a")["model_id"] == "gpt-a"
+        assert model_failure("alice", "gpt-a") is not None
+
+    def test_a_success_with_that_model_clears_both(self, store):
+        from docsgpt.drafter.service import clear_model_failure, model_failure, record_model_failure
+
+        record_model_failure("alice", "gpt-a", "model_auth", instance=True)
+        clear_model_failure("alice", "gpt-b")
+        assert model_failure("alice", "gpt-a") is not None
+        clear_model_failure("alice", "gpt-a")
+        assert model_failure("alice", "gpt-a") is None and model_failure(None, "gpt-a") is None
+
+    def test_forget_drops_the_record(self, store):
+        from docsgpt.drafter.service import forget_model_failure, model_failure, record_model_failure
+
+        record_model_failure("alice", "gpt-a", "model_auth", instance=True)
+        forget_model_failure("alice")
+        forget_model_failure(None)
+        assert model_failure("alice", "gpt-a") is None and model_failure(None, "gpt-a") is None
+
+    def test_without_redis_nothing_is_remembered_and_nothing_fails(self, monkeypatch):
+        from docsgpt.drafter.service import clear_model_failure, model_failure, record_model_failure
+
+        monkeypatch.setattr("docsgpt.drafter.service._turn_store", lambda: None)
+        record_model_failure("alice", "gpt-a", "model_auth")
+        clear_model_failure("alice", "gpt-a")
+        assert model_failure("alice", "gpt-a") is None

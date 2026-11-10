@@ -4,6 +4,7 @@ stopping a turn from another request.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -246,3 +247,88 @@ def end_turn(user_id: str, turn_id: Optional[str]) -> None:
     except Exception:
         # The keys expire on their own; an ended turn only leaves them a while longer.
         logger.debug("drafter: could not forget an ended turn", exc_info=True)
+
+
+#: ``<prefix>user:<user id>`` holds a user's last task-model key failure, ``<prefix>instance`` the instance task
+#: model's. Settings > General and Admin > Defaults read them to mark a task model that can't run.
+_MODEL_FAILURE_PREFIX = "drafter:model_failure:"
+#: How long a failure is remembered without another draft: the next draft with the model records or clears it.
+MODEL_FAILURE_TTL_SECONDS = 30 * 24 * 60 * 60
+
+
+def _failure_key(user_id: Optional[str]) -> str:
+    """The Redis key of a user's remembered failure, or the instance's for None."""
+    return f"{_MODEL_FAILURE_PREFIX}user:{user_id}" if user_id else f"{_MODEL_FAILURE_PREFIX}instance"
+
+
+def record_model_failure(user_id: str, model_id: str, code: str, *, instance: bool = False) -> None:
+    """Remember that a draft on ``model_id`` failed with ``code`` (``model_auth``: the key was refused).
+
+    Best-effort: without Redis nothing is remembered and the draft's own
+    error is all the user sees.
+
+    Args:
+        user_id: The caller.
+        model_id: The task model that failed.
+        code: The ``error`` event's code.
+        instance: The model is the instance's task model, so Admin > Defaults shows the failure too.
+    """
+    client = _turn_store()
+    if client is None:
+        return
+    from datetime import datetime, timezone
+
+    value = json.dumps({"model_id": model_id, "code": code, "at": datetime.now(timezone.utc).isoformat()})
+    try:
+        client.set(_failure_key(user_id), value, ex=MODEL_FAILURE_TTL_SECONDS)
+        if instance:
+            client.set(_failure_key(None), value, ex=MODEL_FAILURE_TTL_SECONDS)
+    except Exception:
+        logger.warning("drafter: could not remember a model failure", exc_info=True)
+
+
+def model_failure(user_id: Optional[str], model_id: Optional[str]) -> Optional[dict]:
+    """The remembered failure of ``model_id`` for a user (or the instance for None), else None.
+
+    A failure of another model reads as None: it no longer applies once the
+    task model changed.
+
+    Args:
+        user_id: The user, or None for the instance's task model.
+        model_id: The task model that runs now.
+
+    Returns:
+        ``{"model_id", "code", "at"}`` (ISO 8601, UTC), or None.
+    """
+    client = _turn_store()
+    if client is None or not model_id:
+        return None
+    try:
+        raw = client.get(_failure_key(user_id))
+    except Exception:
+        return None
+    try:
+        failure = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    if not isinstance(failure, dict) or failure.get("model_id") != model_id:
+        return None
+    return {key: failure.get(key) for key in ("model_id", "code", "at")}
+
+
+def clear_model_failure(user_id: str, model_id: str) -> None:
+    """Forget the user's and the instance's remembered failure of ``model_id`` after a draft on it worked."""
+    for scope in (user_id, None):
+        if model_failure(scope, model_id) is not None:
+            forget_model_failure(scope)
+
+
+def forget_model_failure(user_id: Optional[str]) -> None:
+    """Drop the user's (or, for None, the instance's) remembered failure: the task model was changed."""
+    client = _turn_store()
+    if client is None:
+        return
+    try:
+        client.delete(_failure_key(user_id))
+    except Exception:
+        logger.debug("drafter: could not forget a model failure", exc_info=True)

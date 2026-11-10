@@ -441,3 +441,51 @@ class TestCancel:
             monkeypatch.setattr(redis, "delete", broken)
             events = _events(_stream(client, _body(), fake))
         assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+
+
+class _Status(Exception):
+    def __init__(self, status_code):
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
+
+
+@pytest.mark.unit
+class TestModelAuth:
+    """A key the provider refuses is remembered for Settings; the next good turn with that model forgets it."""
+
+    @pytest.fixture(autouse=True)
+    def _instance_model(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: "instance-model")
+
+    def test_a_refused_key_is_model_auth_and_remembered(self, client, pg_conn, redis):
+        from docsgpt.drafter.service import model_failure
+
+        with _db(pg_conn):
+            events = _events(_stream(client, _body(), FakeLLM(_Status(401))))
+        error = next(e for e in events if e["type"] == "error")
+        assert error["code"] == "model_auth"
+        assert model_failure("alice", "task-model")["code"] == "model_auth"
+        assert model_failure(None, "task-model") is None, "not the instance's model"
+
+    def test_the_instance_model_failing_is_remembered_for_the_instance(self, client, pg_conn, redis):
+        from docsgpt.drafter.service import model_failure
+
+        model = {**MODEL, "id": "instance-model"}
+        with _db(pg_conn):
+            _events(_stream(client, _body(), FakeLLM(_Status(403)), model=model))
+        assert model_failure(None, "instance-model")["code"] == "model_auth"
+
+    def test_a_good_turn_with_that_model_forgets_it(self, client, pg_conn, redis):
+        from docsgpt.drafter.service import model_failure, record_model_failure
+
+        record_model_failure("alice", "task-model", "model_auth")
+        with _db(pg_conn):
+            _events(_stream(client, _body(), FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))))
+        assert model_failure("alice", "task-model") is None
+
+    def test_other_failures_are_not_remembered(self, client, pg_conn, redis):
+        from docsgpt.drafter.service import model_failure
+
+        with _db(pg_conn):
+            _events(_stream(client, _body(), FakeLLM(_Status(500))))
+        assert model_failure("alice", "task-model") is None

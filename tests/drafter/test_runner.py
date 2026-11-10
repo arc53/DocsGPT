@@ -438,3 +438,134 @@ class TestNestedProposalKeys:
         fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL), content="Let me submit."))
         events = _run(fake)
         assert events[-1]["proposal"]["message"] == PROPOSAL["message"]
+
+
+class _Blocking(FakeLLM):
+    """A model whose calls hang until the test lets them go (or a few seconds pass)."""
+
+    def __init__(self, *script):
+        super().__init__(*script)
+        import threading
+
+        self.release = threading.Event()
+
+    def gen(self, *args, **kwargs):
+        answer = super().gen(*args, **kwargs)
+        self.release.wait(5)
+        return answer
+
+
+class _Status(Exception):
+    def __init__(self, status_code):
+        super().__init__(f"HTTP {status_code}: invalid api key sk-secret")
+        self.status_code = status_code
+
+
+@pytest.mark.unit
+class TestDeadlines:
+    @pytest.fixture(autouse=True)
+    def _fast_poll(self, monkeypatch):
+        from docsgpt.drafter import runner
+
+        monkeypatch.setattr(runner, "STOP_POLL_SECONDS", 0.01)
+
+    def test_a_model_call_past_its_deadline_ends_the_turn_retryably(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DRAFTER_CALL_TIMEOUT_SECONDS", 0.05)
+        fake = _Blocking(calls(tool_call("submit_proposal", PROPOSAL)))
+        try:
+            events = _run(fake)
+        finally:
+            fake.release.set()
+        assert events[-1]["type"] == "error" and events[-1]["code"] == "model_error"
+        assert "too long" in events[-1]["message"]
+
+    def test_the_turn_deadline_stops_the_next_call(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter import runner
+
+        clock = iter([0.0] + [1000.0] * 50)
+        monkeypatch.setattr(runner, "_now", lambda: next(clock))
+        monkeypatch.setattr(settings, "DRAFTER_TURN_TIMEOUT_SECONDS", 240)
+        fake = FakeLLM(calls(tool_call("get_prompt", {"prompt_id": "default"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake)
+        assert events[-1]["code"] == "model_error" and "too long" in events[-1]["message"]
+        assert len(fake.calls) <= 1
+
+    def test_a_stop_ends_a_hanging_call_at_once(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DRAFTER_CALL_TIMEOUT_SECONDS", 30)
+        fake = _Blocking(calls(tool_call("submit_proposal", PROPOSAL)))
+        try:
+            events = _run(fake, should_stop=lambda: len(fake.calls) > 0)
+        finally:
+            fake.release.set()
+        assert [e["type"] for e in events] == ["status", "status"]
+
+    def test_no_deadline_at_zero(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DRAFTER_CALL_TIMEOUT_SECONDS", 0)
+        monkeypatch.setattr(settings, "DRAFTER_TURN_TIMEOUT_SECONDS", 0)
+        events = _run(FakeLLM(calls(tool_call("submit_proposal", PROPOSAL))))
+        assert events[-1]["type"] == "proposal"
+
+
+@pytest.mark.unit
+class TestModelAuth:
+    @pytest.mark.parametrize("error", [_Status(401), _Status(403)])
+    def test_a_refused_key_is_model_auth(self, error):
+        events = _run(FakeLLM(error))
+        assert events[-1]["code"] == "model_auth"
+        assert "sk-secret" not in events[-1]["message"]
+
+    def test_an_sdk_authentication_error_is_model_auth(self):
+        class AuthenticationError(Exception):
+            pass
+
+        assert _run(FakeLLM(AuthenticationError("no")))[-1]["code"] == "model_auth"
+
+    def test_a_missing_key_when_the_model_is_built_is_model_auth(self):
+        from docsgpt.drafter.runner import run_draft
+
+        def factory(*args):
+            raise ValueError("The api_key client option must be set either by passing api_key to the client")
+
+        req, recipe = _request()
+        events = list(run_draft(req, recipe, Workspace(), MODEL, llm_factory=factory))
+        assert events[-1]["code"] == "model_auth"
+
+    def test_other_failures_stay_model_error(self):
+        assert _run(FakeLLM(_Status(500)))[-1]["code"] == "model_error"
+        assert _run(FakeLLM(RuntimeError("boom")))[-1]["code"] == "model_error"
+
+
+@pytest.mark.unit
+class TestRetries:
+    def test_drafter_clients_retry_at_most_the_setting(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter import runner
+
+        class Client:
+            max_retries = 2
+
+            def __init__(self, max_retries=2):
+                self.max_retries = max_retries
+
+            def with_options(self, max_retries):
+                return Client(max_retries)
+
+        class LLM:
+            def __init__(self):
+                self.client = Client()
+                self.anthropic = Client()
+
+        monkeypatch.setattr(settings, "DRAFTER_MODEL_RETRIES", 1)
+        monkeypatch.setattr("docsgpt.llm.llm_creator.LLMCreator.create_llm", lambda *a, **k: LLM())
+        monkeypatch.setattr("docsgpt.core.model_utils.get_provider_from_model_id", lambda *a, **k: "openai")
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda *a: "k")
+        llm = runner.build_llm("alice", "m", "drafter:x")
+        assert llm.client.max_retries == 1 and llm.anthropic.max_retries == 1

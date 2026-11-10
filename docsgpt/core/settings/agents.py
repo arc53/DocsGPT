@@ -192,3 +192,28 @@ class AgentSettings(SettingsGroup):
             "is limited. Drafter calls also count against the user's usage quota."
         ),
     )
+    DRAFTER_CALL_TIMEOUT_SECONDS: float = Field(
+        default=90.0,
+        ge=0,
+        description=(
+            "Longest one drafter model call may take, retries included, before the turn ends with a retryable "
+            "error the panel offers to try again (0: no limit). A Stop ends a waiting call at once either way."
+        ),
+    )
+    DRAFTER_TURN_TIMEOUT_SECONDS: float = Field(
+        default=240.0,
+        ge=0,
+        description=(
+            "Longest one draft turn may take across all its model calls (reading included) before it ends with "
+            "a retryable error (0: no limit)."
+        ),
+    )
+    DRAFTER_MODEL_RETRIES: int = Field(
+        default=1,
+        ge=0,
+        description=(
+            "Retries the provider SDK makes for one drafter model call after a failed request (OpenAI-compatible "
+            "and Anthropic models). Low by default: a retry can wait out a provider's Retry-After, which "
+            "the call deadline cuts short anyway."
+        ),
+    )

@@ -28,7 +28,8 @@ from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import (
-    cancel_turn, drafter_config, end_turn, prepare, start_turn, TURN_ID, turn_cancelled,
+    cancel_turn, clear_model_failure, drafter_config, end_turn, prepare, record_model_failure, start_turn, TURN_ID,
+    turn_cancelled,
 )
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
@@ -270,6 +271,25 @@ class DrafterAgentGaps(Resource):
         return make_response(jsonify(summary), 200)
 
 
+def _is_instance_model(model_id: str) -> bool:
+    """Whether ``model_id`` is the instance's task model (what runs for a user who picked none)."""
+    from docsgpt.core.model_utils import get_task_model_id
+
+    try:
+        return get_task_model_id(None) == model_id
+    except Exception:
+        return False
+
+
+def _note_model_outcome(user_id: str, model_id: str, event: dict) -> None:
+    """Remember a refused key (``model_auth``) for Settings and Admin > Defaults; forget it once a draft works."""
+    kind = event.get("type")
+    if kind == "error" and event.get("code") == "model_auth":
+        record_model_failure(user_id, model_id, "model_auth", instance=_is_instance_model(model_id))
+    elif kind in ("questions", "proposal"):
+        clear_model_failure(user_id, model_id)
+
+
 def _stream(draft: DraftRequest, recipe: Recipe, workspace: Workspace, model: dict,
             stopped: threading.Event, turn_id: Optional[str] = None) -> Iterator[str]:
     """The turn's frames, always closed by ``end``; an unexpected failure becomes a ``model_error`` event.
@@ -293,6 +313,7 @@ def _stream(draft: DraftRequest, recipe: Recipe, workspace: Workspace, model: di
         if turn_id:
             yield _frame({"type": "turn", "id": turn_id})
         for event in run_draft(draft, recipe, workspace, model, should_stop=should_stop):
+            _note_model_outcome(draft.user_id, model["id"], event)
             yield _frame(event)
     except Exception:
         logger.exception("drafter: the draft failed")

@@ -144,15 +144,21 @@ def _task_models(conn: Connection, user_id: str) -> dict:
         dict: ``task_model_id``, the caller's choice while they can still run
         it (else ``None``); ``task_model_unavailable``, whether a choice is
         stored that can't run (a disabled or deleted model), which only a
-        null ``PUT`` clears; and ``instance_task_model_id``, what runs without
-        one (the admin's, ``TASK_MODEL_ID`` or the default model).
+        null ``PUT`` clears; ``task_model_error``, the last refused-key failure
+        of the task model that runs now (``{model_id, code, at}``) or ``None``;
+        and ``instance_task_model_id``, what runs without one (the admin's,
+        ``TASK_MODEL_ID`` or the default model).
     """
+    from docsgpt.drafter.service import model_failure
+
     user_choice, instance_choice = model_defaults.stored_task_models(conn, user_id)
     usable = model_is_usable(user_choice, user_id)
+    instance_model = resolve_task_model_id(None, None, instance_choice)
     return {
         "task_model_id": user_choice if usable else None,
         "task_model_unavailable": user_choice is not None and not usable,
-        "instance_task_model_id": resolve_task_model_id(None, None, instance_choice),
+        "task_model_error": model_failure(user_id, user_choice if usable else instance_model),
+        "instance_task_model_id": instance_model,
     }
 
 
@@ -196,13 +202,15 @@ class PreferencesResource(Resource):
     @api.doc(
         description=(
             "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, "
-            "task_model_unavailable, instance_task_model_id}. chat_prompt_id is default when none was set or "
+            "task_model_unavailable, task_model_error, instance_task_model_id}. chat_prompt_id is default when none was set or "
             "the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a "
             "chat prompt was ever stored, default included, even when it now reads as default. task_model_id is "
             "the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; "
             "task_model_unavailable is true when a choice is stored that can no longer run (a disabled or "
             "deleted model): the instance's runs meanwhile, the stored one again if it comes back, until a PUT "
-            "with task_model_id null clears it. instance_task_model_id is the one that runs without a usable "
+            "with task_model_id null clears it. task_model_error is {model_id, code, at} when the task model that runs now "
+            "failed its last draft because its provider refused the key (code model_auth, at ISO 8601), else null; "
+            "a draft that works on it, or a PUT of task_model_id, clears it. instance_task_model_id is the one that runs without a usable "
             "choice, null when no model can. A token gets the chat prompt fields with prompts:read (never when "
             "restricted to specific prompts) and the task model fields with models:read."
         )
@@ -306,6 +314,11 @@ class PreferencesResource(Resource):
                 if sets_task_model:
                     users.set_task_model_id(user_id, task_model_id)
                     response["task_model_id"] = task_model_id
+            if sets_task_model:
+                from docsgpt.drafter.service import forget_model_failure
+
+                # A failure of the model it replaces no longer applies.
+                forget_model_failure(user_id)
         except AccessDenied as err:
             return error_response(err.message, err.status)
         except Exception as err:
