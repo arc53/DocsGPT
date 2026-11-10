@@ -403,6 +403,8 @@ describe('DraftPanel', () => {
       ],
     ];
     await ask('A shipping agent');
+    // Skip is the host's to offer (decision 96): none was given here.
+    expect(button('drafter.skipQuestions')).toBeUndefined();
     const radio = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
     )[1];
@@ -465,7 +467,11 @@ describe('DraftPanel', () => {
       Array.from(container.querySelectorAll('[data-question="q2"]'));
     expect(cards()[0].textContent).toContain('questions.skipped');
 
-    await act(async () => button('drafter.skipQuestions')!.click());
+    // Skip and draft: a ghost pill beside Send answers.
+    const skip = button('drafter.skipQuestions')!;
+    expect(skip.dataset.variant).toBe('ghost');
+    expect(skip.previousElementSibling).toBe(button('questions.sendAnswers'));
+    await act(async () => skip.click());
     expect(onSkipQuestions).toHaveBeenCalledTimes(1);
     expect(button('questions.sendAnswers')).toBeUndefined();
     const second = Array.from(
