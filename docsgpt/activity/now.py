@@ -784,8 +784,9 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
         "needs_you": needs_you,
         "up_next": up_next,
         # The sidebar's "waiting for you" mark: a turn paused on an approval
-        # or on clarifying questions both wait for the user.
-        "approval_conversations": [item["conversation_id"] for item in approvals + questions],
+        # or on clarifying questions both wait for the user. A turn paused on
+        # both is listed under each, but its chat is marked once.
+        "approval_conversations": list(dict.fromkeys(item["conversation_id"] for item in approvals + questions)),
         "failed_conversations": _failed_conversations(conn, user_id),
         "stats": {
             "next_24h": sum(item["runs_in_window"] for item in up_next),

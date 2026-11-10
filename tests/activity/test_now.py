@@ -541,6 +541,20 @@ class TestNeedsYou:
         # The chat gets the sidebar's waiting mark, as an approval's does.
         assert snap["approval_conversations"] == [conv]
 
+    def test_a_turn_waiting_on_an_approval_and_questions_is_marked_once(self, pg_conn):
+        conv = _chat(pg_conn, "Carrier onboarding")
+        PendingToolStateRepository(pg_conn).save_state(
+            conv, "u1",
+            messages=[], tools_dict={}, tool_schemas=[], agent_config={},
+            pending_tool_calls=[
+                {"call_id": "c1", "tool_name": "send_email", "pause_type": "awaiting_approval"},
+                {"call_id": "c2", "tool_name": "ask_user", "pause_type": "awaiting_answer"},
+            ],
+        )
+        snap = activity_now.build_now(pg_conn, "u1")
+        assert sorted(item["kind"] for item in snap["needs_you"]) == ["approval", "question"]
+        assert snap["approval_conversations"] == [conv]
+
     def test_an_expired_question_pause_is_not_listed(self, pg_conn):
         conv = _chat(pg_conn)
         self._pending(pg_conn, conv, pause_type="awaiting_answer")
