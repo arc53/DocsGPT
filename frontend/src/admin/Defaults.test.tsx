@@ -103,11 +103,15 @@ const agentsBody = (guardrails = agentGuardrails, over = {}) => ({
 const modelsBody = (
   taskModelId: string | null = null,
   unavailable = false,
+  refused: string | null = null,
 ) => ({
   json: async () => ({
     success: true,
     task_model_id: taskModelId,
     task_model_unavailable: unavailable,
+    task_model_error: refused
+      ? { model_id: refused, code: 'model_auth', at: '2026-11-10T09:00:00Z' }
+      : null,
     fallback_model_id: 'gpt-b',
     models: [
       { id: 'gpt-a', display_name: 'GPT A', provider: 'openai' },
@@ -368,6 +372,42 @@ describe('Admin Defaults', () => {
     expect(trigger.textContent).toContain('Not set (GPT B)');
     expect(text()).not.toContain("can't run");
     expect(save().disabled).toBe(true);
+  });
+
+  it("says when the running task model's key was refused, and marks it in the list", async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    // Nothing stored: the fallback, GPT B, runs and was refused.
+    admin.getModelDefaults.mockResolvedValue(modelsBody(null, false, 'gpt-b'));
+    await render();
+    expect(text()).toContain(
+      "GPT B couldn't run its last task: its provider refused the API key.",
+    );
+    const trigger = container.querySelector<HTMLElement>(
+      '#defaults-task-model',
+    )!;
+    expect(trigger.className).toContain('sm:max-w-80');
+    expect(trigger.getAttribute('title')).toBe('Not set (GPT B)');
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    expect(
+      Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+      ).map((o) => o.textContent),
+    ).toEqual(['Not set (GPT B)', 'GPT A', 'GPT B· key refused']);
+  });
+
+  it('shows no refusal for a model that runs', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    admin.getModelDefaults.mockResolvedValue(modelsBody('gpt-a', false, null));
+    await render();
+    expect(text()).not.toContain('refused');
   });
 
   it('offers a retry when the defaults fail to load', async () => {

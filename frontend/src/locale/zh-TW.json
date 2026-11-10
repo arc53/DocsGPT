@@ -166,7 +166,9 @@
       "taskModelInstanceDefault": "使用執行個體預設值（{{model}}）",
       "taskModelInstanceDefaultUnnamed": "使用執行個體預設值",
       "taskModelUnavailable": "你的任務模型已無法執行（已被停用或移除），因此改用執行個體預設值。如果該模型恢復，會再次使用它；在此選擇一個選項即可取代它。",
-      "taskModelUnavailableValue": "模型無法使用"
+      "taskModelUnavailableValue": "模型無法使用",
+      "taskModelFailed": "{{model}} 無法執行你的上一個任務：其提供者拒絕了 API 金鑰。請選擇其他模型，或請管理員檢查金鑰。",
+      "taskModelFailedItem": "· 金鑰遭拒絕"
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",

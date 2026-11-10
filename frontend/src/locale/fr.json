@@ -168,7 +168,9 @@
       "taskModelInstanceDefault": "Utiliser la valeur par défaut de l’instance ({{model}})",
       "taskModelInstanceDefaultUnnamed": "Utiliser la valeur par défaut de l’instance",
       "taskModelUnavailable": "Votre modèle de tâches ne peut plus s’exécuter (il a été désactivé ou supprimé) ; la valeur par défaut de l’instance est donc utilisée. Si le modèle revient, il sera de nouveau utilisé ; choisissez une option ici pour le remplacer.",
-      "taskModelUnavailableValue": "Modèle indisponible"
+      "taskModelUnavailableValue": "Modèle indisponible",
+      "taskModelFailed": "{{model}} n’a pas pu exécuter votre dernière tâche : son fournisseur a refusé la clé d’API. Choisissez un autre modèle, ou demandez à un administrateur de vérifier la clé.",
+      "taskModelFailedItem": "· clé refusée"
     },
     "sources": {
       "title": "Gérez ici tous les fichiers sources auxquels vous avez accès et ceux que vous avez importés.",

@@ -39,6 +39,23 @@ type Loaded = {
   models: Model[];
   /** What runs without a pick: the admin's, TASK_MODEL_ID or the default model; null when none can. */
   instanceModelId: string | null;
+  /**
+   * The model whose provider refused its key on the user's last task
+   * (`task_model_error`, code `model_auth`); null when none did.
+   */
+  refusedModelId: string | null;
+};
+
+/** The model a `task_model_error` names, when it is a refused key. */
+const refusedModel = (error: unknown): string | null => {
+  if (!error || typeof error !== 'object') return null;
+  const { model_id: modelId, code } = error as {
+    model_id?: unknown;
+    code?: unknown;
+  };
+  return code === 'model_auth' && typeof modelId === 'string' && modelId
+    ? modelId
+    : null;
 };
 
 /**
@@ -47,7 +64,11 @@ type Loaded = {
  * instance default" (the first option, picked while the user has none)
  * follows whatever the admin sets; a named model is the user's own pick.
  * A stored pick that can no longer run shows no option and a note saying
- * the instance default runs; picking any option replaces it.
+ * the instance default runs; picking any option replaces it. A model whose
+ * provider refused its key on the user's last task (`task_model_error`) is
+ * marked "· key refused" in the list, still pickable since an admin can fix
+ * the key, and while it is the one that runs a warning says so.
+ * The trigger grows with its value up to 320px, then ends in "…".
  * Saved to the server on change, one save at a time: a pick made while one
  * is in flight waits, and only the latest such pick goes out. A failed save
  * puts the last saved pick back. A skeleton row stands in while it loads and
@@ -100,7 +121,12 @@ export default function TaskModelSection() {
             ? prefs.instance_task_model_id
             : null;
         savedValue.current = picked;
-        setLoaded({ value: picked, models, instanceModelId });
+        setLoaded({
+          value: picked,
+          models,
+          instanceModelId,
+          refusedModelId: refusedModel(prefs.task_model_error),
+        });
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -139,10 +165,42 @@ export default function TaskModelSection() {
 
   const builtin = loaded.models.filter((m) => m.source !== 'user');
   const own = loaded.models.filter((m) => m.source === 'user');
+  const nameOf = (modelId: string) =>
+    loaded.models.find((m) => m.id === modelId)?.display_name ?? modelId;
   const instanceModel = loaded.instanceModelId
-    ? (loaded.models.find((m) => m.id === loaded.instanceModelId)
-        ?.display_name ?? loaded.instanceModelId)
+    ? nameOf(loaded.instanceModelId)
     : null;
+  const instanceLabel = instanceModel
+    ? t('settings.general.taskModelInstanceDefault', { model: instanceModel })
+    : t('settings.general.taskModelInstanceDefaultUnnamed');
+  // The model that runs now: the pick, else the instance default.
+  const running =
+    loaded.value === INSTANCE_DEFAULT || loaded.value === UNAVAILABLE
+      ? loaded.instanceModelId
+      : loaded.value;
+  const refused =
+    loaded.refusedModelId !== null && running === loaded.refusedModelId
+      ? nameOf(loaded.refusedModelId)
+      : null;
+  const pickedLabel =
+    loaded.value === INSTANCE_DEFAULT
+      ? instanceLabel
+      : loaded.value === UNAVAILABLE
+        ? undefined
+        : nameOf(loaded.value);
+  const renderItem = (model: Model) => (
+    <SelectItem
+      key={model.id}
+      value={model.id}
+      suffix={
+        model.id === loaded.refusedModelId
+          ? t('settings.general.taskModelFailedItem')
+          : undefined
+      }
+    >
+      <span className="truncate">{model.display_name}</span>
+    </SelectItem>
+  );
 
   const save = async (value: string): Promise<boolean> => {
     try {
@@ -207,10 +265,15 @@ export default function TaskModelSection() {
           htmlFor={id}
           stack
           after={
-            loaded.value === UNAVAILABLE ? (
+            loaded.value === UNAVAILABLE || refused ? (
               <Alert variant="warning">
                 <AlertDescription>
-                  {t('settings.general.taskModelUnavailable')}
+                  {loaded.value === UNAVAILABLE
+                    ? t('settings.general.taskModelUnavailable')
+                    : t('settings.general.taskModelFailed', {
+                        model: refused,
+                        interpolation: { escapeValue: false },
+                      })}
                 </AlertDescription>
               </Alert>
             ) : undefined
@@ -222,9 +285,12 @@ export default function TaskModelSection() {
           >
             <SelectTrigger
               id={id}
-              className="w-full sm:w-56"
+              // Grows to its value, up to 320px, then ends in "…" (the
+              // whole name as its title).
+              className="w-full sm:w-auto sm:max-w-80 sm:min-w-56"
               size="field"
               shape="pill"
+              title={pickedLabel}
             >
               <SelectValue
                 placeholder={t('settings.general.taskModelUnavailableValue')}
@@ -232,22 +298,14 @@ export default function TaskModelSection() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={INSTANCE_DEFAULT}>
-                {instanceModel
-                  ? t('settings.general.taskModelInstanceDefault', {
-                      model: instanceModel,
-                    })
-                  : t('settings.general.taskModelInstanceDefaultUnnamed')}
+                <span className="truncate">{instanceLabel}</span>
               </SelectItem>
               {builtin.length > 0 && (
                 <SelectGroup>
                   <SelectLabel>
                     {t('settings.customModels.modelsGroup.builtin')}
                   </SelectLabel>
-                  {builtin.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.display_name}
-                    </SelectItem>
-                  ))}
+                  {builtin.map(renderItem)}
                 </SelectGroup>
               )}
               {own.length > 0 && (
@@ -255,11 +313,7 @@ export default function TaskModelSection() {
                   <SelectLabel>
                     {t('settings.customModels.modelsGroup.user')}
                   </SelectLabel>
-                  {own.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.display_name}
-                    </SelectItem>
-                  ))}
+                  {own.map(renderItem)}
                 </SelectGroup>
               )}
             </SelectContent>

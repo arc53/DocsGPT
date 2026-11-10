@@ -53,8 +53,18 @@ vi.mock('../components/ui/select', () => ({
       </div>
     </SelectCtx.Provider>
   ),
-  SelectTrigger: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
+  SelectTrigger: ({
+    children,
+    className,
+    title,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+    title?: string;
+  }) => (
+    <div data-testid="trigger" className={className} title={title}>
+      {children}
+    </div>
   ),
   SelectValue: () => null,
   SelectContent: ({ children }: { children: React.ReactNode }) => (
@@ -69,14 +79,17 @@ vi.mock('../components/ui/select', () => ({
   SelectItem: ({
     value,
     children,
+    suffix,
   }: {
     value: string;
     children: React.ReactNode;
+    suffix?: React.ReactNode;
   }) => {
     const pick = React.useContext(SelectCtx);
     return (
       <button type="button" data-item={value} onClick={() => pick(value)}>
         {children}
+        {suffix}
       </button>
     );
   },
@@ -333,6 +346,73 @@ describe('Task model row', () => {
     });
     expect(container.textContent).not.toContain(
       'settings.general.taskModelUnavailable',
+    );
+  });
+
+  it('grows the trigger to its value up to a cap, each name truncating, the picked one as its title', async () => {
+    await render({ task_model_id: 'mine', instance_task_model_id: 'gpt-b' });
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-testid="trigger"]',
+    )!;
+    expect(trigger.className.split(' ')).toEqual(
+      expect.arrayContaining(['sm:w-auto', 'sm:min-w-56', 'sm:max-w-80']),
+    );
+    expect(trigger.className).not.toContain('sm:w-56');
+    expect(trigger.title).toBe('My Llama');
+    expect(item('mine').querySelector('span.truncate')?.textContent).toBe(
+      'My Llama',
+    );
+    expect(item(INSTANCE).querySelector('span.truncate')?.textContent).toBe(
+      'settings.general.taskModelInstanceDefault(GPT B)',
+    );
+  });
+
+  const REFUSED = { code: 'model_auth', at: '2026-11-10T09:00:00Z' };
+
+  it("says when the picked model's key was refused, and marks it in the list", async () => {
+    updatePreferences.mockResolvedValue(json({ success: true }));
+    await render({
+      task_model_id: 'gpt-a',
+      instance_task_model_id: 'gpt-b',
+      task_model_error: { model_id: 'gpt-a', ...REFUSED },
+    });
+    expect(container.textContent).toContain(
+      'settings.general.taskModelFailed(GPT A)',
+    );
+    expect(item('gpt-a').textContent).toBe(
+      'GPT Asettings.general.taskModelFailedItem',
+    );
+    expect(item('gpt-b').textContent).toBe('GPT B');
+    // Another pick runs: the note goes, the mark stays (the model can
+    // still be picked once an admin fixes the key).
+    await act(async () => item('gpt-b').click());
+    expect(container.textContent).not.toContain(
+      'settings.general.taskModelFailed(',
+    );
+    expect(item('gpt-a').textContent).toContain(
+      'settings.general.taskModelFailedItem',
+    );
+  });
+
+  it('says so when the instance default it follows was refused', async () => {
+    await render({
+      task_model_id: null,
+      instance_task_model_id: 'gpt-b',
+      task_model_error: { model_id: 'gpt-b', ...REFUSED },
+    });
+    expect(container.textContent).toContain(
+      'settings.general.taskModelFailed(GPT B)',
+    );
+  });
+
+  it('shows no refusal without one', async () => {
+    await render({
+      task_model_id: 'gpt-a',
+      instance_task_model_id: 'gpt-b',
+      task_model_error: null,
+    });
+    expect(container.textContent).not.toContain(
+      'settings.general.taskModelFailed',
     );
   });
 

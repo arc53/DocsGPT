@@ -69,6 +69,11 @@ type ModelDefaultsBody = {
   task_model_unavailable?: boolean;
   /** What runs while it is unset: TASK_MODEL_ID or the default model. */
   fallback_model_id: string | null;
+  /**
+   * The last refused-key failure of the model that runs ({model_id, code:
+   * "model_auth", at}); null when it last ran fine.
+   */
+  task_model_error?: { model_id: string; code: string; at: string } | null;
   models: BuiltinModel[];
 };
 
@@ -245,6 +250,23 @@ export default function Defaults() {
   const fallbackName =
     models.models.find((m) => m.id === models.fallback_model_id)
       ?.display_name ?? models.fallback_model_id;
+  // A model whose provider refused its key on its last task: marked in the
+  // list, and named in a warning while it is the one that runs.
+  const refusedId =
+    models.task_model_error?.code === 'model_auth'
+      ? models.task_model_error.model_id
+      : null;
+  const runningId = models.task_model_id ?? models.fallback_model_id;
+  const refusedName =
+    refusedId && refusedId === runningId
+      ? (models.models.find((m) => m.id === refusedId)?.display_name ??
+        refusedId)
+      : null;
+  const unsetLabel = fallbackName ? `Not set (${fallbackName})` : 'Not set';
+  const pickedLabel =
+    value.taskModel === TASK_MODEL_UNSET
+      ? unsetLabel
+      : models.models.find((m) => m.id === value.taskModel)?.display_name;
   const valid =
     isPrescreenConfigValid(value.retrieval) &&
     !guardrailsIncomplete(value.agentGuardrails);
@@ -408,6 +430,12 @@ export default function Defaults() {
                       }
                     </AlertDescription>
                   </Alert>
+                ) : refusedName ? (
+                  <Alert variant="warning">
+                    <AlertDescription>
+                      {`${refusedName} couldn't run its last task: its provider refused the API key. Check the key, or pick another model.`}
+                    </AlertDescription>
+                  </Alert>
                 ) : undefined
               }
             >
@@ -421,19 +449,25 @@ export default function Defaults() {
               >
                 <SelectTrigger
                   id="defaults-task-model"
-                  className="w-full sm:w-56"
+                  // Grows to its value, up to 320px, then ends in "…".
+                  className="w-full sm:w-auto sm:max-w-80 sm:min-w-56"
                   size="field"
                   shape="pill"
+                  title={pickedLabel}
                 >
                   <SelectValue placeholder="Unavailable model" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={TASK_MODEL_UNSET}>
-                    {fallbackName ? `Not set (${fallbackName})` : 'Not set'}
+                    <span className="truncate">{unsetLabel}</span>
                   </SelectItem>
                   {models.models.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.display_name}
+                    <SelectItem
+                      key={m.id}
+                      value={m.id}
+                      suffix={m.id === refusedId ? '· key refused' : undefined}
+                    >
+                      <span className="truncate">{m.display_name}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>

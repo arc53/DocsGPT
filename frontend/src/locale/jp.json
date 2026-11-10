@@ -166,7 +166,9 @@
       "taskModelInstanceDefault": "インスタンスのデフォルトを使用（{{model}}）",
       "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルトを使用",
       "taskModelUnavailable": "タスクモデルを実行できなくなりました（無効化または削除されました）。そのため、インスタンスのデフォルトが使われます。モデルが戻ると再び使われます。置き換えるには、ここでオプションを選んでください。",
-      "taskModelUnavailableValue": "利用できないモデル"
+      "taskModelUnavailableValue": "利用できないモデル",
+      "taskModelFailed": "{{model}} で前回のタスクを実行できませんでした。プロバイダーが API キーを拒否しました。別のモデルを選ぶか、管理者にキーの確認を依頼してください。",
+      "taskModelFailedItem": "· キーが拒否されました"
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",

@@ -167,7 +167,9 @@
       "taskModelInstanceDefault": "Instanz-Standard verwenden ({{model}})",
       "taskModelInstanceDefaultUnnamed": "Instanz-Standard verwenden",
       "taskModelUnavailable": "Ihr Aufgabenmodell kann nicht mehr ausgeführt werden (es wurde deaktiviert oder entfernt), daher läuft der Instanz-Standard. Ist das Modell wieder verfügbar, läuft es erneut; wählen Sie hier eine Option, um es zu ersetzen.",
-      "taskModelUnavailableValue": "Modell nicht verfügbar"
+      "taskModelUnavailableValue": "Modell nicht verfügbar",
+      "taskModelFailed": "{{model}} konnte Ihre letzte Aufgabe nicht ausführen: Der Anbieter hat den API-Schlüssel abgelehnt. Wählen Sie ein anderes Modell oder bitten Sie einen Admin, den Schlüssel zu prüfen.",
+      "taskModelFailedItem": "· Schlüssel abgelehnt"
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",

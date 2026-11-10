@@ -168,7 +168,9 @@
       "taskModelInstanceDefault": "Usar el valor predeterminado de la instancia ({{model}})",
       "taskModelInstanceDefaultUnnamed": "Usar el valor predeterminado de la instancia",
       "taskModelUnavailable": "Tu modelo de tareas ya no puede ejecutarse (se desactivó o se eliminó), así que se usa el valor predeterminado de la instancia. Si el modelo vuelve, se usará de nuevo; elige una opción aquí para reemplazarlo.",
-      "taskModelUnavailableValue": "Modelo no disponible"
+      "taskModelUnavailableValue": "Modelo no disponible",
+      "taskModelFailed": "{{model}} no pudo ejecutar tu última tarea: su proveedor rechazó la clave de API. Elige otro modelo o pide a un administrador que revise la clave.",
+      "taskModelFailedItem": "· clave rechazada"
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
