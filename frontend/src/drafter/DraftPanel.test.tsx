@@ -88,6 +88,7 @@ function Host({
     | 'readsAgents'
     | 'onSkipQuestions'
     | 'statusLabel'
+    | 'intro'
   >
 >) {
   const session = useDrafterSession({
@@ -170,6 +171,17 @@ describe('DraftPanel', () => {
       (b) =>
         b.textContent?.trim() === name || b.getAttribute('aria-label') === name,
     );
+  it('leaves out an empty intro instead of drawing a blank line', async () => {
+    const intros = () =>
+      Array.from(document.body.querySelectorAll('p.whitespace-pre-wrap')).map(
+        (p) => p.textContent,
+      );
+    expect(intros()).toContain('Tell me');
+    await act(async () => root.render(<Host intro="" />));
+    expect(intros()).not.toContain('');
+    expect(intros()).not.toContain('Tell me');
+  });
+
   const askBar = () =>
     container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="drafter.askLabel"]',

@@ -4597,7 +4597,6 @@
       "backToDrafter": "Back to DocsGPT"
     },
     "title": "Draft with DocsGPT",
-    "draft": "Draft",
     "improve": "Improve",
     "drafted": "Drafted",
     "undoField": "Undo {{field}}",

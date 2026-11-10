@@ -4842,7 +4842,6 @@
       "backToDrafter": "Вернуться к DocsGPT"
     },
     "title": "Черновик с DocsGPT",
-    "draft": "Набросать",
     "improve": "Улучшить",
     "drafted": "Черновик",
     "undoField": "Отменить: {{field}}",

@@ -4556,7 +4556,6 @@
       "backToDrafter": "DocsGPT に戻る"
     },
     "title": "DocsGPT で下書き",
-    "draft": "下書き",
     "improve": "改善",
     "drafted": "下書き済み",
     "undoField": "{{field}} を元に戻す",

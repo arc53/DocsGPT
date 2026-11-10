@@ -549,9 +549,11 @@ export function DraftPanel({
           {before}
           {items.length === 0 && !streaming && (
             <div className="flex flex-col gap-3">
-              <p className="text-sm wrap-break-word whitespace-pre-wrap">
-                {intro}
-              </p>
+              {intro && (
+                <p className="text-sm wrap-break-word whitespace-pre-wrap">
+                  {intro}
+                </p>
+              )}
               {suggestionGroups ? (
                 <div className="flex flex-col gap-4">
                   {suggestionGroups.map((group) => (

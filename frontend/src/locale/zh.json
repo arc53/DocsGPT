@@ -4554,7 +4554,6 @@
       "backToDrafter": "返回 DocsGPT"
     },
     "title": "用 DocsGPT 起草",
-    "draft": "起草",
     "improve": "改进",
     "drafted": "已起草",
     "undoField": "撤销{{field}}",

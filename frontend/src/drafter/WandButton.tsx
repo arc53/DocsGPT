@@ -42,7 +42,7 @@ export function WandButton({
   const { t } = useTranslation();
   const word =
     mode === 'draft'
-      ? t('drafter.draft')
+      ? t('drafter.build')
       : mode === 'write'
         ? t('drafter.prompt.write')
         : mode === 'resume'

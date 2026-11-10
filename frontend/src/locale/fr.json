@@ -4709,7 +4709,6 @@
       "backToDrafter": "Retour à DocsGPT"
     },
     "title": "Rédiger avec DocsGPT",
-    "draft": "Rédiger",
     "improve": "Améliorer",
     "drafted": "Rédigé",
     "undoField": "Annuler {{field}}",

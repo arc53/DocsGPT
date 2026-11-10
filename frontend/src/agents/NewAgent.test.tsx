@@ -2672,7 +2672,7 @@ describe('NewAgent drafter', () => {
 
   it('greets an empty new agent with the plan and starts at Basics', async () => {
     await render();
-    expect(wand()!.textContent).toContain('drafter.draft');
+    expect(wand()!.textContent).toContain('drafter.build');
     // No describe box on the form.
     expect(container.querySelector('textarea[rows="3"]')).toBeNull();
     await act(async () => wand()!.click());
