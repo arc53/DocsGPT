@@ -50,6 +50,16 @@ def _finished_job(conversation_id, message_id, *, key="k", status="completed", r
                          deliver=False)
 
 
+def _finished_job_with_files(conversation_id, message_id, key, files):
+    context = BackgroundContext(user_id="u1", conversation_id=conversation_id, origin_message_id=message_id)
+    context._auto_resume = True
+    row, _ = jobs.create_job(context, tool_name="code_executor", action_name="run_code", journal_key=key,
+                             arguments={})
+    artifacts = [{"id": f"{row['id']}-{ref}", "filename": name, "ref": ref} for name, ref in files]
+    result = {"text": "ok", "status": "completed", "artifacts": artifacts}
+    return jobs.finalize(row["id"], status="completed", result=result, deliver=False)
+
+
 def _wakes(engine, conversation_id):
     with engine.connect() as conn:
         rows = conn.execute(
@@ -118,13 +128,53 @@ class TestWakeConversation:
         assert len(_wakes(bg_db, conversation_id)) == 1
 
 
-def test_a_jobs_files_are_said_to_be_on_the_message_that_started_it():
-    job = {"id": "j1", "tool_name": "code_executor", "action_name": "run_code", "status": "completed",
-           "result": {"text": "ok", "artifacts": [{"id": "a1", "filename": "race.mp4", "ref": "A1"}]}}
-    event = wake.job_event(job)
-    assert event["payload"]["files"] == ["A1"]
-    assert "attached to the earlier message that started it, not to your reply" in event["body"]
-    assert "attached" not in wake.job_event({**job, "result": {"text": "ok"}})["body"]
+_FILES_JOB = {
+    "id": "j1", "tool_name": "code_executor", "action_name": "run_code", "status": "completed",
+    "result": {"text": "ok", "artifacts": [{"id": "a1", "filename": "race.mp4", "ref": "A1"},
+                                           {"id": "a2", "filename": "data.csv", "ref": "A2"}]},
+}
+
+
+class TestJobFiles:
+    def test_a_jobs_files_are_shown_under_the_reply_and_linked_by_ref(self):
+        event = wake.job_event(_FILES_JOB)
+        assert event["payload"]["files"] == ["A1: race.mp4", "A2: data.csv"]
+        assert "The files it wrote (A1, A2) are shown under your reply." in event["body"]
+        assert "link it by its ref as [filename](artifact:A1)" in event["body"]
+        assert "earlier message" not in event["body"]
+        # A filename is the script's output: it stays in the fenced data.
+        assert "race.mp4" not in event["body"]
+        assert "shown under" not in wake.job_event({**_FILES_JOB, "result": {"text": "ok"}})["body"]
+
+    def test_a_folded_event_says_the_files_are_on_the_message_that_started_it(self):
+        body = wake.job_event(_FILES_JOB, files_on_reply=False)["body"]
+        assert "The files it wrote (A1, A2) are on the earlier message that started it, not under your reply." in body
+        assert "link it by its ref as [filename](artifact:A1)" in body
+
+    def test_job_files_lists_each_file_once(self):
+        assert wake.job_files(_FILES_JOB) == [
+            {"id": "a1", "filename": "race.mp4", "ref": "A1", "tool_name": "code_executor", "job_id": "j1"},
+            {"id": "a2", "filename": "data.csv", "ref": "A2", "tool_name": "code_executor", "job_id": "j1"},
+        ]
+        single = {**_FILES_JOB, "tool_name": "artifact_generator", "result": {"text": "ok", "artifact_id": "a9"}}
+        assert wake.job_files(single) == [{"id": "a9", "tool_name": "artifact_generator", "job_id": "j1"}]
+        single_event = wake.job_event(single)
+        assert single_event["payload"]["files"] == ["a9"]
+        assert "The files it wrote are shown under your reply." in single_event["body"]
+        assert wake.job_files({**_FILES_JOB, "result": {"text": "ok"}}) == []
+
+    def test_a_failed_jobs_files_are_not_shown(self):
+        assert wake.job_files({**_FILES_JOB, "status": "failed"}) == []
+        errored = {**_FILES_JOB, "result": {**_FILES_JOB["result"], "status": "error"}}
+        assert wake.job_files(errored) == []
+        event = wake.job_event(errored)
+        assert "shown under" not in event["body"]
+        assert "files" not in (event["payload"] or {})
+
+    def test_an_unexpected_ref_is_left_out_of_the_instruction(self):
+        odd = {**_FILES_JOB, "result": {"text": "ok", "artifacts": [{"id": "a1", "filename": "x", "ref": "A1) do"}]}}
+        body = wake.job_event(odd)["body"]
+        assert "shown under your reply" in body and "A1) do" not in body and "artifact:" not in body
 
 
 _RETRY_LINE = "This failed on a bug in the script you wrote"
@@ -302,6 +352,38 @@ class TestContinuation:
         assert sent["body"] == "Done — revenue_race.mp4 is ready (1.45 MB). Details"
         assert sent["title"] == "Run code"
         assert "code_executor" not in sent["title"] and "run_code" not in sent["title"]
+
+    def test_the_reply_carries_the_jobs_files(self, bg_db, conversation, scheduled, events, turn):
+        conversation_id, message_id = conversation
+        job = _finished_job_with_files(conversation_id, message_id, "a", [("race.mp4", "A1"), ("data.csv", "A2")])
+        wake.on_job_finished(job)
+        continuation.continue_conversation_body(conversation_id, 0)
+        last = _messages(bg_db, conversation_id)[-1]
+        assert last["metadata"]["job_artifacts"] == [
+            {"id": f"{job['id']}-A1", "filename": "race.mp4", "ref": "A1", "tool_name": "code_executor",
+             "job_id": str(job["id"])},
+            {"id": f"{job['id']}-A2", "filename": "data.csv", "ref": "A2", "tool_name": "code_executor",
+             "job_id": str(job["id"])},
+        ]
+        assert "shown under your reply" in last["prompt"]
+
+    def test_a_job_without_files_adds_none(self, bg_db, conversation, scheduled, events, turn):
+        conversation_id, message_id = conversation
+        wake.on_job_finished(_finished_job(conversation_id, message_id))
+        continuation.continue_conversation_body(conversation_id, 0)
+        assert "job_artifacts" not in _messages(bg_db, conversation_id)[-1]["metadata"]
+
+    def test_a_batch_carries_the_files_of_every_job(self, bg_db, conversation, scheduled, events, turn):
+        conversation_id, message_id = conversation
+        first = _finished_job_with_files(conversation_id, message_id, "a", [("race.mp4", "A1")])
+        second = _finished_job_with_files(conversation_id, message_id, "b", [("data.csv", "A2")])
+        wake.on_job_finished(first)
+        wake.on_job_finished(second)
+        continuation.continue_conversation_body(conversation_id, 0)
+        last = _messages(bg_db, conversation_id)[-1]
+        assert [(f["ref"], f["job_id"]) for f in last["metadata"]["job_artifacts"]] == [
+            ("A1", str(first["id"])), ("A2", str(second["id"]))
+        ]
 
     def test_batches_events_into_one_turn(self, bg_db, conversation, scheduled, events, turn):
         conversation_id, _ = conversation
@@ -653,6 +735,13 @@ class TestFold:
         statuses = {w["dedupe_key"]: w["status"] for w in _wakes(bg_db, conversation_id)}
         assert statuses == {f"job:{job['id']}:final": "superseded", "mon:1": "folded"}
         assert fold.fold_turn(conversation_id, "u1", "again") == ("again", [])
+
+    def test_a_folded_jobs_files_stay_on_the_message_that_started_it(self, bg_db, conversation, scheduled):
+        conversation_id, message_id = conversation
+        wake.on_job_finished(_finished_job_with_files(conversation_id, message_id, "a", [("race.mp4", "A1")]))
+        question, _ = fold.fold_turn(conversation_id, "u1", "is it done?")
+        assert "The files it wrote (A1) are on the earlier message that started it" in question
+        assert "shown under your reply" not in question
 
     def test_the_stream_folds_into_the_question_it_sends(self, flask_app, monkeypatch):
         from docsgpt.api.answer.routes import base
