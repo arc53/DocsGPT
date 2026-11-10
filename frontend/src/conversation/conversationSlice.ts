@@ -56,6 +56,7 @@ import {
   Status,
 } from './conversationModels';
 import { ToolCallsType } from './types';
+import { readJobArtifacts } from './artifactChips';
 import {
   applyLoopItem,
   applyWorkflowStep,
@@ -128,6 +129,8 @@ export function mapServerQueryToClient(raw: any): Query {
 
   const wake = wakeFromMetadata(metadata);
   if (wake) query.wake = wake;
+  const jobArtifacts = readJobArtifacts(metadata.job_artifacts);
+  if (jobArtifacts) query.job_artifacts = jobArtifacts;
 
   if (
     isTerminalComplete ||

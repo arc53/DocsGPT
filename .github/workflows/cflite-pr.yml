@@ -1,0 +1,55 @@
+name: ClusterFuzzLite PR fuzzing
+
+# Builds the atheris harnesses in tests/fuzz/ and fuzzes them for a few
+# minutes on every pull request that touches the backend or the harnesses.
+on:
+  pull_request:
+    paths:
+      - "docsgpt/**"
+      - "tests/fuzz/**"
+      - ".clusterfuzzlite/**"
+      - ".github/workflows/cflite-pr.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz changed code
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read # download the corpus batch fuzzing stored as artifacts
+    steps:
+      - name: Build fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+
+      - name: Run fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Total budget, shared by the harnesses.
+          fuzz-seconds: 480
+          mode: code-change
+          sanitizer: address
+
+      - name: Upload crash
+        if: failure() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crash
+          path: ./out/artifacts
+          if-no-files-found: ignore
+          retention-days: 14

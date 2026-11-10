@@ -18,7 +18,7 @@
 # The web UI, built by the same script the Python package build runs. The API
 # serves it from docsgpt/static (docsgpt/ui.py). The output is static files, so
 # this stage runs on the build machine's platform whatever the target is.
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS ui
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS ui
 
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json frontend/
@@ -28,7 +28,7 @@ COPY scripts/build_frontend.sh scripts/
 RUN mkdir docsgpt && bash scripts/build_frontend.sh
 
 
-FROM ubuntu:24.04 AS builder
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -45,10 +45,11 @@ COPY docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requireme
 RUN python3.12 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
-# http-ece (pulled in by pywebpush for Web Push) is pure Python and has only ever shipped
-# an sdist, so it is the one package allowed to build from source.
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --only-binary=:all: --no-binary=http-ece -r requirements.txt
+# The exported requirements carry uv.lock's hashes; --require-hashes makes pip
+# refuse anything unpinned or with a different hash. http-ece (pulled in by
+# pywebpush for Web Push) is pure Python and has only ever shipped an sdist, so
+# it is the one package allowed to build from source.
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: --no-binary=http-ece -r requirements.txt
 
 # Optional extras. Each requirements-<extra>.txt is exported from the same
 # lock as requirements.txt, so installing it on top only adds the extra's
@@ -61,7 +62,7 @@ RUN set -e; \
     if [ "$INSTALL_DOCLING" = "true" ]; then extras="$extras,docling"; fi; \
     for extra in $(echo "$extras" | tr ',' ' '); do \
         echo "Installing extra: $extra"; \
-        pip install --no-cache-dir -r "requirements-$extra.txt"; \
+        pip install --no-cache-dir --require-hashes -r "requirements-$extra.txt"; \
     done
 
 # google-api-python-client bundles discovery documents for ~600 Google APIs
@@ -71,7 +72,7 @@ RUN find /venv/lib/python3.12/site-packages/googleapiclient/discovery_cache/docu
         -type f ! -name 'drive.v3.json' -delete
 
 
-FROM ubuntu:24.04 AS final
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS final
 
 ENV DEBIAN_FRONTEND=noninteractive
 

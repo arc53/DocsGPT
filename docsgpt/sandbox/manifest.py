@@ -113,7 +113,7 @@ PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "pypdf==7.0.0", "import": "pypdf", "use": "read, merge and split PDFs"},
     {"spec": "pdfplumber==0.11.10", "import": "pdfplumber", "use": "PDF text, tables and page images"},
     {"spec": "pdfminer.six==20260107", "import": "pdfminer", "use": "PDF text layout (pdfplumber's engine)"},
-    {"spec": "pypdfium2==5.15.1", "import": "pypdfium2", "use": "render PDF pages to images"},
+    {"spec": "pypdfium2==5.15.2", "import": "pypdfium2", "use": "render PDF pages to images"},
     {"spec": "pytesseract==0.3.13", "import": "pytesseract", "use": "OCR through the tesseract binary"},
     {"spec": "imageio==2.38.1", "import": "imageio", "use": "animated GIF, WebP and PNG (MP4: the ffmpeg command)"},
 )

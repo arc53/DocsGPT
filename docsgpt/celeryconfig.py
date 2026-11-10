@@ -83,7 +83,8 @@ task_queues = tuple(
     )
 )
 
-beat_scheduler = "redbeat.RedBeatScheduler"
+# RedBeat, made to survive losing its lock (a sleeping Mac) or Redis; see docsgpt/beat_scheduler.py.
+beat_scheduler = "docsgpt.beat_scheduler:DocsGPTScheduler"
 redbeat_redis_url = broker_url
 redbeat_key_prefix = "redbeat:docsgpt:"
 redbeat_lock_timeout = 90
