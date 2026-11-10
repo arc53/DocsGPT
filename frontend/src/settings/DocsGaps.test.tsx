@@ -509,11 +509,29 @@ describe('DocsGaps', () => {
       );
       const url = new URL(link.getAttribute('href')!, 'http://x');
       expect(url.pathname).toBe('/agents/manage/edit/a1');
+      // The page goes with it by the row's key, which the server reads the
+      // gap's questions by.
       expect(Object.fromEntries(url.searchParams)).toEqual({
         improve: 'gap',
         gap_type: 'docs missing',
         where: 'Installing on Docker',
+        group_by: 'page',
+        group_key: '/install/docker',
       });
+    });
+
+    it('carries the source, or none for the no-source row', async () => {
+      store.drafter = { enabled: true };
+      localStorage.setItem('DocsGPTDocsGapsGroup', 'source');
+      respond({ rows: [row({ key: null, name: null })] });
+      await render({ agent: editor });
+      const url = new URL(
+        improve(await openFirst())!.getAttribute('href')!,
+        'http://x',
+      );
+      expect(url.searchParams.get('group_by')).toBe('source');
+      expect(url.searchParams.has('group_key')).toBe(false);
+      expect(url.searchParams.has('topic')).toBe(false);
     });
 
     it('carries the topic when the rows are topics', async () => {
@@ -527,6 +545,8 @@ describe('DocsGaps', () => {
       );
       expect(url.searchParams.get('topic')).toBe('Returns');
       expect(url.searchParams.get('where')).toBe('Returns');
+      expect(url.searchParams.get('group_by')).toBe('topic');
+      expect(url.searchParams.has('group_key')).toBe(false);
     });
 
     it('offers none to a viewer, a workflow, with the drafter off, before the agent loads, or across agents', async () => {

@@ -17,6 +17,8 @@ describe('improveLink', () => {
       gap_type: 'docs missing',
       topic: 'Returns & claims',
       where: 'Returns & claims',
+      group_by: 'topic' as const,
+      group_key: null,
     };
     const path = agentImprovePath('a1', gap);
     expect(path.startsWith('/agents/manage/edit/a1?')).toBe(true);
@@ -26,6 +28,28 @@ describe('improveLink', () => {
         query(agentImprovePath('a1', { ...gap, topic: null, where: '/faq' })),
       ),
     ).toEqual({ ...gap, topic: null, where: '/faq' });
+    // A Page or Source row carries its grouping and the row's key.
+    const page = {
+      ...gap,
+      topic: null,
+      where: 'FAQ',
+      group_by: 'page' as const,
+      group_key: 'https://docs.example.com/faq',
+    };
+    expect(readImproveHandoff(query(agentImprovePath('a1', page)))).toEqual(
+      page,
+    );
+    // The row of answers with no source has no key.
+    const noSource = { ...page, group_by: 'source' as const, group_key: null };
+    expect(readImproveHandoff(query(agentImprovePath('a1', noSource)))).toEqual(
+      noSource,
+    );
+    // A link from before the grouping reads as a topic's.
+    expect(
+      readImproveHandoff(
+        new URLSearchParams('improve=gap&gap_type=docs+missing&where=Returns'),
+      ),
+    ).toEqual({ ...gap, topic: null, where: 'Returns' });
     const conversation = {
       kind: 'conversation' as const,
       conversation_id: CONVERSATION,
@@ -44,6 +68,14 @@ describe('improveLink', () => {
     expect(read('improve=gap&where=Page')).toBeNull();
     expect(read('improve=gap&gap_type=docs%20missing')).toBeNull();
     expect(read(`improve=gap&gap_type=${'x'.repeat(65)}&where=P`)).toBeNull();
+    expect(
+      read('improve=gap&gap_type=docs+missing&where=P&group_by=folder'),
+    ).toBeNull();
+    expect(
+      read(
+        `improve=gap&gap_type=docs+missing&where=P&group_by=page&group_key=${'k'.repeat(501)}`,
+      ),
+    ).toBeNull();
   });
 
   it('lets only an editor of a classic agent, with access fields, improve it', () => {

@@ -4684,7 +4684,7 @@
         "changePlaceholder": "Or tell me what to change…",
         "steps": {
           "basics": "Basics",
-          "knowledge": "Knowledge and tools",
+          "knowledge": "Knowledge",
           "prompt": "Prompt and starters",
           "safety": "Limits and safety"
         },
@@ -4752,8 +4752,8 @@
         "viewHint": "Check it in the prompt view: change it there, or tell me here, then press Use this prompt. It's saved to your prompts when you do.",
         "newPrompt": "New prompt",
         "use": "Use this prompt",
-        "saved_one": "Prompt saved and set. I wrote {{count}} starter from it: check it under Starters.",
-        "saved_other": "Prompt saved and set. I wrote {{count}} starters from it: check them under Starters.",
+        "saved_one": "Prompt saved and set. {{count}} starter is ready under Starters: check it.",
+        "saved_other": "Prompt saved and set. {{count}} starters are ready under Starters: check them.",
         "savedOnly": "Prompt saved and set.",
         "parked": "The prompt I wrote is still open, not saved.",
         "open": "Open prompt",
@@ -4789,7 +4789,12 @@
         "seeInLogs": "See the questions in Logs",
         "quoted": "“{{text}}”",
         "improveAgent": "Improve the agent",
-        "fromConversation": "Improve the agent from this conversation"
+        "fromConversation": "Improve the agent from this conversation",
+        "fixDocsGap": {
+          "page": "Fix the docs gap on “{{where}}”",
+          "source": "Fix the docs gap in “{{where}}”",
+          "topic": "Fix the docs gap in “{{where}}”"
+        }
       }
     },
     "topics": {

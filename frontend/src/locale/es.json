@@ -4802,7 +4802,7 @@
         "changePlaceholder": "O dime qué cambiar…",
         "steps": {
           "basics": "Básico",
-          "knowledge": "Conocimiento y herramientas",
+          "knowledge": "Conocimiento",
           "prompt": "Prompt y preguntas de inicio",
           "safety": "Límites y seguridad"
         },
@@ -4877,9 +4877,9 @@
         "viewHint": "Revísalo en la vista del prompt: cámbialo ahí o dímelo aquí, y luego pulsa Usar este prompt. Se guarda en tus prompts cuando lo hagas.",
         "newPrompt": "Nuevo prompt",
         "use": "Usar este prompt",
-        "saved_one": "Prompt guardado y asignado. Escribí {{count}} pregunta de inicio a partir de él: revísala en Preguntas de inicio.",
-        "saved_other": "Prompt guardado y asignado. Escribí {{count}} preguntas de inicio a partir de él: revísalas en Preguntas de inicio.",
-        "saved_many": "Prompt guardado y asignado. Escribí {{count}} preguntas de inicio a partir de él: revísalas en Preguntas de inicio.",
+        "saved_one": "Prompt guardado y asignado. {{count}} pregunta de inicio está lista en Preguntas de inicio: revísala.",
+        "saved_other": "Prompt guardado y asignado. {{count}} preguntas de inicio están listas en Preguntas de inicio: revísalas.",
+        "saved_many": "Prompt guardado y asignado. {{count}} preguntas de inicio están listas en Preguntas de inicio: revísalas.",
         "savedOnly": "Prompt guardado y asignado.",
         "parked": "El prompt que escribí sigue abierto, sin guardar.",
         "open": "Abrir prompt",
@@ -4919,7 +4919,12 @@
         "seeInLogs": "Ver las preguntas en los registros",
         "quoted": "«{{text}}»",
         "improveAgent": "Mejorar el agente",
-        "fromConversation": "Mejora el agente a partir de esta conversación"
+        "fromConversation": "Mejora el agente a partir de esta conversación",
+        "fixDocsGap": {
+          "page": "Corrige el hueco de documentación en la página «{{where}}»",
+          "source": "Corrige el hueco de documentación en «{{where}}»",
+          "topic": "Corrige el hueco de documentación en «{{where}}»"
+        }
       }
     },
     "topics": {

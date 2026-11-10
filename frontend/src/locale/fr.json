@@ -4802,7 +4802,7 @@
         "changePlaceholder": "Ou dites-moi quoi modifier…",
         "steps": {
           "basics": "Informations de base",
-          "knowledge": "Connaissances et outils",
+          "knowledge": "Connaissances",
           "prompt": "Prompt et questions de départ",
           "safety": "Limites et sécurité"
         },
@@ -4877,9 +4877,9 @@
         "viewHint": "Vérifiez-le dans la vue du prompt : modifiez-le là, ou dites-le-moi ici, puis appuyez sur Utiliser ce prompt. Il est enregistré dans vos prompts à ce moment-là.",
         "newPrompt": "Nouveau prompt",
         "use": "Utiliser ce prompt",
-        "saved_one": "Prompt enregistré et défini. J’en ai tiré {{count}} question de départ : vérifiez-la sous Questions de départ.",
-        "saved_other": "Prompt enregistré et défini. J’en ai tiré {{count}} questions de départ : vérifiez-les sous Questions de départ.",
-        "saved_many": "Prompt enregistré et défini. J’en ai tiré {{count}} questions de départ : vérifiez-les sous Questions de départ.",
+        "saved_one": "Prompt enregistré et défini. {{count}} question de départ est prête sous Questions de départ : vérifiez-la.",
+        "saved_other": "Prompt enregistré et défini. {{count}} questions de départ sont prêtes sous Questions de départ : vérifiez-les.",
+        "saved_many": "Prompt enregistré et défini. {{count}} questions de départ sont prêtes sous Questions de départ : vérifiez-les.",
         "savedOnly": "Prompt enregistré et défini.",
         "parked": "Le prompt que j’ai rédigé est toujours ouvert, non enregistré.",
         "open": "Ouvrir le prompt",
@@ -4919,7 +4919,12 @@
         "seeInLogs": "Voir les questions dans les journaux",
         "quoted": "« {{text}} »",
         "improveAgent": "Améliorer l’agent",
-        "fromConversation": "Améliore l’agent à partir de cette conversation"
+        "fromConversation": "Améliore l’agent à partir de cette conversation",
+        "fixDocsGap": {
+          "page": "Corrige la lacune de documentation sur « {{where}} »",
+          "source": "Corrige la lacune de documentation dans « {{where}} »",
+          "topic": "Corrige la lacune de documentation dans « {{where}} »"
+        }
       }
     },
     "topics": {

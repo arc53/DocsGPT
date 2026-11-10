@@ -11,14 +11,27 @@ import { GuardedAgentContext } from './hooks/useAgent';
 import { agentEditPath, isWorkflowAgent } from './paths';
 import type { Agent } from './types';
 
+/** How the Docs gaps panel grouped the row a gap hand-off came from. */
+export type GapGroup = 'page' | 'source' | 'topic';
+const GAP_GROUPS: readonly GapGroup[] = ['page', 'source', 'topic'];
+
 /**
  * What the agent form's drawer starts on when opened from Insights or Logs:
  * a gap (the Docs gaps panel) or one conversation (a Logs row). `where` is
  * the panel's name for the gap's group (a page, a source or a topic), for
- * the message it sends.
+ * the message it sends. A Page or Source row also carries `group_key`, the
+ * row's key as the server groups by it (null for the row of answers with
+ * no source), which the drafter reads that row's questions by.
  */
 export type ImproveHandoff =
-  | { kind: 'gap'; gap_type: string; topic: string | null; where: string }
+  | {
+      kind: 'gap';
+      gap_type: string;
+      topic: string | null;
+      where: string;
+      group_by: GapGroup;
+      group_key: string | null;
+    }
   | { kind: 'conversation'; conversation_id: string };
 
 /** The query keys a hand-off uses; the form drops them once it has read them. */
@@ -27,6 +40,8 @@ export const IMPROVE_PARAMS = [
   'gap_type',
   'topic',
   'where',
+  'group_by',
+  'group_key',
   'conversation',
 ] as const;
 
@@ -36,6 +51,8 @@ const UUID_RE =
 /** Longest gap type and names a link carries (a topic name is at most 60). */
 const GAP_TYPE_MAX = 64;
 const NAME_MAX = 300;
+/** Longest row key a link carries (a page's URL), as the server cuts it. */
+const GROUP_KEY_MAX = 500;
 
 /**
  * The agent form with its drawer opening in improve mode on `handoff`.
@@ -56,6 +73,8 @@ export function agentImprovePath(
     params.set('gap_type', handoff.gap_type);
     if (handoff.topic) params.set('topic', handoff.topic);
     params.set('where', handoff.where);
+    params.set('group_by', handoff.group_by);
+    if (handoff.group_key) params.set('group_key', handoff.group_key);
   } else params.set('conversation', handoff.conversation_id);
   return `${agentEditPath(agentId)}?${params.toString()}`;
 }
@@ -81,10 +100,22 @@ export function readImproveHandoff(
   const gapType = params.get('gap_type')?.trim() ?? '';
   const where = params.get('where')?.trim() ?? '';
   const topic = params.get('topic')?.trim() || null;
+  // A link from before the grouping went with it is a topic's.
+  const groupBy = (params.get('group_by') ?? 'topic') as GapGroup;
+  const groupKey = params.get('group_key')?.trim() || null;
   if (!gapType || gapType.length > GAP_TYPE_MAX || !where) return null;
   if (where.length > NAME_MAX || (topic && topic.length > NAME_MAX))
     return null;
-  return { kind, gap_type: gapType, topic, where };
+  if (!GAP_GROUPS.includes(groupBy)) return null;
+  if (groupKey && groupKey.length > GROUP_KEY_MAX) return null;
+  return {
+    kind,
+    gap_type: gapType,
+    topic,
+    where,
+    group_by: groupBy,
+    group_key: groupBy === 'topic' ? null : groupKey,
+  };
 }
 
 /**

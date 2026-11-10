@@ -4663,7 +4663,7 @@
         "changePlaceholder": "Oder sag mir, was ich ändern soll…",
         "steps": {
           "basics": "Grundlagen",
-          "knowledge": "Wissen und Tools",
+          "knowledge": "Wissen",
           "prompt": "Prompt und Einstiegsfragen",
           "safety": "Limits und Sicherheit"
         },
@@ -4731,8 +4731,8 @@
         "viewHint": "Prüfe ihn in der Prompt-Ansicht: Ändere ihn dort oder sag es mir hier, dann klick auf Diesen Prompt verwenden. Erst dann wird er bei deinen Prompts gespeichert.",
         "newPrompt": "Neuer Prompt",
         "use": "Diesen Prompt verwenden",
-        "saved_one": "Prompt gespeichert und gesetzt. Ich habe daraus {{count}} Einstiegsfrage geschrieben: Prüfe sie unter Einstiegsfragen.",
-        "saved_other": "Prompt gespeichert und gesetzt. Ich habe daraus {{count}} Einstiegsfragen geschrieben: Prüfe sie unter Einstiegsfragen.",
+        "saved_one": "Prompt gespeichert und gesetzt. {{count}} Einstiegsfrage steht unter Einstiegsfragen bereit: Prüfe sie.",
+        "saved_other": "Prompt gespeichert und gesetzt. {{count}} Einstiegsfragen stehen unter Einstiegsfragen bereit: Prüfe sie.",
         "savedOnly": "Prompt gespeichert und gesetzt.",
         "parked": "Der Prompt, den ich geschrieben habe, ist noch offen und nicht gespeichert.",
         "open": "Prompt öffnen",
@@ -4768,7 +4768,12 @@
         "seeInLogs": "Die Fragen in den Protokollen ansehen",
         "quoted": "„{{text}}“",
         "improveAgent": "Agenten verbessern",
-        "fromConversation": "Verbessere den Agenten anhand dieser Unterhaltung"
+        "fromConversation": "Verbessere den Agenten anhand dieser Unterhaltung",
+        "fixDocsGap": {
+          "page": "Behebe die Doku-Lücke auf „{{where}}“",
+          "source": "Behebe die Doku-Lücke in „{{where}}“",
+          "topic": "Behebe die Doku-Lücke in „{{where}}“"
+        }
       }
     },
     "topics": {

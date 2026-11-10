@@ -1444,11 +1444,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (!handoff || !drafterEnabled || !agent.id || buildRef.current.guided)
       return;
     if (handoff.kind === 'gap') {
+      const { group_by: groupBy, group_key: groupKey } = handoff;
+      // A Page or Source row is read by its key, not by a topic.
       improveFocusRef.current = {
-        gap: { topic: handoff.topic, gap_type: handoff.gap_type },
+        gap: {
+          topic: handoff.topic,
+          gap_type: handoff.gap_type,
+          ...(groupBy === 'topic'
+            ? {}
+            : { group_by: groupBy, group_key: groupKey }),
+        },
       };
+      // The user's words for the row, quoted: "Fix the docs gap on
+      // “App Configuration”".
       drafterSessionRef.current.send(
-        gapRequest(t, { topic: handoff.where, gap_type: handoff.gap_type }),
+        handoff.gap_type === 'docs missing'
+          ? t(`drafter.agent.insights.fixDocsGap.${groupBy}`, {
+              where: handoff.where,
+              interpolation: { escapeValue: false },
+            })
+          : gapRequest(t, { topic: handoff.where, gap_type: handoff.gap_type }),
       );
     } else {
       improveFocusRef.current = { conversation_id: handoff.conversation_id };

@@ -270,7 +270,9 @@ export default function DocsGaps({
   /**
    * The agent form, its drawer fixing this group's docs gap: the topic goes
    * with it as the server names it (the catch-all as "none of these") when
-   * the rows are topics; the group's shown name words the message.
+   * the rows are topics, a page or source by the row's key otherwise, which
+   * the drafter reads the row's questions by; the group's shown name words
+   * the message.
    */
   const improvePath = (index: number) => {
     const row = rows[index];
@@ -279,6 +281,8 @@ export default function DocsGaps({
       gap_type: 'docs missing',
       topic: groupBy === 'topic' ? row.name || row.key || null : null,
       where: displayName(index),
+      group_by: groupBy,
+      group_key: groupBy === 'topic' ? null : (row.key ?? null),
     });
   };
 

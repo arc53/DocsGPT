@@ -637,7 +637,16 @@ function limitsContext(limits: AgentLimitsValue) {
  * row, the Docs gaps panel) or one conversation in Logs.
  */
 export type AgentImproveFocus = {
-  gap?: { topic: string | null; gap_type: string };
+  /**
+   * The gap, and for a Docs gaps row grouped by page or source that row:
+   * its grouping and key (null for the row with no source).
+   */
+  gap?: {
+    topic: string | null;
+    gap_type: string;
+    group_by?: 'page' | 'source';
+    group_key?: string | null;
+  };
   conversation_id?: string;
 };
 

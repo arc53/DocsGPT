@@ -4635,7 +4635,7 @@
         "changePlaceholder": "或告诉我要改什么…",
         "steps": {
           "basics": "基本信息",
-          "knowledge": "知识与工具",
+          "knowledge": "知识",
           "prompt": "提示词与开场问题",
           "safety": "限制与安全"
         },
@@ -4703,8 +4703,8 @@
         "viewHint": "在提示词视图中查看：在那里修改，或在这里告诉我，然后点击“使用此提示词”。点击后它会保存到你的提示词中。",
         "newPrompt": "新提示词",
         "use": "使用此提示词",
-        "saved_one": "提示词已保存并设置。我据此写了 {{count}} 个开场问题：请在“开场问题”中查看。",
-        "saved_other": "提示词已保存并设置。我据此写了 {{count}} 个开场问题：请在“开场问题”中查看。",
+        "saved_one": "提示词已保存并设置。{{count}} 个开场问题已在“开场问题”中准备好：请查看。",
+        "saved_other": "提示词已保存并设置。{{count}} 个开场问题已在“开场问题”中准备好：请查看。",
         "savedOnly": "提示词已保存并设置。",
         "parked": "我写的提示词仍处于打开状态，尚未保存。",
         "open": "打开提示词",
@@ -4740,7 +4740,12 @@
         "seeInLogs": "在日志中查看这些问题",
         "quoted": "“{{text}}”",
         "improveAgent": "改进智能体",
-        "fromConversation": "根据这段对话改进智能体"
+        "fromConversation": "根据这段对话改进智能体",
+        "fixDocsGap": {
+          "page": "修复页面“{{where}}”的文档缺口",
+          "source": "修复来源“{{where}}”中的文档缺口",
+          "topic": "修复主题“{{where}}”中的文档缺口"
+        }
       }
     },
     "topics": {

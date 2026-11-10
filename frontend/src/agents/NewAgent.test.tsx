@@ -4637,7 +4637,7 @@ describe('NewAgent drafter', () => {
       expect(panel()).not.toBeNull();
       expect(drafter.requests).toHaveLength(1);
       expect(lastRequest().messages).toEqual([
-        { role: 'user', content: 'drafter.agent.insights.fixIn' },
+        { role: 'user', content: 'drafter.agent.insights.fixDocsGap.topic' },
       ]);
       expect(lastRequest().context.gap).toEqual({
         topic: 'Returns',
@@ -4645,6 +4645,22 @@ describe('NewAgent drafter', () => {
       });
       // The hand-off leaves the URL; the rest of the query stays.
       expect(search.value).toBe('?tab=x');
+    });
+
+    it("opens on a page's docs gap by the page, not a topic", async () => {
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=App+Configuration&group_by=page&group_key=https%3A%2F%2Fdocs.example.com%2Fsettings',
+      );
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fixDocsGap.page' },
+      ]);
+      expect(lastRequest().context.gap).toEqual({
+        topic: null,
+        gap_type: 'docs missing',
+        group_by: 'page',
+        group_key: 'https://docs.example.com/settings',
+      });
+      expect(search.value).toBe('');
     });
 
     it('opens on the conversation a Logs row handed over', async () => {
