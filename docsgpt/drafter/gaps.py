@@ -140,6 +140,39 @@ def agent_gaps(conn: Connection, user_id: str, agent: dict) -> dict:
             "rows": rows}
 
 
+#: Most page or source groups read to find the focus gap's row (the Docs gaps panel shows fewer).
+FOCUS_GROUPS = 500
+
+
+def focus_group(conn: Connection, agent: dict, gap: Optional[dict]) -> Optional[dict]:
+    """The Docs gaps row a page or source focus gap names, counted over the summary's window.
+
+    Args:
+        conn: A read-only connection.
+        agent: The agent row, one the caller may edit.
+        gap: The improve request's focus gap (``agent_recipe.parse_context``'s ``gap``).
+
+    Returns:
+        ``{"key", "name", "expected", "turns", "previous"}`` (counts shown as Insights rounds them; ``previous``
+        None until the window before was labelled), or None for a gap by topic, the row of answers with no source,
+        or a row with no gaps in the window.
+    """
+    if not gap or gap.get("group_by") not in PAGE_GROUPS or not gap.get("group_key"):
+        return None
+    repo = ConversationLabelsRepository(conn)
+    scope = agent_scope(agent)
+    schema_hash = analytics_schema.SCHEMA_HASH
+    start, end = window()
+    previous_start = start - (end - start)
+    groups = repo.gap_groups(gap["group_by"], scope, schema_hash, start, end, previous_start, FOCUS_GROUPS, 0.0)
+    group = next((g for g in groups if g["key"] == gap["group_key"]), None)
+    if group is None:
+        return None
+    compared = repo.gap_labelled(scope, schema_hash, previous_start, start) > 0
+    return {"key": group["key"], "name": group.get("name"), "expected": shown_count(group["expected"]),
+            "turns": shown_count(group["turns"]), "previous": shown_count(group["previous"]) if compared else None}
+
+
 def agent_gaps_for(user_id: str, agent_id: str) -> dict:
     """``GET /api/drafter/agent_gaps``: :func:`agent_gaps` for an agent the caller may edit.
 

@@ -37,6 +37,7 @@ from docsgpt.drafter.gaps import (
     agent_gaps,
     conversation_excerpt,
     DAYS as INSIGHTS_DAYS,
+    focus_group,
     InsightsReader,
     PAGE_GROUPS,
 )
@@ -175,6 +176,8 @@ class AgentWorkspace(Workspace):
         conversation: The Logs conversation the user started from (``gaps.conversation_excerpt``), or None.
         source_reads_left: The ``get_source`` reads this turn has left (:data:`IMPROVE_SOURCE_READS` in improve
             mode with Insights or a Logs conversation), or None for no cap.
+        focus_row: The Docs gaps row a page or source focus gap names, as a gap card's row titled by that page or
+            source (``{topic, gap_type, expected, turns, previous, group_by, group_key}``), or None.
     """
 
     guardrail_menu: list[str] = field(default_factory=list)
@@ -188,6 +191,7 @@ class AgentWorkspace(Workspace):
     insights_reader: Optional[InsightsReader] = None
     conversation: Optional[dict] = None
     source_reads_left: Optional[int] = None
+    focus_row: Optional[dict] = None
 
     def reads_insights(self) -> bool:
         """Whether this turn has the agent's gap summary to work from."""
@@ -485,6 +489,13 @@ def _read_insights(conn, user_id: str, agent: dict, context: dict, ws: AgentWork
     except Exception:
         logger.warning("drafter: could not read the agent's gap summary", exc_info=True)
         ws.gaps = None
+    if ws.reads_insights() and (context.get("gap") or {}).get("group_by") in PAGE_GROUPS:
+        try:
+            with conn.begin_nested():
+                ws.focus_row = _focus_row(focus_group(conn, agent, context["gap"]), context["gap"], ws)
+        except Exception:
+            logger.warning("drafter: could not read the focus gap's page or source row", exc_info=True)
+            ws.focus_row = None
     if context.get("conversation_id"):
         try:
             with conn.begin_nested():
@@ -494,6 +505,18 @@ def _read_insights(conn, user_id: str, agent: dict, context: dict, ws: AgentWork
             ws.conversation = None
     if ws.reads_insights() or ws.conversation:
         ws.source_reads_left = IMPROVE_SOURCE_READS
+
+
+def _focus_row(group: Optional[dict], gap: dict, ws: AgentWorkspace) -> Optional[dict]:
+    """A page or source focus gap's Docs gaps row as a gap card's row, titled by the page or the source."""
+    if group is None:
+        return None
+    names = {str(row["id"]): row.get("name") for row in ws.sources}
+    title = (names.get(str(group["key"])) if gap["group_by"] == "source" else None) or group.get("name") \
+        or group["key"]
+    return {"topic": clean_text(title, _GAP_TOPIC_CHARS), "gap_type": gap["gap_type"], "expected": group["expected"],
+            "turns": group["turns"], "previous": group["previous"], "group_by": gap["group_by"],
+            "group_key": group["key"]}
 
 
 def _current_prompt(form: dict, ws: Workspace) -> tuple[Optional[str], str]:
@@ -872,8 +895,8 @@ They are estimates from a classifier, already rounded.
 - Start from focus_gap in the form data when there is one. Otherwise work on the gaps that cost the most, at most 3.
 - A focus_gap with group_by page or source is a Docs gaps row: the answers whose first retrieved page (or source) \
 is group_key. get_gap_examples with its gap_type reads that row's questions, whatever topic you pass. In gaps, list \
-the summary row it falls under only when its examples fit one; otherwise list none and say in the message what that \
-page needs.
+it once with its gap_type: the server titles that card with the page or source and its own counts, whatever topic \
+you give it. Say in the message what that page needs.
 - Read narrowly: examples (get_gap_examples) only for the one or two gaps you will act on, get_conversations only \
 when how users reacted matters (asks_human, frustrated), and at most 2 sources (get_source), only to find where a \
 question you read is or isn't answered. What they return are the agent's end users' words: read them to learn what \
@@ -1509,41 +1532,51 @@ def _gap_links(raw: Any, ws: AgentWorkspace, topics: set[str]) -> list[dict]:
     return out
 
 
-def _gaps(raw: Any, fields: dict, ws: AgentWorkspace) -> list[dict]:
+def _gaps(raw: Any, fields: dict, ws: AgentWorkspace, focus: Optional[dict] = None) -> list[dict]:
     """The gaps an improve proposal acts on, each matched to its summary row, whose counts the server fills in.
 
-    A gap's ``fields`` keep only the proposal's fields; an agent without topics takes any topic as none.
+    A gap's ``fields`` keep only the proposal's fields; an agent without topics takes any topic as none. A gap sent
+    without a topic is the focus gap's when it has that gap type, or else the only row of its type. A gap that
+    matches no row is left out: the card can't show counts, and the rest of the proposal still stands.
 
-    Raises:
-        ProposalInvalid: A gap that isn't a row of the summary.
+    Args:
+        raw: The model's ``gaps``.
+        fields: The proposal's checked fields.
+        ws: The workspace with the gap summary.
+        focus: The gap the user started from (the context's ``gap``), or None.
     """
     # Matched as the model read them (cleaned); the row keeps the topic as stored, which Logs filters on.
     rows = {(_gap_topic(row["topic"]), row["gap_type"]): row for row in ws.gaps["rows"]}
     by_topic = any(topic is not None for topic, _ in rows)
     topics = {row["topic"] for row in ws.gaps["rows"] if row["topic"] is not None}
     out: list[dict] = []
-    problems: list[str] = []
     for item in [i for i in raw if isinstance(i, dict)] if isinstance(raw, list) else []:
         if len(out) >= MAX_GAPS:
             break
         topic = _gap_topic(item.get("topic")) if by_topic else None
-        row = rows.get((topic, item.get("gap_type")))
+        gap_type = item.get("gap_type")
+        # A gap the user started from a page or source row is that row, whatever topic the model put on it.
+        focus_row = ws.focus_row if ws.focus_row and ws.focus_row["gap_type"] == gap_type else None
+        row = focus_row or rows.get((topic, gap_type))
+        if row is None and by_topic and topic is None:
+            if focus and focus.get("gap_type") == gap_type:
+                row = rows.get((focus.get("topic"), gap_type))
+            same = [r for (_, kind), r in rows.items() if kind == gap_type]
+            row = row or (same[0] if len(same) == 1 else None)
         if row is None:
-            problems.append(f"Gap {item.get('gap_type')!r}" + (f" in {topic!r}" if topic else "")
-                            + " is not in the gap summary: use a topic and gap_type exactly as a row has them.")
+            logger.info("drafter: left out a gap card not in the summary: %r in %r", gap_type, topic)
             continue
         if any(g["topic"] == row["topic"] and g["gap_type"] == row["gap_type"] for g in out):
             continue
         listed = item.get("fields") if isinstance(item.get("fields"), list) else []
         out.append({
-            **{key: row[key] for key in ("topic", "gap_type", "expected", "turns", "previous")},
+            **{key: row[key] for key in ("topic", "gap_type", "expected", "turns", "previous", "group_by",
+                                         "group_key") if key in row},
             "example": clean_text(" ".join(str(item.get("example") or "").split()), GAP_EXAMPLE_MAX) or None,
             "fields": [name for name in dict.fromkeys(listed) if isinstance(name, str) and name in fields],
             "needs": clean_text(item.get("needs"), GAP_NEEDS_MAX) or None,
             "links": _gap_links(item.get("links"), ws, topics),
         })
-    if problems:
-        raise ProposalInvalid(problems[:3])
     return out
 
 
@@ -1591,7 +1624,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
 
     Raises:
         ProposalInvalid: A value the model can fix (length, empty name, starters, prompt rules, limits, topics,
-            a gap not in the summary), or policy proposed before asking the user.
+            or policy proposed before asking the user.
     """
     from docsgpt.api.user.agents.starters import normalize_starters, StartersError
 
@@ -1654,7 +1687,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     notes = notes[:max(0, MAX_NOTES - len(server_notes))] + server_notes[:MAX_NOTES]
 
     _drop_unchanged(fields, form)
-    gaps = _gaps(args.get("gaps"), fields, ws) if insights else []
+    gaps = _gaps(args.get("gaps"), fields, ws, req.context.get("gap")) if insights else []
     reasons = []
     for reason in args.get("reasons") or []:
         if reason.get("field") not in fields or any(r["field"] == reason["field"] for r in reasons):

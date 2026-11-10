@@ -23,7 +23,7 @@ from docsgpt.drafter.agent_recipe import (
 )
 from docsgpt.drafter.gaps import NEEDED
 from docsgpt.drafter.read_tools import run_read_tool
-from docsgpt.drafter.recipe import DraftRequest, ProposalInvalid
+from docsgpt.drafter.recipe import DraftRequest
 from docsgpt.drafter.runner import run_draft
 from tests.drafter import insights_seed as seed
 from tests.drafter.fakes import calls, FakeLLM, tool_call
@@ -206,9 +206,35 @@ class TestProposalGaps:
             "previous": None, "example": "Where is shipment MRD-48213?", "fields": ["name"], "needs": None,
             "links": []}]
 
-    def test_a_gap_not_in_the_summary_goes_back_to_the_model(self):
-        with pytest.raises(ProposalInvalid, match="not in the gap summary"):
-            _validate(gaps=[{"topic": "Order status", "gap_type": "docs missing"}])
+    def test_a_gap_not_in_the_summary_is_left_out_and_the_rest_kept(self):
+        # conv_sso_r1: one unmatched card used to reject the whole proposal.
+        proposal = _validate(gaps=[{"topic": "Order status", "gap_type": "docs missing"},
+                                   {"topic": "Returns & claims", "gap_type": "docs missing"}],
+                             fields={"name": "Meridian Help"})
+        assert [g["topic"] for g in proposal["gaps"]] == ["Returns & claims"]
+        assert proposal["fields"] == {"name": "Meridian Help"}
+
+    def test_a_page_focus_gaps_card_is_that_pages_row(self):
+        # The re-check showed "deploying · 3 of 23 questions" for a gap the user started from the settings page.
+        page = {"topic": "App Configuration", "gap_type": "docs missing", "expected": 3, "turns": 4, "previous": None,
+                "group_by": "page", "group_key": "/settings"}
+        focus = {"gap": {"gap_type": "docs missing", "group_by": "page", "group_key": "/settings"}}
+        gaps = _validate(gaps=[{"topic": "Returns & claims", "gap_type": "docs missing"},
+                               {"topic": "Order status", "gap_type": "needs account data"}],
+                         ws=_ws(focus_row=page), context=focus)["gaps"]
+        assert gaps[0] == {**page, "example": None, "fields": [], "needs": None, "links": []}
+        assert gaps[1]["topic"] == "Order status" and "group_by" not in gaps[1]
+
+    def test_a_topicless_gap_takes_the_focus_gaps_topic(self):
+        focus = {"gap": {"topic": "Returns & claims", "gap_type": "docs missing"}}
+        [gap] = _validate(gaps=[{"gap_type": "docs missing"}], context=focus)["gaps"]
+        assert gap["topic"] == "Returns & claims" and gap["expected"] == 23
+
+    def test_a_topicless_gap_matches_the_only_row_of_its_type(self):
+        [gap] = _validate(gaps=[{"gap_type": "docs missing"}])["gaps"]
+        assert gap["topic"] == "Returns & claims"
+        rows = [*ROWS, {**ROWS[1], "topic": "Billing"}]
+        assert _validate(gaps=[{"gap_type": "docs missing"}], ws=_ws(gaps={**SUMMARY, "rows": rows}))["gaps"] == []
 
     def test_links_are_checked_and_named(self):
         links = [{"kind": "source", "id": SOURCE_ID}, {"kind": "source", "id": "not-mine"},
@@ -398,6 +424,10 @@ def test_a_page_or_source_focus_gap_reads_that_rows_examples(pg_conn, insights_o
         by_source = run_read_tool("get_gap_examples", source, {"gap_type": "docs missing"})
         other_type = run_read_tool("get_gap_examples", page, {"gap_type": "answer missed"})
         everything = run_read_tool("get_gap_examples", plain, {"gap_type": "docs missing"})
+    assert page.focus_row == {"topic": "/settings", "gap_type": "docs missing", "expected": 1, "turns": 1,
+                              "previous": None, "group_by": "page", "group_key": "/settings"}
+    assert source.focus_row["group_key"] == SOURCE_ID and source.focus_row["expected"] == round(0.9 * NEEDED)
+    assert plain.focus_row is None
     assert by_page["questions"] == ["Where is the settings page?"]
     assert len(by_source["questions"]) == 5 and all(q.startswith("Deploy question") for q in by_source["questions"])
     assert other_type["questions"] == []
