@@ -78,6 +78,7 @@ class APITool(Tool):
 
         if method.upper() not in _VALID_METHODS:
             return {
+                "status": "error",
                 "status_code": None,
                 "message": f"Unsupported HTTP method: {method}",
                 "data": None,
@@ -111,6 +112,7 @@ class APITool(Tool):
                 except ValueError as e:
                     logger.error(f"Body serialization failed: {str(e)}")
                     return {
+                        "status": "error",
                         "status_code": None,
                         "message": f"Body serialization error: {str(e)}",
                         "data": None,
@@ -134,6 +136,26 @@ class APITool(Tool):
                 headers=request_headers,
                 timeout=DEFAULT_TIMEOUT,
             )
+
+            if 300 <= response.status_code < 400:
+                location = response.headers.get("Location", "")
+                if location:
+                    msg = (
+                        f"URL redirects to '{location}'. "
+                        "Call that URL directly instead."
+                    )
+                else:
+                    msg = "URL responded with a redirect but no target location."
+                logger.error(
+                    f"API call redirect (not followed): {response.status_code} -> {location}"
+                )
+                return {
+                    "status": "error",
+                    "status_code": response.status_code,
+                    "message": msg,
+                    "data": None,
+                }
+
             response.raise_for_status()
 
             data = self._parse_response(response)
@@ -146,6 +168,7 @@ class APITool(Tool):
         except UnsafeUserUrlError as e:
             logger.error(f"URL validation failed: {e}")
             return {
+                "status": "error",
                 "status_code": None,
                 "message": f"URL validation error: {e}",
                 "data": None,
@@ -153,6 +176,7 @@ class APITool(Tool):
         except requests.exceptions.Timeout:
             logger.error(f"Request timeout for {request_url}")
             return {
+                "status": "error",
                 "status_code": None,
                 "message": f"Request timeout ({DEFAULT_TIMEOUT}s exceeded)",
                 "data": None,
@@ -160,6 +184,7 @@ class APITool(Tool):
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error: {str(e)}")
             return {
+                "status": "error",
                 "status_code": None,
                 "message": f"Connection error: {str(e)}",
                 "data": None,
@@ -171,6 +196,7 @@ class APITool(Tool):
             except (json.JSONDecodeError, ValueError):
                 error_data = response.text
             return {
+                "status": "error",
                 "status_code": response.status_code,
                 "message": f"HTTP Error {response.status_code}",
                 "data": error_data,
@@ -178,6 +204,7 @@ class APITool(Tool):
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {str(e)}")
             return {
+                "status": "error",
                 "status_code": response.status_code if response else None,
                 "message": f"API call failed: {str(e)}",
                 "data": None,
@@ -185,6 +212,7 @@ class APITool(Tool):
         except Exception as e:
             logger.error(f"Unexpected error in API call: {str(e)}", exc_info=True)
             return {
+                "status": "error",
                 "status_code": None,
                 "message": f"Unexpected error: {str(e)}",
                 "data": None,

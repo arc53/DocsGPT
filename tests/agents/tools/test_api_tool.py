@@ -55,14 +55,16 @@ class TestAPIToolInit:
         assert tool.body_encoding_rules == {}
 
     def test_custom_config(self):
-        tool = APITool(config={
-            "url": "https://api.test.com",
-            "method": "POST",
-            "headers": {"X-Key": "val"},
-            "query_params": {"page": "1"},
-            "body_content_type": "application/xml",
-            "body_encoding_rules": {"field": {"style": "form"}},
-        })
+        tool = APITool(
+            config={
+                "url": "https://api.test.com",
+                "method": "POST",
+                "headers": {"X-Key": "val"},
+                "query_params": {"page": "1"},
+                "body_content_type": "application/xml",
+                "body_encoding_rules": {"field": {"style": "form"}},
+            }
+        )
         assert tool.url == "https://api.test.com"
         assert tool.method == "POST"
         assert tool.headers == {"X-Key": "val"}
@@ -117,7 +119,7 @@ class TestMakeApiCall:
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {}
-        mock_resp.content = b'{}'
+        mock_resp.content = b"{}"
         mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("update", name="new")
@@ -130,7 +132,7 @@ class TestMakeApiCall:
         mock_resp = MagicMock()
         mock_resp.status_code = 204
         mock_resp.headers = {"Content-Type": "text/plain"}
-        mock_resp.content = b''
+        mock_resp.content = b""
         mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("delete")
@@ -157,7 +159,7 @@ class TestMakeApiCall:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "text/html"}
-        mock_resp.content = b''
+        mock_resp.content = b""
         mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("check")
@@ -170,7 +172,7 @@ class TestMakeApiCall:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "text/plain"}
-        mock_resp.content = b''
+        mock_resp.content = b""
         mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("options")
@@ -205,11 +207,13 @@ class TestSSRFValidation:
     def test_ssrf_blocked_with_path_params(self, mock_pinned):
         from docsgpt.security.safe_url import UnsafeUserUrlError
 
-        tool = APITool(config={
-            "url": "https://api.example.com/{host}/data",
-            "method": "GET",
-            "query_params": {"host": "169.254.169.254"},
-        })
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/{host}/data",
+                "method": "GET",
+                "query_params": {"host": "169.254.169.254"},
+            }
+        )
 
         mock_pinned.side_effect = UnsafeUserUrlError("blocked")
         result = tool.execute_action("any")
@@ -282,11 +286,13 @@ class TestErrorHandling:
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_body_serialization_error(self, mock_pinned):
-        tool = APITool(config={
-            "url": "https://example.com",
-            "method": "POST",
-            "body_content_type": "application/json",
-        })
+        tool = APITool(
+            config={
+                "url": "https://example.com",
+                "method": "POST",
+                "body_content_type": "application/json",
+            }
+        )
 
         with patch(
             "docsgpt.agents.tools.api_tool.RequestBodySerializer.serialize",
@@ -294,6 +300,47 @@ class TestErrorHandling:
         ):
             result = tool.execute_action("any", key="val")
             assert "serialization error" in result["message"].lower()
+            assert result["status"] == "error"
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_with_location(self, mock_pinned, get_tool):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {"Location": "https://api.example.com/v2/data"}
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 307
+        assert result["data"] is None
+        assert "URL redirects to 'https://api.example.com/v2/data'" in result["message"]
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_without_location(self, mock_pinned, get_tool):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 301
+        mock_resp.headers = {}
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 301
+        assert result["data"] is None
+        assert (
+            "URL responded with a redirect but no target location" in result["message"]
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_transport_failures_report_error_status(self, mock_pinned, get_tool):
+        for side_effect in (
+            requests.exceptions.Timeout(),
+            requests.exceptions.ConnectionError("conn refused"),
+            requests.exceptions.RequestException("failed"),
+            RuntimeError("boom"),
+        ):
+            mock_pinned.side_effect = side_effect
+            result = get_tool.execute_action("any")
+            assert result["status"] == "error"
 
 
 # =====================================================================
@@ -306,16 +353,18 @@ class TestPathParamSubstitution:
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_path_params_substituted(self, mock_pinned):
-        tool = APITool(config={
-            "url": "https://api.example.com/users/{user_id}/posts/{post_id}",
-            "method": "GET",
-            "query_params": {"user_id": "42", "post_id": "7"},
-        })
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/users/{user_id}/posts/{post_id}",
+                "method": "GET",
+                "query_params": {"user_id": "42", "post_id": "7"},
+            }
+        )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = []
-        mock_resp.content = b'[]'
+        mock_resp.content = b"[]"
         mock_pinned.return_value = mock_resp
 
         tool.execute_action("get")
@@ -326,16 +375,18 @@ class TestPathParamSubstitution:
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_remaining_query_params_appended(self, mock_pinned):
-        tool = APITool(config={
-            "url": "https://api.example.com/items",
-            "method": "GET",
-            "query_params": {"page": "2", "limit": "10"},
-        })
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/items",
+                "method": "GET",
+                "query_params": {"page": "2", "limit": "10"},
+            }
+        )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = []
-        mock_resp.content = b'[]'
+        mock_resp.content = b"[]"
         mock_pinned.return_value = mock_resp
 
         tool.execute_action("get")
@@ -346,16 +397,18 @@ class TestPathParamSubstitution:
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_query_params_append_with_existing_query_string(self, mock_pinned):
-        tool = APITool(config={
-            "url": "https://api.example.com/items?existing=true",
-            "method": "GET",
-            "query_params": {"page": "1"},
-        })
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/items?existing=true",
+                "method": "GET",
+                "query_params": {"page": "1"},
+            }
+        )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = []
-        mock_resp.content = b'[]'
+        mock_resp.content = b"[]"
         mock_pinned.return_value = mock_resp
 
         tool.execute_action("get")
@@ -370,7 +423,7 @@ class TestPathParamSubstitution:
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {}
-        mock_resp.content = b'{}'
+        mock_resp.content = b"{}"
         mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("create")
@@ -378,16 +431,18 @@ class TestPathParamSubstitution:
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_path_params_are_url_encoded(self, mock_pinned):
-        tool = APITool(config={
-            "url": "https://api.example.com/users/{user_id}/profile",
-            "method": "GET",
-            "query_params": {"user_id": "../../admin"},
-        })
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/users/{user_id}/profile",
+                "method": "GET",
+                "query_params": {"user_id": "../../admin"},
+            }
+        )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {}
-        mock_resp.content = b'{}'
+        mock_resp.content = b"{}"
         mock_pinned.return_value = mock_resp
 
         tool.execute_action("get")
@@ -398,16 +453,18 @@ class TestPathParamSubstitution:
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_path_params_query_injection_encoded(self, mock_pinned):
-        tool = APITool(config={
-            "url": "https://api.example.com/items/{item_id}",
-            "method": "GET",
-            "query_params": {"item_id": "x?admin=true"},
-        })
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/items/{item_id}",
+                "method": "GET",
+                "query_params": {"item_id": "x?admin=true"},
+            }
+        )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {}
-        mock_resp.content = b'{}'
+        mock_resp.content = b"{}"
         mock_pinned.return_value = mock_resp
 
         tool.execute_action("get")
@@ -513,16 +570,18 @@ class TestAPIToolMetadata:
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_content_type_set_for_post_with_no_headers(self, mock_pinned):
-        tool = APITool(config={
-            "url": "https://example.com",
-            "method": "POST",
-            "headers": {},
-        })
+        tool = APITool(
+            config={
+                "url": "https://example.com",
+                "method": "POST",
+                "headers": {},
+            }
+        )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {}
-        mock_resp.content = b'{}'
+        mock_resp.content = b"{}"
         mock_pinned.return_value = mock_resp
 
         tool.execute_action("create")
