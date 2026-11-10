@@ -1729,6 +1729,13 @@
       "deleteFailed": "No se pudo eliminar este prompt.",
       "saveFailed": "No se pudo guardar este prompt.",
       "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión.",
+      "conflict": {
+        "title": "Otra persona cambió este prompt",
+        "description": "Tus cambios no pueden reemplazar la versión que guardó. Guárdalos como un prompt nuevo, o sal y vuelve a abrir este para ver su versión."
+      },
+      "saveAsCopy": "Guardar como copia",
+      "saveCopyAndLeave": "Guardar como copia y salir",
+      "editConflictLeave": "Otra persona cambió este prompt. Guarda tus cambios como copia.",
       "loadError": "No se pudieron cargar tus prompts.",
       "noPromptsFound": "No se encontraron prompts",
       "kinds": {

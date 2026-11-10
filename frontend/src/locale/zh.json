@@ -1661,6 +1661,13 @@
       "deleteFailed": "无法删除此提示词。",
       "saveFailed": "无法保存此提示词。",
       "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。",
+      "conflict": {
+        "title": "其他人修改了此提示词",
+        "description": "你的更改无法替换对方保存的版本。可将你的更改另存为新提示词，或离开后重新打开此提示词查看对方的版本。"
+      },
+      "saveAsCopy": "另存为副本",
+      "saveCopyAndLeave": "另存为副本并离开",
+      "editConflictLeave": "其他人修改了此提示词。请将你的更改另存为副本。",
       "loadError": "无法加载你的提示词。",
       "noPromptsFound": "未找到提示词",
       "kinds": {

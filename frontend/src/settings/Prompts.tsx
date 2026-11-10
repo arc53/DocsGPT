@@ -15,6 +15,7 @@ import {
 } from '../components/ui/tooltip';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import {
   Card,
@@ -72,7 +73,8 @@ const PRESETS = ['default', 'creative', 'strict'];
 
 /** What Save and leave says when it can't save, by the reason it rejected. */
 const LEAVE_ERRORS: Record<string, string> = {
-  conflict: 'settings.prompts.editConflict',
+  // Another try saves a copy: a save at the same version fails the same.
+  conflict: 'settings.prompts.editConflictLeave',
   review: 'settings.prompts.saveBlocked.review',
   name: 'settings.prompts.saveBlocked.name',
   nameExists: 'modals.prompts.nameExists',
@@ -603,7 +605,11 @@ function PromptDetailPage({
                     type="button"
                     size="field"
                     shape="pill"
-                    onClick={() => void detail.save()}
+                    // After a conflict a save at the same version fails the
+                    // same: Save keeps the changes as a new prompt instead.
+                    onClick={() =>
+                      void detail.save({ asCopy: detail.conflict })
+                    }
                     // Mid-review the text holds only the changes chosen so
                     // far: the drawer's Accept all or Discard ends it first.
                     disabled={
@@ -611,7 +617,9 @@ function PromptDetailPage({
                     }
                     loading={detail.saving}
                   >
-                    {t('modals.prompts.save')}
+                    {detail.conflict
+                      ? t('settings.prompts.saveAsCopy')
+                      : t('modals.prompts.save')}
                   </Button>
                 )}
               </>
@@ -631,6 +639,34 @@ function PromptDetailPage({
             byline={byline.length > 0 ? <MetaLine>{byline}</MetaLine> : null}
             loading={detail.status === 'loading'}
             onRetry={detail.status === 'error' ? detail.retry : undefined}
+            notice={
+              detail.conflict && !readOnly ? (
+                <Alert variant="warning" data-slot="prompt-conflict">
+                  <AlertTitle>
+                    {t('settings.prompts.conflict.title')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    <p>
+                      {t('settings.prompts.conflict.description')}{' '}
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="text"
+                        tone="current"
+                        onClick={() => void detail.save({ asCopy: true })}
+                        disabled={
+                          !detail.canSave ||
+                          streaming ||
+                          drafter.review !== null
+                        }
+                      >
+                        {t('settings.prompts.saveAsCopy')}
+                      </Button>
+                    </p>
+                  </AlertDescription>
+                </Alert>
+              ) : undefined
+            }
             idPrefix={saved ? 'edit' : 'new'}
             name={detail.name}
             setName={detail.setName}
@@ -662,7 +698,11 @@ function PromptDetailPage({
               message={t('settings.prompts.unsavedChanges')}
               modalState="ACTIVE"
               setModalState={(state) => setLeaving(state === 'ACTIVE')}
-              submitLabel={t('settings.prompts.saveAndLeave')}
+              submitLabel={
+                detail.conflict
+                  ? t('settings.prompts.saveCopyAndLeave')
+                  : t('settings.prompts.saveAndLeave')
+              }
               // Pending while the save runs; a refused save rejects, so its
               // error stays in this dialog and the page stays put. A prompt
               // that can't be saved yet (no name, an open review) rejects
@@ -671,7 +711,10 @@ function PromptDetailPage({
                 if (drafter.review !== null) throw new Error('review');
                 if (!detail.canSave)
                   throw new Error(detail.saveBlocker ?? 'failed');
-                const result = await detail.save({ quiet: true });
+                const result = await detail.save({
+                  quiet: true,
+                  asCopy: detail.conflict,
+                });
                 if (result !== 'saved') throw new Error(result);
               }}
               error={(reason) =>

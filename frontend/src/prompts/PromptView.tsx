@@ -21,6 +21,8 @@ export type PromptViewProps = PromptEditorProps & {
   loading?: boolean;
   /** The text didn't load: an error with Try again stands in for them. */
   onRetry?: () => void;
+  /** An Alert about the open prompt (a refused save), above the fields. */
+  notice?: ReactNode;
 };
 
 /**
@@ -39,6 +41,7 @@ export function PromptView({
   byline,
   loading = false,
   onRetry,
+  notice,
   ...editor
 }: PromptViewProps) {
   const { t } = useTranslation();
@@ -71,7 +74,10 @@ export function PromptView({
           <Skeleton className="h-48 rounded-2xl md:h-64 lg:h-80" />
         </div>
       ) : (
-        <PromptEditor {...editor} />
+        <>
+          {notice}
+          <PromptEditor {...editor} />
+        </>
       )}
     </div>
   );

@@ -1729,6 +1729,13 @@
       "deleteFailed": "Impossible de supprimer ce prompt.",
       "saveFailed": "Impossible d’enregistrer ce prompt.",
       "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version.",
+      "conflict": {
+        "title": "Quelqu’un d’autre a modifié ce prompt",
+        "description": "Vos modifications ne peuvent pas remplacer la version enregistrée. Gardez-les dans un nouveau prompt, ou quittez et rouvrez celui-ci pour voir l’autre version."
+      },
+      "saveAsCopy": "Enregistrer une copie",
+      "saveCopyAndLeave": "Enregistrer une copie et quitter",
+      "editConflictLeave": "Quelqu’un d’autre a modifié ce prompt. Enregistrez plutôt vos modifications dans une copie.",
       "loadError": "Impossible de charger vos prompts.",
       "noPromptsFound": "Aucun prompt trouvé",
       "kinds": {

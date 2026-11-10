@@ -91,6 +91,7 @@ const confirm = vi.hoisted(() => ({
     message: string;
     description?: string;
     error?: string | ((reason: unknown) => string);
+    submitLabel?: string;
     handleSubmit: () => void | Promise<unknown>;
     handleCancel?: () => void;
   },
@@ -827,6 +828,46 @@ describe('Prompts page', () => {
     });
   });
 
+  it('keeps the changes after a conflict: Save becomes Save as a copy, which saves them as a new prompt', async () => {
+    withText('You check vendors.');
+    service.updatePrompt.mockImplementation(() => response({}, false, 409));
+    service.createPrompt.mockImplementation(() => response({ id: 'p-copy' }));
+    await render();
+    await openCard('Vendor checks');
+    await type(textArea()!, 'Changed.');
+    await click(save());
+    // The conflict stays on the page, with the way to keep the changes.
+    const notice = view()!.querySelector<HTMLElement>(
+      '[data-slot="prompt-conflict"]',
+    )!;
+    expect(notice.textContent).toContain('settings.prompts.conflict.title');
+    const inNotice = button('settings.prompts.saveAsCopy', notice)!;
+    expect(inNotice.dataset.tone).toBe('current');
+    // Save can't go over their version again: it saves a copy instead.
+    expect(button('modals.prompts.save', view()!)).toBeUndefined();
+    await click(button('settings.prompts.saveAsCopy', view()!)!);
+    expect(service.updatePrompt).toHaveBeenCalledTimes(1);
+    expect(service.createPrompt).toHaveBeenCalledWith(
+      { name: 'Vendor checks copy', content: 'Changed.' },
+      'tok',
+    );
+    expect(view()).toBeNull();
+  });
+
+  it('forgets a conflict when another prompt opens', async () => {
+    withText('You check vendors.');
+    service.updatePrompt.mockImplementation(() => response({}, false, 409));
+    await render();
+    await openCard('Vendor checks');
+    await type(textArea()!, 'Changed.');
+    await click(save());
+    await click(button('settings.prompts.label', view()!)!);
+    await act(async () => confirm.props!.handleCancel!());
+    await openCard('Vendor checks');
+    expect(view()!.querySelector('[data-slot="prompt-conflict"]')).toBeNull();
+    expect(save()).toBeDefined();
+  });
+
   it('adds a prompt from an empty view, refusing a name already taken', async () => {
     service.createPrompt.mockImplementation(() => response({ id: 'p-new' }));
     await render();
@@ -898,9 +939,23 @@ describe('Prompts page', () => {
     // A refused save stays in the confirm, not a toast as well.
     await expect(result).rejects.toThrow('conflict');
     const error = confirm.props!.error as (reason: unknown) => string;
-    expect(error(new Error('conflict'))).toBe('settings.prompts.editConflict');
+    expect(error(new Error('conflict'))).toBe(
+      'settings.prompts.editConflictLeave',
+    );
     expect(store.getState().actionToast.current).toBeNull();
     expect(view()).not.toBeNull();
+    // Another try doesn't hit the same refusal: it saves a copy and leaves.
+    service.createPrompt.mockImplementation(() => response({ id: 'p-copy' }));
+    expect(confirm.props!.submitLabel).toBe(
+      'settings.prompts.saveCopyAndLeave',
+    );
+    await act(async () => confirm.props!.handleSubmit());
+    expect(service.updatePrompt).toHaveBeenCalledTimes(1);
+    expect(service.createPrompt).toHaveBeenCalledWith(
+      { name: 'Vendor checks copy', content: 'Changed.' },
+      'tok',
+    );
+    expect(view()).toBeNull();
   });
 
   it("keeps the unsaved-changes confirm open with the reason a save can't go", async () => {

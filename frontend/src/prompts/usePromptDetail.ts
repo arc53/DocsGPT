@@ -45,7 +45,9 @@ type PromptDetailOptions = {
  *   opening; `open`, `add`, `duplicate`, `openWith` and `close`; the
  *   fields and their setters; `status` of the text's load with `retry`;
  *   `readOnly`, `dirty`, `nameExists`, `canSave` with `saveBlocker` (what
- *   in the fields stops it), `saving`; and `save`.
+ *   in the fields stops it), `saving`; `save`; and `conflict`, set once a
+ *   save was refused over someone's newer edit, when only a copy can keep
+ *   the changes (`save({ asCopy: true })`).
  */
 export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
   const { t } = useTranslation();
@@ -64,6 +66,9 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     'ready',
   );
   const [saving, setSaving] = React.useState(false);
+  // A save of the open prompt was refused over someone's newer edit: saving
+  // it again at the same version fails the same, so only a copy goes on.
+  const [conflict, setConflict] = React.useState(false);
   // The latest opening, so a load that lands after another one is dropped.
   const opening = React.useRef(0);
   // Each prompt's version as last loaded or saved here, so reopening one
@@ -92,6 +97,7 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     setName(fields.name);
     setContent(fields.content);
     setBaseline(fields);
+    setConflict(false);
   };
 
   const load = (prompt: Prompt) => {
@@ -244,20 +250,27 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
 
   /**
    * Saves the open prompt: creates a new one, or updates a saved one at the
-   * version it opened with. A failure shows as a toast unless `quiet` (a
+   * version it opened with. `asCopy` saves a saved one's fields as a new
+   * prompt instead, named so no listed one repeats it: the way to keep the
+   * changes after a conflict. A failure shows as a toast unless `quiet` (a
    * confirm dialog shows it itself).
    */
-  const save = async ({ quiet = false } = {}): Promise<PromptSaveResult> => {
+  const save = async ({
+    quiet = false,
+    asCopy = false,
+  } = {}): Promise<PromptSaveResult> => {
     if (!target || !canSave || saving) return 'failed';
     setSaving(true);
     const current = opening.current;
     let result: PromptSaveResult = 'failed';
     let savedId: string | null = null;
+    let savedName = name;
     let version: string | null = null;
     try {
-      if (target.kind === 'new') {
+      if (target.kind === 'new' || asCopy) {
+        if (target.kind === 'edit') savedName = copyName(name.trim(), prompts);
         const response = await userService.createPrompt(
-          { name, content },
+          { name: savedName, content },
           token,
         );
         if (response.ok) {
@@ -293,10 +306,11 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     } finally {
       setSaving(false);
     }
+    if (result === 'conflict' && opening.current === current) setConflict(true);
     if (result === 'saved' && savedId) {
       setBaseline({ name, content });
       rememberVersion(savedId, version, current);
-      onSaved({ id: savedId, name });
+      onSaved({ id: savedId, name: savedName });
     } else if (!quiet) {
       showError(
         t(
@@ -330,6 +344,7 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     saveBlocker,
     saving,
     save,
+    conflict,
   };
 }
 

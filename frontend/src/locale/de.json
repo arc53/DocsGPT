@@ -1665,6 +1665,13 @@
       "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
       "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
       "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen.",
+      "conflict": {
+        "title": "Jemand anderes hat diesen Prompt geändert",
+        "description": "Deine Änderungen können die gespeicherte Version nicht ersetzen. Behalte sie als neuen Prompt oder verlasse die Seite und öffne diesen erneut, um die andere Version zu sehen."
+      },
+      "saveAsCopy": "Als Kopie speichern",
+      "saveCopyAndLeave": "Als Kopie speichern und verlassen",
+      "editConflictLeave": "Jemand anderes hat diesen Prompt geändert. Speichere deine Änderungen stattdessen als Kopie.",
       "loadError": "Deine Prompts konnten nicht geladen werden.",
       "noPromptsFound": "Keine Prompts gefunden",
       "kinds": {

@@ -1665,6 +1665,13 @@
       "deleteFailed": "Couldn't delete this prompt.",
       "saveFailed": "Couldn't save this prompt.",
       "editConflict": "Someone else changed this prompt. Reopen it to see their version.",
+      "conflict": {
+        "title": "Someone else changed this prompt",
+        "description": "Your changes can't replace the version they saved. Keep yours as a new prompt, or leave and reopen this one to see theirs."
+      },
+      "saveAsCopy": "Save as a copy",
+      "saveCopyAndLeave": "Save as a copy and leave",
+      "editConflictLeave": "Someone else changed this prompt. Save your changes as a copy instead.",
       "loadError": "Couldn't load your prompts.",
       "noPromptsFound": "No prompts found",
       "kinds": {
