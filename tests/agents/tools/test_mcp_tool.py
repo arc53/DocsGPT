@@ -9,6 +9,7 @@ MCPOAuthManager.
 import asyncio
 import concurrent.futures
 import json
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -676,7 +677,7 @@ class TestExecuteAction:
         with patch.object(MCPTool, "_setup_client") as mock_setup:
             with pytest.raises(
                 Exception,
-                match=error_message,
+                match=re.escape(error_message),
             ):
                 tool.execute_action("create_ticket", ticket_id="401")
 
@@ -711,6 +712,221 @@ class TestExecuteAction:
             assert result == {"status": "retry_successful"}
             assert mock_run.call_count == 2
             mock_setup.assert_called_once()
+
+    def test_transport_http_401_with_generic_rpc_error_triggers_recovery(
+        self, monkeypatch, mcp_config
+    ):
+        import httpx2
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+        requests_seen = []
+        def handler(request):
+            requests_seen.append(request)
+            payload = json.loads(request.content)
+            return httpx2.Response(
+                401,
+                headers={"content-type": "application/json"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": payload.get("id"),
+                    "error": {
+                        "code": -32000,
+                        "message": "Request could not be completed",
+                    },
+                },
+            )
+
+        def mock_http_client(**kwargs):
+            return httpx2.AsyncClient(
+                transport=httpx2.MockTransport(handler),
+                **kwargs,
+            )
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+            mock_http_client,
+        )
+
+        tool = _make_tool(mcp_config)
+        tool._client = tool._build_client()
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            with pytest.raises(Exception):
+                tool.execute_action("read_ticket")
+
+            mock_setup.assert_called_once()
+
+        assert requests_seen
+        assert all(
+            request.method == "POST"
+            for request in requests_seen
+        )
+
+    def test_resolved_http_401_does_not_mask_unrelated_error(
+        self, mcp_config
+    ):
+        import httpx2
+        from docsgpt.agents.tools.mcp_tool import (
+            _capture_mcp_http_status,
+        )
+        tool = _make_tool(mcp_config)
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def call_tool(self, name, arguments):
+                request = httpx2.Request(
+                    "POST",
+                    "https://mcp.example.com/api",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                    },
+                )
+
+                # Initial authentication challenge.
+                await _capture_mcp_http_status(
+                    httpx2.Response(401, request=request)
+                )
+
+                # Authentication succeeds for the same request.
+                await _capture_mcp_http_status(
+                    httpx2.Response(200, request=request)
+                )
+
+                # A later, unrelated application error occurs.
+                raise ValueError("Unrelated application error")
+
+        with pytest.raises(
+            ValueError,
+            match="Unrelated application error",
+        ):
+            asyncio.run(
+                tool._execute_on(
+                    FakeClient(),
+                    "call_tool",
+                    "read_ticket",
+                )
+            )
+
+    def test_earlier_http_401_does_not_mask_later_error(
+        self, mcp_config
+    ):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import _capture_mcp_http_status
+
+        tool = _make_tool(mcp_config)
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def call_tool(self, name, arguments):
+                for request_id, status in [(1, 401), (2, 200)]:
+                    request = httpx2.Request(
+                        "POST",
+                        "https://mcp.example.com/api",
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "method": "tools/call",
+                        },
+                    )
+
+                    await _capture_mcp_http_status(
+                        httpx2.Response(status, request=request)
+                    )
+
+                raise ValueError("Later request failed")
+
+        with pytest.raises(
+            ValueError,
+            match="Later request failed",
+        ):
+            asyncio.run(
+                tool._execute_on(
+                    FakeClient(),
+                    "call_tool",
+                    "read_ticket",
+                )
+            )
+
+    def test_concurrent_operations_isolate_http_statuses(
+        self, mcp_config
+    ):
+        import httpx2
+        from docsgpt.agents.tools.mcp_tool import _capture_mcp_http_status
+        tool = _make_tool(mcp_config)
+
+        async def run_concurrently():
+            ready = asyncio.Event()
+            started = 0
+
+            class FakeClient:
+                def __init__(self, status):
+                    self.status = status
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+                async def call_tool(self, name, arguments):
+                    nonlocal started
+
+                    request = httpx2.Request(
+                        "POST",
+                        "https://mcp.example.com/api",
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "tools/call",
+                        },
+                    )
+
+                    await _capture_mcp_http_status(
+                        httpx2.Response(self.status, request=request)
+                    )
+
+                    started += 1
+
+                    if started == 2:
+                        ready.set()
+
+                    await ready.wait()
+
+                    raise ValueError(
+                        f"Operation failed: {self.status}"
+                    )
+
+            return await asyncio.gather(
+                tool._execute_on(
+                    FakeClient(401),
+                    "call_tool",
+                    "action_a",
+                ),
+                tool._execute_on(
+                    FakeClient(200),
+                    "call_tool",
+                    "action_b",
+                ),
+                return_exceptions=True,
+            )
+
+        errors = asyncio.run(run_concurrently())
+
+        assert len(errors) == 2
+        assert "HTTP 401 Unauthorized" in str(errors[0])
+        assert isinstance(errors[1], ValueError)
+        assert str(errors[1]) == "Operation failed: 200"
 
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_auth_error_retries_for_non_oauth(self, mock_run, mcp_config):
@@ -889,9 +1105,20 @@ class TestMapError:
         err = tool._map_error("test", Exception("403 Forbidden"))
         assert "Access denied" in str(err)
 
-    def test_401_unauthorized(self, mcp_config):
+    @pytest.mark.parametrize(
+        "error_message",
+        [
+            "401 Unauthorized",
+            "HTTP 401",
+            "http 401",
+            "Request failed with status code 401",
+            "HTTP/1.1 401 Unauthorized",
+            "Client error '401 Unauthorized' for url https://example.com",
+        ],
+    )
+    def test_401_unauthorized(self, mcp_config, error_message):
         tool = _make_tool(mcp_config)
-        err = tool._map_error("test", Exception("401 Unauthorized"))
+        err = tool._map_error("test", Exception(error_message))
         assert "Authentication failed" in str(err)
 
     def test_econnrefused_pattern(self, mcp_config):

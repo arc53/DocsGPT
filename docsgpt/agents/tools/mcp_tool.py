@@ -9,6 +9,7 @@ import secrets
 import threading
 import time
 import weakref
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -88,6 +89,30 @@ def _is_http_401_error(error_msg: str) -> bool:
             re.IGNORECASE,
         )
     )
+
+
+_mcp_http_statuses: ContextVar[Optional[Dict[str, int]]] = ContextVar(
+    "mcp_http_statuses",
+    default=None,
+)
+
+
+async def _capture_mcp_http_status(response: httpx2.Response) -> None:
+    """Record HTTP response statuses for the active MCP operation."""
+    statuses = _mcp_http_statuses.get()
+    if statuses is None or response.request.method != "POST":
+        return
+    try:
+        payload = json.loads(response.request.content)
+    except (ValueError, httpx2.RequestNotRead):
+        return
+    if not isinstance(payload, dict):
+        return
+    request_id = payload.get("id")
+    if not isinstance(request_id, (str, int)):
+        return
+    statuses.clear()
+    statuses[str(request_id)] = response.status_code
 
 
 def _mcp_http_client(
@@ -516,6 +541,7 @@ class MCPTool(Tool):
         ):
             client = _mcp_http_client(headers=headers, timeout=timeout, auth=auth)
             client.event_hooks.setdefault("request", []).append(_param_header_hook(header_maps))
+            client.event_hooks.setdefault("response", []).append(_capture_mcp_http_status)
             return client
 
         return factory
@@ -567,29 +593,43 @@ class MCPTool(Tool):
 
     async def _execute_on(self, client: Client, operation: str, /, *args, **kwargs):
         """Run ``operation`` in a session of its own on ``client``."""
-        async with client:
-            if operation == "ping":
-                return await client.ping()
-            elif operation == "list_tools":
-                tools_response = await client.list_tools()
-                self.available_tools = self._format_tools(tools_response)
-                self._refresh_param_headers(self.available_tools)
-                return self.available_tools
-            elif operation == "call_tool":
-                tool_name = args[0]
-                tool_args = kwargs
-                return await client.call_tool(tool_name, tool_args)
-            elif operation == "call_tool_raw":
-                # An MCP App's own call: a failed tool comes back as its result, not an exception.
-                return await client.call_tool(args[0], args[1], raise_on_error=False)
-            elif operation == "read_resource":
-                return await client.read_resource(args[0])
-            elif operation == "list_resources":
-                return await client.list_resources()
-            elif operation == "list_prompts":
-                return await client.list_prompts()
-            else:
-                raise Exception(f"Unknown operation: {operation}")
+        statuses: Dict[str, int] = {}
+        token = _mcp_http_statuses.set(statuses)
+
+        try:
+            try:
+                async with client:
+                    if operation == "ping":
+                        return await client.ping()
+                    elif operation == "list_tools":
+                        tools_response = await client.list_tools()
+                        self.available_tools = self._format_tools(tools_response)
+                        self._refresh_param_headers(self.available_tools)
+                        return self.available_tools
+                    elif operation == "call_tool":
+                        tool_name = args[0]
+                        tool_args = kwargs
+                        return await client.call_tool(tool_name, tool_args)
+                    elif operation == "call_tool_raw":
+                        # An MCP App's own call: a failed tool comes back
+                        # as its result, not an exception.
+                        return await client.call_tool(
+                            args[0], args[1], raise_on_error=False
+                        )
+                    elif operation == "read_resource":
+                        return await client.read_resource(args[0])
+                    elif operation == "list_resources":
+                        return await client.list_resources()
+                    elif operation == "list_prompts":
+                        return await client.list_prompts()
+                    else:
+                        raise Exception(f"Unknown operation: {operation}")
+            except Exception as exc:
+                if 401 in statuses.values():
+                    raise Exception("HTTP 401 Unauthorized") from exc
+                raise
+        finally:
+            _mcp_http_statuses.reset(token)
 
     _ERROR_MAP = [
         (concurrent.futures.TimeoutError, lambda op, t, _: f"Timed out after {t}s"),
