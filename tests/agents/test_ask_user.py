@@ -859,3 +859,77 @@ class TestQuestionOutputGuardrails(_ResumeHarness):
         assert not [e for e in events if e.get("type") == "tool_call"]
         assert not final
         agent.llm.gen.assert_not_called()
+
+
+@pytest.mark.unit
+class TestRefusedCallsKeepNoArguments:
+    """A refused ``ask_user`` call never shows its questions, so none of the model's raw text may travel with it."""
+
+    LEAKY = {**ARGS, "leak": "seats secret"}
+
+    @pytest.fixture(autouse=True)
+    def _journal(self, monkeypatch):
+        self.journaled: List[Dict] = []
+
+        def proposed(call_id, tool_name, action_name, arguments, **_kwargs):
+            self.journaled.append(arguments)
+            return False
+
+        monkeypatch.setattr("docsgpt.agents.tool_executor._record_proposed", proposed)
+
+    def _run(self, executor: ToolExecutor, tools: Dict, args: Dict) -> tuple[List[Dict], List[Dict]]:
+        events, (messages, _pending) = _drain(
+            Handler().handle_tool_calls(_agent(executor), [_call(args=args)], tools, [])
+        )
+        return [e for e in events if e.get("type") == "tool_call"], messages
+
+    def _assert_no_raw_text(self, executor: ToolExecutor, shown: List[Dict]) -> None:
+        (event,) = shown
+        assert event["data"]["arguments"] == {}
+        assert executor.tool_calls[-1]["arguments"] == {}
+        assert "seats" not in json.dumps([event, executor.tool_calls[-1], self.journaled])
+        # The record still tells the chat it was a refused question round.
+        assert executor.tool_calls[-1]["status"] == "error"
+
+    @pytest.mark.parametrize("mode", ["cards", "text"])
+    def test_a_second_round(self, mode):
+        executor, tools = _executor(mode)
+        executor.questions_asked = True
+        shown, messages = self._run(executor, tools, self.LEAKY)
+
+        self._assert_no_raw_text(executor, shown)
+        assert messages[-1]["content"] == ONE_ROUND_TEXT
+
+    def test_a_call_beside_other_tools(self):
+        executor, tools = _executor("cards")
+        executor.calls_this_round = 2
+        pause = executor.check_pause(tools, _call(args=self.LEAKY), "MockLLM")
+
+        assert pause["pause_type"] == "headless_denied"
+        assert pause["arguments"] == {}
+
+    @pytest.mark.parametrize("mode", ["cards", "text"])
+    def test_invalid_questions(self, mode):
+        executor, tools = _executor(mode)
+        shown, _messages = self._run(executor, tools, {"message": "seats secret", "questions": []})
+
+        self._assert_no_raw_text(executor, shown)
+        assert executor.tool_calls[-1]["error_type" if mode == "cards" else "status"]
+
+    def test_where_questions_cant_be_shown(self):
+        executor, tools = _executor(None)
+        shown, _messages = self._run(executor, tools, self.LEAKY)
+
+        self._assert_no_raw_text(executor, shown)
+        assert executor.tool_calls[-1]["error_type"] == "questions_not_asked"
+
+    def test_the_model_still_gets_its_own_call_back(self):
+        executor, tools = _executor("cards")
+        executor.questions_asked = True
+        _shown, messages = self._run(executor, tools, self.LEAKY)
+
+        (assistant,) = [m for m in messages if m.get("role") == "assistant"]
+        (sent,) = assistant["tool_calls"]
+        assert json.loads(sent["function"]["arguments"]) == self.LEAKY
+        # A later turn replays the kept record: its arguments are still a JSON object.
+        assert json.loads(json.dumps(executor.tool_calls[-1]["arguments"])) == {}

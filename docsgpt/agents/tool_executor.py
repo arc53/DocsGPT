@@ -1727,8 +1727,12 @@ class ToolExecutor:
         }
         model_text, reason, message, questions = self._ask_user_check(arguments, count_invalid=True)
         if model_text is not None:
+            # A refused round shows nothing, so none of the model's text goes
+            # to the client, the journal or the kept record; the model's own
+            # call reaches it from the call itself.
             return {
                 **base,
+                "arguments": {},
                 "pause_type": "headless_denied",
                 "deny_reason": f"Questions not asked: {reason}.",
                 "model_text": model_text,
@@ -1798,7 +1802,16 @@ class ToolExecutor:
         }
         model_text, reason, message, questions = self._ask_user_check(arguments, count_invalid=False)
         if model_text is not None:
-            record.update({"result": model_text, "error": f"Questions not asked: {reason}.", "status": "error"})
+            # Nothing of a refused round is shown, so none of its text is kept.
+            record.update(
+                {
+                    "arguments": {},
+                    "result": model_text,
+                    "error": f"Questions not asked: {reason}.",
+                    "error_type": "questions_not_asked",
+                    "status": "error",
+                }
+            )
         else:
             self.questions_asked = True
             # The questions are shown as the answer, so they get its output
