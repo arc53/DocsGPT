@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from docsgpt.drafter.fencing import DATA_GUARD
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
+from docsgpt.core.settings import settings
 from tests.activity.conftest import FakeRedis
 from tests.drafter.fakes import calls, FakeLLM, PROPOSAL, QUESTIONS, text as plain, tool_call
 
@@ -309,7 +310,11 @@ class TestStream:
 
 
 class _Redis(FakeRedis):
-    """The Activity tests' fake Redis, with ``get`` and ``set(nx=True)``."""
+    """The Activity tests' fake Redis, with ``get``, ``set(nx=True)`` and the sorted-set calls running turns use."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.zsets: dict = {}
 
     def get(self, key):
         return self.kv.get(key) if self._alive(key) else None
@@ -318,6 +323,30 @@ class _Redis(FakeRedis):
         if nx and self._alive(key):
             return None
         return super().set(key, value, ex=ex)
+
+    def zadd(self, key, mapping):
+        self.zsets.setdefault(key, {}).update(mapping)
+
+    def zrem(self, key, *members):
+        zset = self.zsets.get(key, {})
+        for member in members:
+            zset.pop(member, None)
+        if not zset:
+            self.zsets.pop(key, None)
+
+    def zremrangebyscore(self, key, low, high):
+        zset = self.zsets.get(key, {})
+        for member, score in list(zset.items()):
+            if score <= high:
+                del zset[member]
+        if not zset:
+            self.zsets.pop(key, None)
+
+    def zcard(self, key):
+        return len(self.zsets.get(key, {}))
+
+    def expire(self, key, seconds):
+        return True
 
 
 @pytest.fixture
@@ -491,3 +520,76 @@ class TestModelAuth:
         with _db(pg_conn):
             _events(_stream(client, _body(), FakeLLM(_Status(500))))
         assert model_failure("alice", "task-model") is None
+
+
+@pytest.mark.unit
+class TestRunningTurns:
+    """A user runs at most DRAFTER_MAX_RUNNING_TURNS turns at once; a crashed turn's claim runs out on its own."""
+
+    @pytest.fixture(autouse=True)
+    def _cap(self, monkeypatch):
+        monkeypatch.setattr(settings, "DRAFTER_MAX_RUNNING_TURNS", 2)
+
+    def test_a_turn_past_the_cap_is_refused_and_an_ended_one_frees_its_place(self, redis):
+        from docsgpt.drafter.service import claim_running, end_turn
+
+        assert claim_running("alice", "a" * 32) and claim_running("alice", "b" * 32)
+        assert not claim_running("alice", "c" * 32)
+        assert set(redis.zsets["drafter:running:alice"]) == {"a" * 32, "b" * 32}
+        assert claim_running("bob", "c" * 32)
+        end_turn("alice", "a" * 32)
+        assert claim_running("alice", "c" * 32)
+
+    def test_a_claim_past_its_life_no_longer_counts(self, redis):
+        import time
+
+        from docsgpt.drafter.service import claim_running
+
+        redis.zsets["drafter:running:alice"] = {"a" * 32: time.time() - 1, "b" * 32: time.time() - 1}
+        assert claim_running("alice", "c" * 32)
+        assert set(redis.zsets["drafter:running:alice"]) == {"c" * 32}
+
+    def test_no_cap_or_no_redis_never_refuses(self, monkeypatch, redis):
+        from docsgpt.drafter import service
+
+        monkeypatch.setattr(settings, "DRAFTER_MAX_RUNNING_TURNS", 0)
+        assert all(service.claim_running("alice", f"{n:032x}") for n in range(5)) and redis.zsets == {}
+        monkeypatch.setattr(settings, "DRAFTER_MAX_RUNNING_TURNS", 1)
+        monkeypatch.setattr(service, "_turn_store", lambda: None)
+        assert all(service.claim_running("alice", f"{n:032x}") for n in range(5))
+
+    def test_a_failing_store_never_refuses(self, monkeypatch, redis):
+        from docsgpt.drafter.service import claim_running
+
+        def broken(*args, **kwargs):
+            raise ConnectionError("redis went away")
+
+        monkeypatch.setattr(redis, "zadd", broken)
+        assert claim_running("alice", "a" * 32)
+
+    def test_the_stream_refuses_a_turn_past_the_cap_before_any_model_call(self, client, pg_conn, redis,
+                                                                         monkeypatch):
+        import time
+
+        monkeypatch.setattr(settings, "DRAFTER_MAX_RUNNING_TURNS", 1)
+        redis.zsets["drafter:running:alice"] = {"a" * 32: time.time() + 300}
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, {**_body(), "turn_id": "b" * 32}, fake))
+        assert [(e["type"], e.get("code")) for e in events] == [("error", "rate_limited"), ("end", None)]
+        assert fake.calls == [] and redis.kv == {}
+        assert set(redis.zsets["drafter:running:alice"]) == {"a" * 32}
+
+    def test_a_turn_frees_its_place_when_it_ends(self, client, pg_conn, redis):
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, _body(), fake))
+        assert _types(events)[-2:] == ["proposal", "end"] and redis.zsets == {}
+
+    def test_cancels_past_the_minute_limit_are_a_429(self, client, redis):
+        with patch("docsgpt.monitors.triggers.rate_limited", return_value=True) as limiter, _session("alice"):
+            response = client.post(f"/api/drafter/turns/{'a' * 32}/cancel")
+        assert response.status_code == 429
+        from docsgpt.drafter.service import CANCEL_RATE_PER_MINUTE
+
+        limiter.assert_called_once_with("drafter_cancel", "alice", CANCEL_RATE_PER_MINUTE)

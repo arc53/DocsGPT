@@ -28,8 +28,8 @@ from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import (
-    cancel_turn, clear_model_failure, drafter_config, end_turn, prepare, record_model_failure, start_turn, TURN_ID,
-    turn_cancelled,
+    CANCEL_RATE_PER_MINUTE, cancel_turn, claim_running, clear_model_failure, drafter_config, end_turn, prepare,
+    record_model_failure, start_turn, TURN_ID, turn_cancelled,
 )
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
@@ -129,10 +129,21 @@ class DrafterStream(Resource):
         refusal, draft, recipe, model = prepare(user_id, body)
         if refusal is not None:
             return Response(_closed(refusal.event()), mimetype="text/event-stream", headers=_SSE_HEADERS)
+        # The panel names its turn, so a Stop sent before the ``turn`` event arrives still reaches it.
+        turn_id = start_turn(user_id, body.get("turn_id"))
+        if not claim_running(user_id, turn_id):
+            end_turn(user_id, turn_id)
+            return Response(
+                _closed({"type": "error", "code": "rate_limited",
+                         "message": "Too many drafts are running at once. Wait for one to finish and try again."}),
+                mimetype="text/event-stream",
+                headers=_SSE_HEADERS,
+            )
         try:
             # Read now, in the request: the stream runs on a thread with no request context.
             workspace = recipe.load_workspace(user_id, draft.context)
         except BadDraftRequest as err:
+            end_turn(user_id, turn_id)
             return Response(
                 _closed({"type": "error", "code": "bad_request", "message": str(err)}),
                 mimetype="text/event-stream",
@@ -140,6 +151,7 @@ class DrafterStream(Resource):
             )
         except Exception:
             logger.exception("drafter: could not read the workspace")
+            end_turn(user_id, turn_id)
             return Response(
                 _closed({"type": "error", "code": "model_error",
                          "message": "Your workspace could not be read. Try again in a moment."}),
@@ -149,8 +161,6 @@ class DrafterStream(Resource):
         # Under Werkzeug a disconnect closes the stream early (``stopped``); the production ASGI adapter drains
         # it first, so the panel stops a turn it gives up on through the turn id instead.
         stopped = threading.Event()
-        # The panel names its turn, so a Stop sent before the ``turn`` event arrives still reaches it.
-        turn_id = start_turn(user_id, body.get("turn_id"))
         return Response(
             with_sse_keepalive(_stream(draft, recipe, workspace, model, stopped, turn_id), on_disconnect=stopped.set),
             mimetype="text/event-stream",
@@ -170,6 +180,7 @@ class DrafterTurnCancel(Resource):
         ),
         responses={202: "The stop was requested", 401: "Not signed in",
                    404: "Not a turn id (32 lowercase hex characters)",
+                   429: f"More than {CANCEL_RATE_PER_MINUTE} stops in a minute",
                    503: "Stopping is unavailable right now"},
     )
     def post(self, turn_id: str) -> Response:
@@ -186,6 +197,10 @@ class DrafterTurnCancel(Resource):
             return make_response(jsonify({"success": False}), 401)
         if not TURN_ID.fullmatch(turn_id):
             return make_response(jsonify({"success": False, "message": "Turn not found"}), 404)
+        from docsgpt.monitors import triggers
+
+        if triggers.rate_limited("drafter_cancel", user_id, CANCEL_RATE_PER_MINUTE):
+            return make_response(jsonify({"success": False, "message": "Too many stops in a minute"}), 429)
         if not cancel_turn(user_id, turn_id):
             return make_response(jsonify({"success": False, "message": "Stopping is unavailable right now"}), 503)
         return make_response(jsonify({"success": True}), 202)

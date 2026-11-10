@@ -192,6 +192,15 @@ class AgentSettings(SettingsGroup):
             "is limited. Drafter calls also count against the user's usage quota."
         ),
     )
+    DRAFTER_MAX_RUNNING_TURNS: int = Field(
+        default=4,
+        ge=0,
+        description=(
+            "Draft turns one user may have running at once (0 disables the limit); a turn past it is refused as "
+            "rate-limited. Counted in Redis; without Redis nothing is limited. A turn that never ended (a crashed "
+            "worker) stops counting once its turn deadline has passed."
+        ),
+    )
     DRAFTER_CALL_TIMEOUT_SECONDS: float = Field(
         default=0.0,
         ge=0,

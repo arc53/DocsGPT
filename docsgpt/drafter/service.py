@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -33,6 +34,12 @@ TURN_TTL_SECONDS = 30 * 60
 #: ``<prefix><user>:<turn id>`` marks the user's running turn; ``<prefix><user>:<turn id>:stop`` asks it to
 #: stop. Both are keyed by the user, so a stop only ever reaches the caller's own turns.
 _TURN_PREFIX = "drafter:turn:"
+#: ``<prefix><user>`` is a sorted set of the user's running turns, each scored by when its claim runs out.
+_RUNNING_PREFIX = "drafter:running:"
+#: Seconds a running turn's claim outlives the turn deadline (or lives, without one).
+_RUNNING_GRACE_SECONDS = 60
+#: Most ``POST /api/drafter/turns/<id>/cancel`` calls a user makes in a minute.
+CANCEL_RATE_PER_MINUTE = 60
 #: A turn id: 32 lowercase hex characters (a UUID's hex). The panel picks it and sends it with the turn.
 TURN_ID = re.compile(r"[0-9a-f]{32}")
 
@@ -195,6 +202,51 @@ def start_turn(user_id: str, requested: Any = None) -> Optional[str]:
     return turn_id
 
 
+def _running_key(user_id: str) -> str:
+    """The Redis sorted set of the user's running turns."""
+    return f"{_RUNNING_PREFIX}{user_id}"
+
+
+def _claim_life() -> float:
+    """Seconds a running turn's claim lasts: past the turn deadline, so a crashed turn stops counting."""
+    deadline = float(settings.DRAFTER_TURN_TIMEOUT_SECONDS or 0)
+    return (deadline if deadline > 0 else TURN_TTL_SECONDS) + _RUNNING_GRACE_SECONDS
+
+
+def claim_running(user_id: str, turn_id: Optional[str]) -> bool:
+    """Count a turn among the user's running ones, unless they already run ``DRAFTER_MAX_RUNNING_TURNS``.
+
+    Each claim is scored by when it runs out, and claims past that are dropped
+    first, so a turn whose worker died stops counting on its own. The claim is
+    added before the count, so two turns starting at once can't both pass the
+    cap. :func:`end_turn` drops it.
+
+    Args:
+        user_id: The turn's owner.
+        turn_id: The turn's id from :func:`start_turn`; without one (no Redis) nothing is counted.
+
+    Returns:
+        False when the turn is one too many; True otherwise, also with no cap or when Redis fails.
+    """
+    cap = int(settings.DRAFTER_MAX_RUNNING_TURNS or 0)
+    if cap <= 0 or not turn_id:
+        return True
+    client = _turn_store()
+    if client is None:
+        return True
+    key, now = _running_key(user_id), time.time()
+    try:
+        client.zremrangebyscore(key, "-inf", now)
+        client.zadd(key, {turn_id: now + _claim_life()})
+        client.expire(key, int(_claim_life()) + 1)
+        if int(client.zcard(key)) > cap:
+            client.zrem(key, turn_id)
+            return False
+    except Exception:
+        logger.warning("drafter: could not count running turns; allowing the turn", exc_info=True)
+    return True
+
+
 def cancel_turn(user_id: str, turn_id: str) -> bool:
     """Ask the caller's turn to stop before its next model call, whether it has started yet or not.
 
@@ -244,6 +296,8 @@ def end_turn(user_id: str, turn_id: Optional[str]) -> None:
     key = _turn_key(user_id, turn_id)
     try:
         client.delete(key, f"{key}:stop")
+        if int(settings.DRAFTER_MAX_RUNNING_TURNS or 0) > 0:
+            client.zrem(_running_key(user_id), turn_id)
     except Exception:
         # The keys expire on their own; an ended turn only leaves them a while longer.
         logger.debug("drafter: could not forget an ended turn", exc_info=True)
