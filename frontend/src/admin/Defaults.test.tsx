@@ -312,6 +312,11 @@ describe('Admin Defaults', () => {
       '#defaults-task-model',
     )!;
     expect(trigger.textContent).toContain('Not set (GPT B)');
+    // A phone's full-width trigger shows the choice without the model.
+    expect(trigger.querySelector('.sm\\:hidden')?.textContent).toBe('Not set');
+    expect(trigger.querySelector('.sm\\:block')?.textContent).toBe(
+      'Not set (GPT B)',
+    );
     expect(save().disabled).toBe(true);
     await act(async () => {
       trigger.dispatchEvent(

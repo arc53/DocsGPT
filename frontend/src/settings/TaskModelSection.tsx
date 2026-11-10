@@ -295,7 +295,21 @@ export default function TaskModelSection() {
             >
               <SelectValue
                 placeholder={t('settings.general.taskModelUnavailableValue')}
-              />
+              >
+                {loaded.value === INSTANCE_DEFAULT && instanceModel ? (
+                  // A phone's full-width trigger (16px text) can't fit the
+                  // model's name as well: it shows the choice, and the list
+                  // and the title name the model.
+                  <>
+                    <span className="truncate sm:hidden">
+                      {t('settings.general.taskModelInstanceDefaultUnnamed')}
+                    </span>
+                    <span className="hidden truncate sm:block">
+                      {instanceLabel}
+                    </span>
+                  </>
+                ) : undefined}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent fit>
               <SelectItem value={INSTANCE_DEFAULT}>

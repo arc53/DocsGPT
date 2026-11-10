@@ -456,7 +456,19 @@ export default function Defaults() {
                   shape="pill"
                   title={pickedLabel}
                 >
-                  <SelectValue placeholder="Unavailable model" />
+                  <SelectValue placeholder="Unavailable model">
+                    {value.taskModel === TASK_MODEL_UNSET && fallbackName ? (
+                      // A phone's full-width trigger (16px text) can't fit
+                      // the model's name as well: the list and the title
+                      // name it.
+                      <>
+                        <span className="truncate sm:hidden">Not set</span>
+                        <span className="hidden truncate sm:block">
+                          {unsetLabel}
+                        </span>
+                      </>
+                    ) : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent fit>
                   <SelectItem value={TASK_MODEL_UNSET}>

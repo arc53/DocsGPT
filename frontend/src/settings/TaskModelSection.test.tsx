@@ -66,7 +66,9 @@ vi.mock('../components/ui/select', () => ({
       {children}
     </div>
   ),
-  SelectValue: () => null,
+  SelectValue: ({ children }: { children?: React.ReactNode }) => (
+    <span data-testid="value">{children}</span>
+  ),
   SelectContent: ({
     children,
     fit,
@@ -379,6 +381,33 @@ describe('Task model row', () => {
     expect(item(INSTANCE).querySelector('span.truncate')?.textContent).toBe(
       'settings.general.taskModelInstanceDefault(GPT B)',
     );
+  });
+
+  // Live check: on a 390px phone "Use instance default (DocsGPT Mod…" cut
+  // the model's name by a pixel.
+  it("shows the instance default without its model's name on a phone, where the trigger can't fit both", async () => {
+    await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
+    const value = container.querySelector('[data-testid="value"]')!;
+    const phone = value.querySelector('.sm\\:hidden')!;
+    const wider = value.querySelector('.sm\\:block')!;
+    expect(phone.textContent).toBe(
+      'settings.general.taskModelInstanceDefaultUnnamed',
+    );
+    expect(wider.textContent).toBe(
+      'settings.general.taskModelInstanceDefault(GPT B)',
+    );
+    expect(wider.className.split(' ')).toContain('hidden');
+    // The title names the model there too.
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="trigger"]')!.title,
+    ).toBe('settings.general.taskModelInstanceDefault(GPT B)');
+  });
+
+  it('shows any other pick as its item does', async () => {
+    await render({ task_model_id: 'mine', instance_task_model_id: 'gpt-b' });
+    expect(
+      container.querySelector('[data-testid="value"]')!.childElementCount,
+    ).toBe(0);
   });
 
   const REFUSED = { code: 'model_auth', at: '2026-11-10T09:00:00Z' };
