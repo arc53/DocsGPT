@@ -1273,6 +1273,40 @@ describe('resumeQuestion', () => {
     expect(store.getState().conversation.queries).toHaveLength(1);
   });
 
+  it('answers the latest turn when a provider reused the call id', async () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    // A local server's "call_0": the first turn's call was answered, the
+    // next turn asks again under the same id.
+    const answered = {
+      ...pausedTurn.tool_calls[0],
+      status: 'success' as const,
+      result: 'Which quarter? → Q2' as never,
+    };
+    store.dispatch(
+      setConversation([
+        { ...pausedTurn, tool_calls: [answered] },
+        { ...pausedTurn, prompt: 'and the next one' },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const { queries } = store.getState().conversation;
+    expect(queries[0].tool_calls![0].result).toBe('Which quarter? → Q2');
+    expect(queries[1].tool_calls![0]).toMatchObject({
+      status: 'success',
+      result: 'Q3',
+    });
+  });
+
   it('sends Just answer as skipped', async () => {
     const store = makeStore();
     await store.dispatch(

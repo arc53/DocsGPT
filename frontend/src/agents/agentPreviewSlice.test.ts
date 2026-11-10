@@ -21,6 +21,8 @@ import reducer, {
   fetchPreviewAnswer,
   raiseError,
   resumePreviewQuestion,
+  updateQuery,
+  updateToolCall,
 } from './agentPreviewSlice';
 
 describe('agent preview curated errors', () => {
@@ -180,6 +182,30 @@ describe('agent preview questions', () => {
     const { queries, status } = store.getState().agentPreview;
     expect(queries[0].tool_calls?.[0].status).toBe('awaiting_answer');
     expect(status).toBe('failed');
+  });
+
+  it('answers the latest turn when a provider reused the call id', async () => {
+    const store = await pausedStore();
+    // The first turn's call was answered; the next turn's model asked again
+    // under the same id ("call_0" from a local server).
+    store.dispatch(
+      updateToolCall({
+        index: 0,
+        tool_call: { ...paused, status: 'success', result: 'Q2' as never },
+      }),
+    );
+    store.dispatch(addQuery({ prompt: 'and the next one' }));
+    store.dispatch(updateToolCall({ index: 1, tool_call: paused }));
+    store.dispatch(
+      updateQuery({ index: 1, query: { conversationId: 'conv-9' } }),
+    );
+    vi.mocked(handleSubmitToolActions).mockResolvedValue(undefined as never);
+    await store.dispatch(
+      resumePreviewQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const { queries } = store.getState().agentPreview;
+    expect(queries[0].tool_calls?.[0].result).toBe('Q2');
+    expect(queries[1].tool_calls?.[0].status).toBe('success');
   });
 
   it('keeps the answered record once the server has taken the answers', async () => {

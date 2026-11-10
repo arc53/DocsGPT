@@ -244,7 +244,8 @@ export const resumePreviewQuestion = createAsyncThunk<
   async ({ callId, action }, { dispatch, getState }) => {
     const state = getState() as RootState;
     const { queries } = state.agentPreview;
-    const index = queries.findIndex((query) =>
+    // The latest turn: a provider may reuse a call id across turns.
+    const index = queries.findLastIndex((query) =>
       query.tool_calls?.some((call) => call.call_id === callId),
     );
     const call = queries[index]?.tool_calls?.find(
