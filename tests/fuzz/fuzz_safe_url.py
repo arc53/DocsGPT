@@ -22,7 +22,7 @@ import sys
 
 import atheris
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(include=["docsgpt", "urllib3"]):
     import urllib3
     from docsgpt.security import safe_url
 

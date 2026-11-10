@@ -35,7 +35,8 @@ PYTHONPATH=. DOCSGPT_ENV_FILE= /tmp/fuzz-venv/bin/python tests/fuzz/fuzz_safe_ur
 
 Arguments after the script are libFuzzer flags (`-max_total_time`, `-runs`,
 `-max_len`, a corpus directory). To replay a crash from CI, pass the downloaded
-file: `python tests/fuzz/fuzz_safe_url.py crash-<sha>`.
+file the same way:
+`PYTHONPATH=. DOCSGPT_ENV_FILE= /tmp/fuzz-venv/bin/python tests/fuzz/fuzz_safe_url.py crash-<sha>`.
 
 To run exactly what CI runs, use the OSS-Fuzz helper from a checkout of
 [google/oss-fuzz](https://github.com/google/oss-fuzz):

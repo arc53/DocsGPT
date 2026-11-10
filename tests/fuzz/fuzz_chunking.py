@@ -23,7 +23,7 @@ import sys
 
 import atheris
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(include=["docsgpt"]):
     from docsgpt.parser.chunking import Chunker
     from docsgpt.parser.chunking_strategies import MarkdownChunker, RecursiveChunker
     from docsgpt.parser.schema.base import Document

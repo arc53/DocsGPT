@@ -29,7 +29,7 @@ import zipfile
 
 import atheris
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(include=["docsgpt"]):
     from docsgpt.security import zip_archive
 
 _LIMITS = zip_archive.ZipExtractionLimits(

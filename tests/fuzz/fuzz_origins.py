@@ -22,7 +22,7 @@ import sys
 
 import atheris
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(include=["docsgpt"]):
     from docsgpt.security import origins
 
 # Lenient parsing keeps whatever host urlsplit found; the strict form allows only what a browser sends.
