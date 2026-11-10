@@ -804,6 +804,14 @@ class BaseAgent(ABC):
 
         actions_by_id = {a["call_id"]: a for a in tool_actions}
 
+        # The answers to question cards are the user's words: screen them with
+        # the input controls first, so a block ends the turn before any call
+        # in the pause runs or anything reaches the model.
+        answers, blocked = self._screen_question_answers(pending_tool_calls, actions_by_id)
+        if blocked is not None:
+            yield blocked
+            return
+
         # Build a single assistant message containing all tool calls so
         # the message history matches the format LLM providers expect
         # (one assistant message with N tool_calls, followed by N tool results).
@@ -851,7 +859,7 @@ class BaseAgent(ABC):
                 }
 
             if pending.get("pause_type") == "awaiting_answer":
-                yield from self._resume_question_call(pending, action, messages)
+                yield from self._resume_question_call(pending, answers.get(call_id, ""), messages)
 
             elif action.get("decision") == "approved":
                 approved = getattr(self.tool_executor, "approved_call_ids", None)
@@ -975,29 +983,67 @@ class BaseAgent(ABC):
         yield {"tool_calls": self._get_truncated_tool_calls()}
         yield from self._emit_responses_metadata()
 
+    def _screen_question_answers(
+        self, pending_tool_calls: List[Dict[str, Any]], actions_by_id: Dict[str, Dict[str, Any]]
+    ) -> Tuple[Dict[str, str], Optional[Dict]]:
+        """The user's answers to the pause's question cards, cleaned, capped and run through the input controls.
+
+        An answer is what the user typed or picked, so it gets the controls a
+        typed message gets: a redaction is what the model reads and the call
+        keeps, and a block ends the turn as an input block on a message does.
+
+        Args:
+            pending_tool_calls: The calls the pause waits on.
+            actions_by_id: The client's actions, by call id.
+
+        Returns:
+            ``({call id: answer}, block event)``: an answer is ``""`` when the
+            questions were skipped; the event is set when an input control
+            blocked an answer, and the answers are then not to be used.
+        """
+        from docsgpt.agents.questions import ANSWER_CHARS
+        from docsgpt.drafter.fencing import clean_text
+
+        answers: Dict[str, str] = {}
+        for pending in pending_tool_calls:
+            if pending.get("pause_type") != "awaiting_answer":
+                continue
+            call_id = pending["call_id"]
+            action = actions_by_id.get(call_id) or {}
+            raw = action.get("answer") if action.get("skipped") is not True else None
+            # Cut before cleaning, which reads every character; the headroom
+            # covers what cleaning drops.
+            answer = clean_text(raw[: ANSWER_CHARS * 2] if isinstance(raw, str) else raw, ANSWER_CHARS)
+            if answer:
+                answer, decision = self.apply_input_guardrails(answer)
+                if decision is not None and decision.blocked:
+                    return {}, self._guardrail_block_event(
+                        decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
+                    )
+            answers[call_id] = answer
+        return answers, None
+
     def _resume_question_call(
-        self, pending: Dict[str, Any], action: Dict[str, Any], messages: List[Dict]
+        self, pending: Dict[str, Any], answer: str, messages: List[Dict]
     ) -> Generator[Dict, None, None]:
         """Answer a paused ``ask_user`` call with what the user replied, or with their skipping it.
 
-        The answer is the user's text, so it is scanned and capped like a
-        client's tool result. The call is kept on the message with the
-        normalized questions as its arguments, so a reload can draw the cards.
+        The answer was screened by the input controls
+        (:meth:`_screen_question_answers`); it is also scanned like a client's
+        tool result. The call is kept on the message with the normalized
+        questions as its arguments, so a reload can draw the cards.
 
         Args:
             pending: The paused call (``awaiting_answer``).
-            action: The client's action for it: ``answer`` or ``skipped``.
+            answer: The screened answer, or ``""`` when the questions were skipped.
             messages: The resumed messages; the tool result is appended.
 
         Yields:
             The call's ``tool_call`` event.
         """
-        from docsgpt.agents.questions import ANSWER_CHARS
         from docsgpt.agents.tools.ask_user import SKIPPED_TEXT
-        from docsgpt.drafter.fencing import clean_text
 
         call_id = pending["call_id"]
-        answer = clean_text(action.get("answer"), ANSWER_CHARS) if action.get("skipped") is not True else ""
         if answer:
             result, status = self._guard_tool_result_text(answer), "success"
         else:

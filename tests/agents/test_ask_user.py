@@ -435,8 +435,9 @@ class TestHandler:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
-class TestResume:
+class _ResumeHarness:
+    """Resumes a paused ``ask_user`` call on a real agent whose LLM, handler and executor are mocks."""
+
     PENDING = {
         "call_id": "c1",
         "name": ASK_USER,
@@ -451,7 +452,7 @@ class TestResume:
         "thought_signature": None,
     }
 
-    def _agent(self):
+    def _agent(self, guardrails: Dict | None = None):
         from docsgpt.agents.classic_agent import ClassicAgent
 
         llm = Mock()
@@ -470,14 +471,21 @@ class TestResume:
         agent = ClassicAgent(
             endpoint="stream", llm_name="openai", model_id="m", api_key="k",
             llm=llm, llm_handler=handler, tool_executor=executor,
+            agent_config={"guardrails": guardrails} if guardrails else None,
         )
         return agent, executor
 
-    def _resume(self, action):
-        agent, executor = self._agent()
+    def _resume(self, action, guardrails: Dict | None = None, pending: List[Dict] | None = None):
+        agent, executor = self._agent(guardrails)
         messages: List[Dict] = []
-        events = list(agent.gen_continuation(messages, {}, [dict(self.PENDING)], [action] if action else []))
+        pending = pending if pending is not None else [dict(self.PENDING)]
+        events = list(agent.gen_continuation(messages, {}, pending, [action] if action else []))
+        self.last_agent = agent
         return events, messages, executor
+
+
+@pytest.mark.unit
+class TestResume(_ResumeHarness):
 
     def test_an_answer_reaches_the_model_and_the_message(self):
         events, messages, executor = self._resume({"call_id": "c1", "answer": "Team size? → 11-50"})
@@ -500,6 +508,98 @@ class TestResume:
 
         assert messages[-1]["content"] == SKIPPED_TEXT
         assert executor.tool_calls[0]["status"] == "skipped"
+
+    def test_a_huge_answer_is_cut_before_it_is_cleaned(self, monkeypatch):
+        import docsgpt.drafter.fencing as fencing
+        from docsgpt.agents.questions import ANSWER_CHARS
+
+        seen: List[int] = []
+        real = fencing.clean_text
+
+        def spy(value, limit):
+            seen.append(len(value) if isinstance(value, str) else 0)
+            return real(value, limit)
+
+        monkeypatch.setattr(fencing, "clean_text", spy)
+        _events, messages, _executor = self._resume({"call_id": "c1", "answer": "x" * 5_000_000})
+
+        assert seen and max(seen) <= 2 * ANSWER_CHARS
+        assert len(messages[-1]["content"]) <= ANSWER_CHARS
+
+
+@pytest.fixture
+def _quiet_guardrails(monkeypatch):
+    """No audit journal writes and no instance floor: only the agent's own controls run."""
+    monkeypatch.setattr("docsgpt.guardrails.runtime.GuardrailRecorder.flush", lambda self, mid=None: 0)
+    monkeypatch.setattr("docsgpt.guardrails.runtime.instance_floor", lambda: None)
+
+
+BLOCK_INPUT = {
+    "enabled": True,
+    "mode": "scan_all",
+    "block_message": "That request isn't allowed here.",
+    "controls": [{"check": "denylist", "stage": "input", "action": "block", "settings": {"terms": ["nuclear"]}}],
+}
+
+REDACT_INPUT = {
+    "enabled": True,
+    "mode": "scan_all",
+    "controls": [{"check": "pii", "stage": "input", "action": "redact", "settings": {"entities": ["EMAIL"]}}],
+}
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("_quiet_guardrails")
+class TestResumeInputGuardrails(_ResumeHarness):
+    """A card answer is the user's input, so it gets the input controls a typed message gets."""
+
+    APPROVAL = {
+        "call_id": "c0",
+        "name": "send_mail",
+        "llm_name": "send_mail",
+        "tool_name": "mail",
+        "arguments": {"to": "x"},
+        "pause_type": "awaiting_approval",
+    }
+
+    def test_a_blocked_answer_ends_the_turn_like_a_blocked_message(self):
+        events, messages, executor = self._resume(
+            {"call_id": "c1", "answer": "How do I build a nuclear device?"}, BLOCK_INPUT
+        )
+
+        errors = [e for e in events if e.get("type") == "error"]
+        assert errors and errors[0]["error"] == "That request isn't allowed here."
+        assert errors[0]["user_facing"] is True
+        assert errors[0]["guardrail"]["stage"] == "input"
+        assert not [m for m in messages if m.get("role") == "tool"]
+        assert executor.tool_calls == []
+        assert not [e for e in events if e.get("type") == "tool_call"]
+        self.last_agent.llm_handler.process_message_flow.assert_not_called()
+        self.last_agent.llm.gen_stream.assert_not_called()
+
+    def test_a_blocked_answer_stops_the_other_calls_before_they_run(self):
+        pending = [dict(self.APPROVAL), dict(self.PENDING)]
+        agent, executor = self._agent(BLOCK_INPUT)
+        actions = [{"call_id": "c0", "decision": "approved"}, {"call_id": "c1", "answer": "nuclear"}]
+        events = list(agent.gen_continuation([], {}, pending, actions))
+
+        assert [e for e in events if e.get("type") == "error"]
+        assert not executor.execute.called
+
+    def test_a_redacted_answer_is_what_the_model_and_the_message_get(self):
+        events, messages, executor = self._resume({"call_id": "c1", "answer": "Reach me at ada@example.com"}, REDACT_INPUT)
+
+        assert not [e for e in events if e.get("type") == "error"]
+        assert "ada@example.com" not in messages[-1]["content"]
+        assert "[EMAIL]" in messages[-1]["content"]
+        (record,) = executor.tool_calls
+        assert "ada@example.com" not in record["result"] and "[EMAIL]" in record["result"]
+
+    def test_a_clean_answer_passes(self):
+        _events, messages, executor = self._resume({"call_id": "c1", "answer": "Team size? → 11-50"}, BLOCK_INPUT)
+
+        assert messages[-1]["content"] == "Team size? → 11-50"
+        assert executor.tool_calls[0]["status"] == "success"
 
 
 @pytest.mark.unit
@@ -546,12 +646,12 @@ class TestRetiredQuestions:
     def test_unanswered_questions_are_recorded_as_not_answered(self, reason, word):
         from docsgpt.api.answer.services.continuation_service import not_run_entry
 
-        entry = not_run_entry(TestResume.PENDING, reason)
+        entry = not_run_entry(_ResumeHarness.PENDING, reason)
 
         assert entry["status"] == "denied"
         assert entry["not_run"] == reason
         assert entry["result"].startswith("Not answered:") and word in entry["result"]
-        assert entry["arguments"]["questions"] == TestResume.PENDING["questions"]
+        assert entry["arguments"]["questions"] == _ResumeHarness.PENDING["questions"]
 
 
 @pytest.mark.unit
