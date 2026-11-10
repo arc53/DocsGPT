@@ -23,8 +23,9 @@ MAX_TEMPLATE_SEQUENCE = 1_000_000
 #: digits, past what Python will print as text anyway).
 MAX_TEMPLATE_INT_BITS = 16_384
 
-# One ``%`` conversion: an optional ``(key)``, flags, then width and precision.
-_PERCENT_SPEC = re.compile(r"%(?:\([^)]*\))?[-#0 +]*(\*|\d+)?(?:\.(\*|\d+)?)?")
+# One ``%`` conversion: an optional ``(key)``, flags, width, precision, a
+# length modifier and the conversion character (``%%`` takes no value).
+_PERCENT_SPEC = re.compile(r"%(?:\([^)]*\))?[-#0 +]*(\*|\d+)?(?:\.(\*|\d+)?)?[hlL]?(.)", re.DOTALL)
 
 
 def _refuse(message: str) -> None:
@@ -43,16 +44,23 @@ def _check_percent_format(fmt: str, args: Any) -> None:
     """
     if "%" not in fmt:
         return
-    star_values = args if isinstance(args, (tuple, list)) else (args,)
+    values = args if isinstance(args, tuple) else (args,)
+    # The conversions take their values in order: a ``*`` width or precision
+    # takes the next one as its size, then the conversion takes its own, so
+    # only the values a ``*`` takes are sizes (``"%*d" % (10, 1234567)``).
+    position = 0
     for match in _PERCENT_SPEC.finditer(fmt):
-        for size in match.groups():
+        width, precision, conversion = match.groups()
+        for size in (width, precision):
             if size == "*":
-                if any(
-                    isinstance(v, int) and abs(v) > MAX_TEMPLATE_SEQUENCE for v in star_values
-                ):
+                value = values[position] if position < len(values) else None
+                position += 1
+                if isinstance(value, int) and abs(value) > MAX_TEMPLATE_SEQUENCE:
                     _refuse("format width too large")
             elif size and int(size) > MAX_TEMPLATE_SEQUENCE:
                 _refuse("format width too large")
+        if conversion != "%":
+            position += 1
 
 
 def _check_width(width: Any) -> None:
