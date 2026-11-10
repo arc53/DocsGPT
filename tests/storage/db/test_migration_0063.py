@@ -36,7 +36,7 @@ def _error_type(conn, run_id: str) -> str:
 
 
 def test_round_trip_allows_then_folds_the_new_value(pg_conn):
-    migration = importlib.import_module("docsgpt.alembic.versions.0063_schedule_run_cannot_complete")
+    migration = importlib.import_module("docsgpt.alembic.versions.0063_run_cannot_complete")
     with patch.object(migration, "op", Operations(MigrationContext.configure(pg_conn))):
         migration.upgrade()
         migration.upgrade()

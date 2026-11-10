@@ -9,13 +9,13 @@ Constraint-only change; existing rows stay valid. Downgrade rewrites rows with
 the new value to ``agent_error`` before restoring the narrower constraint.
 Idempotent both ways.
 
-Revision ID: 0063_schedule_run_cannot_complete
+Revision ID: 0063_run_cannot_complete
 Revises: 0062_ingest_resume
 """
 
 from alembic import op
 
-revision = "0063_schedule_run_cannot_complete"
+revision = "0063_run_cannot_complete"
 down_revision = "0062_ingest_resume"
 branch_labels = None
 depends_on = None
