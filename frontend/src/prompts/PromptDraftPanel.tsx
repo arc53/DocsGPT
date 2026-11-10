@@ -33,6 +33,8 @@ export type PromptDraftSave = {
   onSave: () => void;
   disabled: boolean;
   saving: boolean;
+  /** The prompt differs from what's saved (or was never saved). */
+  dirty: boolean;
 };
 
 type PromptDraftPanelProps = {
@@ -47,7 +49,7 @@ type PromptDraftPanelProps = {
   modelName: string | null;
   /** The footer link's click handler, to ask before leaving unsaved work. */
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
-  /** Save prompt under a written draft. */
+  /** Save prompt under the latest result while there's something to save. */
   save: PromptDraftSave;
   /**
    * Opens an agent a review finding is about ("Open Fleet Desk"), through
@@ -65,9 +67,9 @@ type PromptDraftPanelProps = {
  * ask first, with Skip to draft at once. Each result shows its message, a
  * written prompt's reason, "Check before you save" warnings and the guesses
  * it made (I assumed, each with Change, which puts it in the ask bar); the
- * latest written prompt asks to be read and offers Save prompt, and the
- * latest improvement under review gets Accept all, Review one by one and
- * Discard. The per-change Accept and Reject stay inline in the editor's
+ * latest result asks for a read and offers Save prompt while the prompt has
+ * unsaved changes (no review open, no turn running), and the latest
+ * improvement under review gets Accept all, Review one by one and Discard. The per-change Accept and Reject stay inline in the editor's
  * review. The latest result ends with the model's next changes as rows, and
  * the header's Start over begins a fresh conversation on the text as it
  * stands.
@@ -130,7 +132,10 @@ export function PromptDraftPanel({
     if (!proposal) return null;
     const { review, session } = drafter;
     const reviewing = latest && review !== null && proposal.mode !== 'write';
-    const written = latest && proposal.mode === 'write';
+    // Whatever the mode: an improvement accepted (or a written prompt kept
+    // through a Discard) still has to be saved.
+    const unsaved =
+      latest && review === null && !session.streaming && save.dirty;
     // "Change n" goes to a change still under review, numbered as the
     // editor numbers it.
     const changeNumbers: Record<string, number> = {};
@@ -178,7 +183,7 @@ export function PromptDraftPanel({
         next={next}
         onNext={(text) => session.send(text)}
         actions={
-          written ? (
+          unsaved ? (
             <>
               <p className="text-sm">{t('drafter.prompt.readAndSave')}</p>
               <Button

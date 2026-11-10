@@ -709,6 +709,7 @@ function PromptDetailPage({
             // The header's Save, under the written draft.
             disabled: !detail.canSave || streaming || drafter.review !== null,
             saving: detail.saving,
+            dirty: detail.dirty,
           }}
         />
       )}

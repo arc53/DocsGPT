@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn, fieldFrame, focusRing } from '@/lib/utils';
 
-import { promptDiffSegments, type PromptEdit } from './promptDraft';
+import { promptDiffSegments, type PromptDiffSegment } from './promptDraft';
 import type { PromptDecision, PromptReview } from './usePromptReview';
 
 /**
@@ -45,6 +45,20 @@ export function PromptEditReview({
   const textRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
 
+  // A new review opens on change 1: the box scrolls it to its top and the
+  // page brings the box into view, leaving focus where it was.
+  useEffect(() => {
+    const box = textRef.current;
+    const first = box?.querySelector<HTMLElement>('[data-edit-id]');
+    if (!box || !first) return;
+    const padding = parseFloat(getComputedStyle(box).paddingTop) || 0;
+    box.scrollTop +=
+      first.getBoundingClientRect().top -
+      box.getBoundingClientRect().top -
+      padding;
+    box.scrollIntoView?.({ block: 'nearest' });
+  }, [proposal]);
+
   // One by one: bring the current change into view, and its Accept to hand.
   useEffect(() => {
     if (!current) return;
@@ -58,7 +72,15 @@ export function PromptEditReview({
       ?.focus();
   }, [current]);
 
-  const renderChange = (edit: PromptEdit, number: number) => {
+  // The words a change shares with what it replaces stay plain, before its
+  // number; only what goes is struck and only what comes is added.
+  const renderChange = ({
+    edit,
+    number,
+    kept,
+    removed,
+    added,
+  }: Extract<PromptDiffSegment, { kind: 'change' }>) => {
     const decision = decisions[edit.id];
     return (
       <span
@@ -72,27 +94,29 @@ export function PromptEditReview({
             'decoration-primary underline decoration-2 underline-offset-4',
         )}
       >
+        {kept.before}
         <sup className="text-link px-0.5 text-xs font-semibold">{number}</sup>
         {decision === 'rejected' ? (
-          edit.find
+          removed
         ) : (
           <>
-            {decision !== 'accepted' && edit.find && (
+            {decision !== 'accepted' && removed && (
               <del className="text-muted-foreground line-through">
                 <span className="sr-only">
                   {t('drafter.prompt.removedText')}
                 </span>
-                {edit.find}
+                {removed}
               </del>
             )}
-            {edit.replace && (
+            {added && (
               <ins className="bg-secondary text-foreground rounded-sm no-underline">
                 <span className="sr-only">{t('drafter.prompt.addedText')}</span>
-                {edit.replace}
+                {added}
               </ins>
             )}
           </>
         )}
+        {kept.after}
       </span>
     );
   };
@@ -114,7 +138,7 @@ export function PromptEditReview({
           segment.kind === 'text' ? (
             <span key={`t${index}`}>{segment.text}</span>
           ) : (
-            renderChange(segment.edit, segment.number)
+            renderChange(segment)
           ),
         )}
       </div>

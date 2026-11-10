@@ -1276,6 +1276,44 @@ describe('Prompts page', () => {
     expect(button('drafter.prompt.backToDrafter', view()!)).toBeUndefined();
   });
 
+  it('offers Save prompt under the latest result while the prompt has unsaved changes', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [proposal(IMPROVE), proposal(IMPROVE)];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
+    );
+    // Not while the review is open: the text holds only the choices so far.
+    expect(button('drafter.prompt.savePrompt', panel()!)).toBeUndefined();
+    // Discarded, the saved prompt is unchanged: nothing to save.
+    await click(button('drafter.prompt.discard', panel()!)!);
+    expect(button('drafter.prompt.savePrompt', panel()!)).toBeUndefined();
+    // Accepted after a follow-up, the improvement offers the save.
+    const composer = panel()!.querySelector<HTMLTextAreaElement>('textarea')!;
+    await type(composer, 'Make it clearer');
+    await act(async () => {
+      composer.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    await click(button('drafter.prompt.acceptAll', panel()!)!);
+    expect(panel()!.textContent).toContain('drafter.prompt.readAndSave');
+    expect(
+      panel()!.querySelectorAll('[data-slot="prompt-result"]').length,
+    ).toBe(2);
+    // Only under the latest result.
+    const results = panel()!.querySelectorAll('[data-slot="prompt-result"]');
+    expect(
+      button('drafter.prompt.savePrompt', results[0] as HTMLElement),
+    ).toBeUndefined();
+    expect(
+      button('drafter.prompt.savePrompt', results[1] as HTMLElement),
+    ).toBeDefined();
+  });
+
   const REVIEW = {
     mode: 'review',
     message: '2 things to fix and 1 worth a look.',

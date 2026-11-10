@@ -420,11 +420,57 @@ export function applyPromptEdits(
 
 export type PromptDiffSegment =
   | { kind: 'text'; text: string }
-  | { kind: 'change'; edit: PromptEdit; number: number };
+  | {
+      kind: 'change';
+      edit: PromptEdit;
+      number: number;
+      /** The whole words the edit's find and replace share at each end. */
+      kept: { before: string; after: string };
+      /** What goes, between the kept words. */
+      removed: string;
+      /** What comes in, between the kept words. */
+      added: string;
+    };
+
+/** A text as whole words and the runs of space between them. */
+const words = (text: string): string[] => text.match(/\s+|\S+/g) ?? [];
+
+/**
+ * Split a change into the whole words its find and replace share at the
+ * start and at the end, and the part that really changes: a model that adds
+ * text after a line sends the line in both, which then reads as an addition
+ * instead of the line struck and added back.
+ */
+function trimChange(
+  find: string,
+  replace: string,
+): { kept: { before: string; after: string }; removed: string; added: string } {
+  const from = words(find);
+  const to = words(replace);
+  let start = 0;
+  while (start < from.length && start < to.length && from[start] === to[start])
+    start += 1;
+  let end = 0;
+  while (
+    end < from.length - start &&
+    end < to.length - start &&
+    from[from.length - 1 - end] === to[to.length - 1 - end]
+  )
+    end += 1;
+  return {
+    kept: {
+      before: from.slice(0, start).join(''),
+      after: from.slice(from.length - end).join(''),
+    },
+    removed: from.slice(start, from.length - end).join(''),
+    added: to.slice(start, to.length - end).join(''),
+  };
+}
 
 /**
  * The text cut into unchanged runs and changes, each change numbered in text
- * order (the number the review's list uses).
+ * order (the number the review's list uses), with the whole words it shares
+ * with what it replaces kept apart from what really changes.
  *
  * Args:
  *   content: The text the edits were made for.
@@ -445,7 +491,12 @@ export function promptDiffSegments(
     if (start > cursor)
       segments.push({ kind: 'text', text: content.slice(cursor, start) });
     number += 1;
-    segments.push({ kind: 'change', edit, number });
+    segments.push({
+      kind: 'change',
+      edit,
+      number,
+      ...trimChange(edit.find, edit.replace),
+    });
     cursor = end;
   }
   if (cursor < content.length)

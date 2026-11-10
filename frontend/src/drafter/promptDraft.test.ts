@@ -221,11 +221,54 @@ describe('fittingEdits', () => {
 describe('promptDiffSegments', () => {
   it('splits the text around each change, numbered in text order', () => {
     const segments = promptDiffSegments(CONTENT, [EDITS[1], EDITS[0]]);
-    expect(segments).toEqual([
+    expect(segments).toMatchObject([
       { kind: 'text', text: 'You answer questions.\n' },
       { kind: 'change', edit: EDITS[0], number: 1 },
       { kind: 'change', edit: EDITS[1], number: 2 },
     ]);
+  });
+
+  const change = (find: string, replace: string) => {
+    const edit: PromptEdit = { id: 'e1', find, replace, reason: 'r' };
+    const [segment] = promptDiffSegments(find, [edit]);
+    if (segment.kind !== 'change') throw new Error('no change');
+    const { kept, removed, added } = segment;
+    return { kept, removed, added };
+  };
+
+  it('keeps the whole words a change shares at its start and end', () => {
+    // A line the model re-sends with text after it reads as an addition.
+    expect(
+      change('Say so plainly.', 'Say so plainly.\n## Boundaries\nNo tricks.'),
+    ).toEqual({
+      kept: { before: 'Say so plainly.', after: '' },
+      removed: '',
+      added: '\n## Boundaries\nNo tricks.',
+    });
+    // One word in the middle: only it is struck and added.
+    expect(change('Be brief and kind.', 'Be short and kind.')).toEqual({
+      kept: { before: 'Be ', after: ' and kind.' },
+      removed: 'brief',
+      added: 'short',
+    });
+    // Only whole words: a shared start inside a word stays in the change.
+    expect(change('Be brief.', 'Be briefer.')).toEqual({
+      kept: { before: 'Be ', after: '' },
+      removed: 'brief.',
+      added: 'briefer.',
+    });
+    // Nothing shared: the change is all of it.
+    expect(change('Cite pages.', '{{ source.citation_rules }}')).toEqual({
+      kept: { before: '', after: '' },
+      removed: 'Cite pages.',
+      added: '{{ source.citation_rules }}',
+    });
+    // A deletion of a repeated word keeps the words on both sides once.
+    expect(change('Be very very brief.', 'Be very brief.')).toEqual({
+      kept: { before: 'Be very ', after: 'brief.' },
+      removed: 'very ',
+      added: '',
+    });
   });
 });
 
@@ -269,7 +312,7 @@ describe('edits on a text with invisible characters', () => {
     expect(applyPromptEdits(TEXT, edits, () => true)).toBe(
       `Be${ZWSP} brief.\r\nCite sources.${ZWSP}\u0007 Thanks.`,
     );
-    expect(promptDiffSegments(TEXT, edits)).toEqual([
+    expect(promptDiffSegments(TEXT, edits)).toMatchObject([
       { kind: 'text', text: `Be${ZWSP} brief.\r\n` },
       { kind: 'change', edit: edits[0], number: 1 },
       { kind: 'text', text: `${ZWSP}\u0007 Thanks.` },
