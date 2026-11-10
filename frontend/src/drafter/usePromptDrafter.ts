@@ -188,7 +188,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
       reviewing.current = false;
       setReviewTurn(false);
       skipped.current = true;
-      sessionSend(text);
+      sessionSend(text, { hidden: true });
     },
     [sessionSend],
   );

@@ -225,6 +225,10 @@ describe('usePromptDrafter', () => {
       mode: 'improve',
       skip_questions: true,
     });
+    // The skipped cards are the record: the skip's own text draws no bubble.
+    expect(
+      current.drafter!.session.items.some((item) => item.kind === 'user'),
+    ).toBe(false);
     await act(async () => current.drafter!.session.retry());
     expect(stream.requests[1].context).toMatchObject({ skip_questions: true });
     // The next request may be asked about again.
