@@ -29,6 +29,7 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
+from docsgpt.agents.questions import MAX_OPTIONS
 from docsgpt.analytics.config import AnalyticsTopic, TOPIC_DESCRIPTION_UNITS, TOPIC_NAME_CHARS
 from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import is_template, load_models, read_workspace, Workspace
@@ -1451,14 +1452,37 @@ def _question_part(question: dict) -> Optional[str]:
     return None
 
 
-def _pick_any(question: dict) -> None:
-    """Make a guardrails or topics question pick-any, its "No extra checks" / "No topics" option exclusive and last."""
+#: The decline option added, as a last resort, to a guardrails or topics question that has none.
+_NONE_LABELS = {"guardrails": "No extra checks", "analytics": "No topics"}
+NONE_MISSING = (
+    "The {part} question has no option for none: add a last option meaning \"{label}\", worded in the user's "
+    "language, with \"exclusive\": true."
+)
+
+
+def _none_option(question: dict) -> Optional[dict]:
+    """A question's decline option: one reading "No…" / "None…" in English, else the one the model marked
+    exclusive (its wording in the user's language), else None."""
+    options = question["options"]
+    return next((o for o in options if re.match(r"\s*(?:no|none)\b", _plain(o["label"]))), None) \
+        or next((o for o in options if o.get("exclusive")), None)
+
+
+def _pick_any(question: dict, part: str) -> None:
+    """Make a guardrails or topics question pick-any, its "No extra checks" / "No topics" option exclusive and last.
+
+    A question without one gets the English label (:data:`_NONE_LABELS`), the last regular option giving way when
+    the question is full: :func:`check_questions` sends it back for one in the user's words first.
+    """
     question["multi"] = True
     options = question["options"]
-    none = next((o for o in options if re.match(r"\s*(?:no|none)\b", _plain(o["label"]))), None)
-    if none is not None:
-        for option in options:
-            option["exclusive"] = option is none
+    none = _none_option(question)
+    if none is None:
+        del options[MAX_OPTIONS - 1:]
+        none = {"id": "", "label": _NONE_LABELS[part], "input": None, "exclusive": True}
+        options.append(none)
+    for option in options:
+        option["exclusive"] = option is none
     options.sort(key=lambda option: option["exclusive"])
     for i, option in enumerate(options):
         option["id"] = chr(ord("a") + i)
@@ -1469,10 +1493,13 @@ def check_questions(questions: list[dict], req: DraftRequest, ws: Workspace) -> 
 
     A question about a part the user settled goes back once (:data:`SETTLED_ASKED`); with no correction left it is
     dropped, unless it is the only one. The guardrails and topics questions become pick-any with their "No extra
-    checks" / "No topics" option exclusive, whatever the model sent. Other steps' questions pass as they are.
+    checks" / "No topics" option exclusive, whatever the model sent; one without that option goes back once for it
+    in the user's words (:data:`NONE_MISSING`), and with no correction left gets the English label. Other steps'
+    questions pass as they are.
 
     Raises:
-        ProposalInvalid: A question about a settled part, while a correction is left.
+        ProposalInvalid: A question about a settled part, or a guardrails or topics question with no option for none,
+            while a correction is left.
     """
     if req.context.get("step") != "safety":
         return questions
@@ -1486,7 +1513,9 @@ def check_questions(questions: list[dict], req: DraftRequest, ws: Workspace) -> 
             problems.append(SETTLED_ASKED.format(part=_PART_NAMES[part], how=how))
             continue
         if part in ("guardrails", "analytics") and question["options"]:
-            _pick_any(question)
+            if _none_option(question) is None and req.can_correct:
+                problems.append(NONE_MISSING.format(part=_PART_NAMES[part], label=_NONE_LABELS[part]))
+            _pick_any(question, part)
         kept.append(question)
     if problems and req.can_correct:
         raise ProposalInvalid(problems)

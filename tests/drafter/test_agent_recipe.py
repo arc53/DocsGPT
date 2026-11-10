@@ -1374,6 +1374,42 @@ class TestSafetyQuestions:
             assert [o["exclusive"] for o in question["options"]].count(True) == 1
             assert [o["id"] for o in question["options"]] == ["a", "b", "c"]
 
+    @pytest.mark.parametrize("question,part", [
+        (_q("Which Insights topics should group user questions?", "Parcel tracking", "Customs paperwork"), "topics"),
+        (_q("Which extra safety checks should it run?", "Hide personal data (recommended)", "Hide secrets"),
+         "guardrails"),
+    ])
+    def test_a_question_without_a_none_option_goes_back_for_one(self, question, part):
+        # safety_vague_r2: the topics question came with no "No topics" to tick.
+        with pytest.raises(ProposalInvalid, match="exclusive") as raised:
+            self._check(question, earlier=["a bot for my company"])
+        assert part in str(raised.value) and "user's language" in str(raised.value)
+
+    def test_a_none_option_the_model_marked_exclusive_counts_in_any_language(self):
+        question = _q("Welche Insights-Themen?", "Keine Themen", "Sendungsverfolgung", "Zollpapiere")
+        question["options"][0]["exclusive"] = True
+        [out] = self._check(question, earlier=["ein Bot für meine Firma"])
+        assert [(o["label"], o["exclusive"]) for o in out["options"]][-1] == ("Keine Themen", True)
+        assert [o["exclusive"] for o in out["options"]].count(True) == 1
+
+    @pytest.mark.parametrize("labels,none", [
+        (("Parcel tracking", "Customs paperwork"), "No topics"),
+        (("Hide personal data (recommended)", "Hide secrets"), "No extra checks"),
+    ])
+    def test_with_no_correction_left_a_none_option_is_added(self, labels, none):
+        text = "Which Insights topics should group user questions?" if none == "No topics" \
+            else "Which extra safety checks should it run?"
+        [out] = self._check(_q(text, *labels), earlier=["a bot for my company"], can_correct=False)
+        assert [o["label"] for o in out["options"]] == [*labels, none]
+        assert out["options"][-1]["exclusive"] is True and out["options"][-1]["input"] is None
+        assert [o["id"] for o in out["options"]] == ["a", "b", "c"]
+
+    def test_an_added_none_option_keeps_the_option_cap(self):
+        labels = [f"Topic {n}" for n in range(1, 6)]
+        [out] = self._check(_q("Which Insights topics should group user questions?", *labels),
+                            earlier=["a bot for my company"], can_correct=False)
+        assert [o["label"] for o in out["options"]] == [*labels[:4], "No topics"]
+
     def test_asking_for_topics_after_declining_them_reopens_topics(self):
         out = self._check(TOPICS_Q, said="Also suggest a few Insights topics for it.")
         assert out[0]["multi"] is True
