@@ -55,7 +55,7 @@ from docsgpt.drafter.prompt_rules import (
 )
 from docsgpt.drafter.prompt_checks import edit_problems
 from docsgpt.drafter.prompt_recipe import (
-    apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE, RAW_READ_MAX, READ_MAX,
+    apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE, PromptTooLong, RAW_READ_MAX, READ_MAX,
 )
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
@@ -340,10 +340,10 @@ def parse_context(raw: Any) -> dict:
     form["prompt_draft"] = None
     if isinstance(draft, dict) and isinstance(draft.get("content"), str):
         if len(draft["content"]) > RAW_READ_MAX:
-            raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
+            raise PromptTooLong(READ_MAX)
         content = clean_text(draft["content"], len(draft["content"]))
         if len(content) > READ_MAX:
-            raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
+            raise PromptTooLong(READ_MAX)
         form["prompt_draft"] = {"name": clean_text(draft.get("name"), PROMPT_NAME_MAX), "content": content}
         # The saved prompt whose unsaved changes the view holds; none for a new prompt.
         draft_id = draft.get("id")

@@ -152,13 +152,14 @@ class TestContext:
             parse_context(raw)
 
     def test_the_prompt_views_unsaved_text_is_kept_whole_up_to_the_read_cap(self):
-        from docsgpt.drafter.prompt_recipe import READ_MAX
+        from docsgpt.drafter.prompt_recipe import PromptTooLong, READ_MAX
 
         long = "You help.\n" + "y" * 30000
         draft = parse_context({"form": {"prompt_draft": {"name": "P", "content": long}}})["form"]["prompt_draft"]
         assert draft["content"] == long
-        with pytest.raises(BadDraftRequest, match="too long"):
+        with pytest.raises(PromptTooLong, match="too long") as refused:
             parse_context({"form": {"prompt_draft": {"name": "P", "content": "y" * (READ_MAX + 1)}}})
+        assert refused.value.reason == "too_long" and refused.value.limit == READ_MAX
 
     def test_ids_equal_once_cut_are_kept_once(self):
         long = "s" * 150
