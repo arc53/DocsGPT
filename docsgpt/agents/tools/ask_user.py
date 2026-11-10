@@ -139,7 +139,8 @@ class AskUserTool(Tool):
                     "the sources settle; otherwise answer with a sensible assumption and say what you assumed. "
                     "Never ask for small talk or about something already clear. Give each question 2-5 short "
                     "options (the user can always type their own), or none for something only the user can "
-                    "type. Call it alone, with no other tool call in the same round, and write nothing else in "
+                    "type. An option that needs a detail typed gets an input instead of asking to type; never "
+                    "invent contact details as options. Call it alone, with no other tool call in the same round, and write nothing else in "
                     "that turn: the user's reply comes back to you. One round of questions per user message."
                 ),
                 "parameters": copy.deepcopy(CHAT_QUESTIONS_SCHEMA),

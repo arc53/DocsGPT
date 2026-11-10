@@ -102,7 +102,8 @@ class TestQuestionsShape:
 
         assert message == "Two things first:"
         assert questions[0]["id"] == "q1"
-        assert questions[0]["options"] == [{"id": "a", "label": "1-10"}, {"id": "b", "label": "11-50"}]
+        assert questions[0]["options"] == [{"id": "a", "label": "1-10", "input": None, "exclusive": False},
+                                           {"id": "b", "label": "11-50", "input": None, "exclusive": False}]
         assert questions[1]["placeholder"] == "Acme" and questions[1]["multi"] is False
 
     def test_one_option_is_refused(self):
@@ -118,6 +119,64 @@ class TestQuestionsShape:
             "**2. Company name?**"
         )
         assert "Acme" not in text
+
+    def test_an_option_can_open_a_field_to_type_in(self):
+        _, questions = normalize_questions({"questions": [{"text": "Where to?", "options": [
+            "Lisbon", {"label": "Another city", "input": "City name"},
+        ]}]})
+        assert questions[0]["options"][1] == {"id": "b", "label": "Another city", "input": "City name",
+                                              "exclusive": False}
+
+    def test_an_exclusive_option_goes_last_in_a_multi_question(self):
+        _, questions = normalize_questions({"questions": [{"text": "Topics?", "multi": True, "options": [
+            {"label": "No topics", "exclusive": True}, "Billing", "Returns",
+        ]}]})
+        options = questions[0]["options"]
+        assert [o["label"] for o in options] == ["Billing", "Returns", "No topics"]
+        assert [o["id"] for o in options] == ["a", "b", "c"]
+        assert options[-1]["exclusive"] is True and not options[0]["exclusive"]
+
+    def test_exclusive_means_nothing_in_a_single_choice_question(self):
+        _, questions = normalize_questions({"questions": [{"text": "Tone?", "options": [
+            "Warm", {"label": "Formal", "exclusive": True},
+        ]}]})
+        assert [o["exclusive"] for o in questions[0]["options"]] == [False, False]
+
+    def test_two_exclusive_options_are_refused(self):
+        with pytest.raises(QuestionsInvalid, match="at most one"):
+            normalize_questions({"questions": [{"text": "Checks?", "multi": True, "options": [
+                {"label": "None", "exclusive": True}, {"label": "All", "exclusive": True}, "PII",
+            ]}]})
+
+    def test_a_blank_input_is_no_input(self):
+        _, questions = normalize_questions({"questions": [{"text": "Q?", "options": [
+            {"label": "A", "input": "  "}, {"label": "B", "input": None}, {"text": "C"},
+        ]}]})
+        assert [o["input"] for o in questions[0]["options"]] == [None, None, None]
+
+    def test_the_text_shows_an_input_option_with_its_placeholder(self):
+        text = render_questions_text(*normalize_questions({"questions": [{"text": "Where?", "multi": True,
+                                                                          "options": [
+            {"label": "None", "exclusive": True}, "Lisbon", {"label": "Elsewhere", "input": "City"},
+        ]}]}))
+        assert text == "**1. Where?**  \na) Lisbon  \nb) Elsewhere: _City_  \nc) None"
+
+    def test_the_schema_offers_input_and_exclusive(self):
+        from docsgpt.agents.questions import CHAT_QUESTIONS_SCHEMA
+
+        items = CHAT_QUESTIONS_SCHEMA["properties"]["questions"]["items"]["properties"]["options"]["items"]
+        option = next(branch for branch in items["anyOf"] if branch.get("type") == "object")
+        assert set(option["properties"]) == {"label", "input", "exclusive"}
+
+    def test_the_rules_steer_options(self):
+        from docsgpt.agents.tools.ask_user import AskUserTool
+
+        description = AskUserTool().get_actions_metadata()[0]["description"]
+        options = __import__("docsgpt.agents.questions", fromlist=["x"]).CHAT_QUESTIONS_SCHEMA[
+            "properties"]["questions"]["items"]["properties"]["options"]["description"]
+        for text in (description, options):
+            assert "input" in text
+        assert "Something else" in options and "contact" in options
 
     def test_only_cards_asks_for_cards(self):
         assert questions_mode("cards") == "cards"

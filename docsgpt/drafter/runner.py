@@ -88,9 +88,12 @@ How a turn works:
 - The user's workspace (what they can use: knowledge sources, tools, prompts, models) and the form's current values \
 are given to you as data. Refer to sources, tools and prompts only by the ids listed there; never invent an id.
 - Ask questions only when the description leaves out something that changes the draft. At most {MAX_QUESTIONS} \
-questions, each with 2 to 5 short options to click; the user can always type their own answer. A question only \
-the user can answer in their own words (a company name, a contact) gets no options and a placeholder instead. \
-Don't ask what you can decide sensibly yourself.
+questions, each with 2 to 5 short options to click; the user can always type their own answer with "Something \
+else…", so never add an option like it ("Other", "Type my own"). A question only the user can answer in their own \
+words (a company name, a contact) gets no options and a placeholder instead. An option that needs a detail typed \
+gets an input (a placeholder for the field it opens) instead of asking to type; in a multi question, an option \
+that rules out the others ("None of these") is exclusive. Never invent contact details (emails, phone numbers, \
+links) as options. Don't ask what you can decide sensibly yourself.
 - Write every text the user reads (messages, questions, reasons, names, descriptions, prompts) in the language the \
 user writes in.
 - Keep messages short and plain. No ids in text meant for the user; name things.
@@ -181,7 +184,7 @@ def _replayed_turn(recipe: Recipe, content: Any) -> Optional[tuple[str, dict]]:
             if not isinstance(question, dict):
                 continue
             args = {k: question[k] for k in ("text", "note", "multi", "placeholder") if question.get(k) is not None}
-            args["options"] = [o["label"] for o in question.get("options") or []
+            args["options"] = [_replayed_option(o) for o in question.get("options") or []
                                if isinstance(o, dict) and isinstance(o.get("label"), str)]
             questions.append(args)
         message = clean_text(event.get("message"), MESSAGE_CHARS)
@@ -190,6 +193,12 @@ def _replayed_turn(recipe: Recipe, content: Any) -> Optional[tuple[str, dict]]:
         fields = recipe.proposal_schema.get("properties", {})
         return SUBMIT_PROPOSAL, {k: v for k, v in event["proposal"].items() if k in fields}
     return None
+
+
+def _replayed_option(option: dict) -> Any:
+    """An asked option as the model sent it: its label, or ``{label, input?, exclusive?}``."""
+    extra = {key: option[key] for key in ("input", "exclusive") if option.get(key)}
+    return {"label": option["label"], **extra} if extra else option["label"]
 
 
 def _replay(name: str, args: dict, call_id: str, as_call: bool) -> list[dict]:

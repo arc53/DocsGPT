@@ -204,8 +204,10 @@ class TestStream:
         assert events[2] == {"type": "message", "text": "Two questions before I draft:"}
         questions = events[3]["questions"]
         assert [q["id"] for q in questions] == ["q1", "q2"]
-        assert questions[0]["options"] == [{"id": "a", "label": "Email support"},
-                                           {"id": "b", "label": "Collect details and stop"}]
+        assert questions[0]["options"] == [
+            {"id": "a", "label": "Email support", "input": None, "exclusive": False},
+            {"id": "b", "label": "Collect details and stop", "input": None, "exclusive": False},
+        ]
         assert questions[1]["multi"] is True and questions[0]["note"] is None
         assert first.built_for[0] == "alice" and first.built_for[1] == "task-model"
         assert first.built_for[2].startswith("drafter:")

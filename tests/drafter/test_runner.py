@@ -87,7 +87,7 @@ class TestOutput:
         assert [o["label"] for o in questions[0]["options"]] == ["Friendly", "Formal", "Plain"]
 
     def test_an_option_object_without_text_is_still_rejected(self):
-        with pytest.raises(ProposalInvalid, match="not of type 'string'"):
+        with pytest.raises(ProposalInvalid, match="options/0"):
             normalize_questions({"questions": [{"text": "Tone?", "options": [{"multi": True}, "Formal"]}]})
 
     def test_a_question_without_an_options_list_takes_a_typed_answer(self):
@@ -197,6 +197,28 @@ class TestLoop:
         assert json.loads(submit["function"]["arguments"]) == PROPOSAL
         assert sent[3]["tool_call_id"] == ask["id"] and sent[6]["tool_call_id"] == submit["id"]
         assert ask["id"] != submit["id"]
+
+    def test_input_and_exclusive_options_replay_as_objects(self):
+        asked = {"type": "questions", "questions": [{"id": "q1", "text": "Topics?", "multi": True, "options": [
+            {"id": "a", "label": "Billing", "input": None, "exclusive": False},
+            {"id": "b", "label": "Another", "input": "Topic", "exclusive": False},
+            {"id": "c", "label": "No topics", "input": None, "exclusive": True},
+        ]}]}
+        history = [
+            {"role": "user", "content": "x"}, {"role": "assistant", "content": json.dumps(asked)},
+            {"role": "user", "content": "y"},
+        ]
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, *history)
+        ask = fake.calls[0]["messages"][2]["tool_calls"][0]
+        assert json.loads(ask["function"]["arguments"])["questions"][0]["options"] == [
+            "Billing", {"label": "Another", "input": "Topic"}, {"label": "No topics", "exclusive": True},
+        ]
+
+    def test_the_drafter_rules_steer_options(self):
+        from docsgpt.drafter.runner import COMMON_RULES
+
+        assert "input" in COMMON_RULES and "Something else" in COMMON_RULES and "contact" in COMMON_RULES
 
     def test_a_question_round_replays_with_the_line_before_it(self):
         asked = {"type": "questions", "message": "Two things first:", "questions": [

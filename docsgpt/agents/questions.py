@@ -24,6 +24,15 @@ MESSAGE_CHARS = 1000
 #: Most characters of a user's answer to one question round that reach the model.
 ANSWER_CHARS = 4000
 
+#: What a question's ``options`` are, for every model that asks (chat and drafter).
+OPTIONS_DESCRIPTION = (
+    "Two to five short answers to click: a string, or an object whose input opens a field to type the rest "
+    "(never an option that asks the user to type something; give it an input instead) or that is exclusive. "
+    'Every question already ends with "Something else…" for a free answer: never add an option like it '
+    '("Other", "Type my own"). Never invent contact details (emails, phone numbers, addresses, links) as '
+    "options; ask with an input instead. Empty for an answer only the user can type (a company name, a contact)."
+)
+
 
 class QuestionsInvalid(ValueError):
     """The model's questions broke a rule it can fix.
@@ -63,9 +72,28 @@ def questions_schema(*, message: str, questions: str, note: str) -> Dict[str, An
                         "multi": {"type": "boolean", "description": "True when several options may be picked."},
                         "options": {
                             "type": "array",
-                            "description": "Two to five short answers to click; the user can always type their own. "
-                                           "Empty for an answer only the user can type (a company name, a contact).",
-                            "items": {"type": "string"},
+                            "description": OPTIONS_DESCRIPTION,
+                            "items": {"anyOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": {"type": "string", "description": "The option's text."},
+                                        "input": {
+                                            "type": "string",
+                                            "description": "A placeholder: picking the option opens a short field "
+                                                           "to type the rest (\"Another city\" with input \"City "
+                                                           "name\").",
+                                        },
+                                        "exclusive": {
+                                            "type": "boolean",
+                                            "description": "Multi questions only: picking it clears the other "
+                                                           "options (\"None of these\"). At most one per question.",
+                                        },
+                                    },
+                                    "required": ["label"],
+                                },
+                            ]},
                         },
                         "placeholder": {
                             "type": "string",
@@ -148,9 +176,31 @@ def shaped_questions(arguments: Dict[str, Any]) -> Dict[str, Any]:
             question = {k: v for k, v in question.items() if v is not None}
             options = question.get("options", [])
             if isinstance(options, list):
-                question["options"] = [option_label(o) for o in options]
+                question["options"] = [_shaped_option(o) for o in options]
         shaped.append(question)
     return {**arguments, "questions": shaped}
+
+
+def _shaped_option(option: Any) -> Any:
+    """An option as a plain label, or ``{label, input?, exclusive?}`` when it opens a field or is exclusive.
+
+    An object whose text is under ``text`` rather than ``label`` is read the
+    same; keys an option doesn't have (``multi``…) and null values are
+    dropped. An object without any text stays as it is, for the schema check
+    to refuse.
+    """
+    label = option_label(option)
+    if not isinstance(option, dict) or not isinstance(label, str):
+        return label
+    extra = {key: option[key] for key in ("input", "exclusive") if option.get(key) not in (None, False, "")}
+    return {"label": label, **extra} if extra else label
+
+
+def option_parts(option: Any) -> Tuple[Any, Optional[str], bool]:
+    """``(label, input, exclusive)`` of a shaped option."""
+    if isinstance(option, dict):
+        return option.get("label"), option.get("input"), bool(option.get("exclusive"))
+    return option, None, False
 
 
 def normalize_questions(
@@ -163,7 +213,11 @@ def normalize_questions(
 
     Ids are assigned here (``q1``…, options ``a``…); at most three questions
     and five options are kept. A question with no options takes a typed
-    answer: it keeps its ``placeholder`` and is never ``multi``.
+    answer: it keeps its ``placeholder`` and is never ``multi``. An option is
+    ``{id, label, input, exclusive}``: ``input`` is the placeholder of the
+    field picking it opens (the client sends ``"<label>: <typed>"``), or None;
+    ``exclusive`` (multi questions only, at most one) clears the other options
+    when picked and is listed last.
 
     Args:
         arguments: The arguments as the model sent them.
@@ -174,7 +228,7 @@ def normalize_questions(
         ``(message, questions)``.
 
     Raises:
-        QuestionsInvalid: No usable question, or a question with exactly one option.
+        QuestionsInvalid: No usable question, a question with exactly one option, or two exclusive options.
     """
     arguments = shaped_questions(arguments)
     problems = schema_problems(schema or CHAT_QUESTIONS_SCHEMA, arguments)
@@ -184,23 +238,32 @@ def normalize_questions(
     out: List[Dict[str, Any]] = []
     for raw in arguments.get("questions", [])[:MAX_QUESTIONS]:
         text = clean_text(raw.get("text"), QUESTION_CHARS)
-        labels: List[str] = []
+        options: List[Tuple[str, Optional[str], bool]] = []
         for option in raw.get("options", []):
-            label = clean_text(option, OPTION_CHARS)
-            if label and label.casefold() not in {x.casefold() for x in labels}:
-                labels.append(label)
+            label, typed_input, exclusive = option_parts(option)
+            label = clean_text(label, OPTION_CHARS)
+            if label and label.casefold() not in {x[0].casefold() for x in options}:
+                options.append((label, clean_text(typed_input, PLACEHOLDER_CHARS) or None, exclusive))
         if not text:
             raise QuestionsInvalid(["Every question needs text."])
-        if 0 < len(labels) < MIN_OPTIONS:
+        if 0 < len(options) < MIN_OPTIONS:
             raise QuestionsInvalid([f"Question {text!r} needs at least two different options, or none for an "
                                     "answer the user types."])
-        typed = not labels
+        typed = not options
+        multi = bool(raw.get("multi")) and not typed
+        options = options[:MAX_OPTIONS]
+        if multi and sum(1 for option in options if option[2]) > 1:
+            raise QuestionsInvalid([f"Question {text!r}: at most one option can be exclusive."])
+        # An exclusive option only means something where several can be picked; it is listed last.
+        options = [(label, typed_input, multi and exclusive) for label, typed_input, exclusive in options]
+        options.sort(key=lambda option: option[2])
         out.append({
             "id": f"q{len(out) + 1}",
             "text": text,
             "note": clean_text(raw.get("note"), NOTE_CHARS) or None,
-            "multi": bool(raw.get("multi")) and not typed,
-            "options": [{"id": chr(ord("a") + i), "label": label} for i, label in enumerate(labels[:MAX_OPTIONS])],
+            "multi": multi,
+            "options": [{"id": chr(ord("a") + i), "label": label, "input": typed_input, "exclusive": exclusive}
+                        for i, (label, typed_input, exclusive) in enumerate(options)],
             "placeholder": (clean_text(raw.get("placeholder"), PLACEHOLDER_CHARS) or None) if typed else None,
         })
     if not out:
@@ -213,7 +276,9 @@ def render_questions_text(message: Optional[str], questions: List[Dict[str, Any]
 
     The model's ``message`` is the lead-in; nothing else is added, since the
     server can't word anything in the user's language. A typed question shows
-    no placeholder; a ``note`` is an italic line under its question.
+    no placeholder; a ``note`` is an italic line under its question; an option
+    that opens a field shows its placeholder in italics after it, and an
+    exclusive option comes last (as normalized).
 
     Args:
         message: The lead-in line, or None.
@@ -228,7 +293,8 @@ def render_questions_text(message: Optional[str], questions: List[Dict[str, Any]
         if question.get("note"):
             lines.append(f"*{question['note']}*")
         for option in question.get("options") or []:
-            lines.append(f"{option.get('id')}) {option.get('label')}")
+            typed_input = f": _{option['input']}_" if option.get("input") else ""
+            lines.append(f"{option.get('id')}) {option.get('label')}{typed_input}")
         # Markdown joins lines into one paragraph unless they end in a hard break.
         blocks.append("  \n".join(lines))
     return "\n\n".join(blocks)
