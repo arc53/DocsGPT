@@ -4388,7 +4388,8 @@
         "missed": "horaire manqué",
         "overlap": "l’exécution précédente était encore en cours",
         "stream_error": "le flux de la réponse s’est interrompu",
-        "empty_output": "aucun résultat produit"
+        "empty_output": "aucun résultat produit",
+        "cannot_complete": "l’agent ne peut pas faire cette tâche"
       },
       "viewRuns": "Voir les exécutions",
       "fromChat": "Depuis {{name}}",

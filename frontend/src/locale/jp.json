@@ -4250,7 +4250,8 @@
         "missed": "実行時刻を逃した",
         "overlap": "前回の実行が継続中",
         "stream_error": "回答のストリームが途切れた",
-        "empty_output": "出力がなかった"
+        "empty_output": "出力がなかった",
+        "cannot_complete": "エージェントがこのタスクを実行できない"
       },
       "viewRuns": "実行を表示",
       "fromChat": "{{name}} から",

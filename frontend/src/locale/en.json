@@ -4291,7 +4291,8 @@
         "missed": "missed its time",
         "overlap": "the previous run was still going",
         "stream_error": "the answer stream broke",
-        "empty_output": "it produced nothing"
+        "empty_output": "it produced nothing",
+        "cannot_complete": "the agent can't do this task"
       },
       "viewRuns": "View runs",
       "fromChat": "From {{name}}",

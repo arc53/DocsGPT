@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from unittest.mock import Mock, call, patch
 
 import pytest
+from docsgpt.agents.agentic_agent import AgenticAgent
 from docsgpt.agents.classic_agent import ClassicAgent
 from docsgpt.llm.anthropic import AnthropicLLM
 from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
@@ -233,6 +234,84 @@ class TestBaseAgentBuildMessages:
         assert "firing now" in system
         # The task itself is left as the user's message, untouched.
         assert messages[-1]["content"] == "Remind me: call Anil at 5pm"
+
+    @pytest.mark.parametrize("agent_class", [ClassicAgent, AgenticAgent])
+    def test_a_scheduled_run_with_tools_reports_a_task_it_cannot_do_with_a_call(
+        self, agent_class, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Without a report the worker can't tell "no tool for this" from a
+        # result, so a schedule that can never work runs forever as a success.
+        # An agent with no tools of its own gets the call too.
+        agent_base_params["endpoint"] = "schedule"
+        agent = agent_class(**agent_base_params)
+        tools_dict = {}
+
+        agent._prepare_tools(tools_dict)
+        system = agent._build_messages("System prompt", "open the site and email me")[0]["content"]
+
+        assert "report_cannot_complete" in tools_dict
+        assert [t["function"]["name"] for t in agent.tools] == ["report_cannot_complete"]
+        assert "call report_cannot_complete" in system
+        assert "CANNOT_COMPLETE:" not in system
+
+    def test_a_model_without_tool_calling_opens_its_answer_with_the_marker(
+        self, agent_base_params, mock_llm, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["endpoint"] = "schedule"
+        agent = ClassicAgent(**agent_base_params)
+        agent.llm._supports_tools = False
+        tools_dict = {}
+
+        agent._prepare_tools(tools_dict)
+        system = agent._build_messages("System prompt", "open the site")[0]["content"]
+
+        assert tools_dict == {}
+        assert "begin your answer with CANNOT_COMPLETE:" in system
+
+    def test_a_json_answer_with_no_other_tools_gets_neither(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Some providers refuse tools beside a response schema, and a JSON
+        # answer can't open with a marker.
+        agent_base_params["endpoint"] = "schedule"
+        agent_base_params["json_schema"] = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+        agent = ClassicAgent(**agent_base_params)
+        tools_dict = {}
+
+        agent._prepare_tools(tools_dict)
+        system = agent._build_messages("System prompt", "check the site")[0]["content"]
+
+        assert tools_dict == {}
+        assert "report_cannot_complete" not in system
+        assert "CANNOT_COMPLETE:" not in system
+        assert "This turn is a scheduled run" in system
+
+    def test_a_json_answer_beside_other_tools_gets_the_call(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["endpoint"] = "schedule"
+        agent_base_params["json_schema"] = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+        agent = ClassicAgent(**agent_base_params)
+        tools_dict = {
+            "1": {
+                "name": "custom_tool",
+                "actions": [{"name": "fetch", "description": "Fetch", "active": True, "parameters": {"properties": {}}}],
+            }
+        }
+
+        agent._prepare_tools(tools_dict)
+
+        assert "report_cannot_complete" in tools_dict
+
+    def test_only_a_scheduled_run_gets_the_call(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        for endpoint in ("stream", "webhook", "headless", "continuation"):
+            agent_base_params["endpoint"] = endpoint
+            agent = ClassicAgent(**agent_base_params)
+            tools_dict = {}
+            agent._prepare_tools(tools_dict)
+            assert tools_dict == {}
 
     def test_scheduled_run_note_needs_no_system_prompt(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator

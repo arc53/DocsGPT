@@ -4270,7 +4270,8 @@
         "missed": "Zeitpunkt verpasst",
         "overlap": "die vorherige Ausführung lief noch",
         "stream_error": "der Antwortstrom brach ab",
-        "empty_output": "es kam nichts heraus"
+        "empty_output": "es kam nichts heraus",
+        "cannot_complete": "der Agent kann diese Aufgabe nicht erledigen"
       },
       "viewRuns": "Ausführungen ansehen",
       "fromChat": "Aus {{name}}",
