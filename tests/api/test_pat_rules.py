@@ -278,6 +278,15 @@ class TestResourceRestrictions:
             response = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": True})
             assert _denied(response) is None
 
+    def test_prompt_check_is_open_to_a_prompt_restricted_token(self, client):
+        # It checks the text in the body and reads no saved prompt, so there is no id to prove.
+        claims = self._restricted(["prompts:read"], prompts=[SOURCE_A])
+        response = _call(client, "POST", "/api/check_prompt", claims, json={"content": "You are {{ name }}."})
+        assert _denied(response) is None
+        assert response.status_code == 200
+        refused = _call(client, "POST", "/api/check_prompt", _claims(["agents:read"]), json={"content": "x"})
+        assert _denied(refused) == "insufficient_scope"
+
     def test_missing_id_is_refused_for_a_restricted_token(self, client):
         claims = self._restricted(["agents:read"], agents=[AGENT_A])
         assert _denied(_call(client, "GET", "/api/get_agent", claims)) == "resource_not_allowed"
