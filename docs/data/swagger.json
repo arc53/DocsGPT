@@ -3373,6 +3373,9 @@
           },
           "400": {
             "description": "content is missing, not text, or too long"
+          },
+          "429": {
+            "description": "more than 120 checks in a minute"
           }
         },
         "tags": [
@@ -4313,7 +4316,7 @@
     },
     "/api/drafter/stream": {
       "post": {
-        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, {\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, {\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream. Nothing is saved.",
+        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, {\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, {\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream; a bad_request carries reason: history (the conversation is refused: start a new one), too_long (the prompt is over the read cap, with limit), empty (the message is empty once cleaned) or invalid. Nothing is saved.",
         "operationId": "post_drafter_stream",
         "parameters": [
           {
@@ -4400,6 +4403,9 @@
           },
           "404": {
             "description": "Not a turn id (32 lowercase hex characters)"
+          },
+          "429": {
+            "description": "More than 60 stops in a minute"
           },
           "503": {
             "description": "Stopping is unavailable right now"
