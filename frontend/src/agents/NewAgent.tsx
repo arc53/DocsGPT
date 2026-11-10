@@ -108,7 +108,10 @@ import {
 } from '../drafter/ProposalSummary';
 import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
-import { useDrafterSession } from '../drafter/useDrafterSession';
+import {
+  type DrafterSendOptions,
+  useDrafterSession,
+} from '../drafter/useDrafterSession';
 import { usePromptReview } from '../drafter/usePromptReview';
 import type { PromptEdit } from '../drafter/promptDraft';
 import { WandButton } from '../drafter/WandButton';
@@ -1342,6 +1345,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // The gap or conversation an improve conversation started from in
   // Insights: every turn of it sends it, until Start over.
   const improveFocusRef = useRef<AgentImproveFocus>({});
+  // The next turn drafts with what it has, asking nothing: set by Skip and
+  // draft, cleared by any other message (a retry of that turn keeps it).
+  const skipQuestionsRef = useRef(false);
   const drafterSession = useDrafterSession({
     recipe: 'agent',
     getContext: () => {
@@ -1352,13 +1358,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ? promptViewIdentity()
           : 'drafter';
       turnsRef.current += 1;
-      return agentDraftContext(
-        agent.id || null,
-        draftFormRef.current,
-        buildRef.current.context(),
-        draftOfPrompt,
-        improveFocusRef.current,
-      );
+      return {
+        ...agentDraftContext(
+          agent.id || null,
+          draftFormRef.current,
+          buildRef.current.context(),
+          draftOfPrompt,
+          improveFocusRef.current,
+        ),
+        ...(skipQuestionsRef.current ? { skip_questions: true } : {}),
+      };
     },
     onProposal: applyDraft,
   });
@@ -1378,7 +1387,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const stepName = (step: AgentBuildStep) =>
     t(`drafter.agent.build.steps.${step}`);
   const build = useAgentBuild({
-    session: drafterSession,
+    // Its hidden "Continue with …" is a message of its own: no skip.
+    session: {
+      ...drafterSession,
+      send: (text, options) => {
+        skipQuestionsRef.current = false;
+        drafterSession.send(text, options);
+      },
+    },
     skipped: skippedSteps,
     continueText: (step) =>
       t('drafter.agent.build.continue', {
@@ -1408,7 +1424,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // build, and Finish setup asks for limits and safety alone.
   const panelSession = {
     ...drafterSession,
-    send: (text: string, options?: { hidden?: boolean }) => {
+    send: (text: string, options?: DrafterSendOptions) => {
+      skipQuestionsRef.current = false;
       if (text === finishSetupText) build.focus('safety');
       else if (buildable && drafterSession.items.length === 0) build.start();
       setPromptUsed(false);
@@ -1420,11 +1437,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * folded steps forgotten; the form keeps its values and marks.
    */
   const startDrafterOver = () => {
+    skipQuestionsRef.current = false;
     drafterSession.reset();
     build.reset();
     improveFocusRef.current = {};
     buildRowsRef.current.clear();
     setPromptUsed(false);
+  };
+
+  /**
+   * Skip and draft: the panel marks the round Skipped, and a hidden turn
+   * drafts the step with what it has, asking nothing.
+   */
+  const skipQuestions = () => {
+    setPromptUsed(false);
+    skipQuestionsRef.current = true;
+    drafterSession.send(t('drafter.prompt.skipMessage'), { hidden: true });
   };
 
   // Opened from Insights or Logs ("Improve the agent"): once the agent has
@@ -3271,7 +3299,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         label={t('agents.form.sections.agentType')}
                       >
                         <Select
-                          value={agent.agent_type || undefined}
+                          value={agent.agent_type || ''}
                           onValueChange={(value) =>
                             setAgent((prev) => ({ ...prev, agent_type: value }))
                           }
@@ -3370,7 +3398,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       label={t('agents.form.labels.defaultModel')}
                     >
                       <Select
-                        value={agent.default_model_id || undefined}
+                        // Controlled from the first render: '' shows the placeholder
+                        // until the instance's default model arrives.
+                        value={agent.default_model_id || ''}
                         onValueChange={(value) =>
                           setAgent({ ...agent, default_model_id: value })
                         }
@@ -3851,6 +3881,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           onOpenChange={setDrafterOpen}
           session={panelSession}
           onStartOver={startDrafterOver}
+          onSkipQuestions={skipQuestions}
           modelName={drafterConfig?.model?.display_name ?? null}
           announceProposal={announceAgentProposal}
           intro={doneOnly ? '' : drafterIntro}

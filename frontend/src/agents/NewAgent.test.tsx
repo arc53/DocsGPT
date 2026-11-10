@@ -958,6 +958,24 @@ describe('NewAgent form', () => {
     expect(asked()).toBe(true);
   });
 
+  it("takes the instance's default model with no uncontrolled Select warning", async () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.models = [{ id: 'm1', display_name: 'Model one', provider: 'x' }];
+    mocks.defaultModelId = 'm1';
+    await render();
+    await act(async () => undefined);
+    expect(
+      [...error.mock.calls, ...warn.mock.calls].filter((call) =>
+        /uncontrolled/i.test(String(call[0])),
+      ),
+    ).toEqual([]);
+    error.mockRestore();
+    warn.mockRestore();
+  });
+
   // The defaults a new agent starts from (the instance's model, the admin's
   // guardrails) are not changes of the user's.
   it('lets Go to Tools go from an untouched new agent', async () => {
@@ -3474,6 +3492,51 @@ describe('NewAgent drafter', () => {
       content: 'drafter.agent.build.continue',
     });
     expect(lastRequest().context.step).toBe('basics');
+  });
+
+  it('skips a question round and drafts with what it has', async () => {
+    drafter.scripts = [
+      [
+        {
+          type: 'questions',
+          questions: [
+            {
+              id: 'q1',
+              text: 'What tone should it use?',
+              note: null,
+              multi: false,
+              options: [
+                { id: 'a', label: 'Warm' },
+                { id: 'b', label: 'Neutral' },
+              ],
+            },
+          ],
+        },
+        { type: 'end' },
+      ],
+      [
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    expect(lastRequest().context).not.toHaveProperty('skip_questions');
+    await act(async () =>
+      buttonByText('drafter.skipQuestions', panel()!)!.click(),
+    );
+    // A hidden turn that takes no questions.
+    expect(lastRequest().messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'drafter.prompt.skipMessage',
+    });
+    expect(lastRequest().context).toMatchObject({ skip_questions: true });
+    expect(panel()!.textContent).toContain('questions.skipped');
+    expect(nameInput().value).toBe('Shipping help');
+    // Only that turn.
+    await act(async () => next()!.click());
+    expect(lastRequest().context.step).toBe('knowledge');
+    expect(lastRequest().context).not.toHaveProperty('skip_questions');
   });
 
   it('marks a field undone in the form as undone in the drawer', async () => {
