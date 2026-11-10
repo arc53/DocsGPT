@@ -7,6 +7,7 @@ words (:func:`questions_schema`); the shape and the limits are the same.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from docsgpt.drafter.fencing import clean_text
@@ -176,9 +177,48 @@ def shaped_questions(arguments: Dict[str, Any]) -> Dict[str, Any]:
             question = {k: v for k, v in question.items() if v is not None}
             options = question.get("options", [])
             if isinstance(options, list):
-                question["options"] = [_shaped_option(o) for o in options]
+                question = _typed_where_meant(question, [_shaped_option(o) for o in options])
         shaped.append(question)
     return {**arguments, "questions": shaped}
+
+
+#: An option that only asks the user to type something ("Input for store name"): the free answer's job.
+_INPUT_FOR = re.compile(r"^\s*input\b\s*(?:for\b|:|-)?\s*(.*)$", re.I)
+
+
+def _typing_hint(option: Any) -> Optional[str]:
+    """The placeholder an option that only asks to type carries (``"Input for X"``, or an object with an input
+    and no label), "" when it gives none; None for a real option."""
+    if isinstance(option, dict) and not isinstance(option_label(option), str):
+        return str(option["input"]).strip() if isinstance(option.get("input"), str) else None
+    if isinstance(option, str):
+        match = _INPUT_FOR.match(option)
+        return match.group(1).strip() if match else None
+    return None
+
+
+def _typed_where_meant(question: Dict[str, Any], options: List[Any]) -> Dict[str, Any]:
+    """A question with its typing-only options left out, typed when fewer than two real options remain.
+
+    Models ask for a typed answer in ways the shape doesn't take: one option, an ``"Input for …"`` option, or
+    an option object with an input and no label. Every question already takes a typed answer ("Something
+    else…"), so beside two or more real options those are dropped; otherwise the question is a typed one, its
+    placeholder its own or the first typing option's.
+    """
+    hints = [_typing_hint(option) for option in options]
+    real = [option for option, hint in zip(options, hints) if hint is None]
+    if len(real) >= MIN_OPTIONS:
+        return {**question, "options": real}
+    if not options:
+        return {**question, "options": []}
+    placeholder = question.get("placeholder")
+    if not (isinstance(placeholder, str) and placeholder.strip()):
+        typed_input = next((option_parts(o)[1] for o in real if isinstance(o, dict) and o.get("input")), None)
+        placeholder = next((h for h in hints if h), None) or typed_input
+    typed = {**question, "options": []}
+    if placeholder:
+        typed["placeholder"] = placeholder
+    return typed
 
 
 def _shaped_option(option: Any) -> Any:
@@ -228,7 +268,8 @@ def normalize_questions(
         ``(message, questions)``.
 
     Raises:
-        QuestionsInvalid: No usable question, a question with exactly one option, or two exclusive options.
+        QuestionsInvalid: No usable question, a question left with exactly one option once duplicates are
+            merged, or two exclusive options.
     """
     arguments = shaped_questions(arguments)
     problems = schema_problems(schema or CHAT_QUESTIONS_SCHEMA, arguments)

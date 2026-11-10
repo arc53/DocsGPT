@@ -106,9 +106,44 @@ class TestQuestionsShape:
                                            {"id": "b", "label": "11-50", "input": None, "exclusive": False}]
         assert questions[1]["placeholder"] == "Acme" and questions[1]["multi"] is False
 
-    def test_one_option_is_refused(self):
-        with pytest.raises(QuestionsInvalid):
-            normalize_questions({"questions": [{"text": "Sure?", "options": ["Yes"]}]})
+    def test_one_option_makes_a_typed_question(self):
+        _, questions = normalize_questions({"questions": [{"text": "Sure?", "options": ["Yes"],
+                                                           "placeholder": "Yes, or why not"}]})
+        assert questions[0]["options"] == [] and questions[0]["placeholder"] == "Yes, or why not"
+
+    # chat_amb_policy_r3: refused twice, so the model wrote a [Store Name] template instead of asking.
+    FIRST_TRY = {"message": "I'll draft your shipping policy:", "questions": [
+        {"options": ["Input for business/store name"], "placeholder": "e.g. Aurora Goods",
+         "text": "What's your store or business name?"},
+        {"text": "Which regions do you ship to?", "multi": True},
+        {"options": ["Flat rate", "Free over a threshold", "Calculated at checkout", "Input for rates"],
+         "text": "How do you charge for shipping?"},
+    ]}
+    SECOND_TRY = {"message": "I'll draft your shipping policy:", "questions": [
+        {"options": [{"input": "Store name", "placeholder": "e.g. Aurora Goods"}],
+         "text": "What's your store or business name?"},
+        {"multi": True, "options": ["Domestic only", "Domestic + international",
+                                    "Input for specific countries/regions"], "text": "Which regions do you ship to?"},
+    ]}
+
+    def test_an_input_only_question_becomes_a_typed_one(self):
+        _, questions = normalize_questions(self.FIRST_TRY)
+        store, regions, rates = questions
+        assert store["options"] == [] and store["placeholder"] == "e.g. Aurora Goods"
+        assert regions["options"] == [] and regions["multi"] is False
+        # Typing is what "Something else…" is for: an "Input for …" option beside real ones is left out.
+        assert [o["label"] for o in rates["options"]] == ["Flat rate", "Free over a threshold",
+                                                         "Calculated at checkout"]
+
+    def test_a_label_less_input_option_is_a_typed_question_with_its_placeholder(self):
+        _, questions = normalize_questions(self.SECOND_TRY)
+        assert questions[0]["options"] == [] and questions[0]["placeholder"] == "Store name"
+        assert [o["label"] for o in questions[1]["options"]] == ["Domestic only", "Domestic + international"]
+        assert questions[1]["multi"] is True
+
+    def test_a_single_input_for_string_gives_its_placeholder(self):
+        _, questions = normalize_questions({"questions": [{"text": "Your city?", "options": ["Input for city"]}]})
+        assert questions[0]["options"] == [] and questions[0]["placeholder"] == "city"
 
     def test_renders_markdown_without_placeholders(self):
         text = render_questions_text(*normalize_questions(ARGS))
@@ -167,6 +202,12 @@ class TestQuestionsShape:
         items = CHAT_QUESTIONS_SCHEMA["properties"]["questions"]["items"]["properties"]["options"]["items"]
         option = next(branch for branch in items["anyOf"] if branch.get("type") == "object")
         assert set(option["properties"]) == {"label", "input", "exclusive"}
+
+    def test_the_description_shows_an_option_object(self):
+        from docsgpt.agents.tools.ask_user import AskUserTool
+
+        description = AskUserTool().get_actions_metadata()[0]["description"]
+        assert '{"label": "Another city", "input": "City name"}' in description
 
     def test_the_rules_steer_options(self):
         from docsgpt.agents.tools.ask_user import AskUserTool
@@ -300,7 +341,8 @@ class TestCheckPause:
 
     def test_invalid_questions_get_one_corrected_try(self):
         executor, tools = _executor("cards")
-        bad = {"questions": [{"text": "Sure?", "options": ["Yes"]}]}
+        bad = {"questions": [{"text": "Sure?", "multi": True, "options": [
+            {"label": "None", "exclusive": True}, {"label": "All", "exclusive": True}, "PII"]}]}
 
         first = executor.check_pause(tools, _call(args=bad), "MockLLM")
         assert first["pause_type"] == "headless_denied"
