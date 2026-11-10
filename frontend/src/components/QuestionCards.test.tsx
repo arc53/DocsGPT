@@ -196,6 +196,33 @@ describe('QuestionCards, a typed answer', () => {
     onAnswer.mockReset();
   });
 
+  it('focuses a first typed question when nothing else has focus', () => {
+    expect(document.activeElement).toBe(
+      container.querySelector('[data-question="q1"] input'),
+    );
+  });
+
+  it('leaves focus where it is when the cards become active', async () => {
+    // The user was typing in the composer while the answer streamed.
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    const composer = document.createElement('textarea');
+    document.body.appendChild(composer);
+    composer.focus();
+    await act(async () =>
+      root.render(
+        <QuestionCards questions={TYPED} active={false} onAnswer={onAnswer} />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <QuestionCards questions={TYPED} active onAnswer={onAnswer} />,
+      ),
+    );
+    expect(document.activeElement).toBe(composer);
+    composer.remove();
+  });
+
   it('asks a question with no options as a text field', async () => {
     const card = container.querySelector<HTMLElement>('[data-question="q1"]')!;
     expect(card.querySelector('[role="radio"]')).toBeNull();
@@ -380,6 +407,26 @@ describe('QuestionCards, options that take a value or rule out the others', () =
       'Where should it send HR cases? → HR team email: hr@meridian.example',
       { hr: 'HR team email: hr@meridian.example' },
     );
+  });
+
+  it('moves focus into the field of an option picked with the pointer', async () => {
+    await act(async () => control('hr', 'HR team email').click());
+    expect(document.activeElement).toBe(card('hr').querySelector('input'));
+  });
+
+  it('keeps focus on the radios when arrow keys move onto an option that takes a value', async () => {
+    const first = control('hr', 'Their manager');
+    const valued = control('hr', 'HR team email');
+    first.focus();
+    await act(async () => {
+      first.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+      );
+    });
+    // Radix moves focus to the next radio, which checks it.
+    expect(valued.getAttribute('data-state')).toBe('checked');
+    expect(card('hr').querySelector('input')).not.toBeNull();
+    expect(document.activeElement).toBe(valued);
   });
 
   it('closes the field when another option is picked', async () => {

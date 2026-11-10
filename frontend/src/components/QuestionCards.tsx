@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react';
-import { Fragment, useId, useState } from 'react';
+import { Fragment, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,10 @@ type Answer = {
 };
 
 const NO_ANSWER: Answer = { picked: [], other: null };
+
+/** Whether focus is on nothing in particular (the page itself). */
+const nothingFocused = () =>
+  !document.activeElement || document.activeElement === document.body;
 
 /** How many sets of cards keep their picks for a remount (see `memoryKey`). */
 const REMEMBERED_MAX = 20;
@@ -161,6 +165,13 @@ export function QuestionCards({
   const [answers, setAnswers] = useState<Record<string, Answer>>(
     () => (memoryKey && remembered.get(memoryKey)) || {},
   );
+
+  // A field opened by a pick takes focus when the pick was the user's
+  // choice (a click, Space), not when arrow keys walked onto its radio:
+  // Radix checks the radio an arrow key moves to, and focus leaving the
+  // group would stop the next arrow press.
+  const arrowKey = useRef(false);
+  const [focusField, setFocusField] = useState(true);
 
   const answerOf = (id: string): Answer => answers[id] ?? NO_ANSWER;
   const update = (id: string, next: Answer) =>
@@ -326,7 +337,9 @@ export function QuestionCards({
                 answer.other ?? '',
                 question.text,
                 question.placeholder || t('questions.somethingElsePlaceholder'),
-                index === 0,
+                // Not away from where the user is typing (the composer,
+                // while the answer streamed) once the cards become active.
+                index === 0 && nothingFocused(),
               )}
               {note}
             </Card>
@@ -363,7 +376,7 @@ export function QuestionCards({
               answer.other ?? '',
               t('questions.somethingElseLabel'),
               t('questions.somethingElsePlaceholder'),
-              true,
+              focusField,
             );
           const { option } = row;
           if (!option?.input) return null;
@@ -371,7 +384,7 @@ export function QuestionCards({
             answer.values?.[option.id] ?? '',
             option.label,
             option.input,
-            true,
+            focusField,
             (value) => setValue(question, option.id, value),
           );
         };
@@ -382,9 +395,10 @@ export function QuestionCards({
               id={rowId(row.key)}
               className="mt-0.5"
               checked={isOn(row)}
-              onCheckedChange={(checked) =>
-                toggle(question, row.id, checked === true)
-              }
+              onCheckedChange={(checked) => {
+                setFocusField(true);
+                toggle(question, row.id, checked === true);
+              }}
             />
           ) : (
             <RadioGroupItem
@@ -444,14 +458,21 @@ export function QuestionCards({
               <RadioGroup
                 aria-label={question.text}
                 value={answer.other !== null ? 'other' : (pickedRow?.key ?? '')}
-                onValueChange={(value) =>
+                onKeyDownCapture={(event) => {
+                  arrowKey.current = event.key.startsWith('Arrow');
+                }}
+                onPointerDownCapture={() => {
+                  arrowKey.current = false;
+                }}
+                onValueChange={(value) => {
+                  setFocusField(!arrowKey.current);
                   pickOne(
                     question,
                     value === 'other'
                       ? null
                       : (question.options[Number(value)]?.id ?? null),
-                  )
-                }
+                  );
+                }}
               >
                 {options}
               </RadioGroup>
