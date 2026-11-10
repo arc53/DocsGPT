@@ -1,5 +1,5 @@
 import { ArrowRight, MessageSquare, Plus, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -96,7 +96,13 @@ export default function AllSchedules() {
   const focused = focusId
     ? (schedules ?? []).find((item) => item.id === focusId)
     : undefined;
-  const focusFound = Boolean(focused);
+  const focusTab = focused
+    ? focused.trigger_type === 'once'
+      ? 'once'
+      : 'recurring'
+    : null;
+  const [tab, setTab] = useState('recurring');
+  const scrolledTo = useRef<string | null>(null);
 
   // Opened again from another notification while this page shows: follow it.
   useEffect(() => {
@@ -104,12 +110,19 @@ export default function AllSchedules() {
   }, [focusId]);
 
   useEffect(() => {
-    if (!focusId || !focusFound) return;
+    if (focusTab) setTab(focusTab);
+  }, [focusId, focusTab]);
+
+  // Once its tab shows: the row is not rendered before.
+  useEffect(() => {
+    if (!focusId || tab !== focusTab || scrolledTo.current === focusId) return;
     const row = Array.from(
       document.querySelectorAll<HTMLElement>('[data-schedule-id]'),
     ).find((element) => element.dataset.scheduleId === focusId);
-    row?.scrollIntoView?.({ block: 'center' });
-  }, [focusId, focusFound]);
+    if (!row) return;
+    scrolledTo.current = focusId;
+    row.scrollIntoView?.({ block: 'center' });
+  }, [focusId, focusTab, tab]);
 
   const agentNames = useMemo(
     () => new Map((agents ?? []).map((agent) => [agent.id, agent.name])),
@@ -388,9 +401,7 @@ export default function AllSchedules() {
           action={newButton}
         />
       ) : (
-        <Tabs
-          defaultValue={focused?.trigger_type === 'once' ? 'once' : 'recurring'}
-        >
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="recurring">
               {t('agents.schedules.recurring')}

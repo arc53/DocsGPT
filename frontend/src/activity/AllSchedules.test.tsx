@@ -158,6 +158,24 @@ describe('AllSchedules', () => {
       .scrollIntoView;
   });
 
+  it('a link to a one-time task opens its tab', async () => {
+    service.listAll.mockResolvedValue({
+      schedules: [
+        schedule({ id: 's1', agent_name: 'Deal Desk' }),
+        schedule({
+          id: 's3',
+          trigger_type: 'once',
+          cron: null,
+          name: 'Friday check',
+          agent_name: 'Deal Desk',
+        }),
+      ],
+    });
+    await render('/activity/schedules?schedule=s3');
+    expect(container.querySelector('[data-schedule-id="s3"]')).not.toBeNull();
+    expect(container.querySelector('[data-schedule-id="s1"]')).toBeNull();
+  });
+
   it('shows the empty state when there are no schedules', async () => {
     service.listAll.mockResolvedValue({ schedules: [] });
     await render();
