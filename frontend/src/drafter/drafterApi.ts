@@ -10,6 +10,11 @@ import { readSSEStream } from '../events/eventStreamClient';
  */
 export const DRAFTER_MAX_MESSAGES = 24;
 export const DRAFTER_USER_MESSAGE_CHARS = 8000;
+/**
+ * The longest prompt a turn drafts with (docsgpt/drafter/prompt_recipe.py
+ * READ_MAX), for a refusal that doesn't carry its own `limit`.
+ */
+export const DRAFTER_PROMPT_CHARS = 100_000;
 
 /** What a drafter session fills: the agent form, a prompt, or Insights topics. */
 export type DrafterRecipe = 'agent' | 'prompt' | 'topics';
@@ -45,7 +50,14 @@ export type DrafterErrorCode =
   | 'model_error'
   /** The task model's provider refused its key: another try fails the same. */
   | 'model_auth'
-  | 'bad_request';
+  /** The server refused the conversation itself (too many or too long messages). */
+  | 'bad_request'
+  /** The prompt is longer than a turn drafts with (`limit` characters). */
+  | 'prompt_too_long'
+  /** The message had no text left once cleaned. */
+  | 'empty_message'
+  /** The request was malformed: nothing the user wrote caused it. */
+  | 'request_invalid';
 
 /**
  * The counts a `reading` status reports ("6 knowledge sources, 11 tools…");
@@ -78,7 +90,7 @@ export type DrafterEvent =
   | { type: 'read'; kind: 'questions'; items: string[] }
   | { type: 'questions'; questions: DrafterQuestion[] }
   | { type: 'proposal'; proposal: unknown }
-  | { type: 'error'; code: DrafterErrorCode; message?: string }
+  | { type: 'error'; code: DrafterErrorCode; message?: string; limit?: number }
   | { type: 'end' };
 
 export type DrafterRequest = {
@@ -96,7 +108,20 @@ const ERROR_CODES: DrafterErrorCode[] = [
   'model_error',
   'model_auth',
   'bad_request',
+  'prompt_too_long',
+  'empty_message',
+  'request_invalid',
 ];
+
+// A refused request's `reason`, as the server names it, to the code the panel
+// words it by. Only a refused history (or an older server, which names no
+// reason) stays `bad_request`, the one a fresh conversation fixes.
+const BAD_REQUEST_REASONS = new Map<unknown, DrafterErrorCode>([
+  ['history', 'bad_request'],
+  ['too_long', 'prompt_too_long'],
+  ['empty', 'empty_message'],
+  ['invalid', 'request_invalid'],
+]);
 
 /**
  * Read the drafter's config. Any failure (an older server without the route,
@@ -260,13 +285,28 @@ export async function getAgentGaps(
 const isErrorCode = (code: unknown): code is DrafterErrorCode =>
   typeof code === 'string' && ERROR_CODES.includes(code as DrafterErrorCode);
 
+/** A `bad_request`'s code by its `reason`; an unknown reason isn't the history's. */
+const badRequestCode = (reason: unknown): DrafterErrorCode =>
+  reason === undefined || reason === null
+    ? 'bad_request'
+    : (BAD_REQUEST_REASONS.get(reason) ?? 'request_invalid');
+
+/** A refusal's `limit`, when it names a usable one. */
+const limitOf = (body: unknown): { limit?: number } => {
+  const limit = (body as { limit?: unknown } | null)?.limit;
+  return typeof limit === 'number' && Number.isFinite(limit) && limit > 0
+    ? { limit }
+    : {};
+};
+
 /** The error code for a refused request that never became a stream. */
 function codeForStatus(status: number, body: unknown): DrafterErrorCode {
   if (isQuotaError(body)) return 'quota';
-  const code = (body as { code?: unknown } | null)?.code;
+  const { code, reason } = (body ?? {}) as { code?: unknown; reason?: unknown };
+  if (code === 'bad_request') return badRequestCode(reason);
   if (isErrorCode(code)) return code;
   if (status === 429) return 'rate_limited';
-  if (status === 400 || status === 422) return 'bad_request';
+  if (status === 400 || status === 422) return badRequestCode(reason);
   if (status === 403 || status === 404) return 'disabled';
   return 'model_error';
 }
@@ -291,15 +331,24 @@ export function parseDrafterEvent(data: string): DrafterEvent | null {
         };
       }
       case 'error': {
-        // A code this client has no words for reads as a model error.
-        const { code, message } = parsed as {
+        // A code this client has no words for reads as a model error; a
+        // refused request reads by its reason.
+        const { code, message, reason } = parsed as {
           code?: unknown;
           message?: unknown;
+          reason?: unknown;
         };
+        const read =
+          code === 'bad_request'
+            ? badRequestCode(reason)
+            : isErrorCode(code)
+              ? code
+              : 'model_error';
         return {
           type: 'error',
-          code: isErrorCode(code) ? code : 'model_error',
+          code: read,
           ...(typeof message === 'string' ? { message } : {}),
+          ...(read === 'prompt_too_long' ? limitOf(parsed) : {}),
         };
       }
       case 'status':
@@ -381,8 +430,12 @@ export async function streamDrafter(
       answered = true;
     onEvent(event);
   };
-  const fail = (code: DrafterErrorCode, message?: string) => {
-    emit({ type: 'error', code, message });
+  const fail = (
+    code: DrafterErrorCode,
+    message?: string,
+    limit?: { limit?: number },
+  ) => {
+    emit({ type: 'error', code, message, ...limit });
     emit({ type: 'end' });
   };
 
@@ -411,9 +464,11 @@ export async function streamDrafter(
       // No JSON body: the status decides.
     }
     const message = (body as { message?: unknown } | null)?.message;
+    const code = codeForStatus(response.status, body);
     fail(
-      codeForStatus(response.status, body),
+      code,
       typeof message === 'string' ? message : undefined,
+      code === 'prompt_too_long' ? limitOf(body) : undefined,
     );
     return;
   }

@@ -4658,6 +4658,18 @@
         "description": "The request couldn't be read. Reload the page and try again.",
         "startOver": "DocsGPT couldn't take this conversation. What you've drafted stays."
       },
+      "prompt_too_long": {
+        "title": "The prompt is too long",
+        "description": "DocsGPT drafts with prompts of up to {{limit, number}} characters. Shorten it, then send your message again."
+      },
+      "empty_message": {
+        "title": "Nothing to send",
+        "description": "Your message has no text DocsGPT can read. Write it again and send it."
+      },
+      "request_invalid": {
+        "title": "Couldn't send that",
+        "description": "The request couldn't be read. Reload the page and try again."
+      },
       "model_auth": {
         "title": "The task model can't run",
         "description": "The provider refused the API key for {{model}}. Nothing in the form changed.",

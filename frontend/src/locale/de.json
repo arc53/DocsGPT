@@ -4637,6 +4637,18 @@
         "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut.",
         "startOver": "DocsGPT konnte diese Unterhaltung nicht annehmen. Was du entworfen hast, bleibt."
       },
+      "prompt_too_long": {
+        "title": "Der Prompt ist zu lang",
+        "description": "DocsGPT entwirft mit Prompts bis {{limit, number}} Zeichen. Kürze ihn und sende deine Nachricht dann erneut."
+      },
+      "empty_message": {
+        "title": "Nichts zu senden",
+        "description": "Deine Nachricht enthält keinen Text, den DocsGPT lesen kann. Schreibe sie erneut und sende sie."
+      },
+      "request_invalid": {
+        "title": "Senden nicht möglich",
+        "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut."
+      },
       "model_auth": {
         "title": "Das Aufgabenmodell kann nicht laufen",
         "description": "Der Anbieter hat den API-Schlüssel für {{model}} abgelehnt. Im Formular hat sich nichts geändert.",

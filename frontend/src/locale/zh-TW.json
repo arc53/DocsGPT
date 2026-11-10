@@ -4612,6 +4612,18 @@
         "description": "無法讀取該請求。請重新整理頁面後重試。",
         "startOver": "DocsGPT 無法接收此對話。已草擬的內容會保留。"
       },
+      "prompt_too_long": {
+        "title": "提示詞太長",
+        "description": "DocsGPT 起草時使用的提示詞最多 {{limit, number}} 個字元。請縮短後重新送出訊息。"
+      },
+      "empty_message": {
+        "title": "沒有可送出的內容",
+        "description": "你的訊息中沒有 DocsGPT 能讀取的文字。請重新輸入後送出。"
+      },
+      "request_invalid": {
+        "title": "無法送出",
+        "description": "無法讀取該請求。請重新整理頁面後重試。"
+      },
       "model_auth": {
         "title": "任務模型無法執行",
         "description": "供應商拒絕了 {{model}} 的 API 金鑰。表單沒有變更。",

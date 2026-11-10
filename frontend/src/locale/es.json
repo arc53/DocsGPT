@@ -4775,6 +4775,18 @@
         "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo.",
         "startOver": "DocsGPT no pudo aceptar esta conversación. Lo que has redactado se mantiene."
       },
+      "prompt_too_long": {
+        "title": "El prompt es demasiado largo",
+        "description": "DocsGPT redacta con prompts de hasta {{limit, number}} caracteres. Acórtalo y vuelve a enviar tu mensaje."
+      },
+      "empty_message": {
+        "title": "No hay nada que enviar",
+        "description": "Tu mensaje no tiene texto que DocsGPT pueda leer. Vuelve a escribirlo y envíalo."
+      },
+      "request_invalid": {
+        "title": "No se pudo enviar",
+        "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo."
+      },
       "model_auth": {
         "title": "El modelo de tareas no puede ejecutarse",
         "description": "El proveedor rechazó la clave de API de {{model}}. El formulario no ha cambiado.",

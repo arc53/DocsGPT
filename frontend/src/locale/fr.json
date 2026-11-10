@@ -4775,6 +4775,18 @@
         "description": "La requête n’a pas pu être lue. Rechargez la page et réessayez.",
         "startOver": "DocsGPT n’a pas pu accepter cette conversation. Ce que vous avez rédigé reste."
       },
+      "prompt_too_long": {
+        "title": "Le prompt est trop long",
+        "description": "DocsGPT rédige avec des prompts de {{limit, number}} caractères au plus. Raccourcissez-le, puis renvoyez votre message."
+      },
+      "empty_message": {
+        "title": "Rien à envoyer",
+        "description": "Votre message ne contient aucun texte que DocsGPT puisse lire. Réécrivez-le, puis envoyez-le."
+      },
+      "request_invalid": {
+        "title": "Envoi impossible",
+        "description": "La requête n’a pas pu être lue. Rechargez la page et réessayez."
+      },
       "model_auth": {
         "title": "Le modèle de tâches ne peut pas s’exécuter",
         "description": "Le fournisseur a refusé la clé d’API de {{model}}. Le formulaire n’a pas changé.",

@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
-import type { DrafterErrorCode } from './drafterApi';
+import { DRAFTER_PROMPT_CHARS, type DrafterErrorCode } from './drafterApi';
 
 /** Where the task model is picked: Settings › General. */
 export const TASK_MODEL_SETTINGS_PATH = '/settings/general';
@@ -31,6 +31,8 @@ export const RETRYABLE: DrafterErrorCode[] = [
  *   description: The recipe's own text in place of the code's description,
  *     which speaks of the agent form ("Nothing in the form changed").
  *   model: The task model's name, for a refused key's description.
+ *   limit: A too-long prompt's limit in characters, when the refusal named
+ *     it; else the server's usual one.
  *   onNavigate: The Change the task model link's click handler (a builder's
  *     leave guard).
  *   fix: Another link that fixes the error, after Try again (the panel's
@@ -43,6 +45,7 @@ export function DrafterErrorAlert({
   description,
   fix,
   model,
+  limit,
   onNavigate,
 }: {
   code: DrafterErrorCode;
@@ -50,6 +53,7 @@ export function DrafterErrorAlert({
   description?: string;
   fix?: ReactNode;
   model?: string | null;
+  limit?: number;
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const { t } = useTranslation();
@@ -64,7 +68,11 @@ export function DrafterErrorAlert({
             interpolation: { escapeValue: false },
           })
         : t('drafter.errors.model_auth.descriptionNoModel')
-      : t(`drafter.errors.${code}.description`));
+      : code === 'prompt_too_long'
+        ? t('drafter.errors.prompt_too_long.description', {
+            limit: limit ?? DRAFTER_PROMPT_CHARS,
+          })
+        : t(`drafter.errors.${code}.description`));
   return (
     <Alert variant="destructive" data-item="error">
       <AlertTitle>{t(`drafter.errors.${code}.title`)}</AlertTitle>

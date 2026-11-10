@@ -14,7 +14,9 @@ vi.mock('react-i18next', () => ({
           ? `${key}:${options.model}`
           : options && 'counts' in options
             ? `${key}:${options.counts}`
-            : key,
+            : options && 'limit' in options
+              ? `${key}:${options.limit}`
+              : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -593,6 +595,26 @@ describe('DraftPanel', () => {
     expect(container.querySelector('[data-item]')).toBeNull();
     expect(container.textContent).toContain('Tell me');
   });
+
+  it.each([
+    ['prompt_too_long', 'drafter.errors.prompt_too_long.description:100000'],
+    ['empty_message', 'drafter.errors.empty_message.description'],
+    ['request_invalid', 'drafter.errors.request_invalid.description'],
+  ] as const)(
+    'says why a %s request was refused, with no Start over: the conversation is fine',
+    async (code, description) => {
+      stream.scripts = [[{ type: 'error', code }, { type: 'end' }]];
+      await ask('Draft it');
+      const alert = container.querySelector('[data-item="error"]')!;
+      expect(alert.textContent).toContain(`drafter.errors.${code}.title`);
+      expect(alert.textContent).toContain(description);
+      expect(alert.textContent).not.toContain(
+        'drafter.errors.bad_request.startOver',
+      );
+      expect(button('drafter.retry')).toBeUndefined();
+      expect(alert.querySelector('button')).toBeNull();
+    },
+  );
 
   it("caps the ask bar at the server's message length", () => {
     expect(askBar().maxLength).toBe(8000);

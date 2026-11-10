@@ -515,8 +515,9 @@ export function DraftPanel({
           </Fragment>
         );
       case 'error': {
-        // A refused request (the history too long, say) fails again as it
-        // is: only a fresh conversation goes on.
+        // A refused conversation (the history too long, say) fails again as
+        // it is: only a fresh conversation goes on. A refusal of something
+        // else (the prompt too long) says why, with no Start over.
         const refused = item.code === 'bad_request';
         const latest = index === items.length - 1;
         // The way on isn't a fix for the error, so it goes under the Alert,

@@ -4610,6 +4610,18 @@
         "description": "无法读取该请求。请刷新页面后重试。",
         "startOver": "DocsGPT 无法接收此对话。已起草的内容会保留。"
       },
+      "prompt_too_long": {
+        "title": "提示词太长",
+        "description": "DocsGPT 起草时使用的提示词最多 {{limit, number}} 个字符。请缩短后重新发送消息。"
+      },
+      "empty_message": {
+        "title": "没有可发送的内容",
+        "description": "你的消息中没有 DocsGPT 能读取的文本。请重新输入后发送。"
+      },
+      "request_invalid": {
+        "title": "无法发送",
+        "description": "无法读取该请求。请刷新页面后重试。"
+      },
       "model_auth": {
         "title": "任务模型无法运行",
         "description": "提供商拒绝了 {{model}} 的 API 密钥。表单没有变化。",

@@ -153,6 +153,28 @@ describe('drafterApi', () => {
       type: 'error',
       code: 'model_auth',
     });
+    // A 400 body that names its reason reads like the stream's refusal.
+    client.post.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ code: 'bad_request', reason: 'empty', message: 'x' }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    expect((await run())[0]).toMatchObject({
+      type: 'error',
+      code: 'empty_message',
+    });
+    client.post.mockResolvedValueOnce(
+      new Response(JSON.stringify({ reason: 'too_long', limit: 5 }), {
+        status: 422,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    expect((await run())[0]).toMatchObject({
+      type: 'error',
+      code: 'prompt_too_long',
+      limit: 5,
+    });
   });
 
   it('ends a stream that broke off with a model error', async () => {
@@ -261,6 +283,46 @@ describe('drafterApi', () => {
     expect(parseDrafterEvent('{"type":"error","code":7}')).toEqual({
       type: 'error',
       code: 'model_error',
+    });
+  });
+
+  it('reads a refused request by its reason: only a refused history is bad_request', () => {
+    const read = (body: object) =>
+      parseDrafterEvent(JSON.stringify({ type: 'error', ...body }));
+    expect(read({ code: 'bad_request', reason: 'history' })).toEqual({
+      type: 'error',
+      code: 'bad_request',
+    });
+    // An older server names no reason: the history it refused, as before.
+    expect(read({ code: 'bad_request', message: 'Too many' })).toEqual({
+      type: 'error',
+      code: 'bad_request',
+      message: 'Too many',
+    });
+    expect(
+      read({ code: 'bad_request', reason: 'too_long', limit: 100000 }),
+    ).toEqual({ type: 'error', code: 'prompt_too_long', limit: 100000 });
+    expect(read({ code: 'bad_request', reason: 'empty' })).toEqual({
+      type: 'error',
+      code: 'empty_message',
+    });
+    expect(read({ code: 'bad_request', reason: 'invalid' })).toEqual({
+      type: 'error',
+      code: 'request_invalid',
+    });
+    // A reason this client doesn't know isn't the history's fault either.
+    expect(read({ code: 'bad_request', reason: 'odd' })).toEqual({
+      type: 'error',
+      code: 'request_invalid',
+    });
+    expect(read({ code: 'bad_request', reason: 'toString' })).toEqual({
+      type: 'error',
+      code: 'request_invalid',
+    });
+    // A reason only means something on a refused request.
+    expect(read({ code: 'quota', reason: 'too_long' })).toEqual({
+      type: 'error',
+      code: 'quota',
     });
   });
 
