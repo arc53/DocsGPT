@@ -947,10 +947,18 @@ type SubmitToolActionsArgs = {
   toolActions: ToolAction[];
 };
 
-export const submitToolActions = createAsyncThunk<void, SubmitToolActionsArgs>(
-  'submitToolActions',
-  streamed(sendToolActions),
-);
+/**
+ * How a tool-actions request went: `ran` once the server took it (the resumed
+ * run may still fail later), `refused` when it was turned away before
+ * anything ran (an error frame first: a 400, a 429), `gone` when the pause
+ * was already over and the turn reloads.
+ */
+export type ToolActionsOutcome = 'ran' | 'refused' | 'gone';
+
+export const submitToolActions = createAsyncThunk<
+  ToolActionsOutcome,
+  SubmitToolActionsArgs
+>('submitToolActions', streamed(sendToolActions));
 
 /**
  * Resume a turn paused on clarifying questions (`ask_user`) with the user's
@@ -968,16 +976,42 @@ export const resumeQuestion = createAsyncThunk<
   const call = queries[index]?.tool_calls?.find(
     (candidate) => candidate.call_id === callId,
   );
-  if (call)
+  if (call) {
+    // A refused try left its error on the turn, which would hide the cards
+    // again; this answer is the retry.
+    if (queries[index].error)
+      dispatch(
+        conversationSlice.actions.updateQuery({
+          index,
+          query: {
+            error: undefined,
+            errorCode: undefined,
+            errorParams: undefined,
+          },
+        }),
+      );
     dispatch(
       conversationSlice.actions.updateToolCall({
         index,
         tool_call: answeredCall(call, action),
       }),
     );
-  await dispatch(
+  }
+  const sent = await dispatch(
     submitToolActions({ toolActions: [{ call_id: callId, ...action }] }),
   );
+  const refused = submitToolActions.rejected.match(sent)
+    ? !sent.meta.aborted
+    : sent.payload === 'refused';
+  // Nothing ran and the server still waits: the cards come back as they
+  // were, for another try, and the composer answers them again.
+  if (refused && call)
+    dispatch(
+      conversationSlice.actions.updateToolCall({
+        index,
+        tool_call: { ...call, result: call.result },
+      }),
+    );
 });
 
 async function sendToolActions(
@@ -987,7 +1021,7 @@ async function sendToolActions(
     getState,
   }: Parameters<AsyncThunkPayloadCreator<void, SubmitToolActionsArgs>>[1],
   signal: AbortSignal,
-): Promise<void> {
+): Promise<ToolActionsOutcome> {
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
   if (!conversationId) {
@@ -1003,13 +1037,14 @@ async function sendToolActions(
       );
     }
     dispatch(conversationSlice.actions.setStatus('failed'));
-    return;
+    return 'refused';
   }
 
   dispatch(conversationSlice.actions.setStatus('loading'));
 
   // Fresh per submission: a tool decision is its own logical action.
   const idempotencyKey = newIdempotencyKey();
+  let outcome: ToolActionsOutcome | null = null;
   await handleSubmitToolActions(
     conversationId,
     toolActions,
@@ -1018,6 +1053,14 @@ async function sendToolActions(
     (event) => {
       const data = JSON.parse(event.data);
       const targetIndex = state.conversation.queries.length - 1;
+      // The first frame tells whether the server took the request.
+      if (outcome === null)
+        outcome =
+          data.type !== 'error'
+            ? 'ran'
+            : data.code === NOT_PENDING_CODE
+              ? 'gone'
+              : 'refused';
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));
@@ -1105,6 +1148,7 @@ async function sendToolActions(
     },
     idempotencyKey,
   );
+  return outcome ?? 'ran';
 }
 
 export const conversationSlice = createSlice({
@@ -1555,6 +1599,14 @@ export const conversationSlice = createSlice({
               : state.queries.length - 1;
           state.queries[targetIndex].error = 'Something went wrong';
         }
+      })
+      // A decision whose request threw (no connection) must not leave the
+      // chat busy: it fails on the turn it was for, as a send does.
+      .addCase(submitToolActions.rejected, (state, action) => {
+        if (action.meta.aborted) return;
+        state.status = 'failed';
+        const last = state.queries[state.queries.length - 1];
+        if (last) last.error = 'Something went wrong';
       });
   },
 });

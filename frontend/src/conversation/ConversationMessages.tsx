@@ -38,7 +38,7 @@ import {
 } from './conversationModels';
 import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
-import type { QuestionAction } from './questionCall';
+import { pendingQuestionCall, type QuestionAction } from './questionCall';
 import { cn } from '@/lib/utils';
 
 type ConversationMessagesProps = {
@@ -377,27 +377,31 @@ export default function ConversationMessages({
     // Error first; reconciler-failed rows may carry partial thought/
     // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
+      // A resume the server refused leaves the questions waiting: answering
+      // them is the retry, and resending the prompt would start a new turn.
+      const waitingQuestions = pendingQuestionCall([query]) !== null;
       // A woken turn's prompt is the background event: retrying would send
       // it as the user's own message.
-      const retryButton = query.wake ? undefined : (
-        <IconButton
-          label={t('conversation.retry')}
-          variant="ghost-muted"
-          size="icon-sm"
-          shape="pill"
-          disabled={status === 'loading'}
-          onClick={() => {
-            const questionToRetry = queries[index].prompt;
-            handleQuestion({
-              question: questionToRetry,
-              isRetry: true,
-              index,
-            });
-          }}
-        >
-          <RotateCcw aria-hidden="true" />
-        </IconButton>
-      );
+      const retryButton =
+        query.wake || waitingQuestions ? undefined : (
+          <IconButton
+            label={t('conversation.retry')}
+            variant="ghost-muted"
+            size="icon-sm"
+            shape="pill"
+            disabled={status === 'loading'}
+            onClick={() => {
+              const questionToRetry = queries[index].prompt;
+              handleQuestion({
+                question: questionToRetry,
+                isRetry: true,
+                index,
+              });
+            }}
+          >
+            <RotateCcw aria-hidden="true" />
+          </IconButton>
+        );
       // Files that overflowed the window are better searched than sent:
       // offer to make them Knowledge, then the question can be asked again.
       const knowledgeFiles =
@@ -420,7 +424,8 @@ export default function ConversationMessages({
       // and why.
       const showPartial =
         (query.errorCode === 'time_limit' && hasPartialProgress) ||
-        Boolean(query.workflow?.steps.length);
+        Boolean(query.workflow?.steps.length) ||
+        waitingQuestions;
       return (
         <Fragment key={`${index}-ERROR`}>
           {showPartial ? (

@@ -25,6 +25,7 @@ import {
   handleFetchAnswer,
   handleSubmitToolActions,
 } from './conversationHandlers';
+import { pendingQuestionCall } from './questionCall';
 import reducer, {
   addQuery,
   applyMessageTail,
@@ -1283,6 +1284,96 @@ describe('resumeQuestion', () => {
     expect(store.getState().conversation.queries[0].tool_calls![0].status).toBe(
       'skipped',
     );
+  });
+
+  // The server refused the resume before it ran (a 400, a 429, a dropped
+  // connection): it still waits, so the cards come back to try again.
+  const frames =
+    (events: object[]) =>
+    async (...args: Parameters<typeof handleSubmitToolActions>) => {
+      for (const event of events)
+        args[4](new MessageEvent('message', { data: JSON.stringify(event) }));
+      return undefined as never;
+    };
+  const waitingCall = (store: ReturnType<typeof makeStore>) =>
+    pendingQuestionCall(store.getState().conversation.queries);
+
+  it('brings the cards back when the server refuses the resume', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      frames([{ type: 'error', error: 'Too many requests', code: 'quota' }]),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const call = store.getState().conversation.queries[0].tool_calls![0];
+    expect(call.status).toBe('awaiting_answer');
+    expect(call.result).toBeUndefined();
+    expect(call.arguments).toEqual({});
+    expect(waitingCall(store)?.call_id).toBe('ask-1');
+    expect(store.getState().conversation.status).not.toBe('loading');
+  });
+
+  it('brings the cards back when the request throws', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(
+      new TypeError('Failed to fetch'),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { skipped: true } }),
+    );
+    const state = store.getState().conversation;
+    expect(state.status).toBe('failed');
+    expect(state.queries[0].tool_calls![0].status).toBe('awaiting_answer');
+    expect(waitingCall(store)?.call_id).toBe('ask-1');
+  });
+
+  it('keeps the cards folded when the resumed run fails after it started', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      frames([
+        { type: 'message_id', message_id: 'm-1' },
+        { type: 'error', error: 'Model failed' },
+      ]),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const call = store.getState().conversation.queries[0].tool_calls![0];
+    expect(call).toMatchObject({ status: 'success', result: 'Q3' });
+    expect(waitingCall(store)).toBeNull();
+  });
+
+  it("clears a refused try's error when the answer goes again", async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementationOnce(
+      frames([{ type: 'error', error: 'Too many requests' }]),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    expect(store.getState().conversation.queries[0].error).toBe(
+      'Too many requests',
+    );
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const turn = store.getState().conversation.queries[0];
+    expect(turn.error).toBeUndefined();
+    expect(turn.tool_calls![0].status).toBe('success');
+  });
+
+  it('does not leave an approval stuck loading when its request throws', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(
+      new TypeError('Failed to fetch'),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'ask-1', decision: 'approved' }],
+      }),
+    );
+    expect(store.getState().conversation.status).toBe('failed');
   });
 
   it('retires waiting questions when a new message goes out', () => {
