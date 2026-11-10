@@ -15,6 +15,7 @@ from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
 def _run(conn) -> str:
+    """A pending run of a new recurring schedule; its id."""
     now = datetime.now(timezone.utc)
     schedule = SchedulesRepository(conn).create(
         user_id="u", agent_id=None, trigger_type="recurring", instruction="check the site",
@@ -24,12 +25,14 @@ def _run(conn) -> str:
 
 
 def _set_error_type(conn, run_id: str, value: str) -> None:
+    """Write a run's error type."""
     conn.execute(
         text("UPDATE schedule_runs SET error_type = :v WHERE id = CAST(:id AS uuid)"), {"v": value, "id": run_id},
     )
 
 
 def _error_type(conn, run_id: str) -> str:
+    """Read a run's error type."""
     return conn.execute(
         text("SELECT error_type FROM schedule_runs WHERE id = CAST(:id AS uuid)"), {"id": run_id},
     ).scalar()

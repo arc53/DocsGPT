@@ -529,6 +529,9 @@ class ResearchAgent(BaseAgent):
     ) -> str:
         """Core research loop. Works with any ToolExecutor instance."""
         system_prompt = STEP_PROMPT.replace("{step_query}", step_query)
+        if getattr(self, "reports_cannot_complete_by_tool", False):
+            # The steps are what call tools, so they are what can find a step impossible.
+            system_prompt = f"{system_prompt}\n\n{self.CANNOT_COMPLETE_TOOL_NOTE}"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": step_query},
@@ -813,9 +816,6 @@ class ResearchAgent(BaseAgent):
         synthesis_prompt = synthesis_prompt.replace("{plan_summary}", plan_summary)
         synthesis_prompt = synthesis_prompt.replace("{findings}", findings)
         synthesis_prompt = synthesis_prompt.replace("{references}", references)
-        if self.endpoint == "schedule":
-            # This prompt replaces the one ``_build_messages`` would extend.
-            synthesis_prompt = f"{synthesis_prompt}\n\n---\n\n{self.SCHEDULED_RUN_NOTE}"
 
         messages = [
             {"role": "system", "content": synthesis_prompt},

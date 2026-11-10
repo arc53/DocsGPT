@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
+from docsgpt.agents.cannot_complete import cannot_complete_reason, drop_cannot_complete_marker
 from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.api.answer.segments import merge_tool_calls, separated
 from docsgpt.api.answer.services.prompt_renderer import (
@@ -103,6 +104,30 @@ def _wiki_config(
     except Exception:
         logger.exception("Failed to resolve wiki tool config for a headless run")
         return None
+
+
+def _scheduled_cannot_complete(
+    agent: Any, tool_executor: Any, agent_type: str, answer: str, last_round_start: int
+) -> tuple[Optional[str], str]:
+    """A scheduled run's report that it can't do its task, and its answer as stored.
+
+    A ``report_cannot_complete`` call wins; a workflow's engine notes its
+    nodes' reports on the agent. Only a model given no such tool is told to
+    open its answer with the marker, so only its last round's text is read.
+    """
+    if agent_type == "workflow":
+        noted = getattr(agent, "cannot_complete", None)
+        return (noted if isinstance(noted, str) and noted else None), answer
+    reported = getattr(tool_executor, "cannot_complete", None)
+    if isinstance(reported, str) and reported:
+        return reported, answer
+    last_round = answer[last_round_start:]
+    reason = cannot_complete_reason(last_round)
+    if reason is None:
+        return None, answer
+    # Keep the paragraph break that set the last round off from the text before it.
+    lead = last_round[: len(last_round) - len(last_round.lstrip())] if last_round_start else ""
+    return reason, answer[:last_round_start] + lead + drop_cannot_complete_marker(last_round)
 
 
 def run_agent_headless(
@@ -456,6 +481,8 @@ def _run_agent_headless(
     steps_completed = 0
     # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
     tool_since_text = False
+    # Where the text of the model's last round starts: after its last tool call.
+    last_round_start = 0
     stopped = False
     events = agent.gen(query=query)
     if should_stop is not None:
@@ -493,6 +520,8 @@ def _run_agent_headless(
             elif event.get("type") == "tool_call":
                 tool_since_text = True
             elif "answer" in event:
+                if tool_since_text:
+                    last_round_start = len(answer_full)
                 chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
                 if chunk.strip():
                     tool_since_text = False
@@ -552,11 +581,18 @@ def _run_agent_headless(
         tool_calls = merge_tool_calls(tool_calls, tool_executor.get_truncated_tool_calls())
 
     denied = list(getattr(tool_executor, "headless_denials", []))
+    cannot_complete: Optional[str] = None
+    if endpoint == "schedule":
+        cannot_complete, answer_full = _scheduled_cannot_complete(
+            agent, tool_executor, agent_type, answer_full, last_round_start
+        )
     error: Optional[str] = None
     if budget_error:
         error_type = "TimeLimit"
         error = stream_error
-    elif denied and not answer_full.strip():
+    # A refused tool is the exact cause of a run that then says it couldn't
+    # do its task, so the refusal, which names the tool, is what's recorded.
+    elif denied and (not answer_full.strip() or cannot_complete):
         error_type = "tool_not_allowed"
         blocked = ", ".join(
             str(d.get("tool_name") or d.get("action_name") or "?") for d in denied
@@ -567,6 +603,8 @@ def _run_agent_headless(
         error = stream_error
     else:
         error_type = None
+    if error_type:
+        cannot_complete = None
     if stream_error:
         logger.warning(
             "Headless run for agent %s failed mid-stream: %s", agent_id, stream_error
@@ -578,10 +616,6 @@ def _run_agent_headless(
         agent.flush_guardrail_audit()
     except Exception:
         logger.exception("Guardrail audit flush failed for headless agent %s", agent_id)
-
-    # A workflow node can report it cannot do its step without its text
-    # opening the run's answer, so the engine notes it on the agent.
-    cannot_complete = getattr(agent, "cannot_complete", None)
 
     # Use the LLM accumulator (gen_token_usage / stream_token_usage decorators);
     # current_token_count is a context-size sentinel, not a usage tally.
@@ -600,7 +634,7 @@ def _run_agent_headless(
         "error_type": error_type,
         "error": error,
         "steps_completed": steps_completed,
-        "cannot_complete": cannot_complete if isinstance(cannot_complete, str) else None,
+        "cannot_complete": cannot_complete,
         "model_id": model_id,
         "metadata": message_metadata,
         "stopped": stopped,

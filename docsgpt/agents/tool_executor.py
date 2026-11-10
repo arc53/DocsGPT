@@ -25,6 +25,7 @@ from docsgpt.agents.tool_pins import (
     resolve_arguments,
     sent_arguments,
 )
+from docsgpt.agents.tools.report_cannot_complete import REPORT_CANNOT_COMPLETE
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -789,6 +790,8 @@ class ToolExecutor:
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
         self.headless_denials: List[Dict] = []
+        # The reason a scheduled run's ``report_cannot_complete`` call gave, if it made one.
+        self.cannot_complete: Optional[str] = None
         # Per-turn connection resolution for connection-backed tools, keyed
         # by tool row id, so check_pause and execute share one lookup.
         self._connections: Dict[str, Any] = {}
@@ -1797,7 +1800,17 @@ class ToolExecutor:
             raise
         data = self.tool_calls[-1] if len(self.tool_calls) > recorded else {}
         finish_tool_span(span, data)
+        self._note_cannot_complete(data)
         return outcome
+
+    def _note_cannot_complete(self, data: Dict) -> None:
+        """Keep the reason of the first ``report_cannot_complete`` call that ran."""
+        if self.cannot_complete or data.get("tool_name") != REPORT_CANNOT_COMPLETE or data.get("status") == "error":
+            return
+        arguments = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
+        reason = " ".join(str(arguments.get("reason") or "").split())
+        if reason:
+            self.cannot_complete = reason[:500]
 
     def _execute(self, tools_dict: Dict, call, llm_class_name: str):
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)

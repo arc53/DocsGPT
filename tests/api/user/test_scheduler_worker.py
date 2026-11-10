@@ -702,6 +702,7 @@ class TestOneTimeRunNotifies:
 
 
 def _outcome(answer: str, **extra) -> dict:
+    """What ``run_agent_headless`` returns for a run that answered ``answer``."""
     return {
         "answer": answer, "tool_calls": [], "sources": [], "thought": "", "prompt_tokens": 40,
         "generated_tokens": 12, "denied": [], "error_type": None, "model_id": "fake", **extra,
@@ -709,20 +710,23 @@ def _outcome(answer: str, **extra) -> dict:
 
 
 def _execute_with(run, outcome: dict) -> dict:
+    """Run the worker over one run, the agent replaced by ``outcome``."""
     with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", return_value=outcome):
         return execute_scheduled_run_body(str(run["id"]), "celery-cc")
 
 
-class TestCannotComplete:
-    """An agent that answers it has no way to do the task fails the run, so the schedule can pause."""
+REASON = "Step 1 (open the site): no browser tool."
+EXPLANATION = "I couldn't open the site: this agent has no browser tool. Nothing else was checked."
 
-    def test_the_marker_fails_the_run_with_its_reason(self, pg_engine, patched_engine, stub_events):
+
+class TestCannotComplete:
+    """An agent that reports it has no way to do the task fails the run, so the schedule can pause."""
+
+    def test_a_report_fails_the_run_with_its_reason(self, pg_engine, patched_engine, stub_events):
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
 
-        result = _execute_with(run, _outcome(
-            "**CANNOT_COMPLETE:** Step 1 (open the site): no browser tool.\n\nNothing else was checked."
-        ))
+        result = _execute_with(run, _outcome(EXPLANATION, cannot_complete=REASON))
 
         assert result == {"status": "failed", "run_id": str(run["id"]), "error_type": "cannot_complete"}
         with pg_engine.connect() as conn:
@@ -730,12 +734,12 @@ class TestCannotComplete:
             sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
         assert row["status"] == "failed"
         assert row["error_type"] == "cannot_complete"
-        assert row["error"] == "Step 1 (open the site): no browser tool."
-        assert row["output"] == "Step 1 (open the site): no browser tool.\n\nNothing else was checked."
+        assert row["error"] == REASON
+        assert row["output"] == EXPLANATION
         assert sched["consecutive_failure_count"] == 1
         failed = next(e[1] for e in stub_events if e[0] == "schedule.run.failed")
         assert failed["error_type"] == "cannot_complete"
-        assert failed["error"] == "Step 1 (open the site): no browser tool."
+        assert failed["error"] == REASON
 
     def test_the_third_one_in_a_row_pauses_a_recurring_schedule(
         self, pg_engine, patched_engine, stub_events, monkeypatch,
@@ -753,20 +757,20 @@ class TestCannotComplete:
             ]
 
         for index, run in enumerate([first, *later]):
-            _execute_with(run, _outcome("CANNOT_COMPLETE: no email tool to send the report"))
+            _execute_with(run, _outcome(EXPLANATION, cannot_complete="no email tool to send the report"))
             with pg_engine.connect() as conn:
                 sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
             assert sched["consecutive_failure_count"] == index + 1
             assert sched["status"] == ("paused" if index == 2 else "active")
         assert [e[0] for e in stub_events].count("schedule.autopaused") == 1
 
-    def test_an_answer_that_only_mentions_cannot_succeeds(self, pg_engine, patched_engine, stub_events):
+    def test_a_run_with_no_report_succeeds(self, pg_engine, patched_engine, stub_events):
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
             SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
         answer = "The site is up. I cannot complete the login check without an account, so I skipped it."
 
-        result = _execute_with(run, _outcome(answer))
+        result = _execute_with(run, _outcome(answer, cannot_complete=None))
 
         assert result["status"] == "success"
         with pg_engine.connect() as conn:
@@ -776,24 +780,11 @@ class TestCannotComplete:
         assert row["output"] == answer
         assert sched["consecutive_failure_count"] == 0
 
-    def test_a_workflow_node_that_cannot_do_its_step_fails_the_run(self, pg_engine, patched_engine, stub_events):
-        # The node's text did not stream, or not first; the runner reports it instead.
-        with pg_engine.begin() as conn:
-            _schedule, run, _ = _make_pending_run(conn)
-
-        _execute_with(run, _outcome("Prices fetched.", steps_completed=3, cannot_complete="Mail: no email tool"))
-
-        with pg_engine.connect() as conn:
-            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
-        assert row["error_type"] == "cannot_complete"
-        assert row["error"] == "Mail: no email tool"
-        assert row["output"] == "Prices fetched."
-
     def test_a_run_that_already_failed_keeps_its_error(self, pg_engine, patched_engine, stub_events):
         with pg_engine.begin() as conn:
             _schedule, run, _ = _make_pending_run(conn)
 
-        _execute_with(run, _outcome("CANNOT_COMPLETE: no email tool", error_type="stream_error", error="peer closed"))
+        _execute_with(run, _outcome("", cannot_complete="no email tool", error_type="stream_error", error="peer closed"))
 
         with pg_engine.connect() as conn:
             row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
@@ -808,7 +799,7 @@ class TestCannotComplete:
         with pg_engine.begin() as conn:
             conv_id, run = TestOneTimeRunNotifies()._once(conn, name="Morning check")
 
-        result = _execute_with(run, _outcome("CANNOT_COMPLETE: no browser tool to open the site"))
+        result = _execute_with(run, _outcome(EXPLANATION, cannot_complete=REASON))
 
         assert result["status"] == "failed"
         with pg_engine.connect() as conn:
@@ -821,9 +812,31 @@ class TestCannotComplete:
         assert row["error_type"] == "cannot_complete"
         assert row["message_id"] is not None
         assert str(row["conversation_id"]) == conv_id
-        assert [m[0] for m in messages] == ["no browser tool to open the site"]
-        assert notified[0]["body"] == "no browser tool to open the site"
+        assert [m[0] for m in messages] == [EXPLANATION]
+        assert notified[0]["body"] == EXPLANATION
         assert sched["status"] == "completed"
+
+    def test_a_report_with_no_answer_tells_the_chat_its_reason(
+        self, pg_engine, patched_engine, stub_events, monkeypatch,
+    ):
+        # A bare marker, or a workflow node that reported but streamed nothing.
+        notified = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        with pg_engine.begin() as conn:
+            conv_id, run = TestOneTimeRunNotifies()._once(conn, name="Morning check")
+
+        _execute_with(run, _outcome("", cannot_complete="Check site: no browser tool"))
+
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            messages = conn.execute(
+                text("SELECT response FROM conversation_messages WHERE conversation_id = CAST(:c AS uuid)"),
+                {"c": conv_id},
+            ).fetchall()
+        assert [m[0] for m in messages] == ["Check site: no browser tool"]
+        assert notified[0]["body"] == "Check site: no browser tool"
+        assert row["output"] is None
+        assert row["error"] == "Check site: no browser tool"
 
 
 class TestRunAsOwnerAccessRecheck:

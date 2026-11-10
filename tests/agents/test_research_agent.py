@@ -1114,20 +1114,18 @@ class TestSynthesisPhase:
         answer_events = [e for e in events if isinstance(e, dict) and "answer" in e]
         assert len(answer_events) == 1
 
-    @pytest.mark.parametrize("endpoint, noted", [("schedule", True), ("stream", False)])
-    def test_only_a_scheduled_synthesis_is_told_it_is_the_scheduled_run(
+    def test_the_synthesis_is_never_told_to_report(
         self,
-        endpoint,
-        noted,
         agent_base_params,
         mock_llm,
         mock_llm_creator,
         mock_llm_handler_creator,
         log_context,
     ):
-        """The report is the run's answer, so it carries the marker rule ``_build_messages`` adds elsewhere."""
-        agent_base_params["endpoint"] = endpoint
+        """It has no tools, so it could only misreport a step the research did."""
+        agent_base_params["endpoint"] = "schedule"
         agent = ResearchAgent(**agent_base_params)
+        agent.reports_cannot_complete_by_tool = True
         agent._start_time = time.monotonic()
         mock_llm.gen_stream = Mock(return_value=iter([]))
 
@@ -1135,7 +1133,8 @@ class TestSynthesisPhase:
             list(agent._synthesis_phase("check the site", [], [], {}, log_context))
 
         system = mock_llm.gen_stream.call_args.kwargs["messages"][0]["content"]
-        assert ("CANNOT_COMPLETE:" in system) is noted
+        assert "report_cannot_complete" not in system
+        assert "CANNOT_COMPLETE" not in system
 
 
 @pytest.mark.unit
@@ -1163,6 +1162,34 @@ class TestScheduledResearchRun:
 
         clarify.assert_not_called()
         assert [e["answer"] for e in events if "answer" in e] == ["report"]
+
+    @pytest.mark.parametrize("offered", [True, False])
+    def test_only_steps_given_the_call_are_told_to_use_it(
+        self,
+        offered,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """The steps are what call tools, so they are what can find a step impossible."""
+        from docsgpt.llm.handlers.base import LLMResponse
+
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(**agent_base_params)
+        agent.reports_cannot_complete_by_tool = offered
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm.gen = Mock(return_value=Mock())
+        mock_llm_handler._parse_for_response = Mock(
+            return_value=LLMResponse(content="findings", tool_calls=[], finish_reason="stop", raw_response=None)
+        )
+
+        agent._research_step("Is the status page green?", {})
+
+        system = mock_llm.gen.call_args.kwargs["messages"][0]["content"]
+        assert ("call report_cannot_complete" in system) is offered
 
 
 # =====================================================================

@@ -30,6 +30,7 @@ _NEW = _OLD + ", 'cannot_complete'"
 
 
 def _recreate(values: str) -> None:
+    """Replace the run error-type check with one allowing ``values``."""
     op.execute("ALTER TABLE schedule_runs DROP CONSTRAINT IF EXISTS schedule_runs_error_type_chk;")
     op.execute(
         "ALTER TABLE schedule_runs ADD CONSTRAINT schedule_runs_error_type_chk "
