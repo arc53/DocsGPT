@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 import logging
@@ -1103,6 +1104,9 @@ class BaseAgent(ABC):
         self.tool_executor.guardrail_engine = self.guardrails
         self.tool_executor.retrieval_screen = self._screen_docs
         self.tool_executor.source_name_screen = self._screen_names_one_by_one
+        # Question cards are shown to the user as the model wrote them, so
+        # they get the output controls an answer gets.
+        self.tool_executor.question_screen = self._screen_questions
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
         self._sync_attachments_tool()
@@ -3033,6 +3037,64 @@ class BaseAgent(ABC):
             yield self._guardrail_block_event(
                 step.decisions[-1], step.block_message or GUARDRAIL_DEFAULT_MESSAGE
             )
+
+    def _screen_questions(
+        self, message: Optional[str], questions: List[Dict[str, Any]]
+    ) -> Tuple[Optional[str], List[Dict[str, Any]], Optional[Dict]]:
+        """Run ``ask_user`` question cards through the output controls before they are shown or kept.
+
+        The cards are the model's words shown to the user, as an answer is, so
+        a redaction is what the cards show and a block withholds them all (the
+        turn then ends as a blocked answer does). Every shown string is scanned
+        together, one per line, the way source names are; when a redaction no
+        longer lines up with the strings, each is screened on its own.
+
+        Args:
+            message: The cards' lead-in line.
+            questions: The normalized questions (:func:`docsgpt.agents.questions.normalize_questions`).
+
+        Returns:
+            ``(message, questions, block event)``: the screened message and
+            questions (copies, when anything was redacted), or the event that
+            ends the turn when a control blocked them.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.has_stage(Stage.OUTPUT):
+            return message, questions, None
+        self._refresh_sources_before_output()
+        screened = copy.deepcopy(questions)
+        lead = {"message": message}
+        slots: List[Tuple[Dict[str, Any], str]] = [(lead, "message")]
+        for question in screened:
+            slots += [(question, "text"), (question, "note"), (question, "placeholder")]
+            for option in question.get("options") or []:
+                if isinstance(option, dict):
+                    slots += [(option, "label"), (option, "input")]
+        slots = [(holder, key) for holder, key in slots if isinstance(holder.get(key), str) and holder[key]]
+        texts = [holder[key] for holder, key in slots]
+        if not texts:
+            return message, questions, None
+
+        def blocked(decision) -> Dict:
+            return self._guardrail_block_event(decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE)
+
+        decision = self._guardrail_stage("\n".join(texts), Stage.OUTPUT)
+        if decision is None or not (decision.blocked or decision.redacted):
+            return message, questions, None
+        if decision.blocked:
+            return None, [], blocked(decision)
+        redacted = decision.text.split("\n")
+        if len(redacted) != len(texts):
+            # A string held a line break, or a redaction spanned one.
+            redacted = []
+            for text in texts:
+                one = self._guardrail_stage(text, Stage.OUTPUT)
+                if one is not None and one.blocked:
+                    return None, [], blocked(one)
+                redacted.append(one.text if one is not None and one.redacted else text)
+        for (holder, key), text in zip(slots, redacted):
+            holder[key] = text
+        return lead["message"], screened, None
 
     def _guarded_complete_answer(self, text: str, answer_event):
         """Scan a whole (non-streamed) answer before releasing it."""

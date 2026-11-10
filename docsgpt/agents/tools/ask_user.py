@@ -36,6 +36,10 @@ QUESTION_MODES = frozenset({CARDS, TEXT})
 #: The pause type of a turn waiting for the user to answer its questions.
 AWAITING_ANSWER = "awaiting_answer"
 
+#: What ``check_pause`` returns for question cards an output control blocked:
+#: nothing is shown or kept, and the turn ends on the block.
+QUESTIONS_BLOCKED = "questions_blocked"
+
 #: The tool result when the questions were shown as the turn's answer.
 SHOWN_AS_TEXT = "Shown to the user as text; their next message is the answer."
 

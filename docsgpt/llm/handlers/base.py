@@ -1537,6 +1537,11 @@ class LLMHandler(ABC):
             pause_info = agent.tool_executor.check_pause(
                 tools_dict, call, llm_class
             )
+            if pause_info and pause_info.get("pause_type") == "questions_blocked":
+                # Question cards an output control blocked: nothing of the
+                # call is shown, traced or kept; the turn ends on the block
+                # (``_take_questions_block``).
+                continue
             if pause_info:
                 # A refused call (headless runs, and refusals in any turn: a
                 # secret reference the tool can't take, an admin's read-only
@@ -1751,6 +1756,23 @@ class LLMHandler(ABC):
         return updated_messages, pending_actions if pending_actions else None
 
     @staticmethod
+    def _take_questions_block(agent: Any) -> Optional[Dict]:
+        """The event ending the turn when an output control blocked this round's question cards, taken once.
+
+        Args:
+            agent: The agent running the turn.
+
+        Returns:
+            The guardrail block event, or None when no cards were blocked.
+        """
+        executor = getattr(agent, "tool_executor", None)
+        event = getattr(executor, "questions_blocked", None)
+        if not isinstance(event, dict):
+            return None
+        executor.questions_blocked = None
+        return event
+
+    @staticmethod
     def _take_questions_text(agent: Any) -> Optional[str]:
         """The questions a text-path ``ask_user`` call rendered this round, taken so they are emitted once.
 
@@ -1802,6 +1824,12 @@ class LLMHandler(ABC):
                 except StopIteration as e:
                     messages, pending_actions = e.value
                     break
+
+            # The round's question cards were blocked: the turn ends on the block.
+            questions_block = self._take_questions_block(agent)
+            if questions_block is not None:
+                yield questions_block
+                return ""
 
             # If tools need approval or client execution, pause the loop
             if pending_actions:
@@ -2120,6 +2148,13 @@ class LLMHandler(ABC):
                 messages, pending_actions = e.value
                 break
         pause_reasoning = reasoning_buffer
+
+        # The round's question cards were blocked: the turn ends on the block,
+        # as a blocked answer does.
+        questions_block = self._take_questions_block(agent)
+        if questions_block is not None:
+            yield questions_block
+            return
 
         # If tools need approval or client execution, pause the loop
         if pending_actions:

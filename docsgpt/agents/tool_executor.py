@@ -768,6 +768,12 @@ class ToolExecutor:
         # ("Could not be searched"); the tool-result stage skips its item-level
         # controls for those tools, so nothing else would score them.
         self.source_name_screen: Optional[Callable[[Dict[str, str]], Dict[str, str]]] = None
+        # The agent's output screen for question cards (``BaseAgent._screen_questions``):
+        # ``(message, questions)`` in, ``(message, questions, block event)`` out.
+        self.question_screen: Optional[Callable[..., Tuple[Optional[str], List[Dict], Optional[Dict]]]] = None
+        # The event that ends the turn when that screen blocked the cards; the
+        # LLM handler takes it and emits it instead of the pause.
+        self.questions_blocked: Optional[Dict] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -1731,6 +1737,16 @@ class ToolExecutor:
         if self.questions != ask_user.CARDS:
             return None
         self.questions_asked = True
+        if self.question_screen is not None:
+            screened_message, screened, block = self.question_screen(message, questions)
+            if block is not None:
+                self.questions_blocked = block
+                return {**base, "arguments": {}, "pause_type": ask_user.QUESTIONS_BLOCKED}
+            if (screened_message, screened) != (message, questions):
+                # The model's own wording must not reach the client or the
+                # paused state either: the arguments become the redacted cards.
+                message, questions = screened_message, screened
+                base["arguments"] = {"message": message, "questions": questions}
         return {**base, "pause_type": ask_user.AWAITING_ANSWER, "message": message, "questions": questions}
 
     def _ask_user_as_text(self, call_id: str, llm_name: str, call_args: Any):

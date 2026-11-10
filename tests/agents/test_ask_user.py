@@ -695,3 +695,86 @@ class TestPausedTurnState:
         metadata = next(agent._emit_responses_metadata())["metadata"]
         assert "response_id" not in metadata
         assert metadata["responses_state"] == {"chain_key": "key"}
+
+
+BLOCK_OUTPUT = {
+    "enabled": True,
+    "mode": "scan_all",
+    "block_message": "Response withheld.",
+    "controls": [{"check": "denylist", "stage": "output", "action": "block", "settings": {"terms": ["seats"]}}],
+}
+
+REDACT_OUTPUT = {
+    "enabled": True,
+    "mode": "scan_all",
+    "controls": [{"check": "pii", "stage": "output", "action": "redact", "settings": {"entities": ["EMAIL"]}}],
+}
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("_quiet_guardrails")
+class TestQuestionOutputGuardrails(_ResumeHarness):
+    """Question cards are the model's words shown to the user, so they get the output controls an answer gets."""
+
+    def _cards(self, guardrails: Dict) -> tuple[ToolExecutor, Dict, Mock]:
+        screening_agent, _ = self._agent(guardrails)
+        executor, tools = _executor("cards")
+        executor.question_screen = screening_agent._screen_questions
+        agent = _agent(executor)
+        agent._pending_continuation = None
+        return executor, tools, agent
+
+    def test_the_agent_hands_its_screen_to_the_executor(self):
+        agent, executor = self._agent(BLOCK_OUTPUT)
+        agent._prepare_tools({})
+        assert executor.question_screen == agent._screen_questions
+
+    def test_blocked_cards_end_the_streamed_turn_like_a_blocked_answer(self):
+        executor, tools, agent = self._cards(BLOCK_OUTPUT)
+        events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
+
+        assert events[-1]["type"] == "error"
+        assert events[-1]["error"] == "Response withheld."
+        assert events[-1]["user_facing"] is True
+        assert events[-1]["guardrail"]["stage"] == "output"
+        assert not [e for e in events if isinstance(e, dict) and e.get("type") in ("tool_call", "tool_calls_pending")]
+        assert "seats" not in json.dumps([e for e in events if isinstance(e, dict)])
+        assert agent._pending_continuation is None
+        assert executor.tool_calls == []
+        agent.llm.gen_stream.assert_not_called()
+
+    def test_blocked_cards_end_the_non_streamed_turn(self):
+        executor, tools, agent = self._cards(BLOCK_OUTPUT)
+        first = LLMResponse(content="", tool_calls=[_call()], finish_reason="tool_calls", raw_response={})
+        events, final = _drain(Handler().handle_non_streaming(agent, first, tools, []))
+
+        assert [e for e in events if e.get("type") == "error"][0]["guardrail"]["stage"] == "output"
+        assert not [e for e in events if e.get("type") in ("tool_call", "tool_calls_pending")]
+        assert not final
+        assert agent._pending_continuation is None
+        agent.llm.gen.assert_not_called()
+
+    def test_redacted_cards_show_and_keep_the_redacted_text(self):
+        args = {**ARGS, "message": "Mail ada@example.com or answer:", "questions": [
+            {"text": "Team size?", "options": ["1-10", "bob@example.com"], "note": "Or ask cy@example.com."},
+            {"text": "Company name?", "options": [], "placeholder": "dee@example.com"},
+        ]}
+        executor, tools, agent = self._cards(REDACT_OUTPUT)
+        events = list(Handler().handle_streaming(agent, _tool_round(_call(args=args)), tools, []))
+
+        (pause,) = [e for e in events if isinstance(e, dict) and e.get("type") == "tool_call"]
+        stored = agent._pending_continuation["pending_tool_calls"][0]
+        for shown in (pause["data"], stored):
+            assert "@example.com" not in json.dumps(shown)
+            assert shown["message"] == "Mail [EMAIL] or answer:"
+            assert shown["questions"][0]["note"] == "Or ask [EMAIL]."
+            assert shown["questions"][0]["options"][1]["label"] == "[EMAIL]"
+            assert shown["questions"][1]["placeholder"] == "[EMAIL]"
+
+    def test_clean_cards_are_left_as_they_are(self):
+        executor, tools, _agent_ = self._cards(BLOCK_OUTPUT)
+        pause = executor.check_pause(tools, _call(args={**ARGS, "questions": [ARGS["questions"][1]]}), "MockLLM")
+
+        assert pause["pause_type"] == "awaiting_answer"
+        assert pause["arguments"] == {**ARGS, "questions": [ARGS["questions"][1]]}
+        assert pause["questions"] == normalize_questions({**ARGS, "questions": [ARGS["questions"][1]]})[1]
