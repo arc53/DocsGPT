@@ -31,6 +31,7 @@ that ``passed``.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -441,9 +442,10 @@ first). Every edit belongs to exactly one finding.
 - ask: when a fix or a look needs a detail only the user knows (an email address, a link, opening hours), send \
 no edit: \
 give a short button label (e.g. "Add the address") and the start of the sentence the user completes (prefill, \
-e.g. "The support email is ").
+e.g. "The support email is "). A hand_off finding without an edit always has an ask, whatever its severity.
 - agent: when it is about one agent using the prompt, that agent's id from the workspace.
-Leave out the checks that pass: the app lists them itself. In message, say in one or two sentences how many \
+Titles, details and the message are for the user: never name a check code or a server check's code in them \
+(no "(server check: …)"). Leave out the checks that pass: the app lists them itself. In message, say in one or two sentences how many \
 things to fix and how many worth a look you found, and that the fixes with edits are in the editor.
 
 server_checks in the form are the server's own findings, made without a model: blanks left in (placeholder), \
@@ -777,12 +779,34 @@ def _whole_number(value: Any) -> Optional[int]:
     return value
 
 
-def _model_findings(args: dict, ws: Workspace, edit_ids: dict[int, str], edit_count: int) -> list[dict]:
+#: The codes a review may leak into what the user reads: its checklist and the server's checks.
+_CODES = frozenset(REVIEW_CHECKS) | frozenset(SERVER_CHECKS)
+#: A parenthesis naming codes, with or without "server check:" before them: "(server check: boundaries_missing)".
+_CODE_NOTE = re.compile(r"\s*\((\s*(?:server\s+)?checks?(?:\s+codes?)?\s*:)?\s*([a-z][a-z0-9_]*(?:\s*,\s*[a-z][a-z0-9_]*)*)"
+                        r"\s*\)", re.I)
+HAND_OFF_ASK = ("Finding {number}: a hand_off finding without an edit needs an ask: a short button label and the "
+                "start of the sentence the user completes with the real contact.")
+
+
+def _no_codes(text: str) -> str:
+    """``text`` without the check codes a model put in parentheses ("Missing Boundaries (server check: x)")."""
+    def drop(match: re.Match) -> str:
+        codes = re.split(r"\s*,\s*", match.group(2).casefold())
+        return "" if match.group(1) or all(code in _CODES for code in codes) else match.group(0)
+
+    return _CODE_NOTE.sub(drop, text).strip()
+
+
+def _model_findings(args: dict, req: DraftRequest, ws: Workspace, edit_ids: dict[int, str],
+                    edit_count: int) -> list[dict]:
     """The model's findings, cleaned, with their edits mapped to the proposal's edit ids.
+
+    Check codes in a title or detail are left out (:func:`_no_codes`). A hand_off finding with neither an edit
+    nor an ask gives the user nothing to act on: it goes back once, while a correction is left.
 
     Raises:
         ProposalInvalid: Too many findings, an unknown check, a missing title, a finding pointing past the
-            edits, or an edit that doesn't belong to exactly one finding.
+            edits, an edit that doesn't belong to exactly one finding, or a hand_off finding with nothing to act on.
     """
     raw = [f for f in args.get("findings") or [] if isinstance(f, dict)]
     if len(raw) > MAX_FINDINGS:
@@ -797,7 +821,7 @@ def _model_findings(args: dict, ws: Workspace, edit_ids: dict[int, str], edit_co
             extra = " (agents_fit only when agents use the prompt)" if check == AGENTS_FIT else ""
             problems.append(f"Finding {number}: check must be one of {', '.join(applicable)}{extra}.")
             continue
-        title = clean_text(finding.get("title"), TITLE_MAX)
+        title = _no_codes(clean_text(finding.get("title"), TITLE_MAX))
         if not title:
             problems.append(f"Finding {number}: give a title.")
             continue
@@ -810,13 +834,17 @@ def _model_findings(args: dict, ws: Workspace, edit_ids: dict[int, str], edit_co
             claims[edit_number] = claims.get(edit_number, 0) + 1
             edit_id = edit_ids.get(edit_number)
         severity = finding.get("severity") if finding.get("severity") in SEVERITIES else "look"
+        ask = _ask(finding.get("ask")) if edit_id is None else None
+        if check == "hand_off" and edit_id is None and ask is None and req.can_correct:
+            problems.append(HAND_OFF_ASK.format(number=number))
+            continue
         out.append({
             "check": check,
             "severity": severity,
             "title": title,
-            "detail": clean_text(finding.get("detail"), DETAIL_MAX),
+            "detail": _no_codes(clean_text(finding.get("detail"), DETAIL_MAX)),
             "edit": edit_id,
-            "ask": _ask(finding.get("ask")) if edit_id is None else None,
+            "ask": ask,
             "agent": ws.find_agent(finding.get("agent")) if isinstance(ws, PromptWorkspace) else None,
             "source": "model",
             "code": None,
@@ -857,7 +885,7 @@ def _review(args: dict, req: DraftRequest, ws: Workspace, message: str) -> dict:
     edits, result, edit_ids = apply_numbered_edits(current, raw_edits)
     _check_text(result, current, req)
     _check_edits(result, current, "review")
-    findings = _model_findings(args, ws, edit_ids, len(raw_edits))
+    findings = _model_findings(args, req, ws, edit_ids, len(raw_edits))
     reported = {f["check"] for f in findings}
     server = []
     for check in prompt_checks(current):
@@ -873,7 +901,7 @@ def _review(args: dict, req: DraftRequest, ws: Workspace, message: str) -> dict:
     kept.sort(key=lambda f: SEVERITIES.index(f["severity"]))
     return {
         "mode": "review",
-        "message": message,
+        "message": _no_codes(message),
         "edits": edits,
         "findings": [{"id": f"f{index}", **finding} for index, finding in enumerate(kept, start=1)],
         "passed": [code for code in _applicable_checks(ws) if code not in failed],

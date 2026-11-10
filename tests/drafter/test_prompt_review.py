@@ -230,6 +230,29 @@ class TestFindings:
         assert asks == {"builtin_lines": None, "tone": ask, "hand_off": ask, "placeholders": None}
         assert "ask: when a fix or a look needs a detail only the user knows" in instructions(_req(), _ws())
 
+    def test_a_hand_off_finding_with_neither_edit_nor_ask_goes_back_once(self):
+        # prompt_review_docs_r1: a "look" about a missing contact came back with no way to add one.
+        finding = _finding("hand_off", "look", title="No real contact for questions the docs don't cover")
+        with pytest.raises(ProposalInvalid, match="hand_off") as raised:
+            _review(findings=[finding])
+        assert "ask" in str(raised.value)
+        req = _req()
+        req.can_correct = False
+        proposal = validate({"message": "1 to look at.", "edits": [], "findings": [finding]}, req, _ws())
+        assert _model_findings(proposal)[0]["ask"] is None
+        assert "always has an ask" in instructions(_req(), _ws())
+
+    def test_check_codes_are_kept_out_of_what_the_user_reads(self):
+        proposal = _review(findings=[_finding(
+            "builtin_rules", title="Missing Boundaries section (server check: boundaries_missing)",
+            detail="The template lacks it (boundaries_missing). Add it (see notes).")],
+            message="1 to fix (check: builtin_rules).")
+        finding = _model_findings(proposal)[0]
+        assert finding["title"] == "Missing Boundaries section"
+        assert finding["detail"] == "The template lacks it. Add it (see notes)."
+        assert proposal["message"] == "1 to fix."
+        assert "never name a check code" in instructions(_req(), _ws())
+
     def test_an_edit_that_adds_a_placeholder_goes_back_to_the_model(self):
         with pytest.raises(ProposalInvalid, match=r"\[phone number\]"):
             _review(edits=[_edit("Keep answers short and friendly.", "Keep answers short. Call [phone number].")],
