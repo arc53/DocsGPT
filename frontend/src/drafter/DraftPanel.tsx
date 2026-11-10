@@ -40,12 +40,12 @@ import { useMediaQuery } from '../hooks';
 import { formatCount } from '../utils/dateTimeUtils';
 
 import { type DrafterCounts, DRAFTER_USER_MESSAGE_CHARS } from './drafterApi';
-import { DrafterErrorAlert } from './DrafterErrorAlert';
+import {
+  DrafterErrorAlert,
+  TASK_MODEL_SETTINGS_PATH,
+} from './DrafterErrorAlert';
 import { DrafterStepRow, FilledRow } from './DrafterStepRow';
 import type { DrafterItem, DrafterSession } from './useDrafterSession';
-
-/** Where the footer's model note links: the task model lives on General. */
-export const TASK_MODEL_SETTINGS_PATH = '/settings/general';
 
 /** The window Insights reads over when the host doesn't say (agent_gaps' `days`). */
 const INSIGHTS_DAYS = 30;
@@ -64,7 +64,8 @@ const FOOTER_KEYS = {
 // The order the "Looked at your workspace" line lists counts in.
 const COUNT_KEYS = ['sources', 'tools', 'prompts', 'models', 'agents'] as const;
 
-export { RETRYABLE } from './DrafterErrorAlert';
+// Where the footer's model note links: the task model lives on General.
+export { RETRYABLE, TASK_MODEL_SETTINGS_PATH } from './DrafterErrorAlert';
 
 /**
  * A first-screen suggestion: a click sends its text, or runs `onSelect`
@@ -401,6 +402,8 @@ export function DraftPanel({
               }
               onRetry={latest ? session.retry : undefined}
               fix={latest && refused ? startOverLink : undefined}
+              model={modelName}
+              onNavigate={onNavigate}
             />
             {latest && continueAction && (
               <div
@@ -536,7 +539,8 @@ export function DraftPanel({
             onSend={(text) => session.send(text)}
             onStop={session.stop}
           />
-          <p className="text-muted-foreground text-xs">
+          {/* text-pretty keeps "Change model" from ending alone on a line. */}
+          <p className="text-muted-foreground text-xs text-pretty">
             {modelName
               ? t(footerKeys[0], {
                   model: modelName,

@@ -4609,6 +4609,12 @@
         "title": "无法发送",
         "description": "无法读取该请求。请刷新页面后重试。",
         "startOver": "DocsGPT 无法接收此对话。已起草的内容会保留。"
+      },
+      "model_auth": {
+        "title": "任务模型无法运行",
+        "description": "提供商拒绝了 {{model}} 的 API 密钥。表单没有变化。",
+        "descriptionNoModel": "提供商拒绝了任务模型的 API 密钥。表单没有变化。",
+        "fix": "更换任务模型"
       }
     },
     "agent": {

@@ -43,6 +43,8 @@ export type DrafterErrorCode =
   | 'quota'
   | 'invalid_output'
   | 'model_error'
+  /** The task model's provider refused its key: another try fails the same. */
+  | 'model_auth'
   | 'bad_request';
 
 /**
@@ -92,6 +94,7 @@ const ERROR_CODES: DrafterErrorCode[] = [
   'quota',
   'invalid_output',
   'model_error',
+  'model_auth',
   'bad_request',
 ];
 

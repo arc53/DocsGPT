@@ -142,6 +142,17 @@ describe('drafterApi', () => {
       ),
     );
     expect((await run())[0]).toMatchObject({ type: 'error', code: 'quota' });
+    // A refused key keeps its own code (decision 105).
+    client.post.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'model_auth', message: 'Refused' }), {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    expect((await run())[0]).toMatchObject({
+      type: 'error',
+      code: 'model_auth',
+    });
   });
 
   it('ends a stream that broke off with a model error', async () => {

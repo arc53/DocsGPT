@@ -4774,6 +4774,12 @@
         "title": "Envoi impossible",
         "description": "La requête n’a pas pu être lue. Rechargez la page et réessayez.",
         "startOver": "DocsGPT n’a pas pu accepter cette conversation. Ce que vous avez rédigé reste."
+      },
+      "model_auth": {
+        "title": "Le modèle de tâches ne peut pas s’exécuter",
+        "description": "Le fournisseur a refusé la clé d’API de {{model}}. Le formulaire n’a pas changé.",
+        "descriptionNoModel": "Le fournisseur a refusé la clé d’API du modèle de tâches. Le formulaire n’a pas changé.",
+        "fix": "Changer le modèle de tâches"
       }
     },
     "agent": {

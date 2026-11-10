@@ -1,10 +1,14 @@
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
 import type { DrafterErrorCode } from './drafterApi';
+
+/** Where the task model is picked: Settings › General. */
+export const TASK_MODEL_SETTINGS_PATH = '/settings/general';
 
 // Errors a second try can fix; the others need a setting changed first.
 export const RETRYABLE: DrafterErrorCode[] = [
@@ -16,14 +20,19 @@ export const RETRYABLE: DrafterErrorCode[] = [
 /**
  * A drafter turn's error: a destructive Alert with the code's title and
  * description, and Try again for the errors a second try can fix, a link in
- * the Alert's colour at the end of the text. The DraftPanel draws its errors
- * with it, and a screen shows one inline (the Insights topic suggestions).
+ * the Alert's colour at the end of the text. A task model whose key was
+ * refused (`model_auth`) names the model and links to changing it instead.
+ * The DraftPanel draws its errors with it, and a screen shows one inline (the
+ * Insights topic suggestions).
  *
  * Args:
  *   code: The error event's code.
  *   onRetry: Runs the turn again; left out where it can't (an older error).
  *   description: The recipe's own text in place of the code's description,
  *     which speaks of the agent form ("Nothing in the form changed").
+ *   model: The task model's name, for a refused key's description.
+ *   onNavigate: The Change the task model link's click handler (a builder's
+ *     leave guard).
  *   fix: Another link that fixes the error, after Try again (the panel's
  *     Start over for a refused conversation). A way past the error that
  *     isn't a fix goes under the Alert, not here.
@@ -33,20 +42,35 @@ export function DrafterErrorAlert({
   onRetry,
   description,
   fix,
+  model,
+  onNavigate,
 }: {
   code: DrafterErrorCode;
   onRetry?: () => void;
   description?: string;
   fix?: ReactNode;
+  model?: string | null;
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const { t } = useTranslation();
   const retry = onRetry && RETRYABLE.includes(code);
+  const refusedKey = code === 'model_auth';
+  const text =
+    description ??
+    (refusedKey
+      ? model
+        ? t('drafter.errors.model_auth.description', {
+            model,
+            interpolation: { escapeValue: false },
+          })
+        : t('drafter.errors.model_auth.descriptionNoModel')
+      : t(`drafter.errors.${code}.description`));
   return (
     <Alert variant="destructive" data-item="error">
       <AlertTitle>{t(`drafter.errors.${code}.title`)}</AlertTitle>
       <AlertDescription>
         <p>
-          {description ?? t(`drafter.errors.${code}.description`)}
+          {text}
           {retry && (
             <>
               {' '}
@@ -58,6 +82,16 @@ export function DrafterErrorAlert({
                 onClick={onRetry}
               >
                 {t('drafter.retry')}
+              </Button>
+            </>
+          )}
+          {refusedKey && (
+            <>
+              {' '}
+              <Button variant="link" size="text" tone="current" asChild>
+                <Link to={TASK_MODEL_SETTINGS_PATH} onClick={onNavigate}>
+                  {t('drafter.errors.model_auth.fix')}
+                </Link>
               </Button>
             </>
           )}

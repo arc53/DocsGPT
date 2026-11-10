@@ -4636,6 +4636,12 @@
         "title": "Senden nicht möglich",
         "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut.",
         "startOver": "DocsGPT konnte diese Unterhaltung nicht annehmen. Was du entworfen hast, bleibt."
+      },
+      "model_auth": {
+        "title": "Das Aufgabenmodell kann nicht laufen",
+        "description": "Der Anbieter hat den API-Schlüssel für {{model}} abgelehnt. Im Formular hat sich nichts geändert.",
+        "descriptionNoModel": "Der Anbieter hat den API-Schlüssel des Aufgabenmodells abgelehnt. Im Formular hat sich nichts geändert.",
+        "fix": "Aufgabenmodell ändern"
       }
     },
     "agent": {

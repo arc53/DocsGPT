@@ -4774,6 +4774,12 @@
         "title": "No se pudo enviar",
         "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo.",
         "startOver": "DocsGPT no pudo aceptar esta conversación. Lo que has redactado se mantiene."
+      },
+      "model_auth": {
+        "title": "El modelo de tareas no puede ejecutarse",
+        "description": "El proveedor rechazó la clave de API de {{model}}. El formulario no ha cambiado.",
+        "descriptionNoModel": "El proveedor rechazó la clave de API del modelo de tareas. El formulario no ha cambiado.",
+        "fix": "Cambiar el modelo de tareas"
       }
     },
     "agent": {

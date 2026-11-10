@@ -538,6 +538,33 @@ describe('DraftPanel', () => {
     expect(button('drafter.retry')).toBeUndefined();
   });
 
+  // Decision 105: a refused key can't be fixed by trying again.
+  it('names a task model whose key was refused and links to changing it', async () => {
+    stream.scripts = [
+      [
+        { type: 'error', code: 'model_auth', message: 'refused' },
+        { type: 'end' },
+      ],
+    ];
+    await ask('Draft it');
+    const alert = container.querySelector('[data-item="error"]')!;
+    expect(alert.textContent).toContain('drafter.errors.model_auth.title');
+    expect(alert.textContent).toContain(
+      'drafter.errors.model_auth.description:Fast model',
+    );
+    expect(button('drafter.retry')).toBeUndefined();
+    const fix = alert.querySelector('a[href="/settings/general"]')!;
+    expect(fix.textContent).toBe('drafter.errors.model_auth.fix');
+    expect(fix.getAttribute('data-variant')).toBe('link');
+    expect(fix.getAttribute('data-tone')).toBe('current');
+  });
+
+  // Decision 104: "Change model" never sits alone at the end of the line.
+  it('balances the footer line so its link does not wrap alone', () => {
+    const link = container.querySelector('a[href="/settings/general"]')!;
+    expect(link.closest('p')!.className).toContain('text-pretty');
+  });
+
   it('says a conversation the server refused needs a fresh start, and offers one', async () => {
     stream.scripts = [
       [{ type: 'error', code: 'bad_request' }, { type: 'end' }],
