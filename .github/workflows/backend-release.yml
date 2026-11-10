@@ -107,8 +107,10 @@ jobs:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
     permissions:
-      contents: write # release-assets attaches the compose file to the release
+      contents: write # release-assets attaches the compose file and installers, provenance its signature
       packages: write
+      actions: read # the provenance generator reads the workflow run
+      id-token: write # the provenance is signed keylessly with Sigstore
 
   frontend:
     needs: release
