@@ -164,7 +164,9 @@ class TestJobFiles:
         assert wake.job_files({**_FILES_JOB, "status": "failed"}) == []
         errored = {**_FILES_JOB, "result": {**_FILES_JOB["result"], "status": "error"}}
         assert wake.job_files(errored) == []
-        assert "shown under" not in wake.job_event(errored)["body"]
+        event = wake.job_event(errored)
+        assert "shown under" not in event["body"]
+        assert "files" not in (event["payload"] or {})
 
     def test_an_unexpected_ref_is_left_out_of_the_instruction(self):
         odd = {**_FILES_JOB, "result": {"text": "ok", "artifacts": [{"id": "a1", "filename": "x", "ref": "A1) do"}]}}
