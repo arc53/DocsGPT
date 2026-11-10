@@ -36,6 +36,9 @@ def _denied(err: AccessDenied):
 
 #: Longest ``preview`` a listed prompt carries.
 PREVIEW_LENGTH = 200
+#: Most ``POST /api/check_prompt`` calls a user makes in a minute. The editor checks once typing rests
+#: (400 ms), so a writer stays well under it; a script can't keep a worker on 100,000-character checks.
+CHECK_PROMPT_RATE_PER_MINUTE = 120
 
 #: The built-in prompts, listed by name; they have no row.
 PRESET_PROMPTS = ("default", "creative", "strict")
@@ -315,12 +318,17 @@ class CheckPrompt(Resource):
             200: "checks: at most 20 of {code, ...}: placeholder {text, line}, repeats_builtin {topic, line}, "
             "template_invalid, tool_variables {variables}, boundaries_missing, citations_missing",
             400: "content is missing, not text, or too long",
+            429: f"more than {CHECK_PROMPT_RATE_PER_MINUTE} checks in a minute",
         },
     )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
+        from docsgpt.monitors import triggers
+
+        if triggers.rate_limited("check_prompt", decoded_token.get("sub"), CHECK_PROMPT_RATE_PER_MINUTE):
+            return make_response(jsonify({"success": False, "message": "Too many checks in a minute"}), 429)
         data = request.get_json(silent=True)
         content = data.get("content") if isinstance(data, dict) else None
         if not isinstance(content, str):

@@ -52,3 +52,19 @@ class TestCheckPrompt:
 
         monkeypatch.setattr(settings, "DRAFTER_ENABLED", False, raising=False)
         assert _post(app, {"content": "TODO"}).status_code == 200
+
+    def test_past_the_minute_limit_it_is_a_429(self, app, monkeypatch):
+        import docsgpt.monitors.triggers as triggers
+
+        seen = []
+
+        def limited(scope, user, limit):
+            seen.append((scope, user, limit))
+            return True
+
+        monkeypatch.setattr(triggers, "rate_limited", limited)
+        resp = _post(app, {"content": "TODO"})
+        assert resp.status_code == 429
+        from docsgpt.api.user.prompts.routes import CHECK_PROMPT_RATE_PER_MINUTE
+
+        assert seen == [("check_prompt", "alice", CHECK_PROMPT_RATE_PER_MINUTE)]

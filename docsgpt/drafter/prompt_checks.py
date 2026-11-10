@@ -13,6 +13,7 @@ ordinary prose ("the delivery date") teaches people to ignore it.
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from functools import lru_cache
 from typing import Optional
 
@@ -106,6 +107,9 @@ _BUILTIN_TOPICS: tuple[tuple[str, re.Pattern], ...] = tuple((topic, re.compile("
 # A line that says *not* to do it ("Never use markdown") isn't a repeat.
 _NEGATION = re.compile(r"\b(?:no|not|never|don['’]?t|do not|without|avoid)\b", re.I)
 _CLAUSE_END = re.compile(r"[.!?;:\n]")
+_NEWLINE = re.compile(r"\n")
+# ``</name>``: a closing tag, whose name is anything between ``</`` and ``>``.
+_CLOSER = re.compile(r"</([^<>]*)>")
 
 
 def _masked(text: str) -> str:
@@ -139,9 +143,14 @@ def _masked(text: str) -> str:
     return "".join(parts)
 
 
-def _line(text: str, offset: int) -> int:
-    """The 1-based line ``offset`` falls on."""
-    return text.count("\n", 0, offset) + 1
+def _offsets(pattern: re.Pattern, text: str) -> list[int]:
+    """Where ``pattern`` matches in ``text``, read once so each lookup is a bisect, not a scan from the start."""
+    return [match.start() for match in pattern.finditer(text)]
+
+
+def _line(newlines: list[int], offset: int) -> int:
+    """The 1-based line ``offset`` falls on, from the text's newline offsets."""
+    return bisect_left(newlines, offset) + 1
 
 
 def _blank_words(inner: str) -> bool:
@@ -150,24 +159,28 @@ def _blank_words(inner: str) -> bool:
     return bool(inner) and len(inner.split()) <= 6 and bool(_BLANK_WORDS.fullmatch(inner))
 
 
-def _angle_blank(inner: str, text: str) -> bool:
-    """Whether ``<inner>`` is a blank: a few words, or one word that isn't a known tag or one the text closes."""
+def _angle_blank(inner: str, closed: set[str]) -> bool:
+    """Whether ``<inner>`` is a blank: a few words, or one word that isn't a known tag or one the text closes.
+
+    ``closed`` holds the names the text closes (``</name>``, lowercased).
+    """
     if not inner[:1].isalpha() or not _blank_words(inner):
         return False
     if " " in inner.strip():
         return True
     name = inner.strip().lower()
-    return name not in _KNOWN_TAGS and f"</{name}>" not in text.lower()
+    return name not in _KNOWN_TAGS and name not in closed
 
 
-def _placeholders(text: str, scan: str, persona: bool) -> list[dict]:
+def _placeholders(text: str, scan: str, newlines: list[int], persona: bool) -> list[dict]:
     """Blanks left in the prompt, one per distinct text, by line."""
+    closed = {match.group(1) for match in _CLOSER.finditer(text.lower())}
     found: list[tuple[int, str]] = []
     for match in _BRACKET.finditer(scan):
         if _blank_words(match.group(1)):
             found.append((match.start(), match.group(0)))
     for match in _ANGLE.finditer(scan):
-        if _angle_blank(match.group(1), text):
+        if _angle_blank(match.group(1), closed):
             found.append((match.start(), match.group(0)))
     if persona:
         for match in _BRACE.finditer(scan):
@@ -182,31 +195,37 @@ def _placeholders(text: str, scan: str, persona: bool) -> list[dict]:
         if blank.casefold() in seen:
             continue
         seen.add(blank.casefold())
-        out.append({"code": PLACEHOLDER, "text": blank, "line": _line(text, offset)})
+        out.append({"code": PLACEHOLDER, "text": blank, "line": _line(newlines, offset)})
     return out
 
 
-def _negated(scan: str, start: int) -> bool:
-    """Whether the clause a match starts in says not to, before the match ("Never use markdown")."""
-    clause_start = max((m.end() for m in _CLAUSE_END.finditer(scan, 0, start)), default=0)
+def _negated(scan: str, clause_ends: list[int], start: int) -> bool:
+    """Whether the clause a match starts in says not to, before the match ("Never use markdown").
+
+    ``clause_ends`` holds the offsets of :data:`_CLAUSE_END` in ``scan``; the
+    clause starts after the last one before the match.
+    """
+    before = bisect_left(clause_ends, start)
+    clause_start = clause_ends[before - 1] + 1 if before else 0
     return bool(_NEGATION.search(scan, clause_start, start))
 
 
-def _first_match(pattern: re.Pattern, scan: str) -> Optional[int]:
+def _first_match(pattern: re.Pattern, scan: str, clause_ends: list[int]) -> Optional[int]:
     """The offset of the first match of ``pattern`` that isn't negated, or None."""
     for match in pattern.finditer(scan):
-        if not _negated(scan, match.start()):
+        if not _negated(scan, clause_ends, match.start()):
             return match.start()
     return None
 
 
-def _repeats(text: str, scan: str) -> list[dict]:
+def _repeats(scan: str, newlines: list[int]) -> list[dict]:
     """Lines of a persona that repeat what DocsGPT adds, one per topic at its first line, by line."""
+    clause_ends = _offsets(_CLAUSE_END, scan)
     out: list[dict] = []
     for topic, pattern in _BUILTIN_TOPICS:
-        offset = _first_match(pattern, scan)
+        offset = _first_match(pattern, scan, clause_ends)
         if offset is not None:
-            out.append({"code": REPEATS_BUILTIN, "topic": topic, "line": _line(text, offset)})
+            out.append({"code": REPEATS_BUILTIN, "topic": topic, "line": _line(newlines, offset)})
     return sorted(out, key=lambda check: check["line"])
 
 
@@ -264,9 +283,10 @@ def prompt_checks(content: str) -> list[dict]:
     text = content.replace("\r\n", "\n").replace("\r", "\n")
     template = is_template(text)
     scan = _masked(text)
-    checks = _placeholders(text, scan, persona=not template)
+    newlines = _offsets(_NEWLINE, text)
+    checks = _placeholders(text, scan, newlines, persona=not template)
     if not template:
-        checks += _repeats(text, scan)
+        checks += _repeats(scan, newlines)
     else:
         if not template_parses(text):
             checks.append({"code": TEMPLATE_INVALID})

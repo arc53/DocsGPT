@@ -101,3 +101,29 @@ class TestCodeNote:
         for text in _samples(alphabet):
             old = [m.span() for m in _OLD_CODE_NOTE.finditer(text)]
             assert [m.span() for m in prompt_recipe._CODE_NOTE.finditer(text)] == old, text
+
+
+@pytest.mark.unit
+class TestPromptChecksBudget:
+    """Whole prompts at the 100,000-character cap are checked in about linear time."""
+
+    @pytest.fixture(autouse=True)
+    def _warm(self) -> None:
+        # The first call imports the template helpers once; that isn't the check's cost.
+        prompt_checks.prompt_checks("warm up")
+
+    @pytest.mark.parametrize("unit", [
+        "Never use markdown.\n", "Never use markdown ", "no cite sources ", "<foo>\n", "<foo bar> ",
+    ])
+    def test_repeated_units_are_linear(self, unit: str) -> None:
+        _fast(prompt_checks.prompt_checks, unit * (100_000 // len(unit)))
+
+    def test_many_distinct_blanks_are_linear(self) -> None:
+        text = "".join(f"[blank {n}]\n" for n in range(100_000 // 12))
+        checks = _fast(prompt_checks.prompt_checks, text)
+        assert checks[0] == {"code": "placeholder", "text": "[blank 0]", "line": 1}
+
+    def test_a_negated_line_after_many_clauses_is_still_negated(self) -> None:
+        text = "Be kind. " * 2000 + "Never use markdown.\nUse markdown headings."
+        repeats = [c for c in prompt_checks.prompt_checks(text) if c["code"] == "repeats_builtin"]
+        assert [c["line"] for c in repeats if c["topic"] == "formatting"] == [2]

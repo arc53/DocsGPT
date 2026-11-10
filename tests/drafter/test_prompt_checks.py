@@ -143,3 +143,15 @@ class TestOrderAndCap:
 
     def test_empty_text(self):
         assert prompt_checks("") == []
+
+
+@pytest.mark.unit
+class TestAngleCloserLookup:
+    def test_a_tag_the_text_closes_is_no_blank(self):
+        assert not [c for c in prompt_checks("Wrap it in <answer>.\nThen </answer>.") if c["code"] == "placeholder"]
+
+    def test_a_tag_closed_in_another_case_is_no_blank(self):
+        assert not [c for c in prompt_checks("Wrap it in <Answer>.\nThen </ANSWER>.") if c["code"] == "placeholder"]
+
+    def test_an_unclosed_word_is_a_blank(self):
+        assert [c["text"] for c in prompt_checks("Email <company>.") if c["code"] == "placeholder"] == ["<company>"]
