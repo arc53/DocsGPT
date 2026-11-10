@@ -44,6 +44,17 @@ type Answer = {
 
 const NO_ANSWER: Answer = { picked: [], other: null };
 
+/** How many sets of cards keep their picks for a remount (see `memoryKey`). */
+const REMEMBERED_MAX = 20;
+const remembered = new Map<string, Record<string, Answer>>();
+
+function remember(key: string, answers: Record<string, Answer>) {
+  remembered.delete(key);
+  remembered.set(key, answers);
+  if (remembered.size > REMEMBERED_MAX)
+    remembered.delete(remembered.keys().next().value as string);
+}
+
 /**
  * A question's answer as text: the picked labels ("<label>: <value>" for one
  * that takes a value), then the free text.
@@ -120,6 +131,9 @@ function answerTexts(
  *   emptyLabel: Once not active, the line under a question with no answer:
  *     "Not answered" by default; null shows the question alone.
  *   className: Layout only (the gap between the cards).
+ *   memoryKey: When given, what was picked outlives the cards: mounted again
+ *     under the same key (answers the server refused, shown again for
+ *     another try), they come back as they were left.
  */
 export function QuestionCards({
   questions,
@@ -130,6 +144,7 @@ export function QuestionCards({
   answers: givenAnswers,
   emptyLabel,
   className,
+  memoryKey,
 }: {
   questions: Question[];
   active: boolean;
@@ -139,14 +154,21 @@ export function QuestionCards({
   answers?: Record<string, string | null | undefined>;
   emptyLabel?: string | null;
   className?: string;
+  memoryKey?: string;
 }) {
   const { t } = useTranslation();
   const baseId = useId();
-  const [answers, setAnswers] = useState<Record<string, Answer>>({});
+  const [answers, setAnswers] = useState<Record<string, Answer>>(
+    () => (memoryKey && remembered.get(memoryKey)) || {},
+  );
 
   const answerOf = (id: string): Answer => answers[id] ?? NO_ANSWER;
   const update = (id: string, next: Answer) =>
-    setAnswers((prev) => ({ ...prev, [id]: next }));
+    setAnswers((prev) => {
+      const merged = { ...prev, [id]: next };
+      if (memoryKey) remember(memoryKey, merged);
+      return merged;
+    });
 
   // One pick: an option replaces the other choice and closes "Something
   // else"; `optionId` null is "Something else" itself. A typed value stays

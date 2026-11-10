@@ -105,6 +105,12 @@ export default function QuestionBlock({
               answers={state === 'awaiting' ? undefined : answers}
               emptyLabel={emptyLabel}
               className={active ? undefined : 'gap-2'}
+              // A refused Send answers brings the cards back waiting: with
+              // what was picked. The questions are in the key, as a provider
+              // may reuse a call id ("call_0") across turns.
+              memoryKey={`${call.call_id}\n${JSON.stringify(
+                questions.map((question) => [question.id, question.text]),
+              )}`}
             />
           )}
         </div>

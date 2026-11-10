@@ -115,6 +115,38 @@ describe('QuestionBlock', () => {
     expect(onAction).toHaveBeenLastCalledWith('ask-1', { skipped: true });
   });
 
+  it('comes back with what was picked when the server refuses the answers', async () => {
+    await render(paused);
+    await act(async () => pick('q1', 'Q4 2026 so far').click());
+    await act(async () => button('questions.sendAnswers')!.click());
+    // The cards fold into the record at once, then come back waiting (in
+    // the turn's error branch, so a fresh mount).
+    await render(saved({ status: 'success', result: 'x' as never }));
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render(paused);
+    expect(pick('q1', 'Q4 2026 so far').getAttribute('data-state')).toBe(
+      'checked',
+    );
+    await act(async () => pick('q2', 'Internal').click());
+    await act(async () => button('questions.sendAnswers')!.click());
+    expect(onAction).toHaveBeenLastCalledWith('ask-1', {
+      answer: "Which quarter? → Q4 2026 so far\nWho's it for? → Internal",
+    });
+  });
+
+  it('starts empty for other questions under a reused call id', async () => {
+    await render(paused);
+    await act(async () => pick('q1', 'Q3 2026').click());
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({
+      ...paused,
+      questions: [{ ...QUESTIONS[0], text: 'Which year?' }],
+    });
+    expect(pick('q1', 'Q3 2026').getAttribute('data-state')).toBe('unchecked');
+  });
+
   it('cannot be answered where the turn cannot resume', async () => {
     await render(paused, false);
     expect(button('questions.sendAnswers')).toBeUndefined();
