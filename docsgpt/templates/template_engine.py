@@ -1,5 +1,7 @@
+import functools
 import logging
-from typing import Any, Dict, List, Optional, Set
+import re
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
 from jinja2 import (
     ChainableUndefined,
@@ -7,9 +9,174 @@ from jinja2 import (
     TemplateSyntaxError,
 )
 from jinja2.exceptions import SecurityError, UndefinedError
+from jinja2.runtime import Context
 from jinja2.sandbox import SandboxedEnvironment
+from jinja2.utils import _PassArg, pass_context
 
 logger = logging.getLogger(__name__)
+
+#: The longest string or list one operator or filter may build. Prompts are
+#: capped well below this, so only a template that multiplies its own text
+#: reaches it.
+MAX_TEMPLATE_SEQUENCE = 1_000_000
+#: The largest integer, in bits, ``*`` or ``**`` may produce (about 4,900
+#: digits, past what Python will print as text anyway).
+MAX_TEMPLATE_INT_BITS = 16_384
+
+# One ``%`` conversion: an optional ``(key)``, flags, then width and precision.
+_PERCENT_SPEC = re.compile(r"%(?:\([^)]*\))?[-#0 +]*(\*|\d+)?(?:\.(\*|\d+)?)?")
+
+
+def _refuse(message: str) -> None:
+    raise SecurityError(message)
+
+
+def _check_percent_format(fmt: str, args: Any) -> None:
+    """Refuse a ``%`` format whose width or precision would pad past the cap.
+
+    Args:
+        fmt: The format string.
+        args: The value(s) formatted into it; a ``*`` width reads its number from them.
+
+    Raises:
+        SecurityError: When a width or precision is over ``MAX_TEMPLATE_SEQUENCE``.
+    """
+    if "%" not in fmt:
+        return
+    star_values = args if isinstance(args, (tuple, list)) else (args,)
+    for match in _PERCENT_SPEC.finditer(fmt):
+        for size in match.groups():
+            if size == "*":
+                if any(
+                    isinstance(v, int) and abs(v) > MAX_TEMPLATE_SEQUENCE for v in star_values
+                ):
+                    _refuse("format width too large")
+            elif size and int(size) > MAX_TEMPLATE_SEQUENCE:
+                _refuse("format width too large")
+
+
+def _check_width(width: Any) -> None:
+    if isinstance(width, int) and width > MAX_TEMPLATE_SEQUENCE:
+        _refuse("width too large")
+    if isinstance(width, str) and len(width) > MAX_TEMPLATE_SEQUENCE:
+        _refuse("width too large")
+
+
+def _check_replace(value: Any, old: Any = None, new: Any = None, count: Any = None, *_: Any) -> None:
+    if not isinstance(value, str) or not isinstance(old, str) or not isinstance(new, str):
+        return
+    if len(new) <= len(old):
+        return
+    hits = len(value) + 1 if not old else value.count(old)
+    if isinstance(count, int) and count >= 0:
+        hits = min(hits, count)
+    if len(value) + hits * (len(new) - len(old)) > MAX_TEMPLATE_SEQUENCE:
+        _refuse("replace result too large")
+
+
+def _filter_guard(name: str, args: tuple, kwargs: Mapping[str, Any]) -> None:
+    """Refuse a filter call that would build an oversized string before it runs."""
+    if name == "center":
+        _check_width(args[1] if len(args) > 1 else kwargs.get("width"))
+    elif name == "indent":
+        _check_width(args[1] if len(args) > 1 else kwargs.get("width"))
+    elif name == "format" and args and isinstance(args[0], str):
+        _check_percent_format(args[0], args[1:] or tuple(kwargs.values()))
+    elif name == "replace" and args:
+        _check_replace(*args, **{k: v for k, v in kwargs.items() if k in ("old", "new", "count")})
+
+
+def _runtime_filter(name: str, func: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a filter so it only ever runs while rendering, with size checks.
+
+    Jinja folds a filter applied to constants while it compiles, so a prompt
+    as short as ``{{ "x" | center(100000000) }}`` built its result just by
+    being checked. A ``pass_context`` filter is never folded.
+
+    Args:
+        name: The filter's name, which picks its size check.
+        func: The filter as Jinja registers it.
+
+    Returns:
+        A context filter that checks its arguments, then calls ``func``.
+    """
+    pass_arg = _PassArg.from_obj(func)
+
+    @pass_context
+    @functools.wraps(func)
+    def wrapper(context: Context, *args: Any, **kwargs: Any) -> Any:
+        _filter_guard(name, args, kwargs)
+        if pass_arg is _PassArg.context:
+            return func(context, *args, **kwargs)
+        if pass_arg is _PassArg.eval_context:
+            return func(context.eval_ctx, *args, **kwargs)
+        if pass_arg is _PassArg.environment:
+            return func(context.environment, *args, **kwargs)
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+class BoundedSandboxedEnvironment(SandboxedEnvironment):
+    """A sandbox that computes nothing a template writes while compiling it, and caps what it builds.
+
+    Jinja constant-folds expressions as it compiles, in a sandbox too, so
+    checking ``{{ "x" * 100000000 }}`` built 100 MB and ``{{ 10 ** 200000 }}``
+    a 200,000-digit number. Intercepted operators are never folded
+    (``BinExpr.as_const`` raises ``Impossible`` for them), filters are
+    wrapped as context filters, which are never folded either, and both
+    refuse results past ``MAX_TEMPLATE_SEQUENCE`` / ``MAX_TEMPLATE_INT_BITS``
+    when the template renders.
+    """
+
+    intercepted_binops = frozenset({"*", "**", "%"})
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.filters = {name: _runtime_filter(name, func) for name, func in self.filters.items()}
+
+    def call_binop(self, context: Context, operator: str, left: Any, right: Any) -> Any:
+        """Run ``*``, ``**`` or ``%``, refusing one whose result would be oversized.
+
+        Args:
+            context: The render context.
+            operator: The operator, one of ``intercepted_binops``.
+            left: The left operand.
+            right: The right operand.
+
+        Returns:
+            The operator's result.
+
+        Raises:
+            SecurityError: When the result would pass the size caps.
+        """
+        if operator == "*":
+            self._check_multiply(left, right)
+        elif operator == "**":
+            self._check_power(left, right)
+        elif operator == "%" and isinstance(left, str):
+            _check_percent_format(left, right)
+        return super().call_binop(context, operator, left, right)
+
+    @staticmethod
+    def _check_multiply(left: Any, right: Any) -> None:
+        for seq, times in ((left, right), (right, left)):
+            if isinstance(seq, (str, bytes, list, tuple)) and isinstance(times, int):
+                if len(seq) * times > MAX_TEMPLATE_SEQUENCE:
+                    _refuse("repeated sequence too long")
+                return
+        if isinstance(left, int) and isinstance(right, int):
+            if left.bit_length() + right.bit_length() > MAX_TEMPLATE_INT_BITS:
+                _refuse("integer too large")
+
+    @staticmethod
+    def _check_power(base: Any, exponent: Any) -> None:
+        if not isinstance(base, int) or not isinstance(exponent, int) or exponent <= 0:
+            return
+        if abs(base) <= 1:
+            return
+        if (abs(base).bit_length() - 1) * exponent > MAX_TEMPLATE_INT_BITS:
+            _refuse("integer too large")
 
 
 class TemplateRenderError(Exception):
@@ -25,7 +192,7 @@ class TemplateEngine:
         # Rendered output is an LLM prompt, not HTML — autoescaping would
         # corrupt injected values (e.g. document content: "<" -> "&lt;").
         # The sandbox still blocks unsafe attribute/method access.
-        self._env = SandboxedEnvironment(
+        self._env = BoundedSandboxedEnvironment(
             undefined=ChainableUndefined,
             trim_blocks=True,
             lstrip_blocks=True,
