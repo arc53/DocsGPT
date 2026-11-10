@@ -6,6 +6,7 @@ import {
   selectSelectedAgent,
   selectSharedAgents,
 } from '../preferences/preferenceSlice';
+import { OPTION_KEYS } from '../settings/insights/format';
 import { can } from '../utils/accessUtils';
 import { GuardedAgentContext } from './hooks/useAgent';
 import { agentEditPath, isWorkflowAgent } from './paths';
@@ -18,8 +19,9 @@ const GAP_GROUPS: readonly GapGroup[] = ['page', 'source', 'topic'];
 /**
  * What the agent form's drawer starts on when opened from Insights or Logs:
  * a gap (the Docs gaps panel) or one conversation (a Logs row). `where` is
- * the panel's name for the gap's group (a page, a source or a topic), for
- * the message it sends. A Page or Source row also carries `group_key`, the
+ * the panel's name for the gap's group (a page, a source or a topic), which
+ * only titles the gap's card: a link's text never words the message the
+ * drawer sends. A Page or Source row also carries `group_key`, the
  * row's key as the server groups by it (null for the row of answers with
  * no source), which the drafter reads that row's questions by.
  */
@@ -104,6 +106,8 @@ export function readImproveHandoff(
   const groupBy = (params.get('group_by') ?? 'topic') as GapGroup;
   const groupKey = params.get('group_key')?.trim() || null;
   if (!gapType || gapType.length > GAP_TYPE_MAX || !where) return null;
+  // One of the types Insights labels with: the message is worded from it.
+  if (!Object.hasOwn(OPTION_KEYS.gap_type, gapType)) return null;
   if (where.length > NAME_MAX || (topic && topic.length > NAME_MAX))
     return null;
   if (!GAP_GROUPS.includes(groupBy)) return null;

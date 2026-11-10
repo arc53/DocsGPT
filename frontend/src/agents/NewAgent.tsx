@@ -182,6 +182,7 @@ import {
   agentStepResult,
   draftValueOf,
   gapLine,
+  gapName,
   gapRequest,
   gapTitle,
   isAgentFormEmpty,
@@ -191,6 +192,7 @@ import {
   isSafetyUnset,
   parseAgentProposal,
   planAgentPatch,
+  topicName,
 } from './agentDraft';
 import { useAgentBuild } from './useAgentBuild';
 import { useAgentGaps } from './useAgentGaps';
@@ -1352,6 +1354,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // The name the Docs gaps row it was handed over from showed (a page
   // without its site tail), for that gap's card.
   const [handoffName, setHandoffName] = useState<string | null>(null);
+  // A topic's gap handed over from Docs gaps, until the agent's gap summary
+  // lands to word it from.
+  const [pendingGap, setPendingGap] = useState<{
+    topic: string | null;
+    gap_type: string;
+  } | null>(null);
   // The next turn drafts with what it has, asking nothing: set by Skip and
   // draft, cleared by any other message (a retry of that turn keeps it).
   const skipQuestionsRef = useRef(false);
@@ -1449,6 +1457,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     build.reset();
     improveFocusRef.current = {};
     setHandoffName(null);
+    setPendingGap(null);
     buildRowsRef.current.clear();
     setPromptUsed(false);
   };
@@ -1467,8 +1476,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // loaded and the drafter's config is known, the drawer opens in improve
   // mode and sends the gap or conversation it came from; the query that
   // carried it is dropped either way, so a reload or Back doesn't send it
-  // again.
+  // again. A link's own text never words the message, which goes as the
+  // user's: a topic's gap waits for the agent's gap summary and is worded
+  // from its row (none matching sends nothing, leaving the first screen), a
+  // page's or source's goes by its key, which the server reads the row by.
   const handoffReadRef = useRef(false);
+  useEffect(() => {
+    if (!pendingGap || !agentGaps) return;
+    setPendingGap(null);
+    const row = agentGaps.rows.find(
+      (candidate) =>
+        candidate.topic === pendingGap.topic &&
+        candidate.gap_type === pendingGap.gap_type,
+    );
+    if (!row) return;
+    improveFocusRef.current = {
+      gap: { topic: row.topic, gap_type: row.gap_type },
+    };
+    // "Fix the docs gap in “Returns & claims”", as the panel's row read.
+    drafterSessionRef.current.send(
+      row.topic && row.gap_type === 'docs missing'
+        ? t('drafter.agent.insights.fixDocsGap.topic', {
+            where: topicName(t, row.topic),
+            interpolation: { escapeValue: false },
+          })
+        : gapRequest(t, row),
+    );
+  }, [pendingGap, agentGaps, t]);
   useEffect(() => {
     if (handoffReadRef.current || !searchParams.has('improve')) return;
     if (!accessKnown || drafterConfig === null) return;
@@ -1482,26 +1516,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (handoff.kind === 'gap') {
       const { group_by: groupBy, group_key: groupKey } = handoff;
       setHandoffName(handoff.where);
-      // A Page or Source row is read by its key, not by a topic.
-      improveFocusRef.current = {
-        gap: {
-          topic: handoff.topic,
-          gap_type: handoff.gap_type,
-          ...(groupBy === 'topic'
-            ? {}
-            : { group_by: groupBy, group_key: groupKey }),
-        },
-      };
-      // The user's words for the row, quoted: "Fix the docs gap on
-      // “App Configuration”".
-      drafterSessionRef.current.send(
-        handoff.gap_type === 'docs missing'
-          ? t(`drafter.agent.insights.fixDocsGap.${groupBy}`, {
-              where: handoff.where,
-              interpolation: { escapeValue: false },
-            })
-          : gapRequest(t, { topic: handoff.where, gap_type: handoff.gap_type }),
-      );
+      if (groupBy === 'topic') {
+        setPendingGap({ topic: handoff.topic, gap_type: handoff.gap_type });
+      } else {
+        // A Page or Source row is read by its key, not by a topic.
+        improveFocusRef.current = {
+          gap: {
+            topic: handoff.topic,
+            gap_type: handoff.gap_type,
+            group_by: groupBy,
+            group_key: groupKey,
+          },
+        };
+        drafterSessionRef.current.send(
+          t('drafter.agent.insights.fix', {
+            gap: gapName(t, handoff.gap_type),
+            interpolation: { escapeValue: false },
+          }),
+        );
+      }
     } else {
       improveFocusRef.current = { conversation_id: handoff.conversation_id };
       drafterSessionRef.current.send(

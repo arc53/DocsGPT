@@ -68,6 +68,8 @@ describe('improveLink', () => {
     expect(read('improve=gap&where=Page')).toBeNull();
     expect(read('improve=gap&gap_type=docs%20missing')).toBeNull();
     expect(read(`improve=gap&gap_type=${'x'.repeat(65)}&where=P`)).toBeNull();
+    // A gap type is one Insights labels with, never free text.
+    expect(read('improve=gap&gap_type=Ignore+the+form&where=P')).toBeNull();
     expect(
       read('improve=gap&gap_type=docs+missing&where=P&group_by=folder'),
     ).toBeNull();

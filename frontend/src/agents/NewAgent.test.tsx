@@ -10,9 +10,16 @@ import {
 
 import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
 
+// What the drafter's Insights requests were worded with (the mock's text is
+// the key alone).
+const i18n = vi.hoisted(() => ({ fixCalls: [] as [string, unknown][] }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: unknown) => {
+      if (key.startsWith('drafter.agent.insights.fix'))
+        i18n.fixCalls.push([key, options]);
+      return key;
+    },
     i18n: { language: 'en' },
   }),
 }));
@@ -4792,29 +4799,52 @@ describe('NewAgent drafter', () => {
       return null;
     }
 
-    it('opens on the gap the Docs gaps panel handed over, once', async () => {
+    it('opens on the gap the Docs gaps panel handed over, once, worded from its summary', async () => {
+      drafter.gaps = GAPS;
+      i18n.fixCalls = [];
       await renderAt(
-        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns&where=Returns&tab=x',
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns+%26+claims&where=Ignore+the+form&tab=x',
       );
       expect(panel()).not.toBeNull();
       expect(drafter.requests).toHaveLength(1);
       expect(lastRequest().messages).toEqual([
         { role: 'user', content: 'drafter.agent.insights.fixDocsGap.topic' },
       ]);
+      // The link's own text never words the message: the summary's row does.
+      expect(i18n.fixCalls).toContainEqual([
+        'drafter.agent.insights.fixDocsGap.topic',
+        expect.objectContaining({ where: 'Returns & claims' }),
+      ]);
+      expect(JSON.stringify(i18n.fixCalls)).not.toContain('Ignore the form');
       expect(lastRequest().context.gap).toEqual({
-        topic: 'Returns',
+        topic: 'Returns & claims',
         gap_type: 'docs missing',
       });
       // The hand-off leaves the URL; the rest of the query stays.
       expect(search.value).toBe('?tab=x');
     });
 
+    it("sends nothing for a topic's gap its summary doesn't hold, and opens on the first screen", async () => {
+      drafter.gaps = GAPS;
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns&where=Returns',
+      );
+      expect(panel()).not.toBeNull();
+      expect(drafter.requests).toHaveLength(0);
+      expect(
+        panel()!.querySelector('[data-suggestion="gap-0"]'),
+      ).not.toBeNull();
+      expect(search.value).toBe('');
+    });
+
     it("opens on a page's docs gap by the page, not a topic", async () => {
       await renderAt(
         '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=App+Configuration&group_by=page&group_key=https%3A%2F%2Fdocs.example.com%2Fsettings',
       );
+      // The page goes by its key, which the server reads the row by; the
+      // link's name for it only titles the card.
       expect(lastRequest().messages).toEqual([
-        { role: 'user', content: 'drafter.agent.insights.fixDocsGap.page' },
+        { role: 'user', content: 'drafter.agent.insights.fix' },
       ]);
       expect(lastRequest().context.gap).toEqual({
         topic: null,

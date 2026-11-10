@@ -919,7 +919,7 @@ export const gapName = (t: TFunction, gapType: string): string =>
   optionName((key) => t(key), 'gap_type', gapType);
 
 /** A topic as Insights shows it: the catch-all reads "None of these". */
-const topicName = (t: TFunction, topic: string): string =>
+export const topicName = (t: TFunction, topic: string): string =>
   topic === NONE_OF_THESE
     ? t('settings.analytics.insights.panels.noneOfThese')
     : topic;
