@@ -90,12 +90,6 @@ embedded milvus-lite server, which pulls pyarrow.
 Docker: --build-arg EXTRAS=milvus" \
   --no-dev --extra milvus
 
-INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-supercompress.txt \
-"Core runtime plus the supercompress extra: query-aware context compression
-between retrieval and generation.
-Docker: --build-arg EXTRAS=supercompress" \
-  --no-dev --extra supercompress
-
 INDEX_URL=https://download.pytorch.org/whl/cpu export_file tests/requirements.txt \
 "Test environment: core runtime, the docling extra (so its parser tests run)
 and the dev group from pyproject.toml (pytest and plugins, the renderers the

@@ -4,8 +4,8 @@
 Evaluates context token savings, execution latency, and structural fidelity
 (complete code blocks, full markdown table rows, warnings, navigation removal,
 and duplicate header deduplication) against exact document source IDs.
-Compares Baseline (OFF), In-Tree Pruning (Zero Dependencies), and Optional
-SuperCompress over identical queries with observed percentage calculations.
+Compares Baseline (OFF) and In-Tree Boilerplate Pruning (Zero Dependencies)
+over representative queries with observed percentage calculations.
 """
 
 from __future__ import annotations
@@ -20,10 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from docsgpt.retriever.stages.boilerplate_pruning import (
-    compress_retrieved_chunks,
-    prune_boilerplate,
-)
+from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
 from docsgpt.utils import get_encoding
 
 # Ground truth representative corpus across 3 source IDs with explicit structural specs
@@ -233,15 +230,6 @@ def run_benchmark() -> None:
     print("=" * 78)
     print()
 
-    # 1. Check SuperCompress availability
-    supercompress_available = False
-    try:
-        import supercompress  # noqa: F401
-
-        supercompress_available = True
-    except Exception:
-        supercompress_available = False
-
     # Metrics storage
     baseline_tokens_list: List[int] = []
     intree_tokens_list: List[int] = []
@@ -261,18 +249,7 @@ def run_benchmark() -> None:
         "order_matches": 0,
     }
 
-    sc_tokens_list: List[int] = []
-    sc_latencies_ms: List[float] = []
-    sc_stats_total: Dict[str, int] = {
-        "attempted": 0,
-        "neural_success": 0,
-        "safeguard_fallback": 0,
-        "conflict_fallback": 0,
-        "error_fallback": 0,
-    }
-    sc_eval_totals = deepcopy(intree_eval_totals)
-
-    # Run all modes over identical queries
+    # Run over queries
     for query in queries:
         # A. Baseline
         raw_docs = deepcopy(REPRESENTATIVE_CORPUS)
@@ -300,37 +277,6 @@ def run_benchmark() -> None:
         intree_eval_totals["dup_rem"] += intree_eval["dup_headers_removed"]
         if intree_eval["order_intact"]:
             intree_eval_totals["order_matches"] += 1
-
-        # C. SuperCompress (evaluated over identical query)
-        if supercompress_available:
-            sc_query_stats: Dict[str, int] = {}
-            t1 = time.perf_counter()
-            sc_docs = compress_retrieved_chunks(
-                deepcopy(REPRESENTATIVE_CORPUS),
-                query=query,
-                stats=sc_query_stats,
-            )
-            t_sc = (time.perf_counter() - t1) * 1000
-            sc_tokens = sum(len(enc.encode(d["text"])) for d in sc_docs)
-            sc_tokens_list.append(sc_tokens)
-            sc_latencies_ms.append(t_sc)
-
-            for k in sc_stats_total:
-                sc_stats_total[k] += sc_query_stats.get(k, 0)
-
-            sc_eval = evaluate_structural_integrity(sc_docs)
-            sc_eval_totals["code_exp"] += sc_eval["code_expected"]
-            sc_eval_totals["code_pres"] += sc_eval["code_preserved"]
-            sc_eval_totals["table_exp"] += sc_eval["table_rows_expected"]
-            sc_eval_totals["table_pres"] += sc_eval["table_rows_preserved"]
-            sc_eval_totals["warn_exp"] += sc_eval["warnings_expected"]
-            sc_eval_totals["warn_pres"] += sc_eval["warnings_preserved"]
-            sc_eval_totals["nav_exp"] += sc_eval["nav_lines_expected"]
-            sc_eval_totals["nav_rem"] += sc_eval["nav_lines_removed"]
-            sc_eval_totals["dup_exp"] += sc_eval["dup_headers_expected"]
-            sc_eval_totals["dup_rem"] += sc_eval["dup_headers_removed"]
-            if sc_eval["order_intact"]:
-                sc_eval_totals["order_matches"] += 1
 
     # Calculate observed percentages (never hardcoded)
     avg_base_tokens = sum(baseline_tokens_list) // len(queries)
@@ -369,7 +315,7 @@ def run_benchmark() -> None:
     )
     intree_order_pct = (intree_eval_totals["order_matches"] / len(queries)) * 100
 
-    print("### 1. Token Cost & Latency Comparison across Identical Queries")
+    print("### 1. Token Cost & Latency Comparison across Queries")
     print(f"- **Baseline Context Tokens (OFF):** {avg_base_tokens} tokens / query")
     print(f"- **In-Tree Pruned Tokens (ON):**     {avg_intree_tokens} tokens / query")
     print(
@@ -377,47 +323,12 @@ def run_benchmark() -> None:
         f"{sum(baseline_tokens_list) - sum(intree_tokens_list)} tokens across {len(queries)} queries ({intree_savings_pct:.1f}% reduction)"
     )
     print(f"- **In-Memory Pruning Latency:**     {avg_intree_latency_ms:.2f} ms per retrieval")
-
-    if supercompress_available:
-        avg_sc_tokens = sum(sc_tokens_list) // len(queries)
-        avg_sc_latency_ms = sum(sc_latencies_ms) / len(sc_latencies_ms)
-        sc_savings_pct = (
-            ((sum(baseline_tokens_list) - sum(sc_tokens_list)) / sum(baseline_tokens_list)) * 100
-            if sum(baseline_tokens_list)
-            else 0.0
-        )
-        sc_code_pct = (
-            (sc_eval_totals["code_pres"] / sc_eval_totals["code_exp"]) * 100 if sc_eval_totals["code_exp"] else 100.0
-        )
-        sc_table_pct = (
-            (sc_eval_totals["table_pres"] / sc_eval_totals["table_exp"]) * 100 if sc_eval_totals["table_exp"] else 100.0
-        )
-        sc_warn_pct = (
-            (sc_eval_totals["warn_pres"] / sc_eval_totals["warn_exp"]) * 100 if sc_eval_totals["warn_exp"] else 100.0
-        )
-        sc_nav_pct = (
-            (sc_eval_totals["nav_rem"] / sc_eval_totals["nav_exp"]) * 100 if sc_eval_totals["nav_exp"] else 100.0
-        )
-        sc_dup_pct = (
-            (sc_eval_totals["dup_rem"] / sc_eval_totals["dup_exp"]) * 100 if sc_eval_totals["dup_exp"] else 100.0
-        )
-        sc_order_pct = (sc_eval_totals["order_matches"] / len(queries)) * 100
-
-        print(f"- **SuperCompress Tokens / Query:**  {avg_sc_tokens} tokens / query ({sc_savings_pct:.1f}% reduction)")
-        print(f"- **SuperCompress Latency:**         {avg_sc_latency_ms:.2f} ms per retrieval")
-        print(
-            f"- **SuperCompress Fallback Breakdown:** "
-            f"neural_success={sc_stats_total['neural_success']}, "
-            f"safeguard_fallback={sc_stats_total['safeguard_fallback']}, "
-            f"conflict_fallback={sc_stats_total['conflict_fallback']}, "
-            f"error_fallback={sc_stats_total['error_fallback']} "
-            f"(total chunks attempted={sc_stats_total['attempted']})"
-        )
     print()
 
     print("### 2. Semantic & Structural Integrity (Calculated from Observed Results)")
     print(
-        f"- **Document Order & Inclusion:**    {intree_order_pct:.1f}% Intact ({intree_eval_totals['order_matches']}/{len(queries)} queries)"
+        f"- **Document Order & Inclusion:**    {intree_order_pct:.1f}% Intact "
+        f"({intree_eval_totals['order_matches']}/{len(queries)} queries)"
     )
     print(
         f"- **Complete Code Blocks Preserved:** {intree_code_pct:.1f}% "
@@ -441,41 +352,19 @@ def run_benchmark() -> None:
     )
     print()
 
-    # Pre-format table cells to maintain Python 3.10 f-string compatibility
-    if supercompress_available:
-        sc_tokens_cell = f"{avg_sc_tokens} (-{sc_savings_pct:.1f}%)"
-        sc_latency_cell = f"+{avg_sc_latency_ms:.2f} ms"
-        sc_code_cell = f"{sc_code_pct:.1f}% ({sc_eval_totals['code_pres']}/{sc_eval_totals['code_exp']})"
-        sc_table_cell = f"{sc_table_pct:.1f}% ({sc_eval_totals['table_pres']}/{sc_eval_totals['table_exp']})"
-        sc_warn_cell = f"{sc_warn_pct:.1f}% ({sc_eval_totals['warn_pres']}/{sc_eval_totals['warn_exp']})"
-        sc_nav_cell = f"{sc_nav_pct:.1f}% ({sc_eval_totals['nav_rem']}/{sc_eval_totals['nav_exp']})"
-        sc_dup_cell = f"{sc_dup_pct:.1f}% ({sc_eval_totals['dup_rem']}/{sc_eval_totals['dup_exp']})"
-        sc_order_cell = f"{sc_order_pct:.1f}% Intact"
-        sc_fallback_cell = f"{sc_stats_total['safeguard_fallback']} / {sc_stats_total['conflict_fallback']} / {sc_stats_total['error_fallback']} (of {sc_stats_total['attempted']} chunks)"
-    else:
-        sc_tokens_cell = "N/A"
-        sc_latency_cell = "N/A"
-        sc_code_cell = "N/A"
-        sc_table_cell = "N/A"
-        sc_warn_cell = "N/A"
-        sc_nav_cell = "N/A"
-        sc_dup_cell = "N/A"
-        sc_order_cell = "N/A"
-        sc_fallback_cell = "N/A"
-
-    # Markdown Results Table with observed percentages (N/A if SuperCompress unavailable)
+    # Markdown Results Table with observed percentages
     table = [
-        "| Metric | CHUNK_COMPRESSION_ENABLED=False | In-Tree Pruning (Zero Dependencies) | Optional SuperCompress |",
-        "| :--- | :--- | :--- | :--- |",
-        f"| **Context Tokens / Query** | {avg_base_tokens} | {avg_intree_tokens} (-{intree_savings_pct:.1f}%) | {sc_tokens_cell} |",
-        f"| **Processing Latency** | Baseline (0.0 ms) | +{avg_intree_latency_ms:.2f} ms | {sc_latency_cell} |",
-        f"| **Complete Code Block Fidelity** | 100.0% | {intree_code_pct:.1f}% ({intree_eval_totals['code_pres']}/{intree_eval_totals['code_exp']}) | {sc_code_cell} |",
-        f"| **Complete Table Rows Fidelity** | 100.0% | {intree_table_pct:.1f}% ({intree_eval_totals['table_pres']}/{intree_eval_totals['table_exp']}) | {sc_table_cell} |",
-        f"| **Factual Warnings & Negations** | 100.0% | {intree_warn_pct:.1f}% ({intree_eval_totals['warn_pres']}/{intree_eval_totals['warn_exp']}) | {sc_warn_cell} |",
-        f"| **Navigation Lines Removed** | 0.0% (0/{intree_eval_totals['nav_exp']}) | {intree_nav_pct:.1f}% ({intree_eval_totals['nav_rem']}/{intree_eval_totals['nav_exp']}) | {sc_nav_cell} |",
-        f"| **Duplicate Header Deduplication** | 0.0% (0/{intree_eval_totals['dup_exp']}) | {intree_dup_pct:.1f}% ({intree_eval_totals['dup_rem']}/{intree_eval_totals['dup_exp']}) | {sc_dup_cell} |",
-        f"| **Document IDs & Order** | 100.0% | {intree_order_pct:.1f}% Intact | {sc_order_cell} |",
-        f"| **Fallback Breakdown (Safeguard / Conflict / Error)** | N/A | 0 / 0 / 0 (Deterministic) | {sc_fallback_cell} |",
+        "| Metric | CHUNK_COMPRESSION_ENABLED=False | In-Tree Pruning (Zero Dependencies) |",
+        "| :--- | :--- | :--- |",
+        f"| **Context Tokens / Query** | {avg_base_tokens} | {avg_intree_tokens} (-{intree_savings_pct:.1f}%) |",
+        f"| **Processing Latency** | Baseline (0.0 ms) | +{avg_intree_latency_ms:.2f} ms |",
+        f"| **Complete Code Block Fidelity** | 100.0% | {intree_code_pct:.1f}% ({intree_eval_totals['code_pres']}/{intree_eval_totals['code_exp']}) |",
+        f"| **Complete Table Rows Fidelity** | 100.0% | {intree_table_pct:.1f}% ({intree_eval_totals['table_pres']}/{intree_eval_totals['table_exp']}) |",
+        f"| **Factual Warnings & Negations** | 100.0% | {intree_warn_pct:.1f}% ({intree_eval_totals['warn_pres']}/{intree_eval_totals['warn_exp']}) |",
+        f"| **Navigation Lines Removed** | 0.0% (0/{intree_eval_totals['nav_exp']}) | {intree_nav_pct:.1f}% ({intree_eval_totals['nav_rem']}/{intree_eval_totals['nav_exp']}) |",
+        f"| **Duplicate Header Deduplication** | 0.0% (0/{intree_eval_totals['dup_exp']}) | {intree_dup_pct:.1f}% ({intree_eval_totals['dup_rem']}/{intree_eval_totals['dup_exp']}) |",
+        f"| **Document IDs & Order** | 100.0% | {intree_order_pct:.1f}% Intact |",
+        "| **External Dependencies Required** | None | None (Standard Library Only) |",
     ]
     print("\n".join(table))
 

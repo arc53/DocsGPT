@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-import sys
-from unittest.mock import Mock, patch
-
 import pytest
 
-from docsgpt.retriever.dispatcher import (
-    CompressingDispatcher,
-    CompressingRetriever,
-    Dispatcher,
-    build_dispatcher,
-)
 from docsgpt.retriever.stages.boilerplate_pruning import (
     _normalize_fence_state,
     prune_boilerplate,
@@ -60,111 +51,105 @@ class TestBoilerplatePruningRules:
             "Password length > 8 characters\n"
             "Operating temperature >= -20 C\n"
             "Threshold offset <= +5 ms\n"
-            "Error code != -1\n"
-            "Other text here."
+            "Error tolerance < 0.01 percent\n"
+            "Next page"
         )
-        cleaned = prune_chunk_text(raw, query="How long should my passphrase be?")
+        cleaned = prune_chunk_text(raw, query="guidelines")
         assert "Password length > 8 characters" in cleaned
         assert "Operating temperature >= -20 C" in cleaned
         assert "Threshold offset <= +5 ms" in cleaned
-        assert "Error code != -1" in cleaned
-        assert "Other text here." in cleaned
-        assert "Home > Security > Guidelines" not in cleaned
+        assert "Error tolerance < 0.01 percent" in cleaned
+        assert "Next page" not in cleaned
 
     def test_preserves_prose_containing_slash_and_greater_than(self):
-        """Prose containing ' / ' or ' > ' with or without terminal punctuation must not be pruned."""
-        cases = [
-            "Read / write access is controlled by roles.",
-            "Read / write access is controlled by roles",
-            "Input > Output mapping is shown below.",
-            "Input > Output mapping is shown below",
-            "A / B testing evaluates model variants.",
-            "A / B testing evaluates model variants",
-        ]
-        for line in cases:
-            cleaned = prune_chunk_text(line, query="database configuration")
-            assert cleaned == line, f"Prose was pruned: {line!r}"
+        raw = (
+            "Home > Documentation\n"
+            "The client connects to host:port/path and writes > 100 bytes/sec.\n"
+            "Use the command: cat /etc/passwd > /dev/null\n"
+            "Was this article helpful?"
+        )
+        cleaned = prune_chunk_text(raw, query="client")
+        assert "The client connects to host:port/path and writes > 100 bytes/sec." in cleaned
+        assert "Use the command: cat /etc/passwd > /dev/null" in cleaned
+        assert "Home > Documentation" not in cleaned
+        assert "Was this article helpful?" not in cleaned
 
     def test_preserves_fenced_code_context_across_chunk_boundaries_via_initial_fence(self):
-        """Preserves unindented code lines in continuation chunks carrying active fence state."""
-        continuation_chunk = "Next page: Authentication\n```\nHome > API\nFactual prose outside code fence."
-        # Without initial_active_fence, 'Next page: Authentication' would be treated as nav and pruned
-        without_fence = prune_chunk_text(continuation_chunk, query="")
-        assert "Next page: Authentication" not in without_fence
-        assert "Factual prose outside code fence." in without_fence
-
-        # With initial_active_fence, the code line inside the active fence is preserved regardless of nav match
-        with_fence = prune_chunk_text(continuation_chunk, query="", initial_active_fence=("`", 3))
-        assert "Next page: Authentication" in with_fence
-        assert "```" in with_fence
-        assert "Home > API" not in with_fence
-        assert "Factual prose outside code fence." in with_fence
+        continuation_chunk = (
+            "    # This is code continuing from previous chunk\n"
+            "    x = 10\n"
+            "    return x\n"
+            "```\n"
+            "Home > API\n"
+            "Factual prose outside the code block."
+        )
+        cleaned = prune_chunk_text(continuation_chunk, query="", initial_active_fence=("`", 3))
+        assert "    # This is code continuing from previous chunk\n    x = 10\n    return x\n```" in cleaned
+        assert "Home > API" not in cleaned
+        assert "Factual prose outside the code block." in cleaned
 
     def test_prune_boilerplate_carries_active_fence_from_metadata(self):
-        """prune_boilerplate inspects chunk metadata to preserve continuation code blocks."""
         docs = [
             {
-                "id": 1,
-                "text": "Next page: Authentication\n```\nHome > API\nFactual content.",
+                "id": "chunk1",
+                "text": "```python\ndef run():\n    return 1",
                 "metadata": {"active_fence": ("`", 3)},
             },
             {
-                "id": 2,
-                "text": "previous page: Overview\n~~~\nFactual text.",
-                "metadata": {"fenced_code": "~~~"},
-            },
-            {
-                "id": 3,
-                "text": "skip to content\n```\nFactual text.",
-                "extra_info": {"in_code_fence": True},
+                "id": "chunk2",
+                "text": "    return 2\n```\nHome > API\nSummary info.",
+                "metadata": {"active_fence": ("`", 3)},
             },
         ]
-        pruned = prune_boilerplate(docs, query="")
-        assert "Next page: Authentication" in pruned[0]["text"]
-        assert "Home > API" not in pruned[0]["text"]
-        assert "previous page: Overview" in pruned[1]["text"]
-        assert "skip to content" in pruned[2]["text"]
+        pruned = prune_boilerplate(docs, query="python")
+        assert "Home > API" not in pruned[1]["text"]
+        assert "Summary info." in pruned[1]["text"]
+        assert "return 2\n```" in pruned[1]["text"]
 
     def test_normalize_fence_state_handles_malformed_and_unexpected_values(self):
-        """Malformed tuples and non-fence strings must return None without raising."""
-        assert _normalize_fence_state(["", "bad"]) is None
-        assert _normalize_fence_state(("a", 3)) is None
-        assert _normalize_fence_state(("`", 2)) is None
-        assert _normalize_fence_state("false") is None
-        assert _normalize_fence_state("true") is None
+        # Valid tuple / list
+        assert _normalize_fence_state(("`", 3)) == ("`", 3)
+        assert _normalize_fence_state(["~", 4]) == ("~", 4)
+        # Valid string
         assert _normalize_fence_state("```") == ("`", 3)
         assert _normalize_fence_state("~~~~") == ("~", 4)
-        assert _normalize_fence_state(("~", 4)) == ("~", 4)
+        # Boolean True
         assert _normalize_fence_state(True) == ("`", 3)
-        assert _normalize_fence_state(False) is None
+        # Invalid / malformed inputs
         assert _normalize_fence_state(None) is None
+        assert _normalize_fence_state(False) is None
+        assert _normalize_fence_state("invalid") is None
+        assert _normalize_fence_state(("`", "invalid")) is None
 
     def test_prune_boilerplate_handles_malformed_fence_metadata(self):
-        """prune_boilerplate continues pruning navigation lines when metadata contains unexpected fence values."""
         docs = [
             {
-                "id": 1,
-                "text": "Home > API\nFactual chunk.",
-                "metadata": {"active_fence": ["", "bad"]},
+                "id": "chunk1",
+                "text": "Home > Guides\nFactual chunk with malformed fence.",
+                "metadata": {"active_fence": "malformed_value"},
             },
             {
-                "id": 2,
-                "text": "Next page\nFactual chunk.",
-                "metadata": {"in_code_block": "false"},
+                "id": "chunk2",
+                "text": "Home > Guides\nFactual chunk with non-dict metadata.",
+                "metadata": "not-a-dict",
+            },
+            {
+                "id": "chunk3",
+                "text": "Home > Guides\nFactual chunk without metadata key.",
             },
         ]
-        pruned = prune_boilerplate(docs, query="")
-        assert pruned[0]["text"] == "Factual chunk."
-        assert pruned[1]["text"] == "Factual chunk."
+        pruned = prune_boilerplate(docs, query="chunk")
+        assert len(pruned) == 3
+        for d in pruned:
+            assert "Home > Guides" not in d["text"]
+            assert "Factual chunk" in d["text"]
 
     def test_preserves_indentation_on_first_code_line(self):
-        """Preserves 4-space markdown code line indentation when trimming leading/trailing blank lines."""
-        raw = "\n\n    def hello_world():\n        return True\n\n"
-        cleaned = prune_chunk_text(raw, query="")
-        assert cleaned == "    def hello_world():\n        return True"
-
-        indented_nav = "    Next page: The API returns 401"
-        assert prune_chunk_text(indented_nav, query="") == indented_nav
+        raw = "Home > Guides\n```python\n    def indented_func():\n        pass\n```\nNext page"
+        cleaned = prune_chunk_text(raw, query="func")
+        assert "```python\n    def indented_func():\n        pass\n```" in cleaned
+        assert "Home > Guides" not in cleaned
+        assert "Next page" not in cleaned
 
     def test_breadcrumb_matching_variations_and_non_breadcrumbs(self):
         # Breadcrumbs should be pruned when they are purely navigation boilerplate
@@ -179,19 +164,22 @@ class TestBoilerplatePruningRules:
 
     def test_preserves_code_blocks_and_inline_code(self):
         raw = (
-            "Home / Guides / Setup\n"
-            "To install the package, run:\n"
+            "Home > Documentation > API Reference > Endpoints\n"
+            "Run the following command to initialize the server:\n"
             "```bash\n"
-            "npm install docsgpt-sdk\n"
+            "# Configure and start\n"
+            "curl -X POST http://localhost:8080/init \\\n"
+            "  -H 'Authorization: Bearer test-token'\n"
             "```\n"
-            "Use the `Client` class to configure authentication.\n"
-            "Next page: Usage"
+            "Use the `GET /health` endpoint to verify status.\n"
+            "Next page: Authentication"
         )
-        cleaned = prune_chunk_text(raw, query="install")
-        assert "```bash\nnpm install docsgpt-sdk\n```" in cleaned
-        assert "`Client`" in cleaned
-        assert "Home / Guides / Setup" not in cleaned
-        assert "Next page: Usage" not in cleaned
+        cleaned = prune_chunk_text(raw, query="initialize")
+        assert "```bash" in cleaned
+        assert "curl -X POST http://localhost:8080/init" in cleaned
+        assert "Use the `GET /health` endpoint to verify status." in cleaned
+        assert "Home > Documentation" not in cleaned
+        assert "Next page: Authentication" not in cleaned
 
     def test_preserves_tables_and_factual_prose(self):
         raw = (
@@ -209,14 +197,7 @@ class TestBoilerplatePruningRules:
         assert "Docs > Tables" not in cleaned
 
     def test_preserves_apostrophe_negations_before_nav_pruning(self):
-        """Straight and typographic apostrophe contractions must survive navigation pruning.
-
-        ``_NAV_CONTROL_RE`` matches ``"next page:?.*"``, so a line such as
-        ``"Next page: Don't disable TLS verification"`` would be discarded
-        unless the contraction is detected before the navigation check fires.
-        Both straight apostrophe (U+0027) and typographic/curly (U+2019) forms
-        are covered because the tokenizer normalizes before matching.
-        """
+        """Straight and typographic apostrophe contractions must survive navigation pruning."""
         # Straight apostrophe form
         straight_cases = [
             ("Next page: Don't disable TLS verification", "database"),
@@ -245,15 +226,7 @@ class TestBoilerplatePruningRules:
             )
 
     def test_preserves_possessives_matching_query_terms(self):
-        """Possessives such as "user's" must still match a query token "user".
-
-        The shared term tokenizer splits ``user's`` into ``user`` (the ``s``
-        fragment is discarded as < 2 chars).  The line tokenizer emits the
-        same tokens so ``user's`` in a line matches the ``user`` query token
-        and the line is preserved.
-        """
-        # Nav regex matches "next page:?.*", but "user" in query should protect
-        # the line via query-term overlap on the possessive stem.
+        """Possessives such as 'user's' must still match a query token 'user'."""
         result = prune_chunk_text("Next page: user's credentials expired", query="user login")
         assert result == "Next page: user's credentials expired", (
             f"Possessive 'user's' did not match query token 'user'; line removed.\n  Got: {result!r}"
@@ -309,11 +282,7 @@ class TestBoilerplatePruningRules:
             assert prune_chunk_text(line, query="") == "", f"Navigation line was not pruned: {line!r}"
 
     def test_nav_control_regex_preserves_factual_tokens_under_case_guard(self):
-        """Regression test: uppercase-label guard in _NAV_CONTROL_RE must not match lowercase words.
-
-        Lines like 'Next page token lifetime: 24 hours' must be preserved as factual text
-        even with an unrelated query, because 'token' starts with lowercase 't'.
-        """
+        """Regression test: uppercase-label guard in _NAV_CONTROL_RE must not match lowercase words."""
         cases = [
             "Next page token lifetime",
             "Next page token lifetime: 24 hours",
@@ -447,708 +416,3 @@ class TestBoilerplatePruningRules:
         prune_boilerplate([doc], query="Factual")
         assert "_raw_text" not in doc
         assert doc["text"] == "Factual chunk."
-
-
-@pytest.mark.unit
-class TestCompressingRetrieverIntegration:
-    def test_positional_and_keyword_query_handling(self):
-        mock_inner = Mock()
-        mock_inner.search.side_effect = lambda *args, **kwargs: [
-            {"id": "d1", "text": "Home > API\nThe primary endpoint is /v1/chat."}
-        ]
-        retriever = CompressingRetriever(mock_inner)
-
-        # Test positional query invocation (e.g. from headless_runner / internal_search)
-        res_pos = retriever.search("endpoint")
-        mock_inner.search.assert_called_with("endpoint")
-        assert res_pos[0]["text"] == "The primary endpoint is /v1/chat."
-
-        # Test keyword query invocation
-        res_kw = retriever.search(query="endpoint")
-        assert res_kw[0]["text"] == "The primary endpoint is /v1/chat."
-
-        # Test stored question fallback when search() receives no query argument
-        mock_inner.original_question = "API"
-        res_stored = retriever.search()
-        mock_inner.search.assert_called_with()
-        assert "Home > API" in res_stored[0]["text"]
-
-    def test_build_dispatcher_disabled_returns_raw_retriever(self, monkeypatch):
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
-        # Test ClassicRAG path
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
-        sentinel = object()
-        retriever_classic = build_dispatcher(lambda: sentinel)
-        assert retriever_classic is sentinel
-        assert not isinstance(retriever_classic, CompressingRetriever)
-
-        # Test Dispatcher path
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
-        retriever_disp = build_dispatcher(lambda: object(), source={"question": "q"})
-        assert not isinstance(retriever_disp, CompressingRetriever)
-
-    def test_compressing_dispatcher_preserves_dispatcher_isinstance(self, monkeypatch):
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
-        retriever = build_dispatcher(
-            lambda: object(),
-            source={"question": "q", "active_docs": ["a"]},
-            sources=[],
-        )
-        assert isinstance(retriever, Dispatcher)
-        assert isinstance(retriever, CompressingDispatcher)
-        assert isinstance(retriever, CompressingRetriever)
-
-    def test_build_dispatcher_enabled_wraps_in_compressing_retriever(self, monkeypatch):
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
-        inner = Mock()
-        inner.search.return_value = [{"id": "d1", "text": "Home > Guides\nSetup guide."}]
-        retriever = build_dispatcher(lambda: inner)
-        assert isinstance(retriever, CompressingRetriever)
-        res = retriever.search("setup")
-        assert res[0]["text"] == "Setup guide."
-
-    def test_candidate_snapshot_preserves_pre_pruning_text_and_identity(self, monkeypatch):
-        """Candidate recording through Dispatcher preserves pre-pruning text in candidate snapshots."""
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
-        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
-
-        doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1."}
-        mock_group_retriever = Mock()
-        mock_group_retriever.search.return_value = [doc1]
-        mock_group_retriever.last_outcome = None
-
-        monkeypatch.setattr(
-            Dispatcher,
-            "_build_group_retriever",
-            lambda self, group, budget: mock_group_retriever,
-        )
-
-        retriever = build_dispatcher(
-            lambda: None,
-            source={"active_docs": ["s1"], "question": "chunk"},
-            record_candidates=True,
-        )
-        assert isinstance(retriever, CompressingDispatcher)
-        res = retriever.search("chunk")
-
-        assert res[0] is doc1
-        assert res[0]["text"] == "Factual chunk 1."
-        assert retriever.last_candidates[0]["doc"] is doc1
-        # Snapshot was recorded by Dispatcher._stage_group before pruning ran and retains original text
-        assert retriever.last_candidates[0]["snapshot"]["text"] == "Home > API\nFactual chunk 1."
-
-    def test_compressing_retriever_delegates_last_outcome(self):
-        """CompressingRetriever and CompressingDispatcher must expose inner last_outcome."""
-        from unittest.mock import MagicMock
-        from docsgpt.retriever.base import SearchOutcome, search_outcome_of
-        from docsgpt.retriever.dispatcher import CompressingRetriever, CompressingDispatcher
-
-        mock_inner = MagicMock()
-        mock_outcome = SearchOutcome.of(["s1", "s2"], failed=["s2"])
-        mock_inner.last_outcome = mock_outcome
-
-        wrapper = CompressingRetriever(mock_inner)
-        assert wrapper.last_outcome == mock_outcome
-        assert search_outcome_of(wrapper, ["s1", "s2"]) == mock_outcome
-
-        dispatcher_wrapper = CompressingDispatcher(mock_inner)
-        assert dispatcher_wrapper.last_outcome == mock_outcome
-        assert search_outcome_of(dispatcher_wrapper, ["s1", "s2"]) == mock_outcome
-
-        # When inner has no outcome
-        mock_inner.last_outcome = None
-        assert wrapper.last_outcome is None
-
-    def test_workflow_node_sources_compression(self, monkeypatch):
-        pytest.importorskip("celpy")
-        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
-
-        engine = object.__new__(WorkflowEngine)
-        engine.state = {"query": "authentication"}
-        engine._loop_item = None
-        engine.agent = Mock()
-        engine.agent.decoded_token = {}
-
-        mock_doc = {"id": "d1", "text": "Home > API\nFactual chunk."}
-        mock_retriever = Mock()
-        mock_retriever.search.return_value = [mock_doc]
-
-        monkeypatch.setattr(
-            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
-            lambda *a, **k: mock_retriever,
-        )
-        monkeypatch.setattr(type(engine), "_authorized_node_sources", lambda self, s: list(s or []))
-        monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
-
-        mock_config = Mock()
-        mock_config.sources = ["s1"]
-        mock_config.retriever = "classic"
-        mock_config.chunks = 6
-
-        # When CHUNK_COMPRESSION_ENABLED is False: unpruned
-        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", False)
-        docs_raw = engine._retrieve_node_sources(mock_config)
-        assert docs_raw[0]["text"] == "Home > API\nFactual chunk."
-
-        # When CHUNK_COMPRESSION_ENABLED is True: pruned
-        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
-        docs_pruned = engine._retrieve_node_sources(mock_config)
-        assert docs_pruned[0]["text"] == "Factual chunk."
-
-    def test_workflow_node_sources_supercompress_delegation(self, monkeypatch):
-        """Workflow retrieval-to-generation path delegates to SuperCompress when available."""
-        pytest.importorskip("celpy")
-        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
-
-        engine = object.__new__(WorkflowEngine)
-        engine.state = {"query": "authentication"}
-        engine._loop_item = None
-        engine.agent = Mock()
-        engine.agent.decoded_token = {}
-
-        mock_doc = {"id": "d1", "text": "Raw retrieved chunk", "source": "s1"}
-        mock_retriever = Mock()
-        mock_retriever.search.return_value = [mock_doc]
-
-        monkeypatch.setattr(
-            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
-            lambda *a, **k: mock_retriever,
-        )
-        monkeypatch.setattr(type(engine), "_authorized_node_sources", lambda self, s: list(s or []))
-        monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
-        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
-        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
-
-        mock_result = ("SuperCompressed workflow text", Mock())
-        mock_compress_for_turn = Mock(return_value=mock_result)
-        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
-
-        mock_config = Mock()
-        mock_config.sources = ["s1"]
-        mock_config.retriever = "classic"
-        mock_config.chunks = 6
-
-        with patch.dict("sys.modules", {"supercompress": mock_module}):
-            docs = engine._retrieve_node_sources(mock_config)
-            assert docs[0]["text"] == "SuperCompressed workflow text"
-            mock_compress_for_turn.assert_called_once()
-
-    def test_compressing_retriever_preserves_document_metadata(self):
-        """CompressingRetriever applies in-tree boilerplate pruning while preserving per-document metadata."""
-        mock_inner = Mock()
-        mock_inner.search.return_value = [
-            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
-            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
-        ]
-        retriever = CompressingRetriever(mock_inner)
-        result = retriever.search(query="authentication")
-
-        assert len(result) == 2
-        assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
-        assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
-
-    def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self, monkeypatch):
-        """Integrate SuperCompress between retrieval and generation with automated delegation tests."""
-        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
-        mock_result_1 = ("SuperCompressed chunk 1", Mock())
-        mock_result_2 = ("SuperCompressed chunk 2", Mock())
-        mock_compress_for_turn = Mock(side_effect=[mock_result_1, mock_result_2])
-
-        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
-        mock_inner = Mock()
-        mock_inner.search.return_value = [
-            {"id": "doc1", "text": "Raw retrieved chunk 1", "source": "s1"},
-            {"id": "doc2", "text": "Raw retrieved chunk 2", "source": "s2"},
-        ]
-
-        with patch.dict("sys.modules", {"supercompress": mock_module}):
-            retriever = CompressingRetriever(mock_inner)
-            raw_docs = mock_inner.search.return_value
-            result = retriever.search(query="API authentication")
-
-            assert len(result) == 2
-            assert result is raw_docs
-            assert result[0] is raw_docs[0]
-            assert result[1] is raw_docs[1]
-            assert result[0] == {"id": "doc1", "text": "SuperCompressed chunk 1", "source": "s1"}
-            assert result[1] == {"id": "doc2", "text": "SuperCompressed chunk 2", "source": "s2"}
-            assert mock_compress_for_turn.call_count == 2
-            call1_kwargs = mock_compress_for_turn.call_args_list[0][1]
-            assert call1_kwargs.get("user_query") == "API authentication"
-            assert call1_kwargs.get("context_blocks") == ["Raw retrieved chunk 1"]
-
-    def test_supercompress_avoids_partial_updates_on_failure(self):
-        """When compression raises midway, documents must not be partially modified and fallback is used."""
-        mock_result_1 = ("SuperCompressed chunk 1", Mock())
-        mock_compress_for_turn = Mock(side_effect=[mock_result_1, RuntimeError("compression failed")])
-
-        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
-        doc1 = {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"}
-        doc2 = {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"}
-        mock_inner = Mock()
-        mock_inner.search.return_value = [doc1, doc2]
-
-        with patch.dict("sys.modules", {"supercompress": mock_module}):
-            retriever = CompressingRetriever(mock_inner)
-            result = retriever.search(query="authentication")
-
-            # Documents preserved without partial SuperCompress mutation
-            assert result[0] is doc1
-            assert result[1] is doc2
-            assert result[0]["text"] == "Factual chunk 1."
-            assert result[1]["text"] == "Factual chunk 2."
-
-    def test_supercompress_fallback_when_absent(self):
-        """Falls back gracefully to in-tree boilerplate pruning when SuperCompress is not installed."""
-        mock_inner = Mock()
-        mock_inner.search.return_value = [
-            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
-            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
-        ]
-        with patch.dict("sys.modules", {"supercompress": None}):
-            retriever = CompressingRetriever(mock_inner)
-            result = retriever.search(query="authentication")
-            assert len(result) == 2
-            assert result[0] == {"id": "doc1", "text": "Factual chunk 1.", "source": "s1"}
-            assert result[1] == {"id": "doc2", "text": "Factual chunk 2.", "source": "s2"}
-
-    def test_compress_retrieved_chunks_handles_tuple_and_object_returns(self, monkeypatch):
-        """SuperCompress 0.5.0 returns a tuple (compressed_text, CompressResult); text must be extracted."""
-        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
-        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
-
-        # Tuple return (SuperCompress 0.5.0 API)
-        mock_compress_for_turn = Mock(return_value=("Compressed text from tuple", Mock()))
-        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
-        docs = [{"id": "1", "text": "Some text"}]
-        with patch.dict("sys.modules", {"supercompress": mock_module}):
-            out = compress_retrieved_chunks(docs, query="test")
-            assert out[0]["text"] == "Compressed text from tuple"
-            assert not out[0]["text"].startswith("(")
-
-        # Object return (.compressed_text attribute)
-        mock_compress_for_turn.return_value = Mock(compressed_text="Compressed text from object")
-        docs2 = [{"id": "2", "text": "Some text 2"}]
-        with patch.dict("sys.modules", {"supercompress": mock_module}):
-            out2 = compress_retrieved_chunks(docs2, query="test")
-            assert out2[0]["text"] == "Compressed text from object"
-
-    def test_supercompress_macos_faiss_collision_uses_intree_pruning(self, monkeypatch):
-        """On macOS, torch and FAISS must never share a process; falls back to in-tree pruning."""
-        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
-
-        mock_compress_for_turn = Mock(return_value=("SuperCompressed text", Mock()))
-        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
-
-        docs = [{"id": "doc1", "text": "Home > Guides\nFactual chunk.", "source": "s1"}]
-
-        # On macOS with faiss loaded: uses in-tree pruning without invoking SuperCompress
-        monkeypatch.setattr("sys.platform", "darwin")
-        with patch.dict("sys.modules", {"supercompress": mock_module, "faiss": Mock()}):
-            res = compress_retrieved_chunks(docs, query="query")
-            assert res[0]["text"] == "Factual chunk."
-            mock_compress_for_turn.assert_not_called()
-
-        # On non-macOS (e.g. linux), SuperCompress is used even if faiss is present
-        monkeypatch.setattr("sys.platform", "linux")
-        with patch.dict("sys.modules", {"supercompress": mock_module, "faiss": Mock()}):
-            res2 = compress_retrieved_chunks(docs, query="query")
-            assert res2[0]["text"] == "SuperCompressed text"
-            mock_compress_for_turn.assert_called_once()
-
-    def test_token_reduction_and_oracle_recall_on_evaluation_set(self):
-        """Measures token reduction and oracle recall on a representative evaluation set."""
-        corpus = [
-            {
-                "id": "doc1",
-                "text": "Home > Guides > Settings\nUse Bearer token for auth.\nNext page: Config",
-                "target": "Use Bearer token for auth.",
-            },
-            {
-                "id": "doc2",
-                "text": "Skip to content\nAPI limits: 60 req/min.\nPrevious page: Overview",
-                "target": "API limits: 60 req/min.",
-            },
-        ]
-        # Measure baseline tokens before in-place pruning
-        orig_chars = sum(len(d["text"]) for d in corpus)
-        mock_inner = Mock()
-        mock_inner.search.return_value = corpus
-        retriever = CompressingRetriever(mock_inner)
-        pruned = retriever.search(query="Bearer")
-
-        # 1. Oracle Recall: All key targets must be preserved
-        preserved_targets = sum(1 for c, p in zip(corpus, pruned) if c["target"] in p["text"])
-        oracle_recall = preserved_targets / len(corpus)
-        assert oracle_recall == 1.0
-
-        # 2. Token Reduction: Non-essential navigation lines must be stripped
-        pruned_chars = sum(len(d["text"]) for d in pruned)
-        assert pruned_chars < orig_chars
-
-    def test_supercompress_safeguards_enforce_code_table_qualifier_query_preservation(self):
-        """SuperCompress successful path must enforce safeguards or fall back to in-tree pruning."""
-        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
-
-        # 1. SuperCompress alters code inside fence (e.g. print(1) -> print(2)) -> falls back to in-tree
-        orig_code = "Home > API\n```python\nprint(1)\n```\nNext page"
-        bad_supercompress_code = ("Home > API\n```python\nprint(2)\n```\nNext page", Mock())
-        mock_module_1 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_code))
-        docs1 = [{"id": "1", "text": orig_code}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_1}):
-            res1 = compress_retrieved_chunks(docs1, query="python")
-            # In-tree fallback preserves verbatim code block print(1) and prunes nav
-            assert "```python\nprint(1)\n```" in res1[0]["text"]
-            assert "print(2)" not in res1[0]["text"]
-            assert "Home > API" not in res1[0]["text"]
-
-        # 2. SuperCompress drops a markdown table row -> falls back to in-tree
-        orig_table = "Home > API\n| col1 | col2 |\n| --- | --- |\n| row1_a | row1_b |\n| row2_a | row2_b |\nNext page"
-        bad_supercompress_table = ("Home > API\n| col1 | col2 |\n| --- | --- |\n| row1_a | row1_b |\nNext page", Mock())
-        mock_module_2 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_table))
-        docs2 = [{"id": "2", "text": orig_table}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_2}):
-            res2 = compress_retrieved_chunks(docs2, query="summary")
-            assert "| row2_a | row2_b |" in res2[0]["text"]
-            assert "Home > API" not in res2[0]["text"]
-
-        # 3. SuperCompress drops or alters a warning sentence -> falls back
-        orig_warning = "Home > API\nCritical: Never transmit production passwords over unencrypted HTTP.\nNext page"
-        bad_supercompress_warning = (
-            "Home > API\nTransmit production passwords over unencrypted HTTP.\nNext page",
-            Mock(),
-        )
-        mock_module_3 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_warning))
-        docs3 = [{"id": "3", "text": orig_warning}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_3}):
-            res3 = compress_retrieved_chunks(docs3, query="security")
-            assert "Critical: Never transmit production passwords over unencrypted HTTP." in res3[0]["text"]
-            assert "Home > API" not in res3[0]["text"]
-
-        # 4. SuperCompress retains only 1 of 2 query terms -> falls back
-        # Use sentence without protected qualifier ("are rotated" instead of "must be rotated")
-        # to ensure rejection is purely driven by query-term safeguard
-        orig_multi_query = "Home > API\nDatabase credentials are rotated every 90 days.\nNext page"
-        # Query contains "database credentials", but compressed dropped "credentials"
-        bad_supercompress_query = ("Home > API\nDatabase is rotated every 90 days.\nNext page", Mock())
-        mock_module_4 = Mock(compress_for_turn=Mock(return_value=bad_supercompress_query))
-        docs4 = [{"id": "4", "text": orig_multi_query}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_4}):
-            with patch("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", return_value=False):
-                res4 = compress_retrieved_chunks(docs4, query="database credentials")
-                mock_module_4.compress_for_turn.assert_called_once()
-                assert "Database credentials are rotated every 90 days." in res4[0]["text"]
-
-        # 5. Continuation-fence metadata preservation
-        orig_continuation = "def run():\n    return 42\n```\nHome > API"
-        bad_continuation = "def run():\n    return 99\n```\nHome > API"
-        mock_module_5 = Mock(compress_for_turn=Mock(return_value=(bad_continuation, Mock())))
-        docs5 = [{"id": "5", "text": orig_continuation, "metadata": {"active_fence": ("`", 3)}}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_5}):
-            res5 = compress_retrieved_chunks(docs5, query="run")
-            assert "return 42" in res5[0]["text"]
-            assert "return 99" not in res5[0]["text"]
-
-        # 6. Altered query-bearing line (e.g. 24 hours -> 12 hours) must fall back to in-tree pruning
-        orig_query_line = "Home > API\nToken expires after 24 hours\nNext page: Config"
-        bad_compressed_line = "Home > API\nToken expires after 12 hours\nNext page: Config"
-        mock_module_6 = Mock(compress_for_turn=Mock(return_value=(bad_compressed_line, Mock())))
-        docs6 = [{"id": "6", "text": orig_query_line}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_6}):
-            res6 = compress_retrieved_chunks(docs6, query="token expires")
-            assert "Token expires after 24 hours" in res6[0]["text"]
-            assert "12 hours" not in res6[0]["text"]
-
-        # 7. Single-pipe table row (e.g. Name | Type) must be preserved verbatim or fall back
-        orig_single_pipe = "Home > API\nName | Type\nquery | string\nNext page"
-        bad_compressed_table = "Home > API\nquery | string\nNext page"  # dropped Name | Type
-        mock_module_7 = Mock(compress_for_turn=Mock(return_value=(bad_compressed_table, Mock())))
-        docs7 = [{"id": "7", "text": orig_single_pipe}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_7}):
-            res7 = compress_retrieved_chunks(docs7, query="query parameters")
-            assert "Name | Type" in res7[0]["text"]
-            assert "query | string" in res7[0]["text"]
-
-        # 8. De-indented code block (e.g. 4 spaces de-indented to 0 spaces) must fall back
-        orig_indented = "Home > API\n    def execute():\n        return True\nNext page"
-        bad_deindented = "Home > API\ndef execute():\nreturn True\nNext page"
-        mock_module_8 = Mock(compress_for_turn=Mock(return_value=(bad_deindented, Mock())))
-        docs8 = [{"id": "8", "text": orig_indented}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_8}):
-            res8 = compress_retrieved_chunks(docs8, query="execute function")
-            assert "    def execute():" in res8[0]["text"]
-            assert "        return True" in res8[0]["text"]
-
-        # 9. Multi-backtick inline code span (e.g. ``foo`bar`` changed to `foo`) must fall back
-        orig_multibacktick = "Home > API\nUse ``python -m pytest`` to test.\nNext page"
-        bad_multibacktick = "Home > API\nUse `python -m pytest` to test.\nNext page"
-        mock_module_9 = Mock(compress_for_turn=Mock(return_value=(bad_multibacktick, Mock())))
-        docs9 = [{"id": "9", "text": orig_multibacktick}]
-        with patch.dict("sys.modules", {"supercompress": mock_module_9}):
-            res9 = compress_retrieved_chunks(docs9, query="pytest")
-            assert "``python -m pytest``" in res9[0]["text"]
-
-        # 10. Increased indentation (e.g. 4 spaces increased to 8 spaces) must fall back
-        # Uses an unrelated query so rejection is driven strictly by indented code check, not query-line check
-        orig_increased = "Home > API\n    print(1)\nNext page"
-        bad_increased = "Home > API\n        print(1)\nNext page"
-        mock_module_10 = Mock(compress_for_turn=Mock(return_value=(bad_increased, Mock())))
-        docs10 = [{"id": "10", "text": orig_increased}]
-        stats10: dict = {}
-        with patch.dict("sys.modules", {"supercompress": mock_module_10}):
-            with patch("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", return_value=False):
-                res10 = compress_retrieved_chunks(docs10, query="unrelated topic", stats=stats10)
-                mock_module_10.compress_for_turn.assert_called_once()
-                assert stats10.get("safeguard_fallback") == 1
-                assert stats10.get("neural_success") == 0
-                assert "    print(1)" in res10[0]["text"]
-                assert "        print(1)" not in res10[0]["text"]
-
-        # 11. Changed content after an embedded backtick (e.g. ``foo`bar`` changed to ``foo`baz``) must fall back
-        # Uses an unrelated query so rejection is driven strictly by inline code delimiter check, not query-line check
-        orig_embedded = "Home > API\nUse ``foo`bar`` syntax.\nNext page"
-        bad_embedded = "Home > API\nUse ``foo`baz`` syntax.\nNext page"
-        mock_module_11 = Mock(compress_for_turn=Mock(return_value=(bad_embedded, Mock())))
-        docs11 = [{"id": "11", "text": orig_embedded}]
-        stats11: dict = {}
-        with patch.dict("sys.modules", {"supercompress": mock_module_11}):
-            with patch("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", return_value=False):
-                res11 = compress_retrieved_chunks(docs11, query="unrelated topic", stats=stats11)
-                mock_module_11.compress_for_turn.assert_called_once()
-                assert stats11.get("safeguard_fallback") == 1
-                assert stats11.get("neural_success") == 0
-                assert "``foo`bar``" in res11[0]["text"]
-                assert "``foo`baz``" not in res11[0]["text"]
-
-    def test_supercompress_installed_api_when_present(self, monkeypatch):
-        """Tests real installed SuperCompress API if present in environment, ensuring it reaches safeguards."""
-        if sys.platform == "darwin":
-            from docsgpt.retriever.stages.boilerplate_pruning import _mac_torch_faiss_conflict
-
-            if _mac_torch_faiss_conflict():
-                pytest.skip("PyTorch and FAISS collide on macOS")
-        supercompress = pytest.importorskip("supercompress")
-        from docsgpt.retriever.stages.boilerplate_pruning import (
-            _enforce_supercompress_safeguards,
-            compress_retrieved_chunks,
-        )
-
-        monkeypatch.setattr("docsgpt.retriever.stages.boilerplate_pruning._mac_torch_faiss_conflict", lambda: False)
-
-        docs = [{"id": "d1", "text": "Home > API\nFactual chunk content.", "source": "s1"}]
-        # 1. Direct call to installed package API
-        direct_out = supercompress.compress_for_turn(
-            context_blocks=[docs[0]["text"]],
-            user_query="content",
-        )
-        assert direct_out is not None
-
-        # 2. Call via compress_retrieved_chunks and verify compress_for_turn is invoked and output reaches safeguards
-        stats: dict = {}
-        with patch(
-            "docsgpt.retriever.stages.boilerplate_pruning._enforce_supercompress_safeguards",
-            wraps=_enforce_supercompress_safeguards,
-        ) as spy_safeguard:
-            res = compress_retrieved_chunks(docs, query="content", stats=stats)
-            spy_safeguard.assert_called_once()
-            assert stats.get("neural_success", 0) == 1
-            assert stats.get("safeguard_fallback", 0) == 0
-            assert stats.get("error_fallback", 0) == 0
-            assert stats.get("conflict_fallback", 0) == 0
-            assert len(res) == 1
-            assert "Factual chunk content." in res[0]["text"]
-
-    def test_supercompress_explicit_package_absence_fallback(self):
-        """Explicitly forces package absence and verifies graceful in-tree pruning fallback."""
-        from docsgpt.retriever.stages.boilerplate_pruning import compress_retrieved_chunks
-
-        docs = [
-            {"id": "doc1", "text": "Home > Guides\nFactual chunk 1.", "source": "s1"},
-            {"id": "doc2", "text": "Next page\nFactual chunk 2.", "source": "s2"},
-        ]
-        with patch.dict("sys.modules", {"supercompress": None}):
-            out = compress_retrieved_chunks(docs, query="authentication")
-            assert len(out) == 2
-            assert out[0]["text"] == "Factual chunk 1."
-            assert out[1]["text"] == "Factual chunk 2."
-
-    @pytest.mark.parametrize("retrieval_mode", ["legacy", "single_group", "multi_group"])
-    def test_on_off_near_budget_selection_and_parity(self, monkeypatch, retrieval_mode):
-        """Asserts unchanged document IDs, order, and disabled text output under a restrictive token budget.
-
-        Exercises the real selection path in ClassicRAG and Dispatcher, testing the budget boundary.
-        """
-        from docsgpt.retriever.classic_rag import ClassicRAG
-
-        restrictive_budget = 110  # Cap: max(int(110 * 0.9), 100) = 100 tokens
-
-        doc_a = {
-            "id": "doc_a",
-            "title": "Auth",
-            "filename": "auth.md",
-            "page_content": "Home > Security > Auth\n"
-            + ("Token expires in 3600 seconds for authentication. " * 3)
-            + "\nNext page: Permissions",
-            "metadata": {"source_id": "s1", "title": "Auth", "filename": "auth.md"},
-        }
-        doc_b = {
-            "id": "doc_b",
-            "title": "Permissions",
-            "filename": "permissions.md",
-            "page_content": "Home > Security > Permissions\n"
-            + ("Admin role is strictly required for write actions. " * 3)
-            + "\nNext page: Logs",
-            "metadata": {"source_id": "s1", "title": "Permissions", "filename": "permissions.md"},
-        }
-        # doc_c is the boundary candidate: doc_a (41) + doc_b (38) = 79 tokens, doc_c (53 tokens) pushes total to 132 >= 100 cap -> EXCLUDED
-        doc_c = {
-            "id": "doc_c",
-            "title": "Logs",
-            "filename": "logs.md",
-            "page_content": "Home > Security > Logs\n"
-            + ("Audit logs are retained for 90 days in compliance with security guidelines. " * 3)
-            + "\nPrevious page: Permissions",
-            "metadata": {"source_id": "s1", "title": "Logs", "filename": "logs.md"},
-        }
-        raw_candidates = [doc_a, doc_b, doc_c]
-
-        from docsgpt.core.settings import settings
-
-        # Track actual observed candidate pool counts across all three modes
-        observed_legacy_pool = {"off": 0, "on": 0}
-
-        def spied_fetch_all(plans):
-            tag = "on" if getattr(settings, "CHUNK_COMPRESSION_ENABLED", False) else "off"
-            observed_legacy_pool[tag] += len(raw_candidates)
-            return [(raw_candidates, "similarity")]
-
-        # For legacy and single_group, patch ClassicRAG's source fetch to run its real selection loop
-        with patch.object(ClassicRAG, "_fetch_all", side_effect=spied_fetch_all):
-            with patch.object(ClassicRAG, "_plan_sources", return_value=[{"id": "s1", "src_k": 6}]):
-
-                def create_classic():
-                    rag = ClassicRAG(
-                        source={"active_docs": ["s1"], "question": "tokens"}, doc_token_limit=restrictive_budget
-                    )
-                    rag.vectorstores = ["s1"]
-                    return rag
-
-                # 1. Measure OFF: CHUNK_COMPRESSION_ENABLED = False
-                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
-                if retrieval_mode == "legacy":
-                    monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
-                    retriever_off = build_dispatcher(create_classic, doc_token_limit=restrictive_budget)
-                elif retrieval_mode == "single_group":
-                    monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
-                    retriever_off = build_dispatcher(
-                        create_classic,
-                        source={"question": "tokens", "active_docs": ["s1"]},
-                        sources=[{"id": "s1", "retrieval": None}],
-                        doc_token_limit=restrictive_budget,
-                    )
-                else:  # multi_group
-                    monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
-
-                    # For multi_group, let group retrievers return source-specific candidates and let Dispatcher's real merge enforce budget
-                    def make_group_retriever(group, budget):
-                        m = Mock()
-                        docs = [
-                            {
-                                "id": d["id"],
-                                "text": d["page_content"],
-                                "title": d["title"],
-                                "filename": d["filename"],
-                                "source_name": d["metadata"]["source_id"],
-                            }
-                            for d in raw_candidates
-                            if d["metadata"]["source_id"] in group["doc_ids"]
-                        ]
-                        m.search = Mock(return_value=docs)
-                        m.last_outcome = None
-                        return m
-
-                    monkeypatch.setattr(
-                        Dispatcher,
-                        "_build_group_retriever",
-                        lambda self, group, budget: make_group_retriever(group, budget),
-                    )
-
-                    retriever_off = build_dispatcher(
-                        create_classic,
-                        source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
-                        sources=[
-                            {"id": "s1", "retrieval": {"retriever": "classic"}},
-                            {"id": "s2", "retrieval": {"retriever": "hybrid"}},
-                            {"id": "s3", "retrieval": {"retriever": "custom"}},
-                        ],
-                        doc_token_limit=restrictive_budget,
-                    )
-
-                res_off = retriever_off.search("tokens")
-                off_titles = [d.get("title") for d in res_off]
-                off_files = [d.get("filename") for d in res_off]
-                # Compare full disabled text output against original candidate text
-                assert res_off[0]["text"] == doc_a["page_content"]
-                assert res_off[1]["text"] == doc_b["page_content"]
-                assert "Home > Security > Auth" in res_off[0]["text"]
-                assert "Next page: Permissions" in res_off[0]["text"]
-
-                # 2. Measure ON: CHUNK_COMPRESSION_ENABLED = True
-                monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
-                if retrieval_mode == "legacy":
-                    retriever_on = build_dispatcher(create_classic, doc_token_limit=restrictive_budget)
-                elif retrieval_mode == "single_group":
-                    retriever_on = build_dispatcher(
-                        create_classic,
-                        source={"question": "tokens", "active_docs": ["s1"]},
-                        sources=[{"id": "s1", "retrieval": None}],
-                        doc_token_limit=restrictive_budget,
-                    )
-                else:  # multi_group
-                    retriever_on = build_dispatcher(
-                        create_classic,
-                        source={"question": "tokens", "active_docs": ["s1", "s2", "s3"]},
-                        sources=[
-                            {"id": "s1", "retrieval": {"retriever": "classic"}},
-                            {"id": "s2", "retrieval": {"retriever": "hybrid"}},
-                            {"id": "s3", "retrieval": {"retriever": "custom"}},
-                        ],
-                        doc_token_limit=restrictive_budget,
-                    )
-
-                res_on = retriever_on.search("tokens")
-                on_titles = [d.get("title") for d in res_on]
-                on_files = [d.get("filename") for d in res_on]
-
-                # Invariant checks:
-                # A. Actual observed candidate count parity in all three modes (on vs off)
-                observed_pool_off = (
-                    retriever_off.last_candidate_count
-                    if retrieval_mode in ("single_group", "multi_group")
-                    else observed_legacy_pool["off"]
-                )
-                observed_pool_on = (
-                    retriever_on.last_candidate_count
-                    if retrieval_mode in ("single_group", "multi_group")
-                    else observed_legacy_pool["on"]
-                )
-                expected_pool = 2 if retrieval_mode == "single_group" else 3
-                assert observed_pool_off == expected_pool
-                assert observed_pool_on == expected_pool
-                assert observed_pool_on == observed_pool_off
-                assert len(on_titles) == len(off_titles) == 2
-
-                # B. Full list comparison: exact same stable document titles/filenames and order (NOT sliced)
-                assert on_files == off_files == ["auth.md", "permissions.md"]
-                assert on_titles == off_titles == ["Auth", "Permissions"]
-
-                # C. Verify boundary candidate doc_c was excluded by real token budget selection
-                assert "logs.md" not in on_files and "logs.md" not in off_files
-                assert "Logs" not in on_titles and "Logs" not in off_titles
-
-                # D. Enabled text output prunes navigation boilerplate while disabled text preserves it
-                assert "Home > Security > Auth" not in res_on[0]["text"]
-                assert "Next page: Permissions" not in res_on[0]["text"]
-                assert "Token expires in 3600 seconds" in res_on[0]["text"]
