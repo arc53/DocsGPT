@@ -70,8 +70,18 @@ READ_ITEM_CHARS = 300
 #: Each of a turn's model calls resends them, so this bounds a turn's input however long the conversation runs.
 HISTORY_CHARS = 240_000
 
-#: The clock the turn and call deadlines run on.
+#: Seconds before a retry when the provider asked for no particular wait.
+RETRY_BACKOFF_SECONDS = 2.0
+#: Longest ``Retry-After`` a retry waits out; a provider asking for longer ends the turn at once.
+MAX_RETRY_WAIT_SECONDS = 10.0
+#: Seconds a retry must still have before the deadline to be worth starting.
+MIN_RETRY_SECONDS = 30.0
+#: Seconds between the stop checks while a retry waits.
+STOP_CHECK_SECONDS = 0.25
+
+#: The clock the turn and call deadlines run on, and the sleep a retry waits with.
 _now = time.monotonic
+_sleep = time.sleep
 
 TIMED_OUT = "The model took too long to answer. Try again in a moment."
 UNREACHABLE = "The model could not be reached. Try again in a moment."
@@ -309,8 +319,9 @@ def _limit_retries(llm: Any, retries: int) -> None:
 def build_llm(user_id: str, model_id: str, request_id: str) -> Any:
     """The drafter's LLM: the task model under the caller, stateless, billed as ``drafter``.
 
-    Its SDK retries are capped at ``DRAFTER_MODEL_RETRIES``: a provider's
-    Retry-After can hold one retry for minutes, which a draft can't wait out.
+    Its SDK clients never retry: a provider's ``Retry-After`` can hold one
+    retry for minutes, which a draft can't wait out. The turn retries
+    itself, within its deadline (:func:`_retry_wait`).
     """
     from docsgpt.core.model_utils import get_api_key_for_provider, get_provider_from_model_id
     from docsgpt.llm.llm_creator import LLMCreator
@@ -328,7 +339,7 @@ def build_llm(user_id: str, model_id: str, request_id: str) -> Any:
     llm._token_usage_source = TOKEN_USAGE_SOURCE
     llm._request_id = request_id
     llm._drafter_provider = provider
-    _limit_retries(llm, int(settings.DRAFTER_MODEL_RETRIES))
+    _limit_retries(llm, 0)
     return llm
 
 
@@ -372,6 +383,49 @@ def _interruption(should_stop: Callable[[], bool], deadline: Optional[float]) ->
     if deadline is not None and _now() >= deadline:
         return _TimedOut()
     return None
+
+
+def _retry_wait(error: Exception, attempt: int, deadline: Optional[float]) -> Optional[float]:
+    """Seconds to wait before retrying a model call that failed before it answered, or None to give up now.
+
+    Only a failure another try may fix is retried (a 5xx, 408, 409, 425 or
+    429, a timeout, a dropped connection), at most ``DRAFTER_MODEL_RETRIES``
+    times. The wait is the provider's ``Retry-After`` when it sent one: a
+    wait past :data:`MAX_RETRY_WAIT_SECONDS`, or one that leaves the retry
+    less than :data:`MIN_RETRY_SECONDS` before the deadline, gives up at
+    once, so the user can try again instead of watching the turn run out.
+
+    Args:
+        error: What the call raised.
+        attempt: Retries made so far.
+        deadline: The clock reading the call must finish by, or None.
+    """
+    from docsgpt.agents.workflows.retry import classify_failure, retry_after_seconds, TRANSIENT
+
+    if attempt >= settings.DRAFTER_MODEL_RETRIES or classify_failure(error, "agent") != TRANSIENT:
+        return None
+    wait = retry_after_seconds(error)
+    wait = RETRY_BACKOFF_SECONDS if wait is None else wait
+    if wait > MAX_RETRY_WAIT_SECONDS or (deadline is not None and _now() + wait + MIN_RETRY_SECONDS > deadline):
+        return None
+    return wait
+
+
+def _pause(seconds: float, should_stop: Callable[[], bool]) -> None:
+    """Wait ``seconds`` before a retry, checking for a stop meanwhile.
+
+    Raises:
+        _Stopped: The turn was stopped while waiting.
+    """
+    left = seconds
+    while True:
+        if should_stop():
+            raise _Stopped()
+        if left <= 0:
+            return
+        step = min(left, STOP_CHECK_SECONDS)
+        _sleep(step)
+        left -= step
 
 
 class _Turn:
@@ -455,7 +509,10 @@ class _Turn:
         silent connection is cut by a proxy in front of the model (a 524
         from Cloudflare after about two minutes) while the model still
         writes. A Stop or a missed deadline closes the stream at once, so
-        the model stops writing (and billing) an answer nobody reads.
+        the model stops writing (and billing) an answer nobody reads. A
+        call that failed before it answered is retried when
+        :func:`_retry_wait` allows; one that failed partway never is, since
+        its retry would bill the answer again.
 
         Args:
             final: The last call of the turn: only the terminal tools are offered.
@@ -473,15 +530,41 @@ class _Turn:
             tools = _terminal_definitions(self.recipe, self.allow_questions)
             if not final:
                 tools = tool_definitions(self.read_tools) + tools
+        deadlines = [d for d in (_deadline_after(settings.DRAFTER_CALL_TIMEOUT_SECONDS), turn_deadline) if d]
+        deadline = min(deadlines) if deadlines else None
+        attempt = 0
+        while True:
+            answered: list[bool] = []
+            try:
+                return self._stream(tools, should_stop, deadline, answered)
+            except Exception as exc:
+                wait = None if answered else _retry_wait(exc, attempt, deadline)
+                if wait is None:
+                    raise
+                logger.warning("drafter: a model call failed before it answered (%s); retrying in %g s",
+                               type(exc).__name__, wait)
+            attempt += 1
+            _pause(wait, should_stop)
+
+    def _stream(self, tools: list[dict], should_stop: Callable[[], bool], deadline: Optional[float],
+                answered: list[bool]) -> Any:
+        """Stream one model call and read it whole; ``answered`` gets an entry once the first chunk arrives."""
         from docsgpt.llm.deadlines import interruptible
         from docsgpt.llm.handlers.base import collect_stream
 
-        deadlines = [d for d in (_deadline_after(settings.DRAFTER_CALL_TIMEOUT_SECONDS), turn_deadline) if d]
-        deadline = min(deadlines) if deadlines else None
+        def noted(chunks: Iterator[Any]) -> Iterator[Any]:
+            try:
+                for chunk in chunks:
+                    if not answered:
+                        answered.append(True)
+                    yield chunk
+            finally:
+                chunks.close()
+
         model = getattr(self.llm, "model_id", None) or self.model_id
         stream = self.llm.gen_stream(model=model, messages=list(self.messages), tools=tools)
         return collect_stream(
-            interruptible(stream, lambda: _interruption(should_stop, deadline)),
+            noted(interruptible(stream, lambda: _interruption(should_stop, deadline))),
             lambda chunk: _parse_response(self.llm, chunk),
             finished=lambda: bool(getattr(self.llm, "_stream_reached_finish", False)),
         )

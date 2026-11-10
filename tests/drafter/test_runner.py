@@ -687,17 +687,18 @@ class TestModelAuth:
         assert all("model_auth" in r.getMessage() and "sk-secret" not in r.getMessage() for r in records)
         caplog.clear()
         with caplog.at_level("WARNING", logger="docsgpt.drafter.runner"):
-            _run(FakeLLM(_Status(500)))
-        assert [r.exc_info is not None for r in caplog.records if r.name == "docsgpt.drafter.runner"] == [True]
+            _run(FakeLLM(_Status(500), _Status(500)))
+        records = [r for r in caplog.records if r.name == "docsgpt.drafter.runner"]
+        assert [r.exc_info is not None for r in records] == [False, True], "the retry's line, then the failure's"
 
     def test_other_failures_stay_model_error(self):
-        assert _run(FakeLLM(_Status(500)))[-1]["code"] == "model_error"
+        assert _run(FakeLLM(_Status(500), _Status(500)))[-1]["code"] == "model_error"
         assert _run(FakeLLM(RuntimeError("boom")))[-1]["code"] == "model_error"
 
 
 @pytest.mark.unit
 class TestRetries:
-    def test_drafter_clients_retry_at_most_the_setting(self, monkeypatch):
+    def test_drafter_clients_never_retry_in_the_sdk(self, monkeypatch):
         from docsgpt.core.settings import settings
         from docsgpt.drafter import runner
 
@@ -715,9 +716,102 @@ class TestRetries:
                 self.client = Client()
                 self.anthropic = Client()
 
-        monkeypatch.setattr(settings, "DRAFTER_MODEL_RETRIES", 1)
+        monkeypatch.setattr(settings, "DRAFTER_MODEL_RETRIES", 3)
         monkeypatch.setattr("docsgpt.llm.llm_creator.LLMCreator.create_llm", lambda *a, **k: LLM())
         monkeypatch.setattr("docsgpt.core.model_utils.get_provider_from_model_id", lambda *a, **k: "openai")
         monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda *a: "k")
         llm = runner.build_llm("alice", "m", "drafter:x")
-        assert llm.client.max_retries == 1 and llm.anthropic.max_retries == 1
+        assert llm.client.max_retries == 0 and llm.anthropic.max_retries == 0, "the drafter retries itself"
+
+
+class _HTTPError(Exception):
+    """A provider's HTTP error, with the ``Retry-After`` it sent."""
+
+    def __init__(self, status_code, retry_after=None):
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
+        headers = {} if retry_after is None else {"retry-after": str(retry_after)}
+        self.response = SimpleNamespace(status_code=status_code, headers=headers)
+
+
+class _FailingMidAnswer(FakeLLM):
+    """A model whose first stream fails after it wrote some of the answer."""
+
+    def chunks(self, answer):
+        if answer == "mid":
+            yield "Half an ans"
+            raise _HTTPError(502)
+        yield from super().chunks(answer)
+
+
+@pytest.mark.unit
+class TestDrafterRetries:
+    @pytest.fixture(autouse=True)
+    def waits(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter import runner
+
+        slept = []
+        monkeypatch.setattr(runner, "_sleep", slept.append)
+        monkeypatch.setattr(settings, "DRAFTER_MODEL_RETRIES", 1)
+        monkeypatch.setattr(settings, "DRAFTER_TURN_TIMEOUT_SECONDS", 300)
+        return slept
+
+    @pytest.mark.parametrize("error", [_HTTPError(524), _HTTPError(503), _HTTPError(429), ConnectionError("reset")])
+    def test_a_passing_failure_before_any_answer_is_retried(self, waits, error):
+        fake = FakeLLM(error, calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake)
+        assert events[-1]["type"] == "proposal"
+        assert len(fake.calls) == 2 and sum(waits) == pytest.approx(2.0)
+
+    def test_a_short_retry_after_is_waited_out(self, waits):
+        fake = FakeLLM(_HTTPError(429, retry_after=5), calls(tool_call("submit_proposal", PROPOSAL)))
+        assert _run(fake)[-1]["type"] == "proposal"
+        assert sum(waits) == pytest.approx(5.0)
+
+    def test_a_long_retry_after_ends_the_turn_at_once(self, waits):
+        fake = FakeLLM(_HTTPError(524, retry_after=120), calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake)
+        assert events[-1]["code"] == "model_error"
+        assert len(fake.calls) == 1 and waits == []
+
+    def test_a_retry_the_turn_has_no_time_for_is_not_started(self, waits, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DRAFTER_TURN_TIMEOUT_SECONDS", 20)
+        fake = FakeLLM(_HTTPError(503), calls(tool_call("submit_proposal", PROPOSAL)))
+        assert _run(fake)[-1]["code"] == "model_error"
+        assert len(fake.calls) == 1 and waits == []
+
+    @pytest.mark.parametrize("error", [_HTTPError(400), _HTTPError(404), _Status(401), RuntimeError("boom")])
+    def test_a_failure_another_try_cannot_fix_is_not_retried(self, waits, error):
+        fake = FakeLLM(error, calls(tool_call("submit_proposal", PROPOSAL)))
+        assert _run(fake)[-1]["type"] == "error"
+        assert len(fake.calls) == 1 and waits == []
+
+    def test_a_failure_after_part_of_the_answer_is_not_retried(self, waits):
+        fake = _FailingMidAnswer("mid", calls(tool_call("submit_proposal", PROPOSAL)))
+        assert _run(fake)[-1]["code"] == "model_error"
+        assert len(fake.calls) == 1
+
+    def test_no_retry_at_zero(self, waits, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DRAFTER_MODEL_RETRIES", 0)
+        fake = FakeLLM(_HTTPError(503), calls(tool_call("submit_proposal", PROPOSAL)))
+        assert _run(fake)[-1]["code"] == "model_error"
+        assert len(fake.calls) == 1
+
+    def test_retries_stop_at_the_setting(self, waits, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DRAFTER_MODEL_RETRIES", 2)
+        fake = FakeLLM(_HTTPError(503), _HTTPError(503), _HTTPError(503), calls(tool_call("submit_proposal", PROPOSAL)))
+        assert _run(fake)[-1]["code"] == "model_error"
+        assert len(fake.calls) == 3
+
+    def test_a_stop_while_waiting_ends_the_turn_quietly(self, waits, monkeypatch):
+        fake = FakeLLM(_HTTPError(503), calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake, should_stop=lambda: len(fake.calls) > 0 and bool(waits))
+        assert [e["type"] for e in events] == ["status", "status"]
+        assert len(fake.calls) == 1

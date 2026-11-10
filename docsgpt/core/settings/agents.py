@@ -214,8 +214,10 @@ class AgentSettings(SettingsGroup):
         default=1,
         ge=0,
         description=(
-            "Retries the provider SDK makes for one drafter model call after a failed request (OpenAI-compatible "
-            "and Anthropic models). Low by default: a retry can wait out a provider's Retry-After, which "
-            "the turn deadline cuts short anyway."
+            "Retries of one drafter model call that failed before it answered with an error another try may fix "
+            "(a 5xx, 429, timeout or dropped connection). A retry waits what the provider's Retry-After asks, up "
+            "to 10 seconds, and starts only with at least 30 seconds of the deadline left; otherwise the turn "
+            "ends at once with an error the panel offers to try again. A call that failed partway is never "
+            "retried, and the provider SDK makes no retries of its own."
         ),
     )
