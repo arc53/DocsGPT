@@ -60,12 +60,12 @@ describe('AllSchedules', () => {
     container.remove();
   });
 
-  const render = async () => {
+  const render = async (path = '/activity/schedules') => {
     await act(async () => {
       root.render(
         <Provider store={makeStore()}>
           <TooltipProvider>
-            <MemoryRouter>
+            <MemoryRouter initialEntries={[path]}>
               <AllSchedules />
             </MemoryRouter>
           </TooltipProvider>
@@ -119,6 +119,43 @@ describe('AllSchedules', () => {
     const sections = Array.from(container.querySelectorAll('section'));
     expect(sections[1].textContent).toContain('teamAccess.editor');
     expect(sections[0].textContent).not.toContain('teamAccess.editor');
+  });
+
+  it('a link to one schedule opens its run log and scrolls to it', async () => {
+    const scrolled: string[] = [];
+    const scrollIntoView = vi.fn(function (this: HTMLElement) {
+      scrolled.push(this.dataset.scheduleId ?? '');
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    service.listAll.mockResolvedValue({
+      schedules: [
+        schedule({ id: 's1', agent_name: 'Deal Desk' }),
+        schedule({
+          id: 's2',
+          name: 'Nightly CRM digest',
+          status: 'paused',
+          consecutive_failure_count: 3,
+          agent_name: 'Deal Desk',
+        }),
+      ],
+    });
+    await render('/activity/schedules?schedule=s2');
+    const runsToggle = (id: string, label: string) =>
+      container.querySelector(
+        `[data-schedule-id="${id}"] button[aria-label="agents.schedules.${label}"]`,
+      );
+    expect(runsToggle('s2', 'hideRuns')?.getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    expect(runsToggle('s1', 'showRuns')?.getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(scrolled).toEqual(['s2']);
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown })
+      .scrollIntoView;
   });
 
   it('shows the empty state when there are no schedules', async () => {

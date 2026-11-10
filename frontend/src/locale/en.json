@@ -75,7 +75,9 @@
         "monitor_expired": "Monitor expired",
         "schedule": "Scheduled task finished",
         "default": "New reply",
-        "docs_gaps": "Weekly docs-gap summary"
+        "docs_gaps": "Weekly docs-gap summary",
+        "schedule_paused": "Scheduled task paused",
+        "schedule_failed": "Scheduled task failed"
       },
       "open": "Open",
       "fallbackTitle": "Your assistant has an update"

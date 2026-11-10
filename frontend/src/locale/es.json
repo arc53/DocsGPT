@@ -76,7 +76,9 @@
         "monitor_expired": "Monitor caducado",
         "schedule": "Tarea programada terminada",
         "default": "Nueva respuesta",
-        "docs_gaps": "Resumen semanal de huecos en la documentación"
+        "docs_gaps": "Resumen semanal de huecos en la documentación",
+        "schedule_paused": "Tarea programada en pausa",
+        "schedule_failed": "Tarea programada fallida"
       },
       "open": "Abrir",
       "fallbackTitle": "Tu asistente tiene novedades"

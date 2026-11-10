@@ -74,7 +74,9 @@
         "monitor_expired": "モニターの期限が切れました",
         "schedule": "予定したタスクが完了しました",
         "default": "新しい返信",
-        "docs_gaps": "ドキュメントの不足の週次サマリー"
+        "docs_gaps": "ドキュメントの不足の週次サマリー",
+        "schedule_paused": "予定したタスクが一時停止されました",
+        "schedule_failed": "予定したタスクが失敗しました"
       },
       "open": "開く",
       "fallbackTitle": "アシスタントからのお知らせ"

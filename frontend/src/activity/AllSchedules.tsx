@@ -2,7 +2,7 @@ import { ArrowRight, MessageSquare, Plus, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import PageToolbar from '@/components/PageToolbar';
 import SearchInput from '@/components/SearchInput';
@@ -61,7 +61,8 @@ type ScheduleGroup = {
 /**
  * Activity › Schedules: every schedule the caller owns, across agents,
  * grouped by agent, with the agentless ones the assistant made in a chat
- * last. Rows work as on an agent's Schedules page.
+ * last. Rows work as on an agent's Schedules page. `?schedule=<id>` (a
+ * notification's Open) opens that schedule's run log and scrolls to it.
  */
 export default function AllSchedules() {
   const { t } = useTranslation();
@@ -71,9 +72,11 @@ export default function AllSchedules() {
   const loading = useSelector(selectAllSchedulesLoading);
   const failed = useSelector(selectAllSchedulesError);
   const agents = useSelector(selectAgents);
+  const [searchParams] = useSearchParams();
+  const focusId = searchParams.get('schedule');
 
   const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(focusId);
   const [activeRun, setActiveRun] = useState<ScheduleRun | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
@@ -89,6 +92,24 @@ export default function AllSchedules() {
   useEffect(() => {
     dispatch(loadAllSchedules({ token }));
   }, [dispatch, token]);
+
+  const focused = focusId
+    ? (schedules ?? []).find((item) => item.id === focusId)
+    : undefined;
+  const focusFound = Boolean(focused);
+
+  // Opened again from another notification while this page shows: follow it.
+  useEffect(() => {
+    if (focusId) setExpanded(focusId);
+  }, [focusId]);
+
+  useEffect(() => {
+    if (!focusId || !focusFound) return;
+    const row = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-schedule-id]'),
+    ).find((element) => element.dataset.scheduleId === focusId);
+    row?.scrollIntoView?.({ block: 'center' });
+  }, [focusId, focusFound]);
 
   const agentNames = useMemo(
     () => new Map((agents ?? []).map((agent) => [agent.id, agent.name])),
@@ -367,7 +388,9 @@ export default function AllSchedules() {
           action={newButton}
         />
       ) : (
-        <Tabs defaultValue="recurring">
+        <Tabs
+          defaultValue={focused?.trigger_type === 'once' ? 'once' : 'recurring'}
+        >
           <TabsList>
             <TabsTrigger value="recurring">
               {t('agents.schedules.recurring')}
