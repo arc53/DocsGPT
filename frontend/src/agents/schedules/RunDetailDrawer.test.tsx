@@ -132,6 +132,27 @@ describe('RunDetailDrawer', () => {
     );
   });
 
+  it('titles the error by its label and shows the reason', async () => {
+    await act(async () =>
+      root.render(
+        <RunDetailDrawer
+          run={{
+            ...run,
+            error_type: 'cannot_complete',
+            error: 'Step 1 (open the site): no browser tool',
+            output: 'Step 1 (open the site): no browser tool',
+          }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const [error] = Array.from(content()!.querySelectorAll('h3'));
+    expect(error.textContent).toBe("Error (the agent can't do this task)");
+    expect(content()!.querySelector('pre')!.textContent).toBe(
+      'Step 1 (open the site): no browser tool',
+    );
+  });
+
   it('closes from the X', async () => {
     const onClose = vi.fn();
     await act(async () =>

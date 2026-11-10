@@ -4248,7 +4248,8 @@
         "missed": "错过了运行时间",
         "overlap": "上一次运行仍在进行",
         "stream_error": "回答流中断",
-        "empty_output": "没有产生任何输出"
+        "empty_output": "没有产生任何输出",
+        "cannot_complete": "智能体无法完成此任务"
       },
       "viewRuns": "查看运行",
       "fromChat": "来自 {{name}}",
