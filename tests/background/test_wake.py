@@ -158,6 +158,9 @@ class TestJobFiles:
         ]
         single = {**_FILES_JOB, "tool_name": "artifact_generator", "result": {"text": "ok", "artifact_id": "a9"}}
         assert wake.job_files(single) == [{"id": "a9", "tool_name": "artifact_generator", "job_id": "j1"}]
+        single_event = wake.job_event(single)
+        assert single_event["payload"]["files"] == ["a9"]
+        assert "The files it wrote are shown under your reply." in single_event["body"]
         assert wake.job_files({**_FILES_JOB, "result": {"text": "ok"}}) == []
 
     def test_a_failed_jobs_files_are_not_shown(self):

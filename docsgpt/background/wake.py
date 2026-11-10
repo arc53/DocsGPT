@@ -227,8 +227,7 @@ def job_event(job: Dict[str, Any], *, files_on_reply: bool = True) -> Dict[str, 
     files = job_files(job)
     if files:
         # A failed run's files are shown nowhere, so the model isn't told about them either.
-        if view.get("artifacts"):
-            payload["files"] = [_file_label(f) for f in files]
+        payload["files"] = [_file_label(f) for f in files]
         lines.append(_files_line(files, on_reply=files_on_reply))
     return {"title": title, "body": "\n".join(line for line in lines if line), "payload": payload or None}
 
