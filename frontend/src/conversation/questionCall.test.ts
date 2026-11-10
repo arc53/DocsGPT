@@ -85,6 +85,8 @@ describe('questionState', () => {
       result: 'Reworded later.' as never,
     });
     expect(questionState(asText)).toBeNull();
+    // The answer holds those questions: no step row repeats them.
+    expect(isHiddenCall(asText)).toBe(true);
     // An answered call whose answer happens to start like that is still one.
     const answered = askUser({
       status: 'success',

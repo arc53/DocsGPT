@@ -8,7 +8,12 @@ export interface StreamEvent {
 export interface ToolCallEvent {
   action_name?: string;
   tool_name?: string;
+  /** `text` when the call's questions were written into the answer. */
+  shown_as?: string;
 }
+
+/** The clarifying-questions tool: its questions are the answer's text. */
+const ASK_USER = 'ask_user';
 
 /** internal_search -> Internal Search */
 export const prettifyName = (name: string): string =>
@@ -47,9 +52,19 @@ export const workflowStepLabel = (
   }
 };
 
+/**
+ * The names for the answer's "Tools used" line. Asking the user questions is
+ * not a tool the answer used: the widget gets them as the answer's text.
+ */
 export const toolNames = (calls: unknown): string[] => {
   if (!Array.isArray(calls)) return [];
   return calls
+    .filter(
+      (call: ToolCallEvent | null) =>
+        call?.shown_as !== 'text' &&
+        call?.action_name !== ASK_USER &&
+        call?.tool_name !== ASK_USER,
+    )
     .map((call: ToolCallEvent | null) => call?.action_name ?? call?.tool_name)
     .filter((name): name is string => Boolean(name));
 };
