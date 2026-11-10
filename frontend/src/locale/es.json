@@ -5032,7 +5032,7 @@
     "notAnswered": "Sin responder",
     "justAnswer": "Solo responde",
     "skipped": "Omitida",
-    "yourAnswer": "Tu respuesta",
+    "answeredInMessage": "Respondidas en tu mensaje",
     "typeAnswer": "O escribe tu respuesta…"
   }
 }

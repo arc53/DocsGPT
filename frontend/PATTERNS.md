@@ -524,10 +524,14 @@ with `{call_id, skipped: true}`. While it waits, the composer's placeholder is
 "Or type your answer…", and a message sent from it is the answer (`answer`
 is the typed text), not a new turn; with files attached it goes out as a new
 message, which moves past the questions. Afterwards, and in a reloaded chat,
-the block is the record, with no extra user bubble: each question with its
-answer read back from the result's lines (a reply typed for several questions
-shows once, under "Your answer"), muted "Skipped" after Just answer, and "Not
-answered" for questions the chat moved past or that expired. A round the
+the block is the record: each question with its answer read back from the
+result's lines, muted "Skipped" after Just answer, and "Not answered" for
+questions the chat moved past or that expired. A reply typed in the composer
+(a result with no "<question> → " line, even for one question) folds the
+questions into one `subtle sm` Card, their titles and a muted "Answered in
+your message", and shows under it as the user's own bubble (`bg-secondary
+rounded-3xl`, `self-end` on the column, its right edge on the `mr-5` gutter),
+so the turn reads question, reply, answer. A round the
 server refused (`error_type: "questions_not_asked"`) is internal and shows
 nowhere. Activity › Now lists a paused turn as "Waiting for your answer".
 

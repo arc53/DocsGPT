@@ -5198,7 +5198,7 @@
     "notAnswered": "Без ответа",
     "justAnswer": "Просто ответь",
     "skipped": "Пропущен",
-    "yourAnswer": "Ваш ответ",
+    "answeredInMessage": "Ответ — в вашем сообщении",
     "typeAnswer": "Или введите свой ответ…"
   }
 }

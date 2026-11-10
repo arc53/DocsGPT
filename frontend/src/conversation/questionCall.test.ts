@@ -191,10 +191,12 @@ describe('readAnswers', () => {
     ).toEqual({ answers: { q1: 'Q3 2026', q2: 'Internal' }, reply: null });
   });
 
-  it('takes a typed reply as the answer of a lone question', () => {
+  // Send answers always writes "<question> → " lines; text without one was
+  // typed in the composer, and shows as the user's own message.
+  it('returns a typed reply whole, even for a lone question', () => {
     expect(readAnswers(questions.slice(0, 1), 'last one')).toEqual({
-      answers: { q1: 'last one' },
-      reply: null,
+      answers: {},
+      reply: 'last one',
     });
     expect(readAnswers(questions, 'Q3, for them')).toEqual({
       answers: {},

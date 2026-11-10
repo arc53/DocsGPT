@@ -18,7 +18,9 @@ import { cn } from '@/lib/utils';
  * the model's lead-in line as answer text, then the questions. Waiting, they
  * are cards to answer with Send answers or pass with Just answer; afterwards
  * they fold into the record of what was answered (or "Skipped", or "Not
- * answered" for questions the chat moved past).
+ * answered" for questions the chat moved past). A reply typed in the
+ * composer folds them into one card, "Answered in your message", and shows
+ * as the user's own bubble under it.
  *
  * Args:
  *   call: The `ask_user` call.
@@ -47,14 +49,12 @@ export default function QuestionBlock({
       ? readAnswers(questions, result)
       : { answers: {}, reply: null };
   // Under a question with no answer: "Skipped", "Not answered" (the
-  // default), or nothing while waiting, for a reply typed for them all, or
-  // while the answer is still on its way.
+  // default), or nothing while waiting or while the answer is still on its
+  // way.
   const emptyLabel =
     state === 'skipped'
       ? t('questions.skipped')
-      : state === 'awaiting' ||
-          reply ||
-          (state === 'answered' && result === null)
+      : state === 'awaiting' || (state === 'answered' && result === null)
         ? null
         : undefined;
 
@@ -64,34 +64,60 @@ export default function QuestionBlock({
     <div className="w-full min-w-0" data-slot="question-block">
       <div
         className={cn(
-          'my-2 mr-5 ml-6 flex flex-col',
-          active
-            ? 'animate-in fade-in gap-3 duration-160 ease-out motion-reduce:animate-none'
-            : 'gap-2',
+          'my-2 mr-5 ml-6 flex flex-col gap-4',
+          active &&
+            'animate-in fade-in duration-160 ease-out motion-reduce:animate-none',
         )}
       >
-        {message && (
-          <p className="leading-normal wrap-break-word whitespace-pre-wrap">
-            {message}
-          </p>
-        )}
-        <QuestionCards
-          questions={questions}
-          active={active}
-          onAnswer={(answer) => onAction?.(call.call_id, { answer })}
-          onSkip={() => onAction?.(call.call_id, { skipped: true })}
-          skipLabel={t('questions.justAnswer')}
-          answers={state === 'awaiting' ? undefined : answers}
-          emptyLabel={emptyLabel}
-          className={active ? undefined : 'gap-2'}
-        />
-        {reply && (
-          <Card variant="subtle" padding="sm" className="gap-1">
-            <p className="text-sm font-medium">{t('questions.yourAnswer')}</p>
-            <p className="text-sm wrap-break-word whitespace-pre-wrap">
-              {reply}
+        <div className={cn('flex flex-col', active ? 'gap-3' : 'gap-2')}>
+          {message && (
+            <p className="leading-normal wrap-break-word whitespace-pre-wrap">
+              {message}
             </p>
-          </Card>
+          )}
+          {reply ? (
+            <Card
+              variant="subtle"
+              padding="sm"
+              className="gap-2"
+              data-slot="question-record"
+            >
+              {questions.map((question, index) => (
+                <p
+                  key={question.id}
+                  className="text-sm font-medium wrap-break-word"
+                >
+                  {questions.length > 1 ? `${index + 1}. ` : ''}
+                  {question.text}
+                </p>
+              ))}
+              <p className="text-muted-foreground text-sm">
+                {t('questions.answeredInMessage')}
+              </p>
+            </Card>
+          ) : (
+            <QuestionCards
+              questions={questions}
+              active={active}
+              onAnswer={(answer) => onAction?.(call.call_id, { answer })}
+              onSkip={() => onAction?.(call.call_id, { skipped: true })}
+              skipLabel={t('questions.justAnswer')}
+              answers={state === 'awaiting' ? undefined : answers}
+              emptyLabel={emptyLabel}
+              className={active ? undefined : 'gap-2'}
+            />
+          )}
+        </div>
+        {/* The reply is the user's message, so it is their bubble (the
+            drafter's recipe, DraftPanel), its right edge on the column's
+            mr-5 gutter like the question bubble's. */}
+        {reply && (
+          <div
+            className="bg-secondary text-foreground ml-8 self-end rounded-3xl px-5 py-4 text-sm leading-normal wrap-anywhere whitespace-pre-wrap sm:text-base"
+            data-slot="question-reply"
+          >
+            {reply}
+          </div>
         )}
       </div>
     </div>

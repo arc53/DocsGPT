@@ -4887,7 +4887,7 @@
     "notAnswered": "Not answered",
     "justAnswer": "Just answer",
     "skipped": "Skipped",
-    "yourAnswer": "Your answer",
+    "answeredInMessage": "Answered in your message",
     "typeAnswer": "Or type your answer…"
   }
 }

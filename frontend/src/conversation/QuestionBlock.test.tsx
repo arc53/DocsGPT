@@ -133,11 +133,43 @@ describe('QuestionBlock', () => {
     );
   });
 
-  it('shows a reply typed in the composer once, under the questions', async () => {
+  it('folds the questions into one card when a reply was typed', async () => {
     await render(saved({ status: 'success', result: 'Q3, for them' as never }));
-    expect(card('q1').textContent).toBe('1. Which quarter?');
-    expect(container.textContent).toContain('questions.yourAnswer');
-    expect(container.textContent).toContain('Q3, for them');
+    expect(container.querySelector('[data-question]')).toBeNull();
+    const record = container.querySelector('[data-slot="question-record"]')!;
+    expect(record.textContent).toBe(
+      "1. Which quarter?2. Who's it for?questions.answeredInMessage",
+    );
+  });
+
+  it("shows a typed reply as the user's own bubble after the record", async () => {
+    await render(saved({ status: 'success', result: 'Q3, for them' as never }));
+    const bubble = container.querySelector<HTMLElement>(
+      '[data-slot="question-reply"]',
+    )!;
+    expect(bubble.textContent).toBe('Q3, for them');
+    expect(bubble.className).toContain('bg-secondary');
+    expect(
+      container
+        .querySelector('[data-slot="question-record"]')!
+        .compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('shows a reply typed for a lone question as a bubble too', async () => {
+    await render(
+      saved({
+        status: 'success',
+        arguments: { questions: QUESTIONS.slice(0, 1) },
+        result: 'Q3 please' as never,
+      }),
+    );
+    expect(
+      container.querySelector('[data-slot="question-record"]')!.textContent,
+    ).toBe('Which quarter?questions.answeredInMessage');
+    expect(
+      container.querySelector('[data-slot="question-reply"]')!.textContent,
+    ).toBe('Q3 please');
   });
 
   it('marks skipped and retired questions', async () => {

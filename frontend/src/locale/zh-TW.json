@@ -4832,7 +4832,7 @@
     "notAnswered": "未回答",
     "justAnswer": "直接回答",
     "skipped": "已略過",
-    "yourAnswer": "你的回答",
+    "answeredInMessage": "已在你的訊息中回答",
     "typeAnswer": "或輸入你的回答…"
   }
 }

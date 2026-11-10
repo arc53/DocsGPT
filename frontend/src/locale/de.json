@@ -4866,7 +4866,7 @@
     "notAnswered": "Nicht beantwortet",
     "justAnswer": "Einfach antworten",
     "skipped": "Übersprungen",
-    "yourAnswer": "Deine Antwort",
+    "answeredInMessage": "In deiner Nachricht beantwortet",
     "typeAnswer": "Oder gib deine Antwort ein…"
   }
 }

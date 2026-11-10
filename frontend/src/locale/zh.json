@@ -4830,7 +4830,7 @@
     "notAnswered": "未回答",
     "justAnswer": "直接回答",
     "skipped": "已跳过",
-    "yourAnswer": "你的回答",
+    "answeredInMessage": "已在你的消息中回答",
     "typeAnswer": "或输入你的回答…"
   }
 }

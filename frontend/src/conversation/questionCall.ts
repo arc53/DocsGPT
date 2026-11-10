@@ -135,8 +135,8 @@ export function resultText(call: ToolCallsType): string | null {
  * joined by line breaks). A question's text and an answer can hold line
  * breaks of their own, so each answer runs up to the next answered
  * question's "<question> → ", not to the end of its line. A message typed in
- * the composer instead has no such parts: with one question it is that
- * question's answer, with more it is returned whole.
+ * the composer instead has no such parts, and is returned whole as the reply,
+ * even for a lone question: it shows as the user's own message.
  *
  * Args:
  *   questions: The questions as asked.
@@ -172,8 +172,6 @@ export function readAnswers(
     rest = rest.slice(end + 1);
   }
   if (Object.keys(answers).length > 0) return { answers, reply: null };
-  if (questions.length === 1)
-    return { answers: { [questions[0].id]: text }, reply: null };
   return { answers, reply: text };
 }
 
