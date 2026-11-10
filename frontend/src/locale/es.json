@@ -4990,7 +4990,9 @@
       "count_many": "{{count}} deshechos",
       "empty": "Deshecho, vuelve a estar vacío",
       "previous": "Deshecho, vuelve al valor anterior"
-    }
+    },
+    "stillWaiting": "Aún esperando al modelo. Los modelos lentos pueden tardar unos minutos; Detener termina el turno.",
+    "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado."
   },
   "questions": {
     "somethingElse": "Otra cosa…",

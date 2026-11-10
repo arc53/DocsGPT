@@ -4846,7 +4846,9 @@
       "count_other": "{{count}} undone",
       "empty": "Undone, back to empty",
       "previous": "Undone, back to the previous value"
-    }
+    },
+    "stillWaiting": "Still waiting for the model. Slow models can take a few minutes; Stop ends the turn.",
+    "stoppedDescription": "You stopped this turn. Nothing in the form changed."
   },
   "questions": {
     "somethingElse": "Something else…",

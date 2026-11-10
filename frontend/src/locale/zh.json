@@ -4789,7 +4789,9 @@
       "count_other": "已撤销 {{count}} 个",
       "empty": "已撤销，恢复为空",
       "previous": "已撤销，恢复为之前的值"
-    }
+    },
+    "stillWaiting": "仍在等待模型。较慢的模型可能需要几分钟；点“停止”可结束本轮。",
+    "stoppedDescription": "你停止了本轮。表单没有变化。"
   },
   "questions": {
     "somethingElse": "其他…",

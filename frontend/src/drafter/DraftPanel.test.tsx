@@ -87,6 +87,7 @@ function Host({
     | 'insightsDays'
     | 'readsAgents'
     | 'onSkipQuestions'
+    | 'statusLabel'
   >
 >) {
   const session = useDrafterSession({
@@ -649,11 +650,68 @@ describe('DraftPanel', () => {
     await ask('Again');
     expect(button('Continue')).toBeUndefined();
     await act(async () => button('drafter.stop')!.click());
+    // Decision 97: the chat's stopped note, with the way on under it.
+    const note = container.querySelector('[data-item="stopped"]')!;
+    expect(note.getAttribute('role')).toBe('note');
+    expect(note.getAttribute('data-variant')).toBe('info');
+    expect(note.textContent).toContain('conversation.stoppedTitle');
+    expect(note.textContent).toContain('drafter.stoppedDescription');
     const stopped = container.querySelector('[data-slot="drafter-stopped"]')!;
     expect(stopped.contains(button('Continue')!)).toBe(true);
-    // A new turn takes it away.
+    expect(note.nextElementSibling).toBe(stopped);
+    // A new turn takes the way on away; the note stays as the record.
     await ask('Once more');
     expect(button('Continue')).toBeUndefined();
+    expect(container.querySelector('[data-item="stopped"]')).not.toBeNull();
+  });
+
+  it('says it is still waiting when a turn goes quiet for 30 s', async () => {
+    vi.useFakeTimers();
+    try {
+      stream.hold = true;
+      await ask('Draft it');
+      expect(container.textContent).not.toContain('drafter.stillWaiting');
+      await act(async () => vi.advanceTimersByTime(30_000));
+      const line = container.querySelector('[data-slot="drafter-waiting"]')!;
+      expect(line.textContent).toBe('drafter.stillWaiting');
+      expect(line.className).toContain('text-xs');
+      await act(async () => button('drafter.stop')!.click());
+      expect(
+        container.querySelector('[data-slot="drafter-waiting"]'),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('names the turn on the status line in the host’s words when it gives them', async () => {
+    await act(async () => root.render(<Host statusLabel="Reviewing…" />));
+    stream.hold = true;
+    await ask('Review it');
+    expect(container.querySelector('[role="status"]')!.textContent).toBe(
+      'Reviewing…',
+    );
+  });
+
+  it('says it looked at the workspace once, and again only when the counts change', async () => {
+    const reading = (sources: number): DrafterEvent[] => [
+      { type: 'status', step: 'reading', counts: { sources } },
+      { type: 'message', text: 'Ok.' },
+      { type: 'end' },
+    ];
+    stream.scripts = [reading(6), reading(6), reading(7)];
+    await ask('One');
+    await ask('Two');
+    expect(container.querySelectorAll('[data-item="status"]')).toHaveLength(1);
+    await ask('Three');
+    expect(
+      Array.from(container.querySelectorAll('[data-item="status"]')).map(
+        (line) => line.textContent,
+      ),
+    ).toEqual([
+      'drafter.lookedAtWorkspaceCounts:drafter.counts.sources:6',
+      'drafter.lookedAtWorkspaceCounts:drafter.counts.sources:7',
+    ]);
   });
 
   it("shows the host's own turn end after the conversation, not while a turn runs", async () => {

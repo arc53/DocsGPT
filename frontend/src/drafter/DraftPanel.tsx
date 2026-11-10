@@ -18,6 +18,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import isEqual from 'lodash/isEqual';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -137,6 +138,11 @@ export type DraftPanelProps = {
   progress?: { label: string; value: number } | null;
   /** Above the conversation: the finished steps, folded. */
   before?: ReactNode;
+  /**
+   * The status line's text for the running turn in place of the step's
+   * ("Reviewing the prompt…" for a prompt review).
+   */
+  statusLabel?: string;
   /** The ask bar's placeholder; "Ask for a change…" when left out. */
   placeholder?: string;
   /** Renders a proposal item (the recipe's summary). */
@@ -157,7 +163,8 @@ export type DraftPanelProps = {
   announceProposal?: (proposal: unknown) => string | null;
   /**
    * The way on after a turn was stopped or failed (a build's "Continue:
-   * Basics"): on its own row under the latest error, and after Stop. It
+   * Basics"): on its own row under the latest error, and under the stopped
+   * note while it is the latest. It
    * keeps its own look: it is a way past the error, not a fix, so it never
    * sits in the Alert.
    */
@@ -203,6 +210,7 @@ export function DraftPanel({
   notice,
   progress,
   before,
+  statusLabel,
   placeholder,
   renderProposal,
   onSkipQuestions,
@@ -223,11 +231,8 @@ export function DraftPanel({
       inputRef.current?.focus();
     },
   };
-  const { items, step, streaming, full } = session;
-  const startOver = () => {
-    setStopped(false);
-    (onStartOver ?? session.reset)();
-  };
+  const { items, step, streaming, waiting, full } = session;
+  const startOver = () => (onStartOver ?? session.reset)();
   // Start over fixes a full or refused conversation, so it is a link in
   // the notice's own text.
   const startOverLink = (
@@ -241,12 +246,6 @@ export function DraftPanel({
       {t('drafter.startOver')}
     </Button>
   );
-  // The latest turn was stopped here: the way on shows until the next one.
-  const [stopped, setStopped] = useState(false);
-  useEffect(() => {
-    if (streaming || items.length === 0) setStopped(false);
-  }, [streaming, items.length]);
-
   // Follow the conversation as it grows, and land on its end on reopening.
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView?.({ block: 'end' });
@@ -280,6 +279,16 @@ export function DraftPanel({
     onSelect: suggestion.onSelect ?? (() => session.send(suggestion.text)),
   });
 
+  // "Looked at your workspace" once, and again only when the counts change.
+  const repeatsCounts = (index: number) => {
+    const item = items[index];
+    if (item.kind !== 'status') return false;
+    const earlier = items.findLast(
+      (other, at) => at < index && other.kind === 'status',
+    );
+    return earlier?.kind === 'status' && isEqual(earlier.counts, item.counts);
+  };
+
   const renderItem = (item: DrafterItem, index: number) => {
     switch (item.kind) {
       case 'user':
@@ -293,6 +302,7 @@ export function DraftPanel({
           </p>
         );
       case 'status':
+        if (repeatsCounts(index)) return null;
         return typeof item.counts.insights_conversations === 'number' ? (
           <div key={item.id} className="flex flex-col gap-1">
             <WorkspaceLine counts={item.counts} />
@@ -357,6 +367,24 @@ export function DraftPanel({
           <div key={item.id} data-item="proposal">
             {renderProposal(item.proposal, index === lastProposal, helpers)}
           </div>
+        );
+      case 'stopped':
+        // The chat's stopped note; the way on goes under it while it is the
+        // latest, and the note stays as the record after it.
+        return (
+          <Fragment key={item.id}>
+            <Alert variant="info" role="note" data-item="stopped">
+              <AlertTitle>{t('conversation.stoppedTitle')}</AlertTitle>
+              <AlertDescription>
+                <p>{t('drafter.stoppedDescription')}</p>
+              </AlertDescription>
+            </Alert>
+            {index === items.length - 1 && !streaming && continueAction && (
+              <div className="flex flex-wrap gap-2" data-slot="drafter-stopped">
+                {continueAction}
+              </div>
+            )}
+          </Fragment>
         );
       case 'error': {
         // A refused request (the history too long, say) fails again as it
@@ -458,11 +486,6 @@ export function DraftPanel({
             </div>
           )}
           {items.map(renderItem)}
-          {stopped && !streaming && continueAction && (
-            <div className="flex flex-wrap gap-2" data-slot="drafter-stopped">
-              {continueAction}
-            </div>
-          )}
           {!streaming && after}
           {full && !streaming && (
             <Alert variant="info" data-slot="drafter-full">
@@ -474,7 +497,22 @@ export function DraftPanel({
               </AlertDescription>
             </Alert>
           )}
-          {step && <StreamingStatusLine label={t(`drafter.steps.${step}`)} />}
+          {step && (
+            <div className="flex flex-col">
+              <StreamingStatusLine
+                label={statusLabel ?? t(`drafter.steps.${step}`)}
+              />
+              {waiting && (
+                // Aligned with the status line's text, past its 16px dot.
+                <p
+                  data-slot="drafter-waiting"
+                  className="text-muted-foreground pl-6 text-xs wrap-break-word"
+                >
+                  {t('drafter.stillWaiting')}
+                </p>
+              )}
+            </div>
+          )}
           {/* The status line announces the step; this announces each
               applied draft, not the whole conversation as it grows. */}
           <div ref={endRef} aria-live="polite" data-slot="drafter-live">
@@ -496,10 +534,7 @@ export function DraftPanel({
             disabled={full}
             placeholder={placeholder ?? t('drafter.askPlaceholder')}
             onSend={(text) => session.send(text)}
-            onStop={() => {
-              setStopped(true);
-              session.stop();
-            }}
+            onStop={session.stop}
           />
           <p className="text-muted-foreground text-xs">
             {modelName

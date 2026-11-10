@@ -4825,7 +4825,9 @@
       "count_other": "{{count}} rückgängig gemacht",
       "empty": "Rückgängig gemacht, wieder leer",
       "previous": "Rückgängig gemacht, wieder der vorherige Wert"
-    }
+    },
+    "stillWaiting": "Noch keine Antwort vom Modell. Langsame Modelle brauchen manchmal ein paar Minuten; Stoppen beendet den Durchlauf.",
+    "stoppedDescription": "Du hast diesen Durchlauf gestoppt. Im Formular hat sich nichts geändert."
   },
   "questions": {
     "somethingElse": "Etwas anderes…",

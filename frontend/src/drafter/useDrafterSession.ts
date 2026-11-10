@@ -36,13 +36,18 @@ export type DrafterItem =
       answers?: Record<string, string>;
     }
   | { id: number; kind: 'proposal'; proposal: unknown }
-  | { id: number; kind: 'error'; code: DrafterErrorCode; message?: string };
+  | { id: number; kind: 'error'; code: DrafterErrorCode; message?: string }
+  /** The user stopped the turn running here. */
+  | { id: number; kind: 'stopped' };
 
 // Omit over each member of the union, so a push names one item's fields.
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
   ? Omit<T, K>
   : never;
 type NewItem = DistributiveOmit<DrafterItem, 'id'>;
+
+/** How long a running turn goes without an event before it is `waiting`. */
+export const WAIT_FOR_MODEL_MS = 30_000;
 
 /** How a round of questions closed. */
 export type QuestionsState = 'answered' | 'skipped' | 'passed';
@@ -80,6 +85,11 @@ export type DrafterSession = {
   step: DrafterStep | null;
   streaming: boolean;
   /**
+   * The running turn has had no event for WAIT_FOR_MODEL_MS (a slow model,
+   * or an upstream retry): the panel says it is still waiting.
+   */
+  waiting: boolean;
+  /**
    * The history is as long as the server takes: a send does nothing until
    * `reset` starts over.
    */
@@ -96,7 +106,7 @@ export type DrafterSession = {
   addMessage: (text: string) => void;
   /** What the user wrote in this conversation, in order. */
   userTexts: () => string[];
-  /** Stop the running turn; what arrived so far stays. */
+  /** Stop the running turn; what arrived so far stays, then a `stopped` item. */
   stop: () => void;
   /** Run the last turn again after an error. */
   retry: () => void;
@@ -130,6 +140,8 @@ export function useDrafterSession({
   const [items, setItems] = useState<DrafterItem[]>([]);
   const [step, setStep] = useState<DrafterStep | null>(null);
   const [full, setFull] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const waitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Answered turns only: each user message with the drafter's answer.
   const history = useRef<DrafterMessage[]>([]);
   // The turn being answered: its message and the lines said so far.
@@ -202,12 +214,26 @@ export function useDrafterSession({
     if (id) void cancelDrafterTurn(id, latest.current.token);
   }, []);
 
+  /** Stop counting the quiet: the turn heard from, or over. */
+  const stopWaiting = useCallback(() => {
+    if (waitTimer.current) clearTimeout(waitTimer.current);
+    waitTimer.current = null;
+    setWaiting(false);
+  }, []);
+
+  /** Count the quiet afresh: `waiting` once it lasts WAIT_FOR_MODEL_MS. */
+  const restartWaiting = useCallback(() => {
+    stopWaiting();
+    waitTimer.current = setTimeout(() => setWaiting(true), WAIT_FOR_MODEL_MS);
+  }, [stopWaiting]);
+
   /** Give up on the running turn: drop its stream and cancel it on the server. */
   const abort = useCallback(() => {
     controller.current?.abort();
     controller.current = null;
+    stopWaiting();
     cancelTurn();
-  }, [cancelTurn]);
+  }, [cancelTurn, stopWaiting]);
 
   const handle = useCallback(
     (event: DrafterEvent) => {
@@ -256,11 +282,12 @@ export function useDrafterSession({
           if (failed.current) cancelTurn();
           else answerWithWords();
           turnId.current = null;
+          stopWaiting();
           setStep(null);
           return;
       }
     },
-    [addRead, answer, answerWithWords, cancelTurn, push],
+    [addRead, answer, answerWithWords, cancelTurn, push, stopWaiting],
   );
 
   const run = useCallback(() => {
@@ -276,6 +303,7 @@ export function useDrafterSession({
     const id = newDrafterTurnId();
     turnId.current = id;
     setStep('thinking');
+    restartWaiting();
     void streamDrafter(
       {
         recipe,
@@ -284,17 +312,20 @@ export function useDrafterSession({
       },
       latest.current.token,
       (event) => {
-        if (controller.current === current) handle(event);
+        if (controller.current !== current) return;
+        restartWaiting();
+        handle(event);
       },
       current.signal,
       id,
     ).finally(() => {
       if (controller.current === current) {
         controller.current = null;
+        stopWaiting();
         setStep(null);
       }
     });
-  }, [abort, handle, recipe]);
+  }, [abort, handle, recipe, restartWaiting, stopWaiting]);
 
   /** Close every open round: the latest with `answers` when given. */
   const close = useCallback(
@@ -342,10 +373,12 @@ export function useDrafterSession({
   const userTexts = useCallback(() => [...userWords.current], []);
 
   const stop = useCallback(() => {
+    const running = controller.current !== null;
     abort();
     answerWithWords();
     setStep(null);
-  }, [abort, answerWithWords]);
+    if (running) push({ kind: 'stopped' });
+  }, [abort, answerWithWords, push]);
 
   const retry = useCallback(() => {
     // The failed turn's error goes; its message is still pending.
@@ -372,6 +405,7 @@ export function useDrafterSession({
     items,
     step,
     streaming: step !== null,
+    waiting,
     full,
     send,
     closeQuestions,

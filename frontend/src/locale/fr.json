@@ -4990,7 +4990,9 @@
       "count_many": "{{count}} annulés",
       "empty": "Annulé, de nouveau vide",
       "previous": "Annulé, retour à la valeur précédente"
-    }
+    },
+    "stillWaiting": "Toujours en attente du modèle. Les modèles lents peuvent prendre quelques minutes ; Arrêter met fin au tour.",
+    "stoppedDescription": "Vous avez arrêté ce tour. Le formulaire n’a pas changé."
   },
   "questions": {
     "somethingElse": "Autre chose…",

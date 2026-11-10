@@ -43,7 +43,11 @@ vi.mock('./drafterApi', async (importOriginal) => ({
   },
 }));
 
-import { type DrafterSession, useDrafterSession } from './useDrafterSession';
+import {
+  type DrafterSession,
+  useDrafterSession,
+  WAIT_FOR_MODEL_MS,
+} from './useDrafterSession';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -229,14 +233,50 @@ describe('useDrafterSession', () => {
     );
     await act(async () => session.stop());
     expect(session.streaming).toBe(false);
-    expect(session.items.map((item) => item.kind)).toEqual(['user', 'status']);
+    // The Stop is part of the record (decision 97).
+    const kinds = ['user', 'status', 'stopped'];
+    expect(session.items.map((item) => item.kind)).toEqual(kinds);
     // Events after the Stop are dropped.
     await act(async () =>
       stream.held[0].emit({ type: 'proposal', proposal: {} }),
     );
-    expect(session.items.map((item) => item.kind)).toEqual(['user', 'status']);
+    expect(session.items.map((item) => item.kind)).toEqual(kinds);
+    // A Stop with no turn running leaves nothing.
+    await act(async () => session.stop());
+    expect(session.items.map((item) => item.kind)).toEqual(kinds);
     await act(async () => session.send('Try again, shorter'));
     expect(sent(1)).toEqual([{ role: 'user', content: 'Try again, shorter' }]);
+  });
+
+  // Decision 97: a turn that goes quiet says it is still waiting.
+  it('is waiting once a running turn has had no event for 30 s', async () => {
+    vi.useFakeTimers();
+    try {
+      stream.scripts = ['hold'];
+      await act(async () => session.send('Draft it'));
+      await act(async () => vi.advanceTimersByTime(WAIT_FOR_MODEL_MS - 1));
+      expect(session.waiting).toBe(false);
+      // Any event starts the wait over.
+      await act(async () =>
+        stream.held[0].emit({ type: 'status', step: 'drafting' }),
+      );
+      await act(async () => vi.advanceTimersByTime(WAIT_FOR_MODEL_MS - 1));
+      expect(session.waiting).toBe(false);
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(session.waiting).toBe(true);
+      await act(async () =>
+        stream.held[0].emit({ type: 'message', text: 'Almost.' }),
+      );
+      expect(session.waiting).toBe(false);
+      await act(async () => vi.advanceTimersByTime(WAIT_FOR_MODEL_MS));
+      expect(session.waiting).toBe(true);
+      await act(async () => session.stop());
+      expect(session.waiting).toBe(false);
+      await act(async () => vi.advanceTimersByTime(WAIT_FOR_MODEL_MS));
+      expect(session.waiting).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('replaces a running turn with a new one, dropping the first one’s events', async () => {
