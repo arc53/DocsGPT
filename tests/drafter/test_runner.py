@@ -391,3 +391,50 @@ class TestReadEvents:
         assert "get_prompt" in offered and "get_source" not in offered
         [result] = [m["content"] for m in fake.calls[1]["messages"] if m["role"] == "tool"]
         assert "Unknown tool" in result
+
+
+@pytest.mark.unit
+class TestNestedProposalKeys:
+    """Improve proposals often nest message/gaps/notes/reasons inside ``fields``: read them where they belong."""
+
+    def test_top_level_keys_nested_in_fields_are_lifted_out(self):
+        nested = {"fields": {**PROPOSAL["fields"], "message": "Drafted it.", "notes": ["Check the name."],
+                             "reasons": PROPOSAL["reasons"]}}
+        fake = FakeLLM(calls(tool_call("submit_proposal", nested)))
+        events = _run(fake)
+        proposal = events[-1]["proposal"]
+        assert events[-1]["type"] == "proposal" and len(fake.calls) == 1
+        assert proposal["message"] == "Drafted it."
+        assert proposal["notes"] == ["Check the name."]
+        assert "message" not in proposal["fields"] and "notes" not in proposal["fields"]
+        assert proposal["fields"]["name"] == "Shipping help"
+
+    def test_a_key_given_at_the_top_level_wins_over_its_nested_copy(self):
+        nested = {**PROPOSAL, "fields": {**PROPOSAL["fields"], "message": "Nested."}}
+        events = _run(FakeLLM(calls(tool_call("submit_proposal", nested))))
+        assert events[-1]["proposal"]["message"] == PROPOSAL["message"]
+        assert "message" not in events[-1]["proposal"]["fields"]
+
+    def test_the_correction_note_says_where_the_keys_belong(self):
+        bad = calls(tool_call("submit_proposal", {"fields": {"agent_type": "workflow"}}))
+        fake = FakeLLM(bad, calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake)
+        note = fake.calls[1]["messages"][-1]["content"]
+        assert "next to fields" in note and "message" in note
+
+    def test_the_lead_in_beside_a_proposal_call_becomes_its_message(self):
+        args = {k: v for k, v in PROPOSAL.items() if k != "message"}
+        fake = FakeLLM(calls(tool_call("submit_proposal", args), content="I drafted a shipping agent."))
+        events = _run(fake)
+        assert events[-1]["type"] == "proposal" and len(fake.calls) == 1
+        assert events[-1]["proposal"]["message"] == "I drafted a shipping agent."
+
+    def test_the_lead_in_beside_ask_user_becomes_its_message(self):
+        args = {"questions": QUESTIONS["questions"]}
+        events = _run(FakeLLM(calls(tool_call("ask_user", args), content="Two things first:")))
+        assert [e for e in events if e["type"] == "message"] == [{"type": "message", "text": "Two things first:"}]
+
+    def test_the_args_message_wins_over_the_lead_in(self):
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL), content="Let me submit."))
+        events = _run(fake)
+        assert events[-1]["proposal"]["message"] == PROPOSAL["message"]

@@ -293,22 +293,27 @@ class _Turn:
         self.corrections = 0
         self.read_tools = recipe.offered_tools(req, ws)
 
-    def finish(self, name: str, arguments: Any) -> list[dict]:
+    def finish(self, name: str, arguments: Any, lead_in: str = "") -> list[dict]:
         """Validate a terminal answer and return its events.
 
         The ``questions`` or ``proposal`` event must fit :data:`EVENT_CHARS`:
         the panel sends it back as the next request's assistant message.
 
+        Args:
+            name: The terminal tool.
+            arguments: Its arguments as the model sent them.
+            lead_in: Text the model wrote beside the call; it becomes the ``message`` when the arguments have none.
+
         Raises:
             ProposalInvalid: The answer breaks a rule the model can fix.
         """
-        events = self._terminal_events(name, arguments)
+        events = self._terminal_events(name, arguments, lead_in)
         if echo_length(events[-1]) > EVENT_CHARS:
             raise ProposalInvalid(["The answer is too long to hand over. Send it shorter: fewer and smaller edits, "
                                    "less text."])
         return events
 
-    def _terminal_events(self, name: str, arguments: Any) -> list[dict]:
+    def _terminal_events(self, name: str, arguments: Any, lead_in: str = "") -> list[dict]:
         """A terminal answer's events: ``message`` and ``questions``, or ``proposal``.
 
         Raises:
@@ -317,20 +322,25 @@ class _Turn:
         args = parse_arguments(arguments)
         if args is None:
             raise ProposalInvalid(["The arguments are not a JSON object."])
+        lead_in = clean_text(lead_in, MESSAGE_CHARS)
         if name == ASK_USER:
             if not self.allow_questions:
                 raise ProposalInvalid([NO_MORE_QUESTIONS if self.recipe.asks(self.req)
                                        else "This screen takes no questions. Submit the proposal instead."])
             message, questions = normalize_questions(args)
+            message = message or lead_in
             events = [{"type": "message", "text": message}] if message else []
             return events + [{"type": "questions", "questions": questions}]
         if isinstance(args.get("proposal"), dict) and set(args) <= {"type", "proposal"}:
             # The model copied a proposal event ({"type": "proposal", "proposal": {…}}): read what's inside.
             args = args["proposal"]
-        args = {k: v for k, v in args.items() if k != "type"}
+        args = _lifted(self.recipe.proposal_schema, {k: v for k, v in args.items() if k != "type"})
+        message_schema = self.recipe.proposal_schema.get("properties", {}).get("message")
+        if lead_in and message_schema and not (isinstance(args.get("message"), str) and args["message"].strip()):
+            args["message"] = lead_in
         problems = schema_problems(self.recipe.proposal_schema, args)
         if problems:
-            raise ProposalInvalid(problems)
+            raise ProposalInvalid(problems + _placement_hint(self.recipe.proposal_schema))
         proposal = self.recipe.validate(args, self.req, self.ws)
         return [{"type": "proposal", "proposal": proposal}]
 
@@ -461,7 +471,7 @@ class _Turn:
             if terminal is not None:
                 assistant = self._assistant_for(calls, reasoning)
                 try:
-                    yield from self.finish(terminal.name, terminal.arguments)
+                    yield from self.finish(terminal.name, terminal.arguments, text)
                     return
                 except ProposalInvalid as invalid:
                     problems = invalid.problems
@@ -495,6 +505,52 @@ class _Turn:
         logger.warning("drafter: %s output rejected after %d correction(s): %s", self.recipe.id, self.corrections,
                        " ".join(problems)[:1000] or "no answer")
         yield _error("invalid_output", "The draft didn't come out right. Try again, or rephrase your request.")
+
+
+def _top_level_keys(schema: dict) -> list[str]:
+    """A proposal schema's top-level keys other than ``fields``, when it has a ``fields`` object."""
+    props = schema.get("properties") or {}
+    if not isinstance((props.get("fields") or {}).get("properties"), dict):
+        return []
+    return [key for key in props if key != "fields"]
+
+
+def _lifted(schema: dict, args: dict) -> dict:
+    """Proposal arguments with top-level keys the model nested inside ``fields`` moved back out.
+
+    Models put ``message``, ``reasons``, ``notes`` or ``gaps`` inside
+    ``fields`` (most often in improve proposals); reading them where they
+    belong spares a correction round. A key also given at the top level keeps
+    the top-level value.
+
+    Args:
+        schema: The recipe's proposal schema.
+        args: The arguments as the model sent them.
+
+    Returns:
+        The arguments (a new dict when anything moved).
+    """
+    nested = args.get("fields")
+    keys = _top_level_keys(schema)
+    if not isinstance(nested, dict) or not keys:
+        return args
+    inner = schema["properties"]["fields"]["properties"]
+    stray = [key for key in nested if key in keys and key not in inner]
+    if not stray:
+        return args
+    lifted = {**args, "fields": {k: v for k, v in nested.items() if k not in stray}}
+    for key in stray:
+        lifted.setdefault(key, nested[key])
+    return lifted
+
+
+def _placement_hint(schema: dict) -> list[str]:
+    """The sentence a correction adds on where a proposal's keys go (empty for a schema without ``fields``)."""
+    keys = _top_level_keys(schema)
+    if not keys:
+        return []
+    named = ", ".join(keys[:-1]) + f" and {keys[-1]}" if len(keys) > 1 else keys[0]
+    return [f"{named} go at the top level, next to fields; fields holds only the form's fields."]
 
 
 def _capped(result: dict) -> Any:
