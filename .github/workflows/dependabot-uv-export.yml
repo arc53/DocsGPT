@@ -1,7 +1,7 @@
-# Re-exports docsgpt/requirements*.txt on Dependabot's uv pull requests. Dependabot
-# updates uv.lock and pyproject.toml but can't run scripts/export_requirements.sh,
-# so without this the "requirements-in-sync" check fails and pytest installs the
-# old pins.
+# Re-exports docsgpt/requirements*.txt and tests/requirements.txt on Dependabot's uv
+# pull requests. Dependabot updates uv.lock and pyproject.toml but can't run
+# scripts/export_requirements.sh, so without this the "requirements-in-sync" check
+# fails and pytest installs the old pins.
 #
 # A push made with GITHUB_TOKEN starts no workflows, so after pushing the export
 # this dispatches the lint and test workflows on the branch; their results land on
@@ -50,13 +50,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          if [ -z "$(git status --porcelain -- docsgpt/requirements*.txt)" ]; then
+          if [ -z "$(git status --porcelain -- docsgpt/requirements*.txt tests/requirements.txt)" ]; then
             echo "The requirements files are current."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docsgpt/requirements*.txt
+          git add docsgpt/requirements*.txt tests/requirements.txt
           git commit -q -m "Re-export the requirements files"
           git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
           gh workflow run lint.yml --ref "$HEAD_REF"

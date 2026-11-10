@@ -31,7 +31,7 @@ Use these commands once the dev prerequisites above are satisfied.
 ```bash
 uv sync                    # deps from uv.lock + the dev group (test tools, ruff) + docsgpt itself, editable
 source .venv/bin/activate  # macOS/Linux
-# pip instead: pip install -r docsgpt/requirements.txt -r tests/requirements.txt && pip install -e .
+# pip instead: pip install -r tests/requirements.txt && pip install -e .   (core + docling + test tools)
 # Optional extras (not installed by default); name every extra you want, `uv sync` removes the others:
 # uv sync --extra docling   # docling parser engine (OCR backend, structured output)
 # uv sync --extra milvus    # VECTOR_STORE=milvus

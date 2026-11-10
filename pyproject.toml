@@ -173,7 +173,8 @@ Issues = "https://github.com/arc53/DocsGPT/issues"
 Changelog = "https://github.com/arc53/DocsGPT/releases"
 
 [dependency-groups]
-# Mirrors tests/requirements.txt for `uv sync`; pip users install that file.
+# scripts/export_requirements.sh exports this group, the core runtime and the
+# docling extra to tests/requirements.txt for pip users.
 dev = [
   "pytest>=9.0.3",
   "pytest-asyncio>=0.23",

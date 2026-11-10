@@ -181,11 +181,14 @@ Daytona snapshot (`scripts/build_daytona_snapshot.py`) builds from it directly,
 and `code_executor` tells the model what is installed from it. This image
 installs from files generated from it, next to the Dockerfile:
 `requirements.txt`, `install-system.sh`, `sandbox.env` and `manifest.json`.
-Edit the manifest, never those files, then regenerate them (CI fails when they
-are stale):
+The image installs Python packages from `requirements.lock`: the manifest's
+pins resolved with their dependencies and hashes, installed with
+`pip --require-hashes`. Edit the manifest, never those files, then regenerate
+them (CI fails when they are stale):
 
 ```bash
 python scripts/export_sandbox_manifest.py
+bash scripts/export_requirements.sh   # re-resolves requirements.lock
 ```
 
 What is in it:
