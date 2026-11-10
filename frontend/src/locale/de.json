@@ -4819,7 +4819,13 @@
     "readInsights_one": "Einblicke gelesen: {{formatted}} Unterhaltung, letzte {{days}} Tage",
     "readInsights_other": "Einblicke gelesen: {{formatted}} Unterhaltungen, letzte {{days}} Tage",
     "readQuestions_one": "{{count}} Beispielfrage gelesen",
-    "readQuestions_other": "{{count}} Beispielfragen gelesen"
+    "readQuestions_other": "{{count}} Beispielfragen gelesen",
+    "undone": {
+      "count_one": "{{count}} rückgängig gemacht",
+      "count_other": "{{count}} rückgängig gemacht",
+      "empty": "Rückgängig gemacht, wieder leer",
+      "previous": "Rückgängig gemacht, wieder der vorherige Wert"
+    }
   },
   "questions": {
     "somethingElse": "Etwas anderes…",

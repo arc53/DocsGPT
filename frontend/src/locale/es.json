@@ -4983,7 +4983,14 @@
     "readInsights_many": "Leyó la Información: {{formatted}} conversaciones, últimos {{days}} días",
     "readQuestions_one": "Leyó {{count}} pregunta de ejemplo",
     "readQuestions_other": "Leyó {{count}} preguntas de ejemplo",
-    "readQuestions_many": "Leyó {{count}} preguntas de ejemplo"
+    "readQuestions_many": "Leyó {{count}} preguntas de ejemplo",
+    "undone": {
+      "count_one": "{{count}} deshecho",
+      "count_other": "{{count}} deshechos",
+      "count_many": "{{count}} deshechos",
+      "empty": "Deshecho, vuelve a estar vacío",
+      "previous": "Deshecho, vuelve al valor anterior"
+    }
   },
   "questions": {
     "somethingElse": "Otra cosa…",

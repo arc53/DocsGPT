@@ -5147,7 +5147,15 @@
     "readQuestions_one": "Прочитан {{count}} пример вопроса",
     "readQuestions_other": "Прочитано {{count}} примера вопросов",
     "readQuestions_many": "Прочитано {{count}} примеров вопросов",
-    "readQuestions_few": "Прочитано {{count}} примера вопросов"
+    "readQuestions_few": "Прочитано {{count}} примера вопросов",
+    "undone": {
+      "count_one": "{{count}} отменено",
+      "count_other": "{{count}} отменено",
+      "count_many": "{{count}} отменено",
+      "count_few": "{{count}} отменено",
+      "empty": "Отменено, поле снова пустое",
+      "previous": "Отменено, вернулось прежнее значение"
+    }
   },
   "questions": {
     "somethingElse": "Другое…",

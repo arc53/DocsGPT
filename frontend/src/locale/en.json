@@ -4840,7 +4840,13 @@
     "readInsights_one": "Read Insights: {{formatted}} conversation, last {{days}} days",
     "readInsights_other": "Read Insights: {{formatted}} conversations, last {{days}} days",
     "readQuestions_one": "Read {{count}} example question",
-    "readQuestions_other": "Read {{count}} example questions"
+    "readQuestions_other": "Read {{count}} example questions",
+    "undone": {
+      "count_one": "{{count}} undone",
+      "count_other": "{{count}} undone",
+      "empty": "Undone, back to empty",
+      "previous": "Undone, back to the previous value"
+    }
   },
   "questions": {
     "somethingElse": "Something else…",

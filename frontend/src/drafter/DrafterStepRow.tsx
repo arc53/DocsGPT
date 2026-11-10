@@ -1,5 +1,6 @@
 import { ChevronDown, type LucideIcon } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Collapsible } from '@/components/ui/collapsible';
@@ -8,9 +9,9 @@ import { cn } from '@/lib/utils';
 /**
  * A step row in the drafter's conversation, the chat's step-row recipe
  * (PATTERNS.md › Chat answer column): a muted 16px icon, muted 14px text and
- * a chevron on a `ghost sm` button that opens its rows, a list of 28px
- * one-line rows on a 1px rule (StepGroup's shape). The rows are the
- * children, usually FilledRows. With no children it is a plain line with
+ * a chevron on a `ghost sm` button that opens its rows, a list of rows
+ * (28px at least, wrapping) on a 1px rule (StepGroup's shape). The rows are
+ * the children, usually FilledRows. With no children it is a plain line with
  * nothing to open. "Filled 2 fields" under a proposal, and each finished
  * step of a guided build folded to its result.
  *
@@ -19,20 +20,29 @@ import { cn } from '@/lib/utils';
  *   label: What the step did ("Filled 2 fields", "Basics: Shipping help").
  *   children: The rows it opens.
  *   defaultOpen: Start open.
+ *   undone: How many of its fields the user undid since; above zero the
+ *     label adds "· 1 undone".
  */
 export function DrafterStepRow({
   icon: Icon,
-  label,
+  label: stepLabel,
   children,
   defaultOpen = false,
+  undone = 0,
 }: {
   icon: LucideIcon;
   label: string;
   children?: ReactNode;
   defaultOpen?: boolean;
+  undone?: number;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
+  const label =
+    undone > 0
+      ? `${stepLabel} · ${t('drafter.undone.count', { count: undone })}`
+      : stepLabel;
 
   if (!children) {
     return (
@@ -71,13 +81,9 @@ export function DrafterStepRow({
       </Button>
       <Collapsible id={bodyId} open={open}>
         <div className="pt-1">
-          <div className="relative flex min-w-0 flex-col">
-            {/* The rule runs through the icon centres (left-2 of a 16px
-                icon). */}
-            <span
-              aria-hidden="true"
-              className="bg-border absolute top-3.5 bottom-3.5 left-2 w-px"
-            />
+          {/* Each FilledRow draws the rule from its icon to the next one's,
+              so a row that wraps never runs it past the last icon. */}
+          <div data-slot="drafter-step-rows" className="flex min-w-0 flex-col">
             {children}
           </div>
         </div>
@@ -86,48 +92,65 @@ export function DrafterStepRow({
   );
 }
 
+/** How a field the user undid stands: empty again, or back to what it held. */
+export type UndoneKind = 'empty' | 'previous';
+
 /**
- * One 28px row in a DrafterStepRow: its icon on the rule (a dot when it has
- * none), then "<label> · <value>" on one line, or the value alone (an
- * example question it read), cut with the whole line as its title.
+ * One row in a DrafterStepRow: its icon on the rule (a dot when it has
+ * none), then "<label> · <value>", or the value alone (an example question
+ * it read). 28px for one line, and it wraps, so touch and keyboard users
+ * read all of it. A field the user undid is muted and says so in place of
+ * the value.
  *
  * Args:
  *   label: The field or step ("Name", "Knowledge and tools"); left out, the
  *     row is its value alone.
  *   value: What it now holds.
  *   icon: A lucide icon for the row; a dot stands in without one.
+ *   undone: The user undid the field: "Undone, back to empty" or "Undone,
+ *     back to the previous value".
  */
 export function FilledRow({
   label,
   value,
   icon: Icon,
+  undone,
 }: {
   label?: string;
   value: string;
   icon?: LucideIcon;
+  undone?: UndoneKind;
 }) {
+  const { t } = useTranslation();
+  const text = undone ? t(`drafter.undone.${undone}`) : value;
   return (
     <div
       data-slot="filled-row"
-      className="flex h-7 min-w-0 items-center gap-2 text-sm"
+      className={cn(
+        'relative flex min-h-7 min-w-0 items-start gap-2 py-1 text-sm',
+        // In a step row's list, the rule from this icon's centre (top-3.5)
+        // down to the next one's.
+        'in-data-[slot=drafter-step-rows]:not-last:before:bg-border in-data-[slot=drafter-step-rows]:not-last:before:absolute in-data-[slot=drafter-step-rows]:not-last:before:top-3.5 in-data-[slot=drafter-step-rows]:not-last:before:-bottom-3.5 in-data-[slot=drafter-step-rows]:not-last:before:left-2 in-data-[slot=drafter-step-rows]:not-last:before:w-px',
+        undone && 'text-muted-foreground',
+      )}
     >
-      {/* The background masks the rule behind the icon. */}
-      <span className="bg-background relative flex size-4 shrink-0 items-center justify-center">
+      {/* The background masks the rule behind the icon; mt-0.5 centres it
+          on the first line. */}
+      <span className="bg-background relative mt-0.5 flex size-4 shrink-0 items-center justify-center">
         {Icon ? (
           <Icon className="text-muted-foreground size-4" aria-hidden="true" />
         ) : (
           <span className="bg-muted-foreground/50 size-1.5 rounded-full" />
         )}
       </span>
-      {label ? (
-        <p className="min-w-0 truncate" title={`${label} · ${value}`}>
-          <span className="font-medium">{label}</span> · {value}
-        </p>
-      ) : (
-        <p className="min-w-0 truncate" title={value}>
-          {value}
-        </p>
-      )}
+      <p className="min-w-0 wrap-break-word">
+        {label && (
+          <>
+            <span className="font-medium">{label}</span> ·{' '}
+          </>
+        )}
+        {text}
+      </p>
     </div>
   );
 }

@@ -357,13 +357,13 @@ describe('DraftPanel', () => {
     const read = container.querySelector('[data-item="read"]')!;
     const toggle = read.querySelector<HTMLButtonElement>('button')!;
     expect(toggle.textContent).toBe('drafter.readQuestions:2');
-    // Closed until opened; each question is a row cut to one line.
+    // Closed until opened; each question is a row of its whole text.
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     await act(async () => toggle.click());
     const rows = Array.from(
       read.querySelectorAll('[data-slot="filled-row"] p'),
     );
-    expect(rows.map((row) => row.getAttribute('title'))).toEqual([
+    expect(rows.map((row) => row.textContent)).toEqual([
       'How long do I have to file a damage claim?',
       'Who pays?',
     ]);

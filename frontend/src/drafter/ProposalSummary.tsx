@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-import { DrafterStepRow, FilledRow } from './DrafterStepRow';
+import { DrafterStepRow, FilledRow, type UndoneKind } from './DrafterStepRow';
 
 /** One filled field: its label and what it now holds. */
 export type ProposalReasonRow = {
@@ -26,6 +26,10 @@ export type ProposalReasonRow = {
  *   cards: Under the message, before everything else (the agent's gap
  *     cards).
  *   rows: A row per filled field.
+ *   undone: The rows (by key) whose field the user undid since: a map says
+ *     whether it is empty again or back to its previous value, a set only
+ *     that it went back. The step row counts them ("Filled 2 fields · 1
+ *     undone").
  *   notes: Things the user should know ("No ticketing tool is connected…").
  *   dropped: Lines naming what was left out and why.
  *   footnote: One muted line since the turn ("You changed Name in the
@@ -36,6 +40,7 @@ export function ProposalSummary({
   message,
   cards,
   rows,
+  undone,
   notes = [],
   dropped = [],
   footnote,
@@ -44,12 +49,20 @@ export function ProposalSummary({
   message?: string;
   cards?: ReactNode;
   rows: ProposalReasonRow[];
+  undone?: ReadonlySet<string> | ReadonlyMap<string, UndoneKind>;
   notes?: string[];
   dropped?: string[];
   footnote?: string;
   actions?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const undoneOf = (key: string): UndoneKind | undefined =>
+    !undone?.has(key)
+      ? undefined
+      : undone instanceof Map
+        ? undone.get(key)
+        : 'previous';
+  const undoneCount = rows.filter((row) => undone?.has(row.key)).length;
   return (
     <div className="flex flex-col gap-2" data-slot="proposal-summary">
       {message && (
@@ -65,9 +78,15 @@ export function ProposalSummary({
         <DrafterStepRow
           icon={ListChecks}
           label={t('drafter.filled', { count: rows.length })}
+          undone={undoneCount}
         >
           {rows.map((row) => (
-            <FilledRow key={row.key} label={row.label} value={row.summary} />
+            <FilledRow
+              key={row.key}
+              label={row.label}
+              value={row.summary}
+              undone={undoneOf(row.key)}
+            />
           ))}
         </DrafterStepRow>
       )}

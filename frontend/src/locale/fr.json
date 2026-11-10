@@ -4983,7 +4983,14 @@
     "readInsights_many": "Analyses lues : {{formatted}} conversations, {{days}} derniers jours",
     "readQuestions_one": "{{count}} exemple de question lu",
     "readQuestions_other": "{{count}} exemples de questions lus",
-    "readQuestions_many": "{{count}} exemples de questions lus"
+    "readQuestions_many": "{{count}} exemples de questions lus",
+    "undone": {
+      "count_one": "{{count}} annulé",
+      "count_other": "{{count}} annulés",
+      "count_many": "{{count}} annulés",
+      "empty": "Annulé, de nouveau vide",
+      "previous": "Annulé, retour à la valeur précédente"
+    }
   },
   "questions": {
     "somethingElse": "Autre chose…",

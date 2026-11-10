@@ -4785,7 +4785,13 @@
     "readInsights_one": "已讀取洞察：{{formatted}} 個對話，最近 {{days}} 天",
     "readInsights_other": "已讀取洞察：{{formatted}} 個對話，最近 {{days}} 天",
     "readQuestions_one": "已讀取 {{count}} 個範例問題",
-    "readQuestions_other": "已讀取 {{count}} 個範例問題"
+    "readQuestions_other": "已讀取 {{count}} 個範例問題",
+    "undone": {
+      "count_one": "已復原 {{count}} 個",
+      "count_other": "已復原 {{count}} 個",
+      "empty": "已復原，恢復為空白",
+      "previous": "已復原，恢復為先前的值"
+    }
   },
   "questions": {
     "somethingElse": "其他…",

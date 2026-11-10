@@ -4785,7 +4785,13 @@
     "readInsights_one": "インサイトを読み取りました: 会話 {{formatted}} 件、過去 {{days}} 日間",
     "readInsights_other": "インサイトを読み取りました: 会話 {{formatted}} 件、過去 {{days}} 日間",
     "readQuestions_one": "質問の例を {{count}} 件読み取りました",
-    "readQuestions_other": "質問の例を {{count}} 件読み取りました"
+    "readQuestions_other": "質問の例を {{count}} 件読み取りました",
+    "undone": {
+      "count_one": "{{count}} 件を元に戻しました",
+      "count_other": "{{count}} 件を元に戻しました",
+      "empty": "元に戻しました（空欄）",
+      "previous": "元に戻しました（以前の値）"
+    }
   },
   "questions": {
     "somethingElse": "その他…",

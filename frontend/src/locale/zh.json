@@ -4783,7 +4783,13 @@
     "readInsights_one": "已读取洞察：{{formatted}} 个对话，最近 {{days}} 天",
     "readInsights_other": "已读取洞察：{{formatted}} 个对话，最近 {{days}} 天",
     "readQuestions_one": "已读取 {{count}} 个示例问题",
-    "readQuestions_other": "已读取 {{count}} 个示例问题"
+    "readQuestions_other": "已读取 {{count}} 个示例问题",
+    "undone": {
+      "count_one": "已撤销 {{count}} 个",
+      "count_other": "已撤销 {{count}} 个",
+      "empty": "已撤销，恢复为空",
+      "previous": "已撤销，恢复为之前的值"
+    }
   },
   "questions": {
     "somethingElse": "其他…",
