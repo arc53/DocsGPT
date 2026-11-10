@@ -118,6 +118,10 @@ describe('QuestionCards', () => {
     expect(onAnswer).toHaveBeenCalledWith(
       'Where should refunds go? → Stop\n' +
         'Which knowledge? → Help Center, Shipping, Returns policy',
+      {
+        q1: 'Stop',
+        q2: 'Help Center, Shipping, Returns policy',
+      },
     );
   });
 
@@ -143,6 +147,7 @@ describe('QuestionCards', () => {
     );
     expect(onAnswer).toHaveBeenCalledWith(
       'Where should refunds go? → To the shop',
+      { q1: 'To the shop' },
     );
   });
 
@@ -207,6 +212,7 @@ describe('QuestionCards, a typed answer', () => {
     );
     expect(onAnswer).toHaveBeenCalledWith(
       'Which company is it for? → Meridian Freight Group',
+      { q1: 'Meridian Freight Group' },
     );
   });
 

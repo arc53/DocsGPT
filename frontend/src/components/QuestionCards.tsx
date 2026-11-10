@@ -53,15 +53,25 @@ export function composeAnswers(
   questions: Question[],
   answers: Record<string, Answer>,
 ): string {
+  const byId = answerTexts(questions, answers);
   return questions
-    .map((question) => {
-      const answer = answers[question.id];
-      if (!answer) return null;
-      const parts = answerParts(question, answer);
-      return parts.length > 0 ? `${question.text} → ${parts.join(', ')}` : null;
-    })
-    .filter((line): line is string => line !== null)
+    .filter((question) => byId[question.id])
+    .map((question) => `${question.text} → ${byId[question.id]}`)
     .join('\n');
+}
+
+/** Each answered question's answer as text, by question id. */
+function answerTexts(
+  questions: Question[],
+  answers: Record<string, Answer>,
+): Record<string, string> {
+  const texts: Record<string, string> = {};
+  for (const question of questions) {
+    const answer = answers[question.id];
+    const parts = answer ? answerParts(question, answer) : [];
+    if (parts.length > 0) texts[question.id] = parts.join(', ');
+  }
+  return texts;
 }
 
 /**
@@ -76,7 +86,8 @@ export function composeAnswers(
  * Args:
  *   questions: At most three questions, two to five options each (or none).
  *   active: Whether they can still be answered.
- *   onAnswer: Sends the composed answers.
+ *   onAnswer: Sends the composed answers; also given each answered
+ *     question's answer as text, by id, for a record of them.
  *   onSkip: When given, a Skip button beside Send answers goes on without
  *     answering.
  *   skipLabel: The Skip button's label ("Skip and draft", "Just answer").
@@ -98,7 +109,7 @@ export function QuestionCards({
 }: {
   questions: Question[];
   active: boolean;
-  onAnswer: (message: string) => void;
+  onAnswer: (message: string, answers: Record<string, string>) => void;
   onSkip?: () => void;
   skipLabel?: string;
   answers?: Record<string, string | null | undefined>;
@@ -134,6 +145,7 @@ export function QuestionCards({
   };
 
   const message = composeAnswers(questions, answers);
+  const submit = () => onAnswer(message, answerTexts(questions, answers));
 
   return (
     <div
@@ -212,7 +224,7 @@ export function QuestionCards({
                 message
               ) {
                 event.preventDefault();
-                onAnswer(message);
+                submit();
               }
             }}
           />
@@ -354,7 +366,7 @@ export function QuestionCards({
             size="sm"
             shape="pill"
             disabled={!message}
-            onClick={() => onAnswer(message)}
+            onClick={submit}
           >
             {t('questions.sendAnswers')}
           </Button>

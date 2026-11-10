@@ -310,6 +310,42 @@ describe('useDrafterSession', () => {
     expect(session.items).toEqual([]);
   });
 
+  // Decision 92: the answered cards are the record, so answers draw no bubble.
+  it('sends answers without a bubble, keeps them on the questions, and closes the rest', async () => {
+    stream.scripts = [
+      [QUESTIONS, { type: 'end' }],
+      [QUESTIONS, { type: 'end' }],
+    ];
+    await act(async () => session.send('Draft it'));
+    await act(async () =>
+      session.send('Who uses it? → Staff', { answers: { q1: 'Staff' } }),
+    );
+    expect(sent(1).at(-1)).toEqual({
+      role: 'user',
+      content: 'Who uses it? → Staff',
+    });
+    expect(session.items.filter((item) => item.kind === 'user')).toHaveLength(
+      1,
+    );
+    // The user's words all the same, for a build's later steps.
+    expect(session.userTexts()).toEqual(['Draft it', 'Who uses it? → Staff']);
+    const questions = () =>
+      session.items.filter((item) => item.kind === 'questions');
+    expect(questions()[0]).toMatchObject({
+      state: 'answered',
+      answers: { q1: 'Staff' },
+    });
+    // The second round is open until a message passes it, or a skip.
+    expect(questions()[1]).not.toHaveProperty('state');
+    await act(async () => session.closeQuestions('skipped'));
+    expect(questions()[1]).toMatchObject({ state: 'skipped' });
+
+    stream.scripts = [[QUESTIONS, { type: 'end' }]];
+    await act(async () => session.send('Something else'));
+    await act(async () => session.send('Never mind'));
+    expect(questions()[2]).toMatchObject({ state: 'passed' });
+  });
+
   it('gathers a turn’s reads into one item, and gives the next turn its own', async () => {
     stream.scripts = [
       [

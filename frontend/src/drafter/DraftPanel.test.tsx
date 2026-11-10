@@ -86,6 +86,7 @@ function Host({
     | 'notice'
     | 'insightsDays'
     | 'readsAgents'
+    | 'onSkipQuestions'
   >
 >) {
   const session = useDrafterSession({
@@ -416,6 +417,61 @@ describe('DraftPanel', () => {
     expect(container.textContent).toContain('Draft is in the form.');
     // Answered questions can't be sent again.
     expect(button('questions.sendAnswers')).toBeUndefined();
+    // The answered card is the record: no bubble repeats the answers.
+    expect(
+      Array.from(container.querySelectorAll('[data-item="user"]')).map(
+        (bubble) => bubble.textContent,
+      ),
+    ).toEqual(['A shipping agent']);
+    expect(
+      container.querySelector('[data-question="q1"]')?.textContent,
+    ).toContain('Stop');
+  });
+
+  // Decision 92: a question left blank reads Skipped, as the chat's record.
+  it('marks a question left blank as skipped, and a skipped round too', async () => {
+    const twoQuestions: DrafterEvent = {
+      type: 'questions',
+      questions: [
+        {
+          id: 'q1',
+          text: 'Where should refunds go?',
+          note: null,
+          multi: false,
+          options: [
+            { id: 'a', label: 'Email support' },
+            { id: 'b', label: 'Stop' },
+          ],
+        },
+        { id: 'q2', text: 'Tone?', note: null, multi: false, options: [] },
+      ],
+    };
+    const onSkipQuestions = vi.fn();
+    await act(async () =>
+      root.render(<Host onSkipQuestions={onSkipQuestions} />),
+    );
+    stream.scripts = [
+      [twoQuestions, { type: 'end' }],
+      [twoQuestions, { type: 'end' }],
+    ];
+    await ask('A shipping agent');
+    await act(async () =>
+      container
+        .querySelectorAll<HTMLButtonElement>('[role="radio"]')[0]
+        .click(),
+    );
+    await act(async () => button('questions.sendAnswers')!.click());
+    const cards = () =>
+      Array.from(container.querySelectorAll('[data-question="q2"]'));
+    expect(cards()[0].textContent).toContain('questions.skipped');
+
+    await act(async () => button('drafter.skipQuestions')!.click());
+    expect(onSkipQuestions).toHaveBeenCalledTimes(1);
+    expect(button('questions.sendAnswers')).toBeUndefined();
+    const second = Array.from(
+      container.querySelectorAll('[data-question="q1"]'),
+    )[1];
+    expect(second.textContent).toContain('questions.skipped');
   });
 
   it('shows a proposal as its message, notes, a Filled row and the turn actions', async () => {

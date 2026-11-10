@@ -23,7 +23,18 @@ export type DrafterItem =
   | { id: number; kind: 'message'; text: string }
   /** The example questions the turn read, all its reads in one item. */
   | { id: number; kind: 'read'; items: string[] }
-  | { id: number; kind: 'questions'; questions: DrafterQuestion[] }
+  /**
+   * A round of questions: open until a message passes it, then its record:
+   * `answered` (with each question's answer as text, by id), `skipped`, or
+   * `passed` (a message went past it unanswered).
+   */
+  | {
+      id: number;
+      kind: 'questions';
+      questions: DrafterQuestion[];
+      state?: QuestionsState;
+      answers?: Record<string, string>;
+    }
   | { id: number; kind: 'proposal'; proposal: unknown }
   | { id: number; kind: 'error'; code: DrafterErrorCode; message?: string };
 
@@ -32,6 +43,24 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
   ? Omit<T, K>
   : never;
 type NewItem = DistributiveOmit<DrafterItem, 'id'>;
+
+/** How a round of questions closed. */
+export type QuestionsState = 'answered' | 'skipped' | 'passed';
+
+/** How a message goes out (`send`'s options). */
+export type DrafterSendOptions = {
+  /**
+   * A message the client composed ("Continue with Knowledge and tools."): it
+   * runs the turn but draws no bubble and is not in `userTexts`.
+   */
+  hidden?: boolean;
+  /**
+   * The message answers the open questions: each question's answer as text,
+   * by id. It draws no bubble (the answered cards are the record) but stays
+   * in `userTexts`.
+   */
+  answers?: Record<string, string>;
+};
 
 /** What the panel shows while a turn runs. */
 export type DrafterStep = 'thinking' | 'reading' | 'drafting';
@@ -56,12 +85,13 @@ export type DrafterSession = {
    */
   full: boolean;
   /**
-   * Send a user message (a description, a change, composed answers).
-   * `hidden` sends one the client composed ("Continue with Knowledge and
-   * tools."): it runs the turn but draws no bubble and is not in
-   * `userTexts`.
+   * Send a user message (a description, a change, composed answers). Any
+   * message closes the open questions: `answers` as answered, otherwise as
+   * passed. See DrafterSendOptions for `hidden`.
    */
-  send: (text: string, options?: { hidden?: boolean }) => void;
+  send: (text: string, options?: DrafterSendOptions) => void;
+  /** Close the open questions without answers (Skip and draft). */
+  closeQuestions: (state: 'skipped') => void;
   /** Add an assistant message the client wrote; the server never sees it. */
   addMessage: (text: string) => void;
   /** What the user wrote in this conversation, in order. */
@@ -266,19 +296,42 @@ export function useDrafterSession({
     });
   }, [abort, handle, recipe]);
 
+  /** Close every open round: the latest with `answers` when given. */
+  const close = useCallback(
+    (state: QuestionsState, answers?: Record<string, string>) =>
+      setItems((prev) => {
+        const latestOpen = prev.findLastIndex(
+          (item) => item.kind === 'questions' && !item.state,
+        );
+        if (latestOpen < 0) return prev;
+        return prev.map((item, index) => {
+          if (item.kind !== 'questions' || item.state) return item;
+          return index === latestOpen && answers
+            ? { ...item, state, answers }
+            : { ...item, state: state === 'answered' ? 'passed' : state };
+        });
+      }),
+    [],
+  );
+
+  const closeQuestions = useCallback(
+    (state: 'skipped') => close(state),
+    [close],
+  );
+
   const send = useCallback(
-    (text: string, options?: { hidden?: boolean }) => {
+    (text: string, options?: DrafterSendOptions) => {
       const message = text.trim().slice(0, DRAFTER_USER_MESSAGE_CHARS);
       if (!message || history.current.length + 1 > DRAFTER_MAX_MESSAGES) return;
       // A turn still pending (failed, stopped or running) gives way.
       pending.current = { user: { role: 'user', content: message }, said: [] };
-      if (!options?.hidden) {
-        userWords.current.push(message);
+      close(options?.answers ? 'answered' : 'passed', options?.answers);
+      if (!options?.hidden) userWords.current.push(message);
+      if (!options?.hidden && !options?.answers)
         push({ kind: 'user', text: message });
-      }
       run();
     },
-    [push, run],
+    [close, push, run],
   );
 
   const addMessage = useCallback(
@@ -321,6 +374,7 @@ export function useDrafterSession({
     streaming: step !== null,
     full,
     send,
+    closeQuestions,
     addMessage,
     userTexts,
     stop,

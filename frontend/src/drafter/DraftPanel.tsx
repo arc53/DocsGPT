@@ -259,9 +259,7 @@ export function DraftPanel({
     wasOpen.current = open;
   }, [open, isDesktop]);
 
-  // Only questions not followed by a user message can still be answered.
   const lastProposal = items.findLastIndex((item) => item.kind === 'proposal');
-  const lastUser = items.findLastIndex((item) => item.kind === 'user');
   const latestProposal = items[lastProposal];
   const announcement =
     latestProposal?.kind === 'proposal' && announceProposal
@@ -331,14 +329,27 @@ export function DraftPanel({
           </p>
         );
       case 'questions':
+        // Open until a message passes it; then the cards are the record (no
+        // bubble repeats the answers), a blank one reads Skipped, and a round
+        // passed over reads Not answered.
         return (
           <QuestionCards
             key={item.id}
             questions={item.questions}
-            active={!streaming && index > lastUser}
-            onAnswer={(message) => session.send(message)}
-            onSkip={onSkipQuestions}
+            active={!streaming && !item.state}
+            onAnswer={(message, answers) => session.send(message, { answers })}
+            onSkip={
+              onSkipQuestions &&
+              (() => {
+                session.closeQuestions('skipped');
+                onSkipQuestions();
+              })
+            }
             skipLabel={t('drafter.skipQuestions')}
+            answers={item.answers ?? (item.state ? {} : undefined)}
+            emptyLabel={
+              item.state === 'passed' ? undefined : t('questions.skipped')
+            }
           />
         );
       case 'proposal':
