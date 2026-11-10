@@ -3909,6 +3909,38 @@ describe('NewAgent drafter', () => {
       expect(view()).toBeNull();
     });
 
+    it('keeps the changes after a conflict as a copy, which the agent then uses', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      mocks.updatePrompt.mockImplementationOnce(() =>
+        Promise.resolve(new Response('{}', { status: 409 })),
+      );
+      await act(async () => save()!.click());
+      // The view stays, says so, and Save now keeps the changes as a copy.
+      expect(
+        view()!.querySelector('[data-slot="prompt-conflict"]')!.textContent,
+      ).toContain('settings.prompts.conflict.title');
+      expect(save()).toBeUndefined();
+      mocks.createPrompt.mockImplementationOnce(() =>
+        jsonResponse({ id: 'p9', updated_at: 'v9' }),
+      );
+      await act(async () =>
+        buttonByText('settings.prompts.saveAsCopy', view()!)!.click(),
+      );
+      expect(mocks.updatePrompt).toHaveBeenCalledTimes(1);
+      const copy = mocks.createPrompt.mock.calls[0][0] as {
+        name: string;
+        content: string;
+      };
+      expect(copy.content).toBe('Shorter.');
+      expect(view()).toBeNull();
+      // The agent saves with the copy.
+      await pickMenuItem(container, 'agents.form.buttons.saveDraft');
+      const sent = mocks.updateAgent.mock.calls.at(-1)![1] as FormData;
+      expect(sent.get('prompt_id')).toBe('p9');
+    });
+
     it('opens a prompt from its picker row without picking it', async () => {
       await renderWithPrompt('p1');
       await openFromRow('default');

@@ -35,7 +35,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MetaLine } from '@/components/ui/meta-line';
@@ -223,7 +223,8 @@ const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
 
 /** What the prompt view's Save and leave says when it can't save, by reason. */
 const LEAVE_ERRORS: Record<string, string> = {
-  conflict: 'settings.prompts.editConflict',
+  // Another try saves a copy: a save at the same version fails the same.
+  conflict: 'settings.prompts.editConflictLeave',
   review: 'settings.prompts.saveBlocked.review',
   name: 'settings.prompts.saveBlocked.name',
   nameExists: 'modals.prompts.nameExists',
@@ -932,7 +933,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * picked.
    */
   const handlePromptSaved = ({ id, name }: { id: string; name: string }) => {
-    const created = promptDetail.target?.kind === 'new';
+    const target = promptDetail.target;
+    // A copy kept after a conflict stands in for the agent's prompt it
+    // copied, as a new prompt does.
+    const created =
+      target?.kind === 'new' ||
+      (target?.kind === 'edit' &&
+        target.prompt.id !== id &&
+        draftFormRef.current.prompt === target.prompt.id);
     const listed = prompts.find((prompt) => prompt.id === id);
     dispatch(
       setPrompts(
@@ -2989,7 +2997,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               type="button"
               size="field"
               shape="pill"
-              onClick={() => void promptDetail.save()}
+              // After a conflict a save at the same version fails the same:
+              // Save keeps the changes as a new prompt instead.
+              onClick={() =>
+                void promptDetail.save({ asCopy: promptDetail.conflict })
+              }
               // Mid-review the text holds only the changes chosen so far:
               // the drawer's Accept all or Discard ends it first.
               disabled={
@@ -2999,9 +3011,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               }
               loading={promptDetail.saving}
             >
-              {promptOrigin === 'drafter'
-                ? t('drafter.agent.prompt.use')
-                : t('modals.prompts.save')}
+              {promptDetail.conflict
+                ? t('settings.prompts.saveAsCopy')
+                : promptOrigin === 'drafter'
+                  ? t('drafter.agent.prompt.use')
+                  : t('modals.prompts.save')}
             </Button>
           )}
         </>
@@ -3009,6 +3023,32 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       byline={promptViewByline ? <MetaLine>{promptViewByline}</MetaLine> : null}
       loading={promptDetail.status === 'loading'}
       onRetry={promptDetail.status === 'error' ? promptDetail.retry : undefined}
+      notice={
+        promptDetail.conflict && !promptDetail.readOnly ? (
+          <Alert variant="warning" data-slot="prompt-conflict">
+            <AlertTitle>{t('settings.prompts.conflict.title')}</AlertTitle>
+            <AlertDescription>
+              <p>
+                {t('settings.prompts.conflict.description')}{' '}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="text"
+                  tone="current"
+                  onClick={() => void promptDetail.save({ asCopy: true })}
+                  disabled={
+                    !promptDetail.canSave ||
+                    drafterSession.streaming ||
+                    promptReview.review !== null
+                  }
+                >
+                  {t('settings.prompts.saveAsCopy')}
+                </Button>
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : undefined
+      }
       idPrefix="agent-prompt"
       name={promptDetail.name}
       setName={setPromptName}
@@ -3843,7 +3883,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               message={t('settings.prompts.unsavedChanges')}
               modalState="ACTIVE"
               setModalState={(state) => setLeavingPrompt(state === 'ACTIVE')}
-              submitLabel={t('settings.prompts.saveAndLeave')}
+              submitLabel={
+                promptDetail.conflict
+                  ? t('settings.prompts.saveCopyAndLeave')
+                  : t('settings.prompts.saveAndLeave')
+              }
               // Pending while the save runs; a refused save rejects, so its
               // error stays in this dialog and the view stays. A prompt that
               // can't be saved yet (no name) just stays.
@@ -3855,7 +3899,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     ? 'review'
                     : promptDetail.saveBlocker;
                 if (blocker) throw new Error(blocker);
-                const result = await promptDetail.save({ quiet: true });
+                const result = await promptDetail.save({
+                  quiet: true,
+                  asCopy: promptDetail.conflict,
+                });
                 if (result !== 'saved') throw new Error(result);
                 setLeavingPrompt(false);
               }}
