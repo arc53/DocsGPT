@@ -1084,7 +1084,7 @@ class TestSafety:
     ])
     def test_a_part_the_user_left_open_is_asked_about_first(self, fields, part):
         with pytest.raises(ProposalInvalid, match="Ask the user first") as raised:
-            self._stated(fields)
+            self._stated(fields, earlier=["Build a public support bot."])
         assert part in str(raised.value) and "their words leave open" in str(raised.value)
 
     def test_a_skipped_round_sets_only_what_the_users_words_settle(self):
@@ -1322,3 +1322,119 @@ def test_a_claiming_message_costs_the_one_correction_but_never_the_turn():
                             llm_factory=fake.factory))
     assert "skipped the questions" in fake.calls[1]["messages"][-1]["content"]
     assert events[-1]["type"] == "proposal" and events[-1]["proposal"]["fields"] == {}
+
+
+def _q(text, *labels, multi=False):
+    """A normalized question, as ``normalize_questions`` hands it on."""
+    return {"id": "q1", "text": text, "note": None, "multi": multi, "placeholder": None,
+            "options": [{"id": chr(97 + i), "label": label, "input": None, "exclusive": False}
+                        for i, label in enumerate(labels)]}
+
+
+#: The questions of the live re-check (build_vague_r1 and safety_explicit_r2/r4).
+LIMITS_Q = _q("How much should the bot be allowed to answer per day, across all visitors?",
+              "500 requests a day (recommended)", "50,000 tokens a day", "No limit")
+CHECKS_Q = _q("Which extra safety checks should the bot run?", "No extra checks",
+              "Hide personal data — emails, phone numbers (recommended)", "Block prompt-injection attempts")
+TOPICS_Q = _q("Which Insights topics should customer chats be sorted into?", "Shipping services & bookings",
+              "Customs & paperwork", "No topics")
+KEEP_NONE_Q = _q("Keep Insights without topics, or add a few after all?", "Shipment tracking", "Customs paperwork",
+                 "No topics, as I said before", multi=True)
+
+
+@pytest.mark.unit
+class TestSafetyQuestions:
+    STATED = TestSafety.STATED
+
+    def _check(self, *questions, earlier=(STATED,), said="Continue with Limits and safety.", can_correct=True):
+        context = parse_context({"form": {}, "step": "safety", "earlier": list(earlier)})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": said}], context, "drafter:t")
+        req.can_correct = can_correct
+        return AGENT_RECIPE.check_questions(json.loads(json.dumps(list(questions))), req, _ws())
+
+    @pytest.mark.parametrize("question,part", [(KEEP_NONE_Q, "topics"), (TOPICS_Q, "topics"),
+                                               (LIMITS_Q, "limit"), (CHECKS_Q, "guardrail")])
+    def test_a_question_about_a_part_the_user_settled_goes_back(self, question, part):
+        with pytest.raises(ProposalInvalid, match="already settle") as raised:
+            self._check(question)
+        assert part in str(raised.value)
+
+    @pytest.mark.parametrize("words", ["No extra checks, please.", "no guardrails", "without any checks"])
+    def test_declining_checks_settles_them(self, words):
+        with pytest.raises(ProposalInvalid, match="already settle"):
+            self._check(CHECKS_Q, earlier=[words])
+
+    def test_open_parts_are_asked_and_shaped_as_pick_any_with_an_exclusive_none(self):
+        out = self._check(LIMITS_Q, CHECKS_Q, TOPICS_Q, earlier=["a bot for my company"])
+        limits, checks, topics = out
+        assert limits["multi"] is False and not any(o["exclusive"] for o in limits["options"])
+        for question, none in ((checks, "No extra checks"), (topics, "No topics")):
+            assert question["multi"] is True
+            assert question["options"][-1]["label"] == none and question["options"][-1]["exclusive"] is True
+            assert [o["exclusive"] for o in question["options"]].count(True) == 1
+            assert [o["id"] for o in question["options"]] == ["a", "b", "c"]
+
+    def test_asking_for_topics_after_declining_them_reopens_topics(self):
+        out = self._check(TOPICS_Q, said="Also suggest a few Insights topics for it.")
+        assert out[0]["multi"] is True
+
+    def test_with_no_correction_left_a_settled_question_is_dropped(self):
+        out = self._check(TOPICS_Q, _q("What tone?", "Friendly", "Formal"), can_correct=False)
+        assert [q["text"] for q in out] == ["What tone?"]
+        # Dropping every question would leave nothing to send: they stay.
+        assert len(self._check(TOPICS_Q, can_correct=False)) == 1
+
+    def test_other_steps_questions_are_left_alone(self):
+        context = parse_context({"form": {}, "step": "prompt", "earlier": [self.STATED]})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "go"}], context, "drafter:t")
+        assert AGENT_RECIPE.check_questions([TOPICS_Q], req, _ws()) == [TOPICS_Q]
+
+    def test_a_declined_part_is_left_out_of_the_proposal_without_asking(self):
+        context = parse_context({"form": {}, "step": "safety", "earlier": [self.STATED]})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "Continue with Limits and safety."}],
+                           context, "drafter:t")
+        topics = [{"name": "Customs paperwork", "description": "Documents, duties"}]
+        proposal = validate({"message": "Done.", "fields": {
+            "limits": {"mode": "requests", "value": 1000}, "guardrails": {"checks": ["pii", "injection"]},
+            "analytics": {"topics": topics}}}, req, _ws())
+        assert set(proposal["fields"]) == {"limits", "guardrails"}
+
+    def test_no_limit_in_the_users_words_is_set_without_asking(self):
+        context = parse_context({"form": {"limits": {"mode": "requests", "value": 500}}, "step": "safety",
+                                 "earlier": ["Public bot, no limit."]})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "Continue."}], context, "drafter:t")
+        proposal = validate({"message": "Done.", "fields": {"limits": {"mode": "none"}}}, req, _ws())
+        assert proposal["fields"] == {"limits": {"mode": "none"}}
+
+    @pytest.mark.parametrize("fields,part", [
+        ({"limits": {"mode": "requests", "value": 500}}, "limits"),
+        ({"limits": {"mode": "requests", "value": 1000}, "guardrails": {"checks": ["pii", "secrets"]}},
+         "guardrails"),
+    ])
+    def test_a_value_against_what_the_user_said_goes_back_once(self, fields, part):
+        context = parse_context({"form": {}, "step": "safety", "earlier": [self.STATED]})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "Continue."}], context, "drafter:t")
+        with pytest.raises(ProposalInvalid, match="as they said") as raised:
+            validate({"message": "Done.", "fields": fields}, req, _ws())
+        assert part in str(raised.value)
+        req.can_correct = False
+        assert part not in validate({"message": "Done.", "fields": fields}, req, _ws())["fields"]
+
+
+@pytest.mark.unit
+def test_the_loop_sends_a_settled_question_back():
+    from docsgpt.drafter.runner import run_draft
+    from tests.drafter.fakes import calls, FakeLLM, tool_call
+
+    asked = {"questions": [{"text": KEEP_NONE_Q["text"], "multi": True,
+                            "options": [o["label"] for o in KEEP_NONE_Q["options"]]}]}
+    fake = FakeLLM(calls(tool_call("ask_user", asked)),
+                   calls(tool_call("submit_proposal", {"message": "Set.", "fields": {
+                       "limits": {"mode": "requests", "value": 1000}}})))
+    context = parse_context({"form": {}, "step": "safety", "earlier": [TestSafety.STATED]})
+    req = DraftRequest("alice", "agent", [{"role": "user", "content": "Continue with Limits and safety."}], context,
+                       "drafter:t")
+    events = list(run_draft(req, AGENT_RECIPE, _ws(), {"id": "m", "display_name": "M", "supports_tools": True},
+                            llm_factory=fake.factory))
+    assert "already settle" in fake.calls[1]["messages"][-1]["content"]
+    assert events[-1]["type"] == "proposal"

@@ -1295,7 +1295,22 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
             dropped.append({"field": key, "reason": "not_allowed"})
         elif available[key]:
             wanted.append(key)
-    open_parts = [key for key in wanted if not _stated(key, raw_fields[key], req)]
+    # What the user's words settle is never asked about: a part they declined is left out (a limit of "none"
+    # excepted), and a value against what they said goes back once, unless a questions round has given them a say.
+    settled = _settled_parts(req)
+    against = []
+    for key in list(wanted):
+        how = settled.get(key)
+        if how == "declined" and not (key == "limits" and isinstance(raw_fields[key], dict)
+                                      and raw_fields[key].get("mode") == "none"):
+            wanted.remove(key)
+        elif how == "stated" and not question_rounds(req.messages) and not _stated(key, raw_fields[key], req):
+            against.append(key)
+    if against:
+        if req.can_correct:
+            raise ProposalInvalid([SETTLED_AGAINST.format(parts=", ".join(_PART_NAMES[key] for key in against))])
+        wanted = [key for key in wanted if key not in against]
+    open_parts = [key for key in wanted if key not in settled and not _stated(key, raw_fields[key], req)]
     if req.context.get("skip_questions"):
         # The user skipped the questions: only what their own words state is set. A message written for the parts
         # left open would claim them, so the model hears it once; with no correction left they are dropped.
@@ -1349,6 +1364,114 @@ def _stated(key: str, raw: Any, req: DraftRequest) -> bool:
     names = [clean_text(t.get("name"), TOPIC_NAME_CHARS).casefold() for t in topics if isinstance(t, dict)] \
         if isinstance(topics, list) else []
     return bool(names) and all(name and name in lowered for name in names)
+
+
+SETTLED_AGAINST = (
+    "The user's words already settle the {parts}: set them as they said, without asking, and never offer a "
+    "different value."
+)
+SETTLED_ASKED = (
+    "The user's words already settle the {part} ({how}): don't ask about it. Ask only about the parts still open, "
+    "or submit the proposal when none is, setting this part as they said."
+)
+_CHECK_NAMES = r"(?:pii|personal data|injection|groundedness|grounded|secrets?)"
+#: How the user's words settle a safety part, in English: declined ("no topics"), or stated (a number, named checks).
+_DECLINED = {
+    "limits": re.compile(r"\b(?:no|without(?: a| any)?)\s+(?:daily\s+|usage\s+|request\s+|token\s+)?"
+                         r"(?:limits?|caps?)\b|\bunlimited\b"),
+    "guardrails": re.compile(r"\b(?:no|without(?: any)?)\s+(?:extra\s+|additional\s+|safety\s+)*"
+                             r"(?:checks?|guardrails?)\b"),
+    "analytics": re.compile(r"\b(?:no|without(?: any)?)\s+(?:insights\s+)?topics?\b"),
+}
+_STATED = {
+    "limits": re.compile(r"\d[\d,.\s\u00a0\u202f']*k?\s*(?:requests?|tokens?)\b"),
+    "guardrails": re.compile(rf"\b{_CHECK_NAMES}\b(?:\s+(?:and|or|,)?\s*\w+){{0,3}}\s+(?:checks?|guardrails?)\b"
+                             rf"|\bguardrails?\b.*\b{_CHECK_NAMES}\b"),
+}
+#: Topics asked for again after being declined reopen them.
+_TOPICS = re.compile(r"\btopics?\b")
+
+
+def _plain(text: str) -> str:
+    """Text folded for the English phrase checks: casefolded, hyphens as spaces."""
+    return re.sub(r"[-\u2010\u2011\u2013\u2014]", " ", text).casefold()
+
+
+def _settled_parts(req: DraftRequest) -> dict[str, str]:
+    """The safety parts the user's own words settle: ``{part: "declined" | "stated"}``.
+
+    Read in English over the finished steps' messages and this conversation's, in order; a later message that
+    settles a part again wins, and one asking about topics after "no topics" opens them again.
+    """
+    settled: dict[str, str] = {}
+    for text in [*req.context.get("earlier", []), *(m["content"] for m in req.messages if m.get("role") == "user")]:
+        words = _plain(text)
+        for key in SAFETY_FIELDS:
+            if _DECLINED[key].search(words):
+                settled[key] = "declined"
+            elif key in _STATED and _STATED[key].search(words):
+                settled[key] = "stated"
+            elif key == "analytics" and _TOPICS.search(words):
+                settled.pop(key, None)
+    return settled
+
+
+def _question_part(question: dict) -> Optional[str]:
+    """The safety part a question asks about (English wording only), or None."""
+    words = _plain(" ".join([question["text"], *(o["label"] for o in question["options"])]))
+    if _TOPICS.search(words) or re.search(r"\binsights\b", words):
+        return "analytics"
+    if re.search(rf"guardrail|\bchecks?\b|\b{_CHECK_NAMES}\b", words):
+        return "guardrails"
+    if re.search(r"\blimits?\b|\bcaps?\b|\brequests?\b|\btokens?\b|\bper day\b", words):
+        return "limits"
+    return None
+
+
+def _pick_any(question: dict) -> None:
+    """Make a guardrails or topics question pick-any, its "No extra checks" / "No topics" option exclusive and last."""
+    question["multi"] = True
+    options = question["options"]
+    none = next((o for o in options if re.match(r"\s*(?:no|none)\b", _plain(o["label"]))), None)
+    if none is not None:
+        for option in options:
+            option["exclusive"] = option is none
+    options.sort(key=lambda option: option["exclusive"])
+    for i, option in enumerate(options):
+        option["id"] = chr(ord("a") + i)
+
+
+def check_questions(questions: list[dict], req: DraftRequest, ws: Workspace) -> list[dict]:
+    """The safety step's questions, checked against what the user's words settle and shaped as the step asks.
+
+    A question about a part the user settled goes back once (:data:`SETTLED_ASKED`); with no correction left it is
+    dropped, unless it is the only one. The guardrails and topics questions become pick-any with their "No extra
+    checks" / "No topics" option exclusive, whatever the model sent. Other steps' questions pass as they are.
+
+    Raises:
+        ProposalInvalid: A question about a settled part, while a correction is left.
+    """
+    if req.context.get("step") != "safety":
+        return questions
+    settled = _settled_parts(req)
+    problems: list[str] = []
+    kept: list[dict] = []
+    for question in questions:
+        part = _question_part(question)
+        if part in settled:
+            how = "they want none" if settled[part] == "declined" else "they said what they want"
+            problems.append(SETTLED_ASKED.format(part=_PART_NAMES[part], how=how))
+            continue
+        if part in ("guardrails", "analytics") and question["options"]:
+            _pick_any(question)
+        kept.append(question)
+    if problems and req.can_correct:
+        raise ProposalInvalid(problems)
+    if not kept:
+        return questions
+    for i, question in enumerate(kept):
+        question["id"] = f"q{i + 1}"
+    return kept
 
 
 def _insights_guardrails(raw: Any, req: DraftRequest, ws: AgentWorkspace, fields: dict, dropped: list[dict]) -> None:
@@ -1676,4 +1799,5 @@ AGENT_RECIPE = register(Recipe(
     tools_for=read_tools_for,
     proposal_description="Fill the agent form with your draft. Ends your turn.",
     questions=asks,
+    check_questions=check_questions,
 ))

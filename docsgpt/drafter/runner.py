@@ -456,6 +456,8 @@ class _Turn:
                 raise ProposalInvalid([NO_MORE_QUESTIONS if self.recipe.asks(self.req)
                                        else "This screen takes no questions. Submit the proposal instead."])
             message, questions = normalize_questions(args)
+            if self.recipe.check_questions is not None:
+                questions = self.recipe.check_questions(questions, self.req, self.ws)
             message = message or lead_in
             events = [{"type": "message", "text": message}] if message else []
             return events + [{"type": "questions", "questions": questions}]

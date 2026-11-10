@@ -79,6 +79,9 @@ class Recipe:
             ``(request) -> bool`` deciding it per turn (the prompt recipe asks only before writing).
         reads_workspace: Whether ``load_workspace`` reads anything; a recipe that drafts on the
             screen's own values (a prompt) sends no ``reading`` status, so the panel shows no counts.
+        check_questions: Checks and reshapes a turn's normalized questions for the recipe's own rules,
+            ``(questions, request, workspace) -> questions``; raises :class:`ProposalInvalid` on a fixable problem.
+            None takes them as they are.
     """
 
     id: str
@@ -93,6 +96,7 @@ class Recipe:
     proposal_description: str = "Hand the finished draft to the user's form. Ends your turn."
     questions: Union[bool, Callable[[DraftRequest], bool]] = True
     reads_workspace: bool = True
+    check_questions: Optional[Callable[[list[dict], DraftRequest, Workspace], list[dict]]] = None
 
     def asks(self, req: DraftRequest) -> bool:
         """Whether this turn of ``req`` may ask questions at all."""
