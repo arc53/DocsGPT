@@ -130,6 +130,9 @@ class KeenableSearchTool(Tool):
 
         if response.status_code == 200:
             try:
+                data = response.json()
+                if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                    raise ValueError("response must contain a results list")
                 results = [
                     {
                         "title": item.get("title", ""),
@@ -137,7 +140,7 @@ class KeenableSearchTool(Tool):
                         "snippet": item.get("snippet") or item.get("description", ""),
                         "published_at": item.get("published_at"),
                     }
-                    for item in response.json().get("results", [])
+                    for item in data["results"]
                 ]
             except (AttributeError, TypeError, ValueError) as e:
                 logger.error("Keenable web search returned an invalid response: %s", e)
@@ -194,6 +197,8 @@ class KeenableSearchTool(Tool):
                 data = response.json()
                 if not isinstance(data, dict):
                     raise TypeError(f"expected an object, got {type(data).__name__}")
+                if not isinstance(data.get("content"), str):
+                    raise ValueError("response must contain a content string")
             except (TypeError, ValueError) as e:
                 logger.error("Keenable fetch returned an invalid response: %s", e)
                 return {"status_code": 500, "message": f"Fetch failed: invalid response ({e})"}
