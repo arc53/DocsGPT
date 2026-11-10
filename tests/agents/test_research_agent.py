@@ -1222,6 +1222,24 @@ class TestScheduledResearchRun:
         assert agent.tool_executor.cannot_complete == "no browser tool to open the status page"
         assert report == "no browser tool to open the status page\n\nNothing else found."
 
+    def test_a_marked_summary_of_a_step_that_ran_out_of_rounds_is_noted_too(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(max_sub_iterations=0, **agent_base_params)
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm.gen = Mock(return_value="CANNOT_COMPLETE: no email tool")
+
+        report = agent._research_step("Email the summary", {})
+
+        assert agent.tool_executor.cannot_complete == "no email tool"
+        assert report == "no email tool"
+
 
 # =====================================================================
 # _research_step and _research_step_with_executor

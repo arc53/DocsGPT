@@ -604,7 +604,8 @@ class ResearchAgent(BaseAgent):
             )
             self._track_tokens(self._snapshot_llm_tokens())
             text = self._extract_text(response)
-            return text or "Research step completed."
+            report = text or "Research step completed."
+            return self._take_step_marker(report, executor) if marks_answer else report
         except Exception as exc:
             if is_budget_exhausted(exc):
                 raise
