@@ -3941,6 +3941,53 @@ describe('NewAgent drafter', () => {
       expect(sent.get('prompt_id')).toBe('p9');
     });
 
+    it("drops the prompt view's history entry when Back comes onto it with no view open", async () => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          status: 'draft',
+          agent_type: 'classic',
+          prompt_id: 'p1',
+          access: 'owner',
+        }),
+      );
+      const seen: { state: unknown } = { state: undefined };
+      function StateProbe() {
+        seen.state = useLocation().state;
+        return null;
+      }
+      // Left through the sidebar with the view open, then Back: the entry
+      // the view pushed is where Back lands.
+      await act(async () => {
+        root.render(
+          <MemoryRouter
+            initialEntries={[
+              '/agents/edit/agent-1',
+              { pathname: '/agents/edit/agent-1', state: { promptView: true } },
+            ]}
+            initialIndex={1}
+          >
+            <Routes>
+              <Route
+                path="/agents/edit/:agentId"
+                element={
+                  <>
+                    <NewAgent mode="edit" />
+                    <StateProbe />
+                  </>
+                }
+              />
+            </Routes>
+          </MemoryRouter>,
+        );
+      });
+      expect(view()).toBeNull();
+      expect(
+        (seen.state as { promptView?: boolean } | null)?.promptView,
+      ).not.toBe(true);
+    });
+
     it('opens a prompt from its picker row without picking it', async () => {
       await renderWithPrompt('p1');
       await openFromRow('default');

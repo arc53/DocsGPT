@@ -691,6 +691,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const viewInHistory =
     (location.state as { promptView?: boolean } | null)?.promptView === true;
+  // Back onto the view's entry with no view open (the page was left through
+  // the sidebar while it was): the entry goes too, so one more Back leaves
+  // the form rather than two.
+  useEffect(() => {
+    if (viewInHistory && !promptViewOpen) navigate(-1);
+    // Only as the form mounts.
+  }, []);
   // Each opening pushes the history entry Back pops, unless one is there.
   useEffect(() => {
     if (!promptViewOpen || viewInHistory) return;
