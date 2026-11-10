@@ -317,11 +317,11 @@ class TestExecuteScheduledRunBody:
         """A workflow that ran its nodes did work, however quiet the stream.
 
         Workflow tool calls never surface as ``tool_calls`` events (the engine
-        keeps them in its execution log) and node agents own their LLMs, so
-        the runner reports 0 generated tokens. A workflow whose nodes don't
-        stream and whose end node has no output template therefore matches the
-        empty-output shape exactly — ``steps_completed`` is what tells them
-        apart. Without it, every such schedule fails and then autopauses.
+        keeps them in its execution log), and a workflow of code or state
+        nodes calls no LLM at all. Such a workflow whose end node has no
+        output template matches the empty-output shape exactly —
+        ``steps_completed`` is what tells them apart. Without it, every such
+        schedule fails and then autopauses.
         """
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
@@ -961,3 +961,105 @@ class TestCallerRules:
 
     def test_owners_own_schedule_runs_as_the_owner(self, pg_engine, patched_engine, stub_events):
         assert self._caller(pg_engine) == {"external_caller": False, "public_link_caller": False}
+
+
+# What the fake provider reports for each agent node's one call.
+_NODE_CALLS = {"Fetch prices": (1200, 300), "Write summary": (900, 250)}
+
+
+def _fake_llm_class():
+    """An LLM that streams a canned reply and reports the node's usage, as a provider would."""
+    from docsgpt.llm.base import BaseLLM
+
+    class _FakeLLM(BaseLLM):
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                decoded_token=kwargs.get("decoded_token"),
+                agent_id=kwargs.get("agent_id"),
+                model_id=kwargs.get("model_id"),
+            )
+            self.user_api_key = kwargs.get("user_api_key")
+            self.stateless = False
+
+        def _supports_tools(self):
+            return False
+
+        def _raw_gen(self, baseself, model, messages, stream, tools=None, **kw):
+            return "ok"
+
+        def _raw_gen_stream(self, baseself, model, messages, stream, tools=None, **kw):
+            system = str(messages[0].get("content", "")) if messages else ""
+            title = next((t for t in _NODE_CALLS if t in system), None)
+            prompt, completion = _NODE_CALLS.get(title, (10, 2))
+            self._last_usage = {"prompt_tokens": prompt, "completion_tokens": completion}
+            self._last_usage_claimed = False
+            yield f"{title or 'reply'}: done."
+
+    return _FakeLLM
+
+
+class TestWorkflowRunTokens:
+    """A workflow's node agents own their LLMs; the run row and the budget see their sum."""
+
+    def _pending_workflow_run(self, conn, token_budget):
+        from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
+        from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        wf_id = str(WorkflowsRepository(conn).create("u1", "Nightly prices")["id"])
+        nodes = WorkflowNodesRepository(conn).bulk_create(wf_id, 1, [
+            {"node_id": "start", "node_type": "start", "title": "Start"},
+            {"node_id": "fetch", "node_type": "agent", "title": "Fetch prices",
+             "config": {"agent_type": "classic", "system_prompt": "Fetch prices", "stream_to_user": False}},
+            {"node_id": "summary", "node_type": "agent", "title": "Write summary",
+             "config": {"agent_type": "classic", "system_prompt": "Write summary"}},
+            {"node_id": "end", "node_type": "end", "title": "End"},
+        ])
+        ids = {n["node_id"]: str(n["id"]) for n in nodes}
+        WorkflowEdgesRepository(conn).bulk_create(wf_id, 1, [
+            {"edge_id": f"e{i}", "from_node_id": ids[a], "to_node_id": ids[b]}
+            for i, (a, b) in enumerate([("start", "fetch"), ("fetch", "summary"), ("summary", "end")])
+        ])
+        agent_id = str(conn.execute(
+            text(
+                "INSERT INTO agents (user_id, name, status, agent_type, workflow_id, default_model_id) "
+                "VALUES ('u1', 'Prices', 'published', 'workflow', CAST(:w AS uuid), '') RETURNING id"
+            ),
+            {"w": wf_id},
+        ).scalar())
+        schedule = SchedulesRepository(conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring", instruction="Run the nightly report",
+            cron="0 2 * * *", next_run_at=_now() + timedelta(days=1), token_budget=token_budget,
+        )
+        return ScheduleRunsRepository(conn).record_pending(str(schedule["id"]), "u1", agent_id, _now())
+
+    def _execute(self, pg_engine, monkeypatch, token_budget=None):
+        monkeypatch.setattr(
+            "docsgpt.agents.base.LLMCreator.create_llm",
+            classmethod(lambda cls, *a, **kw: _fake_llm_class()(*a, **kw)),
+        )
+        with pg_engine.begin() as conn:
+            run = self._pending_workflow_run(conn, token_budget)
+        result = execute_scheduled_run_body(str(run["id"]), "celery-wf-tokens")
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            billed = conn.execute(
+                text("SELECT prompt_tokens, generated_tokens FROM token_usage WHERE user_id = 'u1' ORDER BY id")
+            ).fetchall()
+        return result, row, [tuple(b) for b in billed]
+
+    def test_the_run_row_sums_both_agent_nodes(self, pg_engine, patched_engine, stub_events, monkeypatch):
+        result, row, billed = self._execute(pg_engine, monkeypatch)
+
+        assert result["status"] == "success"
+        assert (row["prompt_tokens"], row["generated_tokens"]) == (2100, 550)
+        # Each node's call is billed once, as it ran; the run adds no row of its own.
+        assert billed == [(1200, 300), (900, 250)]
+
+    def test_a_workflow_over_its_token_budget_fails(self, pg_engine, patched_engine, stub_events, monkeypatch):
+        result, row, billed = self._execute(pg_engine, monkeypatch, token_budget=1000)
+
+        assert result["status"] == "failed"
+        assert row["error_type"] == "budget_exceeded"
+        assert row["error"] == "used 2650 tokens exceeds budget 1000"
+        assert billed == [(1200, 300), (900, 250)]
