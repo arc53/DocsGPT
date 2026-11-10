@@ -4211,7 +4211,7 @@
       "toolVariables_many": "{{variables}} ejecutan sus herramientas antes de cada mensaje",
       "templateInvalid": "La plantilla no se puede analizar",
       "boundariesMissing": "No tiene la sección Boundaries, así que el agente podría seguir instrucciones ocultas en documentos o en resultados de herramientas",
-      "citationsMissing": "No usa source.citation_rules, así que las respuestas no citarán fuentes como [1], [2]",
+      "citationsMissing": "No usa <code>{{variable}}</code>, así que las reglas de citas [1], [2] de DocsGPT no están en el prompt",
       "onLine": "{{check}} (línea {{line}})"
     },
     "checksHint": {

@@ -1,4 +1,6 @@
 import type { TFunction } from 'i18next';
+import { createElement, type ReactNode } from 'react';
+import { Trans } from 'react-i18next';
 
 /** The topics `repeats_builtin` names: lines DocsGPT already adds. */
 const BUILTIN_TOPICS = ['date', 'citations', 'formatting', 'data_guard'];
@@ -21,20 +23,21 @@ export type PromptCheckFacts = {
  * editor's hint and a review's server findings: the placeholder or the
  * variables it names, and the line when it has one. A code it doesn't
  * know is null, so a newer server's check shows nothing rather than a key.
+ * A sentence that names a variable shows it as code (DESIGN.md › Mono).
  *
  * Args:
  *   t: The translate function.
  *   facts: The check's code and what it names.
  *
  * Returns:
- *   The sentence, or null.
+ *   The sentence (a string, or a node when it shows code), or null.
  */
 export function promptCheckText(
   t: TFunction,
   facts: PromptCheckFacts,
-): string | null {
+): ReactNode {
   const plain = { interpolation: { escapeValue: false } };
-  let text: string | null = null;
+  let text: ReactNode = null;
   switch (facts.code) {
     case 'placeholder':
       text = t('prompts.checks.placeholder', {
@@ -70,12 +73,21 @@ export function promptCheckText(
       text = t('prompts.checks.boundariesMissing');
       break;
     case 'citations_missing':
-      text = t('prompts.checks.citationsMissing');
+      // True with or without a citation line of the prompt's own: it says
+      // only that DocsGPT's rules aren't in it.
+      text = createElement(Trans, {
+        t,
+        i18nKey: 'prompts.checks.citationsMissing',
+        values: { variable: '{{ source.citation_rules }}' },
+        components: { code: createElement('code', { className: 'font-mono' }) },
+      });
       break;
     default:
       return null;
   }
-  return typeof facts.line === 'number' && facts.code !== 'placeholder'
+  return typeof text === 'string' &&
+    typeof facts.line === 'number' &&
+    facts.code !== 'placeholder'
     ? t('prompts.checks.onLine', { check: text, line: facts.line, ...plain })
     : text;
 }

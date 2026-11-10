@@ -4211,7 +4211,7 @@
       "toolVariables_many": "{{variables}} exécutent leurs outils avant chaque message",
       "templateInvalid": "Le modèle ne peut pas être analysé",
       "boundariesMissing": "Il n’a pas de section Boundaries, donc l’agent risque de suivre des instructions cachées dans des documents ou des résultats d’outils",
-      "citationsMissing": "Il n’utilise pas source.citation_rules, donc les réponses ne citeront pas les sources en [1], [2]",
+      "citationsMissing": "Il n’utilise pas <code>{{variable}}</code>, donc les règles de citation [1], [2] de DocsGPT ne sont pas dans le prompt",
       "onLine": "{{check}} (ligne {{line}})"
     },
     "checksHint": {

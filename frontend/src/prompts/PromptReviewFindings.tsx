@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
@@ -47,7 +47,7 @@ export function PromptReviewFindings({
   const passedId = useId();
   const [passedOpen, setPassedOpen] = useState(false);
 
-  const titleOf = (finding: ReviewFinding): string =>
+  const titleOf = (finding: ReviewFinding): ReactNode =>
     finding.source === 'server'
       ? (promptCheckText(t, {
           code: finding.code ?? '',

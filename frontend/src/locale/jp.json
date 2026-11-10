@@ -4075,7 +4075,7 @@
       "toolVariables_other": "{{variables}} はメッセージごとに事前にツールを実行します",
       "templateInvalid": "テンプレートを解析できません",
       "boundariesMissing": "Boundaries セクションがないため、エージェントがドキュメントやツールの結果に隠れた指示に従うおそれがあります",
-      "citationsMissing": "source.citation_rules を使っていないため、回答で出典が [1]、[2] のように示されません",
+      "citationsMissing": "<code>{{variable}}</code> を使っていないため、DocsGPT の [1]、[2] 形式の引用ルールがプロンプトに入っていません",
       "onLine": "{{check}}（{{line}} 行目）"
     },
     "checksHint": {

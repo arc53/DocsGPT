@@ -4075,7 +4075,7 @@
       "toolVariables_other": "{{variables}} 會在每則訊息之前執行它們的工具",
       "templateInvalid": "範本無法解析",
       "boundariesMissing": "它沒有 Boundaries 區段，代理可能會執行隱藏在文件或工具結果中的指令",
-      "citationsMissing": "它沒有使用 source.citation_rules，所以回答不會以 [1]、[2] 的形式引用來源",
+      "citationsMissing": "它沒有使用 <code>{{variable}}</code>，所以提示中沒有 DocsGPT 的 [1]、[2] 引用規則",
       "onLine": "{{check}}（第 {{line}} 行）"
     },
     "checksHint": {

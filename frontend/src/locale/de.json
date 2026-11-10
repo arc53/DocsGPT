@@ -4095,7 +4095,7 @@
       "toolVariables_other": "{{variables}} rufen ihre Tools vor jeder Nachricht auf",
       "templateInvalid": "Die Vorlage lässt sich nicht ausführen",
       "boundariesMissing": "Es fehlt der Abschnitt „Boundaries“, daher könnte der Agent Anweisungen befolgen, die in Dokumenten oder Tool-Ergebnissen versteckt sind",
-      "citationsMissing": "Es nutzt source.citation_rules nicht, daher zitieren Antworten keine Quellen als [1], [2]",
+      "citationsMissing": "Es nutzt <code>{{variable}}</code> nicht, daher fehlen die [1]-, [2]-Zitierregeln von DocsGPT im Prompt",
       "onLine": "{{check}} (Zeile {{line}})"
     },
     "checksHint": {

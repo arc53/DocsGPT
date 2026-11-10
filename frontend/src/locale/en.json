@@ -4095,7 +4095,7 @@
       "toolVariables_other": "{{variables}} run their tools before every message",
       "templateInvalid": "The template doesn't parse",
       "boundariesMissing": "It has no Boundaries section, so the agent may follow instructions hidden in documents or tool results",
-      "citationsMissing": "It doesn't use source.citation_rules, so answers won't cite sources as [1], [2]",
+      "citationsMissing": "It doesn't use <code>{{variable}}</code>, so DocsGPT's [1], [2] citation rules aren't in the prompt",
       "onLine": "{{check}} (line {{line}})"
     },
     "checksHint": {
