@@ -25,6 +25,26 @@ AMPLIFIERS = [
     ' | replace("", "xxxxxxxxxx") | replace("", "xxxxxxxxxx") | replace("", "xxxxxxxxxx") }}',
 ]
 
+# Render-time builders the operators and filters above don't cover: each
+# would build a gigabyte while the template renders.
+RENDER_BUILDERS = [
+    '{{ "{:>999999999}".format("x") }}',
+    '{{ "{:.999999999f}".format(1.5) }}',
+    '{{ "{v:{w}}".format(v="x", w=999999999) }}',
+    '{{ "{x:>999999999}".format_map({"x": "y"}) }}',
+    '{{ "x".ljust(999999999) }}',
+    '{{ "x".rjust(999999999) }}',
+    '{{ "x".center(999999999) }}',
+    '{{ "1".zfill(999999999) }}',
+    '{{ ("\\t" * 1000).expandtabs(1000000) }}',
+    '{% set r = "x" * 1000 %}{{ "ab".replace("", r).replace("", r).replace("", r) }}',
+    '{% set a = "x" * 1000000 %}{{ a + a }}',
+    '{% set a = "x" * 1000000 %}{{ a ~ a }}',
+    '{% set a = "x" * 1000000 %}{{ "".join([a, a]) }}',
+    '{{ (["x" * 999999] * 1000) | join }}',
+    '{{ ([{"a": "x" * 999999}] * 1000) | join(attribute="a") }}',
+]
+
 
 @pytest.fixture
 def engine() -> TemplateEngine:
@@ -45,6 +65,13 @@ class TestNoCompileTimeAmplification:
         with pytest.raises(TemplateRenderError):
             engine.render(template, {})
         assert time.perf_counter() - started < 0.2
+
+    @pytest.mark.parametrize("template", RENDER_BUILDERS)
+    def test_render_time_builders_are_refused_cheaply(self, engine: TemplateEngine, template: str) -> None:
+        started = time.perf_counter()
+        with pytest.raises(TemplateRenderError):
+            engine.render(template, {})
+        assert time.perf_counter() - started < 0.5
 
     def test_folding_is_off_for_the_operators_and_filters(self, engine: TemplateEngine) -> None:
         source = engine._env.compile('{{ "x" * 3 }}{{ 2 ** 3 }}{{ "y" | center(5) }}', raw=True)
@@ -80,6 +107,19 @@ class TestOrdinaryTemplatesStillWork:
             ("{{ missing | default('none') }}", "none"),
             ("{% for i in range(3) %}{{ i }}{% endfor %}", "012"),
             ("{{ n * 2 }}", "42"),
+            ("{{ n + 1 }}", "22"),
+            ('{{ "a" + "b" }}', "ab"),
+            ("{{ [1] + [2] }}", "[1, 2]"),
+            ('{{ name ~ "!" ~ n }}', "Ada!21"),
+            ('{{ "{:>5}|{:.2f}".format("x", 3.14159) }}', "    x|3.14"),
+            ('{{ "{n:{w}}".format(n=7, w=3) }}', "  7"),
+            ('{{ "{a}".format_map({"a": 1}) }}', "1"),
+            ('{{ "x".ljust(3) ~ "|" ~ "7".zfill(3) }}', "x  |007"),
+            ('{{ "a\tb".expandtabs(4) }}', "a   b"),
+            ('{{ "a-b".replace("-", "+") }}', "a+b"),
+            ('{{ "-".join(["a", "b"]) }}', "a-b"),
+            ('{{ [{"a": 1}, {"a": 2}] | join(",", attribute="a") }}', "1,2"),
+            ("{{ range(3) | join }}", "012"),
         ],
     )
     def test_renders(self, engine: TemplateEngine, template: str, expected: str) -> None:

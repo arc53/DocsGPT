@@ -8,10 +8,13 @@ from jinja2 import (
     nodes,
     TemplateSyntaxError,
 )
+from jinja2.compiler import CodeGenerator, Frame, optimizeconst
 from jinja2.exceptions import SecurityError, UndefinedError
+from jinja2.filters import make_attrgetter
 from jinja2.runtime import Context
-from jinja2.sandbox import SandboxedEnvironment
+from jinja2.sandbox import SandboxedEnvironment, SandboxedEscapeFormatter, SandboxedFormatter
 from jinja2.utils import _PassArg, pass_context
+from markupsafe import Markup
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +85,99 @@ def _check_replace(value: Any, old: Any = None, new: Any = None, count: Any = No
         _refuse("replace result too large")
 
 
-def _filter_guard(name: str, args: tuple, kwargs: Mapping[str, Any]) -> None:
-    """Refuse a filter call that would build an oversized string before it runs."""
+# A run of digits in a ``str.format`` field spec: its width or precision (a
+# fill character is a single character, so it never joins a run).
+_SPEC_NUMBER = re.compile(r"\d+")
+
+
+def _check_format_spec(spec: str) -> None:
+    """Refuse a ``str.format`` field whose width or precision would pad past the cap."""
+    for number in _SPEC_NUMBER.findall(spec or ""):
+        if len(number) > 7 or int(number) > MAX_TEMPLATE_SEQUENCE:
+            _refuse("format width too large")
+
+
+def _text_length(value: Any) -> int:
+    return len(value) if isinstance(value, str) else len(str(value))
+
+
+def _check_joined(parts: List[Any], separator: Any = "") -> None:
+    """Refuse joining ``parts`` when the result would pass the cap."""
+    total = _text_length(separator) * max(len(parts) - 1, 0)
+    for part in parts:
+        total += _text_length(part)
+        if total > MAX_TEMPLATE_SEQUENCE:
+            _refuse("joined text too long")
+
+
+def _bounded_join(parts: Any) -> str:
+    """``str_join`` for the ``~`` operator, refusing a result past the cap."""
+    texts = [str(part) for part in parts]
+    _check_joined(texts)
+    return "".join(texts)
+
+
+class _BoundedFormatter(SandboxedFormatter):
+    """The sandbox's ``str.format`` formatter, refusing a width or precision past the cap."""
+
+    def format_field(self, value: Any, format_spec: str) -> Any:
+        _check_format_spec(format_spec)
+        return super().format_field(value, format_spec)
+
+
+class _BoundedEscapeFormatter(_BoundedFormatter, SandboxedEscapeFormatter):
+    pass
+
+
+class _BoundedCodeGenerator(CodeGenerator):
+    """Compiles ``~`` to a join that refuses a result past the cap.
+
+    ``~`` is not an operator the sandbox can intercept: Jinja writes it as a
+    call to its own ``str_join``, so doubling a string in a loop reached a
+    gigabyte in about thirty steps.
+    """
+
+    @optimizeconst
+    def visit_Concat(self, node: nodes.Concat, frame: Frame) -> None:
+        if frame.eval_ctx.volatile or frame.eval_ctx.autoescape:
+            super().visit_Concat(node, frame)
+            return
+        self.write("environment.bounded_join((")
+        for arg in node.nodes:
+            self.visit(arg, frame)
+            self.write(", ")
+        self.write("))")
+
+
+def _check_str_method(name: str, text: str, args: tuple, kwargs: Mapping[str, Any]) -> None:
+    """Refuse a ``str`` method call from a template that would build an oversized string."""
+    if name in ("ljust", "rjust", "center", "zfill"):
+        _check_width(args[0] if args else kwargs.get("width"))
+    elif name == "expandtabs":
+        size = args[0] if args else kwargs.get("tabsize", 8)
+        if isinstance(size, int) and len(text) + text.count("\t") * max(size, 0) > MAX_TEMPLATE_SEQUENCE:
+            _refuse("expanded text too long")
+    elif name == "replace":
+        _check_replace(text, *args, **{k: v for k, v in kwargs.items() if k == "count"})
+
+
+def _filter_guard(name: str, args: tuple, kwargs: Mapping[str, Any], environment: Any) -> tuple:
+    """Refuse a filter call that would build an oversized string before it runs.
+
+    Returns:
+        The filter's positional arguments; ``join`` gets its value as a list,
+        read once for the check.
+    """
+    if name == "join" and args:
+        value = args[0] if isinstance(args[0], (str, list, tuple)) else list(args[0])
+        attribute = args[2] if len(args) > 2 else kwargs.get("attribute")
+        separator = args[1] if len(args) > 1 else kwargs.get("d", "")
+        items = list(value)
+        if attribute is not None:
+            getter = make_attrgetter(environment, attribute)
+            items = [getter(item) for item in items]
+        _check_joined(items, separator)
+        return (value, *args[1:])
     if name == "center":
         _check_width(args[1] if len(args) > 1 else kwargs.get("width"))
     elif name == "indent":
@@ -92,6 +186,7 @@ def _filter_guard(name: str, args: tuple, kwargs: Mapping[str, Any]) -> None:
         _check_percent_format(args[0], args[1:] or tuple(kwargs.values()))
     elif name == "replace" and args:
         _check_replace(*args, **{k: v for k, v in kwargs.items() if k in ("old", "new", "count")})
+    return args
 
 
 def _runtime_filter(name: str, func: Callable[..., Any]) -> Callable[..., Any]:
@@ -113,7 +208,7 @@ def _runtime_filter(name: str, func: Callable[..., Any]) -> Callable[..., Any]:
     @pass_context
     @functools.wraps(func)
     def wrapper(context: Context, *args: Any, **kwargs: Any) -> Any:
-        _filter_guard(name, args, kwargs)
+        args = _filter_guard(name, args, kwargs, context.environment)
         if pass_arg is _PassArg.context:
             return func(context, *args, **kwargs)
         if pass_arg is _PassArg.eval_context:
@@ -137,14 +232,52 @@ class BoundedSandboxedEnvironment(SandboxedEnvironment):
     when the template renders.
     """
 
-    intercepted_binops = frozenset({"*", "**", "%"})
+    intercepted_binops = frozenset({"*", "**", "%", "+"})
+    code_generator_class = _BoundedCodeGenerator
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.filters = {name: _runtime_filter(name, func) for name, func in self.filters.items()}
 
+    #: The join compiled templates call for ``~`` (``_BoundedCodeGenerator``).
+    bounded_join = staticmethod(_bounded_join)
+
+    def wrap_str_format(self, value: Any) -> Optional[Callable[..., str]]:
+        """The sandbox's ``str.format`` / ``format_map``, refusing a field width or precision past the cap."""
+        if super().wrap_str_format(value) is None:
+            return None
+        text = value.__self__
+        formatter = (
+            _BoundedEscapeFormatter(self, escape=text.escape) if isinstance(text, Markup) else _BoundedFormatter(self)
+        )
+        is_format_map = value.__name__ == "format_map"
+
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            if is_format_map:
+                if kwargs:
+                    raise TypeError("format_map() takes no keyword arguments")
+                if len(args) != 1:
+                    raise TypeError(f"format_map() takes exactly one argument ({len(args)} given)")
+                kwargs, args = args[0], ()
+            return type(text)(formatter.vformat(text, args, kwargs))
+
+        return functools.update_wrapper(wrapper, value)
+
+    def call(__self, __context: Context, __obj: Any, *args: Any, **kwargs: Any) -> Any:  # noqa: N805
+        """Call ``__obj`` from a template, refusing a ``str`` method that would build an oversized string."""
+        owner = getattr(__obj, "__self__", None)
+        if isinstance(owner, str) and not isinstance(__obj, functools.partial):
+            name = getattr(__obj, "__name__", "")
+            if name == "join" and args:
+                parts = list(args[0])
+                _check_joined(parts, owner)
+                args = (parts, *args[1:])
+            else:
+                _check_str_method(name, owner, args, kwargs)
+        return super().call(__context, __obj, *args, **kwargs)
+
     def call_binop(self, context: Context, operator: str, left: Any, right: Any) -> Any:
-        """Run ``*``, ``**`` or ``%``, refusing one whose result would be oversized.
+        """Run ``+``, ``*``, ``**`` or ``%``, refusing one whose result would be oversized.
 
         Args:
             context: The render context.
@@ -158,7 +291,11 @@ class BoundedSandboxedEnvironment(SandboxedEnvironment):
         Raises:
             SecurityError: When the result would pass the size caps.
         """
-        if operator == "*":
+        if operator == "+":
+            sized = (str, bytes, list, tuple)
+            if isinstance(left, sized) and isinstance(right, sized) and len(left) + len(right) > MAX_TEMPLATE_SEQUENCE:
+                _refuse("joined sequence too long")
+        elif operator == "*":
             self._check_multiply(left, right)
         elif operator == "**":
             self._check_power(left, right)
