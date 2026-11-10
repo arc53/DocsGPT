@@ -3447,6 +3447,43 @@ describe('NewAgent drafter', () => {
       });
     });
 
+    it('keeps a parked prompt and its conversation through Publish', async () => {
+      mocks.createAgent.mockImplementation(() =>
+        jsonResponse({ id: 'new-1', key: 'k1' }),
+      );
+      drafter.scripts = [
+        [
+          proposal(
+            {
+              name: 'Shipping help',
+              description: 'Answers shipping.',
+              prompt: WRITTEN,
+            },
+            { steps: ['basics', 'prompt'], next_step: 'safety' },
+          ),
+          { type: 'end' },
+        ],
+      ];
+      await render();
+      await ask('A shipping agent');
+      await act(async () => crumb().click());
+      const parked = () =>
+        Array.from(
+          panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+        ).find((el) => el.textContent?.includes('drafter.agent.prompt.parked'));
+      expect(parked()).toBeDefined();
+      await act(async () =>
+        buttonByText('agents.form.buttons.publish')!.click(),
+      );
+      expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+      // The prompt it wrote wasn't sent: it still waits, and opens again.
+      expect(parked()).toBeDefined();
+      await act(async () =>
+        buttonByText('drafter.agent.prompt.open', parked()!)!.click(),
+      );
+      expect(viewText().value).toBe(PROMPT_TEXT);
+    });
+
     it('keeps the id of the used prompt on an update left unsaved', async () => {
       mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
       drafter.scripts = [writes()];

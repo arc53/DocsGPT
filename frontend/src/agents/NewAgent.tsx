@@ -2258,9 +2258,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       markSaved(saving);
       drafted.clear(savedValues);
       // Publishing ends a drafting session, unless a turn began while it
-      // was out: that conversation and what it drafted stay.
+      // was out, or a prompt it wrote still waits (parked: Publish sent the
+      // agent's own prompt, not that one): that conversation and what it
+      // drafted stay, so the prompt can still be opened, used or turned down.
       const session = drafterSessionRef.current;
-      if (!session.streaming && turnsRef.current === turnsAtSave) {
+      if (
+        !session.streaming &&
+        turnsRef.current === turnsAtSave &&
+        !promptDraft
+      ) {
         session.reset();
         build.reset();
         buildRowsRef.current.clear();
