@@ -270,8 +270,8 @@ def reject_ambiguous_url(url: str) -> None:
 
     Raises:
         UnsafeUserUrlError: If the URL contains control characters, a
-            backslash or whitespace in its authority, or a host urllib3
-            reads differently.
+            backslash or whitespace in its authority, a percent-encoded
+            host, or a host urllib3 reads differently.
     """
 
     if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in url):
@@ -285,6 +285,10 @@ def reject_ambiguous_url(url: str) -> None:
         raise UnsafeUserUrlError(f"url {url!r} has a backslash or whitespace in its host part")
     if not host:
         return
+    # urllib3 decodes percent-escapes in a host and urlsplit keeps them, so the
+    # two spellings can differ; a hostname never needs them.
+    if "%" in host:
+        raise UnsafeUserUrlError(f"url {url!r} percent-encodes its host")
     # Re-parse the host urlsplit found so both sides get urllib3's spelling
     # (IDNA, brackets, case) before they are compared.
     bracketed = f"[{host}]" if ":" in host else host
