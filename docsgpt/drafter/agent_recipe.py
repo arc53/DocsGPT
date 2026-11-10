@@ -54,7 +54,9 @@ from docsgpt.drafter.prompt_rules import (
     tool_variables_problem,
 )
 from docsgpt.drafter.prompt_checks import edit_problems
-from docsgpt.drafter.prompt_recipe import apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE, READ_MAX
+from docsgpt.drafter.prompt_recipe import (
+    apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE, RAW_READ_MAX, READ_MAX,
+)
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
 from docsgpt.drafter import topics_recipe
@@ -292,6 +294,21 @@ def _parse_policy(form_raw: dict) -> dict:
     }
 
 
+def _earlier(values: list) -> list[str]:
+    """The finished steps' messages: the first :data:`MAX_EARLIER` that aren't empty, cleaned and capped.
+
+    Stops cleaning once it has them, so a long list costs no more than its kept items.
+    """
+    out: list[str] = []
+    for value in values:
+        if len(out) >= MAX_EARLIER:
+            break
+        text = clean_text(value, EARLIER_CHARS)
+        if text:
+            out.append(text)
+    return out
+
+
 def parse_context(raw: Any) -> dict:
     """Clean the agent form's values: ``{agent_id, step, starter?, skip_questions?, earlier, form: {...}}``.
 
@@ -322,6 +339,8 @@ def parse_context(raw: Any) -> dict:
     draft = form_raw.get("prompt_draft")
     form["prompt_draft"] = None
     if isinstance(draft, dict) and isinstance(draft.get("content"), str):
+        if len(draft["content"]) > RAW_READ_MAX:
+            raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
         content = clean_text(draft["content"], len(draft["content"]))
         if len(content) > READ_MAX:
             raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
@@ -343,7 +362,7 @@ def parse_context(raw: Any) -> dict:
         "agent_id": agent_id.strip()[:_ID_CHARS] if isinstance(agent_id, str) and agent_id.strip() else None,
         "step": step,
         "starter": starter if isinstance(starter, str) and starter in STARTERS else None,
-        "earlier": [text for text in (clean_text(t, EARLIER_CHARS) for t in earlier) if text][:MAX_EARLIER],
+        "earlier": _earlier(earlier),
         "form": form,
         # Improve mode's ways in from Insights: the gap or the Logs conversation the user started from.
         "gap": _parse_gap(raw.get("gap")) if step is None else None,

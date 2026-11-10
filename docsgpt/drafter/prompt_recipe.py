@@ -77,6 +77,9 @@ CONTENT_MAX = 20000
 #: Most characters of prompt text the drafter reads. The prompt routes save any length, so a prompt over
 #: :data:`CONTENT_MAX` is read whole (edits must fit the saved text, not a cut copy) and a longer one is refused.
 READ_MAX = 100_000
+#: Longest prompt text a request may send before it is cleaned: past it the text is refused unread. Cleaning only
+#: drops characters, so the slack keeps a text that cleans to :data:`READ_MAX` (``\r\n`` line ends) accepted.
+RAW_READ_MAX = 2 * READ_MAX
 MAX_EDITS = 20
 REASON_MAX = 300
 MESSAGE_MAX = 600
@@ -144,6 +147,8 @@ def parse_context(raw: Any) -> dict:
         raise BadDraftRequest("context.prompt must be an object")
     prompt_id = prompt.get("id")
     raw_content = prompt.get("content")
+    if isinstance(raw_content, str) and len(raw_content) > RAW_READ_MAX:
+        raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
     content = clean_text(raw_content, len(raw_content)) if isinstance(raw_content, str) else ""
     if len(content) > READ_MAX:
         raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")

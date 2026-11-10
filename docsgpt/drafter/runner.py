@@ -67,6 +67,10 @@ MAX_READ_CALLS = 5
 #: Most items, and characters of one, a ``read`` event lists.
 READ_EVENT_ITEMS = 10
 READ_ITEM_CHARS = 300
+#: Characters of earlier messages one turn sends the model (the latest request is always sent, past it too).
+#: Older messages are dropped, oldest first, until the rest fit; the kept history starts with a user message.
+#: Each of a turn's model calls resends them, so this bounds a turn's input however long the conversation runs.
+HISTORY_CHARS = 240_000
 #: Seconds between the stop and deadline checks while a model call runs.
 STOP_POLL_SECONDS = 0.25
 
@@ -213,6 +217,22 @@ def _replay(name: str, args: dict, call_id: str, as_call: bool) -> list[dict]:
     ]
 
 
+def _history_start(messages: list[dict]) -> int:
+    """The index of the oldest message a turn sends: the newest ones within :data:`HISTORY_CHARS`.
+
+    The latest message always counts as sent; the kept history then starts at a user message, so it never opens
+    with an answer to a request the model doesn't see.
+    """
+    last = len(messages) - 1
+    start, used = last, 0
+    while start > 0 and used + len(messages[start - 1].get("content") or "") <= HISTORY_CHARS:
+        start -= 1
+        used += len(messages[start].get("content") or "")
+    while start < last and messages[start].get("role") != "user":
+        start += 1
+    return start
+
+
 def build_messages(
     req: DraftRequest, recipe: Recipe, ws: Workspace, *, tool_mode: bool, allow_questions: bool
 ) -> list[dict]:
@@ -246,7 +266,10 @@ def build_messages(
     ])
     messages: list[dict] = [{"role": "system", "content": system}]
     last = len(req.messages) - 1
+    first = _history_start(req.messages)
     for index, message in enumerate(req.messages):
+        if index < first:
+            continue
         content = message["content"]
         replayed = _replayed_turn(recipe, content) if message["role"] == "assistant" else None
         if replayed is not None:
