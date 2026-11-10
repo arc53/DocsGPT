@@ -43,6 +43,7 @@ import { formatCount } from '../utils/dateTimeUtils';
 import { type DrafterCounts, DRAFTER_USER_MESSAGE_CHARS } from './drafterApi';
 import {
   DrafterErrorAlert,
+  RETRYABLE,
   TASK_MODEL_SETTINGS_PATH,
 } from './DrafterErrorAlert';
 import { DrafterStepRow, FilledRow } from './DrafterStepRow';
@@ -174,8 +175,8 @@ export type DraftPanelProps = {
   announceProposal?: (proposal: unknown) => string | null;
   /**
    * The way on after a turn was stopped or failed (a build's "Continue:
-   * Basics"): on its own row under the latest error, and under the stopped
-   * note while it is the latest. It
+   * Basics"): on its own row under the latest error Try again can't fix,
+   * and under the stopped note while it is the latest. It
    * keeps its own look: it is a way past the error, not a fix, so it never
    * sits in the Alert.
    */
@@ -518,7 +519,11 @@ export function DraftPanel({
         // is: only a fresh conversation goes on.
         const refused = item.code === 'bad_request';
         const latest = index === items.length - 1;
-        // The way on isn't a fix for the error, so it goes under the Alert.
+        // The way on isn't a fix for the error, so it goes under the Alert,
+        // and only when Try again can't fix it: Continue drafts the step
+        // afresh, dropping the message that failed, which Try again sends
+        // again.
+        const wayOn = latest && !RETRYABLE.includes(item.code);
         return (
           <Fragment key={item.id}>
             <DrafterErrorAlert
@@ -531,7 +536,7 @@ export function DraftPanel({
               model={modelName}
               onNavigate={onNavigate}
             />
-            {latest && continueAction && (
+            {wayOn && continueAction && (
               <div
                 className="flex flex-wrap gap-2"
                 data-slot="drafter-continue"

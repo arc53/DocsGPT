@@ -669,17 +669,10 @@ describe('DraftPanel', () => {
       ),
     );
     expect(button('Continue')).toBeUndefined();
-    stream.scripts = [
-      [{ type: 'error', code: 'model_error' }, { type: 'end' }],
-    ];
+    stream.scripts = [[{ type: 'error', code: 'model_auth' }, { type: 'end' }]];
     await ask('Draft it');
-    // Try again fixes the error: a link in the Alert's text. Continue is a
-    // way past it, on its own row under the Alert.
+    // Continue is a way past the error, on its own row under the Alert.
     const alert = container.querySelector('[data-item="error"]')!;
-    const retry = button('drafter.retry')!;
-    expect(alert.contains(retry)).toBe(true);
-    expect(retry.dataset.variant).toBe('link');
-    expect(retry.dataset.tone).toBe('current');
     const row = container.querySelector('[data-slot="drafter-continue"]')!;
     expect(row.contains(button('Continue')!)).toBe(true);
     expect(alert.contains(button('Continue')!)).toBe(false);
@@ -703,6 +696,30 @@ describe('DraftPanel', () => {
     expect(button('Continue')).toBeUndefined();
     expect(container.querySelector('[data-item="stopped"]')).not.toBeNull();
   });
+
+  // Continue would drop the message that failed; Try again sends it again.
+  it.each(['model_error', 'rate_limited', 'invalid_output'] as const)(
+    'offers only Try again under an error it fixes (%s)',
+    async (code) => {
+      await act(async () =>
+        root.render(
+          <Host continueAction={<button type="button">Continue</button>} />,
+        ),
+      );
+      stream.scripts = [[{ type: 'error', code }, { type: 'end' }]];
+      await ask('Draft it');
+      // Try again fixes the error: a link in the Alert's text.
+      const alert = container.querySelector('[data-item="error"]')!;
+      const retry = button('drafter.retry')!;
+      expect(alert.contains(retry)).toBe(true);
+      expect(retry.dataset.variant).toBe('link');
+      expect(retry.dataset.tone).toBe('current');
+      expect(button('Continue')).toBeUndefined();
+      expect(
+        container.querySelector('[data-slot="drafter-continue"]'),
+      ).toBeNull();
+    },
+  );
 
   it('says it is still waiting when a turn goes quiet for 30 s', async () => {
     vi.useFakeTimers();

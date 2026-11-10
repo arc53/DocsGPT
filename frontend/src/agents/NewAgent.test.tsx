@@ -3519,9 +3519,24 @@ describe('NewAgent drafter', () => {
     });
   });
 
-  it('offers Continue on the step after an error', async () => {
+  it('sends the failed message again on Try again, with no Continue', async () => {
     drafter.scripts = [
       [{ type: 'error', code: 'model_error' }, { type: 'end' }],
+    ];
+    await render();
+    await ask('A shipping agent');
+    // Continue would draft the step afresh and drop what was asked.
+    expect(panel()!.querySelector('[data-slot="drafter-continue"]')).toBeNull();
+    await act(async () => buttonByText('drafter.retry', panel()!)!.click());
+    expect(lastRequest().messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'A shipping agent',
+    });
+  });
+
+  it('offers Continue on the step after an error Try again cannot fix', async () => {
+    drafter.scripts = [
+      [{ type: 'error', code: 'model_auth' }, { type: 'end' }],
     ];
     await render();
     await ask('A shipping agent');
