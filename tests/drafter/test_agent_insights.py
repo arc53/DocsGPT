@@ -87,8 +87,12 @@ class TestContext:
         assert ctx["gap"] == {"topic": "Returns", "gap_type": "docs missing"} and ctx["conversation_id"] == "c1"
         assert parse_context({"gap": {"gap_type": "docs missing"}})["gap"] == {"topic": None,
                                                                                 "gap_type": "docs missing"}
-        stepped = parse_context({"step": "basics", "gap": {"gap_type": "docs missing"}, "conversation_id": "c1"})
-        assert stepped["gap"] is None and stepped["conversation_id"] is None
+        stepped = parse_context({"step": "basics", "gap": {"gap_type": "docs missing"}, "conversation_id": "c1",
+                                 "message_id": "m1"})
+        assert stepped["gap"] is None and stepped["conversation_id"] is None and stepped["message_id"] is None
+        assert parse_context({"conversation_id": "c1", "message_id": " m1 "})["message_id"] == "m1"
+        # a message only means something inside its conversation
+        assert parse_context({"message_id": "m1"})["message_id"] is None
 
     def test_a_gap_from_a_page_or_source_row_carries_its_group(self):
         page = parse_context({"gap": {"topic": None, "gap_type": "docs missing", "group_by": "page",
@@ -359,6 +363,28 @@ def test_improve_mode_loads_the_summary_reader_and_conversation(pg_conn, insight
         turns = run_read_tool("get_conversations", ws, {"label": "docs_gap"})
     assert examples["questions"] == ["Where is MRD-48213?"]
     assert len(turns["conversations"]) == 5 and turns["shown"][0].startswith("Claim deadline")
+
+
+@pytest.mark.unit
+def test_improve_from_logs_reads_the_turn_the_user_clicked(pg_conn, insights_on):
+    bot, cid = _labelled_agent(pg_conn)
+    aid = str(bot["id"])
+    _, clicked = seed.turn(pg_conn, aid, "Can I change the address?", cid=cid, position=2,
+                           response="Please contact support.")
+    ws = _load(pg_conn, "alice", {"agent_id": aid, "conversation_id": cid, "message_id": clicked})
+    # the clicked turn, though an earlier one carries a likelier gap
+    assert ws.conversation == {"question": "Can I change the address?", "answer": "Please contact support.",
+                               "labels": [], "gap_type": None}
+
+
+@pytest.mark.unit
+def test_a_message_of_another_conversation_falls_back_to_the_labelled_turn(pg_conn, insights_on):
+    bot, cid = _labelled_agent(pg_conn)
+    aid = str(bot["id"])
+    _, elsewhere = seed.turn(pg_conn, aid, "Another conversation's question")
+    for message_id in (elsewhere, "not-a-uuid"):
+        ws = _load(pg_conn, "alice", {"agent_id": aid, "conversation_id": cid, "message_id": message_id})
+        assert ws.conversation["question"] == "Where is MRD-48213?"
 
 
 @pytest.mark.unit

@@ -1370,7 +1370,7 @@ class ConversationLabelsRepository:
         return [dict(row._mapping) for row in result.fetchall()]
 
     def agent_conversation_turns(self, conversation_id: str, agent_id: str, agent_key: Optional[str],
-                                 limit: int) -> List[dict]:
+                                 limit: int, message_id: Optional[str] = None) -> List[dict]:
         """The first finished user messages of one conversation, when it is the agent's (by id, or by key for API
         and widget traffic); empty otherwise.
 
@@ -1379,10 +1379,12 @@ class ConversationLabelsRepository:
             agent_id: The agent.
             agent_key: Its API key; ``None`` when it has none.
             limit: Most messages returned.
+            message_id: Only this message (a UUID), when it is one of the conversation's.
 
         Returns:
             ``id``, ``prompt`` and ``response`` (their first 2000 characters), in position order.
         """
+        only = "AND m.id = CAST(:mid AS uuid)" if message_id else ""
         result = self._conn.execute(
             text(
                 f"""
@@ -1393,11 +1395,13 @@ class ConversationLabelsRepository:
                   AND (c.agent_id = CAST(:agent_id AS uuid)
                        OR (c.agent_id IS NULL AND c.api_key = :agent_key AND :agent_key <> ''))
                   AND {_usable("m")}
+                  {only}
                 ORDER BY m.position
                 LIMIT :limit
                 """
             ),
-            {"cid": conversation_id, "agent_id": agent_id, "agent_key": agent_key or "", "limit": int(limit)},
+            {"cid": conversation_id, "agent_id": agent_id, "agent_key": agent_key or "", "limit": int(limit),
+             **({"mid": message_id} if message_id else {})},
         )
         return [dict(row._mapping) for row in result.fetchall()]
 

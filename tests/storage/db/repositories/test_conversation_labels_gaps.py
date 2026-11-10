@@ -155,3 +155,14 @@ class TestLabelledTurns:
                                                                                                   "Second?"]
         assert [t["prompt"] for t in repo.agent_conversation_turns(keyed, aid, bot["key"], 10)] == ["By key"]
         assert repo.agent_conversation_turns(foreign, aid, bot["key"], 10) == []
+
+    def test_conversation_turns_narrowed_to_one_message_of_that_conversation(self, pg_conn):
+        bot = seed.agent(pg_conn)
+        aid = str(bot["id"])
+        cid, _ = seed.turn(pg_conn, aid, "First?")
+        _, second = seed.turn(pg_conn, aid, "Second?", cid=cid, position=1)
+        _, elsewhere = seed.turn(pg_conn, aid, "Elsewhere")
+        repo = ConversationLabelsRepository(pg_conn)
+        turns = repo.agent_conversation_turns(cid, aid, bot["key"], 10, message_id=second)
+        assert [(t["id"], t["prompt"]) for t in turns] == [(second, "Second?")]
+        assert repo.agent_conversation_turns(cid, aid, bot["key"], 10, message_id=elsewhere) == []

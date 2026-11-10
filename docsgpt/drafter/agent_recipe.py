@@ -357,6 +357,9 @@ def parse_context(raw: Any) -> dict:
     agent_id = raw.get("agent_id")
     starter = raw.get("starter")
     conversation_id = raw.get("conversation_id")
+    conversation_id = conversation_id.strip()[:_ID_CHARS] \
+        if step is None and isinstance(conversation_id, str) and conversation_id.strip() else None
+    message_id = raw.get("message_id")
     return {
         "skip_questions": raw.get("skip_questions") is True,
         "agent_id": agent_id.strip()[:_ID_CHARS] if isinstance(agent_id, str) and agent_id.strip() else None,
@@ -366,8 +369,10 @@ def parse_context(raw: Any) -> dict:
         "form": form,
         # Improve mode's ways in from Insights: the gap or the Logs conversation the user started from.
         "gap": _parse_gap(raw.get("gap")) if step is None else None,
-        "conversation_id": conversation_id.strip()[:_ID_CHARS]
-        if step is None and isinstance(conversation_id, str) and conversation_id.strip() else None,
+        "conversation_id": conversation_id,
+        # The Logs row the user clicked, read only inside that conversation.
+        "message_id": message_id.strip()[:_ID_CHARS]
+        if conversation_id and isinstance(message_id, str) and message_id.strip() else None,
     }
 
 
@@ -519,7 +524,8 @@ def _read_insights(conn, user_id: str, agent: dict, context: dict, ws: AgentWork
     if context.get("conversation_id"):
         try:
             with conn.begin_nested():
-                ws.conversation = conversation_excerpt(conn, agent, context["conversation_id"])
+                ws.conversation = conversation_excerpt(conn, agent, context["conversation_id"],
+                                                       context.get("message_id"))
         except Exception:
             logger.warning("drafter: could not read the conversation", exc_info=True)
             ws.conversation = None

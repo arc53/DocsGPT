@@ -282,16 +282,18 @@ class InsightsReader:
                  "answer": clean_text(row.get("response"), EXCERPT_CHARS)} for row in rows]
 
 
-def conversation_excerpt(conn: Connection, agent: dict, conversation_id: str) -> Optional[dict]:
+def conversation_excerpt(conn: Connection, agent: dict, conversation_id: str,
+                         message_id: Optional[str] = None) -> Optional[dict]:
     """One of the agent's conversations as the model reads it: a question, its answer, and their Logs labels.
 
-    The turn is the first one that fell short by Insights' labels (a Logs label, or a likely gap type), else the
-    conversation's first question.
+    The turn is ``message_id`` when it is one of the conversation's; else the first one that fell short by
+    Insights' labels (a Logs label, or a likely gap type), else the conversation's first question.
 
     Args:
         conn: A read-only connection.
         agent: The agent row, one the caller may edit.
         conversation_id: The conversation the user started from.
+        message_id: The Logs row (a message of that conversation) the user started from, or None.
 
     Returns:
         ``{"question", "answer", "labels", "gap_type"}`` (each text at most :data:`CONVERSATION_CHARS`; ``labels``
@@ -304,7 +306,13 @@ def conversation_excerpt(conn: Connection, agent: dict, conversation_id: str) ->
     if not isinstance(conversation_id, str) or not looks_like_uuid(conversation_id):
         return None
     repo = ConversationLabelsRepository(conn)
-    turns = repo.agent_conversation_turns(conversation_id, str(agent["id"]), agent.get("key"), CONVERSATION_TURNS)
+    turns = []
+    if isinstance(message_id, str) and looks_like_uuid(message_id):
+        turns = repo.agent_conversation_turns(conversation_id, str(agent["id"]), agent.get("key"), 1,
+                                              message_id=message_id)
+    if not turns:
+        turns = repo.agent_conversation_turns(conversation_id, str(agent["id"]), agent.get("key"),
+                                              CONVERSATION_TURNS)
     if not turns:
         return None
     rows: dict[str, list[dict]] = {}
