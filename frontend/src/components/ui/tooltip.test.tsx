@@ -111,4 +111,48 @@ describe('Tooltip on focus', () => {
     // A sheet closing on a phone hands focus back to the button that opened it.
     expect(await focusTrigger(false)).toBe('closed');
   });
+
+  // A trigger that wraps the focusable control (a switch or radio, whose own
+  // data-state the trigger would overwrite): focus lands on the child, and
+  // the wrapper never matches :focus-visible itself.
+  async function focusWrappedChild(visible: boolean) {
+    const { act } = await import('react');
+    const { createRoot } = await import('react-dom/client');
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <button type="button">Use in my chats</button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>In chats: on</TooltipContent>
+        </Tooltip>,
+      ),
+    );
+    const wrapper = host.querySelector('[data-slot="tooltip-trigger"]')!;
+    const button = host.querySelector('button')!;
+    const matches = button.matches.bind(button);
+    Object.defineProperty(button, 'matches', {
+      value: (selector: string) =>
+        selector === ':focus-visible' ? visible : matches(selector),
+    });
+    await act(async () => button.focus());
+    const state = wrapper.getAttribute('data-state');
+    await act(async () => root.unmount());
+    host.remove();
+    return state;
+  }
+
+  it('opens when the keyboard focuses a control its trigger wraps', async () => {
+    expect(await focusWrappedChild(true)).not.toBe('closed');
+  });
+
+  it('stays closed when focus returns to a wrapped control after a tap', async () => {
+    expect(await focusWrappedChild(false)).toBe('closed');
+  });
 });

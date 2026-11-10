@@ -49,8 +49,10 @@ function TooltipTrigger({
         onFocus?.(event);
         // Focus handed back by script after a tap or click (a phone sheet
         // closing onto its opener) isn't the keyboard: Radix skips opening
-        // on a default-prevented focus.
-        if (!event.currentTarget.matches(':focus-visible'))
+        // on a default-prevented focus. The element that took focus is read,
+        // not the trigger: a trigger wrapping a switch or radio never
+        // matches :focus-visible itself.
+        if (!(event.target as Element).matches(':focus-visible'))
           event.preventDefault();
       }}
       {...props}
