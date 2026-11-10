@@ -95,7 +95,11 @@ import {
 } from '../drafter/DraftPanel';
 import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField } from '../drafter/DraftedBadge';
-import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
+import {
+  DrafterStepRow,
+  FilledRow,
+  type UndoneKind,
+} from '../drafter/DrafterStepRow';
 import { DRAFTER_STARTERS } from '../drafter/starters';
 import {
   ProposalSummary,
@@ -1263,9 +1267,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     raw && typeof raw === 'object'
       ? appliedRef.current.get(raw)?.map((change) => change.field)
       : undefined;
-  // The latest reason for each field a build drafted: a finished step's
-  // folded line opens them.
-  const buildRowsRef = useRef(new Map<AgentDraftField, ProposalReasonRow>());
+  // The latest reason for each field a build drafted, with what it changed:
+  // a finished step's folded line opens them.
+  const buildRowsRef = useRef(
+    new Map<AgentDraftField, ProposalReasonRow & { change?: AppliedChange }>(),
+  );
 
   /** Bring the first drafted field into view, after the form has drawn it. */
   const scrollToDrafted = () =>
@@ -1285,14 +1291,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       draftToolOptions,
     );
     const changed = changes.map((change) => change.field);
-    appliedRef.current.set(
-      raw as object,
-      changes.map((change) => ({
-        field: change.field,
-        previous: draftValueOf(change.field, change.previous),
-        applied: draftValueOf(change.field, change.next),
-      })),
-    );
+    const applied = changes.map((change) => ({
+      field: change.field,
+      previous: draftValueOf(change.field, change.previous),
+      applied: draftValueOf(change.field, change.next),
+    }));
+    appliedRef.current.set(raw as object, applied);
     changes.forEach((change) => {
       writeDraftField(change.field, change.next);
       drafted.mark(
@@ -1308,6 +1312,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           key: field,
           label: t(AGENT_FIELD_LABEL_KEYS[field]),
           summary: reason.summary,
+          change: applied.find((change) => change.field === field),
         });
     });
     // A prompt it wrote opens in the prompt view; one of the caller's picked
@@ -1523,6 +1528,39 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     !promptReview.review &&
     !pendingEdits;
 
+  /**
+   * A field the draft set that the form holds as before it again (its Undo,
+   * or typed back): empty again or back to its previous value. Null while
+   * it holds the draft or the user's own edit.
+   */
+  const undoneKind = (change?: AppliedChange): UndoneKind | null => {
+    if (!change) return null;
+    const now = draftValues[change.field];
+    if (isEqual(now, change.applied) || !isEqual(now, change.previous))
+      return null;
+    const { previous } = change;
+    return previous === null ||
+      previous === undefined ||
+      previous === '' ||
+      (Array.isArray(previous) && previous.length === 0)
+      ? 'empty'
+      : 'previous';
+  };
+  /** A proposal's rows (by key) whose field the user undid since. */
+  const undoneRows = (raw: unknown, rows: ProposalReasonRow[]) => {
+    const undone = new Map<string, UndoneKind>();
+    const changes =
+      raw && typeof raw === 'object' ? appliedRef.current.get(raw) : undefined;
+    (changes ?? []).forEach((change) => {
+      const kind = undoneKind(change);
+      if (!kind) return;
+      rows
+        .filter((row) => row.key.startsWith(`${change.field}-`))
+        .forEach((row) => undone.set(row.key, kind));
+    });
+    return undone;
+  };
+
   /** "You changed Name in the form.": fields the proposal set, edited since. */
   const editedSince = (raw: unknown) => {
     const changes =
@@ -1612,6 +1650,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         message={proposal.message}
         cards={gapCards}
         rows={gapCards ? rows.filter((row) => !cardFields.has(row.key)) : rows}
+        undone={undoneRows(raw, rows)}
         notes={notes}
         dropped={dropped}
         footnote={
@@ -1806,10 +1845,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ) : (
           build.finished.map((step) => {
             const rows = stepRows(step);
+            const undone = rows.filter((row) => undoneKind(row.change));
             return (
               <DrafterStepRow
                 key={step}
                 icon={CircleCheck}
+                undone={undone.length}
                 label={t('drafter.agent.build.folded', {
                   step: stepName(step),
                   result: stepResult(step),
@@ -1822,6 +1863,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         key={row.key}
                         label={row.label}
                         value={row.summary}
+                        undone={undoneKind(row.change) ?? undefined}
                       />
                     ))
                   : undefined}
@@ -1954,9 +1996,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     !pendingEdits &&
     !drafterSession.streaming;
 
-  /** "Drafted 3 fields…" for a screen reader once a draft is applied. */
+  /**
+   * "Drafted 3 fields…" for a screen reader once a draft is applied; a field
+   * undone since doesn't count.
+   */
   const announceAgentProposal = (raw: unknown) => {
-    const count = appliedFields(raw)?.length ?? 0;
+    const changes =
+      raw && typeof raw === 'object' ? appliedRef.current.get(raw) : undefined;
+    const count = (changes ?? []).filter(
+      (change) => !undoneKind(change),
+    ).length;
     return count > 0 ? t('drafter.agent.draftedCount', { count }) : null;
   };
 
@@ -3459,37 +3508,29 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                           htmlFor={tokenLimitSwitchId}
                           drafted={limitRowDrafted('token')}
                           onUndo={() => drafted.undo('limits')}
+                          // The row's badge marks the switch and the number
+                          // together, and undoes both.
                           after={
-                            <DraftedField
-                              {...draftedProps('limits')}
-                              drafted={
-                                limitRowDrafted('token') &&
-                                !!agent.limited_token_mode
+                            <Input
+                              type="number"
+                              min="0"
+                              value={agent.token_limit || ''}
+                              onChange={(e) =>
+                                setAgent({
+                                  ...agent,
+                                  token_limit: e.target.value
+                                    ? parseInt(e.target.value)
+                                    : undefined,
+                                })
                               }
-                            >
-                              <Input
-                                type="number"
-                                min="0"
-                                value={agent.token_limit || ''}
-                                onChange={(e) =>
-                                  setAgent({
-                                    ...agent,
-                                    token_limit: e.target.value
-                                      ? parseInt(e.target.value)
-                                      : undefined,
-                                  })
-                                }
-                                disabled={
-                                  !agent.limited_token_mode || !canEditPolicy
-                                }
-                                placeholder={t(
-                                  'agents.form.placeholders.enterTokenLimit',
-                                )}
-                                aria-label={t(
-                                  'agents.form.advanced.tokenLimit',
-                                )}
-                              />
-                            </DraftedField>
+                              disabled={
+                                !agent.limited_token_mode || !canEditPolicy
+                              }
+                              placeholder={t(
+                                'agents.form.placeholders.enterTokenLimit',
+                              )}
+                              aria-label={t('agents.form.advanced.tokenLimit')}
+                            />
                           }
                         >
                           <Switch
@@ -3515,37 +3556,31 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                           htmlFor={requestLimitSwitchId}
                           drafted={limitRowDrafted('request')}
                           onUndo={() => drafted.undo('limits')}
+                          // The row's badge marks the switch and the number
+                          // together, and undoes both.
                           after={
-                            <DraftedField
-                              {...draftedProps('limits')}
-                              drafted={
-                                limitRowDrafted('request') &&
-                                !!agent.limited_request_mode
+                            <Input
+                              type="number"
+                              min="0"
+                              value={agent.request_limit || ''}
+                              onChange={(e) =>
+                                setAgent({
+                                  ...agent,
+                                  request_limit: e.target.value
+                                    ? parseInt(e.target.value)
+                                    : undefined,
+                                })
                               }
-                            >
-                              <Input
-                                type="number"
-                                min="0"
-                                value={agent.request_limit || ''}
-                                onChange={(e) =>
-                                  setAgent({
-                                    ...agent,
-                                    request_limit: e.target.value
-                                      ? parseInt(e.target.value)
-                                      : undefined,
-                                  })
-                                }
-                                disabled={
-                                  !agent.limited_request_mode || !canEditPolicy
-                                }
-                                placeholder={t(
-                                  'agents.form.placeholders.enterRequestLimit',
-                                )}
-                                aria-label={t(
-                                  'agents.form.advanced.requestLimit',
-                                )}
-                              />
-                            </DraftedField>
+                              disabled={
+                                !agent.limited_request_mode || !canEditPolicy
+                              }
+                              placeholder={t(
+                                'agents.form.placeholders.enterRequestLimit',
+                              )}
+                              aria-label={t(
+                                'agents.form.advanced.requestLimit',
+                              )}
+                            />
                           }
                         >
                           <Switch

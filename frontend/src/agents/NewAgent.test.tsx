@@ -2913,6 +2913,11 @@ describe('NewAgent drafter', () => {
     expect(requestLimit().disabled).toBe(false);
     const requestRow = requestLimit().closest('[data-slot="setting-row"]')!;
     expect(requestRow.getAttribute('data-drafted')).toBe('true');
+    // One badge, on the row: none on the number it holds.
+    expect(
+      requestRow.querySelectorAll('[data-slot="drafted-badge"]'),
+    ).toHaveLength(1);
+    expect(requestRow.querySelector('[data-slot="drafted-field"]')).toBeNull();
     const guardrails = mocks.guardrailsProps.mock.calls.at(-1)![0] as {
       drafted: boolean;
       value: { enabled: boolean; mode: string; controls: { check: string }[] };
@@ -3451,6 +3456,63 @@ describe('NewAgent drafter', () => {
       content: 'drafter.agent.build.continue',
     });
     expect(lastRequest().context.step).toBe('basics');
+  });
+
+  it('marks a field undone in the form as undone in the drawer', async () => {
+    drafter.scripts = [
+      [
+        {
+          type: 'proposal',
+          proposal: {
+            message: 'The basics are in.',
+            fields: { name: 'Shipping help', description: 'Helps' },
+            reasons: [
+              { field: 'name', summary: 'Says what it does' },
+              { field: 'description', summary: 'Names who it serves' },
+            ],
+            notes: [],
+            dropped: [],
+            steps: ['basics'],
+            next_step: 'knowledge',
+          },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    const nameField = nameInput().closest<HTMLElement>(
+      '[data-slot="drafted-field"]',
+    )!;
+    await act(async () =>
+      buttonByLabel('drafter.undoField', nameField)!.click(),
+    );
+    expect(nameInput().value).toBe('');
+    const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
+    const rows = () =>
+      Array.from(summary.querySelectorAll('[data-slot="filled-row"] p')).map(
+        (p) => p.textContent,
+      );
+    expect(summary.textContent).toContain('drafter.undone.count');
+    expect(rows()).toEqual([
+      'agents.form.labels.name · drafter.undone.empty',
+      'agents.form.labels.description · Names who it serves',
+    ]);
+    // The folded step's rows say so too.
+    await act(async () => next()!.click());
+    const folded = panel()!.querySelector<HTMLElement>(
+      '[data-slot="build-finished"] [data-slot="drafter-step-row"]',
+    )!;
+    await act(async () => buttons(folded)[0].click());
+    expect(
+      Array.from(folded.querySelectorAll('[data-slot="filled-row"] p')).map(
+        (p) => p.textContent,
+      ),
+    ).toEqual([
+      'agents.form.labels.name · drafter.undone.empty',
+      'agents.form.labels.description · Names who it serves',
+    ]);
+    expect(folded.textContent).toContain('drafter.undone.count');
   });
 
   it('notes a field edited in the form since the turn', async () => {
