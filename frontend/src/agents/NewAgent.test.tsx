@@ -4652,6 +4652,30 @@ describe('NewAgent drafter', () => {
       expect(lastRequest().context).not.toHaveProperty('gap');
     });
 
+    it('forgets the gap once Publish ends the conversation', async () => {
+      drafter.gaps = GAPS;
+      drafter.scripts = [
+        [{ type: 'message', text: 'On it.' }, { type: 'end' }],
+        [{ type: 'message', text: 'Done.' }, { type: 'end' }],
+      ];
+      mocks.updateAgent.mockImplementation(() =>
+        jsonResponse({ id: 'agent-1' }),
+      );
+      await renderEdit(EDITOR, { status: 'draft' });
+      await act(async () => wand()!.click());
+      await act(async () => suggestion('gap-1')!.click());
+      expect(lastRequest().context.gap).toBeDefined();
+      await act(async () =>
+        buttonByText('agents.form.buttons.publish')!.click(),
+      );
+      expect(mocks.updateAgent).toHaveBeenCalled();
+      await ask('Shorter, please');
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'Shorter, please' },
+      ]);
+      expect(lastRequest().context).not.toHaveProperty('gap');
+    });
+
     it('says once that Insights is off for the agent, with a way to turn it on', async () => {
       drafter.gaps = {
         ...GAPS,

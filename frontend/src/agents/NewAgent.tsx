@@ -1347,7 +1347,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // while it was out, even after a Start over emptied the drawer.
   const turnsRef = useRef(0);
   // The gap or conversation an improve conversation started from in
-  // Insights: every turn of it sends it, until Start over.
+  // Insights: every turn of it sends it, until Start over or Publish.
   const improveFocusRef = useRef<AgentImproveFocus>({});
   // The name the Docs gaps row it was handed over from showed (a page
   // without its site tail), for that gap's card.
@@ -1448,6 +1448,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     drafterSession.reset();
     build.reset();
     improveFocusRef.current = {};
+    setHandoffName(null);
     buildRowsRef.current.clear();
     setPromptUsed(false);
   };
@@ -2269,6 +2270,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       ) {
         session.reset();
         build.reset();
+        // The gap or conversation it was improving went with it.
+        improveFocusRef.current = {};
+        setHandoffName(null);
+        skipQuestionsRef.current = false;
         buildRowsRef.current.clear();
         setPromptDraft(null);
         setPromptUsed(false);
