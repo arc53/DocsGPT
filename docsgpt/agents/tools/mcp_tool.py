@@ -4,6 +4,7 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import re
 import secrets
 import threading
 import time
@@ -75,6 +76,18 @@ _ui_resource_cache: Dict[tuple, tuple] = {}
 _ui_resource_cache_guard = threading.Lock()
 UI_RESOURCE_TTL = 600
 UI_RESOURCE_CACHE_SIZE = 32
+
+
+def _is_http_401_error(error_msg: str) -> bool:
+    """Return whether an error message explicitly reports HTTP 401."""
+    return bool(
+        re.search(
+            r"\b(?:HTTP(?:/\d+(?:\.\d+)?)?\s+|status(?:\s+code)?\s*[:=]?\s*)401\b"
+            r"|\b401\s+Unauthorized\b",
+            error_msg,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _mcp_http_client(
@@ -585,7 +598,6 @@ class MCPTool(Tool):
 
     _ERROR_PATTERNS = {
         ("403", "Forbidden"): "Access denied (403 Forbidden)",
-        ("401", "Unauthorized"): "Authentication failed (401 Unauthorized)",
         ("ECONNREFUSED",): "Connection refused",
         ("SSL", "certificate"): "SSL/TLS error",
     }
@@ -646,6 +658,8 @@ class MCPTool(Tool):
             if isinstance(exc, exc_type):
                 return Exception(msg_fn(operation, self.timeout, exc))
         error_msg = str(exc)
+        if _is_http_401_error(error_msg):
+            return Exception("Authentication failed (401 Unauthorized)")
         for patterns, friendly in self._ERROR_PATTERNS.items():
             if any(p.lower() in error_msg.lower() for p in patterns):
                 return Exception(friendly)
@@ -696,8 +710,9 @@ class MCPTool(Tool):
             if _is_header_mismatch(e):
                 return self._retry_with_listed_schemas(action_name, cleaned_kwargs, e)
             lower_msg = error_msg.lower()
+            is_http_401 = _is_http_401_error(error_msg)
             is_auth_error = (
-                "401" in error_msg
+                is_http_401
                 or "unauthorized" in lower_msg
                 or "session expired" in lower_msg
                 or "re-authorize" in lower_msg

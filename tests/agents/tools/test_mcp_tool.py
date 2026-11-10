@@ -651,6 +651,67 @@ class TestExecuteAction:
         assert "param2" not in call_kwargs
         assert call_kwargs["param3"] == "real"
 
+    @pytest.mark.parametrize(
+        "error_message",
+        [
+            "Ticket 401 could not be found",
+            "Record 401 is unavailable",
+            "Error 1401: invalid ticket",
+        ],
+    )
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    def test_non_auth_error_containing_401_does_not_retry(
+        self, mock_run, mcp_config, error_message
+    ):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = _make_tool(mcp_config)
+        tool._client = MagicMock()
+
+        mock_run.side_effect = [
+            Exception(error_message),
+            {"status": "unexpected second execution"},
+        ]
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            with pytest.raises(
+                Exception,
+                match=error_message,
+            ):
+                tool.execute_action("create_ticket", ticket_id="401")
+
+            mock_run.assert_called_once()
+            mock_setup.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "error_message",
+        [
+            "HTTP 401",
+            "HTTP/1.1 401 Unauthorized",
+            "Request failed with status code 401",
+        ],
+    )
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    def test_http_401_errors_trigger_auth_recovery(
+        self, mock_run, mcp_config, error_message
+    ):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = _make_tool(mcp_config)
+        tool._client = MagicMock()
+
+        mock_run.side_effect = [
+            Exception(error_message),
+            {"status": "retry_successful"},
+        ]
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            result = tool.execute_action("read_ticket")
+
+            assert result == {"status": "retry_successful"}
+            assert mock_run.call_count == 2
+            mock_setup.assert_called_once()
+
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_auth_error_retries_for_non_oauth(self, mock_run, mcp_config):
         from docsgpt.agents.tools.mcp_tool import MCPTool
@@ -848,6 +909,15 @@ class TestMapError:
         original = RuntimeError("something weird")
         err = tool._map_error("test", original)
         assert err is original
+
+    def test_ticket_number_401_is_not_authentication_error(self, mcp_config):
+        tool = _make_tool(mcp_config)
+
+        original_error = Exception("Ticket 401 could not be found")
+
+        mapped_error = tool._map_error("call_tool", original_error)
+
+        assert str(mapped_error) == "Ticket 401 could not be found"
 
 
 # =====================================================================
