@@ -3169,6 +3169,32 @@ describe('NewAgent drafter', () => {
     expect(requestLimit().disabled).toBe(true);
   });
 
+  it('reads an Undo of a field drafted twice as undone, not as an edit', async () => {
+    drafter.scripts = [
+      [proposal({ name: 'Shipping help' }), { type: 'end' }],
+      [proposal({ name: 'Shipping desk' }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    const before = nameInput().value;
+    await ask('Name it for shipping');
+    await ask('Shorter');
+    expect(nameInput().value).toBe('Shipping desk');
+    await act(async () =>
+      buttonByLabel(
+        'drafter.undoField',
+        nameInput().closest<HTMLElement>('[data-slot="drafted-field"]')!,
+      )!.click(),
+    );
+    expect(nameInput().value).toBe(before);
+    expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
+    const summaries = panel()!.querySelectorAll(
+      '[data-slot="proposal-summary"]',
+    );
+    expect(summaries[summaries.length - 1].textContent).toContain(
+      'drafter.undone.count',
+    );
+  });
+
   it('keeps the marks and the conversation of a draft that lands during Publish', async () => {
     let answer: (value: {
       ok: boolean;

@@ -1332,11 +1332,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       ),
     };
     const changed = changes.map((change) => change.field);
-    const applied = changes.map((change) => ({
-      field: change.field,
-      previous: draftValueOf(change.field, change.previous),
-      applied: draftValueOf(change.field, change.next),
-    }));
+    // A field drafted again still holding the last draft goes back, on its
+    // Undo, to before the first: its record says so, so that Undo reads as
+    // undone rather than as an edit by hand.
+    const applied = changes.map((change) => {
+      const marked = drafted.undoValue(change.field);
+      return {
+        field: change.field,
+        previous: draftValueOf(
+          change.field,
+          (marked ? marked.previous : change.previous) as never,
+        ),
+        applied: draftValueOf(change.field, change.next),
+      };
+    });
     appliedRef.current.set(raw as object, applied);
     changes.forEach((change) => {
       writeDraftField(change.field, change.next);

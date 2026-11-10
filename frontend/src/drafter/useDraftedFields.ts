@@ -26,6 +26,11 @@ export type DraftedFields<K extends string> = {
   /** Put a field's previous value back and drop its mark. */
   undo: (field: K) => void;
   /**
+   * What undo would put back for a marked field (from before its first
+   * draft, in the form's own shape); null for an unmarked field.
+   */
+  undoValue: (field: K) => { previous: unknown } | null;
+  /**
    * Drop the marks, keeping the values (after a save). With `saved`, the
    * values a save sent (in the shape of `values`), only the marks whose
    * value went with it: a field drafted while the save was out keeps its.
@@ -106,6 +111,11 @@ export function useDraftedFields<K extends string>(
     });
   }, []);
 
+  const undoValue = useCallback((field: K) => {
+    const marker = markersRef.current.get(field);
+    return marker ? { previous: marker.previous } : null;
+  }, []);
+
   const clear = useCallback((saved?: Partial<Record<K, unknown>>) => {
     if (!saved) {
       setMarkers(new Map());
@@ -129,6 +139,7 @@ export function useDraftedFields<K extends string>(
     mark,
     follow,
     undo,
+    undoValue,
     clear,
   };
 }

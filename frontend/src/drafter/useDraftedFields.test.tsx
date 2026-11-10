@@ -81,6 +81,15 @@ describe('useDraftedFields', () => {
     expect(harness.drafted!.fields).toEqual([]);
   });
 
+  it('tells what undo would put back for a marked field, from before the first draft', async () => {
+    expect(harness.drafted!.undoValue('name')).toBeNull();
+    await draft('name', 'New');
+    await draft('name', 'Newer');
+    expect(harness.drafted!.undoValue('name')).toEqual({ previous: 'Old' });
+    await act(async () => harness.drafted!.undo('name'));
+    expect(harness.drafted!.undoValue('name')).toBeNull();
+  });
+
   it('keeps the first previous value when the form holds another shape than it compares', async () => {
     await act(async () => root.render(<ShapedHarness />));
     const draftTools = async (ids: string[]) =>
