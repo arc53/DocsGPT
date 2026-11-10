@@ -194,6 +194,9 @@ export function PromptDraftPanel({
                 disabled={save.disabled}
                 loading={save.saving}
                 onClick={save.onSave}
+                // Room for its focus ring when Accept all or Discard
+                // scrolls it in (DraftPanel's keepFocus).
+                className="scroll-my-2"
                 data-drafter-next-focus=""
               >
                 {t('drafter.prompt.savePrompt')}

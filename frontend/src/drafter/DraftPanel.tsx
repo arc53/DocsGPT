@@ -98,6 +98,8 @@ export type DraftPanelHelpers = {
    * Run a button's action that takes the button away (Accept all,
    * Discard), then, if focus dropped to <body>, move it on to the panel's
    * `data-drafter-next-focus` control or else the ask bar (on a desktop).
+   * The control is scrolled into view by its scroll margin (`scroll-my-2`
+   * on it), so its focus ring isn't clipped at the body's edge.
    */
   keepFocus: (action: () => void) => void;
 };
@@ -249,8 +251,12 @@ export function DraftPanel({
       const next = scope?.querySelector<HTMLElement>(
         '[data-drafter-next-focus]',
       );
-      if (next) next.focus();
-      else if (isDesktop) inputRef.current?.focus();
+      if (next) {
+        // focus() alone scrolls it flush to the body's edge, clipping its
+        // ring; scrolling it in honours its scroll margin.
+        next.focus({ preventScroll: true });
+        next.scrollIntoView?.({ block: 'nearest' });
+      } else if (isDesktop) inputRef.current?.focus();
     },
   };
   const { items, step, streaming, waiting, full } = session;

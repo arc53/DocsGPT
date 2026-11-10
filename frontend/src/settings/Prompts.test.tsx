@@ -1312,12 +1312,29 @@ describe('Prompts page', () => {
     });
     const acceptAll = button('drafter.prompt.acceptAll', panel()!)!;
     acceptAll.focus();
-    await click(acceptAll);
+    const scroll = vi.fn();
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    const originalScroll = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      await click(acceptAll);
+    } finally {
+      Element.prototype.scrollIntoView = originalScroll;
+    }
     expect(panel()!.textContent).toContain('drafter.prompt.readAndSave');
     // Focus moves on to Save prompt, which takes Accept all's place.
-    expect(document.activeElement).toBe(
-      button('drafter.prompt.savePrompt', panel()!),
-    );
+    const save = button('drafter.prompt.savePrompt', panel()!)!;
+    expect(document.activeElement).toBe(save);
+    // Focusing it doesn't scroll it flush to the body's edge, which clipped
+    // its ring: it comes into view with room around it (scroll margin).
+    const saveFocus = focus.mock.contexts.indexOf(save);
+    expect(focus.mock.calls[saveFocus]).toEqual([{ preventScroll: true }]);
+    expect(scroll.mock.contexts).toContain(save);
+    expect(scroll.mock.calls[scroll.mock.contexts.indexOf(save)]).toEqual([
+      { block: 'nearest' },
+    ]);
+    expect(save.className).toContain('scroll-my-2');
+    focus.mockRestore();
     expect(
       panel()!.querySelectorAll('[data-slot="prompt-result"]').length,
     ).toBe(2);
