@@ -104,16 +104,19 @@ export default function AllSchedules() {
   const [tab, setTab] = useState('recurring');
   const scrolledTo = useRef<string | null>(null);
 
-  // Opened again from another notification while this page shows: follow it.
+  // Opened again from another notification while this page shows: follow it,
+  // past a search that would hide it.
   useEffect(() => {
-    if (focusId) setExpanded(focusId);
+    if (!focusId) return;
+    setExpanded(focusId);
+    setSearch('');
   }, [focusId]);
 
   useEffect(() => {
     if (focusTab) setTab(focusTab);
   }, [focusId, focusTab]);
 
-  // Once its tab shows: the row is not rendered before.
+  // Once its tab shows and no search hides it: the row is not rendered before.
   useEffect(() => {
     if (!focusId || tab !== focusTab || scrolledTo.current === focusId) return;
     const row = Array.from(
@@ -122,7 +125,7 @@ export default function AllSchedules() {
     if (!row) return;
     scrolledTo.current = focusId;
     row.scrollIntoView?.({ block: 'center' });
-  }, [focusId, focusTab, tab]);
+  }, [focusId, focusTab, tab, search]);
 
   const agentNames = useMemo(
     () => new Map((agents ?? []).map((agent) => [agent.id, agent.name])),
