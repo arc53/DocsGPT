@@ -1,0 +1,18 @@
+provider: nvidia
+defaults:
+  supports_tools: true
+  supports_structured_output: true
+
+models:
+  - id: nvidia/nemotron-3.5-super-vl-120b-a12b
+    display_name: Nemotron 3.5 Super VL
+    description: NVIDIA Nemotron 3.5 Super vision-language MoE (120B, 12B active) with tool calling and structured output
+    attachments: [image]
+
+  - id: nvidia/nemotron-3-ultra-550b-a55b
+    display_name: Nemotron 3 Ultra
+    description: NVIDIA Nemotron 3 Ultra MoE (550B, 55B active), the largest Nemotron 3 model, for reasoning and agentic tasks
+
+  - id: nvidia/nemotron-3.5-lightning-30b-a3b
+    display_name: Nemotron 3.5 Lightning
+    description: NVIDIA Nemotron 3.5 Lightning MoE (30B, 3B active), a smaller and cheaper model with tool calling

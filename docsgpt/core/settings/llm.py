@@ -16,7 +16,7 @@ class LLMSettings(SettingsGroup):
         default="docsgpt",
         description=(
             "Provider whose first model is the default when LLM_NAME names none: docsgpt, openai, anthropic, "
-            "google, groq, openrouter, novita or openai_compatible. For your own OpenAI-compatible server use "
+            "google, groq, openrouter, novita, nvidia or openai_compatible. For your own OpenAI-compatible server use "
             "openai with OPENAI_BASE_URL."
         ),
     )
@@ -48,6 +48,7 @@ class LLMSettings(SettingsGroup):
     GROQ_API_KEY: Optional[str] = Field(default=None, description="Groq API key.")
     OPEN_ROUTER_API_KEY: Optional[str] = Field(default=None, description="OpenRouter API key.")
     NOVITA_API_KEY: Optional[str] = Field(default=None, description="Novita API key.")
+    NVIDIA_API_KEY: Optional[str] = Field(default=None, description="NVIDIA API key.")
 
     OPENAI_API_BASE: Optional[str] = Field(default=None, description="Azure OpenAI API base URL.")
     OPENAI_API_VERSION: Optional[str] = Field(default=None, description="Azure OpenAI API version.")

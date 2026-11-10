@@ -32,6 +32,7 @@ class TestModelProvider:
         assert ModelProvider.GROQ == "groq"
         assert ModelProvider.DOCSGPT == "docsgpt"
         assert ModelProvider.NOVITA == "novita"
+        assert ModelProvider.NVIDIA == "nvidia"
         assert ModelProvider.OPENROUTER == "openrouter"
 
 

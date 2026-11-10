@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-10
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -178,7 +178,7 @@ Which model answers, how it is reached, and provider-specific behaviour.
 
 Type `str`, default `docsgpt`.
 
-Provider whose first model is the default when LLM_NAME names none: docsgpt, openai, anthropic, google, groq, openrouter, novita or openai_compatible. For your own OpenAI-compatible server use openai with OPENAI_BASE_URL.
+Provider whose first model is the default when LLM_NAME names none: docsgpt, openai, anthropic, google, groq, openrouter, novita, nvidia or openai_compatible. For your own OpenAI-compatible server use openai with OPENAI_BASE_URL.
 
 ### `LLM_NAME`
 
@@ -239,6 +239,12 @@ OpenRouter API key.
 Type `str`, default unset.
 
 Novita API key.
+
+### `NVIDIA_API_KEY`
+
+Type `str`, default unset.
+
+NVIDIA API key.
 
 ### `OPENAI_API_BASE`
 
