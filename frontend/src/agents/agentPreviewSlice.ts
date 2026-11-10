@@ -31,6 +31,7 @@ import {
   answeredCall,
   type QuestionAction,
 } from '../conversation/questionCall';
+import { NOT_PENDING_CODE } from '../conversation/conversationSlice';
 import store from '../store';
 import {
   clearAttachments,
@@ -256,15 +257,46 @@ export const resumePreviewQuestion = createAsyncThunk<
     abortController = new AbortController();
     const { signal } = abortController;
 
+    // A refused try left its error on the turn; this answer is the retry.
+    if (queries[index].error)
+      dispatch(
+        updateQuery({
+          index,
+          query: {
+            error: undefined,
+            errorCode: undefined,
+            errorParams: undefined,
+          },
+        }),
+      );
     dispatch(updateToolCall({ index, tool_call: answeredCall(call, action) }));
     dispatch(agentPreviewSlice.actions.setStatus('loading'));
-    await handleSubmitToolActions(
-      conversationId,
-      [{ call_id: callId, ...action }],
-      state.preference.token,
-      signal,
-      previewEventHandler(dispatch, index),
-    );
+    // The first frame tells whether the server took the answers; a refusal
+    // (or a request that never got there) left the turn waiting, so the
+    // cards come back as they were for another try.
+    let taken: boolean | null = null;
+    const onEvent = previewEventHandler(dispatch, index);
+    const restore = () =>
+      dispatch(updateToolCall({ index, tool_call: { ...call } }));
+    try {
+      await handleSubmitToolActions(
+        conversationId,
+        [{ call_id: callId, ...action }],
+        state.preference.token,
+        signal,
+        (event) => {
+          if (taken === null) {
+            const data = JSON.parse(event.data);
+            taken = data.type !== 'error' || data.code === NOT_PENDING_CODE;
+          }
+          onEvent(event);
+        },
+      );
+    } catch (error) {
+      if (taken !== true && !signal.aborted) restore();
+      throw error;
+    }
+    if (taken === false) restore();
   },
 );
 
