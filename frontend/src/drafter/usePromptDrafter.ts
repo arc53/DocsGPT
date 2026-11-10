@@ -26,7 +26,7 @@ export type PromptDrafter = {
   session: DrafterSession;
   /** Send a starting point's text, with its id going along for the session. */
   start: (starter: DrafterStarter, text: string) => void;
-  /** Send `text` and draft from here on without asking questions. */
+  /** Send `text` and draft this turn without asking questions. */
   skipQuestions: (text: string) => void;
   /**
    * Send `text` as a review (`mode: "review"`, the checklist); the messages
@@ -85,7 +85,9 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   const sessionRef = useRef<DrafterSession | null>(null);
   // The text the running turn was sent with: a proposal's edits fit it.
   const sent = useRef('');
-  // The starting point picked and a Skip on questions hold for the session.
+  // The starting point picked holds for the session; a Skip on questions
+  // holds for its own turn (and a Retry of it), so a later request may be
+  // asked about again.
   const starter = useRef<DrafterStarter | null>(null);
   const skipped = useRef(false);
   // The running turn is a review: a Retry runs it as one again, and the
@@ -168,6 +170,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   const send = useCallback<DrafterSession['send']>(
     (text, sendOptions) => {
       reviewing.current = false;
+      skipped.current = false;
       setReviewTurn(false);
       sessionSend(text, sendOptions);
     },
@@ -182,15 +185,18 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   );
   const skipQuestions = useCallback(
     (text: string) => {
+      reviewing.current = false;
+      setReviewTurn(false);
       skipped.current = true;
-      send(text);
+      sessionSend(text);
     },
-    [send],
+    [sessionSend],
   );
   const startReview = useCallback(
     (text: string) => {
       // Up before the send: the turn reads its context as it starts.
       reviewing.current = true;
+      skipped.current = false;
       setReviewTurn(true);
       sessionSend(text);
     },

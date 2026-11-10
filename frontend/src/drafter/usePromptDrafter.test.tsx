@@ -214,6 +214,26 @@ describe('usePromptDrafter', () => {
     expect(stream.requests[2].context).toMatchObject({ mode: 'improve' });
   });
 
+  it('skips questions for the Skip turn only, a Retry of it too', async () => {
+    stream.scripts = [
+      [{ type: 'error', code: 'model_error' }, { type: 'end' }],
+      [{ type: 'end' }],
+      [{ type: 'end' }],
+    ];
+    await act(async () => current.drafter!.skipQuestions('Just draft it'));
+    expect(stream.requests[0].context).toMatchObject({
+      mode: 'improve',
+      skip_questions: true,
+    });
+    await act(async () => current.drafter!.session.retry());
+    expect(stream.requests[1].context).toMatchObject({ skip_questions: true });
+    // The next request may be asked about again.
+    await act(async () => current.drafter!.session.send('Add the hours'));
+    expect(stream.requests[2].context).toMatchObject({
+      skip_questions: false,
+    });
+  });
+
   const WRITE = {
     mode: 'write',
     message: 'A first draft.',

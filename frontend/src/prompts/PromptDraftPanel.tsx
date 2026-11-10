@@ -64,7 +64,8 @@ type PromptDraftPanelProps = {
  * with Review it (the checklist, `mode: "review"`), whose result lists what
  * to fix and what's worth a look (PromptReviewFindings); a new prompt starts
  * from one of three starting points (or a description), and the drafter may
- * ask first, with Skip to draft at once. Each result shows its message, a
+ * ask first (an improvement too, for details only you know), with Skip to
+ * draft that turn at once. Each result shows its message, a
  * written prompt's reason, "Check before you save" warnings and the guesses
  * it made (I assumed, each with Change, which puts it in the ask bar); the
  * latest result asks for a read and offers Save prompt while the prompt has
@@ -252,10 +253,8 @@ export function PromptDraftPanel({
       }
       renderProposal={renderProposal}
       statusLabel={drafter.reviewing ? t('drafter.steps.reviewing') : undefined}
-      onSkipQuestions={
-        mode === 'write'
-          ? () => drafter.skipQuestions(t('drafter.prompt.skipMessage'))
-          : undefined
+      onSkipQuestions={() =>
+        drafter.skipQuestions(t('drafter.prompt.skipMessage'))
       }
       announceProposal={(raw) => readPromptProposal(raw)?.message || null}
       onStartOver={drafter.startOver}

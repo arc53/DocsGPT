@@ -1466,6 +1466,49 @@ describe('Prompts page', () => {
     expect(panel()!.textContent).not.toContain('drafter.steps.drafting');
   });
 
+  it('offers Skip on the questions an improvement asks, drafting at once for that turn', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      [
+        {
+          type: 'questions',
+          questions: [
+            {
+              id: 'q1',
+              text: 'Who is the tier-2 contact?',
+              note: null,
+              multi: false,
+              options: [],
+              placeholder: '',
+            },
+          ],
+        },
+        { type: 'end' },
+      ],
+      proposal(IMPROVE),
+    ];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="unsure"]')!,
+    );
+    expect(drafter.requests[0].context).toMatchObject({
+      mode: 'improve',
+      skip_questions: false,
+    });
+    await click(button('drafter.skipQuestions', panel()!)!);
+    expect(drafter.requests[1].messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'drafter.prompt.skipMessage',
+    });
+    expect(drafter.requests[1].context).toMatchObject({
+      mode: 'improve',
+      skip_questions: true,
+    });
+  });
+
   it('says it is drafting while an improve turn runs', async () => {
     drafter.config = { enabled: true };
     drafter.hang = true;
