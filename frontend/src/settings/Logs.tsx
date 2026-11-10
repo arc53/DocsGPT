@@ -140,9 +140,13 @@ export default function Logs({ agentId, analytics, agent }: LogsProps) {
     if (!id) return null;
     const record = agent?.id === id ? agent : knownAgent(id);
     if (!canImproveAgent(record)) return null;
+    // The answer the row is on, so the drafter reads that one.
+    const messageId =
+      log.message_id && UUID_RE.test(log.message_id) ? log.message_id : null;
     return agentImprovePath(id, {
       kind: 'conversation',
       conversation_id: conversationId,
+      ...(messageId ? { message_id: messageId } : {}),
     });
   };
   // The drill-down filters live in the URL, so a docs-gap example or a

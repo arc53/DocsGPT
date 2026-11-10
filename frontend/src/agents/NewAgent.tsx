@@ -1536,7 +1536,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         );
       }
     } else {
-      improveFocusRef.current = { conversation_id: handoff.conversation_id };
+      improveFocusRef.current = {
+        conversation_id: handoff.conversation_id,
+        ...(handoff.message_id ? { message_id: handoff.message_id } : {}),
+      };
       drafterSessionRef.current.send(
         t('drafter.agent.insights.fromConversation'),
       );

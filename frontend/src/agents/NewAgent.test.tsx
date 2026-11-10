@@ -122,6 +122,7 @@ const drafter = vi.hoisted(() => ({
       earlier?: string[];
       gap?: { topic: string | null; gap_type: string };
       conversation_id?: string;
+      message_id?: string;
       form: Record<string, unknown>;
     };
   }[],
@@ -4896,13 +4897,15 @@ describe('NewAgent drafter', () => {
 
     it('opens on the conversation a Logs row handed over', async () => {
       const id = '0b6f3a52-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+      const message = '7d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6';
       await renderAt(
-        `/agents/edit/agent-1?improve=conversation&conversation=${id}`,
+        `/agents/edit/agent-1?improve=conversation&conversation=${id}&message=${message}`,
       );
       expect(lastRequest().messages).toEqual([
         { role: 'user', content: 'drafter.agent.insights.fromConversation' },
       ]);
       expect(lastRequest().context.conversation_id).toBe(id);
+      expect(lastRequest().context.message_id).toBe(message);
       expect(lastRequest().context).not.toHaveProperty('gap');
       expect(search.value).toBe('');
     });

@@ -912,6 +912,7 @@ describe('agentDraft', () => {
     const focus = {
       gap: { topic: 'Order status', gap_type: 'needs account data' },
       conversation_id: 'c1',
+      message_id: 'm1',
     };
     const improving = agentDraftContext(
       'a1',
@@ -922,6 +923,7 @@ describe('agentDraft', () => {
     );
     expect(improving.gap).toEqual(focus.gap);
     expect(improving.conversation_id).toBe('c1');
+    expect(improving.message_id).toBe('m1');
     const fresh = agentDraftContext(
       null,
       form(),
@@ -931,6 +933,7 @@ describe('agentDraft', () => {
     );
     expect(fresh).not.toHaveProperty('gap');
     expect(fresh).not.toHaveProperty('conversation_id');
+    expect(fresh).not.toHaveProperty('message_id');
     expect(
       agentDraftContext(
         'a1',

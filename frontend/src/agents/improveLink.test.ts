@@ -8,6 +8,7 @@ import {
 import type { Agent } from './types';
 
 const CONVERSATION = '0b6f3a52-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+const MESSAGE = '7d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6';
 const query = (path: string) => new URL(path, 'http://x').searchParams;
 
 describe('improveLink', () => {
@@ -57,6 +58,11 @@ describe('improveLink', () => {
     expect(
       readImproveHandoff(query(agentImprovePath('a1', conversation))),
     ).toEqual(conversation);
+    // A Logs row carries the answer it was on, which the drafter reads.
+    const answer = { ...conversation, message_id: MESSAGE };
+    expect(readImproveHandoff(query(agentImprovePath('a1', answer)))).toEqual(
+      answer,
+    );
   });
 
   it('reads nothing from a missing or malformed hand-off', () => {
@@ -65,6 +71,10 @@ describe('improveLink', () => {
     expect(read('')).toBeNull();
     expect(read('improve=other')).toBeNull();
     expect(read('improve=conversation&conversation=not-a-uuid')).toBeNull();
+    // A malformed answer id is left out; the conversation still goes.
+    expect(
+      read(`improve=conversation&conversation=${CONVERSATION}&message=x`),
+    ).toEqual({ kind: 'conversation', conversation_id: CONVERSATION });
     expect(read('improve=gap&where=Page')).toBeNull();
     expect(read('improve=gap&gap_type=docs%20missing')).toBeNull();
     expect(read(`improve=gap&gap_type=${'x'.repeat(65)}&where=P`)).toBeNull();

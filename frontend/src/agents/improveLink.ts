@@ -34,7 +34,12 @@ export type ImproveHandoff =
       group_by: GapGroup;
       group_key: string | null;
     }
-  | { kind: 'conversation'; conversation_id: string };
+  | {
+      kind: 'conversation';
+      conversation_id: string;
+      /** The answer the Logs row was on, when it carried one. */
+      message_id?: string;
+    };
 
 /** The query keys a hand-off uses; the form drops them once it has read them. */
 export const IMPROVE_PARAMS = [
@@ -45,9 +50,10 @@ export const IMPROVE_PARAMS = [
   'group_by',
   'group_key',
   'conversation',
+  'message',
 ] as const;
 
-/** A conversation id as the server takes it. */
+/** A conversation or message id as the server takes it. */
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Longest gap type and names a link carries (a topic name is at most 60). */
@@ -77,7 +83,10 @@ export function agentImprovePath(
     params.set('where', handoff.where);
     params.set('group_by', handoff.group_by);
     if (handoff.group_key) params.set('group_key', handoff.group_key);
-  } else params.set('conversation', handoff.conversation_id);
+  } else {
+    params.set('conversation', handoff.conversation_id);
+    if (handoff.message_id) params.set('message', handoff.message_id);
+  }
   return `${agentEditPath(agentId)}?${params.toString()}`;
 }
 
@@ -96,7 +105,12 @@ export function readImproveHandoff(
   const kind = params.get('improve');
   if (kind === 'conversation') {
     const id = params.get('conversation') ?? '';
-    return UUID_RE.test(id) ? { kind, conversation_id: id } : null;
+    if (!UUID_RE.test(id)) return null;
+    // A malformed answer id is left out: the conversation still goes.
+    const message = params.get('message') ?? '';
+    return UUID_RE.test(message)
+      ? { kind, conversation_id: id, message_id: message }
+      : { kind, conversation_id: id };
   }
   if (kind !== 'gap') return null;
   const gapType = params.get('gap_type')?.trim() ?? '';

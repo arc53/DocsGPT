@@ -811,6 +811,14 @@ describe('Improve the agent from a Logs row', () => {
     );
   });
 
+  it('carries the answer the row is on, for the drafter to read that one', async () => {
+    const message = '7d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6';
+    const link = (await show({ ...chat, message_id: message }))!;
+    expect(link.getAttribute('href')).toBe(
+      `/agents/manage/edit/agent-1?improve=conversation&conversation=${CONVERSATION}&message=${message}`,
+    );
+  });
+
   it('offers it for a thumbs-down, with the page’s own agent', async () => {
     store.state.preference.agents = [];
     const link = await show(

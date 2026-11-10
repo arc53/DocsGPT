@@ -649,6 +649,8 @@ export type AgentImproveFocus = {
     group_key?: string | null;
   };
   conversation_id?: string;
+  /** The answer in that conversation a Logs row was on. */
+  message_id?: string;
 };
 
 /**
@@ -688,7 +690,10 @@ export function agentDraftContext(
     starter: build.starter ?? null,
     ...(improving && focus.gap ? { gap: focus.gap } : {}),
     ...(improving && focus.conversation_id
-      ? { conversation_id: focus.conversation_id }
+      ? {
+          conversation_id: focus.conversation_id,
+          ...(focus.message_id ? { message_id: focus.message_id } : {}),
+        }
       : {}),
     form: {
       name: form.name,
