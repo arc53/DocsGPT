@@ -28,7 +28,7 @@ from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import (
-    CANCEL_RATE_PER_MINUTE, cancel_turn, claim_running, clear_model_failure, drafter_config, end_turn, prepare,
+    bad_request, CANCEL_RATE_PER_MINUTE, cancel_turn, claim_running, clear_model_failure, drafter_config, end_turn, prepare,
     record_model_failure, start_turn, TURN_ID, turn_cancelled,
 )
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
@@ -116,7 +116,9 @@ class DrafterStream(Resource):
             "valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, "
             "{\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). "
             "Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an "
-            "error event in a 200 stream. Nothing is saved."
+            "error event in a 200 stream; a bad_request carries reason: history (the conversation is refused: "
+            "start a new one), too_long (the prompt is over the read cap, with limit), empty (the message is "
+            "empty once cleaned) or invalid. Nothing is saved."
         ),
         responses={200: "text/event-stream of draft events", 401: "Not signed in"},
     )
@@ -145,7 +147,7 @@ class DrafterStream(Resource):
         except BadDraftRequest as err:
             end_turn(user_id, turn_id)
             return Response(
-                _closed({"type": "error", "code": "bad_request", "message": str(err)}),
+                _closed(bad_request(err).event()),
                 mimetype="text/event-stream",
                 headers=_SSE_HEADERS,
             )

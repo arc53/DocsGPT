@@ -80,6 +80,16 @@ READ_MAX = 100_000
 #: Longest prompt text a request may send before it is cleaned: past it the text is refused unread. Cleaning only
 #: drops characters, so the slack keeps a text that cleans to :data:`READ_MAX` (``\r\n`` line ends) accepted.
 RAW_READ_MAX = 2 * READ_MAX
+
+
+class PromptTooLong(BadDraftRequest):
+    """The prompt to draft with is over the read cap; the refusal's ``reason`` is ``too_long`` with the ``limit``."""
+
+    reason = "too_long"
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"The prompt is too long to draft with: at most {limit:,} characters")
+        self.limit = limit
 MAX_EDITS = 20
 REASON_MAX = 300
 MESSAGE_MAX = 600
@@ -148,10 +158,10 @@ def parse_context(raw: Any) -> dict:
     prompt_id = prompt.get("id")
     raw_content = prompt.get("content")
     if isinstance(raw_content, str) and len(raw_content) > RAW_READ_MAX:
-        raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
+        raise PromptTooLong(READ_MAX)
     content = clean_text(raw_content, len(raw_content)) if isinstance(raw_content, str) else ""
     if len(content) > READ_MAX:
-        raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
+        raise PromptTooLong(READ_MAX)
     if mode in _ON_TEXT and not content:
         raise BadDraftRequest(f"There is no prompt text to {mode}")
     writing = mode == "write"

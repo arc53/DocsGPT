@@ -140,3 +140,53 @@ class TestModelFailures:
         record_model_failure("alice", "gpt-a", "model_auth")
         clear_model_failure("alice", "gpt-a")
         assert model_failure("alice", "gpt-a") is None
+
+
+@pytest.mark.unit
+class TestBadRequestReason:
+    """A refused request says why, so the panel offers Start over only when the conversation is what's refused."""
+
+    def _refusal(self, body):
+        with patch.object(settings, "DRAFTER_ENABLED", True):
+            refusal, *_ = prepare("alice", body)
+        return refusal.event()
+
+    @pytest.mark.parametrize("messages", [
+        [],
+        [{"role": "user", "content": "x"}] * 25,
+        [{"role": "robot", "content": "x"}],
+        [{"role": "user", "content": 5}],
+        [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}],
+        [{"role": "user", "content": "x"}, {"role": "assistant", "content": "​"}, {"role": "user", "content": "z"}],
+        [{"role": "assistant", "content": "y" * 200_000}, {"role": "user", "content": "z"}],
+    ])
+    def test_a_refused_conversation_is_history(self, messages):
+        event = self._refusal({"recipe": "agent", "messages": messages})
+        assert (event["code"], event["reason"]) == ("bad_request", "history")
+
+    def test_an_empty_last_message_is_empty(self):
+        event = self._refusal({"recipe": "agent", "messages": [{"role": "user", "content": "​​"}]})
+        assert (event["code"], event["reason"]) == ("bad_request", "empty")
+
+    def test_a_prompt_over_the_read_cap_is_too_long_with_the_limit(self):
+        from docsgpt.drafter.prompt_recipe import READ_MAX
+
+        event = self._refusal({"recipe": "prompt", "messages": [{"role": "user", "content": "Improve it"}],
+                               "context": {"mode": "improve", "prompt": {"content": "x" * (READ_MAX + 1)}}})
+        assert (event["code"], event["reason"], event["limit"]) == ("bad_request", "too_long", READ_MAX)
+        assert event["message"]
+
+    @pytest.mark.parametrize("body", [
+        ["not an object"],
+        {"recipe": "nope", "messages": [{"role": "user", "content": "x"}]},
+        {"recipe": "agent", "messages": [{"role": "user", "content": "x"}], "context": 5},
+        {"recipe": "agent", "messages": [{"role": "user", "content": "x" * 9000}]},
+    ])
+    def test_anything_else_is_invalid(self, body):
+        event = self._refusal(body)
+        assert (event["code"], event["reason"]) == ("bad_request", "invalid") and "limit" not in event
+
+    def test_other_refusals_carry_no_reason(self):
+        with patch.object(settings, "DRAFTER_ENABLED", False):
+            refusal, *_ = prepare("alice", {})
+        assert "reason" not in refusal.event()

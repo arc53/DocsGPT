@@ -44,16 +44,44 @@ CANCEL_RATE_PER_MINUTE = 60
 TURN_ID = re.compile(r"[0-9a-f]{32}")
 
 
+#: Why a ``bad_request`` was refused: the conversation itself (``history``: Start over helps), the prompt to
+#: draft with is over the read cap (``too_long``, with its ``limit``), the user's message cleans to nothing
+#: (``empty``), or anything else (``invalid``).
+BAD_REQUEST_REASONS = ("history", "too_long", "empty", "invalid")
+
+
 @dataclass
 class Refusal:
-    """Why a draft can't start: the ``error`` event's code and message."""
+    """Why a draft can't start: the ``error`` event's code and message, and a ``bad_request``'s reason."""
 
     code: str
     message: str
+    reason: Optional[str] = None
+    limit: Optional[int] = None
 
     def event(self) -> dict:
         """The refusal as the stream's ``error`` event."""
-        return {"type": "error", "code": self.code, "message": self.message}
+        event = {"type": "error", "code": self.code, "message": self.message}
+        if self.reason is not None:
+            event["reason"] = self.reason
+        if self.limit is not None:
+            event["limit"] = self.limit
+        return event
+
+
+def bad_request(err: BadDraftRequest) -> Refusal:
+    """A ``bad_request`` refusal for ``err``, with the reason (and limit) it carries; ``invalid`` by default."""
+    reason = getattr(err, "reason", None)
+    limit = getattr(err, "limit", None)
+    return Refusal("bad_request", str(err), reason if reason in BAD_REQUEST_REASONS else "invalid",
+                   limit if isinstance(limit, int) else None)
+
+
+def _refused(message: str, reason: str) -> BadDraftRequest:
+    """A :class:`BadDraftRequest` with the ``reason`` its refusal reports."""
+    err = BadDraftRequest(message)
+    err.reason = reason
+    return err
 
 
 def drafter_config(user_id: Optional[str]) -> dict:
@@ -79,27 +107,30 @@ def parse_messages(raw: Any) -> list[dict]:
     Raises:
         BadDraftRequest: Not a list of ``{role, content}`` with user and
             assistant roles, empty, too long, or not ending with a user message.
+            Its ``reason`` is ``empty`` or ``invalid`` when only the new (last)
+            user message is at fault, else ``history``.
     """
     if not isinstance(raw, list) or not raw:
-        raise BadDraftRequest("messages must be a non-empty list")
+        raise _refused("messages must be a non-empty list", "history")
     if len(raw) > MAX_MESSAGES:
-        raise BadDraftRequest(f"A draft conversation can have at most {MAX_MESSAGES} messages; start a new one")
+        raise _refused(f"A draft conversation can have at most {MAX_MESSAGES} messages; start a new one", "history")
     out: list[dict] = []
-    for message in raw:
+    for position, message in enumerate(raw):
         if not isinstance(message, dict) or message.get("role") not in ("user", "assistant"):
-            raise BadDraftRequest("Each message needs a role of user or assistant")
+            raise _refused("Each message needs a role of user or assistant", "history")
         content = message.get("content")
         if not isinstance(content, str):
-            raise BadDraftRequest("Each message needs text content")
+            raise _refused("Each message needs text content", "history")
+        newest = position == len(raw) - 1 and message["role"] == "user"
         limit = USER_MESSAGE_CHARS if message["role"] == "user" else ASSISTANT_MESSAGE_CHARS
         if len(content) > limit:
-            raise BadDraftRequest(f"A message can be at most {limit} characters")
+            raise _refused(f"A message can be at most {limit} characters", "invalid" if newest else "history")
         text = clean_text(content, limit)
         if not text:
-            raise BadDraftRequest("A message can't be empty")
+            raise _refused("A message can't be empty", "empty" if newest else "history")
         out.append({"role": message["role"], "content": text})
     if out[-1]["role"] != "user":
-        raise BadDraftRequest("The last message must be the user's")
+        raise _refused("The last message must be the user's", "history")
     return out
 
 
@@ -120,7 +151,7 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
     if not settings.DRAFTER_ENABLED:
         return Refusal("disabled", "Drafting is turned off on this instance."), None, None, None
     if not isinstance(body, dict):
-        return Refusal("bad_request", "The request body must be a JSON object."), None, None, None
+        return Refusal("bad_request", "The request body must be a JSON object.", "invalid"), None, None, None
     recipe = get_recipe(body.get("recipe"))
     try:
         if recipe is None:
@@ -131,7 +162,7 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
             raise BadDraftRequest("context must be an object")
         context = recipe.parse_context(context)
     except BadDraftRequest as err:
-        return Refusal("bad_request", str(err)), None, None, None
+        return bad_request(err), None, None, None
     model = drafter_model(user_id)
     if model is None:
         return Refusal("no_model", "No model is set up to draft with."), None, None, None
