@@ -4654,6 +4654,10 @@
         "description": "Der Anbieter hat den API-Schlüssel für {{model}} abgelehnt. Im Formular hat sich nichts geändert.",
         "descriptionNoModel": "Der Anbieter hat den API-Schlüssel des Aufgabenmodells abgelehnt. Im Formular hat sich nichts geändert.",
         "fix": "Aufgabenmodell ändern"
+      },
+      "auth": {
+        "title": "Du bist abgemeldet",
+        "description": "Deine Sitzung ist abgelaufen, daher konnte DocsGPT nicht entwerfen. Melde dich erneut an und sende deine Nachricht dann noch einmal."
       }
     },
     "agent": {

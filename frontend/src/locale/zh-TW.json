@@ -4629,6 +4629,10 @@
         "description": "供應商拒絕了 {{model}} 的 API 金鑰。表單沒有變更。",
         "descriptionNoModel": "供應商拒絕了任務模型的 API 金鑰。表單沒有變更。",
         "fix": "更換任務模型"
+      },
+      "auth": {
+        "title": "你已登出",
+        "description": "你的工作階段已結束，DocsGPT 無法起草。請重新登入，然後再次送出訊息。"
       }
     },
     "agent": {

@@ -4675,6 +4675,10 @@
         "description": "The provider refused the API key for {{model}}. Nothing in the form changed.",
         "descriptionNoModel": "The provider refused the task model's API key. Nothing in the form changed.",
         "fix": "Change the task model"
+      },
+      "auth": {
+        "title": "You're signed out",
+        "description": "Your session ended, so DocsGPT couldn't draft. Sign in again, then send your message again."
       }
     },
     "agent": {

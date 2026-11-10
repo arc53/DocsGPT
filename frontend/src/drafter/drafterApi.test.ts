@@ -153,6 +153,14 @@ describe('drafterApi', () => {
       type: 'error',
       code: 'model_auth',
     });
+    // An expired session isn't the model's fault: another try fails the same.
+    client.post.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    expect((await run())[0]).toEqual({ type: 'error', code: 'auth' });
     // A 400 body that names its reason reads like the stream's refusal.
     client.post.mockResolvedValueOnce(
       new Response(

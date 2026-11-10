@@ -4792,6 +4792,10 @@
         "description": "El proveedor rechazó la clave de API de {{model}}. El formulario no ha cambiado.",
         "descriptionNoModel": "El proveedor rechazó la clave de API del modelo de tareas. El formulario no ha cambiado.",
         "fix": "Cambiar el modelo de tareas"
+      },
+      "auth": {
+        "title": "Has cerrado sesión",
+        "description": "Tu sesión terminó, así que DocsGPT no pudo redactar. Vuelve a iniciar sesión y envía tu mensaje de nuevo."
       }
     },
     "agent": {

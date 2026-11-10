@@ -616,6 +616,15 @@ describe('DraftPanel', () => {
     },
   );
 
+  it('asks to sign in again after a session ended, with no Try again', async () => {
+    stream.scripts = [[{ type: 'error', code: 'auth' }, { type: 'end' }]];
+    await ask('Draft it');
+    const alert = container.querySelector('[data-item="error"]')!;
+    expect(alert.textContent).toContain('drafter.errors.auth.title');
+    expect(alert.textContent).toContain('drafter.errors.auth.description');
+    expect(button('drafter.retry')).toBeUndefined();
+  });
+
   it("caps the ask bar at the server's message length", () => {
     expect(askBar().maxLength).toBe(8000);
   });

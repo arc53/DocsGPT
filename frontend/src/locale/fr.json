@@ -4792,6 +4792,10 @@
         "description": "Le fournisseur a refusé la clé d’API de {{model}}. Le formulaire n’a pas changé.",
         "descriptionNoModel": "Le fournisseur a refusé la clé d’API du modèle de tâches. Le formulaire n’a pas changé.",
         "fix": "Changer le modèle de tâches"
+      },
+      "auth": {
+        "title": "Vous êtes déconnecté",
+        "description": "Votre session a expiré, DocsGPT n’a donc pas pu rédiger. Reconnectez-vous, puis renvoyez votre message."
       }
     },
     "agent": {

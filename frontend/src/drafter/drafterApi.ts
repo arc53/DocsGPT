@@ -57,7 +57,9 @@ export type DrafterErrorCode =
   /** The message had no text left once cleaned. */
   | 'empty_message'
   /** The request was malformed: nothing the user wrote caused it. */
-  | 'request_invalid';
+  | 'request_invalid'
+  /** The session ended (HTTP 401): only signing in again helps. */
+  | 'auth';
 
 /**
  * The counts a `reading` status reports ("6 knowledge sources, 11 tools…");
@@ -111,6 +113,7 @@ const ERROR_CODES: DrafterErrorCode[] = [
   'prompt_too_long',
   'empty_message',
   'request_invalid',
+  'auth',
 ];
 
 // A refused request's `reason`, as the server names it, to the code the panel
@@ -305,6 +308,7 @@ function codeForStatus(status: number, body: unknown): DrafterErrorCode {
   const { code, reason } = (body ?? {}) as { code?: unknown; reason?: unknown };
   if (code === 'bad_request') return badRequestCode(reason);
   if (isErrorCode(code)) return code;
+  if (status === 401) return 'auth';
   if (status === 429) return 'rate_limited';
   if (status === 400 || status === 422) return badRequestCode(reason);
   if (status === 403 || status === 404) return 'disabled';
