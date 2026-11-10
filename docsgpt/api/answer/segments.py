@@ -108,6 +108,28 @@ class AnswerSegments:
         self._seen_calls.add(call_id)
         self._append({"kind": "tool", "call_id": str(call_id)})
 
+    def restore(self, items: Any) -> None:
+        """Start from a paused turn's saved order, so what the resumed turn adds follows it.
+
+        Args:
+            items: The ``segments`` the pause saved; malformed entries are skipped.
+        """
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            kind, length, call_id = item.get("kind"), item.get("length"), item.get("call_id")
+            if kind in ("text", "thought") and isinstance(length, int) and length > 0:
+                self._append({"kind": kind, "length": length})
+            elif kind == "tool" and call_id and str(call_id) not in self._seen_calls:
+                self._seen_calls.add(str(call_id))
+                self._append({"kind": "tool", "call_id": str(call_id)})
+            else:
+                continue
+            if kind == "tool":
+                self._tool_since_text = True
+            elif kind == "text":
+                self._tool_since_text = False
+
     def reset(self) -> None:
         """Forget the order, when the stream retracts what it emitted (a guardrail trip)."""
         self.items.clear()

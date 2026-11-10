@@ -511,6 +511,7 @@ def chat_completions():
                 "reserved_message_id": processor.reserved_message_id,
                 "request_id": processor.request_id,
                 "prior_tool_calls": getattr(processor, "prior_tool_calls", []),
+                "prior_turn": getattr(processor, "prior_turn", {}),
             }
             question = ""
         else:

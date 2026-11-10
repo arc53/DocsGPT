@@ -691,6 +691,15 @@ class BaseAnswerResource:
         prior_tool_calls: List[Dict] = list((_continuation or {}).get("prior_tool_calls") or [])
         if prior_tool_calls:
             tool_calls = list(prior_tool_calls)
+        # The text, reasoning and order the turn streamed before its pause: the resumed answer adds to them,
+        # so the row it finalizes reads as the whole turn after a reload or on a shared page. Only when it
+        # finalizes the paused row; a resume that appends a new one (``/v1`` stateless rounds) starts clean.
+        prior_turn = (_continuation or {}).get("prior_turn") if _continuation else None
+        if isinstance(prior_turn, dict) and _continuation.get("reserved_message_id"):
+            response_full = prior_turn.get("response") if isinstance(prior_turn.get("response"), str) else ""
+            thought = prior_turn.get("thought") if isinstance(prior_turn.get("thought"), str) else ""
+        else:
+            prior_turn = None
         # Set when a workflow agent run emits its ``workflow_run`` event; persisted
         # onto the message metadata so the chat can render the run's produced
         # artifacts on reload.
@@ -702,6 +711,8 @@ class BaseAnswerResource:
         # The order text, thought and tool calls arrived in, saved under
         # ``query_metadata["segments"]`` so a reload renders the turn as it streamed.
         segments = AnswerSegments(query_metadata)
+        if prior_turn:
+            segments.restore(prior_turn.get("segments"))
         # The decision model's entries for the turn, under ``query_metadata["decisions"]``.
         decision_record.attach(query_metadata)
         paused = False
@@ -1467,6 +1478,7 @@ class BaseAnswerResource:
                         request_id=request_id,
                         tool_calls=tool_calls,
                         passthrough=passthrough,
+                        prior_turn={"response": response_full, "thought": thought, "segments": segments.items},
                     )
 
                     # Notify the user out-of-band so they can navigate back and
@@ -2220,6 +2232,7 @@ class BaseAnswerResource:
         request_id: Optional[str],
         tool_calls: List[Dict[str, Any]],
         passthrough: Optional[Dict[str, Any]] = None,
+        prior_turn: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Save a paused turn's continuation state so a later request can resume it.
 
@@ -2240,6 +2253,8 @@ class BaseAnswerResource:
             tool_calls: Every call of the turn so far.
             passthrough: The request's stored passthrough values; the resume
                 logs the turn with them.
+            prior_turn: The turn's ``response``, ``thought`` and ``segments``
+                so far; the resume finalizes its row with them first.
 
         Returns:
             Whether the state was saved.
@@ -2300,6 +2315,9 @@ class BaseAnswerResource:
                     # Every round's calls so far, so the message
                     # the resumed turn finalizes keeps them all.
                     "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                    # The text and reasoning streamed so far, and their order with
+                    # the calls: the resumed turn's row starts from them.
+                    "prior_turn": json.loads(json.dumps(prior_turn, default=str)) if prior_turn else None,
                     "passthrough": passthrough,
                     # The turn's files (so ``F`` refs still
                     # resolve), its compression point and

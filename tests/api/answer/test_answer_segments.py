@@ -131,3 +131,26 @@ class TestCompleteStreamSavesSegments:
                 {"kind": "tool", "call_id": "c1"},
                 {"kind": "text", "length": 7},
             ]
+
+
+class TestRestore:
+    """A resumed turn's segments start from the order its pause saved."""
+
+    def test_restores_the_saved_order_and_skips_junk(self):
+        metadata: dict = {}
+        recorder = AnswerSegments(metadata)
+        recorder.restore([{"kind": "thought", "length": 3}, {"kind": "text", "length": 0}, "junk",
+                          {"kind": "tool", "call_id": "q1"}, {"kind": "tool"}, {"kind": "other", "length": 2}])
+        assert metadata["segments"] == [{"kind": "thought", "length": 3}, {"kind": "tool", "call_id": "q1"}]
+
+    def test_the_paused_call_is_not_added_again_and_text_after_it_is_a_new_paragraph(self):
+        recorder = AnswerSegments({})
+        recorder.restore([{"kind": "text", "length": 5}, {"kind": "tool", "call_id": "q1"}])
+        recorder.tool_call({"call_id": "q1"})
+        assert recorder.join("Hello", "Next") == "\n\nNext"
+        assert recorder.items == [{"kind": "text", "length": 5}, {"kind": "tool", "call_id": "q1"}]
+
+    def test_nothing_saved_leaves_the_metadata_alone(self):
+        metadata: dict = {}
+        AnswerSegments(metadata).restore(None)
+        assert metadata == {}

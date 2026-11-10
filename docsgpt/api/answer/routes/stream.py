@@ -161,6 +161,7 @@ class StreamResource(Resource, BaseAnswerResource):
                                 "request_id": processor.request_id,
                                 "reasoning_content": reasoning_content,
                                 "prior_tool_calls": processor.prior_tool_calls,
+                                "prior_turn": processor.prior_turn,
                             },
                         ),
                     ),

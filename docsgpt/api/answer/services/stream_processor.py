@@ -588,6 +588,8 @@ class StreamProcessor:
         # WAL placeholder id pulled from continuation state on resume.
         self.reserved_message_id: Optional[str] = None
         self.prior_tool_calls: List[Dict[str, Any]] = []
+        # The paused turn's text, reasoning and their order, finalized ahead of the resumed answer.
+        self.prior_turn: Dict[str, Any] = {}
         # Carried through resumes so multi-pause runs keep one request_id.
         self.request_id: Optional[str] = None
         # The request's execution trace, started by the first traced setup
@@ -2600,6 +2602,8 @@ class StreamProcessor:
         self.request_id = agent_config.get("request_id")
         # The turn's calls from its earlier approval rounds, kept on the message.
         self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
+        prior_turn = agent_config.get("prior_turn")
+        self.prior_turn = dict(prior_turn) if isinstance(prior_turn, dict) else {}
         # The paused turn's values: a resume request does not resend them.
         self.passthrough = stored_passthrough(agent_config.get("passthrough")) or stored_passthrough(
             self.data.get("passthrough")
