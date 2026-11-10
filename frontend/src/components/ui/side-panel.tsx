@@ -143,6 +143,22 @@ type SidePanelProps = SidePanelBaseProps &
   );
 
 /**
+ * A docked panel's phone sheet opening: focus goes to the sheet itself (it
+ * draws no ring) instead of its first control, and a control inside that
+ * already took focus keeps it.
+ *
+ * Args:
+ *   event: Radix's open auto-focus event, dispatched on the sheet.
+ */
+function focusSheet(event: Event) {
+  event.preventDefault();
+  const sheet = event.target;
+  if (!(sheet instanceof HTMLElement)) return;
+  if (sheet.contains(document.activeElement)) return;
+  sheet.focus({ preventScroll: true });
+}
+
+/**
  * The one right-side panel (DESIGN.md "Side panels"). Compose a PanelHeader,
  * one PanelBody and an optional PanelFooter inside it. A docked panel is a
  * flex item: its host is a `relative flex` row with the page as a `min-w-0
@@ -267,12 +283,10 @@ function SidePanel({
           size={size}
           className={cn('gap-0 p-0', variant === 'modal' && className)}
           // A docked panel's phone sheet opens on the panel, not with a ring
-          // on its first control (DESIGN.md "Focus").
+          // on its first control (DESIGN.md "Focus"): the sheet itself takes
+          // focus, so it doesn't stay on the page behind it.
           onOpenAutoFocus={
-            onOpenAutoFocus ??
-            (variant === 'docked'
-              ? (event: Event) => event.preventDefault()
-              : undefined)
+            onOpenAutoFocus ?? (variant === 'docked' ? focusSheet : undefined)
           }
           {...contentProps}
         >

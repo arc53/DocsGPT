@@ -429,6 +429,41 @@ describe('SidePanel variant="docked"', () => {
     await render(panel({ variant: 'docked' }));
     expect(document.activeElement).not.toBe(button('sidePanel.close'));
   });
+
+  // Live check: focus stayed on the wand behind the sheet (an aria-hidden
+  // page), or on <body> when the sheet came back.
+  it('takes focus on the sheet itself on a phone', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    const wand = document.createElement('button');
+    document.body.appendChild(wand);
+    try {
+      wand.focus();
+      await render(panel({ variant: 'docked' }));
+      const content = document.querySelector<HTMLElement>(
+        '[data-slot="sheet-content"]',
+      )!;
+      expect(document.activeElement).toBe(content);
+    } finally {
+      wand.remove();
+    }
+  });
+
+  it('leaves focus on a control inside that took it as the sheet opened', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    await render(
+      <SidePanel variant="docked" open onOpenChange={() => undefined}>
+        <PanelHeader title="renewal-note.md" />
+        <PanelBody>
+          <input data-testid="field" autoFocus />
+        </PanelBody>
+      </SidePanel>,
+    );
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-testid="field"]'),
+    );
+  });
 });
 
 describe('PanelHeader', () => {
