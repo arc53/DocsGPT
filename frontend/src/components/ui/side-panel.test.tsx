@@ -449,6 +449,28 @@ describe('SidePanel variant="docked"', () => {
     }
   });
 
+  // Live check: the sheet the page brought back after the last one-by-one
+  // choice had no opener, so closing it dropped focus to <body>.
+  it('gives focus to its fallback on a phone when nothing opened it', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    const wand = document.createElement('button');
+    document.body.appendChild(wand);
+    try {
+      (document.activeElement as HTMLElement | null)?.blur();
+      await render(panel({ variant: 'docked', focusFallback: () => wand }));
+      await render(
+        panel({ variant: 'docked', open: false, focusFallback: () => wand }),
+      );
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(document.activeElement).toBe(wand);
+    } finally {
+      wand.remove();
+    }
+  });
+
   it('leaves focus on a control inside that took it as the sheet opened', async () => {
     media.isMobile = true;
     media.isDesktop = false;

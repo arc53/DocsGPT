@@ -103,6 +103,7 @@ function SheetContent({
   title,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  focusFallback,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   /**
@@ -119,8 +120,17 @@ function SheetContent({
   // pass this to render a visually-hidden one when the panel has no visible
   // heading of its own (omit it if the children already render a SheetTitle).
   title?: string;
+  /**
+   * Where focus goes on close when nothing had it as the sheet opened (or
+   * that has left the page); SidePanel passes its own `focusFallback`.
+   */
+  focusFallback?: () => HTMLElement | null | undefined;
 }) {
-  const focusReturn = useFocusReturn(onOpenAutoFocus, onCloseAutoFocus);
+  const focusReturn = useFocusReturn(
+    onOpenAutoFocus,
+    onCloseAutoFocus,
+    focusFallback,
+  );
   return (
     <SheetPortal>
       <SheetOverlay />

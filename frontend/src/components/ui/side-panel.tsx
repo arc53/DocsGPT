@@ -100,7 +100,8 @@ type SidePanelBaseProps = {
   onClosed?: () => void;
   /**
    * Docked: where focus goes on close when what opened the panel has left
-   * the page. Without it focus is left where it lands.
+   * the page, or (its phone sheet) when nothing had focus as it opened.
+   * Without it focus is left where it lands.
    */
   focusFallback?: () => HTMLElement | null | undefined;
   /** Layout only. */
@@ -288,6 +289,7 @@ function SidePanel({
           onOpenAutoFocus={
             onOpenAutoFocus ?? (variant === 'docked' ? focusSheet : undefined)
           }
+          focusFallback={focusFallback}
           {...contentProps}
         >
           <SidePanelContext.Provider value={context}>

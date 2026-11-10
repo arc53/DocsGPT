@@ -17,6 +17,9 @@ type AutoFocusHandler = (event: Event) => void;
  *
  * Focus the page moved on its own as the dialog closed (outside it) stays.
  *
+ * A dialog nothing had focus for when it opened (a phone sheet the page
+ * brought back) returns focus to `fallback`'s element, when given.
+ *
  * Returns the two handlers to pass to the Radix Content. The caller's own
  * handlers run first; a caller that calls `preventDefault()` on close keeps
  * control of focus.
@@ -24,6 +27,7 @@ type AutoFocusHandler = (event: Event) => void;
 function useFocusReturn(
   onOpenAutoFocus?: AutoFocusHandler,
   onCloseAutoFocus?: AutoFocusHandler,
+  fallback?: () => HTMLElement | null | undefined,
 ) {
   const returnTo = React.useRef<HTMLElement | null>(null);
 
@@ -57,8 +61,9 @@ function useFocusReturn(
       const active = document.activeElement;
       if (active && active !== document.body && active.isConnected) return;
       if (target?.isConnected) target.focus();
+      else fallback?.()?.focus();
     },
-    [onCloseAutoFocus],
+    [onCloseAutoFocus, fallback],
   );
 
   return {
