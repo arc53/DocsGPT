@@ -270,7 +270,9 @@ def _parse_policy(form_raw: dict) -> dict:
 
 
 def parse_context(raw: Any) -> dict:
-    """Clean the agent form's values: ``{agent_id, step, starter?, earlier, form: {...}}``.
+    """Clean the agent form's values: ``{agent_id, step, starter?, skip_questions?, earlier, form: {...}}``.
+
+    ``skip_questions`` (true only) is a turn the user sent with Skip on a question round: it takes no questions.
 
     Wrong-typed values are left out rather than refused; only a ``form`` that
     isn't an object, or an unknown ``step``, is. The prompt view's unsaved
@@ -314,6 +316,7 @@ def parse_context(raw: Any) -> dict:
     starter = raw.get("starter")
     conversation_id = raw.get("conversation_id")
     return {
+        "skip_questions": raw.get("skip_questions") is True,
         "agent_id": agent_id.strip()[:_ID_CHARS] if isinstance(agent_id, str) and agent_id.strip() else None,
         "step": step,
         "starter": starter if isinstance(starter, str) and starter in STARTERS else None,
@@ -664,14 +667,18 @@ DESIGN_RULES = f"""Designing it well:
 - Pick knowledge and tools only from what exists in the workspace, and only what the agent needs. Read a source's \
 files or a tool's actions when the name alone doesn't tell you what it covers. Skip a source whose status is \
 failed.
-- If the agent faces the public (customers, a website) and a source or tool looks internal (contracts, rates, HR, \
-salaries, credentials, internal notes; a tool that reads or changes internal systems, such as a database, admin, \
-billing or CRM tool), don't attach it silently: ask, or leave it out and say why.
+- If the agent faces the public (customers, a website), never attach or offer (in a question either) a tool that \
+reads or changes the company's internal systems: an MCP server or an internal API into them, a database, admin, \
+billing, rates or CRM tool. Leave it out and say why in the reason: a prompt can't stop the agent from calling a tool \
+it has, so "the prompt will restrict it" is no safeguard. If a source looks internal (contracts, rates, HR, \
+salaries, credentials, internal notes), don't attach it silently: ask, or leave it out and say why.
 - Notice a flow the user describes that no tool supports (opening tickets, refunds, bookings). Don't pretend: \
 make the prompt hand it off (for example to an email address the user gives) and add a note saying which tool is \
 missing.
 - Make the prompt say what to do with off-topic questions.
-- Starters should show what the agent is for, one per main use.
+- Starters should show what the agent is for, one per main use: each a question the agent answers itself, never \
+a question the prompt refuses or hands off (a binding quote, prices or fees the documents don't confirm, a \
+complaint).
 
 The prompt:
 - Reuse an existing prompt when one fits; otherwise write a new one. A built-in prompt (default, creative, \
@@ -700,8 +707,9 @@ send (sources, tools, starters) replaces the whole list, so send the full list y
 
 In the proposal, give one reason per field you set: a summary naming what you chose, with what you left out in a \
 few words (e.g. "Meridian service guide · left out the internal wiki"). Notes are only \
-for what the user must do or know that the reasons don't say (a missing tool, an item to check), at most 3. Never \
-describe the next step, or how to review or save the draft: the panel shows that."""
+for what the user must do or know that the reasons don't say (a missing tool, an item to check), at most 3: never \
+repeat in a note what the message, a reason or a gap's needs already say. Never describe the next step, or how to \
+review or save the draft: the panel shows that."""
 
 GUIDED = """You are building a new agent with the user in four steps, in this order:
 - basics: name, description.
@@ -711,7 +719,9 @@ GUIDED = """You are building a new agent with the user in four steps, in this or
 Each step is its own short conversation; the user moves on when they are happy with it.
 - Fast path: also set a later step's fields (never safety's) when the user's words name or clearly imply them, \
 for example "answer from the Help Center" (sources) or "use the strict prompt" (prompt). Otherwise leave later \
-steps' fields out: each step drafts its own. A new prompt is written only in the prompt step.
+steps' fields out: each step drafts its own. A new prompt is written only in the prompt step. Before the prompt \
+step, never write a new prompt or describe one in your message: the prompt step writes it after asking about the \
+hand-off and the tone (picking an existing prompt the user names is fine).
 - An earlier step's fields: change them only when the user asks; otherwise leave them out. A new or changed \
 prompt is the exception: once past the prompt step, leave it out, don't say it changed, and tell the user this step \
 can't change the prompt; they can change it in the form's prompt field.
@@ -719,7 +729,14 @@ can't change the prompt; they can change it in the form's prompt field.
 the user wants. They are the user's own words, quoted for you.
 - A plain approval ("ok", "looks good, next") with nothing to change: submit a proposal with no fields and a \
 one-line message. Don't ask questions about it.
-- Ask questions only about this step."""
+- Ask questions only about this step. A question your earlier round asked that the user's answer leaves out (they \
+left it blank) is answered: they left it to you, so don't ask it again. Decide it sensibly yourself, or in the \
+safety step leave that part out."""
+
+#: A turn the user sent with Skip on the questions (``skip_questions``): it takes no questions.
+SKIPPED = """The user skipped your questions: draft now with what you know and say in your message what you \
+assumed. In the safety step, set only what the user's words settle and leave the other parts out, saying they can \
+set them in the form."""
 
 STEP_GUIDES = {
     "basics": """Step basics: draft the name and the description from the user's description, and say in the \
@@ -868,6 +885,8 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
                   _safety_guide() if step == "safety" else STEP_GUIDES[step]]
         if req.context.get("starter"):
             parts.append(STARTERS[req.context["starter"]])
+        if req.context.get("skip_questions"):
+            parts.append(SKIPPED)
         return "\n\n".join(parts)
     has_values = any(form.get(k) for k in ("name", "description", "sources", "tools", "starters")) \
         or bool(form.get("prompt_draft")) or (form.get("prompt_id") not in (None, "default"))
@@ -880,6 +899,8 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
         parts.append(INSIGHTS_RULES)
     if not step and getattr(ws, "conversation", None):
         parts.append(CONVERSATION_RULES)
+    if req.context.get("skip_questions"):
+        parts.append(SKIPPED)
     return "\n\n".join(parts)
 
 
@@ -1208,7 +1229,8 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
 
     Limits and guardrails need ``edit_policy`` (listed in ``dropped`` as ``not_allowed`` without it); a part the
     instance or the agent has turned off is left out. What remains is accepted after a questions round, or
-    without one when the user's own words state it (:func:`_stated`).
+    without one when the user's own words state it (:func:`_stated`). A turn that skipped the questions sets only
+    what the user's words state; the rest is left out.
 
     Raises:
         ProposalInvalid: Policy the user's words leave open, proposed before asking them, or a value the model can
@@ -1230,7 +1252,10 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
         elif available[key]:
             wanted.append(key)
     open_parts = [key for key in wanted if not _stated(key, raw_fields[key], req)]
-    if open_parts and not question_rounds(req.messages):
+    if req.context.get("skip_questions"):
+        # The user skipped the questions: only what their own words state is set.
+        wanted = [key for key in wanted if key not in open_parts]
+    elif open_parts and not question_rounds(req.messages):
         raise ProposalInvalid([ASK_FIRST.format(parts=", ".join(_PART_NAMES[key] for key in open_parts))])
     if "limits" in wanted:
         fields["limits"] = _limits(raw_fields["limits"])
@@ -1514,6 +1539,11 @@ WORKSPACE_READS = ("get_prompt", "get_source", "get_tool")
 INSIGHTS_READS = ("get_gap_examples", "get_conversations")
 
 
+def asks(req: DraftRequest) -> bool:
+    """Every turn may ask questions, except one the user sent with Skip on the questions."""
+    return not req.context.get("skip_questions")
+
+
 def read_tools_for(req: DraftRequest, ws: Workspace) -> tuple[str, ...]:
     """The read tools a turn offers: the Insights reads only in improve mode with the agent's gap summary."""
     reader = isinstance(ws, AgentWorkspace) and ws.reads_insights() and ws.insights_reader is not None
@@ -1531,4 +1561,5 @@ AGENT_RECIPE = register(Recipe(
     read_tools=WORKSPACE_READS + INSIGHTS_READS,
     tools_for=read_tools_for,
     proposal_description="Fill the agent form with your draft. Ends your turn.",
+    questions=asks,
 ))

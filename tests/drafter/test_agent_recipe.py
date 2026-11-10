@@ -543,7 +543,31 @@ class TestInstructions:
 
     def test_internal_looking_tools_are_asked_about_too(self):
         text = instructions(_req(), _ws())
-        assert "a source or tool looks internal" in text
+        assert "If a source looks internal" in text
+
+    def test_a_public_agent_never_gets_a_tool_into_internal_systems(self):
+        text = instructions(_req(), _ws())
+        for rule in ("never attach or offer", "an MCP server or an internal API",
+                     "a prompt can't stop the agent from calling a tool"):
+            assert rule in text, rule
+
+    def test_starters_only_ask_what_the_agent_answers(self):
+        text = instructions(_req(), _ws())
+        assert "never a question the prompt refuses or hands off" in text
+
+    def test_notes_never_repeat_the_reasons(self):
+        text = instructions(_req(), _ws())
+        assert "never repeat in a note what the message, a reason or a gap's needs already say" in text
+
+    @pytest.mark.parametrize("step", ["basics", "knowledge"])
+    def test_a_step_before_the_prompt_writes_no_prompt_and_does_not_describe_one(self, step):
+        text = instructions(_req({}, step=step), _ws())
+        assert "Before the prompt step, never write a new prompt or describe one in your message" in text
+
+    def test_a_question_left_blank_is_not_asked_again(self):
+        text = instructions(_req({}, step="prompt"), _ws())
+        assert "A question your earlier round asked that the user's answer leaves out" in text
+        assert "don't ask it again" in text
 
     def test_a_filled_form_is_a_change_request(self):
         assert "change request" in instructions(_req({"name": "Shipping help"}), _ws())
@@ -995,6 +1019,18 @@ class TestSafety:
             _validate({"limits": {"mode": "requests", "value": 500}}, step="safety")
         assert _validate({}, step="safety")["fields"] == {}
 
+    def test_skip_questions_takes_no_questions_this_turn(self):
+        skipped = parse_context({"step": "prompt", "skip_questions": True})
+        assert skipped["skip_questions"] is True
+        assert parse_context({"step": "prompt", "skip_questions": "yes"})["skip_questions"] is False
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "Draft it with what you know."}], skipped,
+                           "drafter:t")
+        assert AGENT_RECIPE.asks(req) is False
+        assert AGENT_RECIPE.asks(_req({}, step="prompt")) is True
+        text = instructions(req, _ws())
+        assert "The user skipped your questions" in text and "say in your message what you assumed" in text
+        assert "The user skipped your questions" not in instructions(_req({}, step="prompt"), _ws())
+
     STATED = ("Build a public support bot. Limit it to 1,000 requests a day, with PII and injection guardrails, "
               "no Insights topics.")
 
@@ -1028,6 +1064,14 @@ class TestSafety:
         with pytest.raises(ProposalInvalid, match="Ask the user first") as raised:
             self._stated(fields)
         assert part in str(raised.value) and "their words leave open" in str(raised.value)
+
+    def test_a_skipped_round_sets_only_what_the_users_words_settle(self):
+        proposal = self._stated({"limits": {"mode": "requests", "value": 1000}}, skip=True,
+                                message="Draft it with what you know.")
+        assert proposal["fields"] == {"limits": {"mode": "requests", "value": 1000}}
+        proposal = self._stated({"limits": {"mode": "requests", "value": 500}}, earlier=["A support bot"],
+                                skip=True, message="Draft it with what you know.")
+        assert proposal["fields"] == {}
 
     def test_limits_are_either_or(self):
         proposal = _validate({"limits": {"mode": "requests", "value": 500}}, step="safety", asked=True,
