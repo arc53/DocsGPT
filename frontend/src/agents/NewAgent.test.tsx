@@ -3460,10 +3460,38 @@ describe('NewAgent drafter', () => {
     expect(strip()).toBeNull();
     // Closed again, the strip is back; its Next runs the step's Next.
     await act(async () => wand()!.click());
+    expect(panel()).toBeNull();
     await act(async () =>
       buttonByText('drafter.agent.build.nextShort', strip()!)!.click(),
     );
     expect(lastRequest().context.step).toBe('knowledge');
+    // In the open sheet, where the turn shows it runs.
+    expect(panel()).not.toBeNull();
+  });
+
+  it("opens the sheet for a phone strip's Finish", async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    drafter.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help' },
+          { steps: ['basics', 'knowledge', 'prompt', 'safety'] },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    const strip = () =>
+      container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
+    expect(panel()).toBeNull();
+    await act(async () =>
+      buttonByText('drafter.agent.build.finish', strip()!)!.click(),
+    );
+    // The done message lands in the open sheet.
+    expect(panel()).not.toBeNull();
+    expect(panel()!.textContent).toContain('drafter.agent.build.done');
   });
 
   // The picker's Add prompt and each row's Edit or View open the same

@@ -3530,7 +3530,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     : t('drafter.agent.build.finish')
                 }
                 onOpen={() => setDrafterOpen(true)}
-                onNext={goNext}
+                // In the open sheet the turn shows it runs, and its
+                // questions, an error or the done message land in view; a
+                // turn that ends on a proposal steps aside again.
+                onNext={() => {
+                  setDrafterOpen(true);
+                  goNext();
+                }}
               />
             )}
           </div>
