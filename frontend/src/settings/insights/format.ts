@@ -407,6 +407,27 @@ function sharedTail(names: string[]): string {
   return best;
 }
 
+/**
+ * A page's name as a Docs gaps row showed it: `shown` when `name` is that
+ * name with a site tail after it (`pageNames` stripped "App Configuration |
+ * DocsGPT Docs" to "App Configuration"), else `name` as it is.
+ *
+ * Args:
+ *   name: The page's full name (its title).
+ *   shown: The name the row showed, if any.
+ *
+ * Returns:
+ *   The name to show.
+ */
+export function shownPageName(name: string, shown: string | null): string {
+  if (!shown || !name.startsWith(shown)) return name;
+  const tail = name.slice(shown.length);
+  return !tail ||
+    TAIL_SEPARATORS.some((separator) => tail.startsWith(separator))
+    ? shown
+    : name;
+}
+
 type PageRow = {
   key: string | null;
   name: string | null;

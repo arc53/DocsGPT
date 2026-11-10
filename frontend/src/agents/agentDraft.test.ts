@@ -871,6 +871,14 @@ describe('agentDraft', () => {
     const gap = 'settings.analytics.insights.options.gapType.docsMissing';
     expect(gapTitle(tr, row)).toBe('Returns & claims');
     expect(gapTitle(tr, { ...row, topic: null })).toBe(gap);
+    // A page's gap, named as the Docs gaps row it came from showed it.
+    expect(
+      gapTitle(
+        tr,
+        { ...row, topic: 'App Configuration | DocsGPT Docs' },
+        'App Configuration',
+      ),
+    ).toBe('App Configuration');
     expect(gapLine(tr, row)).toBe(
       `drafter.agent.insights.gapLine(gap=${gap},expected=23,formatted=160)` +
         ' · drafter.agent.insights.upFrom(previous=19)',

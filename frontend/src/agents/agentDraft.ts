@@ -13,6 +13,7 @@ import {
   joinList,
   NONE_OF_THESE,
   optionName,
+  shownPageName,
 } from '../settings/insights/format';
 import { isLogLabel, type LogLabel } from '../settings/logsLinks';
 import { formatCount } from '../utils/dateTimeUtils';
@@ -923,9 +924,19 @@ const topicName = (t: TFunction, topic: string): string =>
     ? t('settings.analytics.insights.panels.noneOfThese')
     : topic;
 
-/** A gap row's title: its topic, or the gap's name for an agent without topics. */
-export const gapTitle = (t: TFunction, row: AgentGapRow): string =>
-  row.topic ? topicName(t, row.topic) : gapName(t, row.gap_type);
+/**
+ * A gap row's title: its topic, or the gap's name for an agent without
+ * topics. A page's gap handed over from Docs gaps reads as that row showed
+ * the page, without the site tail (`shown`, the hand-off's `where`).
+ */
+export const gapTitle = (
+  t: TFunction,
+  row: AgentGapRow,
+  shown: string | null = null,
+): string =>
+  row.topic
+    ? topicName(t, shownPageName(row.topic, shown))
+    : gapName(t, row.gap_type);
 
 /**
  * A gap row's line, from the data alone: "Docs gap · 23 of 160 questions",

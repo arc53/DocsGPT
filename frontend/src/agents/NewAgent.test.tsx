@@ -4749,6 +4749,45 @@ describe('NewAgent drafter', () => {
       expect(search.value).toBe('');
     });
 
+    // Live check: the card kept the site tail Insights leaves off.
+    it("titles a page's gap card the way the Docs gaps row showed the page", async () => {
+      drafter.scripts = [
+        [
+          {
+            type: 'proposal',
+            proposal: {
+              message: 'The page is already in the source.',
+              fields: {},
+              reasons: [],
+              notes: [],
+              dropped: [],
+              steps: [],
+              next_step: null,
+              gaps: [
+                {
+                  topic: 'App Configuration | DocsGPT Docs',
+                  gap_type: 'docs missing',
+                  expected: 1,
+                  turns: 2,
+                  previous: 3,
+                  example: 'How do I set up SSO?',
+                  fields: [],
+                  needs: 'Add the SSO steps to the page.',
+                  links: [],
+                },
+              ],
+            },
+          },
+          { type: 'end' },
+        ],
+      ];
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=App+Configuration&group_by=page&group_key=https%3A%2F%2Fdocs.example.com%2Fsettings',
+      );
+      const card = panel()!.querySelector('[data-slot="gap-card"]')!;
+      expect(card.querySelector('h3')!.textContent).toBe('App Configuration');
+    });
+
     it('opens on the conversation a Logs row handed over', async () => {
       const id = '0b6f3a52-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
       await renderAt(

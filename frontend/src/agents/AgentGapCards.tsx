@@ -30,15 +30,19 @@ import {
  *   fieldRow: The label and summary of a field the fix set; null leaves the
  *     field out (applying the draft didn't change it).
  *   onNavigate: A link's click handler (the leave guard's `onNavigate()`).
+ *   shownName: The name the Docs gaps row the drawer opened from showed (its
+ *     page without the site tail), which titles that page's card.
  */
 export default function AgentGapCards({
   gaps,
   agentId,
   fieldRow,
   onNavigate,
+  shownName = null,
 }: {
   gaps: AgentProposalGap[];
   agentId: string;
+  shownName?: string | null;
   fieldRow: (
     field: AgentDraftField,
   ) => { label: string; summary: string } | null;
@@ -74,7 +78,7 @@ export default function AgentGapCards({
             data-slot="gap-card"
           >
             <div className="flex flex-col gap-0.5">
-              <CardTitle as="h3">{gapTitle(t, gap)}</CardTitle>
+              <CardTitle as="h3">{gapTitle(t, gap, shownName)}</CardTitle>
               <CardDescription size="xs" className="tabular-nums">
                 {gapLine(t, gap)}
               </CardDescription>

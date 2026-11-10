@@ -1349,6 +1349,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // The gap or conversation an improve conversation started from in
   // Insights: every turn of it sends it, until Start over.
   const improveFocusRef = useRef<AgentImproveFocus>({});
+  // The name the Docs gaps row it was handed over from showed (a page
+  // without its site tail), for that gap's card.
+  const [handoffName, setHandoffName] = useState<string | null>(null);
   // The next turn drafts with what it has, asking nothing: set by Skip and
   // draft, cleared by any other message (a retry of that turn keeps it).
   const skipQuestionsRef = useRef(false);
@@ -1477,6 +1480,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       return;
     if (handoff.kind === 'gap') {
       const { group_by: groupBy, group_key: groupKey } = handoff;
+      setHandoffName(handoff.where);
       // A Page or Source row is read by its key, not by a topic.
       improveFocusRef.current = {
         gap: {
@@ -1675,6 +1679,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             rows.find((row) => row.key.startsWith(`${field}-`)) ?? null
           }
           onNavigate={leaveGuard.onNavigate()}
+          shownName={handoffName}
         />
       ) : undefined;
     const review = promptReview.review;
