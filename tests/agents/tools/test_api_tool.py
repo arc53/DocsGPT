@@ -316,6 +316,21 @@ class TestErrorHandling:
         assert "URL redirects to 'https://api.example.com/v2/data'" in result["message"]
 
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_with_relative_location(self, mock_pinned, get_tool):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {"Location": "/v2/orders/"}
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 307
+        assert result["data"] is None
+        assert (
+            "URL redirects to 'https://api.example.com/v2/orders/'" in result["message"]
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_redirect_3xx_without_location(self, mock_pinned, get_tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 301

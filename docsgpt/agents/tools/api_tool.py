@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urljoin
 
 import requests
 
@@ -138,16 +138,17 @@ class APITool(Tool):
             )
 
             if 300 <= response.status_code < 400:
-                location = response.headers.get("Location", "")
-                if location:
+                raw_location = response.headers.get("Location", "")
+                if raw_location:
+                    target_url = urljoin(request_url, raw_location)
                     msg = (
-                        f"URL redirects to '{location}'. "
+                        f"URL redirects to '{target_url}'. "
                         "Call that URL directly instead."
                     )
                 else:
                     msg = "URL responded with a redirect but no target location."
                 logger.error(
-                    f"API call redirect (not followed): {response.status_code} -> {location}"
+                    f"API call redirect (not followed): {response.status_code} -> {raw_location}"
                 )
                 return {
                     "status": "error",
