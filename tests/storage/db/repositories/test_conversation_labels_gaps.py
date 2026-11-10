@@ -70,6 +70,46 @@ class TestGapTypeGroups:
         assert [r["gap_type"] for r in _groups(pg_conn, scope, by_topic=False)] == ["docs missing", "out of scope"]
         assert [r["gap_type"] for r in _groups(pg_conn, scope, by_topic=False, limit=1)] == ["docs missing"]
 
+    @pytest.mark.parametrize("by_topic", [True, False])
+    def test_one_pass_over_the_turns_matches_one_row_per_gap_type(self, pg_conn, by_topic):
+        from unittest.mock import patch
+
+        from sqlalchemy import text
+
+        bot = seed.agent(pg_conn)
+        aid = str(bot["id"])
+        seed.turn(pg_conn, aid, gap={"docs missing": 0.5, "needs account data": 0.4, "other": 0.9},
+                  topics={"Returns": 0.75, "Orders": 0.25})
+        seed.turn(pg_conn, aid, gap={"needs account data": 0.8, "out of scope": 0.3}, topics={"Orders": 1.0})
+        seed.turn(pg_conn, aid, gap={"docs missing": 0.0, "ambiguous question": 0.7}, topics={"Billing": 1.0})
+        seed.turn(pg_conn, aid, gap={"docs missing": 0.9}, topics={"Returns": 0.5, "Billing": 0.5}, days_ago=10)
+        seed.turn(pg_conn, aid, topics={"Orders": 1.0})
+        scope = Scope(agent_id=aid, api_key=bot["key"])
+        start, end, previous_start = _window()
+        repo = ConversationLabelsRepository(pg_conn)
+        # The summary as it was: every turn expanded to every gap type, then grouped.
+        params = {"start": start, "end": end, "prev_start": previous_start, "limit": 50, "min_expected": 0.0}
+        cte = repo._gaps_cte("topic" if by_topic else "all", scope, schema.SCHEMA_HASH, params, SUMMARY_GAP_TYPES)
+        expanded = [dict(r._mapping) for r in pg_conn.execute(text(f"""
+            WITH g AS ({cte})
+            SELECT key AS topic, gap_type, COALESCE(SUM(p) FILTER (WHERE current), 0) AS expected,
+                   COALESCE(SUM(weight) FILTER (WHERE current), 0) AS turns,
+                   COALESCE(SUM(p) FILTER (WHERE NOT current), 0) AS previous,
+                   array_agg(DISTINCT model_version) FILTER (WHERE current) AS versions
+            FROM g GROUP BY key, gap_type
+            HAVING COALESCE(SUM(p) FILTER (WHERE current), 0) >= :min_expected
+            ORDER BY expected DESC, key NULLS LAST, gap_type LIMIT :limit
+        """), params).fetchall()]
+        with patch.object(pg_conn, "execute", wraps=pg_conn.execute) as spy:
+            rows = _groups(pg_conn, scope, by_topic=by_topic, limit=50, min_expected=0.0)
+        assert "unnest" not in str(spy.call_args.args[0])
+        assert [(r["topic"], r["gap_type"]) for r in rows] == [(r["topic"], r["gap_type"]) for r in expanded]
+        for got, want in zip(rows, expanded):
+            assert got["expected"] == pytest.approx(want["expected"])
+            assert got["turns"] == pytest.approx(want["turns"])
+            assert got["previous"] == pytest.approx(want["previous"])
+            assert got["versions"] == want["versions"]
+
     def test_gap_conversations_counts_labelled_conversations_in_the_window(self, pg_conn):
         bot = seed.agent(pg_conn)
         aid = str(bot["id"])

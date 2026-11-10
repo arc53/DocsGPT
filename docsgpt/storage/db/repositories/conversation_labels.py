@@ -1195,22 +1195,55 @@ class ConversationLabelsRepository:
             weights, or every labelled turn), ``previous`` and ``versions`` (the models of its rows).
         """
         params: Dict[str, Any] = {"start": start, "end": end, "prev_start": previous_start, "limit": int(limit),
-                                  "min_expected": float(min_expected)}
-        cte = self._gaps_cte("topic" if by_topic else "all", scope, schema_hash, params, SUMMARY_GAP_TYPES)
-        # Every turn is expanded to every gap type, so a pair's summed weights are its topic's.
+                                  "min_expected": float(min_expected), "schema_hash": schema_hash}
+        where = (f"{scope.labels('g', params)} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash"
+                 " AND g.occurred_at >= :prev_start AND g.occurred_at <= :end")
+        # One pass over the turns, each gap type summed in its own column; only the per-topic sums are then
+        # turned into one row per gap type, so a pair's summed weights are its topic's.
+        for i, gap_type in enumerate(SUMMARY_GAP_TYPES):
+            params[f"gt{i}"] = gap_type
+        sums = ",\n".join(
+            f"COALESCE(SUM(COALESCE((g.probabilities->>:gt{i})::float8, 0) * weight) FILTER (WHERE current), 0)"
+            f" AS e{i}, COALESCE(SUM(COALESCE((g.probabilities->>:gt{i})::float8, 0) * weight)"
+            f" FILTER (WHERE NOT current), 0) AS p{i}"
+            for i in range(len(SUMMARY_GAP_TYPES))
+        )
+        pairs = ", ".join(f"(CAST(:gt{i} AS text), s.e{i}, s.p{i})" for i in range(len(SUMMARY_GAP_TYPES)))
+        if by_topic:
+            turns = f"""
+                SELECT t.key, t.value::float8 AS weight, g.occurred_at >= :start AS current, g.model_version,
+                       g.probabilities
+                FROM conversation_labels g
+                JOIN conversation_labels te
+                    ON te.message_id = g.message_id AND te.label = 'topic_effective'
+                   AND te.schema_hash = :schema_hash
+                CROSS JOIN LATERAL jsonb_each_text(te.probabilities) AS t(key, value)
+                WHERE {where}
+            """
+        else:
+            turns = f"""
+                SELECT NULL::text AS key, 1.0::float8 AS weight, g.occurred_at >= :start AS current,
+                       g.model_version, g.probabilities
+                FROM conversation_labels g
+                WHERE {where}
+            """
         result = self._conn.execute(
             text(
                 f"""
-                WITH g AS ({cte})
-                SELECT key AS topic, gap_type,
-                       COALESCE(SUM(p) FILTER (WHERE current), 0) AS expected,
-                       COALESCE(SUM(weight) FILTER (WHERE current), 0) AS turns,
-                       COALESCE(SUM(p) FILTER (WHERE NOT current), 0) AS previous,
-                       array_agg(DISTINCT model_version) FILTER (WHERE current) AS versions
-                FROM g
-                GROUP BY key, gap_type
-                HAVING COALESCE(SUM(p) FILTER (WHERE current), 0) >= :min_expected
-                ORDER BY expected DESC, key NULLS LAST, gap_type
+                WITH g AS ({turns}),
+                s AS (
+                    SELECT key,
+                           COALESCE(SUM(weight) FILTER (WHERE current), 0) AS turns,
+                           array_agg(DISTINCT model_version) FILTER (WHERE current) AS versions,
+                           {sums}
+                    FROM g
+                    GROUP BY key
+                )
+                SELECT s.key AS topic, v.gap_type, v.expected, s.turns, v.previous, s.versions
+                FROM s
+                CROSS JOIN LATERAL (VALUES {pairs}) AS v(gap_type, expected, previous)
+                WHERE v.expected >= :min_expected
+                ORDER BY v.expected DESC, s.key NULLS LAST, v.gap_type
                 LIMIT :limit
                 """
             ),
@@ -1599,7 +1632,8 @@ class ConversationLabelsRepository:
                 f"""
                 WITH conv AS ({conversations}),
                 recent AS (
-                    SELECT m.id, m.prompt, m.conversation_id, m.timestamp
+                    -- the caller reads 4000 characters of a question; a huge one is never pulled whole
+                    SELECT m.id, LEFT(m.prompt, 4000) AS prompt, m.conversation_id, m.timestamp
                     FROM conversation_messages m
                     WHERE m.conversation_id IN (SELECT id FROM conv)
                       AND m.timestamp >= NOW() - make_interval(days => :days) AND {_usable("m")}
