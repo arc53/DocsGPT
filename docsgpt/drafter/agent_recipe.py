@@ -51,6 +51,7 @@ from docsgpt.drafter.prompt_rules import (
     template_parses,
     tool_variables_problem,
 )
+from docsgpt.drafter.prompt_checks import edit_problems
 from docsgpt.drafter.prompt_recipe import apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE, READ_MAX
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
@@ -789,7 +790,7 @@ workspace leaves no doubt.
 - knowledge: attach only what is safe for the public: no internal, commercial or HR sources, and no tools that \
 read or change internal systems.
 - prompt: usually off-limits are prices, discounts or delivery dates the documents don't confirm, legal advice and \
-anything internal. It answers in the visitor's language.
+anything internal. DocsGPT already answers in the visitor's language: don't add a line for it.
 - safety: recommend pii and injection.""",
     "helpdesk": """The user started from "Internal helpdesk": an agent for the company's own staff, answering HR, \
 IT and policy questions. Use the part for the current step:
@@ -1146,6 +1147,9 @@ def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict
     problem = tool_variables_problem(result, current, req, req.context["earlier"])
     if problem:
         raise ProposalInvalid([problem])
+    problems = edit_problems(current, result, "Ask the user for it")
+    if problems:
+        raise ProposalInvalid(problems)
     # The edits fit the prompt's whole saved text (or the view's unsaved text), the text the form applies them to.
     return {"kind": "edit", "id": target, "edits": edits, "checks": checks_for(current, result)}
 

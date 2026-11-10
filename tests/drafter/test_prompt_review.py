@@ -221,12 +221,19 @@ class TestFindings:
         assert found["agents_fit"]["agent"] == {"id": "a1", "name": "Fleet Desk"}
         assert found["scope"]["agent"] is None
 
-    def test_an_ask_is_only_kept_on_a_fix_without_an_edit(self):
+    def test_an_ask_is_kept_on_a_fix_or_a_look_without_an_edit(self):
         ask = {"label": "Add the address", "prefill": "The support email is "}
         proposal = _review(edits=[DATE_EDIT], findings=[
             _finding("builtin_lines", edit=1, ask=ask), _finding("tone", "look", ask=ask),
-            _finding("placeholders", ask={"label": " ", "prefill": "x"})])
-        assert [f["ask"] for f in _model_findings(proposal)] == [None, None, None]
+            _finding("hand_off", ask=ask), _finding("placeholders", ask={"label": " ", "prefill": "x"})])
+        asks = {f["check"]: f["ask"] for f in _model_findings(proposal)}
+        assert asks == {"builtin_lines": None, "tone": ask, "hand_off": ask, "placeholders": None}
+        assert "ask: when a fix or a look needs a detail only the user knows" in instructions(_req(), _ws())
+
+    def test_an_edit_that_adds_a_placeholder_goes_back_to_the_model(self):
+        with pytest.raises(ProposalInvalid, match=r"\[phone number\]"):
+            _review(edits=[_edit("Keep answers short and friendly.", "Keep answers short. Call [phone number].")],
+                    findings=[_finding("hand_off", edit=1)])
 
     def test_unknown_severity_is_a_look(self):
         assert _model_findings(_review(findings=[_finding("tone", "urgent")]))[0]["severity"] == "look"

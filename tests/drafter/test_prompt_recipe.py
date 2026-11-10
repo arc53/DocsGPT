@@ -20,7 +20,7 @@ from docsgpt.drafter.prompt_recipe import (
     validate,
 )
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, get_recipe, ProposalInvalid
-from docsgpt.drafter.runner import build_messages, run_draft
+from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import parse_messages
 from docsgpt.prompts.composer import compose_preset
 from tests.drafter.fakes import calls, FakeLLM, tool_call
@@ -63,14 +63,14 @@ class TestContext:
         assert ctx == {"mode": "improve", "prompt": {"id": "p1", "name": "Support", "content": "Hi\nthere"},
                        "starter": None, "skip_questions": False}
 
-    def test_a_starter_and_skip_are_read_for_write_only(self):
+    def test_a_starter_is_read_for_write_only_and_skip_for_write_and_improve(self):
         write = parse_context({"mode": "write", "prompt": {"content": ""}, "starter": "website",
                                "skip_questions": True})
         assert (write["starter"], write["skip_questions"]) == ("website", True)
         assert parse_context({"mode": "write", "prompt": {}, "starter": "space-station"})["starter"] is None
         improve = parse_context({"mode": "improve", "prompt": {"content": "x"}, "starter": "website",
                                  "skip_questions": True})
-        assert (improve["starter"], improve["skip_questions"]) == (None, False)
+        assert (improve["starter"], improve["skip_questions"]) == (None, True)
 
     @pytest.mark.parametrize("starter", [["website"], {"website": 1}, 5])
     def test_a_starter_that_is_not_a_string_is_dropped(self, starter):
@@ -128,12 +128,25 @@ class TestInstructions:
         assert "Write a new prompt" in text and "name" in text
         assert "exactly once" not in text
 
-    def test_improve_offers_no_questions(self):
-        req = _req()
-        assert PROMPT_RECIPE.asks(req) is False
-        system = build_messages(req, PROMPT_RECIPE, Workspace(), tool_mode=True, allow_questions=False)[0]
-        assert "submit_proposal" in system["content"] and "ask_user" not in system["content"]
-        assert "asked enough questions" not in system["content"]
+    def test_improve_asks_only_for_a_detail_only_the_user_knows(self):
+        assert PROMPT_RECIPE.asks(_req()) is True
+        assert PROMPT_RECIPE.asks(_req(skip_questions=True)) is False
+        text = instructions(_req(), Workspace())
+        for rule in ("a detail only the user knows", "call ask_user once", "a typed question",
+                     "Ask about nothing else", "Never leave placeholders"):
+            assert rule in text, rule
+
+    @pytest.mark.parametrize("mode,content", [("improve", PERSONA), ("write", ""), ("review", PERSONA)])
+    def test_the_legacy_summaries_marker_is_named_as_filled(self, mode, content):
+        text = instructions(_req(mode, content), Workspace())
+        for rule in ("{summaries} (single braces)", "DocsGPT fills it with the retrieved documents",
+                     "not a placeholder", "keep it where it is"):
+            assert rule in text, rule
+
+    def test_the_website_brief_leaves_the_language_line_to_docsgpt(self):
+        text = instructions(_req("write", "", starter="website"), Workspace())
+        assert "It answers in the visitor's language" not in text
+        assert "DocsGPT already answers in the visitor's language: don't add a line for it" in text
 
     def test_write_asks_first_unless_skipped(self):
         assert PROMPT_RECIPE.asks(_req("write", "")) is True
@@ -284,6 +297,21 @@ class TestImprove:
         asked = _improve(edit, messages=("Add {{ tools.memory.memory_view }}",))
         assert "memory_view" in asked["edits"][0]["replace"]
 
+    def test_an_edit_that_adds_a_placeholder_goes_back_to_the_model(self):
+        with pytest.raises(ProposalInvalid, match=r"\[support email\]"):
+            _improve([_edit("Be polite and concise.", "Be polite and concise. Send people to [support email].")])
+        # A blank the prompt already had isn't blamed on an edit elsewhere.
+        content = PERSONA + "\nEmail [support email] for help."
+        proposal = _improve([_edit("Be polite and concise.", "Be warm.")], content=content)
+        assert proposal["edits"][0]["replace"] == "Be warm."
+
+    def test_an_edit_that_drops_the_documents_marker_goes_back_to_the_model(self):
+        content = "You answer from these pages.\n\n{summaries}"
+        with pytest.raises(ProposalInvalid, match=r"\{summaries\}"):
+            _improve([_edit("\n\n{summaries}", "")], content=content)
+        proposal = _improve([_edit("{summaries}", "{{ source.summaries }}")], content=content)
+        assert proposal["edits"][0]["replace"] == "{{ source.summaries }}"
+
     def test_suggestions_come_with_the_edits(self):
         proposal = _improve([_edit("Be polite", "Be warm")], suggestions=["Add a hand-off"], assumptions=["x"])
         assert proposal["suggestions"] == ["Add a hand-off"]
@@ -375,9 +403,16 @@ class TestTurn:
         assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["submit_proposal"]
         assert events[-1]["proposal"]["assumptions"] == ["Hand-offs go to the support team."]
 
-    def test_ask_user_is_never_offered(self):
+    def test_improve_may_ask_for_a_missing_detail(self):
+        fake, events = self._run(calls(tool_call("ask_user", {"questions": [
+            {"text": "Which email should it give?", "options": [], "placeholder": "e.g. support@northwind.com"}]})),
+            req=_req("improve", PERSONA, "Add a hand-off to humans"))
+        assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["ask_user", "submit_proposal"]
+        assert events[-1]["type"] == "questions"
+
+    def test_a_skipped_improve_round_only_proposes(self):
         fake, events = self._run(calls(tool_call("submit_proposal", {
-            "message": "Done.", "edits": [_edit("Be polite", "Be warm")]})))
+            "message": "Done.", "edits": [_edit("Be polite", "Be warm")]})), req=_req(skip_questions=True))
         assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["submit_proposal"]
         assert events[-1]["type"] == "proposal"
         assert events[-1]["proposal"]["edits"][0]["replace"] == "Be warm"

@@ -181,6 +181,36 @@ def _repeats(text: str, scan: str) -> list[dict]:
     return sorted(out, key=lambda check: check["line"])
 
 
+def edit_problems(before: str, after: str, how: str) -> list[str]:
+    """What a change to a saved prompt must not do, as problems for the model: blanks it adds, and the retrieved
+    documents' marker it drops.
+
+    A blank the prompt already had isn't blamed on the change. Dropping the last ``{summaries}`` (or another
+    documents variable) moves the documents out of the prompt the author placed them in.
+
+    Args:
+        before: The prompt's text before the change.
+        after: Its text after.
+        how: What the model should do instead of a blank, e.g. "Ask the user for it with ask_user".
+
+    Returns:
+        One sentence per problem; empty when the change is fine.
+    """
+    from docsgpt.api.answer.services.prompt_renderer import prompt_embeds_documents
+
+    problems: list[str] = []
+    had = {check["text"].casefold() for check in prompt_checks(before) if check["code"] == PLACEHOLDER}
+    added = [check["text"] for check in prompt_checks(after)
+             if check["code"] == PLACEHOLDER and check["text"].casefold() not in had]
+    if added:
+        problems.append(f"The change adds the blank {', '.join(added)}: never leave placeholders in a prompt. "
+                        f"{how}, or write around it (e.g. \"point them to the support team\").")
+    if prompt_embeds_documents(before) and not prompt_embeds_documents(after):
+        problems.append("Keep {summaries} (or another documents variable such as {{ source.summaries }}): it is "
+                        "where DocsGPT puts the retrieved documents, not a placeholder.")
+    return problems
+
+
 def prompt_checks(content: str) -> list[dict]:
     """The model-free checks on a prompt's text.
 

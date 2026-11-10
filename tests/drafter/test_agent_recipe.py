@@ -603,6 +603,26 @@ class TestInstructions:
             assert marker in text and "Use the part for the current step" in text, step
         assert marker not in instructions(_req({}, step="basics"), _ws())
 
+    def test_the_website_brief_leaves_the_language_line_to_docsgpt(self):
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": "x"}],
+                           parse_context({"step": "prompt", "starter": "website"}), "drafter:t")
+        text = instructions(req, _ws())
+        assert "It answers in the visitor's language" not in text
+        assert "DocsGPT already answers in the visitor's language: don't add a line for it" in text
+
+    def test_edits_that_add_a_placeholder_or_drop_the_documents_marker_go_back_to_the_model(self):
+        ws = _ws(prompt_texts={"default": "x", PROMPT_ID: "You help customers.\n\n{summaries}"})
+        form = {"prompt_id": PROMPT_ID}
+        blank = {"kind": "edit", "id": PROMPT_ID,
+                 "edits": [{"find": "You help customers.", "replace": "You help. Email [support email].",
+                            "reason": "Hand-off."}]}
+        with pytest.raises(ProposalInvalid, match=r"\[support email\]"):
+            _validate({"prompt": blank}, form=form, ws=ws, step="prompt")
+        dropped = {"kind": "edit", "id": PROMPT_ID,
+                   "edits": [{"find": "\n\n{summaries}", "replace": "", "reason": "Unused."}]}
+        with pytest.raises(ProposalInvalid, match=r"\{summaries\}"):
+            _validate({"prompt": dropped}, form=form, ws=ws, step="prompt")
+
     def test_proposals_stay_lean(self):
         text = instructions(_req(), _ws())
         for rule in ("one reason per field", "what you left out in a few words", "at most 3",

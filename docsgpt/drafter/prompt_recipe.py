@@ -13,8 +13,9 @@ own ``warnings`` are already in it.
 Write returns a name and a plain-text persona, and may first ask what the
 description leaves out (the company, the hand-off, the tone); a ``starter``
 (one of :data:`STARTERS`, picked from the drawer's first screen) adds a brief
-for that kind of prompt, and ``skip_questions`` drafts at once. Improve never
-asks. Both return up to three ``suggestions`` (next changes, worded as the
+for that kind of prompt, and ``skip_questions`` drafts at once. Improve asks
+only for a detail a change needs that only the user knows (a contact), and its
+edits may never add a blank or drop the ``{summaries}`` marker. Both return up to three ``suggestions`` (next changes, worded as the
 user's request); write also lists the ``assumptions`` the user should check.
 
 Review runs a fixed checklist (:data:`REVIEW_CHECKS`) over a saved or unsaved
@@ -39,6 +40,7 @@ from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.prompt_checks import (
     BOUNDARIES_MISSING,
     CITATIONS_MISSING,
+    edit_problems,
     PLACEHOLDER,
     prompt_checks,
     REPEATS_BUILTIN,
@@ -63,8 +65,11 @@ from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvali
 logger = logging.getLogger(__name__)
 
 MODES = ("improve", "write", "review")
-#: Modes that work on the prompt's existing text.
+#: Modes that work on the prompt's existing text, and those that may ask questions.
 _ON_TEXT = ("improve", "review")
+_ASKS = ("write", "improve")
+#: What a change that needs a detail only the user knows does instead of a blank, by mode.
+_ASK_INSTEAD = {"improve": "Ask the user for it with ask_user", "review": "Give its finding an ask instead"}
 
 NAME_MAX = 100
 CONTENT_MAX = 20000
@@ -122,8 +127,8 @@ SERVER_CHECKS: dict[str, tuple[str, str]] = {
 def parse_context(raw: Any) -> dict:
     """Clean the prompt recipe's ``context``: ``{mode, prompt: {id, name, content}, starter?, skip_questions?}``.
 
-    ``starter`` and ``skip_questions`` only mean something to write mode; an
-    unknown starter is dropped. The prompt's text is cleaned but never cut.
+    ``starter`` only means something to write mode, ``skip_questions`` to the
+    modes that may ask (write, improve); an unknown starter is dropped. The prompt's text is cleaned but never cut.
 
     Raises:
         BadDraftRequest: An unknown mode, a missing prompt, nothing to improve
@@ -153,13 +158,14 @@ def parse_context(raw: Any) -> dict:
             "content": content,
         },
         "starter": starter if writing and isinstance(starter, str) and starter in STARTERS else None,
-        "skip_questions": writing and raw.get("skip_questions") is True,
+        "skip_questions": mode in _ASKS and raw.get("skip_questions") is True,
     }
 
 
 def asks(req: DraftRequest) -> bool:
-    """Write mode asks before drafting, unless the user chose to skip; improve and review never do."""
-    return req.context["mode"] == "write" and not req.context.get("skip_questions")
+    """Write asks before drafting and improve for a detail only the user knows, unless the user chose to skip;
+    review never asks."""
+    return req.context["mode"] in _ASKS and not req.context.get("skip_questions")
 
 
 @dataclass
@@ -306,8 +312,10 @@ are the same), {{ source.documents }} (a list to loop over), {{ source.count }},
   - {{ passthrough.<field> }}: values the embedding website or API call sends with each message
   - {{ tools.<tool>.<action> }}: a tool action's result, run before every message
   - {{ system.platform }}: the platform notes the built-in prompts include
-  A prompt that writes {{ source.content }}, {{ source.summaries }}, {{ source.docs_together }} or \
-{{ source.documents }} gets the documents in the prompt instead of with the question."""
+  - {summaries} (single braces): an older marker DocsGPT still supports: DocsGPT fills it with the retrieved \
+documents, like {{ source.summaries }}. It is not a placeholder or an invalid variable: keep it where it is.
+  A prompt that writes {{ source.content }}, {{ source.summaries }}, {{ source.docs_together }}, \
+{{ source.documents }} or {summaries} gets the documents in the prompt instead of with the question."""
 
 COMMON = f"""You are working on a prompt in DocsGPT: the system prompt an agent or a chat answers with.
 
@@ -346,6 +354,12 @@ knowledge or tools, and don't guess what an agent using the prompt has attached;
 the user said and chose: never suggest replacing it (e.g. a support email when they picked live chat) or asking it \
 again; suggest what would complete it instead (e.g. "Add your live chat's opening hours")."""
 
+#: Improve may ask, but only for the details a change needs that only the user knows.
+IMPROVE_ASK = """- When the change needs a detail only the user knows (an email address, a link, a phone number, \
+opening hours) that neither the prompt nor the user's messages give, don't guess it and don't leave a blank: call \
+ask_user once, with a typed question for each missing detail (no options, a placeholder such as \
+"e.g. support@northwind.com"). Ask about nothing else, and don't ask when nothing is missing."""
+
 IMPROVE_NEXT = f"""suggestions: up to 3 further changes this prompt could use, each worded as the short request the \
 user would send (e.g. "Add what to do when it doesn't know"). Leave out what you just changed. {TEXT_ONLY}"""
 
@@ -364,6 +378,8 @@ and list them in assumptions. Don't ask what the user already said, and don't as
 covers it.
 - """ + CONTACT_DETAILS_ROUND + """
 - """ + no_placeholders("assumptions") + """
+- A question you asked that the user's answer leaves out (left blank) is theirs to leave: don't ask it again; write \
+around it and list it in assumptions.
 - assumptions: up to 3 short sentences, each a guess the user should check (e.g. "Hand-offs go to your support \
 team; you didn't name a contact.").
 - suggestions: up to 3 next changes this prompt could use, each worded as the short request the user would send \
@@ -375,7 +391,8 @@ STARTERS: dict[str, str] = {
     "website": """The user picked "Website chat for customers": a chat on the company's public website. Its \
 users are visitors and customers who may know nothing about the company. Find out the company or product, where \
 it sends people it can't help, and the tone. Usually off-limits: prices, discounts or delivery dates the documents \
-don't confirm, legal or medical advice, and anything internal. It answers in the visitor's language.""",
+don't confirm, legal or medical advice, and anything internal. DocsGPT already answers in the visitor's language: \
+don't add a line for it.""",
     "helpdesk": """The user picked "Internal helpdesk": answers the company's own staff on HR, IT and policy \
 questions. Find out the company, which areas it covers (HR, IT, policies, office and facilities), and who staff \
 contact when it can't help (a team, an email, a ticket portal). Personal cases (pay, health, disputes, \
@@ -421,7 +438,8 @@ worth the user's judgement.
 wrong.
 - edit: when you can fix it in the text, add the change to edits and give its position in edits (1 for the \
 first). Every edit belongs to exactly one finding.
-- ask: when the fix needs a detail only the user knows (an email address, a link, opening hours), send no edit: \
+- ask: when a fix or a look needs a detail only the user knows (an email address, a link, opening hours), send \
+no edit: \
 give a short button label (e.g. "Add the address") and the start of the sentence the user completes (prefill, \
 e.g. "The support email is ").
 - agent: when it is about one agent using the prompt, that agent's id from the workspace.
@@ -472,7 +490,9 @@ def _applicable_checks(ws: Workspace) -> tuple[str, ...]:
 def instructions(req: DraftRequest, ws: Workspace) -> str:
     """The prompt recipe's system instructions for the request's mode (and the write starter's brief)."""
     if req.context["mode"] == "improve":
-        return f"{COMMON}\n\n{IMPROVE}\n{IMPROVE_NEXT}"
+        ask = IMPROVE_ASK if asks(req) else None
+        return "\n".join(filter(None, [f"{COMMON}\n\n{IMPROVE}", "- " + no_placeholders("your message"), ask,
+                                        IMPROVE_NEXT]))
     if req.context["mode"] == "review":
         return _review_instructions(ws)
     starter = STARTERS.get(req.context.get("starter") or "")
@@ -724,6 +744,17 @@ def _check_text(result: str, previous: str, req: DraftRequest) -> None:
         raise ProposalInvalid([problem])
 
 
+def _check_edits(result: str, previous: str, mode: str) -> None:
+    """Edits never add a blank or drop the retrieved documents' marker (``prompt_checks.edit_problems``).
+
+    Raises:
+        ProposalInvalid: They do.
+    """
+    problems = edit_problems(previous, result, _ASK_INSTEAD[mode])
+    if problems:
+        raise ProposalInvalid(problems)
+
+
 def _ask(raw: Any) -> Optional[dict]:
     """A finding's ``ask`` cleaned and capped, or None without a label."""
     if not isinstance(raw, dict):
@@ -785,7 +816,7 @@ def _model_findings(args: dict, ws: Workspace, edit_ids: dict[int, str], edit_co
             "title": title,
             "detail": clean_text(finding.get("detail"), DETAIL_MAX),
             "edit": edit_id,
-            "ask": _ask(finding.get("ask")) if severity == "fix" and edit_id is None else None,
+            "ask": _ask(finding.get("ask")) if edit_id is None else None,
             "agent": ws.find_agent(finding.get("agent")) if isinstance(ws, PromptWorkspace) else None,
             "source": "model",
             "code": None,
@@ -825,6 +856,7 @@ def _review(args: dict, req: DraftRequest, ws: Workspace, message: str) -> dict:
     raw_edits = [e for e in args.get("edits") or [] if isinstance(e, dict)]
     edits, result, edit_ids = apply_numbered_edits(current, raw_edits)
     _check_text(result, current, req)
+    _check_edits(result, current, "review")
     findings = _model_findings(args, ws, edit_ids, len(raw_edits))
     reported = {f["check"] for f in findings}
     server = []
@@ -864,6 +896,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     if req.context["mode"] == "improve":
         edits, result = apply_edits(current, [e for e in args.get("edits") or [] if isinstance(e, dict)])
         _check_text(result, current, req)
+        _check_edits(result, current, "improve")
         return {
             "mode": "improve",
             "message": message,
