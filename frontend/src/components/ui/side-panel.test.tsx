@@ -146,6 +146,50 @@ describe('SidePanel variant="docked"', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  // Live check [#16]: closing left focus on <body>.
+  it('gives focus back to what opened it when it closes', async () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    try {
+      opener.focus();
+      await render(panel({ variant: 'docked', open: false }));
+      await render(
+        <SidePanel variant="docked" open onOpenChange={() => undefined}>
+          <PanelHeader title="renewal-note.md" />
+          <PanelBody>
+            <input data-testid="field" />
+          </PanelBody>
+        </SidePanel>,
+      );
+      const field = document.querySelector<HTMLInputElement>(
+        '[data-testid="field"]',
+      )!;
+      field.focus();
+      expect(document.activeElement).toBe(field);
+      await render(panel({ variant: 'docked', open: false }));
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      opener.remove();
+    }
+  });
+
+  it('leaves focus alone on close when it is outside the panel', async () => {
+    const opener = document.createElement('button');
+    const elsewhere = document.createElement('input');
+    document.body.append(opener, elsewhere);
+    try {
+      opener.focus();
+      await render(panel({ variant: 'docked', open: false }));
+      await render(panel({ variant: 'docked' }));
+      elsewhere.focus();
+      await render(panel({ variant: 'docked', open: false }));
+      expect(document.activeElement).toBe(elsewhere);
+    } finally {
+      opener.remove();
+      elsewhere.remove();
+    }
+  });
+
   it('is always 480px compact: wide is a modal-only size', async () => {
     await render(
       <SidePanel

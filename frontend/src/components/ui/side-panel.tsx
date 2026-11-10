@@ -213,6 +213,33 @@ function SidePanel({
   }, [open, present, settled]);
 
   const dialog = variant === 'modal' || isMobile;
+
+  // A docked panel gives focus back to what opened it, as a dialog does:
+  // closing (its X, Escape, a button inside) otherwise leaves focus on the
+  // inert panel or <body>. Its own effects run before the page's, so the
+  // opener is still focused when it opens.
+  const asideRef = React.useRef<HTMLElement>(null);
+  const opener = React.useRef<HTMLElement | null>(null);
+  React.useLayoutEffect(() => {
+    if (dialog) return;
+    if (open) {
+      const active = document.activeElement;
+      opener.current =
+        active instanceof HTMLElement && active !== document.body
+          ? active
+          : null;
+      return;
+    }
+    const back = opener.current;
+    opener.current = null;
+    const active = document.activeElement;
+    const lost =
+      !active ||
+      active === document.body ||
+      (asideRef.current?.contains(active) ?? false);
+    if (back?.isConnected && lost) back.focus();
+  }, [open, dialog]);
+
   const context = React.useMemo<SidePanelContextValue>(
     () => ({
       inDialog: dialog,
@@ -253,6 +280,7 @@ function SidePanel({
   return (
     <SidePanelContext.Provider value={context}>
       <aside
+        ref={asideRef}
         data-slot="side-panel"
         data-width={current}
         data-state={closing ? 'closed' : 'open'}

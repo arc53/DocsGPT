@@ -830,6 +830,141 @@ describe('DraftPanel', () => {
     ).toBe(false);
   });
 
+  // Live check [#16]: focus dropped to <body> after Send answers and Stop.
+  describe('focus', () => {
+    const questions: DrafterEvent = {
+      type: 'questions',
+      questions: [
+        {
+          id: 'q1',
+          text: 'Where should refunds go?',
+          note: null,
+          multi: false,
+          options: [
+            { id: 'a', label: 'Email support' },
+            { id: 'b', label: 'Stop' },
+          ],
+        },
+      ],
+    };
+    const radios = () =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+      );
+
+    it('lands on the first new question when a turn ends on them', async () => {
+      stream.scripts = [[questions, { type: 'end' }]];
+      await ask('A shipping agent');
+      expect(document.activeElement).toBe(radios()[0]);
+    });
+
+    it('keeps it in the ask bar while the user is typing there', async () => {
+      stream.hold = true;
+      await ask('A shipping agent');
+      askBar().focus();
+      await act(async () => setValue(askBar(), 'And returns'));
+      expect(document.activeElement).toBe(askBar());
+    });
+
+    it('moves it to the ask bar after Send answers and after Stop', async () => {
+      stream.scripts = [[questions, { type: 'end' }]];
+      await ask('A shipping agent');
+      await act(async () => radios()[1].click());
+      stream.hold = true;
+      const send = button('questions.sendAnswers')!;
+      send.focus();
+      await act(async () => send.click());
+      expect(document.activeElement).toBe(askBar());
+
+      const stop = button('drafter.stop')!;
+      stop.focus();
+      await act(async () => stop.click());
+      expect(document.activeElement).toBe(askBar());
+    });
+
+    it('leaves it where the user put it in the page', async () => {
+      const outside = document.createElement('input');
+      document.body.appendChild(outside);
+      try {
+        stream.hold = true;
+        await ask('A shipping agent');
+        outside.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+        outside.focus();
+        outside.blur();
+        await act(async () => button('drafter.stop')!.click());
+        expect(document.activeElement).not.toBe(askBar());
+      } finally {
+        outside.remove();
+      }
+    });
+  });
+
+  // Live check [#18, #19]: what renders after the scroll (review actions, a
+  // field opening in a question) keeps the end in view.
+  it('keeps the end in view as late content grows the conversation', async () => {
+    const callbacks: (() => void)[] = [];
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) {
+        callbacks.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    const scroll = vi.fn();
+    const scrollOriginal = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      await act(async () => root.render(<Host open={false} />));
+      await act(async () => root.render(<Host open />));
+      scroll.mockClear();
+      await act(async () => callbacks.forEach((callback) => callback()));
+      expect(scroll).toHaveBeenCalledWith({ block: 'end' });
+      // Scrolled up, the user stays where they are.
+      const body = container.querySelector<HTMLElement>(
+        '[data-slot="panel-body"]',
+      )!;
+      Object.defineProperty(body, 'scrollHeight', { value: 2000 });
+      Object.defineProperty(body, 'clientHeight', { value: 500 });
+      body.scrollTop = 100;
+      body.dispatchEvent(new Event('scroll'));
+      scroll.mockClear();
+      await act(async () => callbacks.forEach((callback) => callback()));
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      globalThis.ResizeObserver = original;
+      Element.prototype.scrollIntoView = scrollOriginal;
+    }
+  });
+
+  it('lands a turn that ends on questions on the first of them', async () => {
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      stream.scripts = [
+        [
+          {
+            type: 'questions',
+            questions: [
+              { id: 'q1', text: 'One?', note: null, multi: false, options: [] },
+              { id: 'q2', text: 'Two?', note: null, multi: false, options: [] },
+            ],
+          },
+          { type: 'end' },
+        ],
+      ];
+      await ask('Draft it');
+      const first = container.querySelector('[data-question="q1"]');
+      expect(scrolled.at(-1)).toBe(first);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('focuses the ask bar when the panel opens on a desktop', async () => {
     await act(async () => root.render(<Host open={false} />));
     (document.activeElement as HTMLElement | null)?.blur();

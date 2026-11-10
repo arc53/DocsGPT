@@ -221,7 +221,7 @@ export function DraftPanel({
   onStartOver,
 }: DraftPanelProps) {
   const { t } = useTranslation();
-  const { isDesktop } = useMediaQuery();
+  const { isDesktop, isMobile } = useMediaQuery();
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const wasOpen = useRef(false);
@@ -247,10 +247,95 @@ export function DraftPanel({
       {t('drafter.startOver')}
     </Button>
   );
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+  // The body was scrolled to its end: what renders late (a review's
+  // actions, a field opening in a question) keeps the end in view.
+  const atEnd = useRef(true);
+  const toEnd = () => {
+    endRef.current?.scrollIntoView?.({ block: 'end' });
+    atEnd.current = true;
+  };
+
+  // The open round of questions, still waiting for answers.
+  const openQuestions = () =>
+    columnRef.current?.querySelector<HTMLElement>(
+      '[data-item="questions"][data-open]',
+    ) ?? null;
+
   // Follow the conversation as it grows, and land on its end on reopening.
+  // A turn that ends on questions lands on the first of them when they
+  // don't all fit.
   useEffect(() => {
-    if (open) endRef.current?.scrollIntoView?.({ block: 'end' });
+    if (!open) return;
+    toEnd();
+    if (!streaming && items.at(-1)?.kind === 'questions') {
+      openQuestions()?.querySelector('[data-question]')?.scrollIntoView?.({
+        block: 'nearest',
+      });
+    }
   }, [items.length, step, open]);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    const column = columnRef.current;
+    if (!open || !body || !column) return;
+    const onScroll = () => {
+      atEnd.current =
+        body.scrollTop + body.clientHeight >= body.scrollHeight - 24;
+    };
+    body.addEventListener('scroll', onScroll, { passive: true });
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            if (atEnd.current) toEnd();
+          });
+    observer?.observe(column);
+    return () => {
+      body.removeEventListener('scroll', onScroll);
+      observer?.disconnect();
+    };
+  }, [open]);
+
+  // Focus never drops to <body> in the docked panel (a sheet keeps it
+  // itself): a send whose button goes (Send answers, a starter) or a Stop
+  // moves it to the ask bar, and a turn that ends on questions to the first
+  // of them, also from an empty ask bar. Only while focus was last in the
+  // panel: a click in the page leaves it there.
+  const focusWasHere = useRef(false);
+  useEffect(() => {
+    if (!open) return;
+    const panel = () => endRef.current?.closest('[data-slot="side-panel"]');
+    const onFocusIn = (event: FocusEvent) => {
+      focusWasHere.current = !!panel()?.contains(event.target as Node);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!panel()?.contains(event.target as Node))
+        focusWasHere.current = false;
+    };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open]);
+  useEffect(() => {
+    if (!open || isMobile || !focusWasHere.current) return;
+    const active = document.activeElement;
+    const lost = !active || active === document.body;
+    const input = inputRef.current;
+    const questions = streaming ? null : openQuestions();
+    const first = questions?.querySelector<HTMLElement>(
+      '[role="radio"], [role="checkbox"], input',
+    );
+    // A typed question's field would raise a tablet's keyboard.
+    const canFocus = first && (isDesktop || first.tagName !== 'INPUT');
+    if (canFocus && (lost || (active === input && !input?.value))) {
+      first.focus();
+    } else if (lost && isDesktop) input?.focus();
+  }, [streaming, items.length]);
 
   // Opening the docked panel beside the form puts the cursor in its ask bar;
   // not on a phone or tablet, where a keyboard would cover the sheet.
@@ -344,24 +429,31 @@ export function DraftPanel({
         // bubble repeats the answers), a blank one reads Skipped, and a round
         // passed over reads Not answered.
         return (
-          <QuestionCards
+          <div
             key={item.id}
-            questions={item.questions}
-            active={!streaming && !item.state}
-            onAnswer={(message, answers) => session.send(message, { answers })}
-            onSkip={
-              onSkipQuestions &&
-              (() => {
-                session.closeQuestions('skipped');
-                onSkipQuestions();
-              })
-            }
-            skipLabel={t('drafter.skipQuestions')}
-            answers={item.answers ?? (item.state ? {} : undefined)}
-            emptyLabel={
-              item.state === 'passed' ? undefined : t('questions.skipped')
-            }
-          />
+            data-item="questions"
+            data-open={item.state ? undefined : ''}
+          >
+            <QuestionCards
+              questions={item.questions}
+              active={!streaming && !item.state}
+              onAnswer={(message, answers) =>
+                session.send(message, { answers })
+              }
+              onSkip={
+                onSkipQuestions &&
+                (() => {
+                  session.closeQuestions('skipped');
+                  onSkipQuestions();
+                })
+              }
+              skipLabel={t('drafter.skipQuestions')}
+              answers={item.answers ?? (item.state ? {} : undefined)}
+              emptyLabel={
+                item.state === 'passed' ? undefined : t('questions.skipped')
+              }
+            />
+          </div>
         );
       case 'proposal':
         return (
@@ -452,8 +544,8 @@ export function DraftPanel({
           />
         )}
       </PanelHeader>
-      <PanelBody>
-        <div className="flex flex-col gap-4">
+      <PanelBody ref={bodyRef}>
+        <div ref={columnRef} className="flex flex-col gap-4">
           {before}
           {items.length === 0 && !streaming && (
             <div className="flex flex-col gap-3">
@@ -631,8 +723,10 @@ function Composer({
         }}
       />
       <div className="flex items-center justify-end px-2 pb-2">
+        {/* Keyed apart: Stop must not become a focused, disabled Send. */}
         {streaming ? (
           <IconButton
+            key="stop"
             size="icon-sm"
             shape="pill"
             label={t('drafter.stop')}
@@ -642,6 +736,7 @@ function Composer({
           </IconButton>
         ) : (
           <IconButton
+            key="send"
             size="icon-sm"
             shape="pill"
             label={t('drafter.send')}
