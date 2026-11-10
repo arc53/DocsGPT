@@ -4808,8 +4808,7 @@
       "estimateHint": "The drafting model's guess: it couldn't be measured on the questions.",
       "taken": "Already a topic",
       "similar": "Similar to \"{{name}}\".",
-      "leftOut": "Not suggested: {{items}}",
-      "leftOutItem": "{{name}} ({{reason}})",
+      "leftOutItem": "<name>{{name}}</name>: {{reason}}",
       "pushesOut_one": "Adding these pushes out {{count}} folder, so its questions go to None of these: {{names}}",
       "pushesOut_other": "Adding these pushes out {{count}} folders, so their questions go to None of these: {{names}}",
       "tooManyOnePick_one": "Only {{formatted}} more topic that sorts questions fits. Untick some before adding.",
@@ -4824,7 +4823,10 @@
         "invalid_output": "The model's answer couldn't be used. No topics were added.",
         "model_error": "Something went wrong while suggesting topics. No topics were added."
       },
-      "statusFailed": "Couldn't check whether suggestions from conversations are available."
+      "statusFailed": "Couldn't check whether suggestions from conversations are available.",
+      "fewQuestions_one": "Fits less than the {{formatted}} question it was tried on, so it starts unticked.",
+      "fewQuestions_other": "Fits less than one of the {{formatted}} questions it was tried on, so it starts unticked.",
+      "leftOutTitle": "Not suggested"
     },
     "lookedAtWorkspaceCounts": "Looked at your workspace: {{counts}}",
     "filled_one": "Filled {{count}} field",

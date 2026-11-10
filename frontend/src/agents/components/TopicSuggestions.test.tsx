@@ -5,19 +5,34 @@ import type { DrafterEvent, DrafterRequest } from '../../drafter/drafterApi';
 import type { TopicsProposal, TopicsStatus } from '../../drafter/topicsDraft';
 import type { AnalyticsConfig } from '../types';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    // Interpolations show as `key(a=1,b=2)`, so counts and names can be checked.
-    t: (key: string, opts?: Record<string, unknown>) => {
-      if (!opts) return key;
-      const args = Object.entries(opts)
-        .filter(([name]) => name !== 'interpolation')
-        .map(([name, value]) => `${name}=${String(value)}`)
-        .join(',');
-      return args ? `${key}(${args})` : key;
-    },
-  }),
-}));
+vi.mock('react-i18next', () => {
+  // Interpolations show as `key(a=1,b=2)`, so counts and names can be checked.
+  const t = (key: string, opts?: Record<string, unknown>) => {
+    if (!opts) return key;
+    const args = Object.entries(opts)
+      .filter(([name]) => name !== 'interpolation')
+      .map(([name, value]) => `${name}=${String(value)}`)
+      .join(',');
+    return args ? `${key}(${args})` : key;
+  };
+  return {
+    useTranslation: () => ({ t }),
+    // A Trans shows its key and values the same way, its tags as spans.
+    Trans: ({
+      i18nKey,
+      values,
+      components,
+    }: {
+      i18nKey: string;
+      values?: Record<string, unknown>;
+      components?: Record<string, unknown>;
+    }) => (
+      <span data-trans={i18nKey} data-tags={Object.keys(components ?? {})}>
+        {t(i18nKey, values)}
+      </span>
+    ),
+  };
+});
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
     selector({ preference: { token: 'tok' } }),
@@ -37,6 +52,8 @@ const mocks = vi.hoisted(() => ({
   statusCalls: [] as string[],
   scripts: [] as DrafterEvent[][],
   requests: [] as DrafterRequest[],
+  // The turn stays open after its events, as while the model works.
+  hang: false,
 }));
 vi.mock('../../drafter/useDrafterConfig', () => ({
   loadDrafterConfig: () =>
@@ -64,6 +81,7 @@ vi.mock('../../drafter/drafterApi', async (importOriginal) => ({
   ) => {
     mocks.requests.push(JSON.parse(JSON.stringify(request)));
     (mocks.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
+    if (mocks.hang) await new Promise(() => undefined);
   },
 }));
 
@@ -173,6 +191,7 @@ describe('topic suggestions in the Insights settings', () => {
     mocks.statusCalls = [];
     mocks.scripts = [];
     mocks.requests = [];
+    mocks.hang = false;
     getTopicFolders.mockReset();
     getTopicFolders.mockResolvedValue({
       ok: true,
@@ -313,11 +332,21 @@ describe('topic suggestions in the Insights settings', () => {
     expect(text).toContain(`${T}.read(count=300,formatted=300,days=30)`);
     expect(text).toContain(`${T}.tried(count=100,formatted=100`);
     expect(text).toContain('Most questions are about parcels.');
-    expect(text).toContain(
-      `${T}.leftOut(items=${T}.leftOutItem(name=Packaging,reason=Your shipping folder covers it.))`,
+    // What it left out is a list under its own heading.
+    const leftOut = card()!.querySelector<HTMLElement>(
+      '[data-note="leftOut"]',
+    )!;
+    expect(leftOut.querySelector('h3, h4, h5')!.textContent).toBe(
+      `${T}.leftOutTitle`,
     );
-    expect(suggestion('t1').textContent).toContain(
-      'agents.form.analytics.countOf(count=22,max=150)',
+    expect(
+      Array.from(leftOut.querySelectorAll('li')).map((li) => li.textContent),
+    ).toEqual([
+      `${T}.leftOutItem(name=Packaging,reason=Your shipping folder covers it.)`,
+    ]);
+    // The description's length budget is for editing, not this list.
+    expect(suggestion('t1').textContent).not.toContain(
+      'agents.form.analytics.countOf',
     );
     expect(suggestion('t2').textContent).toContain(
       `${T}.similar(name=Billing)`,
@@ -474,6 +503,52 @@ describe('topic suggestions in the Insights settings', () => {
       );
     },
   );
+
+  it('starts a measured suggestion that fits under one question unticked, saying why', async () => {
+    await render();
+    await run(
+      proposal({
+        ...PROPOSAL,
+        topics: [
+          ...PROPOSAL.topics,
+          {
+            id: 't4',
+            name: 'SSO and login',
+            description: 'Single sign-on.',
+            overlap: false,
+            share: 0.005,
+            share_kind: 'measured',
+            similar_to: null,
+            note: null,
+          },
+        ],
+      }),
+    );
+    const box = (id: string) =>
+      suggestion(id).querySelector<HTMLButtonElement>('button')!;
+    expect(box('t4').getAttribute('aria-checked')).toBe('false');
+    expect(suggestion('t4').textContent).toContain(
+      `${T}.fewQuestions(count=100,formatted=100)`,
+    );
+    // The others start ticked and say nothing of it; an estimate too.
+    expect(box('t1').getAttribute('aria-checked')).toBe('true');
+    expect(box('t2').getAttribute('aria-checked')).toBe('true');
+    expect(suggestion('t1').textContent).not.toContain(`${T}.fewQuestions`);
+    expect(button(`${T}.add`)!.textContent).toContain('count=3');
+  });
+
+  it('shows the reading line without a status inside a paragraph', async () => {
+    await render();
+    mocks.hang = true;
+    mocks.scripts.push([{ type: 'status', step: 'reading' }]);
+    await act(async () => button(`${T}.suggest`)!.click());
+    const spinner = card()!.querySelector('[data-slot="spinner"]')!;
+    expect(spinner.closest('p')).toBeNull();
+    expect(spinner.getAttribute('role')).toBeNull();
+    expect(spinner.getAttribute('aria-hidden')).toBe('true');
+    expect(spinner.parentElement!.getAttribute('aria-live')).toBe('polite');
+    expect(spinner.parentElement!.textContent).toBe(`${T}.reading`);
+  });
 
   it('announces the status line, not the whole card', async () => {
     await render();

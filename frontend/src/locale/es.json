@@ -4942,8 +4942,7 @@
       "estimateHint": "Una estimación del modelo de redacción: no se pudo medir con las preguntas.",
       "taken": "Ya es un tema",
       "similar": "Parecido a \"{{name}}\".",
-      "leftOut": "No sugeridos: {{items}}",
-      "leftOutItem": "{{name}} ({{reason}})",
+      "leftOutItem": "<name>{{name}}</name>: {{reason}}",
       "pushesOut_one": "Al añadirlos, {{count}} carpeta queda fuera y sus preguntas van a Ninguno de estos temas: {{names}}",
       "pushesOut_many": "Al añadirlos, {{count}} carpetas quedan fuera y sus preguntas van a Ninguno de estos temas: {{names}}",
       "pushesOut_other": "Al añadirlos, {{count}} carpetas quedan fuera y sus preguntas van a Ninguno de estos temas: {{names}}",
@@ -4962,7 +4961,11 @@
         "invalid_output": "No se pudo usar la respuesta del modelo. No se añadió ningún tema.",
         "model_error": "Algo salió mal al sugerir temas. No se añadió ningún tema."
       },
-      "statusFailed": "No se pudo comprobar si hay sugerencias a partir de conversaciones."
+      "statusFailed": "No se pudo comprobar si hay sugerencias a partir de conversaciones.",
+      "fewQuestions_one": "Encaja en menos de la {{formatted}} pregunta con la que se probó, así que empieza sin marcar.",
+      "fewQuestions_other": "Encaja en menos de una de las {{formatted}} preguntas con las que se probó, así que empieza sin marcar.",
+      "fewQuestions_many": "Encaja en menos de una de las {{formatted}} preguntas con las que se probó, así que empieza sin marcar.",
+      "leftOutTitle": "No sugeridos"
     },
     "lookedAtWorkspaceCounts": "Revisó tu espacio de trabajo: {{counts}}",
     "filled_one": "Se rellenó {{count}} campo",

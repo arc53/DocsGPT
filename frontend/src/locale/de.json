@@ -4787,8 +4787,7 @@
       "estimateHint": "Eine Schätzung des Entwurfsmodells: An den Fragen ließ sie sich nicht messen.",
       "taken": "Bereits ein Thema",
       "similar": "Ähnlich wie „{{name}}“.",
-      "leftOut": "Nicht vorgeschlagen: {{items}}",
-      "leftOutItem": "{{name}} ({{reason}})",
+      "leftOutItem": "<name>{{name}}</name>: {{reason}}",
       "pushesOut_one": "Dadurch fällt {{count}} Ordner heraus, seine Fragen landen unter Keines dieser Themen: {{names}}",
       "pushesOut_other": "Dadurch fallen {{count}} Ordner heraus, ihre Fragen landen unter Keines dieser Themen: {{names}}",
       "tooManyOnePick_one": "Es passt nur noch {{formatted}} Thema, das Fragen einsortiert. Wähle vor dem Hinzufügen einige ab.",
@@ -4803,7 +4802,10 @@
         "invalid_output": "Die Antwort des Modells war nicht verwendbar. Es wurden keine Themen hinzugefügt.",
         "model_error": "Beim Vorschlagen von Themen ist etwas schiefgelaufen. Es wurden keine Themen hinzugefügt."
       },
-      "statusFailed": "Es ließ sich nicht prüfen, ob Vorschläge aus Gesprächen verfügbar sind."
+      "statusFailed": "Es ließ sich nicht prüfen, ob Vorschläge aus Gesprächen verfügbar sind.",
+      "fewQuestions_one": "Passt zu weniger als der {{formatted}} Frage, an der es getestet wurde, daher ist es nicht angehakt.",
+      "fewQuestions_other": "Passt zu weniger als einer der {{formatted}} Fragen, an denen es getestet wurde, daher ist es nicht angehakt.",
+      "leftOutTitle": "Nicht vorgeschlagen"
     },
     "lookedAtWorkspaceCounts": "Deinen Arbeitsbereich angesehen: {{counts}}",
     "filled_one": "{{count}} Feld ausgefüllt",

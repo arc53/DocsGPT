@@ -4757,8 +4757,7 @@
       "estimateHint": "下書きモデルによる推定です。実際の質問では測定できませんでした。",
       "taken": "既存のトピック",
       "similar": "「{{name}}」と似ています。",
-      "leftOut": "提案しなかったもの：{{items}}",
-      "leftOutItem": "{{name}}（{{reason}}）",
+      "leftOutItem": "<name>{{name}}</name>：{{reason}}",
       "pushesOut_other": "追加すると {{count}} 個のフォルダーが外れ、その質問は「どのトピックにも該当しない」になります：{{names}}",
       "tooManyOnePick_other": "質問を分類するトピックはあと {{formatted}} 個しか追加できません。追加する前にいくつかのチェックを外してください。",
       "tooManyOverlap_other": "重複可のトピックはあと {{formatted}} 個しか追加できません。追加する前にいくつかのチェックを外してください。",
@@ -4769,7 +4768,10 @@
         "invalid_output": "モデルの回答を使用できませんでした。トピックは追加されていません。",
         "model_error": "トピックの提案中に問題が発生しました。トピックは追加されていません。"
       },
-      "statusFailed": "会話からの提案を使えるか確認できませんでした。"
+      "statusFailed": "会話からの提案を使えるか確認できませんでした。",
+      "fewQuestions_one": "試した {{formatted}} 件の質問のうち、該当するのが 1 件に満たないため、最初はチェックしていません。",
+      "fewQuestions_other": "試した {{formatted}} 件の質問のうち、該当するのが 1 件に満たないため、最初はチェックしていません。",
+      "leftOutTitle": "提案しなかったもの"
     },
     "lookedAtWorkspaceCounts": "ワークスペースを確認しました: {{counts}}",
     "filled_one": "{{count}} 個のフィールドを入力しました",

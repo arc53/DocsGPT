@@ -4757,8 +4757,7 @@
       "estimateHint": "起草模型的估計：無法在實際問題上測量。",
       "taken": "已是主題",
       "similar": "與「{{name}}」相似。",
-      "leftOut": "未建議：{{items}}",
-      "leftOutItem": "{{name}}（{{reason}}）",
+      "leftOutItem": "<name>{{name}}</name>：{{reason}}",
       "pushesOut_other": "加入後會擠出 {{count}} 個資料夾，其問題會歸入「不屬於這些主題」：{{names}}",
       "tooManyOnePick_other": "只能再加入 {{formatted}} 個用於歸類問題的主題。加入前請取消勾選一些。",
       "tooManyOverlap_other": "只能再加入 {{formatted}} 個可重疊的主題。加入前請取消勾選一些。",
@@ -4769,7 +4768,10 @@
         "invalid_output": "無法使用模型的回答。沒有加入任何主題。",
         "model_error": "建議主題時發生問題。沒有加入任何主題。"
       },
-      "statusFailed": "無法檢查是否能根據對話建議主題。"
+      "statusFailed": "無法檢查是否能根據對話建議主題。",
+      "fewQuestions_one": "在試用的 {{formatted}} 個問題中符合不到 1 個，所以預設不勾選。",
+      "fewQuestions_other": "在試用的 {{formatted}} 個問題中符合不到 1 個，所以預設不勾選。",
+      "leftOutTitle": "未建議"
     },
     "lookedAtWorkspaceCounts": "已查看你的工作區：{{counts}}",
     "filled_one": "已填寫 {{count}} 個欄位",

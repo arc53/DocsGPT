@@ -4755,8 +4755,7 @@
       "estimateHint": "起草模型的估计：无法在实际问题上测量。",
       "taken": "已是主题",
       "similar": "与“{{name}}”相似。",
-      "leftOut": "未建议：{{items}}",
-      "leftOutItem": "{{name}}（{{reason}}）",
+      "leftOutItem": "<name>{{name}}</name>：{{reason}}",
       "pushesOut_other": "添加后会挤出 {{count}} 个文件夹，其问题会归入“不属于这些主题”：{{names}}",
       "tooManyOnePick_other": "只能再添加 {{formatted}} 个用于归类问题的主题。添加前请取消勾选一些。",
       "tooManyOverlap_other": "只能再添加 {{formatted}} 个可重叠的主题。添加前请取消勾选一些。",
@@ -4767,7 +4766,10 @@
         "invalid_output": "无法使用模型的回答。没有添加任何主题。",
         "model_error": "建议主题时出了问题。没有添加任何主题。"
       },
-      "statusFailed": "无法检查是否可以根据对话建议主题。"
+      "statusFailed": "无法检查是否可以根据对话建议主题。",
+      "fewQuestions_one": "在试用的 {{formatted}} 个问题中匹配不到 1 个，所以默认不勾选。",
+      "fewQuestions_other": "在试用的 {{formatted}} 个问题中匹配不到 1 个，所以默认不勾选。",
+      "leftOutTitle": "未建议"
     },
     "lookedAtWorkspaceCounts": "已查看你的工作区：{{counts}}",
     "filled_one": "已填写 {{count}} 个字段",

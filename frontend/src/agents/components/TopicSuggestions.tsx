@@ -1,6 +1,6 @@
 import { CircleCheck, WandSparkles } from 'lucide-react';
 import React from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { SectionHeader } from '@/components/ui/section-header';
 import { Spinner } from '@/components/ui/spinner';
 
 import { DrafterErrorAlert } from '../../drafter/DrafterErrorAlert';
@@ -24,13 +25,7 @@ import { loadDrafterConfig } from '../../drafter/useDrafterConfig';
 import { useDrafterSession } from '../../drafter/useDrafterSession';
 import { formatShare, joinList } from '../../settings/insights/format';
 import { formatCount } from '../../utils/dateTimeUtils';
-import {
-  descriptionMax,
-  nameTaken,
-  topicsOfKind,
-  units,
-  visibleFolders,
-} from '../analyticsConfig';
+import { nameTaken, topicsOfKind, visibleFolders } from '../analyticsConfig';
 import type { AnalyticsConfig, TopicFolder } from '../types';
 import type { TopicDraft } from './TopicModal';
 
@@ -289,13 +284,20 @@ export function TopicSuggestionsCard({
   if (streaming) {
     body = (
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <p
+        {/* A div, not a p: the Spinner is a div. Only the text is
+            announced, once. */}
+        <div
           className="text-muted-foreground flex items-center gap-2 text-sm"
           aria-live="polite"
         >
-          <Spinner size="xs" label={t('drafter.topics.reading')} />
+          <Spinner
+            size="xs"
+            role={undefined}
+            aria-label={undefined}
+            aria-hidden="true"
+          />
           {t('drafter.topics.reading')}
-        </p>
+        </div>
         <Button
           type="button"
           variant="ghost"
@@ -392,10 +394,21 @@ function Suggestions({
       .filter((name) => !nameTaken(name, config.hidden_folders)),
   ];
   const isTaken = (topic: TopicSuggestion) => nameTaken(topic.name, taken);
+  // A measured share that comes to less than one of the questions it was
+  // tried on: it starts unticked and says why. An estimate, or a sample with
+  // no count, starts ticked.
+  const triedOn = sample.unmatched?.questions ?? 0;
+  const fewQuestions = (topic: TopicSuggestion) =>
+    topic.share_kind === 'measured' &&
+    topic.share !== null &&
+    triedOn > 0 &&
+    topic.share * triedOn < 1;
   const [picked, setPicked] = React.useState<Set<string>>(
     () =>
       new Set(
-        topics.filter((topic) => !isTaken(topic)).map((topic) => topic.id),
+        topics
+          .filter((topic) => !isTaken(topic) && !fewQuestions(topic))
+          .map((topic) => topic.id),
       ),
   );
   const chosen = topics.filter(
@@ -441,24 +454,6 @@ function Suggestions({
   }
 
   const notes: { key: string; text: string }[] = [];
-  if (proposal.left_out.length > 0)
-    notes.push({
-      key: 'leftOut',
-      text: t('drafter.topics.leftOut', {
-        items: joinList(
-          proposal.left_out.map((item) =>
-            item.reason
-              ? t('drafter.topics.leftOutItem', {
-                  name: item.name,
-                  reason: item.reason,
-                  interpolation: { escapeValue: false },
-                })
-              : item.name,
-          ),
-        ),
-        interpolation: { escapeValue: false },
-      }),
-    });
   if (pushed.length > 0)
     notes.push({
       key: 'pushesOut',
@@ -550,7 +545,6 @@ function Suggestions({
         <ul className="divide-border divide-y border-t">
           {topics.map((topic) => {
             const id = `${baseId}-${topic.id}`;
-            const max = descriptionMax(topic.overlap);
             const off = isTaken(topic);
             return (
               <li
@@ -600,12 +594,6 @@ function Suggestions({
                           {t('drafter.topics.estimate')}
                         </Badge>
                       )}
-                    <span className="tabular-nums">
-                      {t('agents.form.analytics.countOf', {
-                        count: formatCount(Math.ceil(units(topic.description))),
-                        max: formatCount(max),
-                      })}
-                    </span>
                     <span>
                       {topic.overlap
                         ? t('agents.form.analytics.groups.overlap')
@@ -613,6 +601,14 @@ function Suggestions({
                     </span>
                     {off && <span>{t('drafter.topics.taken')}</span>}
                   </div>
+                  {fewQuestions(topic) && (
+                    <p className="text-muted-foreground text-xs">
+                      {t('drafter.topics.fewQuestions', {
+                        count: triedOn,
+                        formatted: formatCount(triedOn),
+                      })}
+                    </p>
+                  )}
                   {topic.similar_to ? (
                     <Alert variant="warning" className="mt-1">
                       <AlertDescription>
@@ -641,8 +637,41 @@ function Suggestions({
         </ul>
       )}
 
-      {notes.length > 0 && (
+      {(notes.length > 0 || proposal.left_out.length > 0) && (
         <div className="divide-y border-t">
+          {proposal.left_out.length > 0 && (
+            <div
+              data-note="leftOut"
+              className="text-muted-foreground flex flex-col gap-1 px-4 py-2.5 text-xs"
+            >
+              <SectionHeader
+                as="h4"
+                size="xs"
+                title={t('drafter.topics.leftOutTitle')}
+              />
+              <ul className="flex flex-col gap-1">
+                {proposal.left_out.map((item, index) => (
+                  <li key={index} className="wrap-break-word">
+                    {item.reason ? (
+                      <Trans
+                        t={t}
+                        i18nKey="drafter.topics.leftOutItem"
+                        values={{ name: item.name, reason: item.reason }}
+                        // The model's words, escaped for the tags and shown
+                        // as written.
+                        shouldUnescape
+                        components={{
+                          name: <span className="text-foreground" />,
+                        }}
+                      />
+                    ) : (
+                      <span className="text-foreground">{item.name}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {notes.map((note) => (
             <p
               key={note.key}
