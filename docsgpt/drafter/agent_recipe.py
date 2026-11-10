@@ -1561,24 +1561,31 @@ def _gap_links(raw: Any, ws: AgentWorkspace, topics: set[str]) -> list[dict]:
     return out
 
 
-def _gaps(raw: Any, fields: dict, ws: AgentWorkspace, focus: Optional[dict] = None) -> list[dict]:
+def _gaps(raw: Any, fields: dict, ws: AgentWorkspace, focus: Optional[dict] = None,
+          can_correct: bool = False) -> list[dict]:
     """The gaps an improve proposal acts on, each matched to its summary row, whose counts the server fills in.
 
     A gap's ``fields`` keep only the proposal's fields; an agent without topics takes any topic as none. A gap sent
     without a topic is the focus gap's when it has that gap type, or else the only row of its type. A gap that
-    matches no row is left out: the card can't show counts, and the rest of the proposal still stands.
+    matches no row goes back once, naming the rows it may use (:func:`_unmatched_gap`); with no correction left it
+    is left out: the card can't show counts, and the rest of the proposal still stands.
 
     Args:
         raw: The model's ``gaps``.
         fields: The proposal's checked fields.
         ws: The workspace with the gap summary.
         focus: The gap the user started from (the context's ``gap``), or None.
+        can_correct: Whether the turn's corrected try is still left.
+
+    Raises:
+        ProposalInvalid: A gap that matches no row of the summary, while a correction is left.
     """
     # Matched as the model read them (cleaned); the row keeps the topic as stored, which Logs filters on.
     rows = {(_gap_topic(row["topic"]), row["gap_type"]): row for row in ws.gaps["rows"]}
     by_topic = any(topic is not None for topic, _ in rows)
     topics = {row["topic"] for row in ws.gaps["rows"] if row["topic"] is not None}
     out: list[dict] = []
+    problems: list[str] = []
     for item in [i for i in raw if isinstance(i, dict)] if isinstance(raw, list) else []:
         if len(out) >= MAX_GAPS:
             break
@@ -1593,7 +1600,10 @@ def _gaps(raw: Any, fields: dict, ws: AgentWorkspace, focus: Optional[dict] = No
             same = [r for (_, kind), r in rows.items() if kind == gap_type]
             row = row or (same[0] if len(same) == 1 else None)
         if row is None:
-            logger.info("drafter: left out a gap card not in the summary: %r in %r", gap_type, topic)
+            if can_correct:
+                problems.append(_unmatched_gap(gap_type, topic, by_topic, ws.gaps["rows"]))
+            else:
+                logger.info("drafter: left out a gap card not in the summary: %r in %r", gap_type, topic)
             continue
         if any(g["topic"] == row["topic"] and g["gap_type"] == row["gap_type"] for g in out):
             continue
@@ -1606,7 +1616,32 @@ def _gaps(raw: Any, fields: dict, ws: AgentWorkspace, focus: Optional[dict] = No
             "needs": clean_text(item.get("needs"), GAP_NEEDS_MAX) or None,
             "links": _gap_links(item.get("links"), ws, topics),
         })
+    if problems:
+        raise ProposalInvalid(problems[:MAX_GAPS])
     return out
+
+
+#: Rows an unmatched gap's correction names at most.
+_NAMED_ROWS = 8
+
+
+def _unmatched_gap(gap_type: Any, topic: Optional[str], by_topic: bool, rows: list[dict]) -> str:
+    """The correction for a gap that matches no summary row: the rows of its gap type it may use (all rows when
+    none has that type), each as its topic and gap type.
+
+    Args:
+        gap_type: The gap type the model sent.
+        topic: The topic the model sent, cleaned; None when it sent none or the agent sorts no topics.
+        by_topic: Whether the summary's rows have topics.
+        rows: The summary's rows.
+    """
+    kind = str(gap_type)[:60]
+    same = [row for row in rows if row["gap_type"] == gap_type] or rows
+    named = ", ".join(f'"{row["topic"]}" ({row["gap_type"]})' if row["topic"] is not None
+                      else f'no topic ({row["gap_type"]})' for row in same[:_NAMED_ROWS])
+    where = f" in {topic!r}" if topic else " with no topic" if by_topic else ""
+    return (f"Gap {kind!r}{where} is not a row of the gap summary. Give each gap a topic and gap_type exactly as "
+            f"one row has them ({named}), or leave that gap out.")
 
 
 def _drafted_ahead(step: str, fields: dict, form: dict) -> bool:
@@ -1716,7 +1751,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     notes = notes[:max(0, MAX_NOTES - len(server_notes))] + server_notes[:MAX_NOTES]
 
     _drop_unchanged(fields, form)
-    gaps = _gaps(args.get("gaps"), fields, ws, req.context.get("gap")) if insights else []
+    gaps = _gaps(args.get("gaps"), fields, ws, req.context.get("gap"), req.can_correct) if insights else []
     reasons = []
     for reason in args.get("reasons") or []:
         if reason.get("field") not in fields or any(r["field"] == reason["field"] for r in reasons):

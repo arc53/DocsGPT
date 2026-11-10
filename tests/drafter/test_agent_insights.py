@@ -23,7 +23,7 @@ from docsgpt.drafter.agent_recipe import (
 )
 from docsgpt.drafter.gaps import NEEDED
 from docsgpt.drafter.read_tools import run_read_tool
-from docsgpt.drafter.recipe import DraftRequest
+from docsgpt.drafter.recipe import DraftRequest, ProposalInvalid
 from docsgpt.drafter.runner import run_draft
 from tests.drafter import insights_seed as seed
 from tests.drafter.fakes import calls, FakeLLM, tool_call
@@ -71,11 +71,13 @@ def _req(context=None, *messages) -> DraftRequest:
     return DraftRequest("alice", "agent", user, ctx, "drafter:t")
 
 
-def _validate(gaps=None, fields=None, ws=None, context=None):
+def _validate(gaps=None, fields=None, ws=None, context=None, can_correct=True):
     args = {"message": "Done.", "fields": fields or {}}
     if gaps is not None:
         args["gaps"] = gaps
-    return validate(args, _req(context), ws or _ws())
+    req = _req(context)
+    req.can_correct = can_correct
+    return validate(args, req, ws or _ws())
 
 
 @pytest.mark.unit
@@ -206,11 +208,29 @@ class TestProposalGaps:
             "previous": None, "example": "Where is shipment MRD-48213?", "fields": ["name"], "needs": None,
             "links": []}]
 
-    def test_a_gap_not_in_the_summary_is_left_out_and_the_rest_kept(self):
+    def test_a_gap_not_in_the_summary_goes_back_once_naming_the_rows(self):
+        # findmore_r2: a topicless card was dropped without the model hearing which rows it could use.
+        with pytest.raises(ProposalInvalid) as raised:
+            _validate(gaps=[{"topic": "Order status", "gap_type": "docs missing"},
+                            {"topic": "Returns & claims", "gap_type": "docs missing"}],
+                      fields={"name": "Meridian Help"})
+        [problem] = raised.value.problems
+        assert "'docs missing' in 'Order status'" in problem and '"Returns & claims" (docs missing)' in problem
+
+    def test_a_topicless_gap_with_several_rows_of_its_type_goes_back_naming_them(self):
+        rows = [*ROWS, {**ROWS[1], "topic": "Billing"}]
+        with pytest.raises(ProposalInvalid) as raised:
+            _validate(gaps=[{"gap_type": "docs missing"}], ws=_ws(gaps={**SUMMARY, "rows": rows}))
+        [problem] = raised.value.problems
+        assert "no topic" in problem
+        assert '"Returns & claims" (docs missing)' in problem and '"Billing" (docs missing)' in problem
+        assert "Order status" not in problem
+
+    def test_with_no_correction_left_a_gap_not_in_the_summary_is_left_out_and_the_rest_kept(self):
         # conv_sso_r1: one unmatched card used to reject the whole proposal.
         proposal = _validate(gaps=[{"topic": "Order status", "gap_type": "docs missing"},
                                    {"topic": "Returns & claims", "gap_type": "docs missing"}],
-                             fields={"name": "Meridian Help"})
+                             fields={"name": "Meridian Help"}, can_correct=False)
         assert [g["topic"] for g in proposal["gaps"]] == ["Returns & claims"]
         assert proposal["fields"] == {"name": "Meridian Help"}
 
@@ -234,7 +254,8 @@ class TestProposalGaps:
         [gap] = _validate(gaps=[{"gap_type": "docs missing"}])["gaps"]
         assert gap["topic"] == "Returns & claims"
         rows = [*ROWS, {**ROWS[1], "topic": "Billing"}]
-        assert _validate(gaps=[{"gap_type": "docs missing"}], ws=_ws(gaps={**SUMMARY, "rows": rows}))["gaps"] == []
+        assert _validate(gaps=[{"gap_type": "docs missing"}], ws=_ws(gaps={**SUMMARY, "rows": rows}),
+                         can_correct=False)["gaps"] == []
 
     def test_links_are_checked_and_named(self):
         links = [{"kind": "source", "id": SOURCE_ID}, {"kind": "source", "id": "not-mine"},
