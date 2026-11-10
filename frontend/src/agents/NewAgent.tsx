@@ -1291,15 +1291,46 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }),
     );
 
-  /** Fill the form from a proposal, marking every field it changed. */
+  // The form as the latest turn was sent with, so a proposal leaves alone a
+  // field the user changed while the turn ran.
+  const sentFormRef = useRef<AgentDraftForm | null>(null);
+  // The fields each proposal left as the user had changed them meanwhile,
+  // with the value it would have set, for "You changed … in the form".
+  const keptRef = useRef(new WeakMap<object, AppliedChange[]>());
+
+  /**
+   * Fill the form from a proposal, marking every field it changed. A field
+   * the user changed while the turn ran keeps their value.
+   */
   const applyDraft = (raw: unknown) => {
     const proposal = proposalOf(raw);
     if (!proposal) return;
-    const changes = planAgentPatch(
-      proposal.fields,
-      draftFormRef.current,
-      draftToolOptions,
+    const form = draftFormRef.current;
+    const sent = sentFormRef.current ?? form;
+    const planned = planAgentPatch(proposal.fields, form, draftToolOptions);
+    const movedSinceSent = (field: AgentDraftField) =>
+      !isEqual(
+        draftValueOf(field, form[field] as never),
+        draftValueOf(field, sent[field] as never),
+      );
+    const changes = planned.filter((change) => !movedSinceSent(change.field));
+    keptRef.current.set(
+      raw as object,
+      planned
+        .filter((change) => movedSinceSent(change.field))
+        .map((change) => ({
+          field: change.field,
+          previous: draftValueOf(change.field, sent[change.field] as never),
+          applied: draftValueOf(change.field, change.next),
+        })),
     );
+    // A later proposal in the same turn takes this one's values as sent.
+    sentFormRef.current = {
+      ...sent,
+      ...Object.fromEntries(
+        changes.map((change) => [change.field, change.next]),
+      ),
+    };
     const changed = changes.map((change) => change.field);
     const applied = changes.map((change) => ({
       field: change.field,
@@ -1373,6 +1404,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ? promptViewIdentity()
           : 'drafter';
       turnsRef.current += 1;
+      sentFormRef.current = draftFormRef.current;
       return {
         ...agentDraftContext(
           agent.id || null,
@@ -1650,15 +1682,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     return undone;
   };
 
-  /** "You changed Name in the form.": fields the proposal set, edited since. */
+  /**
+   * "You changed Name in the form.": fields the proposal set, edited since,
+   * and those it left as the user changed them while the turn ran.
+   */
   const editedSince = (raw: unknown) => {
-    const changes =
-      raw && typeof raw === 'object' ? appliedRef.current.get(raw) : undefined;
-    const edited = (changes ?? []).filter(
-      ({ field, previous, applied }) =>
-        !isEqual(draftValues[field], applied) &&
-        !isEqual(draftValues[field], previous),
-    );
+    const key = raw && typeof raw === 'object' ? raw : null;
+    const changes = key ? appliedRef.current.get(key) : undefined;
+    const kept = key ? keptRef.current.get(key) : undefined;
+    const edited = [
+      ...(changes ?? []).filter(
+        ({ field, previous, applied }) =>
+          !isEqual(draftValues[field], applied) &&
+          !isEqual(draftValues[field], previous),
+      ),
+      ...(kept ?? []).filter(
+        ({ field, applied }) => !isEqual(draftValues[field], applied),
+      ),
+    ];
     return edited.length > 0
       ? t('drafter.agent.formEdited', {
           fields: joinList(

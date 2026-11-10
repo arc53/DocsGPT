@@ -3680,6 +3680,40 @@ describe('NewAgent drafter', () => {
     expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
   });
 
+  it('keeps a field edited in the form while the turn ran, and says so', async () => {
+    let land: (events: unknown[]) => void = () => undefined;
+    drafter.scripts = [
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    ];
+    await render();
+    await ask('Shipping agent');
+    await act(async () => setNativeValue(nameInput(), 'My own name'));
+    await act(async () =>
+      land([
+        proposal(
+          { name: 'Shipping help', description: 'Helps with shipping' },
+          { steps: ['basics'] },
+        ),
+        { type: 'end' },
+      ]),
+    );
+    expect(nameInput().value).toBe('My own name');
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+      )!.value,
+    ).toBe('Helps with shipping');
+    expect(panel()!.textContent).toContain('drafter.agent.formEdited');
+    // The name kept is no drafted field: it has nothing to undo.
+    expect(
+      nameInput()
+        .closest('[data-slot="drafted-field"]')!
+        .hasAttribute('data-drafted'),
+    ).toBe(false);
+  });
+
   it('steps the sheet aside on a phone and keeps the step in a strip', async () => {
     media.isMobile = true;
     media.isDesktop = false;
