@@ -2045,21 +2045,21 @@ Drafts one user may start per minute (0 disables the limit). Counted in Redis; w
 
 ### `DRAFTER_CALL_TIMEOUT_SECONDS`
 
-Type `float`, default `90.0`, must be `>= 0`.
+Type `float`, default `0.0`, must be `>= 0`.
 
-Longest one drafter model call may take, retries included, before the turn ends with a retryable error the panel offers to try again (0: no limit). A Stop ends a waiting call at once either way.
+Longest one drafter model call may take, retries included, before the turn ends with a retryable error the panel offers to try again (0, the default: no limit of its own, so only the turn deadline applies). Off by default because a slow model's single call can take several minutes. A Stop ends a waiting call at once either way.
 
 ### `DRAFTER_TURN_TIMEOUT_SECONDS`
 
-Type `float`, default `240.0`, must be `>= 0`.
+Type `float`, default `300.0`, must be `>= 0`.
 
-Longest one draft turn may take across all its model calls (reading included) before it ends with a retryable error (0: no limit).
+Longest one draft turn may take across all its model calls (reading included) before it ends with a retryable error the panel offers to try again (0: no limit).
 
 ### `DRAFTER_MODEL_RETRIES`
 
 Type `int`, default `1`, must be `>= 0`.
 
-Retries the provider SDK makes for one drafter model call after a failed request (OpenAI-compatible and Anthropic models). Low by default: a retry can wait out a provider's Retry-After, which the call deadline cuts short anyway.
+Retries the provider SDK makes for one drafter model call after a failed request (OpenAI-compatible and Anthropic models). Low by default: a retry can wait out a provider's Retry-After, which the turn deadline cuts short anyway.
 
 
 ## Guardrails

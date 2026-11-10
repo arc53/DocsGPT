@@ -527,6 +527,14 @@ class TestDeadlines:
             fake.release.set()
         assert [e["type"] for e in events] == ["status", "status"]
 
+    def test_by_default_only_a_turn_past_five_minutes_is_ended(self):
+        from docsgpt.core.settings.agents import AgentSettings
+
+        fields = AgentSettings.model_fields
+        assert fields["DRAFTER_CALL_TIMEOUT_SECONDS"].default == 0
+        assert fields["DRAFTER_TURN_TIMEOUT_SECONDS"].default == 300
+        assert fields["DRAFTER_MODEL_RETRIES"].default == 1
+
     def test_no_deadline_at_zero(self, monkeypatch):
         from docsgpt.core.settings import settings
 

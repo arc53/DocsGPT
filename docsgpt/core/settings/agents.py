@@ -193,19 +193,21 @@ class AgentSettings(SettingsGroup):
         ),
     )
     DRAFTER_CALL_TIMEOUT_SECONDS: float = Field(
-        default=90.0,
+        default=0.0,
         ge=0,
         description=(
             "Longest one drafter model call may take, retries included, before the turn ends with a retryable "
-            "error the panel offers to try again (0: no limit). A Stop ends a waiting call at once either way."
+            "error the panel offers to try again (0, the default: no limit of its own, so only the turn deadline "
+            "applies). Off by default because a slow model's single call can take several minutes. A Stop ends "
+            "a waiting call at once either way."
         ),
     )
     DRAFTER_TURN_TIMEOUT_SECONDS: float = Field(
-        default=240.0,
+        default=300.0,
         ge=0,
         description=(
             "Longest one draft turn may take across all its model calls (reading included) before it ends with "
-            "a retryable error (0: no limit)."
+            "a retryable error the panel offers to try again (0: no limit)."
         ),
     )
     DRAFTER_MODEL_RETRIES: int = Field(
@@ -214,6 +216,6 @@ class AgentSettings(SettingsGroup):
         description=(
             "Retries the provider SDK makes for one drafter model call after a failed request (OpenAI-compatible "
             "and Anthropic models). Low by default: a retry can wait out a provider's Retry-After, which "
-            "the call deadline cuts short anyway."
+            "the turn deadline cuts short anyway."
         ),
     )
