@@ -19,10 +19,8 @@ otherwise reports ``invalid_output``.
 
 from __future__ import annotations
 
-import contextvars
 import json
 import logging
-import threading
 import time
 import uuid
 from typing import Any, Callable, Iterator, Optional
@@ -71,8 +69,6 @@ READ_ITEM_CHARS = 300
 #: Older messages are dropped, oldest first, until the rest fit; the kept history starts with a user message.
 #: Each of a turn's model calls resends them, so this bounds a turn's input however long the conversation runs.
 HISTORY_CHARS = 240_000
-#: Seconds between the stop and deadline checks while a model call runs.
-STOP_POLL_SECONDS = 0.25
 
 #: The clock the turn and call deadlines run on.
 _now = time.monotonic
@@ -351,12 +347,17 @@ def _error(code: str, message: str) -> dict:
     return {"type": "error", "code": code, "message": message}
 
 
-class _Stopped(Exception):
-    """The turn was stopped while a model call ran."""
+class _Stopped(BaseException):
+    """The turn was stopped while a model call ran.
+
+    A ``BaseException``, like the answer route's ``StreamStopped``: raised
+    inside the model's stream, an ``Exception`` would count as a provider
+    failure and start the fallback model.
+    """
 
 
-class _TimedOut(Exception):
-    """A model call ran past its deadline, or the turn past its own."""
+class _TimedOut(BaseException):
+    """A model call ran past its deadline, or the turn past its own (a ``BaseException``, as :class:`_Stopped`)."""
 
 
 def _deadline_after(seconds: float) -> Optional[float]:
@@ -364,47 +365,13 @@ def _deadline_after(seconds: float) -> Optional[float]:
     return _now() + seconds if seconds and seconds > 0 else None
 
 
-def _call(fn: Callable[[], Any], should_stop: Callable[[], bool], deadline: Optional[float]) -> Any:
-    """Run one model call on its own thread and wait for it, checking for a stop and the deadline meanwhile.
-
-    A provider call can't be interrupted, so on a stop or a missed deadline
-    the call is left to finish (or time out in its SDK) on its thread, and
-    whatever it returns is dropped.
-
-    Args:
-        fn: The call.
-        should_stop: True ends the wait with :class:`_Stopped`.
-        deadline: The clock reading the call must finish by, or None.
-
-    Returns:
-        What ``fn`` returned.
-
-    Raises:
-        _Stopped: The turn was stopped first.
-        _TimedOut: The deadline passed first.
-        Exception: Whatever ``fn`` raised.
-    """
-    outcome: dict = {}
-    done = threading.Event()
-
-    def target() -> None:
-        try:
-            outcome["value"] = fn()
-        except BaseException as exc:  # noqa: BLE001 - handed to the waiting thread
-            outcome["error"] = exc
-        finally:
-            done.set()
-
-    context = contextvars.copy_context()
-    threading.Thread(target=context.run, args=(target,), name="drafter-model-call", daemon=True).start()
-    while not done.wait(STOP_POLL_SECONDS):
-        if should_stop():
-            raise _Stopped()
-        if deadline is not None and _now() >= deadline:
-            raise _TimedOut()
-    if "error" in outcome:
-        raise outcome["error"]
-    return outcome["value"]
+def _interruption(should_stop: Callable[[], bool], deadline: Optional[float]) -> Optional[BaseException]:
+    """What ends a streaming model call now: :class:`_Stopped`, :class:`_TimedOut`, or None to keep reading."""
+    if should_stop():
+        return _Stopped()
+    if deadline is not None and _now() >= deadline:
+        return _TimedOut()
+    return None
 
 
 class _Turn:
@@ -484,6 +451,12 @@ class _Turn:
             turn_deadline: Optional[float] = None) -> Any:
         """Call the model once and return its parsed answer.
 
+        The call streams, though the turn uses only the whole answer: a
+        silent connection is cut by a proxy in front of the model (a 524
+        from Cloudflare after about two minutes) while the model still
+        writes. A Stop or a missed deadline closes the stream at once, so
+        the model stops writing (and billing) an answer nobody reads.
+
         Args:
             final: The last call of the turn: only the terminal tools are offered.
             should_stop: Asked while the call runs; True abandons it (:class:`_Stopped`).
@@ -493,19 +466,25 @@ class _Turn:
         Returns:
             The handler's ``LLMResponse``.
         """
-        # An empty list, not None: every provider sends no tools for it, and ``gen_cache`` skips any call that
+        # An empty list, not None: every provider sends no tools for it, and ``stream_cache`` skips any call that
         # passes tools, so "Try again" asks the model again instead of replaying a cached failed answer.
         tools: list[dict] = []
         if self.tool_mode:
             tools = _terminal_definitions(self.recipe, self.allow_questions)
             if not final:
                 tools = tool_definitions(self.read_tools) + tools
+        from docsgpt.llm.deadlines import interruptible
+        from docsgpt.llm.handlers.base import collect_stream
+
         deadlines = [d for d in (_deadline_after(settings.DRAFTER_CALL_TIMEOUT_SECONDS), turn_deadline) if d]
+        deadline = min(deadlines) if deadlines else None
         model = getattr(self.llm, "model_id", None) or self.model_id
-        messages = list(self.messages)
-        response = _call(lambda: self.llm.gen(model=model, messages=messages, tools=tools), should_stop,
-                         min(deadlines) if deadlines else None)
-        return _parse_response(self.llm, response)
+        stream = self.llm.gen_stream(model=model, messages=list(self.messages), tools=tools)
+        return collect_stream(
+            interruptible(stream, lambda: _interruption(should_stop, deadline)),
+            lambda chunk: _parse_response(self.llm, chunk),
+            finished=lambda: bool(getattr(self.llm, "_stream_reached_finish", False)),
+        )
 
     def _correct_calls(self, assistant: dict, problems: list[str]) -> None:
         """Answer every call of a rejected terminal answer with the problems, for one corrected try."""

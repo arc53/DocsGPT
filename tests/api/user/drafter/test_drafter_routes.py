@@ -342,9 +342,9 @@ class TestCancel:
         seen = []
 
         class Recording(FakeLLM):
-            def gen(self, *args, **kwargs):
+            def gen_stream(self, *args, **kwargs):
                 seen.extend(_turn_ids(redis))
-                return super().gen(*args, **kwargs)
+                return super().gen_stream(*args, **kwargs)
 
         fake = Recording(calls(tool_call("submit_proposal", PROPOSAL)))
         with _db(pg_conn):
@@ -356,10 +356,10 @@ class TestCancel:
         from docsgpt.drafter.service import cancel_turn
 
         class Cancelling(FakeLLM):
-            def gen(self, *args, **kwargs):
+            def gen_stream(self, *args, **kwargs):
                 [turn_id] = _turn_ids(redis)
                 assert cancel_turn("alice", turn_id) is True
-                return super().gen(*args, **kwargs)
+                return super().gen_stream(*args, **kwargs)
 
         fake = Cancelling(calls(tool_call("get_prompt", {"prompt_id": "default"})),
                           calls(tool_call("submit_proposal", PROPOSAL)))

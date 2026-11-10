@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -471,10 +473,9 @@ class _Blocking(FakeLLM):
 
         self.release = threading.Event()
 
-    def gen(self, *args, **kwargs):
-        answer = super().gen(*args, **kwargs)
+    def chunks(self, answer):
         self.release.wait(5)
-        return answer
+        yield from super().chunks(answer)
 
 
 class _Status(Exception):
@@ -485,12 +486,6 @@ class _Status(Exception):
 
 @pytest.mark.unit
 class TestDeadlines:
-    @pytest.fixture(autouse=True)
-    def _fast_poll(self, monkeypatch):
-        from docsgpt.drafter import runner
-
-        monkeypatch.setattr(runner, "STOP_POLL_SECONDS", 0.01)
-
     def test_a_model_call_past_its_deadline_ends_the_turn_retryably(self, monkeypatch):
         from docsgpt.core.settings import settings
 
@@ -542,6 +537,115 @@ class TestDeadlines:
         monkeypatch.setattr(settings, "DRAFTER_TURN_TIMEOUT_SECONDS", 0)
         events = _run(FakeLLM(calls(tool_call("submit_proposal", PROPOSAL))))
         assert events[-1]["type"] == "proposal"
+
+
+def _delta(call_id=None, name=None, arguments=None, finish_reason=None):
+    """One streamed OpenAI choice carrying a piece of tool call 0."""
+    call = SimpleNamespace(id=call_id, index=0, function=SimpleNamespace(name=name, arguments=arguments))
+    return SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=[call]), finish_reason=finish_reason)
+
+
+class _Endless(FakeLLM):
+    """A model that keeps writing until the drafter stops reading."""
+
+    sent = 0
+
+    def chunks(self, answer):
+        for _ in range(10_000):
+            self.sent += 1
+            time.sleep(0.005)
+            yield "x"
+
+
+def _closed(fake, timeout=2.0):
+    """Whether the fake's stream got closed (on the reader thread) within ``timeout``."""
+    end = time.monotonic() + timeout
+    while not fake.closed and time.monotonic() < end:
+        time.sleep(0.01)
+    return fake.closed == 1
+
+
+@pytest.mark.unit
+class TestStreaming:
+    def test_a_proposal_streamed_in_argument_deltas(self):
+        body = json.dumps(PROPOSAL)
+        fake = FakeLLM([
+            _delta("call_1", "submit_proposal", body[:20]),
+            _delta(arguments=body[20:60]),
+            _delta(arguments=body[60:]),
+            SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=None), finish_reason="tool_calls"),
+        ])
+        events = _run(fake)
+        assert events[-1]["type"] == "proposal"
+        assert events[-1]["proposal"]["fields"]["name"] == PROPOSAL["fields"]["name"]
+
+    def test_streamed_thoughts_ride_on_the_next_request(self):
+        fake = FakeLLM([{"type": "thought", "thought": "Read it "}, {"type": "thought", "thought": "first."},
+                        calls(tool_call("get_prompt", {"prompt_id": "default"}))],
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake)
+        assistant = next(m for m in fake.calls[1]["messages"] if m.get("tool_calls"))
+        assert assistant["reasoning_content"] == "Read it first."
+
+    def test_a_streamed_json_answer_without_tools(self):
+        fake = FakeLLM(text(json.dumps({"type": "proposal", **PROPOSAL})))
+        events = _run(fake, model={**MODEL, "supports_tools": False})
+        assert events[-1]["type"] == "proposal"
+
+    def test_a_stop_closes_the_stream_mid_answer(self):
+        fake = _Endless("unused")
+        events = _run(fake, should_stop=lambda: fake.sent >= 3)
+        assert [e["type"] for e in events] == ["status", "status"]
+        assert _closed(fake) and fake.sent < 100
+
+    @pytest.mark.parametrize("stop", [True, False], ids=["stop", "deadline"])
+    def test_a_stop_or_deadline_never_starts_the_fallback_model(self, monkeypatch, stop):
+        from docsgpt.core.settings import settings
+        from docsgpt.llm.base import BaseLLM
+
+        def passthrough(func):
+            def wrapper(llm, model, messages, stream, tools=None, **kwargs):
+                return func(llm, model, messages, stream, tools, **kwargs)
+            return wrapper
+
+        for name in ("stream_cache", "stream_token_usage"):
+            monkeypatch.setattr(f"docsgpt.llm.base.{name}", passthrough)
+        monkeypatch.setattr(settings, "DRAFTER_CALL_TIMEOUT_SECONDS", 0 if stop else 0.1)
+
+        class Writing(BaseLLM):
+            sent = 0
+            fallback_asked = False
+
+            @property
+            def fallback_llm(self):
+                self.fallback_asked = True
+                return Writing()
+
+            def _raw_gen(self, *args, **kwargs):
+                raise AssertionError("not called")
+
+            def _raw_gen_stream(self, baseself, model, messages, stream, tools=None, **kwargs):
+                for _ in range(10_000):
+                    self.sent += 1
+                    time.sleep(0.005)
+                    yield "x"
+
+        primary = Writing()
+        primary.model_id = "m"
+        req, recipe = _request()
+        events = list(run_draft(req, recipe, Workspace(), MODEL, llm_factory=lambda *a: primary,
+                                should_stop=(lambda: primary.sent >= 3) if stop else None))
+        assert not primary.fallback_asked
+        assert events[-1]["type"] == "status" if stop else events[-1]["code"] == "model_error"
+
+    def test_a_deadline_closes_the_stream_mid_answer(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DRAFTER_CALL_TIMEOUT_SECONDS", 0.1)
+        fake = _Endless("unused")
+        events = _run(fake)
+        assert events[-1]["code"] == "model_error" and "too long" in events[-1]["message"]
+        assert _closed(fake) and fake.sent < 1000
 
 
 @pytest.mark.unit
