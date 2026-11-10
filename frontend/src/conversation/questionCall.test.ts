@@ -109,13 +109,32 @@ describe('readQuestions', () => {
         note: null,
         multi: true,
         options: [
-          { id: '0', label: 'One' },
-          { id: '1', label: 'Two' },
+          { id: '0', label: 'One', input: null, exclusive: false },
+          { id: '1', label: 'Two', input: null, exclusive: false },
         ],
         placeholder: null,
       },
     ]);
     expect(readQuestions(null)).toEqual([]);
+  });
+
+  it('keeps an option that opens a field and one that rules out the rest', () => {
+    const [question] = readQuestions([
+      {
+        text: 'Where do HR cases go?',
+        multi: true,
+        options: [
+          { id: 'a', label: 'HR team email', input: 'hr@…', exclusive: false },
+          { id: 'b', label: 'Their manager', input: '  ', exclusive: false },
+          { id: 'c', label: 'Nowhere', input: null, exclusive: true },
+        ],
+      },
+    ]);
+    expect(question.options).toEqual([
+      { id: 'a', label: 'HR team email', input: 'hr@…', exclusive: false },
+      { id: 'b', label: 'Their manager', input: null, exclusive: false },
+      { id: 'c', label: 'Nowhere', input: null, exclusive: true },
+    ]);
   });
 });
 

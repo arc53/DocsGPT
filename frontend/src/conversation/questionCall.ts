@@ -37,11 +37,19 @@ export function readQuestions(value: unknown): Question[] {
                 ? (option as Record<string, unknown>).label
                 : null;
           if (typeof label !== 'string' || !label.trim()) return [];
-          const id =
+          const fields =
             option && typeof option === 'object'
-              ? (option as Record<string, unknown>).id
-              : null;
-          return [{ id: typeof id === 'string' ? id : String(at), label }];
+              ? (option as Record<string, unknown>)
+              : {};
+          const { id, input } = fields;
+          return [
+            {
+              id: typeof id === 'string' ? id : String(at),
+              label,
+              input: typeof input === 'string' && input.trim() ? input : null,
+              exclusive: fields.exclusive === true,
+            },
+          ];
         })
       : [];
     return [
