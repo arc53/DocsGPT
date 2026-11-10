@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { readPromptProposal } from './promptDraft';
@@ -33,6 +33,11 @@ export type PromptDrafter = {
    * after it go back to the drawer's own mode.
    */
   startReview: (text: string) => void;
+  /**
+   * The latest turn is a review (the checklist): the drawer's status line
+   * says "Reviewing the prompt…" while it runs.
+   */
+  reviewing: boolean;
   review: PromptReview | null;
   drafted: DraftedFields<'name' | 'content'>;
   /** Accept or reject one change (null clears the choice). */
@@ -86,6 +91,8 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   // The running turn is a review: a Retry runs it as one again, and the
   // next message goes back to the drawer's mode.
   const reviewing = useRef(false);
+  // The same, for rendering.
+  const [reviewTurn, setReviewTurn] = useState(false);
 
   const values = useMemo(
     () => ({ name: options.name, content: options.content }),
@@ -161,6 +168,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   const send = useCallback<DrafterSession['send']>(
     (text, sendOptions) => {
       reviewing.current = false;
+      setReviewTurn(false);
       sessionSend(text, sendOptions);
     },
     [sessionSend],
@@ -183,6 +191,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     (text: string) => {
       // Up before the send: the turn reads its context as it starts.
       reviewing.current = true;
+      setReviewTurn(true);
       sessionSend(text);
     },
     [sessionSend],
@@ -195,6 +204,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     starter.current = null;
     skipped.current = false;
     reviewing.current = false;
+    setReviewTurn(false);
     resetSession();
     reviewsRef.current.finish(latest.current.content);
   }, [resetSession]);
@@ -202,6 +212,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     starter.current = null;
     skipped.current = false;
     reviewing.current = false;
+    setReviewTurn(false);
     resetSession();
     reviewsRef.current.clear();
     draftedRef.current.clear();
@@ -212,6 +223,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     start,
     skipQuestions,
     startReview,
+    reviewing: reviewTurn,
     review: reviews.review,
     drafted,
     decide: reviews.decide,

@@ -4565,7 +4565,8 @@
     "steps": {
       "thinking": "考えています…",
       "reading": "ワークスペースを確認しています…",
-      "drafting": "下書きしています…"
+      "drafting": "下書きしています…",
+      "reviewing": "プロンプトを確認しています…"
     },
     "askLabel": "DocsGPT へのメッセージ",
     "askPlaceholder": "変更を依頼…",

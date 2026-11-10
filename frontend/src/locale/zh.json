@@ -4563,7 +4563,8 @@
     "steps": {
       "thinking": "正在思考…",
       "reading": "正在查看你的工作区…",
-      "drafting": "正在起草…"
+      "drafting": "正在起草…",
+      "reviewing": "正在检查提示…"
     },
     "askLabel": "发给 DocsGPT 的消息",
     "askPlaceholder": "提出修改…",

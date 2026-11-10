@@ -58,6 +58,8 @@ const drafter = vi.hoisted(() => ({
   config: null as null | { enabled: boolean },
   scripts: [] as DrafterEvent[][],
   requests: [] as DrafterRequest[],
+  // The turn stays open after its events, as while the model works.
+  hang: false,
 }));
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => drafter.config,
@@ -71,6 +73,7 @@ vi.mock('../drafter/drafterApi', async (importOriginal) => ({
   ) => {
     drafter.requests.push(JSON.parse(JSON.stringify(request)));
     (drafter.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
+    if (drafter.hang) await new Promise(() => undefined);
   },
 }));
 
@@ -198,6 +201,7 @@ describe('Prompts page', () => {
     promptChecks.value = [];
     drafter.scripts = [];
     drafter.requests = [];
+    drafter.hang = false;
     shareModalProps.mockReset();
     confirm.props = null;
     store = makeStore();
@@ -1445,6 +1449,70 @@ describe('Prompts page', () => {
       );
     });
     expect(drafter.requests[1].context).toMatchObject({ mode: 'improve' });
+  });
+
+  it('says it is reviewing the prompt while a review turn runs, drafting otherwise', async () => {
+    drafter.config = { enabled: true };
+    drafter.hang = true;
+    drafter.scripts = [[{ type: 'status', step: 'drafting' }]];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="review"]')!,
+    );
+    expect(panel()!.textContent).toContain('drafter.steps.reviewing');
+    expect(panel()!.textContent).not.toContain('drafter.steps.drafting');
+  });
+
+  it('says it is drafting while an improve turn runs', async () => {
+    drafter.config = { enabled: true };
+    drafter.hang = true;
+    drafter.scripts = [[{ type: 'status', step: 'drafting' }]];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
+    );
+    expect(panel()!.textContent).toContain('drafter.steps.drafting');
+    expect(panel()!.textContent).not.toContain('drafter.steps.reviewing');
+  });
+
+  it('links the ask of a finding worth a look, not only of one to fix', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      proposal({
+        ...REVIEW,
+        edits: [],
+        findings: [
+          {
+            ...REVIEW.findings[0],
+            id: 'f9',
+            severity: 'look',
+            title: 'No company named',
+            ask: { label: 'Name the company', prefill: 'The company is ' },
+          },
+        ],
+      }),
+    ];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="review"]')!,
+    );
+    const row = panel()!.querySelector<HTMLElement>('[data-finding="f9"]')!;
+    expect(row.closest('[data-severity]')!.getAttribute('data-severity')).toBe(
+      'look',
+    );
+    await click(button('Name the company', row)!);
+    expect(panel()!.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe(
+      'The company is ',
+    );
   });
 
   it('opens an agent a finding is about through the leave guard', async () => {

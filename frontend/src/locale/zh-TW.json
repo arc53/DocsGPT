@@ -4565,7 +4565,8 @@
     "steps": {
       "thinking": "正在思考…",
       "reading": "正在查看你的工作區…",
-      "drafting": "正在起草…"
+      "drafting": "正在起草…",
+      "reviewing": "正在檢查提示…"
     },
     "askLabel": "給 DocsGPT 的訊息",
     "askPlaceholder": "提出修改…",

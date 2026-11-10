@@ -4718,7 +4718,8 @@
     "steps": {
       "thinking": "Pensando…",
       "reading": "Revisando tu espacio de trabajo…",
-      "drafting": "Redactando…"
+      "drafting": "Redactando…",
+      "reviewing": "Revisando el prompt…"
     },
     "askLabel": "Mensaje para DocsGPT",
     "askPlaceholder": "Pide un cambio…",

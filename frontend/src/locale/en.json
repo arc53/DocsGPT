@@ -4606,7 +4606,8 @@
     "steps": {
       "thinking": "Thinking…",
       "reading": "Looking at your workspace…",
-      "drafting": "Drafting…"
+      "drafting": "Drafting…",
+      "reviewing": "Reviewing the prompt…"
     },
     "askLabel": "Message to DocsGPT",
     "askPlaceholder": "Ask for a change…",

@@ -251,6 +251,7 @@ export function PromptDraftPanel({
           : t('drafter.prompt.improvePlaceholder')
       }
       renderProposal={renderProposal}
+      statusLabel={drafter.reviewing ? t('drafter.steps.reviewing') : undefined}
       onSkipQuestions={
         mode === 'write'
           ? () => drafter.skipQuestions(t('drafter.prompt.skipMessage'))
