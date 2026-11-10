@@ -193,6 +193,7 @@ jobs:
     permissions:
       contents: write
     outputs:
+      attest: ${{ steps.hashes.outputs.attest }}
       tag: ${{ steps.hashes.outputs.tag }}
       hashes: ${{ steps.hashes.outputs.hashes }}
     steps:
@@ -223,6 +224,10 @@ jobs:
 
       # The provenance covers the assets as GitHub serves them: download them
       # back, check they are the files this run uploaded, and hash those copies.
+      # The generator records the run's commit as the source, so provenance is
+      # only made when that is the tagged commit the assets came from. A manual
+      # run for an older tag dispatched from main re-uploads identical files and
+      # leaves that release's existing provenance in place.
       - name: Hash the published assets
         id: hashes
         env:
@@ -230,6 +235,12 @@ jobs:
           TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
+          checked_out=$(git rev-parse HEAD)
+          if [ "$checked_out" != "$GITHUB_SHA" ]; then
+            echo "::notice::$TAG is at $checked_out, not this run's commit $GITHUB_SHA; skipping provenance."
+            echo "attest=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           dir="$RUNNER_TEMP/published"
           gh release download "$TAG" --dir "$dir" \
             --pattern docker-compose-standalone.yaml \
@@ -238,6 +249,7 @@ jobs:
           sums=$(cd "$dir" && sha256sum docker-compose-standalone.yaml install.sh install.ps1)
           (cd deployment && sha256sum --check --strict <<<"$sums")
           {
+            echo "attest=true"
             echo "tag=$TAG"
             echo "hashes=$(base64 -w0 <<<"$sums")"
           } >> "$GITHUB_OUTPUT"
@@ -247,7 +259,7 @@ jobs:
   # SECURITY.md). The generator must be called by its release tag, not a SHA:
   # it checks its own ref, and slsa-verifier trusts it only at a tag.
   provenance:
-    if: github.repository == 'arc53/DocsGPT'
+    if: github.repository == 'arc53/DocsGPT' && needs.release-assets.outputs.attest == 'true'
     needs: release-assets
     permissions:
       actions: read # the generator reads this workflow run

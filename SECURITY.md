@@ -25,17 +25,24 @@ For the public incident response process, see [`INCIDENT_RESPONSE.md`](./.github
 Releases after 1.1.0 carry SLSA provenance for their assets (`install.sh`, `install.ps1`, `docker-compose-standalone.yaml`) in `docsgpt.intoto.jsonl`, signed with Sigstore by the release workflow. To check an asset, download it with the provenance and run [slsa-verifier](https://github.com/slsa-framework/slsa-verifier):
 
 ```bash
-TAG=1.2.0  # the release to check
+#!/usr/bin/env bash
+# Usage: verify.sh <release tag>, e.g. verify.sh 1.2.0
+set -euo pipefail
+TAG="${1:?usage: verify.sh <release tag>}"
 gh release download "$TAG" --repo arc53/DocsGPT --pattern install.sh --pattern docsgpt.intoto.jsonl
 slsa-verifier verify-artifact install.sh \
   --provenance-path docsgpt.intoto.jsonl \
   --source-uri github.com/arc53/DocsGPT \
   --print-provenance > provenance.json
 # The provenance must name the commit the release tag points at.
-built=$(jq -r '.predicate.invocation.configSource.digest.sha1' provenance.json)
+built=$(jq -er '.predicate.invocation.configSource.digest.sha1' provenance.json)
 tagged=$(gh api "repos/arc53/DocsGPT/commits/$TAG" --jq .sha)
-[ "$built" = "$tagged" ] && echo "install.sh is from $TAG" || echo "install.sh is NOT from $TAG"
+if [ -z "$tagged" ] || [ "$built" != "$tagged" ]; then
+  echo "install.sh was built from $built, but $TAG is $tagged" >&2
+  exit 1
+fi
+echo "install.sh is from $TAG"
 ```
 
-`--source-uri` alone proves the asset was built by this repository's release workflow, not which release it belongs to; the commit check binds it to `$TAG`.
+`--source-uri` alone proves the asset was built by this repository's release workflow, not which release it belongs to; the commit check binds it to the tag.
 
