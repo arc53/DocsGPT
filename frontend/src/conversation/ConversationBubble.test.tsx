@@ -900,8 +900,11 @@ describe('ConversationBubble', () => {
     expect(detail.textContent).toContain(curated);
     expect(detail.innerHTML).not.toContain('font-mono');
     const fix = buttonByText('add-knowledge')!;
-    expect(fix.parentElement!.tagName).toBe('P');
+    // Not a <p>: a busy fix shows a block spinner, which a paragraph can't hold.
+    expect(fix.parentElement!.tagName).toBe('DIV');
+    expect(fix.parentElement!.className).toContain('leading-relaxed');
     expect(fix.parentElement!.textContent).toBe(`${curated} add-knowledge`);
+    expect(detail.querySelector('p')).toBeNull();
   });
 
   it('shows an answer the user stopped as a note, not a failure', async () => {

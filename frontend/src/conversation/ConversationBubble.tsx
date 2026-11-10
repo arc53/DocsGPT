@@ -570,9 +570,11 @@ const ConversationBubble = forwardRef<
                     : t('conversation.failedTitle')}
                 </AlertTitle>
                 <AlertDescription>
-                  <p
+                  {/* A div, not a <p>: the fix's busy spinner is a block
+                      element. leading-relaxed is what a <p> here gets. */}
+                  <div
                     className={cn(
-                      'wrap-break-word whitespace-pre-wrap',
+                      'leading-relaxed wrap-break-word whitespace-pre-wrap',
                       !errorCode && 'font-mono text-xs',
                     )}
                   >
@@ -580,7 +582,7 @@ const ConversationBubble = forwardRef<
                     {/* A fix (Add to Knowledge) is a link at the end of
                         the message, in the Alert's colour. */}
                     {errorAction && <> {errorAction}</>}
-                  </p>
+                  </div>
                 </AlertDescription>
               </Alert>
             </div>

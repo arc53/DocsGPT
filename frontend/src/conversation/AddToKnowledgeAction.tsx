@@ -12,8 +12,8 @@ import {
  * makes a Knowledge source of them and selects it for the chat once ready,
  * so the question can be asked again against the source. It fixes the
  * error, so it is a link in the Alert's text and colour, after the message;
- * the answer's bubble puts it there. Inline content only, since it sits in
- * the message's paragraph.
+ * the answer's bubble puts it there, inline at the end of the message's
+ * text.
  */
 export default function AddToKnowledgeAction({
   files,
