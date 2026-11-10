@@ -459,4 +459,128 @@ describe('MultiSelectPopover', () => {
       ]);
     });
   });
+
+  describe('folder rows', () => {
+    const openCarriers = vi.fn();
+    const folderItems = [
+      {
+        id: 'folder:c',
+        label: 'Carriers',
+        checked: 'indeterminate' as const,
+        onOpen: openCarriers,
+        openLabel: 'Open Carriers',
+      },
+      {
+        id: 'q4',
+        label: 'Rates Q4',
+        checked: true,
+        muted: true,
+        disabled: true,
+      },
+      { id: 'deep', label: 'Deep', pinnedOnly: true },
+    ];
+    const show = (props: Record<string, unknown> = {}) =>
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={folderItems}
+            selectedIds={[]}
+            onToggle={onToggle}
+            {...props}
+          />,
+        );
+      });
+    const onToggle = vi.fn();
+    const rowsNow = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
+      );
+
+    it('draws the tri-state box and a muted included row', () => {
+      show();
+      const [folder, included] = rowsNow();
+      expect(
+        folder.querySelector<HTMLElement>('[data-slot="checkbox"]')?.dataset
+          .state,
+      ).toBe('indeterminate');
+      expect(folder.hasAttribute('data-checked')).toBe(false);
+      const box = included.querySelector<HTMLElement>('[data-slot="checkbox"]');
+      expect(box?.dataset.state).toBe('checked');
+      // Its box is disabled (faded); the row itself stays legible.
+      expect(box?.hasAttribute('disabled')).toBe(true);
+      expect(included.getAttribute('data-muted')).toBe('true');
+      // Checked, not tinted: it is included, not picked on its own.
+      expect(included.hasAttribute('data-checked')).toBe(false);
+      expect(included.getAttribute('data-disabled')).toBe('true');
+    });
+
+    it('opens a folder from its chevron without toggling it', () => {
+      onToggle.mockClear();
+      show();
+      const opener = rowsNow()[0].querySelector<HTMLButtonElement>(
+        '[data-slot="row-opener"]',
+      )!;
+      expect(opener.getAttribute('aria-label')).toBe('Open Carriers');
+      expect(opener.tabIndex).toBe(-1);
+      openCarriers.mockClear();
+      act(() => opener.click());
+      expect(openCarriers).toHaveBeenCalledTimes(1);
+      expect(onToggle).not.toHaveBeenCalled();
+      // The other rows keep the chevron's slot, so the boxes line up.
+      expect(rowsNow()[1].querySelector('[data-slot="row-opener"]')).toBeNull();
+    });
+
+    it('opens the highlighted folder with ArrowRight and backs out with ArrowLeft', () => {
+      const onBack = vi.fn();
+      openCarriers.mockClear();
+      show({ search: '', onSearchChange: () => undefined, onBack });
+      const input = document.querySelector<HTMLInputElement>(
+        '[data-slot="command-input"]',
+      )!;
+      act(() => {
+        input.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+        );
+      });
+      expect(openCarriers).toHaveBeenCalledTimes(1);
+      act(() => {
+        input.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+        );
+      });
+      expect(onBack).toHaveBeenCalledTimes(1);
+    });
+
+    it('lists a pinnedOnly row only when it was picked as the picker opened', () => {
+      show({ selectedFirst: true });
+      expect(rowsNow().map((row) => row.textContent)).toEqual([
+        'Carriers',
+        'Rates Q4',
+      ]);
+      act(() => root.render(<></>));
+      show({ selectedFirst: true, selectedIds: ['deep'] });
+      expect(rowsNow().map((row) => row.textContent)).toEqual([
+        'Deep',
+        'Carriers',
+        'Rates Q4',
+      ]);
+    });
+
+    it('draws a header under the search and keeps the order without cmdk filtering', () => {
+      show({
+        header: <div data-testid="crumb">Knowledge › Carriers</div>,
+        shouldFilter: false,
+        search: 'zzz',
+        onSearchChange: () => undefined,
+      });
+      expect(
+        document.querySelector('[data-slot="multi-select-header"]')
+          ?.textContent,
+      ).toBe('Knowledge › Carriers');
+      // The caller filters: a search cmdk would empty the list with stays put.
+      expect(rowsNow()).toHaveLength(2);
+    });
+  });
 });

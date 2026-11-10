@@ -244,8 +244,10 @@ class ConnectionSetup(Resource):
     @api.doc(
         description=(
             "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, "
-            "sync?: {items, frequency, name?, config?}}. allow_writes points GitHub's tool at its write "
-            "endpoint. config is the synced source's retrieval settings, validated like an upload's. Honours an Idempotency-Key header for the sync."
+            "sync?: {items, frequency, name?, config?, folder_id?}}. allow_writes points GitHub's tool at its "
+            "write endpoint. config is the synced source's retrieval settings, validated like an upload's; "
+            "folder_id files the new source in one of the caller's source folders (404 folder_not_found). "
+            "Honours an Idempotency-Key header for the sync."
         )
     )
     def post(self, connection_id: str):
@@ -307,7 +309,8 @@ class ConnectionSetup(Resource):
             if body.get("sync"):
                 started = _start_sync(user_id, row, body["sync"])
                 if isinstance(started, tuple):
-                    return _error(*started)
+                    message, status, *code = started
+                    return _error(message, status, **({"code": code[0]} if code else {}))
                 sources.append(started)
         except Exception as err:
             current_app.logger.error(f"Error setting up connection: {err}", exc_info=True)
@@ -321,8 +324,9 @@ def _start_sync(user_id: str, row: dict, sync: dict):
     Args:
         user_id: The connection's owner.
         row: The connection row.
-        sync: ``{items, frequency, name?, config?}``. ``config`` is the source's
-            retrieval settings (a ``SourceConfig``), applied as an upload's are.
+        sync: ``{items, frequency, name?, config?, folder_id?}``. ``config`` is the source's
+            retrieval settings (a ``SourceConfig``), applied as an upload's are; ``folder_id`` one of
+            the owner's source folders to file the new source in.
 
     Returns:
         The source summary, or ``(message, status)`` on a bad request.
@@ -349,6 +353,15 @@ def _start_sync(user_id: str, row: dict, sync: dict):
     source_config, config_error = _parse_source_config(sync.get("config"))
     if config_error is not None:
         return ("Invalid source config", 400)
+    folder_id = None
+    if sync.get("folder_id"):
+        from docsgpt.api.user.folders.service import FolderError, ingest_folder
+
+        try:
+            with db_readonly() as conn:
+                folder_id = ingest_folder(conn, user_id, sync.get("folder_id"))
+        except FolderError as err:
+            return (err.message, err.status, err.code)
     if definition.sync_ingestor == "github":
         from docsgpt.parser.remote.github_loader import GitHubLoader
 
@@ -414,6 +427,8 @@ def _start_sync(user_id: str, row: dict, sync: dict):
             return {"id": cached.get("source_id"), "task_id": cached.get("task_id"), "name": name}
     source_id = str(_derive_source_id(scoped_key)) if scoped_key else str(uuid.uuid4())
     options = {"task_id": task_id} if task_id else {}
+    if folder_id:
+        kwargs["folder_id"] = folder_id
     task = task_fn.apply_async(
         kwargs={**kwargs, "idempotency_key": scoped_key, "source_id": source_id}, **options,
     )

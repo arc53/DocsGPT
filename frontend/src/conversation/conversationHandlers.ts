@@ -155,6 +155,33 @@ async function _drainSseBody(
   }
 }
 
+/**
+ * Puts the composer's knowledge on a request: the picked sources as
+ * ``active_docs`` (one id, or a list for several) with the first one's
+ * retriever, and whole folders as ``active_folders``, which the server reads
+ * live (an agent chat ignores them, as it does the sources).
+ *
+ * Args:
+ *   payload: The request, changed in place.
+ *   selectedDocs: The picked sources.
+ *   activeFolders: The picked folder ids.
+ */
+export function applySelectedKnowledge(
+  payload: RetrievalPayload,
+  selectedDocs: Doc[],
+  activeFolders: string[] = [],
+): void {
+  if (selectedDocs.length > 1) {
+    payload.active_docs = selectedDocs.map((doc) => doc.id!);
+    payload.retriever = selectedDocs[0]?.retriever as string;
+  } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
+    // One source goes as a plain id (backward compatibility).
+    payload.active_docs = selectedDocs[0].id as string;
+    payload.retriever = selectedDocs[0].retriever as string;
+  }
+  if (activeFolders.length > 0) payload.active_folders = activeFolders;
+}
+
 export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
@@ -168,6 +195,7 @@ export function handleFetchAnswer(
   save_conversation = true,
   modelId?: string,
   idempotencyKey?: string,
+  activeFolders: string[] = [],
 ): Promise<
   | {
       result: any;
@@ -194,7 +222,7 @@ export function handleFetchAnswer(
     conversation_id: conversationId,
     prompt_id: promptId,
     chunks: chunks,
-    isNoneDoc: selectedDocs.length === 0,
+    isNoneDoc: selectedDocs.length === 0 && activeFolders.length === 0,
     agent_id: agentId,
     save_conversation: save_conversation,
     // The backend persists every conversation hidden unless the request
@@ -212,17 +240,7 @@ export function handleFetchAnswer(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs.length > 0) {
-    if (selectedDocs.length > 1) {
-      // Handle multiple documents
-      payload.active_docs = selectedDocs.map((doc) => doc.id!);
-      payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs[0].id as string;
-      payload.retriever = selectedDocs[0].retriever as string;
-    }
-  }
+  applySelectedKnowledge(payload, selectedDocs, activeFolders);
   const headers: Record<string, string> = {};
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   return conversationService
@@ -264,13 +282,14 @@ export function handleFetchAnswerSteaming(
   save_conversation = true,
   modelId?: string,
   idempotencyKey?: string,
+  activeFolders: string[] = [],
 ): Promise<Answer> {
   const payload: RetrievalPayload = {
     question: question,
     conversation_id: conversationId,
     prompt_id: promptId,
     chunks: chunks,
-    isNoneDoc: selectedDocs.length === 0,
+    isNoneDoc: selectedDocs.length === 0 && activeFolders.length === 0,
     index: indx,
     agent_id: agentId,
     save_conversation: save_conversation,
@@ -289,17 +308,7 @@ export function handleFetchAnswerSteaming(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs.length > 0) {
-    if (selectedDocs.length > 1) {
-      // Handle multiple documents
-      payload.active_docs = selectedDocs.map((doc) => doc.id!);
-      payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs[0].id as string;
-      payload.retriever = selectedDocs[0].retriever as string;
-    }
-  }
+  applySelectedKnowledge(payload, selectedDocs, activeFolders);
 
   const headers: Record<string, string> = {};
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
@@ -824,17 +833,7 @@ export function handleSearch(
     chunks: chunks,
     isNoneDoc: selectedDocs.length === 0,
   };
-  if (selectedDocs.length > 0) {
-    if (selectedDocs.length > 1) {
-      // Handle multiple documents
-      payload.active_docs = selectedDocs.map((doc) => doc.id!);
-      payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs[0].id as string;
-      payload.retriever = selectedDocs[0].retriever as string;
-    }
-  }
+  applySelectedKnowledge(payload, selectedDocs);
   return conversationService
     .search(payload, token)
     .then((response) => response.json())

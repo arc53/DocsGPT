@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api.user.tasks import ingest_remote
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
@@ -144,8 +145,6 @@ class DatabaseSeeder:
             "chunks": agent_config.get("chunks", "0"),
             "retriever": agent_config.get("retriever", ""),
         }
-        if folder_id_val is not None:
-            agent_fields["folder_id"] = folder_id_val
         if workflow_id_val is not None:
             agent_fields["workflow_id"] = workflow_id_val
         if source_id_val is not None:
@@ -157,6 +156,7 @@ class DatabaseSeeder:
             if existing:
                 self.logger.info(f"Updating existing agent: {name}")
                 repo.update(str(existing["id"]), self.system_user_id, agent_fields)
+                self._file_agent(conn, str(existing["id"]), folder_id_val)
                 self.logger.info(f"Successfully updated agent: {name} (ID: {existing['id']})")
             else:
                 self.logger.info(f"Creating new agent: {name}")
@@ -166,9 +166,19 @@ class DatabaseSeeder:
                     status="template",
                     **agent_fields,
                 )
+                self._file_agent(conn, str(created["id"]), folder_id_val)
                 self.logger.info(
                     f"Successfully created agent: {name} (ID: {created.get('id')})"
                 )
+
+    def _file_agent(self, conn, agent_id: str, folder_id: Optional[str]) -> None:
+        """File a template agent into the system user's agent folder ``folder_id``, when it is one."""
+        if folder_id is None:
+            return
+        if FoldersRepository(conn).get(folder_id, self.system_user_id, "agent") is None:
+            self.logger.warning(f"Folder {folder_id} is not a system agent folder; agent {agent_id} left unfiled")
+            return
+        FolderItemsRepository(conn).file(self.system_user_id, "agent", agent_id, folder_id)
 
     @staticmethod
     def _find_system_agent_by_name(repo: AgentsRepository, name: str) -> Optional[dict]:

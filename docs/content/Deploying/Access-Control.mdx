@@ -1,7 +1,7 @@
 ---
 title: Access Control, Roles & Teams
 description: How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -214,6 +214,7 @@ An agent (and its workflow) runs as its owner, so its tools, sources and prompts
 - Sponsoring is never implied. A save that would make you a new sponsor is refused with `409` until you confirm it. In DocsGPT, a dialog names each resource and who will reach it through the agent. Through the API, send the save again with `confirm_sponsor` listing every resource from the response as `"<type>:<id>"`. A `confirm_sponsor` entry for anything the save doesn't ask you to sponsor is refused with `400`.
 - A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. The agent's edit page says why it stopped. An editor who may sponsor it can choose **Run … with my access** there; after they confirm in the same dialog that names who reaches the agent, it runs with their access from their next save. Through the API, include its key in `confirm_sponsor` on any save. Otherwise, someone removes it.
 - A resource that is removed and later added again needs a new confirmation, even if its old sponsor could still sponsor it.
+- A [Knowledge folder](/Sources/adding-knowledge#pick-a-whole-folder) an editor adds needs no confirmation, and only its owner can add it. It runs as its owner's filing, the way a sponsor would: it gives the agent each source in it that the agent's owner can use or the folder's owner owns or edits, and nothing once the folder's owner can no longer edit the agent. `folder_details` from `GET /api/get_agent` marks it `stopped` with `reason: "sponsor_cannot_edit_agent"`.
 - Editors can remove any tool, source or prompt from the agent or its workflow nodes, including the owner's private ones they can't open.
 - Workflow nodes follow the same rules, through `PUT /api/workflows/<id>` or the `workflow_graph` field of `POST /api/create_agent` and `PUT /api/update_agent/<agent_id>`. The owner's own saves are checked too: a node can't name a tool or source its owner can't use.
 - Models aren't sponsored. A workflow node's model is looked up in the owner's account, so a node can name one of the owner's [custom models](/Models/custom-models#where-the-model-appears), and it runs with the owner's key for everyone. A save that sets a node to the editor's own custom model is refused with `400`.

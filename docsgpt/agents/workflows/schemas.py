@@ -73,6 +73,8 @@ class AgentNodeConfig(BaseModel):
     stream_to_user: bool = True
     tools: List[str] = Field(default_factory=list)
     sources: List[str] = Field(default_factory=list)
+    # Source folders read live: their owner's filed sources at run time.
+    folders: List[str] = Field(default_factory=list)
     chunks: str = "6"
     retriever: str = ""
     model_id: Optional[str] = None

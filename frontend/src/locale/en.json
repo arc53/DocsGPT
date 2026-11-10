@@ -698,6 +698,15 @@
       "kindFilterLabel": "Filter by kind",
       "needsAttention": "Needs attention",
       "allKnowledge": "All knowledge",
+      "sections": {
+        "folders": "Folders",
+        "sources": "Sources"
+      },
+      "folders": {
+        "emptyHint": "Add knowledge here, or move sources in from their ⋯ menu.",
+        "searchAll": "Search all knowledge",
+        "noMatchIn": "Nothing in {{name}} matches “{{query}}”."
+      },
       "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this source. Its files and chunks are deleted too. This can't be undone.",
       "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this source. Its files and chunks are deleted too. This can't be undone.",
       "noKnowledgeFound": "No knowledge found"
@@ -2591,7 +2600,10 @@
       "cancel": "Cancel",
       "review": "Review",
       "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "continueToAgent": "Continue to agent",
+      "planWarningsTitle": "Check before you import:",
+      "folderMatched": "{{name}}: using your folder",
+      "folderMissing": "{{name}}: you have no folder with this name"
     },
     "jwt": {
       "title": "Add JWT Token",
@@ -2988,7 +3000,7 @@
       "actions": "Agent actions"
     },
     "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
-    "newAgent": "New Agent",
+    "newAgent": "New agent",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
     "exportAgentFailed": "Failed to export agent",
@@ -3607,25 +3619,7 @@
     },
     "deleteConfirmation": "Delete \"{{name}}\"?",
     "folders": {
-      "newFolder": "New Folder",
-      "createFolder": "Create Folder",
-      "folderName": "Folder name",
-      "rename": "Rename",
-      "delete": "Delete",
-      "deleteConfirm": "Delete \"{{name}}\"?",
-      "empty": "This folder is empty",
-      "moveToFolder": "Move to folder",
-      "moveTo": "Move",
-      "move": "Move",
-      "noFolder": "No folder (root)",
-      "backToRoot": "Back",
-      "currentFolder": "This folder",
-      "noSubfolders": "No subfolders",
-      "openFolder": "Open folder",
-      "noFolders": "No folders yet",
-      "moveTitle": "Move \"{{name}}\" to",
-      "menuAriaLabel": "Actions for {{folderName}}",
-      "deleteConsequence": "The agents inside move out of the folder; they aren't deleted."
+      "emptyHint": "Create an agent here, or move one in from its ⋯ menu."
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -3944,6 +3938,85 @@
       "subtitle": "Message volume, token usage and user feedback for this agent."
     },
     "loadError": "Could not load this agent."
+  },
+  "folders": {
+    "root": {
+      "agent": "My agents",
+      "source": "Knowledge"
+    },
+    "newFolder": "New folder",
+    "create": "Create",
+    "name": "Folder name",
+    "rename": "Rename",
+    "renameTitle": "Rename folder",
+    "moveToFolder": "Move to folder",
+    "move": "Move",
+    "moveTitle": "Move \"{{name}}\"",
+    "searchFolders": "Search folders…",
+    "noFolder": "no folder",
+    "current": "Current",
+    "tooDeep": "Too deep",
+    "openFolder": "Open {{name}}",
+    "noMatches": "No folders match",
+    "noSubfolders": "No folders inside",
+    "delete": "Delete",
+    "deleteFolder": "Delete folder",
+    "deleteConfirm": "Delete \"{{name}}\"?",
+    "deleteMoves_one": "Its {{what}} moves to {{parent}}. Nothing is deleted.",
+    "deleteMoves_other": "Its {{what}} move to {{parent}}. Nothing is deleted.",
+    "deleteEmpty": "The folder is empty. Nothing else is deleted.",
+    "and": "{{first}} and {{second}}",
+    "usedByWarning_one": "{{formatted}} agent uses this folder and will lose its sources: {{names}}.",
+    "usedByWarning_other": "{{formatted}} agents use this folder and will lose its sources: {{names}}.",
+    "usedByWarningNoNames_one": "{{formatted}} agent uses this folder and will lose its sources.",
+    "usedByWarningNoNames_other": "{{formatted}} agents use this folder and will lose its sources.",
+    "menuLabel": "Actions for {{name}}",
+    "depthLimit": "Folders go 3 levels deep",
+    "counts": {
+      "agent_one": "{{formatted}} agent",
+      "agent_other": "{{formatted}} agents",
+      "source_one": "{{formatted}} source",
+      "source_other": "{{formatted}} sources",
+      "folder_one": "{{formatted}} folder",
+      "folder_other": "{{formatted}} folders",
+      "empty": "Empty"
+    },
+    "searchIn": "Search in {{name}}…",
+    "inParent": "In {{name}}",
+    "emptyTitle": "This folder is empty",
+    "errors": {
+      "nameTaken": "A folder with this name already exists.",
+      "tooDeep": "Folders go 3 levels deep.",
+      "cycle": "A folder can't move into itself or a folder inside it.",
+      "invalidName": "Use 1 to 80 characters, without line breaks.",
+      "notFound": "This folder no longer exists.",
+      "cantFile": "You can't file this item.",
+      "saveFailed": "Couldn't save the folder. Try again.",
+      "moveFailed": "Couldn't move it. Try again.",
+      "deleteFailed": "Couldn't delete the folder. Try again.",
+      "loadFailed": "Couldn't load your folders.",
+      "openFailed": "That folder doesn't exist any more."
+    },
+    "picker": {
+      "allOf": "All of {{name}}",
+      "inFolder": "In this folder",
+      "partial": "{{picked}} of {{total}} picked",
+      "live": "{{what}} · new sources included",
+      "includedWith": "Included with {{name}}",
+      "back": "Back",
+      "deletedFolder": "Deleted folder",
+      "deletedLine": "No longer exists. Take it off.",
+      "ownersFolder": "{{person}}'s folder",
+      "stoppedShort": "Stopped",
+      "hintOne_one": "{{name}} is a folder: its {{formatted}} source today, and any added to it later.",
+      "hintOne_other": "{{name}} is a folder: its {{formatted}} sources today, and any added to it later.",
+      "hintMany_one": "{{names}} are folders: their {{formatted}} source today, and any added to them later.",
+      "hintMany_other": "{{names}} are folders: their {{formatted}} sources today, and any added to them later.",
+      "stopped": "{{name}} stopped: it's {{person}}'s folder, and they can no longer edit this agent.",
+      "stoppedOther": "{{name}} stopped: its owner can no longer edit this agent.",
+      "deleted_one": "A picked folder was deleted. Take it off in the list.",
+      "deleted_other": "{{formatted}} picked folders were deleted. Take them off in the list."
+    }
   },
   "components": {
     "fileUpload": {

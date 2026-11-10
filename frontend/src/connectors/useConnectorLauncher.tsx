@@ -66,6 +66,11 @@ type LauncherCallbacks = {
    * navigate otherwise.
    */
   onNavigate?: LeaveTo;
+  /**
+   * The caller's Knowledge folder a sync started here files its sources into
+   * (Add knowledge inside a folder).
+   */
+  folderId?: string | null;
 };
 
 /**
@@ -82,12 +87,14 @@ type LauncherCallbacks = {
  *     ingesting.
  *   onNavigate: How a run leaves for a page; the router's navigate when
  *     left out.
+ *   folderId: The Knowledge folder a sync started here files into.
  */
 export default function useConnectorLauncher({
   onConnected,
   onCancel,
   onSynced,
   onNavigate,
+  folderId = null,
 }: LauncherCallbacks = {}) {
   const dispatch = useDispatch<AppDispatch>();
   const routerNavigate = useNavigate();
@@ -228,6 +235,7 @@ export default function useConnectorLauncher({
           connectionId={active.connectionId}
           mcpToolId={active.mcpToolId}
           purpose={active.purpose}
+          folderId={folderId}
           onSynced={onSynced}
           onNavigate={onNavigate}
           // A wizard that does not say (an older run) connected nothing.

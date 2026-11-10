@@ -124,6 +124,7 @@ export default function ConnectWizard({
   connectionId: initialConnectionId = null,
   mcpToolId,
   purpose,
+  folderId = null,
   onClose,
   onNavigate,
   onFinished,
@@ -135,6 +136,8 @@ export default function ConnectWizard({
   /** Reconnecting an MCP preset: the tool to update rather than add. */
   mcpToolId?: string;
   purpose?: LaunchPurpose;
+  /** The caller's Knowledge folder the synced sources are filed into. */
+  folderId?: string | null;
   onClose: (connected: boolean, toolIds?: string[]) => void;
   onNavigate?: LeaveTo;
   onFinished?: () => void;
@@ -565,6 +568,7 @@ export default function ConnectWizard({
               frequency,
               name: sourceName.trim() || undefined,
               config: optionsToConfig(retrievalOptions),
+              ...(folderId && { folder_id: folderId }),
             },
           }),
         },
@@ -592,6 +596,7 @@ export default function ConnectWizard({
               name: source.name,
               connectionId: activeConnectionId,
               startedAt,
+              ...(folderId && { folderId }),
             })),
           ),
         );

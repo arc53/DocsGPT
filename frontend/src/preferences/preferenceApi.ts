@@ -1,6 +1,11 @@
 import conversationService from '../api/services/conversationService';
 import userService from '../api/services/userService';
-import { Doc, GetDocsResponse, Prompt } from '../models/misc';
+import {
+  Doc,
+  GetDocsResponse,
+  Prompt,
+  type SourceListScope,
+} from '../models/misc';
 import { GetConversationsResult, ConversationSummary } from './types';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
@@ -28,12 +33,20 @@ export async function getDocsWithPagination(
   rowsPerPage = 10,
   searchTerm = '',
   token: string | null,
-  { kind = 'all', usage = 'all' }: { kind?: string; usage?: string } = {},
+  {
+    kind = 'all',
+    usage = 'all',
+    scope,
+  }: { kind?: string; usage?: string; scope?: SourceListScope } = {},
 ): Promise<GetDocsResponse | null> {
   try {
-    // The kind and usage filters are sent only when set.
+    // The kind and usage filters are sent only when set, and the folder
+    // scope only when given.
     const filters = `${kind !== 'all' ? `&kind=${kind}` : ''}${usage !== 'all' ? `&usage=${usage}` : ''}`;
-    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}${filters}`;
+    const folder = scope
+      ? `&folder=${encodeURIComponent(scope.folder)}&direct=${scope.direct}`
+      : '';
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${encodeURIComponent(searchTerm)}${filters}${folder}`;
     const response = await userService.getDocsWithPagination(query, token);
     if (!response.ok)
       throw new Error(`Failed to load sources (${response.status})`);
@@ -51,6 +64,7 @@ export async function getDocsWithPagination(
       nextCursor: data.nextCursor,
       kindCounts: data.kind_counts,
       usageCounts: data.usage_counts,
+      subtreeTotal: data.subtree_total,
     };
   } catch (error) {
     console.log(error);
@@ -209,6 +223,43 @@ export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
   setLocalRecentDocs(validDocs.length > 0 ? validDocs : null);
 
   return validDocs.length > 0 ? validDocs : null;
+}
+
+/** A whole folder picked in the composer: its id, and its name for the pill. */
+export type SelectedFolder = { id: string; name: string };
+
+const RECENT_FOLDERS_KEY = 'DocsGPTRecentFolders';
+
+/**
+ * The composer's picked folders from the last visit, like its picked
+ * sources; anything malformed reads as none.
+ */
+export function getStoredRecentFolders(): SelectedFolder[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(RECENT_FOLDERS_KEY) ?? '[]',
+    );
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is SelectedFolder =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof item.id === 'string' &&
+        typeof item.name === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function setStoredRecentFolders(folders: SelectedFolder[]): void {
+  try {
+    if (folders.length > 0)
+      localStorage.setItem(RECENT_FOLDERS_KEY, JSON.stringify(folders));
+    else localStorage.removeItem(RECENT_FOLDERS_KEY);
+  } catch {
+    // Storage off (a private window): the pick lasts for this visit.
+  }
 }
 
 export function setLocalApiKey(key: string): void {

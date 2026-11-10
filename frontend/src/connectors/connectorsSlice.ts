@@ -18,6 +18,8 @@ export type StartedSync = {
   connectionId: string;
   /** ISO time the sync was started. */
   startedAt: string;
+  /** The Knowledge folder it was added from, which files the new source. */
+  folderId?: string;
 };
 
 export type ConnectorsState = {

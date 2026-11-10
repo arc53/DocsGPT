@@ -9,9 +9,13 @@ An agent uses a resource when running it would reach that resource:
   ``prompt_id``, ``agents.prompt_preset`` names the preset it runs
   (``creative`` or ``strict``), and NULL there too is ``default``.
 - A workflow agent through the agent nodes of its workflow's current graph
-  version (``workflows.current_graph_version``): their ``tools`` and
-  ``sources`` lists. Workflow nodes carry their prompt inline, so a workflow
-  agent never uses a prompt, and its classic columns are ignored.
+  version (``workflows.current_graph_version``): their ``tools``,
+  ``sources`` and ``folders`` lists. Workflow nodes carry their prompt inline,
+  so a workflow agent never uses a prompt, and its classic columns are ignored.
+
+A source folder (kind ``folder``) is used by the classic agents that read it
+live (``agents.knowledge_folder_ids``) and by workflow agent nodes naming it in
+``folders``.
 
 Only agents the caller can open are listed: their own and the ones a team
 shares with them (narrowed further by a token's agent allowlist; a token
@@ -38,7 +42,7 @@ from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 
 logger = logging.getLogger(__name__)
 
-UsageKind = Literal["tool", "prompt", "source"]
+UsageKind = Literal["tool", "prompt", "source", "folder"]
 
 #: The ``used_by`` of a resource no agent uses. Compare against it; never mutate it.
 EMPTY_USAGE: dict = {"agents": [], "others": 0}
@@ -81,6 +85,17 @@ _CLASSIC_SOURCES_SQL = f"""
 # Uses ``agents_source_id_idx`` and the GIN index on ``agents.extra_source_ids`` (migration 0060).
 _CLASSIC_SOURCES_MATCH = "(a.source_id = ANY(CAST({ids} AS uuid[])) OR a.extra_source_ids && CAST({ids} AS uuid[]))"
 
+# A source folder an agent reads live (``agents.knowledge_folder_ids``, migration 0063).
+_CLASSIC_FOLDERS_SQL = f"""
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, f.fid::text AS ref
+    FROM agents a
+    CROSS JOIN LATERAL unnest(a.knowledge_folder_ids) AS f(fid)
+    WHERE {_CLASSIC} AND ({{match}})
+      AND f.fid = ANY(CAST(:ids AS uuid[]))
+"""
+# Uses the GIN index on ``agents.knowledge_folder_ids`` (migration 0063).
+_CLASSIC_FOLDERS_MATCH = "a.knowledge_folder_ids && CAST({ids} AS uuid[])"
+
 _CLASSIC_PROMPTS_SQL = f"""
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status,
            COALESCE(a.prompt_id::text, a.prompt_preset, '{DEFAULT_PROMPT}') AS ref
@@ -99,6 +114,7 @@ _PRESETS_MATCH = (
 # engine reads them; a lone id is one ref (``_node_refs`` in the workflow routes).
 # The match is that function on a constant key, the expression the GIN indexes
 # ``workflow_nodes_tool_refs_gin_idx`` / ``workflow_nodes_source_refs_gin_idx`` hold.
+# ``folders`` has no such index: its match reads the agent nodes of current versions.
 _WORKFLOW_SQL = """
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, r.ref
     FROM workflow_nodes n
@@ -110,7 +126,7 @@ _WORKFLOW_SQL = """
 """
 _WORKFLOW_MATCH = "workflow_node_refs(n.config, '{key}') && CAST({{ids}} AS text[])"
 
-_WORKFLOW_KEY = {"tool": "tools", "source": "sources"}
+_WORKFLOW_KEY = {"tool": "tools", "source": "sources", "folder": "folders"}
 
 # Installs migrated from Mongo (``scripts/db/backfill.py``) may still name a
 # tool in ``agents.tools``, or a tool or source in a workflow node, by its
@@ -314,9 +330,11 @@ def _usage_rows(
         return conn.execute(text(_CLASSIC_PROMPTS_SQL.format(match=where)), params).fetchall()
     if not (full_ids or scoped_ids):
         return []
-    classic_sql, classic_match = (
-        (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH) if kind == "tool" else (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH)
-    )
+    classic_sql, classic_match = {
+        "tool": (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH),
+        "source": (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH),
+        "folder": (_CLASSIC_FOLDERS_SQL, _CLASSIC_FOLDERS_MATCH),
+    }[kind]
     classic_params = text_params if kind == "tool" else params
     rows = list(conn.execute(
         text(classic_sql.format(match=_match(classic_match, classic_params["full"], classic_params["scoped"]))),

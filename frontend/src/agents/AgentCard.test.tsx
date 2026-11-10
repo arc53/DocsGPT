@@ -27,7 +27,9 @@ vi.mock('../navigation/SidebarLevelProvider', () => ({
   useSidebarLevel: () => ({ goToLevel: mocks.goToLevel }),
 }));
 
-vi.mock('../modals/MoveToFolderModal', () => ({ default: () => null }));
+vi.mock('../components/folders/MoveToFolderModal', () => ({
+  default: () => null,
+}));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
 vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
@@ -160,7 +162,7 @@ describe('AgentCard menu', () => {
       'agents.exportAgent',
       'agents.shareWithTeam',
       'agents.card.pin',
-      'agents.folders.moveToFolder',
+      'folders.moveToFolder',
       'agents.form.buttons.delete',
     ]);
   });

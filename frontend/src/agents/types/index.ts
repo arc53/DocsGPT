@@ -1,3 +1,4 @@
+import type { FolderRefDetail } from '../../components/folders/pickedFolders';
 import type { SponsorAudience } from '../sponsorConsent';
 import type { AccessFields } from '../../utils/accessUtils';
 
@@ -138,6 +139,14 @@ export type Agent = {
   // names for resources the caller themselves owns).
   prompt_name?: string | null;
   source_details?: { id: string; name: string | null }[];
+  /** Whole knowledge folders on the agent, read live on every answer. */
+  folders?: string[];
+  /**
+   * Those folders named and counted (GET /api/get_agent): a teammate's
+   * carries `owner_id` and `owner_name`, a stopped one `stopped` and its
+   * `reason`.
+   */
+  folder_details?: FolderRefDetail[];
   // Resources the owner can't use that run as the editor who attached them
   // (GET /api/get_agent, callers who may view the config).
   resource_sponsors?: ResourceSponsor[];
@@ -157,6 +166,7 @@ export type Agent = {
   request_limit?: number;
   models?: string[];
   default_model_id?: string;
+  /** The caller's own folder for the agent (folders are personal). */
   folder_id?: string;
   workflow?: string;
   allow_system_prompt_override?: boolean;
@@ -261,14 +271,6 @@ export type GuardrailCatalog = {
   pii_entities: string[];
   default_pii_entities: string[];
   floor: GuardrailsConfig | null;
-};
-
-export type AgentFolder = {
-  id: string;
-  name: string;
-  parent_id?: string | null;
-  created_at?: string;
-  updated_at?: string;
 };
 
 export * from './schedule';

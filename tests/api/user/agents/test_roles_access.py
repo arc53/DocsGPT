@@ -166,7 +166,8 @@ class TestGetAgent:
         assert _status(resp) == 200
         data = _json(resp)
         assert data["access"] == "viewer"
-        assert data["allowed_actions"] == ["pin", "use"]
+        # A viewer may file it in their own folders, nothing more.
+        assert data["allowed_actions"] == ["move_folder", "pin", "use"]
         assert data.get("key", "") == ""
         assert data["config"] == {}
 
@@ -188,6 +189,37 @@ class TestGetAgents:
         assert rows[shared_id]["access"] == "editor"
         assert "edit" in rows[shared_id]["allowed_actions"]
         assert rows[shared_id]["team_access"] == "editor"
+
+    def test_folder_id_is_the_callers_own_filing(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import GetAgent, GetAgents
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        shared_id = _agent(pg_conn)
+        owners = FoldersRepository(pg_conn).create(OWNER, "Owner's")
+        viewers = FoldersRepository(pg_conn).create(VIEWER, "Viewer's")
+        FolderItemsRepository(pg_conn).file(OWNER, "agent", shared_id, str(owners["id"]))
+        FolderItemsRepository(pg_conn).file(VIEWER, "agent", shared_id, str(viewers["id"]))
+        for user, folder in ((OWNER, owners), (VIEWER, viewers), (EDITOR, None)):
+            rows = {r["id"]: r for r in _json(_call(app, pg_conn, GetAgents, "get", "/api/get_agents", user))}
+            one = _json(_call(app, pg_conn, GetAgent, "get", f"/api/get_agent?id={shared_id}", user))
+            expected = str(folder["id"]) if folder else None
+            assert rows[shared_id]["folder_id"] == one["folder_id"] == expected, user
+
+    def test_create_files_the_new_agent_for_its_creator(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        folder = FoldersRepository(pg_conn).create(OWNER, "F")
+        body = {"name": "Bot", "description": "d", "agent_type": "classic", "status": "draft",
+                "folder_id": str(folder["id"])}
+        resp = _call(app, pg_conn, CreateAgent, "post", "/api/create_agent", OWNER, json=body)
+        assert _status(resp) == 201
+        new_id = _json(resp)["id"]
+        assert FolderItemsRepository(pg_conn).filing(OWNER, "agent", new_id) == str(folder["id"])
+        source_folder = FoldersRepository(pg_conn).create(OWNER, "K", resource_type="source")
+        resp = _call(app, pg_conn, CreateAgent, "post", "/api/create_agent", OWNER,
+                     json={**body, "folder_id": str(source_folder["id"])})
+        assert _status(resp) == 404
 
 
 # ---------------------------------------------------------------------------
@@ -242,22 +274,31 @@ class TestUpdateAgent:
         assert "key" not in _json(resp)
         assert _row(pg_conn, agent_id)["key"]
 
-    def test_editor_cannot_move_folder(self, app, pg_conn):
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
+    def test_editor_files_the_agent_in_their_own_folder(self, app, pg_conn):
+        """folder_id on a save is the caller's own filing; the owner's stays as it is."""
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 
         agent_id = _agent(pg_conn)
-        folder = AgentFoldersRepository(pg_conn).create(OWNER, "F")
-        resp = self._put(app, pg_conn, agent_id, EDITOR, {"folder_id": str(folder["id"])})
-        assert _status(resp) == 403
+        owners = FoldersRepository(pg_conn).create(OWNER, "Owner's")
+        FolderItemsRepository(pg_conn).file(OWNER, "agent", agent_id, str(owners["id"]))
+        mine = FoldersRepository(pg_conn).create(EDITOR, "Mine")
+        stamp = _row(pg_conn, agent_id)["updated_at"]
+        resp = self._put(app, pg_conn, agent_id, EDITOR, {"folder_id": str(mine["id"])})
+        assert _status(resp) == 200, _json(resp)
+        filings = FolderItemsRepository(pg_conn)
+        assert filings.filing(EDITOR, "agent", agent_id) == str(mine["id"])
+        assert filings.filing(OWNER, "agent", agent_id) == str(owners["id"])
+        # Filing alone doesn't edit the agent.
+        assert _row(pg_conn, agent_id)["updated_at"] == stamp
 
-    def test_editor_saving_unchanged_folder_is_fine(self, app, pg_conn):
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
+    def test_editor_cannot_file_into_someone_elses_folder(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.folders import FoldersRepository
 
-        folder = AgentFoldersRepository(pg_conn).create(OWNER, "F")
-        agent_id = _agent(pg_conn, folder_id=str(folder["id"]))
-        resp = self._put(app, pg_conn, agent_id, EDITOR,
-                         {"name": "n", "folder_id": str(folder["id"])})
-        assert _status(resp) == 200
+        agent_id = _agent(pg_conn)
+        folder = FoldersRepository(pg_conn).create(OWNER, "F")
+        resp = self._put(app, pg_conn, agent_id, EDITOR, {"name": "n", "folder_id": str(folder["id"])})
+        assert _status(resp) == 404
+        assert _row(pg_conn, agent_id)["name"] == "Shared"
 
     def test_workflow_validated_against_owner_and_owner_only_to_change(self, app, pg_conn):
         from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
@@ -436,32 +477,35 @@ class TestExportAgent:
 
 
 class TestFolderMoves:
-    def test_move_agent_owner_only(self, app, pg_conn):
+    def test_anyone_who_sees_the_agent_files_it(self, app, pg_conn):
         from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         agent_id = _agent(pg_conn)
         body = {"agent_id": agent_id, "folder_id": None}
-        assert _status(_call(app, pg_conn, MoveAgentToFolder, "post",
-                             "/api/agents/folders/move_agent", EDITOR, json=body)) == 403
+        for user in (VIEWER, EDITOR, OWNER):
+            assert _status(_call(app, pg_conn, MoveAgentToFolder, "post",
+                                 "/api/agents/folders/move_agent", user, json=body)) == 200
         assert _status(_call(app, pg_conn, MoveAgentToFolder, "post",
                              "/api/agents/folders/move_agent", STRANGER, json=body)) == 404
-        assert _status(_call(app, pg_conn, MoveAgentToFolder, "post",
-                             "/api/agents/folders/move_agent", OWNER, json=body)) == 200
 
-    def test_bulk_move_reports_skipped(self, app, pg_conn):
+    def test_bulk_move_files_shared_agents_and_skips_unseen(self, app, pg_conn):
         from docsgpt.api.user.agents.folders import BulkMoveAgents
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 
         shared_id = _agent(pg_conn)
-        own = str(AgentsRepository(pg_conn).create(EDITOR, "Mine", "draft")["id"])
-        folder = AgentFoldersRepository(pg_conn).create(EDITOR, "F")
-        body = {"agent_ids": [own, shared_id], "folder_id": str(folder["id"])}
+        hidden = _agent(pg_conn, share=False, key="other-key-123")
+        own = str(AgentsRepository(pg_conn).create(VIEWER, "Mine", "draft")["id"])
+        folder = FoldersRepository(pg_conn).create(VIEWER, "F")
+        body = {"agent_ids": [own, shared_id, hidden], "folder_id": str(folder["id"])}
         resp = _call(app, pg_conn, BulkMoveAgents, "post", "/api/agents/folders/bulk_move",
-                     EDITOR, json=body)
+                     VIEWER, json=body)
         assert _status(resp) == 200
-        assert _json(resp)["moved"] == [own]
-        assert _json(resp)["skipped"] == [shared_id]
-        assert _row(pg_conn, shared_id)["folder_id"] is None
+        assert _json(resp)["moved"] == [own, shared_id]
+        assert _json(resp)["skipped"] == [hidden]
+        filings = FolderItemsRepository(pg_conn)
+        assert filings.filing(VIEWER, "agent", shared_id) == str(folder["id"])
+        # The owner's view is untouched.
+        assert filings.filing(OWNER, "agent", shared_id) is None
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +522,7 @@ class TestListsCarryAccess:
                              f"/api/pin_agent?id={agent_id}", VIEWER)) == 200
         rows = _json(_call(app, pg_conn, PinnedAgents, "get", "/api/pinned_agents", VIEWER))
         assert rows[0]["access"] == "viewer"
-        assert rows[0]["allowed_actions"] == ["pin", "use"]
+        assert rows[0]["allowed_actions"] == ["move_folder", "pin", "use"]
 
     def test_link_shared_agent_is_viewer(self, app, pg_conn):
         from docsgpt.api.user.agents.sharing import SharedAgent, SharedAgents

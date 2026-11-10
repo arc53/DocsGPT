@@ -726,6 +726,15 @@
       "kindFilterLabel": "Filtrar por tipo",
       "needsAttention": "Requiere atención",
       "allKnowledge": "Todo el conocimiento",
+      "sections": {
+        "folders": "Carpetas",
+        "sources": "Fuentes"
+      },
+      "folders": {
+        "emptyHint": "Añade conocimiento aquí o mueve fuentes desde su menú ⋯.",
+        "searchAll": "Buscar en todo el conocimiento",
+        "noMatchIn": "Nada en {{name}} coincide con «{{query}}»."
+      },
       "deleteUsedBy_one": "La usa {{formatted}} agente, que la perderá. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
       "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
       "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
@@ -2678,7 +2687,10 @@
       "cancel": "Cancelar",
       "review": "Revisar",
       "import": "Importar",
-      "continueToAgent": "Continuar al agente"
+      "continueToAgent": "Continuar al agente",
+      "planWarningsTitle": "Revisa antes de importar:",
+      "folderMatched": "{{name}}: se usa tu carpeta",
+      "folderMissing": "{{name}}: no tienes ninguna carpeta con este nombre"
     },
     "jwt": {
       "title": "Añadir token JWT",
@@ -3085,7 +3097,7 @@
       "actions": "Acciones del agente"
     },
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
-    "newAgent": "Nuevo Agente",
+    "newAgent": "Nuevo agente",
     "importAgent": "Importar",
     "exportAgent": "Exportar como YAML",
     "exportAgentFailed": "No se pudo exportar el agente",
@@ -3714,25 +3726,7 @@
     },
     "deleteConfirmation": "¿Eliminar \"{{name}}\"?",
     "folders": {
-      "newFolder": "Nueva carpeta",
-      "createFolder": "Crear carpeta",
-      "folderName": "Nombre de la carpeta",
-      "rename": "Renombrar",
-      "delete": "Eliminar",
-      "deleteConfirm": "¿Eliminar \"{{name}}\"?",
-      "empty": "Esta carpeta está vacía",
-      "moveToFolder": "Mover a carpeta",
-      "moveTo": "Mover",
-      "move": "Mover",
-      "noFolder": "Sin carpeta (raíz)",
-      "backToRoot": "Volver",
-      "currentFolder": "Esta carpeta",
-      "noSubfolders": "Sin subcarpetas",
-      "openFolder": "Abrir carpeta",
-      "noFolders": "No hay carpetas todavía",
-      "moveTitle": "Mover «{{name}}» a",
-      "menuAriaLabel": "Acciones para {{folderName}}",
-      "deleteConsequence": "Los agentes que contiene salen de la carpeta; no se eliminan."
+      "emptyHint": "Crea un agente aquí o mueve uno desde su menú ⋯."
     },
     "guardrailEvents": {
       "heading": "Actividad de las barreras de protección",
@@ -4057,6 +4051,94 @@
       "subtitle": "Volumen de mensajes, uso de tokens y comentarios de usuarios de este agente."
     },
     "loadError": "No se pudo cargar este agente."
+  },
+  "folders": {
+    "root": {
+      "agent": "Mis agentes",
+      "source": "Conocimiento"
+    },
+    "newFolder": "Nueva carpeta",
+    "create": "Crear",
+    "name": "Nombre de la carpeta",
+    "rename": "Renombrar",
+    "renameTitle": "Renombrar carpeta",
+    "moveToFolder": "Mover a carpeta",
+    "move": "Mover",
+    "moveTitle": "Mover \"{{name}}\"",
+    "searchFolders": "Buscar carpetas…",
+    "noFolder": "sin carpeta",
+    "current": "Actual",
+    "tooDeep": "Demasiado profunda",
+    "openFolder": "Abrir {{name}}",
+    "noMatches": "Ninguna carpeta coincide",
+    "noSubfolders": "No hay carpetas dentro",
+    "delete": "Eliminar",
+    "deleteFolder": "Eliminar carpeta",
+    "deleteConfirm": "¿Eliminar \"{{name}}\"?",
+    "deleteMoves_one": "Su contenido ({{what}}) pasa a {{parent}}. No se elimina nada.",
+    "deleteMoves_many": "Su contenido ({{what}}) pasa a {{parent}}. No se elimina nada.",
+    "deleteMoves_other": "Su contenido ({{what}}) pasa a {{parent}}. No se elimina nada.",
+    "deleteEmpty": "La carpeta está vacía. No se elimina nada más.",
+    "and": "{{first}} y {{second}}",
+    "usedByWarning_one": "{{formatted}} agente usa esta carpeta y perderá sus fuentes: {{names}}.",
+    "usedByWarning_many": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes: {{names}}.",
+    "usedByWarning_other": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes: {{names}}.",
+    "usedByWarningNoNames_one": "{{formatted}} agente usa esta carpeta y perderá sus fuentes.",
+    "usedByWarningNoNames_many": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes.",
+    "usedByWarningNoNames_other": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes.",
+    "menuLabel": "Acciones para {{name}}",
+    "depthLimit": "Las carpetas admiten hasta 3 niveles",
+    "counts": {
+      "agent_one": "{{formatted}} agente",
+      "agent_many": "{{formatted}} agentes",
+      "agent_other": "{{formatted}} agentes",
+      "source_one": "{{formatted}} fuente",
+      "source_many": "{{formatted}} fuentes",
+      "source_other": "{{formatted}} fuentes",
+      "folder_one": "{{formatted}} carpeta",
+      "folder_many": "{{formatted}} carpetas",
+      "folder_other": "{{formatted}} carpetas",
+      "empty": "Vacía"
+    },
+    "searchIn": "Buscar en {{name}}…",
+    "inParent": "En {{name}}",
+    "emptyTitle": "Esta carpeta está vacía",
+    "errors": {
+      "nameTaken": "Ya existe una carpeta con este nombre.",
+      "tooDeep": "Las carpetas admiten hasta 3 niveles.",
+      "cycle": "Una carpeta no puede moverse dentro de sí misma ni de una de sus subcarpetas.",
+      "invalidName": "Usa entre 1 y 80 caracteres, sin saltos de línea.",
+      "notFound": "Esta carpeta ya no existe.",
+      "cantFile": "No puedes archivar este elemento.",
+      "saveFailed": "No se pudo guardar la carpeta. Inténtalo de nuevo.",
+      "moveFailed": "No se pudo mover. Inténtalo de nuevo.",
+      "deleteFailed": "No se pudo eliminar la carpeta. Inténtalo de nuevo.",
+      "loadFailed": "No se pudieron cargar tus carpetas.",
+      "openFailed": "Esa carpeta ya no existe."
+    },
+    "picker": {
+      "allOf": "Todo {{name}}",
+      "inFolder": "En esta carpeta",
+      "partial": "{{picked}} de {{total}} elegidas",
+      "live": "{{what}} · incluye fuentes nuevas",
+      "includedWith": "Incluida con {{name}}",
+      "back": "Atrás",
+      "deletedFolder": "Carpeta eliminada",
+      "deletedLine": "Ya no existe. Quítala.",
+      "ownersFolder": "Carpeta de {{person}}",
+      "stoppedShort": "Detenida",
+      "hintOne_one": "{{name}} es una carpeta: hoy {{formatted}} fuente, y las que se añadan después.",
+      "hintOne_many": "{{name}} es una carpeta: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintOne_other": "{{name}} es una carpeta: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintMany_one": "{{names}} son carpetas: hoy {{formatted}} fuente, y las que se añadan después.",
+      "hintMany_many": "{{names}} son carpetas: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintMany_other": "{{names}} son carpetas: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "stopped": "{{name}} se detuvo: es la carpeta de {{person}}, que ya no puede editar este agente.",
+      "stoppedOther": "{{name}} se detuvo: su propietario ya no puede editar este agente.",
+      "deleted_one": "Se eliminó una carpeta seleccionada. Quítala de la lista.",
+      "deleted_many": "Se eliminaron {{formatted}} carpetas seleccionadas. Quítalas de la lista.",
+      "deleted_other": "Se eliminaron {{formatted}} carpetas seleccionadas. Quítalas de la lista."
+    }
   },
   "components": {
     "fileUpload": {

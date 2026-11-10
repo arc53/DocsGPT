@@ -261,6 +261,13 @@ def search(
             source_ids = _authorized_source_ids(
                 conn, agent, _collect_source_ids(agent)
             )
+            # Its knowledge folders read as their owner's filing.
+            from docsgpt.api.user.folder_knowledge import folder_source_ids
+
+            seen = {str(sid).lower() for sid in source_ids}
+            source_ids += [
+                sid for sid in folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent) if sid not in seen
+            ]
     except InvalidAPIKey:
         raise
     except Exception as e:

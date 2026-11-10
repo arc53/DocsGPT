@@ -109,7 +109,9 @@ def _chat_check(request, resource_filter: dict, user_id: Optional[str]) -> Optio
 
     Chat executes tools: an agent's own, or the user's defaults when there is
     no agent. Neither can be held to a tools allowlist from here, so a token
-    restricted on tools cannot chat at all.
+    restricted on tools cannot chat at all. Knowledge folders
+    (``active_folders``) read sources no allowlist names, so a token
+    restricted on sources cannot name any.
     """
     body = _json_body(request)
     if "tools" in resource_filter:
@@ -128,6 +130,9 @@ def _chat_check(request, resource_filter: dict, user_id: Optional[str]) -> Optio
         return "Restrict this token to specific agents to use chat endpoints"
     elif agent_ids:
         return "This token is restricted to specific sources and cannot run agents"
+    if "sources" in resource_filter and _as_ids(body.get("active_folders")):
+        # A folder reads every source filed in it, which no allowlist names.
+        return "A token restricted to specific sources cannot chat with knowledge folders"
     conversation_id = body.get("conversation_id")
     if conversation_id:
         found, conversation_agent = _conversation_agent_id(conversation_id, user_id)
@@ -143,13 +148,17 @@ def _agent_body_check(request, resource_filter: dict, user_id: Optional[str]) ->
     A token restricted on any of those may attach a workflow to an agent only
     when it is also restricted on workflows, so the workflow is one its owner
     chose (``refs`` then verifies the id). An inline ``workflow_graph`` is
-    refused to a token restricted on any of them or on workflows.
+    refused to a token restricted on any of them or on workflows. Knowledge
+    folders (``folders``) read sources no allowlist names, so a token
+    restricted on sources may only clear them.
     """
     graph = _json_body(request).get("workflow_graph") if request.is_json else request.form.get("workflow_graph")
     if graph not in (None, "") and set(resource_filter) & {*_WORKFLOW_CONTENT_FAMILIES, "workflows"}:
         # An inline graph can name any source, tool or prompt and creates or rewrites a workflow
         # no allowlist can prove; like POST /api/workflows, closed to tokens restricted on those.
         return "A token restricted to specific sources, tools, prompts or workflows cannot save a workflow graph"
+    if "sources" in resource_filter and _read(request, (BODY, "folders")):
+        return "A token restricted to specific sources cannot attach knowledge folders"
     if "workflows" in resource_filter or not set(resource_filter) & {"sources", "tools", "prompts"}:
         return None
     if _read(request, (BODY, "workflow")):
@@ -176,6 +185,57 @@ def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -
         return "Token is not allowed to access this resource (prompts)"
     return None
 
+
+#: The token family of each folder type (``/api/folders``).
+_FOLDER_FAMILY = {"agent": "agents", "source": "sources"}
+
+
+def _folder_family(request, user_id: Optional[str]) -> Optional[str]:
+    """The family of the folder type a ``/api/folders`` request touches, or None when it can't tell.
+
+    The type travels as ``type`` (query or JSON); a request naming only a
+    folder id takes the folder's own type.
+    """
+    raw = request.args.get("type") or _json_body(request).get("type")
+    if raw:
+        return _FOLDER_FAMILY.get(str(raw).strip().lower())
+    folder_id = (request.view_args or {}).get("folder_id")
+    if not folder_id or not user_id:
+        return None
+    from docsgpt.storage.db.repositories.folders import FoldersRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    try:
+        with db_readonly() as conn:
+            folder = FoldersRepository(conn).get(str(folder_id), user_id)
+    except Exception:
+        return None
+    return _FOLDER_FAMILY.get(folder.get("resource_type")) if folder else None
+
+
+def _folder_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
+    """Hold a restricted token to the agent-folder rules for both folder types.
+
+    Folders are not on any allowlist, so a token restricted on the type's
+    family may list folders and file items on its allowlist (``ids``), but not
+    create, rename, move or delete a folder. The route checks the type's
+    read/write scope.
+    """
+    family = _folder_family(request, user_id)
+    if family is None or family not in resource_filter or request.method == "GET":
+        return None
+    if (request.url_rule.rule if request.url_rule else "").endswith("/folders/items"):
+        ids = _as_ids(_json_body(request).get("ids"))
+        if not ids:
+            return f"This token is restricted to specific {family} and cannot use this endpoint"
+        if not _all_allowed(ids, resource_filter[family]):
+            return f"Token is not allowed to access this resource ({family})"
+        return None
+    return f"This token is restricted to specific {family} and cannot use this endpoint"
+
+
+_FOLDER_READ = _rule(any_of=("agents:read", "sources:read"), check=_folder_check)
+_FOLDER_WRITE = _rule(any_of=("agents:write", "sources:write"), check=_folder_check)
 
 _CHAT = dict(
     family=None,
@@ -214,6 +274,13 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/analytics/topics", "GET"): _rule(
         "analytics:read", (QUERY, "agent_id"), family="agents", blocked_by=_NON_AGENT_FAMILIES
     ),
+    # Folders of both types; the route also checks the type's own scope (agents:* or sources:*).
+    ("/api/folders", "GET"): _FOLDER_READ,
+    ("/api/folders", "POST"): _FOLDER_WRITE,
+    ("/api/folders/<string:folder_id>", "PUT"): _FOLDER_WRITE,
+    ("/api/folders/<string:folder_id>", "DELETE"): _FOLDER_WRITE,
+    ("/api/folders/items", "POST"): _FOLDER_WRITE,
+    # Agent folders: aliases of /api/folders with type=agent.
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
     ("/api/create_agent", "POST"): _rule("agents:write", refs=_AGENT_BODY_REFS, check=_agent_body_check),

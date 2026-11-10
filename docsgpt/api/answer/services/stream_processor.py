@@ -231,13 +231,15 @@ def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Option
 
 
 def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], List[dict]]:
-    """The source rows an agent run retrieves from: primary first, then extras.
+    """The source rows an agent run retrieves from: primary first, then extras, then its folders'.
 
     Each is authorized by ``resource_access.authorized_holder_sources`` (the
     owner, else the editor who attached it while they still qualify), the
     check workflow nodes use too, and a source listed twice appears once.
-    Rows are read unscoped once authorized: an owner-scoped read misses a
-    team-shared source.
+    The agent's knowledge folders (``knowledge_folder_ids``) add the sources
+    their owner filed in them and may use (``folder_knowledge``). Rows are
+    read unscoped once authorized: an owner-scoped read misses a team-shared
+    source.
 
     Args:
         conn: An open database connection.
@@ -247,6 +249,7 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
         The primary source row (None when unset or not usable) and every
         usable row in run order.
     """
+    from docsgpt.api.user.folder_knowledge import folder_source_ids
     from docsgpt.api.user.resource_access import authorized_holder_sources
 
     primary_id = agent.get("source_id")
@@ -255,7 +258,9 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
     primary: Optional[dict] = None
     rows: List[dict] = []
     seen: set = set()
-    for sid in authorized_holder_sources(conn, "agent", agent, refs):
+    authorized = authorized_holder_sources(conn, "agent", agent, refs)
+    authorized += folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
+    for sid in authorized:
         source_doc = sources_repo.get_by_id(str(sid))
         if not source_doc or str(source_doc["id"]) in seen:
             continue
@@ -1475,27 +1480,57 @@ class StreamProcessor:
                 self.source = {}
                 self.all_sources = []
             return
-        if "active_docs" in self.data:
-            active_docs = self.data["active_docs"]
-            if active_docs and active_docs != "default":
-                # The retriever queries ``self.source["active_docs"]``, so it
-                # must carry only the ids the caller may actually read — the
-                # authorized set that _load_request_sources resolved, not the
-                # raw client input.
-                self.all_sources = self._load_request_sources(active_docs)
-                allowed = [entry["id"] for entry in self.all_sources]
-                if not allowed:
-                    self.source = {}
-                elif isinstance(active_docs, list):
-                    self.source = {"active_docs": allowed}
-                else:
-                    self.source = {"active_docs": allowed[0]}
-            else:
-                self.source = {}
-                self.all_sources = []
-            return
-        self.source = {}
-        self.all_sources = []
+        active_docs = self.data.get("active_docs")
+        has_docs = bool(active_docs) and active_docs != "default"
+        # The retriever queries ``self.source["active_docs"]``, so it must
+        # carry only the ids the caller may actually read — the authorized set
+        # that _load_request_sources resolved, not the raw client input.
+        entries = self._load_request_sources(active_docs) if has_docs else []
+        folder_entries = self._load_request_folder_sources(self.data.get("active_folders"))
+        seen = {str(entry["id"]).lower() for entry in entries}
+        entries += [entry for entry in folder_entries if str(entry["id"]).lower() not in seen]
+        self.all_sources = entries
+        allowed = [entry["id"] for entry in entries]
+        if not allowed:
+            self.source = {}
+        elif isinstance(active_docs, list) or folder_entries:
+            self.source = {"active_docs": allowed}
+        else:
+            self.source = {"active_docs": allowed[0]}
+
+    def _load_request_folder_sources(self, active_folders) -> list:
+        """Per-source entries of an agentless request's ``active_folders``.
+
+        Each folder must be one of the caller's own source folders; it adds
+        the sources the caller filed anywhere in it that they may still use
+        (``folder_knowledge``). Anything else adds nothing: a malformed value,
+        someone else's folder, a failed read (fail closed).
+
+        Args:
+            active_folders: The request's ``active_folders`` (a list of folder ids).
+
+        Returns:
+            list: ``{"id", "retrieval"}`` entries, each source once.
+        """
+        from docsgpt.api.user.folder_knowledge import caller_folder_source_ids
+
+        owner = self.initial_user_id
+        if not owner or not active_folders:
+            return []
+        folders = active_folders if isinstance(active_folders, list) else [active_folders]
+        try:
+            with db_readonly() as conn:
+                source_ids = caller_folder_source_ids(conn, folders, owner)
+                rows = SourcesRepository(conn).list_by_ids(source_ids) if source_ids else []
+        except Exception:
+            logger.warning("Could not read the request's knowledge folders; dropping them.", exc_info=True)
+            return []
+        configs = {str(row["id"]).lower(): row.get("config") for row in rows}
+        return [
+            {"id": sid, "retrieval": SourceConfig.parse(configs.get(sid)).retrieval}
+            for sid in source_ids
+            if sid in configs
+        ]
 
     def _load_request_sources(self, active_docs) -> list:
         """Per-source list (with each source's retrieval config) for a non-agent

@@ -119,7 +119,7 @@ class TestListPayload:
         assert e["allowed_actions"] == sorted(e["allowed_actions"])
         assert e["team_access"] == "editor"
         assert v["access"] == "viewer"
-        assert v["allowed_actions"] == ["use", "view_config"]
+        assert v["allowed_actions"] == ["move_folder", "use", "view_config"]
         # viewers_can_see_config defaults on.
         assert "config" in v
 
@@ -137,7 +137,7 @@ class TestListPayload:
         vp = next(r for r in vpage.json["paginated"] if r["id"] == sid)
         # Only the behaviour selector survives: the UI needs it to pick the view.
         assert v["config"] == {"kind": "classic"}
-        assert v["allowed_actions"] == ["use"]
+        assert v["allowed_actions"] == ["move_folder", "use"]
         assert vp["config"] == {"kind": "classic"}
         assert "retrieval" in e["config"]
 

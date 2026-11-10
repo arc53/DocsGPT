@@ -112,6 +112,10 @@ export type Doc = {
   allowed_actions?: string[];
   // The agents that use it (both lists; absent from an older backend).
   used_by?: ResourceUsage;
+  // The caller's own filing: the source folder it is in (null: none) and that
+  // folder's trail, top-level folder first (sources API).
+  folder_id?: string | null;
+  folder_path?: { id: string; name: string }[];
 };
 
 /**
@@ -132,7 +136,16 @@ export type GetDocsResponse = {
   kindCounts?: Record<SourceKindFilter, number>;
   /** Sources per usage, the search and kind filters applied (paginated list). */
   usageCounts?: Record<UsageFilter, number>;
+  /** With a `folder`: the sources in its whole subtree (the counts' scope). */
+  subtreeTotal?: number;
 };
+
+/**
+ * Where the paginated listing looks: a folder's sources (`root`: the ones in
+ * no folder) with `direct`, or its whole subtree without it. Left out, every
+ * source the caller can see.
+ */
+export type SourceListScope = { folder: string; direct: boolean };
 
 /** The Knowledge page's usage filter, as `/api/sources/paginated` takes it. */
 export type UsageFilter = 'all' | 'in_use' | 'unused';

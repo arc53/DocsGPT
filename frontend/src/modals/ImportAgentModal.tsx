@@ -1,5 +1,5 @@
 import { TriangleAlert, CircleCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { type FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -19,8 +19,13 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { agentEditPath } from '../agents/paths';
+import { formatFolderPath, folderPath } from '../components/folders/folderTree';
+import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
 import { ActiveState } from '../models/misc';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
+
+/** A plan entry for a whole knowledge folder rather than one source. */
+const isFolderEntry = (source: { type: string }) => source.type === 'folder';
 
 const YAML_ACCEPT = {
   'application/x-yaml': ['.yaml', '.yml'],
@@ -29,6 +34,7 @@ const YAML_ACCEPT = {
 
 type PlanSource = {
   name: string;
+  /** `folder` for a whole knowledge folder, matched to the importer's own. */
   type: string;
   status: 'matched' | 'missing';
   target_id: string | null;
@@ -61,6 +67,8 @@ type ImportPlan = {
   tools: PlanTool[];
   prompt: { status: string; name?: string };
   models: PlanModel[];
+  /** What the import will leave off (a folder the importer doesn't have). */
+  warnings?: string[];
   workflow?: {
     nodes: number;
     edges: number;
@@ -90,6 +98,19 @@ export default function ImportAgentModal({
   const [plan, setPlan] = useState<ImportPlan | null>(null);
 
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
+  // A missing folder mapped by hand to one of the importer's own.
+  const [folderMap, setFolderMap] = useState<Record<string, string>>({});
+  const { tree: folderTree } = useSourceFolderTree();
+  const folderOptions = useMemo(
+    () =>
+      [...folderTree.byId.values()]
+        .map((folder) => ({
+          id: folder.id,
+          label: formatFolderPath(folderPath(folderTree, folder.id)),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [folderTree],
+  );
   const [toolSecrets, setToolSecrets] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -106,6 +127,7 @@ export default function ImportAgentModal({
     setError(null);
     setPlan(null);
     setSourceMap({});
+    setFolderMap({});
     setToolSecrets({});
     setModelKeys({});
     setWarnings(null);
@@ -171,12 +193,16 @@ export default function ImportAgentModal({
 
     const resolution: {
       sources: Record<string, string>;
+      folders: Record<string, string>;
       tools: Record<string, { secrets: Record<string, string> }>;
       models: Record<string, { api_key: string }>;
-    } = { sources: {}, tools: {}, models: {} };
+    } = { sources: {}, folders: {}, tools: {}, models: {} };
 
     plan.sources.forEach((s) => {
-      if (s.status === 'missing' && sourceMap[s.name]) {
+      if (s.status !== 'missing') return;
+      if (isFolderEntry(s)) {
+        if (folderMap[s.name]) resolution.folders[s.name] = folderMap[s.name];
+      } else if (sourceMap[s.name]) {
         resolution.sources[s.name] = sourceMap[s.name];
       }
     });
@@ -353,10 +379,81 @@ export default function ImportAgentModal({
                 </p>
               ))}
 
+            {plan.warnings && plan.warnings.length > 0 && (
+              <Alert variant="warning" role="status">
+                <AlertTitle>
+                  {t('modals.importAgent.planWarningsTitle')}
+                </AlertTitle>
+                <AlertDescription>
+                  <ul className="list-disc space-y-1 pl-5">
+                    {plan.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {plan.sources.length > 0 && (
               <Section title={t('modals.importAgent.sources')}>
                 {plan.sources.map((s) =>
-                  s.status === 'matched' ? (
+                  isFolderEntry(s) ? (
+                    s.status === 'matched' ? (
+                      <p
+                        key={`folder:${s.name}`}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <CircleCheck
+                          className="text-success size-4"
+                          aria-hidden="true"
+                        />
+                        {t('modals.importAgent.folderMatched', {
+                          name: s.name,
+                        })}
+                      </p>
+                    ) : (
+                      <div
+                        key={`folder:${s.name}`}
+                        className="flex flex-col gap-1"
+                      >
+                        <p className="flex items-center gap-2 text-sm">
+                          <TriangleAlert
+                            className="text-warning size-4"
+                            aria-hidden="true"
+                          />
+                          {t('modals.importAgent.folderMissing', {
+                            name: s.name,
+                          })}
+                        </p>
+                        {folderOptions.length > 0 && (
+                          <Select
+                            value={folderMap[s.name] || ''}
+                            onValueChange={(value) =>
+                              setFolderMap((prev) => ({
+                                ...prev,
+                                [s.name]: value,
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue
+                                placeholder={t(
+                                  'modals.importAgent.leaveUnattached',
+                                )}
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {folderOptions.map((folder) => (
+                                <SelectItem key={folder.id} value={folder.id}>
+                                  {folder.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    )
+                  ) : s.status === 'matched' ? (
                     <p key={s.name} className="flex items-center gap-2 text-sm">
                       <CircleCheck
                         className="text-success size-4"

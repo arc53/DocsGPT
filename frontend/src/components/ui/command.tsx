@@ -180,7 +180,8 @@ function CommandSeparator({
 }
 
 /**
- * A row in a Command list. `checked` marks the item that is currently chosen
+ * A row in a Command list. `muted` keeps a disabled row legible (see its
+ * prop). `checked` marks the item that is currently chosen
  * (the active prompt in a picker) with a brand tint, apart from the
  * `data-selected` highlight cmdk moves with the pointer and arrow keys. A
  * checked row that is also highlighted keeps its tint and gains a 1px
@@ -189,16 +190,23 @@ function CommandSeparator({
 function CommandItem({
   className,
   checked,
+  muted,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Item> & {
   checked?: boolean;
+  /**
+   * A disabled row that still reads (a source a picked folder includes): no
+   * fade, the text muted instead.
+   */
+  muted?: boolean;
 }) {
   return (
     <CommandPrimitive.Item
       data-slot="command-item"
       data-checked={checked ? 'true' : undefined}
+      data-muted={muted ? 'true' : undefined}
       className={cn(
-        "data-[checked=true]:bg-secondary data-[checked=true]:text-secondary-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[checked=true]:data-[selected=true]:bg-secondary data-[checked=true]:data-[selected=true]:text-secondary-foreground data-[checked=true]:data-[selected=true]:ring-primary [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[checked=true]:data-[selected=true]:ring-1 data-[checked=true]:data-[selected=true]:ring-inset [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "data-[checked=true]:bg-secondary data-[checked=true]:text-secondary-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[checked=true]:data-[selected=true]:bg-secondary data-[checked=true]:data-[selected=true]:text-secondary-foreground data-[checked=true]:data-[selected=true]:ring-primary [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[muted=true]:data-[disabled=true]:opacity-100 data-[checked=true]:data-[selected=true]:ring-1 data-[checked=true]:data-[selected=true]:ring-inset [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

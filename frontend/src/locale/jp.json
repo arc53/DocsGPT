@@ -695,6 +695,15 @@
       "kindFilterLabel": "種類で絞り込む",
       "needsAttention": "要対応",
       "allKnowledge": "すべてのナレッジ",
+      "sections": {
+        "folders": "フォルダー",
+        "sources": "ソース"
+      },
+      "folders": {
+        "emptyHint": "ここにナレッジを追加するか、ソースの⋯メニューからここに移動してください。",
+        "searchAll": "すべてのナレッジを検索",
+        "noMatchIn": "{{name}} 内に「{{query}}」に一致するものはありません。"
+      },
       "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはこのソースを使えなくなります。ファイルとチャンクも削除されます。この操作は元に戻せません。",
       "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのソースを使えなくなります。ファイルとチャンクも削除されます。この操作は元に戻せません。",
       "noKnowledgeFound": "ナレッジが見つかりません"
@@ -2581,7 +2590,10 @@
       "cancel": "キャンセル",
       "review": "確認",
       "import": "インポート",
-      "continueToAgent": "エージェントへ進む"
+      "continueToAgent": "エージェントへ進む",
+      "planWarningsTitle": "インポート前に確認してください:",
+      "folderMatched": "{{name}}: あなたのフォルダを使用",
+      "folderMissing": "{{name}}: この名前のフォルダはありません"
     },
     "jwt": {
       "title": "JWT トークンを追加",
@@ -3588,25 +3600,7 @@
     },
     "deleteConfirmation": "「{{name}}」を削除しますか？",
     "folders": {
-      "newFolder": "新しいフォルダ",
-      "createFolder": "フォルダを作成",
-      "folderName": "フォルダ名",
-      "rename": "名前を変更",
-      "delete": "削除",
-      "deleteConfirm": "「{{name}}」を削除しますか？",
-      "empty": "このフォルダは空です",
-      "moveToFolder": "フォルダに移動",
-      "moveTo": "移動",
-      "move": "移動",
-      "noFolder": "フォルダなし (ルート)",
-      "backToRoot": "戻る",
-      "currentFolder": "このフォルダ",
-      "noSubfolders": "サブフォルダなし",
-      "openFolder": "フォルダーを開く",
-      "noFolders": "フォルダがありません",
-      "moveTitle": "「{{name}}」の移動先",
-      "menuAriaLabel": "{{folderName}} の操作",
-      "deleteConsequence": "中のエージェントはフォルダーの外に移動され、削除されません。"
+      "emptyHint": "ここでエージェントを作成するか、エージェントの⋯メニューからここに移動してください。"
     },
     "guardrailEvents": {
       "heading": "ガードレールのアクティビティ",
@@ -3924,6 +3918,85 @@
       "subtitle": "このエージェントのメッセージ量、トークン使用量、ユーザーフィードバック。"
     },
     "loadError": "このエージェントを読み込めませんでした。"
+  },
+  "folders": {
+    "root": {
+      "agent": "自分のエージェント",
+      "source": "ナレッジ"
+    },
+    "newFolder": "新しいフォルダ",
+    "create": "作成",
+    "name": "フォルダ名",
+    "rename": "名前を変更",
+    "renameTitle": "フォルダ名を変更",
+    "moveToFolder": "フォルダに移動",
+    "move": "移動",
+    "moveTitle": "「{{name}}」を移動",
+    "searchFolders": "フォルダを検索…",
+    "noFolder": "フォルダなし",
+    "current": "現在",
+    "tooDeep": "深すぎます",
+    "openFolder": "{{name}} を開く",
+    "noMatches": "一致するフォルダはありません",
+    "noSubfolders": "中にフォルダはありません",
+    "delete": "削除",
+    "deleteFolder": "フォルダを削除",
+    "deleteConfirm": "「{{name}}」を削除しますか？",
+    "deleteMoves_one": "中身（{{what}}）は{{parent}}に移動します。何も削除されません。",
+    "deleteMoves_other": "中身（{{what}}）は{{parent}}に移動します。何も削除されません。",
+    "deleteEmpty": "このフォルダは空です。ほかに削除されるものはありません。",
+    "and": "{{first}}と{{second}}",
+    "usedByWarning_one": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います：{{names}}。",
+    "usedByWarning_other": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います：{{names}}。",
+    "usedByWarningNoNames_one": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います。",
+    "usedByWarningNoNames_other": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います。",
+    "menuLabel": "{{name}} の操作",
+    "depthLimit": "フォルダは3階層までです",
+    "counts": {
+      "agent_one": "{{formatted}}件のエージェント",
+      "agent_other": "{{formatted}}件のエージェント",
+      "source_one": "{{formatted}}件のソース",
+      "source_other": "{{formatted}}件のソース",
+      "folder_one": "{{formatted}}個のフォルダ",
+      "folder_other": "{{formatted}}個のフォルダ",
+      "empty": "空"
+    },
+    "searchIn": "{{name}} 内を検索…",
+    "inParent": "{{name}} 内",
+    "emptyTitle": "このフォルダは空です",
+    "errors": {
+      "nameTaken": "同じ名前のフォルダが既にあります。",
+      "tooDeep": "フォルダは3階層までです。",
+      "cycle": "フォルダをそれ自身やそのサブフォルダに移動することはできません。",
+      "invalidName": "改行を含めず、1〜80文字で入力してください。",
+      "notFound": "このフォルダはもう存在しません。",
+      "cantFile": "この項目はフォルダに整理できません。",
+      "saveFailed": "フォルダを保存できませんでした。もう一度お試しください。",
+      "moveFailed": "移動できませんでした。もう一度お試しください。",
+      "deleteFailed": "フォルダを削除できませんでした。もう一度お試しください。",
+      "loadFailed": "フォルダを読み込めませんでした。",
+      "openFailed": "そのフォルダはもう存在しません。"
+    },
+    "picker": {
+      "allOf": "{{name}} のすべて",
+      "inFolder": "このフォルダ内",
+      "partial": "{{total}}件中{{picked}}件を選択",
+      "live": "{{what}} · 新しいソースも含む",
+      "includedWith": "{{name}} に含まれます",
+      "back": "戻る",
+      "deletedFolder": "削除されたフォルダ",
+      "deletedLine": "もう存在しません。外してください。",
+      "ownersFolder": "{{person}} のフォルダ",
+      "stoppedShort": "停止中",
+      "hintOne_one": "{{name}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintOne_other": "{{name}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintMany_one": "{{names}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintMany_other": "{{names}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "stopped": "{{name}} は停止中です: {{person}} のフォルダですが、このユーザーはもうこのエージェントを編集できません。",
+      "stoppedOther": "{{name}} は停止中です: 所有者はもうこのエージェントを編集できません。",
+      "deleted_one": "選択したフォルダが削除されました。一覧から外してください。",
+      "deleted_other": "選択したフォルダが{{formatted}}個削除されました。一覧から外してください。"
+    }
   },
   "components": {
     "fileUpload": {

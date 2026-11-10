@@ -165,6 +165,7 @@ def ingest(
     idempotency_key=None,
     source_id=None,
     copy_files=None,
+    folder_id=None,
 ):
     resp = ingest_worker(
         self,
@@ -180,6 +181,7 @@ def ingest(
         source_id=source_id,
         # Only when given, so the worker's call shape is unchanged otherwise.
         **({"copy_files": copy_files} if copy_files else {}),
+        **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
 
@@ -192,7 +194,7 @@ def ingest(
 def ingest_remote(
     self, source_data, job_name, user, loader,
     config=None, idempotency_key=None, source_id=None, connection_id=None,
-    sync_frequency="never",
+    sync_frequency="never", folder_id=None,
 ):
     resp = remote_worker(
         self, source_data, job_name, user, loader,
@@ -201,6 +203,7 @@ def ingest_remote(
         idempotency_key=idempotency_key,
         source_id=source_id,
         connection_id=connection_id,
+        **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
 
@@ -571,6 +574,7 @@ def ingest_connector_task(
     source_id=None,
     connection_id=None,
     actor_id=None,
+    folder_id=None,
 ):
     """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
 
@@ -597,6 +601,7 @@ def ingest_connector_task(
         idempotency_key=idempotency_key,
         source_id=source_id,
         actor_id=actor_id,
+        **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
 

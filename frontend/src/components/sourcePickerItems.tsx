@@ -86,52 +86,67 @@ type SourcePickerOptions = {
  */
 export function toSourcePickerItems(
   docs: Doc[] | null | undefined,
-  { t, labels, connections, lineSuffix }: SourcePickerOptions,
+  options: SourcePickerOptions,
 ): MultiSelectPopoverItem[] {
   const list = docs ?? [];
   const isTeam = (doc: Doc) => doc.ownership === 'team';
-  const toItem = (doc: Doc): MultiSelectPopoverItem => {
-    const connection = connectionOf(doc, connections);
-    const line =
-      [sourceDetailLine(t, doc, connection), lineSuffix?.(doc)]
-        .filter(Boolean)
-        .join(' · ') || undefined;
-    const item: MultiSelectPopoverItem = {
-      id: sourceItemId(doc),
-      label: doc.name,
-      icon: sourceIcon(doc, connection),
-      group: isTeam(doc) ? labels.team : labels.own,
-    };
-    const ingest = ingestState(doc);
-    const badges = [];
-    if (connectionNeedsSignIn(connection))
-      badges.push(
-        <Badge key="reconnect" variant="warning">
-          {t('settings.connectors.status.reconnect')}
-        </Badge>,
-      );
-    if (ingest) badges.push(<IngestBadge key="ingest" status={ingest} />);
-    if (badges.length === 0) return { ...item, description: line };
-    return {
-      ...item,
-      keywords: line ? [line] : undefined,
-      descriptionNode: (
-        <div className="flex flex-col items-start gap-0.5">
-          <span className="mt-0.5 flex flex-wrap gap-1">{badges}</span>
-          {line ? (
-            <p
-              className="text-muted-foreground w-full truncate text-xs"
-              title={line}
-            >
-              {line}
-            </p>
-          ) : null}
-        </div>
-      ),
-    };
-  };
+  const toItem = (doc: Doc) => toSourcePickerItem(doc, options);
   return [
     ...list.filter((doc) => !isTeam(doc)).map(toItem),
     ...list.filter(isTeam).map(toItem),
   ];
+}
+
+/**
+ * One knowledge picker row (see `toSourcePickerItems`). `linePrefix` leads
+ * its line: the folder trail in a flat search, or "Included with Carriers".
+ */
+export function toSourcePickerItem(
+  doc: Doc,
+  {
+    t,
+    labels,
+    connections,
+    lineSuffix,
+    linePrefix,
+  }: SourcePickerOptions & { linePrefix?: string | null },
+): MultiSelectPopoverItem {
+  const connection = connectionOf(doc, connections);
+  const line =
+    [linePrefix, sourceDetailLine(t, doc, connection), lineSuffix?.(doc)]
+      .filter(Boolean)
+      .join(' · ') || undefined;
+  const item: MultiSelectPopoverItem = {
+    id: sourceItemId(doc),
+    label: doc.name,
+    icon: sourceIcon(doc, connection),
+    group: doc.ownership === 'team' ? labels.team : labels.own,
+  };
+  const ingest = ingestState(doc);
+  const badges = [];
+  if (connectionNeedsSignIn(connection))
+    badges.push(
+      <Badge key="reconnect" variant="warning">
+        {t('settings.connectors.status.reconnect')}
+      </Badge>,
+    );
+  if (ingest) badges.push(<IngestBadge key="ingest" status={ingest} />);
+  if (badges.length === 0) return { ...item, description: line };
+  return {
+    ...item,
+    keywords: line ? [line] : undefined,
+    descriptionNode: (
+      <div className="flex flex-col items-start gap-0.5">
+        <span className="mt-0.5 flex flex-wrap gap-1">{badges}</span>
+        {line ? (
+          <p
+            className="text-muted-foreground w-full truncate text-xs"
+            title={line}
+          >
+            {line}
+          </p>
+        ) : null}
+      </div>
+    ),
+  };
 }

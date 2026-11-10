@@ -23,6 +23,8 @@ export type ConnectionSetupBody = {
     name?: string;
     /** The source's retrieval settings, as an upload sends them. */
     config?: SourceConfig;
+    /** The caller's Knowledge folder to file the new source into. */
+    folder_id?: string;
   };
 };
 

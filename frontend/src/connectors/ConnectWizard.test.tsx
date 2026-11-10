@@ -570,6 +570,17 @@ describe('ConnectWizard', () => {
     );
   });
 
+  // Add knowledge inside a Knowledge folder: the new source is filed there.
+  it('files the synced source into the folder it was added from', async () => {
+    setupOk([{ id: 'src-1', name: 'Handbook' }]);
+    await render(drive, vi.fn(), { purpose: 'knowledge', folderId: 'fold-1' });
+    await click('settings.connectors.wizard.signIn');
+    await click('pick-folder');
+    await click('modals.uploadDoc.train');
+    const [, body] = service.setup.mock.calls[0];
+    expect(body.sync.folder_id).toBe('fold-1');
+  });
+
   describe('Sync into Knowledge', () => {
     it('asks a sync-only service with two choices, Sync content now picked from any entry', async () => {
       // Opened from Connectors: no purpose.

@@ -324,6 +324,24 @@ describe('fetchAnswer — attachment ids on the wire', () => {
     expect(store.getState().upload.attachments).toHaveLength(1);
   });
 
+  it("sends the composer's picked folders as the last argument", async () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: () => ({
+          ...preferenceStub,
+          selectedFolders: [{ id: 'carriers', name: 'Carriers' }],
+        }),
+      },
+    });
+    store.dispatch(addQuery({ prompt: 'q' }));
+    await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][12]).toEqual([
+      'carriers',
+    ]);
+  });
+
   it('falls back to completed composer uploads and clears them when no ids are passed', async () => {
     const store = makeStore();
     store.dispatch(addQuery({ prompt: 'q' }));

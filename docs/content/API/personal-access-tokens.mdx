@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-08
 ---
 
 # Personal Access Tokens
@@ -152,11 +152,11 @@ A `write` scope includes the matching `read` scope.
 
 | Scope | Allows |
 | --- | --- |
-| `agents:read` | View agents, folders, guardrail events and export agent definitions |
-| `agents:write` | Create, update, delete, share and import (apply) agents and folders |
+| `agents:read` | View agents, agent folders, guardrail events and export agent definitions |
+| `agents:write` | Create, update, delete, share and import (apply) agents, and manage agent folders and file agents in them |
 | `agents:keys` | Regenerate agent API keys and read incoming webhook URLs |
-| `sources:read` | View sources, their files, chunks and ingestion task status |
-| `sources:write` | Upload, ingest, sync, edit and delete sources and chunks |
+| `sources:read` | View sources, their files, chunks and ingestion task status, and Knowledge folders |
+| `sources:write` | Upload, ingest, sync, edit and delete sources and chunks, and manage Knowledge folders and file sources in them |
 | `prompts:read` / `prompts:write` | View / create, update and delete prompts |
 | `tools:read` / `tools:write` | View / create, update and delete tools and MCP servers |
 | `models:read` / `models:write` | View models / manage custom models |
@@ -211,6 +211,8 @@ For a restricted family the token:
   - **Workflow writes** are closed to tokens restricted on sources, tools or prompts, because a workflow graph names those inside its nodes. Such a token also cannot attach a workflow to an agent unless it is restricted on workflows too, in which case only the listed workflows can be attached.
   - **Workflow runs** belong to the agent that ran them. A token restricted to agents lists and reads only those agents' runs and downloads only their files; any other run, and a run started from the workflow builder's preview, answers `404`. Runs and their files are closed to tokens restricted on another family, and the `/api/artifacts` routes are closed to every restricted token.
   - `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
+  - **Folders** (`/api/folders` and the `/api/agents/folders` routes) aren't on any list. A token restricted on agents can list agent folders and file the listed agents with `POST /api/folders/items`, but not create, rename, move or delete agent folders; a token restricted on sources gets the same for Knowledge folders and the listed sources.
+  - **Knowledge folders on agents and in chat**: a folder brings in every source filed in it, which no list names, so a token restricted on sources is refused for a non-empty `folders` on `POST /api/create_agent` and `PUT /api/update_agent/<agent_id>`, and for `active_folders` in chat.
   - **The chat prompt** (`/api/user/preferences`): a token restricted on prompts can't read it, since the stored pick may be outside its list. It can set it to a preset (`default`, `creative`, `strict`) or a prompt on its list. Sending `only_if_unset` is refused (`403`, `resource_not_allowed`), since the answer could carry a stored pick outside its list.
 
 A restriction covers what the token *asks for*, not what an allowed resource already contains: an agent on the list runs with its own sources, prompt and tools even when the token is also restricted on those families. List an agent only if you are happy for the token to use everything that agent uses.

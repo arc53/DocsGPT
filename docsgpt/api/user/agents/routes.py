@@ -53,7 +53,6 @@ from docsgpt.api.user.team_sharing import (
     visible_with_access,
 )
 from docsgpt.agents.default_tools import is_synthesized_tool_id
-from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
 from docsgpt.storage.db.repositories.agents import (
     AgentsRepository,
     expose_prompt_preset,
@@ -78,6 +77,16 @@ from docsgpt.api.user.workflows.routes import (
     write_graph_save,
 )
 from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
+from docsgpt.api.user.folders.service import FolderError, resolve_folder
+from docsgpt.api.user.folder_knowledge import (
+    FOLDER_NOT_ACCESSIBLE,
+    FolderRefError,
+    owned_source_folders,
+    parse_folder_refs,
+    resolve_folder_details,
+    unattachable_folder,
+)
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.api.user.agents.graph_checks import (
     graph_validation_failed as _graph_validation_failed,
     runs_outside_builder as _runs_outside_builder,
@@ -148,6 +157,7 @@ AGENT_TYPE_SCHEMAS = {
             "image",
             "source_id",
             "extra_source_ids",
+            "knowledge_folder_ids",
             "chunks",
             "retriever",
             "prompt_id",
@@ -155,7 +165,6 @@ AGENT_TYPE_SCHEMAS = {
             "json_schema",
             "models",
             "default_model_id",
-            "folder_id",
             "limited_token_mode",
             "token_limit",
             "limited_request_mode",
@@ -178,7 +187,6 @@ AGENT_TYPE_SCHEMAS = {
             "key",
             "image",
             "workflow_id",
-            "folder_id",
             "limited_token_mode",
             "token_limit",
             "limited_request_mode",
@@ -272,20 +280,20 @@ def _workflow_taken(conn, workflow_id: str, agent_id: str | None = None):
 
 
 def _resolve_folder_id(conn, folder_id, user):
-    """Resolve a folder id (UUID or legacy) to its PG UUID; error response otherwise."""
+    """The caller's agent folder for a requested id (UUID or legacy): ``(pg_id, None)`` or ``(None, 404)``."""
     if not folder_id:
         return None, None
-    repo = AgentFoldersRepository(conn)
-    folder = None
-    if looks_like_uuid(folder_id):
-        folder = repo.get(folder_id, user)
-    if folder is None:
-        folder = repo.get_by_legacy_id(folder_id, user)
-    if folder is None:
-        return None, make_response(
-            jsonify({"success": False, "message": "Folder not found"}), 404
-        )
-    return str(folder["id"]), None
+    try:
+        return str(resolve_folder(conn, folder_id, user, "agent")["id"]), None
+    except FolderError as err:
+        return None, err.response()
+
+
+def _folder_not_accessible():
+    """403 for a knowledge folder the caller may not attach (only its owner may)."""
+    return make_response(
+        jsonify({"success": False, "error": FOLDER_NOT_ACCESSIBLE, "message": "Folder not accessible"}), 403
+    )
 
 
 # What a caller who reached an agent only through its public share link may
@@ -445,6 +453,8 @@ def _format_agent_output(
     team_access: str | None = None,
     resolve_names: bool = False,
     access: dict | None = None,
+    folder_id: str | None = None,
+    viewer: str | None = None,
 ) -> dict:
     """Shape a PG agent row into the outward API response dict.
 
@@ -462,6 +472,11 @@ def _format_agent_output(
     decides what leaves the server: the full guardrail ``config`` needs
     ``view``, the (masked) ``key`` and public ``shared_token`` need
     ``manage_access_details``.
+
+    ``folder_id`` is the caller's own filing of the agent (``folder_items``),
+    not a column of the agent. ``folders`` are the source folders the agent
+    reads live (``knowledge_folder_ids``); with ``resolve_names``,
+    ``folder_details`` names them as ``viewer`` sees them.
     """
     if access is None:
         access = payload_for("agent", "owner", {})
@@ -487,6 +502,7 @@ def _format_agent_output(
         ),
         "source": source_value,
         "sources": sources_list,
+        "folders": [str(f).lower() for f in agent.get("knowledge_folder_ids") or [] if f],
         "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "6",
         "retriever": agent.get("retriever", "") or "",
         "prompt_id": str(agent["prompt_id"]) if agent.get("prompt_id") else "",
@@ -509,7 +525,7 @@ def _format_agent_output(
         "shared_token": agent.get("shared_token", "") or "",
         "models": agent.get("models", []) or [],
         "default_model_id": agent.get("default_model_id", "") or "",
-        "folder_id": str(agent["folder_id"]) if agent.get("folder_id") else None,
+        "folder_id": folder_id,
         "workflow": str(agent["workflow_id"]) if agent.get("workflow_id") else None,
         "allow_system_prompt_override": bool(
             agent.get("allow_system_prompt_override", False)
@@ -532,6 +548,7 @@ def _format_agent_output(
         out["source_details"] = resolve_source_details(
             ([source_id] if source_id else []) + list(extra_source_ids)
         )
+        out["folder_details"] = resolve_folder_details(out["folders"], viewer, "agent", agent)
     # The public ``shared_token`` and the (masked) agent ``key`` are access
     # details: only a caller who may manage them sees them.
     if "manage_access_details" not in allowed:
@@ -566,6 +583,8 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         kwargs["source_id"] = data["source_id"]
     if "extra_source_ids" in allowed_fields and data.get("extra_source_ids"):
         kwargs["extra_source_ids"] = data["extra_source_ids"]
+    if "knowledge_folder_ids" in allowed_fields and data.get("knowledge_folder_ids"):
+        kwargs["knowledge_folder_ids"] = data["knowledge_folder_ids"]
 
     if "prompt_id" in allowed_fields:
         # A preset name or a prompt's id; the repository stores a preset in
@@ -573,9 +592,6 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         prompt_val = data.get("prompt_id")
         if prompt_val and prompt_val != "default" and is_agent_prompt_ref(prompt_val):
             kwargs["prompt_id"] = prompt_val
-
-    if "folder_id" in allowed_fields and data.get("folder_id"):
-        kwargs["folder_id"] = data["folder_id"]
 
     if "workflow_id" in allowed_fields and data.get("workflow_id"):
         kwargs["workflow_id"] = data["workflow_id"]
@@ -721,12 +737,15 @@ class GetAgent(Resource):
             sponsored: list = []
             states: list = []
             audience = None
+            folder_id = None
             with db_readonly() as conn, cached_resolves():
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
                 ra = resolve(conn, "agent", agent_id, user)
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
+                if agent:
+                    folder_id = FolderItemsRepository(conn).filing(user, "agent", str(agent["id"]))
                 # Edit-page detail: who vouches for resources the owner can't
                 # use, and which attached resources stopped running and why,
                 # with their names. Only for people who may edit the agent:
@@ -751,6 +770,8 @@ class GetAgent(Resource):
                 team_access=None if is_owner else ra.access,
                 resolve_names=True,
                 access=ra.payload(),
+                folder_id=folder_id,
+                viewer=user,
             )
             data["resource_sponsors"] = sponsored
             data["resource_states"] = states
@@ -789,6 +810,8 @@ class GetAgents(Resource):
                 switches = settings_many(
                     conn, "agent", [str(a["id"]) for a in agents + shared_agents]
                 )
+                # The caller's own filing of each agent, theirs or a team's.
+                filings = FolderItemsRepository(conn).filings(user, "agent")
 
             # Every agent is listed: one with no source skips retrieval and
             # answers from the model and its tools, so it is still runnable.
@@ -797,6 +820,7 @@ class GetAgents(Resource):
                     agent,
                     pinned=str(agent["id"]) in pinned_ids,
                     access=payload_for("agent", "owner", switches[str(agent["id"])]),
+                    folder_id=filings.get(str(agent["id"]).lower()),
                 )
                 for agent in agents
             ]
@@ -810,6 +834,7 @@ class GetAgents(Resource):
                         team_shared.get(str(agent["id"])),
                         switches[str(agent["id"])],
                     ),
+                    folder_id=filings.get(str(agent["id"]).lower()),
                 )
                 for agent in shared_agents
             ]
@@ -838,6 +863,15 @@ class CreateAgent(Resource):
                 fields.String,
                 required=False,
                 description="List of source identifiers for multiple sources",
+            ),
+            "folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Source folders the agent reads live: every source their owner files in them, subfolders "
+                    "included. A folder is attached by its owner only (403 folder_not_accessible); ones "
+                    "already on the agent stay. Must be a list (a JSON string in a multipart form)"
+                ),
             ),
             "chunks": fields.Integer(required=False, description="Chunks count"),
             "retriever": fields.String(required=False, description="Retriever ID"),
@@ -894,7 +928,8 @@ class CreateAgent(Resource):
                 required=False, description="Default model ID for this agent"
             ),
             "folder_id": fields.String(
-                required=False, description="Folder ID to organize the agent"
+                required=False,
+                description="One of the caller's agent folders to file the agent in (the caller's own filing)",
             ),
             "allow_system_prompt_override": fields.Boolean(
                 required=False,
@@ -937,6 +972,11 @@ class CreateAgent(Resource):
                     data["sources"] = json.loads(data["sources"])
                 except json.JSONDecodeError:
                     data["sources"] = []
+            if "folders" in data:
+                try:
+                    data["folders"] = json.loads(data["folders"])
+                except json.JSONDecodeError:
+                    pass
             if "json_schema" in data:
                 try:
                     data["json_schema"] = json.loads(data["json_schema"])
@@ -953,6 +993,10 @@ class CreateAgent(Resource):
         for field, label in (("tools", "Tools"), ("sources", "Sources")):
             if data.get(field) not in (None, "") and not isinstance(data[field], list):
                 return _reject(f"{label} must be a list", user, field)
+        try:
+            folder_refs = parse_folder_refs(data.get("folders"))
+        except FolderRefError as exc:
+            return _reject(str(exc), user, "folders")
 
         if "json_schema" in data:
             try:
@@ -1094,6 +1138,11 @@ class CreateAgent(Resource):
                             jsonify({"success": False, "message": "Source not accessible"}),
                             403,
                         )
+                # A knowledge folder reads as its owner's filing: only its owner attaches it.
+                if agent_type == "workflow":
+                    folder_refs = []
+                if unattachable_folder(conn, folder_refs, user) is not None:
+                    return _folder_not_accessible()
                 prompt_ref = data.get("prompt_id")
                 if prompt_ref and looks_like_uuid(prompt_ref):
                     if not ref_attachable(conn, "prompt", prompt_ref, user):
@@ -1115,10 +1164,10 @@ class CreateAgent(Resource):
                     build_data["tools"] = [canonical_uuid(t) for t in data["tools"]]
                 if looks_like_uuid(data.get("prompt_id")):
                     build_data["prompt_id"] = canonical_uuid(data["prompt_id"])
-                build_data["folder_id"] = pg_folder_id
                 build_data["workflow_id"] = pg_workflow_id
                 build_data["source_id"] = source_id_resolved
                 build_data["extra_source_ids"] = extra_source_ids
+                build_data["knowledge_folder_ids"] = folder_refs
                 build_data["key"] = key
                 build_data["agent_type"] = agent_type
 
@@ -1167,6 +1216,8 @@ class CreateAgent(Resource):
                     **kwargs,
                 )
                 new_id = str(agent_row["id"])
+                if pg_folder_id:
+                    FolderItemsRepository(conn).file(user, "agent", new_id, pg_folder_id)
                 record_event(
                     conn,
                     "agent.created",
@@ -1213,6 +1264,15 @@ class UpdateAgent(Resource):
                 fields.String,
                 required=False,
                 description="List of source identifiers for multiple sources",
+            ),
+            "folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Source folders the agent reads live: every source their owner files in them, subfolders "
+                    "included. A folder is attached by its owner only (403 folder_not_accessible); ones "
+                    "already on the agent stay. Must be a list (a JSON string in a multipart form)"
+                ),
             ),
             "chunks": fields.Integer(required=False, description="Chunks count"),
             "retriever": fields.String(required=False, description="Retriever ID"),
@@ -1269,7 +1329,8 @@ class UpdateAgent(Resource):
                 required=False, description="Default model ID for this agent"
             ),
             "folder_id": fields.String(
-                required=False, description="Folder ID to organize the agent"
+                required=False,
+                description="One of the caller's agent folders to file the agent in (the caller's own filing)",
             ),
             "allow_system_prompt_override": fields.Boolean(
                 required=False,
@@ -1308,7 +1369,7 @@ class UpdateAgent(Resource):
                 data = request.get_json()
             else:
                 data = request.form.to_dict()
-                json_fields = ["tools", "sources", "json_schema", "models", "config", "starters"]
+                json_fields = ["tools", "sources", "folders", "json_schema", "models", "config", "starters"]
                 for field in json_fields:
                     if field in data and data[field]:
                         try:
@@ -1364,11 +1425,14 @@ class UpdateAgent(Resource):
                 has_new_image = bool(image_file and image_file.filename)
 
                 update_fields: dict = {}
+                # ``(folder_id,)`` when the save files the agent for the caller.
+                filing: Optional[tuple] = None
                 allowed_fields = [
                     "name",
                     "description",
                     "source",
                     "sources",
+                    "folders",
                     "chunks",
                     "retriever",
                     "prompt_id",
@@ -1429,6 +1493,11 @@ class UpdateAgent(Resource):
                                     f"Invalid source ID in list: {src}", user, field
                                 )
                         update_fields["extra_source_ids"] = valid
+                    elif field == "folders":
+                        try:
+                            update_fields["knowledge_folder_ids"] = parse_folder_refs(data.get("folders"))
+                        except FolderRefError as exc:
+                            return _reject(str(exc), user, field)
                     elif field == "chunks":
                         chunks_value = data.get("chunks")
                         if chunks_value in ("", None):
@@ -1531,30 +1600,14 @@ class UpdateAgent(Resource):
                                 field,
                             )
                     elif field == "folder_id":
-                        # Folders are the owner's own organisation; re-sending
-                        # the current folder is a no-op anyone may do.
-                        folder_input = data.get("folder_id") or None
-                        current_folder = (
-                            str(existing_agent["folder_id"])
-                            if existing_agent.get("folder_id")
-                            else None
+                        # The caller's own filing (folder_items), written once
+                        # the save lands; it never touches the agent row.
+                        pg_folder_id, folder_err = _resolve_folder_id(
+                            conn, data.get("folder_id") or None, user,
                         )
-                        if folder_input == current_folder:
-                            update_fields["folder_id"] = current_folder
-                            continue
-                        if not ra.can("move_folder"):
-                            return _denied(
-                                AccessDenied(403, "Only the owner can move this agent between folders")
-                            )
-                        if folder_input:
-                            pg_folder_id, folder_err = _resolve_folder_id(
-                                conn, folder_input, owner_id,
-                            )
-                            if folder_err:
-                                return folder_err
-                            update_fields["folder_id"] = pg_folder_id
-                        else:
-                            update_fields["folder_id"] = None
+                        if folder_err:
+                            return folder_err
+                        filing = (pg_folder_id,)
                     elif field == "workflow":
                         workflow_required = (
                             data.get("status", existing_agent.get("status")) == "published"
@@ -1635,7 +1688,7 @@ class UpdateAgent(Resource):
                                     f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
-                if not update_fields and not has_new_image and inline_graph is None:
+                if not update_fields and not has_new_image and inline_graph is None and filing is None:
                     return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
@@ -1758,6 +1811,15 @@ class UpdateAgent(Resource):
                         return make_response(
                             jsonify({"success": False, "message": "Source not accessible"}), 403
                         )
+                # A newly attached knowledge folder must be the caller's own;
+                # folders already on the agent stay whoever saves it.
+                if "knowledge_folder_ids" in update_fields and unattachable_folder(
+                    conn,
+                    update_fields["knowledge_folder_ids"],
+                    user,
+                    existing_agent.get("knowledge_folder_ids") or [],
+                ) is not None:
+                    return _folder_not_accessible()
                 new_prompt_id = update_fields.get("prompt_id")
                 if (
                     new_prompt_id
@@ -1872,7 +1934,10 @@ class UpdateAgent(Resource):
                     # workflow is linked below, after it is written).
                     update_fields.setdefault("workflow_id", existing_agent.get("workflow_id"))
                 expected_updated_at = data.get("expected_updated_at") or None
-                if is_team_editor:
+                if not update_fields and filing is not None:
+                    # Only the caller's filing changes: the agent row stays as it is.
+                    result = True
+                elif is_team_editor:
                     result = agents_repo.update_by_id(
                         pg_agent_id, update_fields, expected_updated_at=expected_updated_at,
                     )
@@ -1928,6 +1993,8 @@ class UpdateAgent(Resource):
                         ),
                         404,
                     )
+                if filing is not None:
+                    FolderItemsRepository(conn).file(user, "agent", pg_agent_id, filing[0])
                 # The row's new stamp: the builder's next save sends it as
                 # ``expected_updated_at``.
                 saved_row = agents_repo.get_by_id(pg_agent_id) or {}
@@ -2361,6 +2428,10 @@ def _strip_foreign_node_refs(conn, user: str):
                 for s in sources
                 if s and can_access(conn, "source", str(s), user)
             ]
+        if cfg.get("folders"):
+            # A knowledge folder is its owner's filing: keep only the adopter's own.
+            folders = cfg["folders"] if isinstance(cfg["folders"], list) else [cfg["folders"]]
+            cfg["folders"] = owned_source_folders(conn, folders, user)
         model_id = cfg.get("model_id")
         if (
             model_id
@@ -2371,7 +2442,7 @@ def _strip_foreign_node_refs(conn, user: str):
         if cfg is not config:
             # Flat leftovers of these keys are ignored by the engine but would
             # carry the template owner's raw ids along; drop them.
-            for key in ("tools", "sources", "model_id"):
+            for key in ("tools", "sources", "folders", "model_id"):
                 config.pop(key, None)
         return config
 
@@ -2426,7 +2497,7 @@ class AdoptAgent(Resource):
                 for col in (
                     "description", "agent_type", "retriever",
                     "default_model_id",
-                    "source_id", "prompt_id", "folder_id",
+                    "source_id", "prompt_id",
                     "extra_source_ids",
                 ):
                     val = template.get(col)

@@ -9,6 +9,7 @@ import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListene
 import backgroundReducer from './backgroundJobs/backgroundSlice';
 import chatToolsReducer from './conversation/chatToolsSlice';
 import connectorsReducer from './connectors/connectorsSlice';
+import foldersReducer from './components/folders/foldersSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import {
@@ -18,7 +19,10 @@ import {
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import actionToastReducer from './notifications/actionToastSlice';
 import notificationsReducer from './notifications/notificationsSlice';
-import { getStoredRecentDocs } from './preferences/preferenceApi';
+import {
+  getStoredRecentDocs,
+  getStoredRecentFolders,
+} from './preferences/preferenceApi';
 import {
   Preference,
   prefListenerMiddleware,
@@ -46,6 +50,7 @@ const preloadedState: { preference: Preference } = {
     ],
     chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
+    selectedFolders: getStoredRecentFolders(),
     conversations: {
       data: null,
       loading: false,
@@ -61,7 +66,6 @@ const preloadedState: { preference: Preference } = {
     selectedModel: selectedModel ? JSON.parse(selectedModel) : null,
     availableModels: [],
     modelsLoading: false,
-    agentFolders: null,
     roles: [],
     rolesResolved: false,
     ttsAvailable: true,
@@ -88,6 +92,7 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    folders: foldersReducer,
     chatTools: chatToolsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,

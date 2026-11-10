@@ -152,16 +152,24 @@ class TestResolveFolderId:
 
     def test_resolves_owned_folder(self, pg_conn, app):
         from docsgpt.api.user.agents.routes import _resolve_folder_id
-        from docsgpt.storage.db.repositories.agent_folders import (
-            AgentFoldersRepository,
-        )
+        from docsgpt.storage.db.repositories.folders import FoldersRepository
 
         user = "u"
-        folder = AgentFoldersRepository(pg_conn).create(user, "F")
+        folder = FoldersRepository(pg_conn).create(user, "F")
         with app.app_context():
             pg_id, err = _resolve_folder_id(pg_conn, str(folder["id"]), user)
         assert pg_id == str(folder["id"])
         assert err is None
+
+    def test_a_source_folder_is_not_an_agent_folder(self, pg_conn, app):
+        from docsgpt.api.user.agents.routes import _resolve_folder_id
+        from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+        folder = FoldersRepository(pg_conn).create("u", "K", resource_type="source")
+        with app.app_context():
+            pg_id, err = _resolve_folder_id(pg_conn, str(folder["id"]), "u")
+        assert pg_id is None
+        assert err.status_code == 404
 
 
 class TestFormatAgentOutput:
@@ -207,12 +215,11 @@ class TestFormatAgentOutput:
     def test_with_folder_and_workflow(self):
         from docsgpt.api.user.agents.routes import _format_agent_output
 
-        agent = {
-            "id": "a", "name": "n",
-            "folder_id": "f-1", "workflow_id": "w-1",
-        }
-        out = _format_agent_output(agent)
+        agent = {"id": "a", "name": "n", "workflow_id": "w-1"}
+        # ``folder_id`` is the caller's filing, passed in by the route.
+        out = _format_agent_output(agent, folder_id="f-1")
         assert out["folder_id"] == "f-1"
+        assert _format_agent_output(agent)["folder_id"] is None
         assert out["workflow"] == "w-1"
 
 

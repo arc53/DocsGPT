@@ -63,6 +63,13 @@
           "description": "Active documents",
           "type": "string"
         },
+        "active_folders": {
+          "description": "Agentless chats only: the caller's own source folders to search as a whole, every source filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agent_id": {
           "description": "Agent ID",
           "type": "string"
@@ -284,8 +291,15 @@
           "type": "string"
         },
         "folder_id": {
-          "description": "Folder ID to organize the agent",
+          "description": "One of the caller's agent folders to file the agent in (the caller's own filing)",
           "type": "string"
+        },
+        "folders": {
+          "description": "Source folders the agent reads live: every source their owner files in them, subfolders included. A folder is attached by its owner only (403 folder_not_accessible); ones already on the agent stay. Must be a list (a JSON string in a multipart form)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "image": {
           "description": "Image file upload",
@@ -388,6 +402,27 @@
       },
       "required": [
         "name"
+      ],
+      "type": "object"
+    },
+    "CreateFolderRequest": {
+      "properties": {
+        "name": {
+          "description": "Folder name",
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "Parent folder id",
+          "type": "string"
+        },
+        "type": {
+          "description": "agent or source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
       ],
       "type": "object"
     },
@@ -516,6 +551,71 @@
         "feedback",
         "question_index"
       ],
+      "type": "object"
+    },
+    "FileFolderItemsRequest": {
+      "properties": {
+        "folder_id": {
+          "description": "Target folder id, or null to unfile",
+          "type": "string"
+        },
+        "ids": {
+          "description": "Agent or source ids",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "description": "agent or source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ids",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Folder": {
+      "properties": {
+        "created_at": {
+          "description": "ISO timestamp",
+          "type": "string"
+        },
+        "folder_count": {
+          "description": "Folders directly in it",
+          "type": "integer"
+        },
+        "id": {
+          "description": "Folder id",
+          "type": "string"
+        },
+        "item_count": {
+          "description": "Items filed directly in it that the caller can see",
+          "type": "integer"
+        },
+        "name": {
+          "description": "Folder name",
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "Parent folder id; null at the top level",
+          "type": "string"
+        },
+        "type": {
+          "description": "agent or source",
+          "type": "string"
+        },
+        "updated_at": {
+          "description": "ISO timestamp",
+          "type": "string"
+        },
+        "used_by": {
+          "description": "Source folders only: {agents: [{id, name, agent_type, can_edit, status}], others} reading it live",
+          "type": "object"
+        }
+      },
       "type": "object"
     },
     "GetConversationInsightsModel": {
@@ -1128,6 +1228,10 @@
           "description": "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: [url or https://host/path/*], keep_links}",
           "type": "string"
         },
+        "folder_id": {
+          "description": "One of the caller's source folders to file the new source in",
+          "type": "string"
+        },
         "name": {
           "description": "Job name",
           "type": "string"
@@ -1370,6 +1474,13 @@
           "description": "Active documents",
           "type": "string"
         },
+        "active_folders": {
+          "description": "Agentless chats only: the caller's own source folders to search as a whole, every source filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agent_id": {
           "description": "Agent ID",
           "type": "string"
@@ -1504,8 +1615,15 @@
           "type": "string"
         },
         "folder_id": {
-          "description": "Folder ID to organize the agent",
+          "description": "One of the caller's agent folders to file the agent in (the caller's own filing)",
           "type": "string"
+        },
+        "folders": {
+          "description": "Source folders the agent reads live: every source their owner files in them, subfolders included. A folder is attached by its owner only (403 folder_not_accessible); ones already on the agent stay. Must be a list (a JSON string in a multipart form)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "image": {
           "description": "Image file upload",
@@ -1637,6 +1755,19 @@
       ],
       "type": "object"
     },
+    "UpdateFolderRequest": {
+      "properties": {
+        "name": {
+          "description": "New name",
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "New parent folder id, or null",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "UpdatePromptModel": {
       "properties": {
         "content": {
@@ -1761,6 +1892,10 @@
         "file": {
           "description": "File(s) to upload",
           "type": "object"
+        },
+        "folder_id": {
+          "description": "One of the caller's source folders to file the new source in",
+          "type": "string"
         },
         "name": {
           "description": "Job name",
@@ -2688,7 +2823,7 @@
     },
     "/api/agents/folders/": {
       "get": {
-        "description": "Get all folders for the user",
+        "description": "The caller's agent folders, as GET /api/folders?type=agent",
         "operationId": "get_agent_folders",
         "responses": {
           "200": {
@@ -2703,7 +2838,7 @@
         ]
       },
       "post": {
-        "description": "Create a new folder",
+        "description": "Create an agent folder, as POST /api/folders with type=agent",
         "operationId": "post_agent_folders",
         "parameters": [
           {
@@ -2730,7 +2865,7 @@
     },
     "/api/agents/folders/bulk_move": {
       "post": {
-        "description": "Move multiple agents to a folder",
+        "description": "File several agents into one of the caller's folders (null unfiles them)",
         "operationId": "post_bulk_move_agents",
         "parameters": [
           {
@@ -2757,7 +2892,7 @@
     },
     "/api/agents/folders/move_agent": {
       "post": {
-        "description": "Move an agent to a folder or remove from folder",
+        "description": "File an agent the caller can see into one of their folders, or unfile it",
         "operationId": "post_move_agent_to_folder",
         "parameters": [
           {
@@ -2784,7 +2919,7 @@
     },
     "/api/agents/folders/{folder_id}": {
       "delete": {
-        "description": "Delete a folder",
+        "description": "Delete an agent folder; its folders and agents move to its parent",
         "operationId": "delete_agent_folder",
         "responses": {
           "200": {
@@ -2799,7 +2934,7 @@
         ]
       },
       "get": {
-        "description": "Get a specific folder with its agents",
+        "description": "An agent folder with the agents the caller filed in it and its subfolders",
         "operationId": "get_agent_folder",
         "responses": {
           "200": {
@@ -2822,7 +2957,7 @@
         }
       ],
       "put": {
-        "description": "Update a folder",
+        "description": "Rename or move an agent folder, as PUT /api/folders/<id>",
         "operationId": "put_agent_folder",
         "responses": {
           "200": {
@@ -3549,7 +3684,7 @@
         }
       ],
       "post": {
-        "description": "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, sync?: {items, frequency, name?, config?}}. allow_writes points GitHub's tool at its write endpoint. config is the synced source's retrieval settings, validated like an upload's. Honours an Idempotency-Key header for the sync.",
+        "description": "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, sync?: {items, frequency, name?, config?, folder_id?}}. allow_writes points GitHub's tool at its write endpoint. config is the synced source's retrieval settings, validated like an upload's; folder_id files the new source in one of the caller's source folders (404 folder_not_found). Honours an Idempotency-Key header for the sync.",
         "operationId": "post_connection_setup",
         "responses": {
           "200": {
@@ -4193,6 +4328,141 @@
         ],
         "x-pat-scopes": [
           "conversations:write"
+        ]
+      }
+    },
+    "/api/folders": {
+      "get": {
+        "description": "The caller's folders of one type, oldest first: {folders: [Folder]}. item_count and folder_count count direct children; used_by (source folders) names the agents reading the folder live.",
+        "operationId": "get_folders",
+        "parameters": [
+          {
+            "description": "agent or source (required)",
+            "in": "query",
+            "name": "type",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:read",
+          "sources:read"
+        ]
+      },
+      "post": {
+        "description": "Create a folder: {type, name, parent_id?}. Names are trimmed, 1-80 characters, unique among siblings ignoring case (409 folder_name_taken); folders nest 3 levels deep (400 folder_too_deep). Answers 201 with the Folder.",
+        "operationId": "post_folders",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateFolderRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new folder",
+            "schema": {
+              "$ref": "#/definitions/Folder"
+            }
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "sources:write"
+        ]
+      }
+    },
+    "/api/folders/items": {
+      "post": {
+        "description": "File items into one of the caller's folders: {type, folder_id, ids}; folder_id null unfiles them. Any agent or source the caller can see can be filed, into their own folder of its type. Answers {success, moved: [ids], skipped: [ids the caller can't see]}.",
+        "operationId": "post_folder_items",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FileFolderItemsRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "sources:write"
+        ]
+      }
+    },
+    "/api/folders/{folder_id}": {
+      "delete": {
+        "description": "Delete a folder. Its folders and items move to its parent (the top level and unfiled when it had none); agents reading it live lose it. Answers {success, moved_items, moved_folders}.",
+        "operationId": "delete_folder_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "sources:write"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "folder_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Rename or move a folder: {name?, parent_id?}; parent_id null moves it to the top level. Errors: 404 folder_not_found, 400 folder_cycle / folder_too_deep, 409 folder_name_taken.",
+        "operationId": "put_folder_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateFolderRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "sources:write"
         ]
       }
     },
@@ -5988,7 +6258,7 @@
     },
     "/api/sources/paginated": {
       "get": {
-        "description": "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` (the agents using it). ``kind_counts`` counts every kind with the search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind filters applied.",
+        "description": "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` (the agents using it) and the caller's filing (``folder_id``, ``folder_path`` [{id, name}] from the top-level folder down). ``kind_counts`` counts every kind with the search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind filters applied. With ``folder``, both counts and ``subtree_total`` cover the folder's whole subtree, while ``total``/``totalPages`` describe the listed rows.",
         "operationId": "get_paginated_sources",
         "parameters": [
           {
@@ -6031,6 +6301,18 @@
             "description": "all (default), in_use (some agent uses it) or unused",
             "in": "query",
             "name": "usage",
+            "type": "string"
+          },
+          {
+            "description": "root, or one of the caller's source folders: counts cover that folder and every folder under it (root: everything). Omitted: no folder scoping",
+            "in": "query",
+            "name": "folder",
+            "type": "string"
+          },
+          {
+            "description": "true lists only the sources filed directly in ``folder`` (root: the unfiled ones); false (default) lists its whole subtree",
+            "in": "query",
+            "name": "direct",
             "type": "string"
           }
         ],
@@ -8041,6 +8323,10 @@
       "name": "conversations"
     },
     {
+      "description": "Folders for agents and knowledge",
+      "name": "folders"
+    },
+    {
       "description": "Current user identity and roles",
       "name": "me"
     },
@@ -8069,7 +8355,7 @@
       "name": "agents"
     },
     {
-      "description": "Agent folder management",
+      "description": "Agent folder management (aliases of /api/folders?type=agent)",
       "name": "agents_folders"
     },
     {

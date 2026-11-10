@@ -113,4 +113,36 @@ describe('composer controls', () => {
     expect(two).toContain('title="Q3 contracts, Rate cards"');
     expect(two).toContain('aria-label="conversation.sources.triggerLabel"');
   });
+
+  it('names a lone folder with a folder icon and counts a folder once', () => {
+    const render = (
+      selectedFolders: { id: string; name: string }[],
+      selectedDocs: { name: string; date: string; model: string }[] = [],
+    ) =>
+      renderToStaticMarkup(
+        <SourcesTrigger
+          open={false}
+          onOpenChange={noop}
+          items={[]}
+          selectedIds={[]}
+          onToggle={noop}
+          selectedDocs={selectedDocs}
+          selectedFolders={selectedFolders}
+          onUploadClick={noop}
+        />,
+      );
+    const one = render([{ id: 'c', name: 'Carriers' }]);
+    expect(one).toContain('Carriers');
+    expect(one).toContain('lucide-folder');
+    expect(one).not.toContain('lucide-database');
+    expect(one).not.toContain('data-slot="badge"');
+
+    const mixed = render(
+      [{ id: 'c', name: 'Carriers' }],
+      [{ name: 'Q3 contracts', date: '', model: '' }],
+    );
+    expect(mixed).toContain('lucide-database');
+    expect(mixed).toContain('title="Carriers, Q3 contracts"');
+    expect(mixed.match(/data-slot="badge"[^>]*>([^<]*)</)?.[1]).toBe('2');
+  });
 });

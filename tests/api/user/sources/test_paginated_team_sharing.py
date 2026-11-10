@@ -43,6 +43,17 @@ def _source_row(sid, *, user_id):
     }
 
 
+class _NoFiling:
+    folders: list = []
+    paths: dict = {}
+
+    def folder_of(self, _source_id):
+        return None
+
+    def fields(self, _source_id):
+        return {"folder_id": None, "folder_path": []}
+
+
 def _run(sub, repo, team_shared, client):
     patches = [
         patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
@@ -58,6 +69,8 @@ def _run(sub, repo, team_shared, client):
         # No agent uses any source.
         patch("docsgpt.api.user.sources.routes.used_by_many", return_value={}),
         patch("docsgpt.api.user.sources.routes.deletable_row_ids", return_value=[]),
+        # The caller has filed nothing.
+        patch("docsgpt.api.user.sources.routes.SourceFiling", return_value=_NoFiling()),
     ]
     for p in patches:
         p.start()

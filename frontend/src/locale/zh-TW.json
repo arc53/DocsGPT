@@ -695,6 +695,15 @@
       "kindFilterLabel": "依類型篩選",
       "needsAttention": "需要處理",
       "allKnowledge": "所有知識",
+      "sections": {
+        "folders": "資料夾",
+        "sources": "來源"
+      },
+      "folders": {
+        "emptyHint": "在此新增知識，或透過來源的 ⋯ 選單將其移入。",
+        "searchAll": "搜尋所有知識",
+        "noMatchIn": "{{name}}中沒有符合「{{query}}」的內容。"
+      },
       "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
       "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
       "noKnowledgeFound": "找不到知識"
@@ -2581,7 +2590,10 @@
       "cancel": "取消",
       "review": "檢閱",
       "import": "匯入",
-      "continueToAgent": "前往代理"
+      "continueToAgent": "前往代理",
+      "planWarningsTitle": "匯入前請檢查：",
+      "folderMatched": "{{name}}：使用你的資料夾",
+      "folderMissing": "{{name}}：你沒有同名資料夾"
     },
     "jwt": {
       "title": "新增 JWT 權杖",
@@ -3588,25 +3600,7 @@
     },
     "deleteConfirmation": "要刪除「{{name}}」嗎？",
     "folders": {
-      "newFolder": "新建資料夾",
-      "createFolder": "建立資料夾",
-      "folderName": "資料夾名稱",
-      "rename": "重新命名",
-      "delete": "刪除",
-      "deleteConfirm": "要刪除「{{name}}」嗎？",
-      "empty": "此資料夾為空",
-      "moveToFolder": "移動到資料夾",
-      "moveTo": "移動",
-      "move": "移動",
-      "noFolder": "無資料夾 (根目錄)",
-      "backToRoot": "返回",
-      "currentFolder": "此資料夾",
-      "noSubfolders": "沒有子資料夾",
-      "openFolder": "開啟資料夾",
-      "noFolders": "暫無資料夾",
-      "moveTitle": "將「{{name}}」移動到",
-      "menuAriaLabel": "{{folderName}} 的操作",
-      "deleteConsequence": "其中的代理會移出資料夾，不會被刪除。"
+      "emptyHint": "在此建立代理，或透過代理的 ⋯ 選單將其移入。"
     },
     "guardrailEvents": {
       "heading": "防護機制活動",
@@ -3924,6 +3918,85 @@
       "subtitle": "此代理的訊息量、Token 使用量和使用者回饋。"
     },
     "loadError": "無法載入此代理。"
+  },
+  "folders": {
+    "root": {
+      "agent": "我的代理",
+      "source": "知識庫"
+    },
+    "newFolder": "新建資料夾",
+    "create": "建立",
+    "name": "資料夾名稱",
+    "rename": "重新命名",
+    "renameTitle": "重新命名資料夾",
+    "moveToFolder": "移動到資料夾",
+    "move": "移動",
+    "moveTitle": "移動「{{name}}」",
+    "searchFolders": "搜尋資料夾…",
+    "noFolder": "無資料夾",
+    "current": "目前",
+    "tooDeep": "層級過深",
+    "openFolder": "開啟{{name}}",
+    "noMatches": "沒有符合的資料夾",
+    "noSubfolders": "裡面沒有資料夾",
+    "delete": "刪除",
+    "deleteFolder": "刪除資料夾",
+    "deleteConfirm": "要刪除「{{name}}」嗎？",
+    "deleteMoves_one": "其中的內容（{{what}}）會移到{{parent}}，不會刪除任何內容。",
+    "deleteMoves_other": "其中的內容（{{what}}）會移到{{parent}}，不會刪除任何內容。",
+    "deleteEmpty": "此資料夾是空的，不會刪除其他內容。",
+    "and": "{{first}}和{{second}}",
+    "usedByWarning_one": "{{formatted}} 個代理正在使用此資料夾，將失去其中的來源：{{names}}。",
+    "usedByWarning_other": "{{formatted}} 個代理正在使用此資料夾，將失去其中的來源：{{names}}。",
+    "usedByWarningNoNames_one": "{{formatted}} 個代理正在使用此資料夾，將失去其中的來源。",
+    "usedByWarningNoNames_other": "{{formatted}} 個代理正在使用此資料夾，將失去其中的來源。",
+    "menuLabel": "{{name}} 的操作",
+    "depthLimit": "資料夾最多 3 層",
+    "counts": {
+      "agent_one": "{{formatted}} 個代理",
+      "agent_other": "{{formatted}} 個代理",
+      "source_one": "{{formatted}} 個來源",
+      "source_other": "{{formatted}} 個來源",
+      "folder_one": "{{formatted}} 個資料夾",
+      "folder_other": "{{formatted}} 個資料夾",
+      "empty": "空"
+    },
+    "searchIn": "在{{name}}中搜尋…",
+    "inParent": "位於{{name}}",
+    "emptyTitle": "此資料夾是空的",
+    "errors": {
+      "nameTaken": "已有同名的資料夾。",
+      "tooDeep": "資料夾最多 3 層。",
+      "cycle": "資料夾不能移到自身或其子資料夾中。",
+      "invalidName": "請使用 1 到 80 個字元，不含換行。",
+      "notFound": "此資料夾已不存在。",
+      "cantFile": "無法將此項目放入資料夾。",
+      "saveFailed": "無法儲存資料夾，請再試一次。",
+      "moveFailed": "無法移動，請再試一次。",
+      "deleteFailed": "無法刪除資料夾，請再試一次。",
+      "loadFailed": "無法載入資料夾。",
+      "openFailed": "該資料夾已不存在。"
+    },
+    "picker": {
+      "allOf": "{{name}} 全部",
+      "inFolder": "此資料夾中",
+      "partial": "已選 {{picked}}/{{total}}",
+      "live": "{{what}} · 包括新來源",
+      "includedWith": "已隨{{name}}包含",
+      "back": "返回",
+      "deletedFolder": "已刪除的資料夾",
+      "deletedLine": "已不存在，請移除。",
+      "ownersFolder": "{{person}} 的資料夾",
+      "stoppedShort": "已停止",
+      "hintOne_one": "{{name}} 是一個資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "hintOne_other": "{{name}} 是一個資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "hintMany_one": "{{names}} 是資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "hintMany_other": "{{names}} 是資料夾：包括現有的 {{formatted}} 個來源，以及之後新增的來源。",
+      "stopped": "{{name}} 已停止：這是 {{person}} 的資料夾，而該使用者已無法編輯此代理。",
+      "stoppedOther": "{{name}} 已停止：其擁有者已無法編輯此代理。",
+      "deleted_one": "一個已選資料夾已被刪除。請在清單中移除它。",
+      "deleted_other": "{{formatted}} 個已選資料夾已被刪除。請在清單中移除它們。"
+    }
   },
   "components": {
     "fileUpload": {
