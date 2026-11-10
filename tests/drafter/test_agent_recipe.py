@@ -608,12 +608,39 @@ class TestInstructions:
 
     def test_only_the_safety_step_may_talk_about_policy(self):
         for step in ("basics", "knowledge", "prompt"):
-            assert "Never set or mention changing models, guardrails" in instructions(_req({}, step=step), _ws())
+            text = instructions(_req({}, step=step), _ws())
+            assert "Limits, guardrails and Insights topics are the safety step's" in text
+            assert "don't mention them" in text
         text = instructions(_req({}, step="safety"), _ws())
-        assert "Never set or mention changing models, guardrails" not in text
+        assert "Limits, guardrails and Insights topics are the safety step's" not in text
         for rule in ("Ask first", "recommended", "500 requests", "50,000 tokens", "last 24 hours",
-                     "either a request limit or a token limit", "starting topics", "Set only what the user picked"):
+                     "either a request limit or a token limit", "starting topics", "Set only what the user said or picked"):
             assert rule in text, rule
+
+    @pytest.mark.parametrize("step", ["basics", "knowledge", "prompt", "safety"])
+    def test_no_step_says_the_policy_stays_as_it_is(self, step):
+        # The safety step sets limits and guardrails: an earlier step's note saying they "stay as they are" is wrong.
+        assert "stay as they are" not in instructions(_req({}, step=step), _ws())
+
+    def test_the_safety_step_asks_only_what_the_users_words_leave_open(self):
+        text = instructions(_req({}, step="safety"), _ws())
+        for rule in ("only about the parts the user's words leave open", "users_earlier_messages",
+                     "set it as they said", "propose without asking",
+                     "never offer the recommended value against what they said"):
+            assert rule in text, rule
+
+    def test_the_guardrail_question_offers_one_check_per_option(self):
+        text = instructions(_req({}, step="safety"), _ws())
+        for rule in ("one option per check", "never a combination", '"All four"',
+                     '{"label": "No extra checks", "exclusive": true}'):
+            assert rule in text, rule
+
+    def test_topics_are_subjects_and_none_is_an_exclusive_option(self):
+        text = instructions(_req({}, step="safety"), _ws())
+        for rule in ("a subject users ask about", "never an outcome or how it is handled", "Complaints & hand-offs",
+                     "never mark a topic recommended", '{"label": "No topics", "exclusive": true}'):
+            assert rule in text, rule
+        assert 'a last option "No topics"' not in text
 
     def test_the_safety_step_suggests_only_what_the_source_folders_miss(self):
         text = instructions(_req({}, step="safety"), _ws())
@@ -624,7 +651,7 @@ class TestInstructions:
     def test_the_topics_are_offered_one_by_one(self):
         text = instructions(_req({}, step="safety"), _ws())
         for rule in ("pick-any question (multi true)", "one option per topic, its label the topic's name",
-                     'a last option "No topics"', "set only the topics the user ticks"):
+                     "set only the topics the user ticks"):
             assert rule in text, rule
 
     def test_a_saved_agent_with_conversations_is_pointed_to_suggest_from_conversations(self):
@@ -967,6 +994,40 @@ class TestSafety:
         with pytest.raises(ProposalInvalid, match="Ask the user first"):
             _validate({"limits": {"mode": "requests", "value": 500}}, step="safety")
         assert _validate({}, step="safety")["fields"] == {}
+
+    STATED = ("Build a public support bot. Limit it to 1,000 requests a day, with PII and injection guardrails, "
+              "no Insights topics.")
+
+    def _stated(self, fields, *, earlier=(STATED,), message="Continue with Limits and safety.", skip=False):
+        context = parse_context({"form": {}, "step": "safety", "earlier": list(earlier), "skip_questions": skip})
+        req = DraftRequest("alice", "agent", [{"role": "user", "content": message}], context, "drafter:t")
+        return validate({"message": "Set as you said.", "fields": fields}, req, _ws())
+
+    def test_what_the_users_words_settle_is_set_without_asking(self):
+        proposal = self._stated({"limits": {"mode": "requests", "value": 1000}, "guardrails": {"checks": ["pii",
+                                                                                                         "injection"]}})
+        assert proposal["fields"] == {"limits": {"mode": "requests", "value": 1000},
+                                      "guardrails": _added("pii", "injection")}
+        topics = [{"name": "Customs paperwork", "description": "Documents, duties"}]
+        proposal = self._stated({"analytics": {"topics": topics}},
+                                earlier=["Track a topic for customs paperwork questions."])
+        assert proposal["fields"] == {"analytics": {"topics": topics}}
+
+    @pytest.mark.parametrize("written", ["1000 requests", "1.000 Anfragen", "1 000 requests", "1k requests a day"])
+    def test_a_stated_limit_is_read_however_the_number_is_written(self, written):
+        proposal = self._stated({"limits": {"mode": "requests", "value": 1000}}, earlier=[f"Limit: {written}"])
+        assert proposal["fields"] == {"limits": {"mode": "requests", "value": 1000}}
+
+    @pytest.mark.parametrize("fields,part", [
+        ({"limits": {"mode": "requests", "value": 500}}, "limits"),
+        ({"limits": {"mode": "requests", "value": 1000}, "guardrails": {"checks": ["pii", "secrets"]}},
+         "guardrails"),
+        ({"analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}}, "topics"),
+    ])
+    def test_a_part_the_user_left_open_is_asked_about_first(self, fields, part):
+        with pytest.raises(ProposalInvalid, match="Ask the user first") as raised:
+            self._stated(fields)
+        assert part in str(raised.value) and "their words leave open" in str(raised.value)
 
     def test_limits_are_either_or(self):
         proposal = _validate({"limits": {"mode": "requests", "value": 500}}, step="safety", asked=True,

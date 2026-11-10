@@ -23,6 +23,7 @@ groundedness guardrail, monitor-only, for answers the docs don't back.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -116,9 +117,18 @@ INSIGHTS_CHECK = "groundedness"
 UNGROUNDED = "confidently ungrounded"
 
 ASK_FIRST = (
-    "Ask the user first: call ask_user with a question for each part of this step you can set (limits, "
-    "guardrails, topics), the recommended option first, then set only what they pick."
+    "Ask the user first: call ask_user with a question for each part of this step their words leave open ({parts}), "
+    "the recommended option first, then set what they pick and what they said."
 )
+#: How a part of the safety step is named in :data:`ASK_FIRST`.
+_PART_NAMES = {"limits": "limits", "guardrails": "guardrails", "analytics": "topics"}
+#: Words that name a guardrail check in the user's own text, besides its id.
+_CHECK_WORDS: dict[str, tuple[str, ...]] = {
+    "pii": ("pii", "personal data"),
+    "injection": ("injection",),
+    "groundedness": ("groundedness", "grounded"),
+    "secrets": ("secret",),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -641,10 +651,14 @@ before it is saved.
 the agent's users would ask."""
 
 NEVER_POLICY = """Never set or mention changing models, guardrails, limits, allowed websites, API write permissions, \
-a JSON response schema, analytics or sharing: those stay as they are."""
+a JSON response schema, analytics or sharing: they are not part of this draft."""
 
 NEVER_OTHER = """Never set or mention changing models, allowed websites, API write permissions, a JSON response \
-schema or sharing: those stay as they are."""
+schema or sharing: they are not part of this draft."""
+
+#: The guided steps before safety: policy is the safety step's, so they neither set it nor say it stays as it is.
+NEVER_GUIDED = NEVER_OTHER + """ Limits, guardrails and Insights topics are the safety step's: leave them out of \
+this step and don't mention them in a message or a note."""
 
 DESIGN_RULES = f"""Designing it well:
 - Pick knowledge and tools only from what exists in the workspace, and only what the agent needs. Read a source's \
@@ -765,9 +779,13 @@ def _safety_guide() -> str:
     return f"""Step safety: limits, guardrails and Insights topics. Which of them you may set is in safety_options \
 in the form data. Leave out a part marked unavailable and don't ask about it; when it is unavailable for lack of \
 access, say once that the agent's owner or an editor with policy access can set it.
-- Ask first: before any proposal, ask one round of questions (ask_user), one question per available part. Put the \
-recommended option first and say in its label that it is recommended. Set only what the user picked: a part the \
-user declines stays out of the proposal.
+- Ask first, but only about the parts the user's words leave open. Read users_earlier_messages and this \
+conversation: a part their words already settle ("1,000 requests a day", "PII and injection guardrails", "no \
+Insights topics") is not asked about again: set it as they said. Before any proposal, ask one round of questions \
+(ask_user), one question per available part still open, the recommended option first with "recommended" in its \
+label. When their words settle every available part, propose without asking. Never ask again about what they said, \
+and never offer the recommended value against what they said. Set only what the user said or picked: a part the \
+user declines, or leaves blank, stays out of the proposal.
 - limits: one budget shared by everyone using the agent, counted over the last 24 hours: either a request limit \
 or a token limit, never both. Recommend {limits["request_limit"]:,} requests (or {limits["token_limit"]:,} tokens \
 when the user thinks in cost). mode "none" turns limits off.
@@ -777,15 +795,20 @@ agent already enforces its guardrails (mode scan_all), they run in monitor-only 
 have done, and the owner turns enforcement on later. pii hides personal data (emails, \
 phone numbers, card numbers) in questions and answers; injection blocks messages that try to override the agent's \
 instructions; groundedness flags answers its knowledge doesn't back; secrets hides keys and passwords in answers. \
-Recommend pii and injection for an agent that faces the public.
+Recommend pii and injection for an agent that faces the public. Ask as a pick-any question (multi true) with one \
+option per check, named plainly (never a combination such as "PII and injection" or "All four"): the recommended \
+checks first, each with "recommended" in its label, and a last option {{"label": "No extra checks", "exclusive": \
+true}}.
 - analytics: Insights sorts the agent's conversations by topic so its owner sees what users ask about. Offer up \
 to {MAX_NEW_TOPICS} starting topics drawn from what the agent is for as a pick-any question (multi true): one \
-option per topic, its label the topic's name (not marked recommended), and a last option "No topics"; set only \
-the topics the user ticks. Each topic is a name of at most {TOPIC_NAME_CHARS} characters and a description of at most \
-{TOPIC_DESCRIPTION_UNITS} characters listing concrete things users ask ("Late or stuck parcels, missed delivery \
-windows"). Never reuse a topic the agent already has. The folders of its sources (source_folders in \
-safety_options) already sort conversations as topics: never suggest a topic a folder already covers, only what \
-they miss, and at most room topics. Past room, each topic pushes the smallest folder out (up to \
+option per topic, its label the topic's name, and a last option {{"label": "No topics", "exclusive": true}}; set \
+only the topics the user ticks. A topic is a subject users ask about ("Customs paperwork", "Tracking a parcel"), \
+never an outcome or how it is handled ("Complaints & hand-offs", "Questions it couldn't answer", "Escalations"), \
+and never mark a topic recommended. Each topic is a name of at most {TOPIC_NAME_CHARS} characters and a \
+description of at most {TOPIC_DESCRIPTION_UNITS} characters listing concrete things users ask ("Late or stuck \
+parcels, missed delivery windows"). Never reuse a topic the agent already has. The folders of its sources \
+(source_folders in safety_options) already sort conversations as topics: never suggest a topic a folder already \
+covers, only what they miss, and at most room topics. Past room, each topic pushes the smallest folder out (up to \
 room_pushing_folders_out more): suggest that only when the user asks for more topics, and say which folder. \
 When insights_topics is unavailable as suggest_from_conversations, the agent has enough real conversations: \
 don't guess topics, say once that Suggest from conversations, in the form's Insights section, suggests them from \
@@ -836,7 +859,8 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
     step = req.context["step"]
     form = req.context["form"]
     insights = not step and isinstance(ws, AgentWorkspace) and ws.reads_insights()
-    never = NEVER_OTHER if step == "safety" else NEVER_POLICY_INSIGHTS if insights else NEVER_POLICY
+    never = NEVER_OTHER if step == "safety" else NEVER_GUIDED if step else NEVER_POLICY_INSIGHTS if insights \
+        else NEVER_POLICY
     parts = [AGENT_FIELDS, never, DESIGN_RULES]
     if step:
         own = ", ".join(STEP_FIELDS[step])
@@ -1183,10 +1207,12 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
     """Check the safety step's limits, guardrails and topics into ``fields``.
 
     Limits and guardrails need ``edit_policy`` (listed in ``dropped`` as ``not_allowed`` without it); a part the
-    instance or the agent has turned off is left out. What remains is accepted only after a questions round.
+    instance or the agent has turned off is left out. What remains is accepted after a questions round, or
+    without one when the user's own words state it (:func:`_stated`).
 
     Raises:
-        ProposalInvalid: Policy proposed before asking the user, or a value the model can fix.
+        ProposalInvalid: Policy the user's words leave open, proposed before asking them, or a value the model can
+            fix.
     """
     form = req.context["form"]
     available = {
@@ -1203,8 +1229,9 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
             dropped.append({"field": key, "reason": "not_allowed"})
         elif available[key]:
             wanted.append(key)
-    if wanted and not question_rounds(req.messages):
-        raise ProposalInvalid([ASK_FIRST])
+    open_parts = [key for key in wanted if not _stated(key, raw_fields[key], req)]
+    if open_parts and not question_rounds(req.messages):
+        raise ProposalInvalid([ASK_FIRST.format(parts=", ".join(_PART_NAMES[key] for key in open_parts))])
     if "limits" in wanted:
         fields["limits"] = _limits(raw_fields["limits"])
     if "guardrails" in wanted:
@@ -1215,6 +1242,40 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
         topics = _topics(raw_fields["analytics"], form, ws, notes)
         if topics:
             fields["analytics"] = {"topics": topics}
+
+
+def _numbers(text: str) -> set[int]:
+    """The whole numbers a text names, however they are grouped: ``1,000``, ``1.000``, ``1 000``, ``1000``, ``1k``."""
+    grouped = re.sub(r"(?<=\d)[,.\s\u00a0\u202f'](?=\d{3}(?!\d))", "", text)
+    out = {int(n) for n in re.findall(r"\d+", grouped)}
+    out |= {int(n) * 1000 for n in re.findall(r"(\d+)\s*k\b", grouped, flags=re.I)}
+    return out
+
+
+def _users_words(req: DraftRequest) -> str:
+    """Everything the user wrote in the build: the finished steps' messages and this conversation's."""
+    return "\n".join([*req.context.get("earlier", []), req.user_text()])
+
+
+def _stated(key: str, raw: Any, req: DraftRequest) -> bool:
+    """Whether the user's own words state a drafted safety part, so it needs no question first.
+
+    A limit's value is a number they wrote; each guardrail check is one they named; each topic a name they wrote.
+    Anything else (no limit, a check named another way) is asked about.
+    """
+    words = _users_words(req)
+    lowered = words.casefold()
+    if key == "limits":
+        value = raw.get("value") if isinstance(raw, dict) else None
+        return isinstance(value, int) and not isinstance(value, bool) and value in _numbers(words)
+    if key == "guardrails":
+        checks = raw.get("checks") if isinstance(raw, dict) else None
+        names = [str(check).strip().lower() for check in checks] if isinstance(checks, list) else []
+        return bool(names) and all(any(w in lowered for w in _CHECK_WORDS.get(name, (name,))) for name in names)
+    topics = raw.get("topics") if isinstance(raw, dict) else None
+    names = [clean_text(t.get("name"), TOPIC_NAME_CHARS).casefold() for t in topics if isinstance(t, dict)] \
+        if isinstance(topics, list) else []
+    return bool(names) and all(name and name in lowered for name in names)
 
 
 def _insights_guardrails(raw: Any, req: DraftRequest, ws: AgentWorkspace, fields: dict, dropped: list[dict]) -> None:
