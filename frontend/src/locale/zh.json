@@ -4764,8 +4764,6 @@
         "improveAgent": "改进智能体",
         "fromConversation": "根据这段对话改进智能体",
         "fixDocsGap": {
-          "page": "修复页面“{{where}}”的文档缺口",
-          "source": "修复来源“{{where}}”中的文档缺口",
           "topic": "修复主题“{{where}}”中的文档缺口"
         }
       }

@@ -4766,8 +4766,6 @@
         "improveAgent": "改進代理",
         "fromConversation": "根據這段對話改進代理",
         "fixDocsGap": {
-          "page": "修正頁面「{{where}}」的文件缺口",
-          "source": "修正來源「{{where}}」中的文件缺口",
           "topic": "修正主題「{{where}}」中的文件缺口"
         }
       }

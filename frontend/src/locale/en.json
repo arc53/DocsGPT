@@ -4813,8 +4813,6 @@
         "improveAgent": "Improve the agent",
         "fromConversation": "Improve the agent from this conversation",
         "fixDocsGap": {
-          "page": "Fix the docs gap on “{{where}}”",
-          "source": "Fix the docs gap in “{{where}}”",
           "topic": "Fix the docs gap in “{{where}}”"
         }
       }

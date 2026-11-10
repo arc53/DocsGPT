@@ -4943,8 +4943,6 @@
         "improveAgent": "Améliorer l’agent",
         "fromConversation": "Améliore l’agent à partir de cette conversation",
         "fixDocsGap": {
-          "page": "Corrige la lacune de documentation sur « {{where}} »",
-          "source": "Corrige la lacune de documentation dans « {{where}} »",
           "topic": "Corrige la lacune de documentation dans « {{where}} »"
         }
       }

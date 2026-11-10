@@ -4943,8 +4943,6 @@
         "improveAgent": "Mejorar el agente",
         "fromConversation": "Mejora el agente a partir de esta conversación",
         "fixDocsGap": {
-          "page": "Corrige el hueco de documentación en la página «{{where}}»",
-          "source": "Corrige el hueco de documentación en «{{where}}»",
           "topic": "Corrige el hueco de documentación en «{{where}}»"
         }
       }

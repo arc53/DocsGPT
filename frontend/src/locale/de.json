@@ -4792,8 +4792,6 @@
         "improveAgent": "Agenten verbessern",
         "fromConversation": "Verbessere den Agenten anhand dieser Unterhaltung",
         "fixDocsGap": {
-          "page": "Behebe die Doku-Lücke auf „{{where}}“",
-          "source": "Behebe die Doku-Lücke in „{{where}}“",
           "topic": "Behebe die Doku-Lücke in „{{where}}“"
         }
       }

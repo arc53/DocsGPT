@@ -4766,8 +4766,6 @@
         "improveAgent": "エージェントを改善",
         "fromConversation": "この会話をもとにエージェントを改善して",
         "fixDocsGap": {
-          "page": "「{{where}}」ページのドキュメント不足を直して",
-          "source": "「{{where}}」のドキュメント不足を直して",
           "topic": "「{{where}}」のドキュメント不足を直して"
         }
       }
