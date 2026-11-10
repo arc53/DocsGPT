@@ -243,6 +243,14 @@ class TestQuestionsShape:
 # ---------------------------------------------------------------------------
 
 
+SEARCH_TOOL = {
+    "id": "search",
+    "name": "search",
+    "actions": [{"name": "search", "description": "Search", "active": True, "parameters": {"properties": {}}}],
+    "config": {},
+}
+
+
 @pytest.mark.unit
 class TestAttachment:
     def _agent(self, *, mode="text", headless=False, scope=None, json_schema=None, tools=True):
@@ -260,9 +268,20 @@ class TestAttachment:
         )
 
     def _attached(self, agent, tools_dict=None) -> bool:
-        tools_dict = {} if tools_dict is None else tools_dict
+        tools_dict = {"search": dict(SEARCH_TOOL)} if tools_dict is None else tools_dict
         agent._prepare_tools(tools_dict)
         return any(t.get("name") == ASK_USER for t in tools_dict.values())
+
+    def test_a_turn_with_no_other_tools_does_not_get_it(self):
+        """Without tools the model is called with none, so its answers stay cacheable."""
+        agent = self._agent(mode="cards")
+        assert not self._attached(agent, {})
+        assert not agent.tools
+
+    def test_a_saved_entry_alone_is_not_another_tool(self):
+        tools_dict: Dict = {}
+        add_ask_user_tool(tools_dict, enabled=True)
+        assert not self._attached(self._agent(mode="cards"), tools_dict)
 
     @pytest.mark.parametrize("mode", ["cards", "text"])
     def test_an_interactive_chat_turn_gets_it(self, mode):

@@ -1094,10 +1094,15 @@ class BaseAgent(ABC):
 
             if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
                 add_check_job_tool(tools_dict)
-        # An interactive chat turn can ask the user clarifying questions.
-        from docsgpt.agents.tools.ask_user import add_ask_user_tool
+        # An interactive chat turn can ask the user clarifying questions, beside
+        # its other tools: a turn with none calls the model without tools, so
+        # its answers stay cacheable and it pays no tokens for the tool.
+        from docsgpt.agents.tools.ask_user import ASK_USER, add_ask_user_tool
 
-        add_ask_user_tool(tools_dict, enabled=self._offers_questions())
+        has_other_tools = any(
+            isinstance(t, dict) and (t.get("name") != ASK_USER or t.get("client_side")) for t in tools_dict.values()
+        )
+        add_ask_user_tool(tools_dict, enabled=has_other_tools and self._offers_questions())
         # The executor gates tool calls itself, so it needs this run's engine,
         # and the search tools screen their hits as retrieved documents and
         # the source names their result lists as those documents' names.

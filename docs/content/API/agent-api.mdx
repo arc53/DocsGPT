@@ -367,7 +367,7 @@ Write actions on the owner's accounts or credentials never reach this pause for 
 
 ## Clarifying questions
 
-When an answer depends on something neither the conversation nor the sources settle, the assistant can ask the user up to three short questions, once per user message. How they reach your client depends on the `questions` field:
+When an answer depends on something neither the conversation nor the sources settle, the assistant can ask the user up to three short questions, once per user message. An agent with no tools and no sources never asks. How they reach your client depends on the `questions` field:
 
 - **Without it** (the default), the questions are the turn's answer, written as text: the assistant's lead-in line, then each question in bold with its options as `a)`, `b)` and so on. The turn ends, and the user's next message is the answer. The turn's `ask_user` tool call carries `"shown_as": "text"`.
 - **With `"questions": "cards"`**, the turn pauses as in [Tools that need approval](#tools-that-need-approval). The `tool_call` event has `"status": "awaiting_answer"`, a `message` (the lead-in, or `null`) and a `questions` list; the pending call's `pause_type` is `awaiting_answer`.
