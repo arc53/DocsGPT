@@ -4591,7 +4591,8 @@
           "builtin_lines": "Lines DocsGPT adds",
           "agents_fit": "Fits its agents"
         }
-      }
+      },
+      "backToDrafter": "Back to DocsGPT"
     },
     "title": "Draft with DocsGPT",
     "draft": "Draft",

@@ -4548,7 +4548,8 @@
           "builtin_lines": "DocsGPT 会添加的内容",
           "agents_fit": "适合使用它的智能体"
         }
-      }
+      },
+      "backToDrafter": "返回 DocsGPT"
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",

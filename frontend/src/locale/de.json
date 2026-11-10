@@ -4570,7 +4570,8 @@
           "builtin_lines": "Zeilen, die DocsGPT selbst hinzufügt",
           "agents_fit": "Passt zu seinen Agenten"
         }
-      }
+      },
+      "backToDrafter": "Zurück zu DocsGPT"
     },
     "title": "Mit DocsGPT entwerfen",
     "draft": "Entwerfen",

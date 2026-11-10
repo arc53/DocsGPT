@@ -343,6 +343,11 @@ export type PromptEditorProps = {
    * on; without it the hint has no link.
    */
   onReview?: () => void;
+  /**
+   * A phone's way back to the drafter's sheet, which steps aside while you
+   * choose: a link under the review's changes.
+   */
+  onBackToDrafter?: () => void;
 };
 
 /**
@@ -372,6 +377,7 @@ export function PromptEditor({
   nameError,
   locked = false,
   onReview,
+  onBackToDrafter,
 }: PromptEditorProps) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -407,7 +413,11 @@ export function PromptEditor({
         </DraftedField>
 
         {review && onDecide ? (
-          <PromptEditReview review={review} onDecide={onDecide} />
+          <PromptEditReview
+            review={review}
+            onDecide={onDecide}
+            onBack={onBackToDrafter}
+          />
         ) : (
           <div className="flex flex-col gap-1.5">
             <DraftedField

@@ -43,10 +43,15 @@ const service = vi.hoisted(() => ({
 }));
 vi.mock('../api/services/userService', () => ({ default: service }));
 
-// The drawer docks beside the page on a desktop.
+// The drawer docks beside the page on a desktop; a test may switch to a
+// phone, where it is a sheet over the page.
+const media = vi.hoisted(() => ({ isMobile: false }));
 vi.mock('../hooks', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks')>()),
-  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
+  useMediaQuery: () => ({
+    isMobile: media.isMobile,
+    isDesktop: !media.isMobile,
+  }),
 }));
 
 const drafter = vi.hoisted(() => ({
@@ -189,6 +194,7 @@ describe('Prompts page', () => {
     );
     service.getUserTools.mockImplementation(() => response({ success: false }));
     drafter.config = null;
+    media.isMobile = false;
     promptChecks.value = [];
     drafter.scripts = [];
     drafter.requests = [];
@@ -1183,6 +1189,91 @@ describe('Prompts page', () => {
     expect(textArea()!.value).toBe('You check every vendor.');
     expect(button('drafter.prompt.acceptAll', panel()!)).toBeUndefined();
     expect(save().disabled).toBe(false);
+  });
+
+  it('closes the sheet on a phone to step through the changes, and opens it when they are chosen', async () => {
+    media.isMobile = true;
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      proposal({
+        ...IMPROVE,
+        edits: [
+          IMPROVE.edits[0],
+          {
+            id: 'e2',
+            find: 'before onboarding',
+            replace: 'before signing',
+            reason: 'Sharper.',
+          },
+        ],
+      }),
+    ];
+    withText('You check vendors. Do it before onboarding.');
+    await render();
+    await openCard('Vendor checks');
+    const improve = button('drafter.improve', view()!)!;
+    await click(improve);
+    const sheet = () =>
+      document.querySelector<HTMLElement>('[data-slot="sheet-content"]');
+    await click(
+      sheet()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
+    );
+    await click(button('drafter.prompt.reviewOneByOne', sheet()!)!);
+    // The sheet goes aside and the page lands on change 1.
+    expect(improve.getAttribute('aria-expanded')).toBe('false');
+    const review = view()!.querySelector('[data-slot="prompt-review"]')!;
+    expect(
+      review.querySelector('[data-edit-id="e1"]')!.getAttribute('data-current'),
+    ).toBe('true');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(
+      'drafter.prompt.acceptChange:{"number":1}',
+    );
+    // The way back is a link under the changes.
+    expect(button('drafter.prompt.backToDrafter', review)).toBeDefined();
+    // The last choice ends the review and the sheet opens on its turn.
+    await click(button('drafter.prompt.accept', review)!);
+    await click(button('drafter.prompt.reject', view()!)!);
+    expect(view()!.querySelector('[data-slot="prompt-review"]')).toBeNull();
+    expect(improve.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it("opens the sheet again from the review's Back to DocsGPT on a phone", async () => {
+    media.isMobile = true;
+    drafter.config = { enabled: true };
+    drafter.scripts = [proposal(IMPROVE)];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    const improve = button('drafter.improve', view()!)!;
+    await click(improve);
+    const sheet = () =>
+      document.querySelector<HTMLElement>('[data-slot="sheet-content"]');
+    await click(
+      sheet()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
+    );
+    await click(button('drafter.prompt.reviewOneByOne', sheet()!)!);
+    expect(improve.getAttribute('aria-expanded')).toBe('false');
+    await click(button('drafter.prompt.backToDrafter', view()!)!);
+    expect(improve.getAttribute('aria-expanded')).toBe('true');
+    // The review stays open, with Accept all and Discard in the sheet.
+    expect(view()!.querySelector('[data-slot="prompt-review"]')).not.toBeNull();
+    expect(button('drafter.prompt.discard', sheet()!)).toBeDefined();
+  });
+
+  it('keeps the drawer open for one by one on a desktop', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [proposal(IMPROVE)];
+    withText('You check vendors.');
+    await render();
+    await openCard('Vendor checks');
+    const improve = button('drafter.improve', view()!)!;
+    await click(improve);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
+    );
+    await click(button('drafter.prompt.reviewOneByOne', panel()!)!);
+    expect(improve.getAttribute('aria-expanded')).toBe('true');
+    expect(button('drafter.prompt.backToDrafter', view()!)).toBeUndefined();
   });
 
   const REVIEW = {

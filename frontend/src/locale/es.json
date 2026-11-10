@@ -4703,7 +4703,8 @@
           "builtin_lines": "Líneas que añade DocsGPT",
           "agents_fit": "Encaja con sus agentes"
         }
-      }
+      },
+      "backToDrafter": "Volver a DocsGPT"
     },
     "title": "Redactar con DocsGPT",
     "draft": "Redactar",

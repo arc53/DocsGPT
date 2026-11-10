@@ -4703,7 +4703,8 @@
           "builtin_lines": "Lignes que DocsGPT ajoute",
           "agents_fit": "Convient à ses agents"
         }
-      }
+      },
+      "backToDrafter": "Retour à DocsGPT"
     },
     "title": "Rédiger avec DocsGPT",
     "draft": "Rédiger",

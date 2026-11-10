@@ -4550,7 +4550,8 @@
           "builtin_lines": "DocsGPT 會加入的內容",
           "agents_fit": "適合使用它的代理"
         }
-      }
+      },
+      "backToDrafter": "返回 DocsGPT"
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",

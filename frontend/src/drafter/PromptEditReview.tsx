@@ -1,3 +1,4 @@
+import { WandSparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,18 +16,22 @@ import type { PromptDecision, PromptReview } from './usePromptReview';
  * changes with their reasons and Accept / Reject each. "Review one by one"
  * (the drawer's turn) marks the change being decided
  * and moves on after each choice. Accept all and Discard there finish the
- * review.
+ * review. On a phone the drawer's sheet steps aside while you choose, and
+ * `onBack` gives a link back to it under the changes.
  *
  * Args:
  *   review: The proposal, the text it was made for and the choices so far.
  *   onDecide: Accept or reject a change; null takes a choice back.
+ *   onBack: Opens the drafter's sheet again (phone only, `sm:hidden`).
  */
 export function PromptEditReview({
   review,
   onDecide,
+  onBack,
 }: {
   review: PromptReview;
   onDecide: (id: string, decision: PromptDecision | null) => void;
+  onBack?: () => void;
 }) {
   const { t } = useTranslation();
   const { proposal, original, decisions, current } = review;
@@ -176,6 +181,18 @@ export function PromptEditReview({
           );
         })}
       </ol>
+      {onBack && (
+        <Button
+          type="button"
+          variant="link"
+          size="inline"
+          className="self-start sm:hidden"
+          onClick={onBack}
+        >
+          <WandSparkles aria-hidden="true" />
+          {t('drafter.prompt.backToDrafter')}
+        </Button>
+      )}
     </div>
   );
 }

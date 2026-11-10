@@ -4836,7 +4836,8 @@
           "builtin_lines": "Строки, которые добавляет DocsGPT",
           "agents_fit": "Подходит его агентам"
         }
-      }
+      },
+      "backToDrafter": "Вернуться к DocsGPT"
     },
     "title": "Черновик с DocsGPT",
     "draft": "Набросать",

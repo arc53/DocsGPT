@@ -33,6 +33,7 @@ import { promptDrafterMode } from '../drafter/promptDraft';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import { usePromptDrafter } from '../drafter/usePromptDrafter';
 import { WandButton } from '../drafter/WandButton';
+import { useMediaQuery } from '../hooks';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import type { Prompt } from '../models/misc';
@@ -500,6 +501,27 @@ function PromptDetailPage({
     target?.kind === 'new' && target.draft,
   );
   const [leaving, setLeaving] = React.useState(false);
+  // On a phone the drawer is a sheet over the editor: stepping through the
+  // changes (one by one, a finding's Change n) puts it aside so the page
+  // lands on the change, and it opens again once every change is chosen.
+  const { isMobile } = useMediaQuery();
+  const [reviewAside, setReviewAside] = React.useState(false);
+  if (reviewAside && drafter.review === null) {
+    setReviewAside(false);
+    setDrawerOpen(true);
+  }
+  const stepAside = <A extends unknown[]>(action: (...args: A) => void) =>
+    isMobile
+      ? (...args: A) => {
+          action(...args);
+          setDrawerOpen(false);
+          setReviewAside(true);
+        }
+      : action;
+  const backToDrafter = () => {
+    setReviewAside(false);
+    setDrawerOpen(true);
+  };
   // The drawer's Change model link asks before leaving unsaved changes.
   const leaveGuard = useLeaveGuard(detail.dirty);
 
@@ -629,6 +651,9 @@ function PromptDetailPage({
             }
             locked={streaming}
             onReview={reviewFromHint}
+            onBackToDrafter={
+              drafterOn && !readOnly && !drawerOpen ? backToDrafter : undefined
+            }
           />
           {dialogs}
           {leaveGuard.dialog}
@@ -669,7 +694,11 @@ function PromptDetailPage({
         <PromptDraftPanel
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
-          drafter={drafter}
+          drafter={{
+            ...drafter,
+            reviewOneByOne: stepAside(drafter.reviewOneByOne),
+            goTo: stepAside(drafter.goTo),
+          }}
           mode={mode}
           usedBy={usedBy}
           modelName={drafterConfig?.model?.display_name ?? null}
