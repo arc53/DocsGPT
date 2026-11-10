@@ -80,9 +80,6 @@ class TestExecutorNotesTheReport:
             return "Recorded", call.id
 
         monkeypatch.setattr(executor, "_execute", fake_execute)
-        gen = executor.execute({}, SimpleNamespace(id="c1", name=REPORT_CANNOT_COMPLETE, arguments={}), "MockLLM")
-        with pytest.raises(StopIteration):
-            while True:
-                next(gen)
+        list(executor.execute({}, SimpleNamespace(id="c1", name=REPORT_CANNOT_COMPLETE, arguments={}), "MockLLM"))
 
         assert executor.cannot_complete == "no email tool"
