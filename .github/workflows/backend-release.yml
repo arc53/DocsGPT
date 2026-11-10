@@ -58,18 +58,32 @@ jobs:
           # The tag and the release are checked separately: a run that pushed
           # the tag and then failed to create the release must still create
           # it (and publish) when re-run.
+          tag=missing
           if git ls-remote --tags --exit-code origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            echo "tag=exists" >> "$GITHUB_OUTPUT"
+            tag=exists
             echo "Tag $VERSION already exists on origin."
-          else
-            echo "tag=missing" >> "$GITHUB_OUTPUT"
           fi
+          release=missing
           if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "release=exists" >> "$GITHUB_OUTPUT"
+            release=exists
             echo "Release $VERSION already exists — nothing to publish."
-          else
-            echo "release=missing" >> "$GITHUB_OUTPUT"
           fi
+          # Publishing for a tag pushed earlier must run at the tag's commit:
+          # the release provenance names this run's commit as the source, and
+          # ci.yml skips it when that is not the commit the assets come from.
+          if [ "$tag" = exists ] && [ "$release" = missing ]; then
+            tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/refs/tags/$VERSION" --jq .sha)
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $VERSION is at $tag_sha, not this run's commit $GITHUB_SHA." \
+                "Re-run the failed jobs of the run that pushed the tag, or run this workflow from the tag:" \
+                "gh workflow run backend-release.yml --ref $VERSION"
+              exit 1
+            fi
+          fi
+          {
+            echo "tag=$tag"
+            echo "release=$release"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         if: steps.check.outputs.tag == 'missing'
