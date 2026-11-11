@@ -1675,7 +1675,7 @@ class LLMHandler(ABC):
             pause_info = agent.tool_executor.check_pause(
                 tools_dict, call, llm_class
             )
-            if pause_info and pause_info.get("pause_type") == "questions_blocked":
+            if pause_info and pause_info.get("pause_type") == ask_user.QUESTIONS_BLOCKED:
                 # Question cards an output control blocked: nothing of the
                 # call is shown, traced or kept; the turn ends on the block
                 # (``_take_questions_block``).
