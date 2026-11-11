@@ -2,7 +2,6 @@ import * as React from 'react';
 
 import { FormFieldControlProvider } from '@/components/ui/form-field';
 import { Label } from '@/components/ui/label';
-import { DraftedBadge } from '@/drafter/DraftedBadge';
 import { cn } from '@/lib/utils';
 
 /** A group of SettingRows, split by faint dividers. Layout classes only. */
@@ -42,15 +41,6 @@ type SettingRowProps = {
   after?: React.ReactNode;
   /** Something that follows the title on its line (a status badge). */
   titleAddon?: React.ReactNode;
-  /**
-   * @deprecated Use DraftedSettingRow (drafter/DraftedBadge); kept until the
-   * agent form's limit rows move to it.
-   */
-  drafted?: boolean;
-  /** @deprecated See `drafted`. */
-  onUndo?: () => void;
-  /** @deprecated See `drafted`. */
-  fieldLabel?: string;
   /** Layout only. */
   className?: string;
   /** The control on the right: a Switch, a small Input, a Select. */
@@ -77,9 +67,6 @@ function SettingRow({
   as = 'label',
   after,
   titleAddon,
-  drafted = false,
-  onUndo,
-  fieldLabel,
   className,
   children,
   ...data
@@ -103,19 +90,9 @@ function SettingRow({
       {label}
     </Label>
   );
-  const legacyDrafted = !!onUndo && drafted;
-  const addon = legacyDrafted ? (
-    <DraftedBadge
-      onUndo={onUndo}
-      fieldLabel={fieldLabel ?? (typeof label === 'string' ? label : '')}
-    />
-  ) : (
-    titleAddon
-  );
   return (
     <div
       data-slot="setting-row"
-      data-drafted={legacyDrafted || undefined}
       {...data}
       className={cn('py-3 first:pt-0 last:pb-0', className)}
     >
@@ -131,10 +108,10 @@ function SettingRow({
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {addon ? (
+          {titleAddon ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {title}
-              {addon}
+              {titleAddon}
             </div>
           ) : (
             title

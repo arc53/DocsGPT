@@ -91,7 +91,7 @@ import {
   type DraftSuggestionGroup,
 } from '../drafter/DraftPanel';
 import { suggestionIconClass } from '../hero/SuggestionRows';
-import { DraftedField } from '../drafter/DraftedBadge';
+import { DraftedField, DraftedSettingRow } from '../drafter/DraftedBadge';
 import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
 import { DRAFTER_STARTERS } from '../drafter/starters';
 import { ProposalSummary } from '../drafter/ProposalSummary';
@@ -2903,7 +2903,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                             }))
                           }
                         />
-                        <SettingRow
+                        <DraftedSettingRow
                           label={t('agents.form.advanced.tokenLimiting')}
                           description={t(
                             'agents.form.advanced.tokenLimitingDescription',
@@ -2950,8 +2950,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                               });
                             }}
                           />
-                        </SettingRow>
-                        <SettingRow
+                        </DraftedSettingRow>
+                        <DraftedSettingRow
                           label={t('agents.form.advanced.requestLimiting')}
                           description={t(
                             'agents.form.advanced.requestLimitingDescription',
@@ -3000,7 +3000,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                               });
                             }}
                           />
-                        </SettingRow>
+                        </DraftedSettingRow>
                         <AllowedOriginsSetting
                           config={agent.config}
                           disabled={!canEditPolicy}

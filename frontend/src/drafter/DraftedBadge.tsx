@@ -162,7 +162,7 @@ export function DraftedSettingRow({
   onUndo,
   fieldLabel,
   ...props
-}: Omit<SettingRowProps, 'drafted' | 'onUndo' | 'fieldLabel'> & {
+}: SettingRowProps & {
   drafted: boolean;
   onUndo?: () => void;
   fieldLabel?: string;
