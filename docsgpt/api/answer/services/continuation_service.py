@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from sqlalchemy import Connection
 
+from docsgpt.agents.tools.ask_user import AWAITING_ANSWER, is_awaiting_answer, question_payload
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
@@ -92,9 +93,6 @@ _NOT_ANSWERED_TEXT = {
     RETIRED_EXPIRED: "Not answered: the questions expired before the user answered them.",
 }
 
-#: The pause type of a call waiting for the user to answer its questions.
-AWAITING_ANSWER = "awaiting_answer"
-
 #: Statuses of a call still waiting for the user or the client.
 _WAITING = frozenset({"awaiting_approval", "requires_client_execution", AWAITING_ANSWER})
 
@@ -132,17 +130,13 @@ def not_run_entry(pending: Mapping[str, Any], reason: str) -> Dict[str, Any]:
         A ``denied`` tool call carrying ``not_run`` (the reason) and, as its
         result, the sentence later turns replay to the model.
     """
-    asks = pending.get("pause_type") == AWAITING_ANSWER
+    asks = is_awaiting_answer(pending)
     for_client = pending.get("pause_type") == "requires_client_execution"
     entry: Dict[str, Any] = {
         "tool_name": pending.get("tool_name") or "unknown",
         "call_id": pending.get("call_id"),
         "action_name": pending.get("llm_name") or pending.get("name") or pending.get("action_name"),
-        "arguments": (
-            {"message": pending.get("message"), "questions": pending.get("questions") or []}
-            if asks
-            else pending.get("arguments") or {}
-        ),
+        "arguments": question_payload(pending) if asks else pending.get("arguments") or {},
         "result": _NOT_ANSWERED_TEXT[reason] if asks else _NOT_RUN_TEXT[(for_client, reason)],
         "status": "denied",
         "not_run": reason,
@@ -179,7 +173,7 @@ def question_action_problem(pending_tool_calls: Any, tool_actions: Any) -> Optio
         pending = by_id.get(str(action.get("call_id") or ""))
         if pending is None:
             continue
-        if pending.get("pause_type") == AWAITING_ANSWER:
+        if is_awaiting_answer(pending):
             if "decision" in action or "result" in action:
                 return "A question call takes an answer or skipped, not a decision or a result."
             answer = action.get("answer")

@@ -22,6 +22,7 @@ from docsgpt.agents.attachment_dispatch import AttachmentDispatch
 from docsgpt.agents.cannot_complete import CANNOT_COMPLETE_MARKER
 from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
+from docsgpt.agents.tools import ask_user
 from docsgpt.agents.tools.report_cannot_complete import add_report_cannot_complete_tool
 from docsgpt.agents.tools.view_image import add_view_image_tool
 from docsgpt.agents.tool_executor import (
@@ -848,7 +849,7 @@ class BaseAgent(ABC):
             call_id = pending["call_id"]
             args = pending["arguments"]
             action = actions_by_id.get(call_id)
-            if not action and pending.get("pause_type") == "awaiting_answer":
+            if not action and ask_user.is_awaiting_answer(pending):
                 # Questions nobody answered: the model goes ahead without them.
                 action = {"call_id": call_id, "skipped": True}
             if not action:
@@ -858,7 +859,7 @@ class BaseAgent(ABC):
                     "comment": "No response provided",
                 }
 
-            if pending.get("pause_type") == "awaiting_answer":
+            if ask_user.is_awaiting_answer(pending):
                 yield from self._resume_question_call(pending, answers.get(call_id, ""), messages)
 
             elif action.get("decision") == "approved":
@@ -1006,7 +1007,7 @@ class BaseAgent(ABC):
 
         answers: Dict[str, str] = {}
         for pending in pending_tool_calls:
-            if pending.get("pause_type") != "awaiting_answer":
+            if not ask_user.is_awaiting_answer(pending):
                 continue
             call_id = pending["call_id"]
             action = actions_by_id.get(call_id) or {}
@@ -1054,7 +1055,7 @@ class BaseAgent(ABC):
             "tool_name": pending.get("tool_name") or "ask_user",
             "call_id": call_id,
             "action_name": pending.get("llm_name", pending["name"]),
-            "arguments": {"message": pending.get("message"), "questions": pending.get("questions") or []},
+            "arguments": ask_user.question_payload(pending),
             "result": truncate_tool_result(result),
             "status": status,
         }

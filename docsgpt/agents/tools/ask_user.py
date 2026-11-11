@@ -14,7 +14,7 @@ only holds the tool's description and the texts the model reads.
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from docsgpt.agents.questions import CHAT_QUESTIONS_SCHEMA, MAX_QUESTIONS
 from docsgpt.agents.tools.base import Tool
@@ -80,6 +80,57 @@ def add_ask_user_tool(tools_dict: Dict[str, Any], enabled: bool) -> bool:
     actions = [{**meta, "active": True} for meta in AskUserTool().get_actions_metadata()]
     tools_dict[ASK_USER_TOOL_ID] = {"id": ASK_USER_TOOL_ID, "name": ASK_USER, "actions": actions, "config": {}}
     return True
+
+
+def is_awaiting_answer(call: Any) -> bool:
+    """Whether a pending call is paused on questions for the user.
+
+    Args:
+        call: A pending call (anything; only a dict can be one).
+
+    Returns:
+        Whether its ``pause_type`` is :data:`AWAITING_ANSWER`.
+    """
+    return isinstance(call, Mapping) and call.get("pause_type") == AWAITING_ANSWER
+
+
+def question_payload(call: Mapping[str, Any]) -> Dict[str, Any]:
+    """The cards a paused ``ask_user`` call shows: ``{"message", "questions"}``.
+
+    A paused call holds them once, as its ``arguments`` (the screened cards).
+    A call saved before that carries them beside the arguments too, and that
+    copy is read first: the oldest such rows kept the model's own arguments.
+
+    Args:
+        call: The pending call (``awaiting_answer``).
+
+    Returns:
+        The lead-in line (or None) and the normalized questions.
+    """
+    if "questions" in call:
+        message, questions = call.get("message"), call.get("questions")
+    else:
+        arguments = call.get("arguments")
+        arguments = arguments if isinstance(arguments, Mapping) else {}
+        message, questions = arguments.get("message"), arguments.get("questions")
+    return {"message": message, "questions": questions or []}
+
+
+def client_pending_call(call: Any) -> Any:
+    """A pending call as clients receive it (``tool_calls_pending``).
+
+    A call waiting on questions also carries ``message`` and ``questions``
+    beside its arguments, as the API documents; any other call is unchanged.
+
+    Args:
+        call: The pending call as the pause keeps it.
+
+    Returns:
+        The call to send.
+    """
+    if not is_awaiting_answer(call):
+        return call
+    return {**call, **question_payload(call)}
 
 
 def invalid_text(problems: List[str], last_try: bool) -> str:

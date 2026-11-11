@@ -1697,7 +1697,8 @@ class ToolExecutor:
 
         A call that may not ask is refused (the ``headless_denied`` shape the
         LLM handler answers with ``model_text``); otherwise the turn pauses on
-        ``awaiting_answer``, carrying the normalized questions.
+        ``awaiting_answer``, carrying the normalized questions as its
+        arguments.
 
         Args:
             call: The model's tool call.
@@ -1742,9 +1743,14 @@ class ToolExecutor:
         # The model's own wording must not reach the client or the paused
         # state: the arguments are the screened cards, so whatever the cards
         # leave out (a fourth question, an extra key, text past a cap) and the
-        # screen therefore never saw stays out too.
-        base["arguments"] = {"message": message, "questions": questions}
-        return {**base, "pause_type": ask_user.AWAITING_ANSWER, "message": message, "questions": questions}
+        # screen therefore never saw stays out too. They are held once, as the
+        # arguments; clients get them beside the call too
+        # (``ask_user.question_payload`` / ``client_pending_call``).
+        return {
+            **base,
+            "arguments": {"message": message, "questions": questions},
+            "pause_type": ask_user.AWAITING_ANSWER,
+        }
 
     def _screened_questions(
         self, message: Optional[str], questions: List[Dict]

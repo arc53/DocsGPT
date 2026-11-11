@@ -44,7 +44,7 @@ from docsgpt.core.model_utils import (
     validate_model_id,
 )
 from docsgpt.agents.client_capabilities import FORMS, parse_capabilities
-from docsgpt.agents.tools.ask_user import CARDS, QUESTION_MODES
+from docsgpt.agents.tools.ask_user import CARDS, QUESTION_MODES, is_awaiting_answer
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
@@ -2343,7 +2343,6 @@ class StreamProcessor:
             mode and ignored elsewhere.
         """
         from docsgpt.api.answer.services.continuation_service import (
-            AWAITING_ANSWER,
             NOT_PENDING_MESSAGE,
             ContinuationNotPendingError,
             ContinuationService,
@@ -2493,8 +2492,7 @@ class StreamProcessor:
         if agent_config.get("questions") in QUESTION_MODES:
             tool_executor.questions = self._questions_for_client()
         tool_executor.questions_asked = bool(agent_config.get("questions_asked")) or any(
-            isinstance(call, dict) and call.get("pause_type") == AWAITING_ANSWER
-            for call in pending_tool_calls or []
+            is_awaiting_answer(call) for call in pending_tool_calls or []
         )
         # Restore client tools so they stay available for subsequent LLM calls
         saved_client_tools = state.get("client_tools")

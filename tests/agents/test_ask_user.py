@@ -309,9 +309,11 @@ class TestCheckPause:
         pause = executor.check_pause(tools, _call(), "MockLLM")
 
         assert pause["pause_type"] == "awaiting_answer"
-        assert pause["message"] == "Two things first:"
-        assert [q["id"] for q in pause["questions"]] == ["q1", "q2"]
-        assert pause["arguments"] == {"message": pause["message"], "questions": pause["questions"]}
+        # The paused call holds the cards once, as its arguments.
+        assert "message" not in pause and "questions" not in pause
+        assert pause["arguments"]["message"] == "Two things first:"
+        assert [q["id"] for q in pause["arguments"]["questions"]] == ["q1", "q2"]
+        assert set(pause["arguments"]) == {"message", "questions"}
         assert executor.questions_asked is True
 
     @pytest.mark.parametrize("mode", [None, "text"])
@@ -377,8 +379,33 @@ class TestHandler:
         events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
 
         assert events[-1]["type"] == "tool_calls_pending"
-        assert agent._pending_continuation["pending_tool_calls"][0]["questions"]
+        assert agent._pending_continuation["pending_tool_calls"][0]["arguments"]["questions"]
         agent.llm.gen_stream.assert_not_called()
+
+    def test_the_pause_events_keep_their_shape(self):
+        """Clients get the cards beside the call and as its arguments, though the saved call holds them once."""
+        executor, tools = _executor("cards")
+        agent = _agent(executor)
+        events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
+        message, questions = normalize_questions(ARGS)
+        payload = {"message": message, "questions": questions}
+
+        (call_event,) = [e for e in events if e.get("type") == "tool_call"]
+        assert call_event["data"] == {
+            "tool_name": ASK_USER,
+            "call_id": "c1",
+            "action_name": ASK_USER,
+            "arguments": payload,
+            "status": "awaiting_answer",
+            **payload,
+        }
+        assert list(call_event["data"])[-2:] == ["message", "questions"]
+
+        (stored,) = agent._pending_continuation["pending_tool_calls"]
+        (sent,) = events[-1]["data"]["pending_tool_calls"]
+        assert "message" not in stored and "questions" not in stored
+        assert sent == {**stored, **payload}
+        assert list(sent) == [*stored, "message", "questions"]
 
     def test_a_refusal_is_sent_to_the_model_and_kept_as_a_failed_call(self):
         executor, tools = _executor("cards")
@@ -454,8 +481,31 @@ class _ResumeHarness:
         return events, messages, executor
 
 
+#: A paused call as it is saved now: the cards once, as the arguments.
+SAVED_PENDING = {
+    key: value for key, value in _ResumeHarness.PENDING.items() if key not in ("message", "questions")
+} | {"arguments": {"message": "Two things first:", "questions": normalize_questions(ARGS)[1]}}
+
+#: A paused call saved before the cards were held once: both copies, the same cards.
+LEGACY_PENDING = {**_ResumeHarness.PENDING, "arguments": SAVED_PENDING["arguments"]}
+
+
 @pytest.mark.unit
 class TestResume(_ResumeHarness):
+
+    @pytest.mark.parametrize(
+        "pending",
+        [SAVED_PENDING, LEGACY_PENDING, _ResumeHarness.PENDING],
+        ids=["saved-once", "legacy-both-copies", "legacy-raw-arguments"],
+    )
+    @pytest.mark.parametrize("action", [{"call_id": "c1", "answer": "11-50"}, None], ids=["answered", "skipped"])
+    def test_every_saved_shape_resumes_with_the_cards_as_arguments(self, pending, action):
+        events, _messages, executor = self._resume(action, pending=[dict(pending)])
+
+        (record,) = executor.tool_calls
+        assert record["arguments"] == {"message": "Two things first:", "questions": normalize_questions(ARGS)[1]}
+        (event,) = [e for e in events if e.get("type") == "tool_call"]
+        assert event["data"]["arguments"] == record["arguments"]
 
     def test_an_answer_reaches_the_model_and_the_message(self):
         events, messages, executor = self._resume({"call_id": "c1", "answer": "Team size? → 11-50"})
@@ -623,6 +673,13 @@ class TestRetiredQuestions:
         assert entry["result"].startswith("Not answered:") and word in entry["result"]
         assert entry["arguments"]["questions"] == _ResumeHarness.PENDING["questions"]
 
+    @pytest.mark.parametrize("pending", [SAVED_PENDING, LEGACY_PENDING], ids=["saved-once", "legacy-both-copies"])
+    def test_every_saved_shape_records_the_cards_it_asked(self, pending):
+        from docsgpt.api.answer.services.continuation_service import not_run_entry
+
+        entry = not_run_entry(pending, "expired")
+        assert entry["arguments"] == {"message": "Two things first:", "questions": normalize_questions(ARGS)[1]}
+
 
 @pytest.mark.unit
 class TestPausedTurnState:
@@ -711,7 +768,7 @@ class TestQuestionOutputGuardrails(_ResumeHarness):
 
         (pause,) = [e for e in events if isinstance(e, dict) and e.get("type") == "tool_call"]
         stored = agent._pending_continuation["pending_tool_calls"][0]
-        for shown in (pause["data"], stored):
+        for shown in (pause["data"], pause["data"]["arguments"], stored["arguments"]):
             assert "@example.com" not in json.dumps(shown)
             assert shown["message"] == "Mail [EMAIL] or answer:"
             assert shown["questions"][0]["note"] == "Or ask [EMAIL]."
@@ -725,7 +782,7 @@ class TestQuestionOutputGuardrails(_ResumeHarness):
         message, questions = normalize_questions({**ARGS, "questions": [ARGS["questions"][1]]})
         assert pause["pause_type"] == "awaiting_answer"
         assert pause["arguments"] == {"message": message, "questions": questions}
-        assert pause["questions"] == questions
+        assert "questions" not in pause
 
     def test_what_the_cards_leave_out_never_reaches_the_client_or_the_paused_state(self):
         # A 4th question and an extra key are dropped from the cards, so the

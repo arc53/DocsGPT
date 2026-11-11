@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Uni
 
 from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
+from docsgpt.agents.tools import ask_user
 from docsgpt.error import bounded_error_text
 from docsgpt.logging import build_stack_data
 
@@ -1767,9 +1768,8 @@ class LLMHandler(ABC):
                     if pause_info.get(key):
                         pause_data[key] = pause_info[key]
                 # Questions for the user (``ask_user``): the client draws them as cards.
-                if pause_info["pause_type"] == "awaiting_answer":
-                    pause_data["message"] = pause_info.get("message")
-                    pause_data["questions"] = pause_info.get("questions") or []
+                if ask_user.is_awaiting_answer(pause_info):
+                    pause_data.update(ask_user.question_payload(pause_info))
                 trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
@@ -1961,7 +1961,7 @@ class LLMHandler(ABC):
                 }
                 yield {
                     "type": "tool_calls_pending",
-                    "data": {"pending_tool_calls": pending_actions},
+                    "data": {"pending_tool_calls": [ask_user.client_pending_call(c) for c in pending_actions]},
                 }
                 return ""
 
@@ -2219,7 +2219,7 @@ class LLMHandler(ABC):
             }
             yield {
                 "type": "tool_calls_pending",
-                "data": {"pending_tool_calls": pending_actions},
+                "data": {"pending_tool_calls": [ask_user.client_pending_call(c) for c in pending_actions]},
             }
             return
 
