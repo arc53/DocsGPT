@@ -745,16 +745,23 @@ def apply_numbered_edits(content: str, edits: list[dict]) -> tuple[list[dict], s
     return out, result, ids
 
 
-def _check_text(result: str, previous: str, req: DraftRequest) -> None:
+def _check_text(result: str, previous: str, req: DraftRequest, *, edited: bool = True) -> None:
     """Template syntax and tool-variable rules for a drafted prompt text.
 
-    A prompt whose text didn't parse before the change (a template with a stray
-    ``{%``) isn't blamed on the change.
+    Edits to a prompt whose text didn't parse before (a template with a stray
+    ``{%``) leave the user's own mistake in place, so it isn't blamed on them.
+    A whole new text is the model's alone: it is refused whenever it doesn't parse.
+
+    Args:
+        result: The drafted text.
+        previous: The prompt's text before the change; tool variables already in it stay allowed.
+        req: The draft request, whose messages may ask for tool variables.
+        edited: Whether ``result`` is ``previous`` with edits applied, rather than a whole new text.
 
     Raises:
         ProposalInvalid: The text doesn't parse, or adds tool variables the user didn't ask for.
     """
-    if not template_parses(result) and (not previous or template_parses(previous)):
+    if not template_parses(result) and (not edited or not previous or template_parses(previous)):
         raise ProposalInvalid([TEMPLATE_PROBLEM])
     problem = tool_variables_problem(result, previous, req)
     if problem:
@@ -962,7 +969,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         problems.append(f"The prompt can be at most {CONTENT_MAX} characters.")
     if problems:
         raise ProposalInvalid(problems)
-    _check_text(content, current, req)
+    _check_text(content, current, req, edited=False)
     return {
         "mode": "write",
         "message": message,

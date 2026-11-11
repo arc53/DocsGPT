@@ -19,6 +19,7 @@ from docsgpt.drafter.prompt_recipe import (
     READ_MAX,
     validate,
 )
+from docsgpt.drafter.prompt_rules import TEMPLATE_PROBLEM
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, get_recipe, ProposalInvalid
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import parse_messages
@@ -372,6 +373,14 @@ class TestWrite:
     def test_tool_variables_need_the_users_ask(self):
         with pytest.raises(ProposalInvalid, match="tools"):
             self._write("Memory: {{ tools.memory.memory_view }}")
+
+    def test_a_new_text_that_does_not_parse_is_refused_even_when_the_current_one_never_parsed(self):
+        # The edit exemption keeps the user's own stray {% in place; a whole new text is the model's alone.
+        current = "Hi {{ system.date }} {% here. Be brief."
+        args = {"message": "Wrote it.", "name": "N", "content": "Hi {{ system.date }} {% if x %}", "reason": "R."}
+        with pytest.raises(ProposalInvalid) as raised:
+            validate(args, _req("write", current, "Rewrite it"), Workspace())
+        assert raised.value.problems == [TEMPLATE_PROBLEM]
 
     def test_a_template_is_flagged(self):
         proposal = self._write("Today is {{ system.date }}.", messages=("Put {{ system.date }} in it",))
