@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, type ComponentProps, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
   MemoryRouter,
@@ -390,16 +390,91 @@ const setNativeValue = (
   el.dispatchEvent(new Event('input', { bubbles: true }));
 };
 
-/** Open the toolbar's ⋯ and its items' labels. */
-const openToolbarMenu = async (root: ParentNode) => {
-  const trigger = root.querySelector<HTMLButtonElement>(
-    'button[aria-label="agents.form.buttons.moreActions"]',
-  )!;
-  await act(async () => {
-    trigger.dispatchEvent(
+/** Click an element inside act. */
+const click = (el: HTMLElement) => act(async () => el.click());
+/** Type a value into a field as a user would, inside act. */
+const type = (el: HTMLInputElement | HTMLTextAreaElement, value: string) =>
+  act(async () => setNativeValue(el, value));
+/** Press a Radix trigger (it opens on pointerdown), inside act. */
+const pointerDown = (el: Element) =>
+  act(async () => {
+    el.dispatchEvent(
       new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
     );
   });
+/** Open a combobox (a press, then its click), inside act. */
+const openCombobox = (trigger: HTMLElement) =>
+  act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+    );
+    trigger.click();
+  });
+/** The form's Name field. */
+const nameInput = (root: ParentNode) =>
+  root.querySelector<HTMLInputElement>(
+    'input[placeholder="agents.form.placeholders.agentName"]',
+  )!;
+
+/**
+ * Draw the form: a new agent, or a saved one (`edit`, `draft`) at its edit
+ * address.
+ *
+ * Args:
+ *   root: The test's root.
+ *   mode: The form's mode.
+ *   options: `entries` and `initialIndex`, the router's history (the saved
+ *     agent's address by default); `beside`, drawn next to the form in its
+ *     route; `after`, drawn after the routes.
+ */
+const mountForm = (
+  root: Root,
+  mode: 'new' | 'edit' | 'draft' = 'new',
+  {
+    entries = ['/agents/edit/agent-1'],
+    initialIndex,
+    beside,
+    after,
+  }: {
+    entries?: ComponentProps<typeof MemoryRouter>['initialEntries'];
+    initialIndex?: number;
+    beside?: ReactNode;
+    after?: ReactNode;
+  } = {},
+) =>
+  act(async () => {
+    root.render(
+      mode === 'new' ? (
+        <MemoryRouter>
+          <NewAgent mode="new" />
+          {after}
+        </MemoryRouter>
+      ) : (
+        <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={
+                <>
+                  <NewAgent mode={mode} />
+                  {beside}
+                </>
+              }
+            />
+          </Routes>
+          {after}
+        </MemoryRouter>
+      ),
+    );
+  });
+
+/** Open the toolbar's ⋯ and its items' labels. */
+const openToolbarMenu = async (root: ParentNode) => {
+  await pointerDown(
+    root.querySelector<HTMLButtonElement>(
+      'button[aria-label="agents.form.buttons.moreActions"]',
+    )!,
+  );
   return Array.from(
     document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
   );
@@ -410,7 +485,7 @@ const pickMenuItem = async (root: ParentNode, label: string) => {
   const item = (await openToolbarMenu(root)).find(
     (row) => row.textContent === label,
   )!;
-  await act(async () => item.click());
+  await click(item);
 };
 
 describe('NewAgent form', () => {
@@ -441,13 +516,7 @@ describe('NewAgent form', () => {
   });
 
   const render = async () => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <NewAgent mode="new" />
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root);
   };
 
   const buttonByText = (text: string) =>
@@ -485,9 +554,7 @@ describe('NewAgent form', () => {
   // Decision 63 (3): every field, picker and button in the form is 42px.
   it('renders the name field as a default-size square Input', async () => {
     await render();
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
+    const name = nameInput(container);
     expect(name.getAttribute('data-slot')).toBe('input');
     expect(name.getAttribute('data-size')).toBe('default');
     // S8: form controls are square; only the page chrome is pill.
@@ -525,12 +592,7 @@ describe('NewAgent form', () => {
           ?.textContent,
       ).toBe('agents.form.sections.prompt');
       expect(buttonByText('agents.form.buttons.add')).toBeUndefined();
-      await act(async () => {
-        trigger.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-        );
-        trigger.click();
-      });
+      await openCombobox(trigger);
       const list = document.body.querySelector('[cmdk-list]')!;
       const rows = Array.from(list.querySelectorAll('[cmdk-item]'));
       expect(rows.map((row) => row.getAttribute('data-value'))).toEqual([
@@ -556,7 +618,7 @@ describe('NewAgent form', () => {
         (b) => b.textContent === 'settings.prompts.addPrompt',
       )!;
       expect(add.getAttribute('data-variant')).toBe('outline-primary');
-      await act(async () => (rows[1] as HTMLElement).click());
+      await click(rows[1] as HTMLElement);
       expect(trigger.textContent).toContain('Tone');
     } finally {
       mockState.preference.prompts = [];
@@ -567,12 +629,7 @@ describe('NewAgent form', () => {
     const trigger = container.querySelector<HTMLButtonElement>(
       '[data-slot="combobox-trigger"]',
     )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-      trigger.click();
-    });
+    await openCombobox(trigger);
   };
   const promptRow = (value: string) =>
     document.body.querySelector<HTMLElement>(
@@ -649,7 +706,7 @@ describe('NewAgent form', () => {
         '[data-slot="combobox-trigger"]',
       )!;
       await openPromptPicker();
-      await act(async () => promptRow('team-1')!.click());
+      await click(promptRow('team-1')!);
       expect(trigger.textContent).toContain('Theirs');
       await openPromptPicker();
       const kinds = Array.from(
@@ -658,7 +715,7 @@ describe('NewAgent form', () => {
         ),
       );
       // Yours: the picked teammate's prompt is filtered out.
-      await act(async () => kinds[2].click());
+      await click(kinds[2]);
       expect(trigger.textContent).toContain('Theirs');
       expect(trigger.textContent).not.toContain('Mine 0');
     } finally {
@@ -697,7 +754,7 @@ describe('NewAgent form', () => {
         // Short, as on the Prompts page's track.
         'settings.prompts.kinds.shared',
       ]);
-      await act(async () => kinds[2].click());
+      await click(kinds[2]);
       const rows = Array.from(
         document.body.querySelectorAll('[cmdk-item]'),
       ).map((row) => row.getAttribute('data-value'));
@@ -717,10 +774,10 @@ describe('NewAgent form', () => {
     ] as never[];
     try {
       await render();
-      await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[data-slot="combobox-trigger"]')!
-          .click(),
+      await click(
+        container.querySelector<HTMLButtonElement>(
+          '[data-slot="combobox-trigger"]',
+        )!,
       );
       const sheet = document.body.querySelector<HTMLElement>(
         '[data-slot="sheet-content"]',
@@ -730,7 +787,7 @@ describe('NewAgent form', () => {
       expect(sheet.querySelector('h3')?.textContent).toBe(
         'agents.form.sections.prompt',
       );
-      await act(async () => promptRow('strict').click());
+      await click(promptRow('strict'));
       expect(document.body.querySelector('[data-slot="sheet-content"]')).toBe(
         null,
       );
@@ -744,9 +801,7 @@ describe('NewAgent form', () => {
 
   it('renders the token and request limits as default-size square Inputs', async () => {
     await render();
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced').click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced'));
     for (const key of ['enterTokenLimit', 'enterRequestLimit']) {
       const field = container.querySelector(
         `input[placeholder="agents.form.placeholders.${key}"]`,
@@ -886,18 +941,7 @@ describe('NewAgent form', () => {
         ...agent,
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'edit');
   };
 
   // The route guard sends a workflow on to its editor when its record says
@@ -950,19 +994,12 @@ describe('NewAgent form', () => {
     // This file stubs ConfirmationModal as its confirm button.
     container.querySelector('[data-testid="confirm-delete"]') !== null;
   const typeName = async (value: string) =>
-    act(async () =>
-      setNativeValue(
-        container.querySelector<HTMLInputElement>(
-          'input[placeholder="agents.form.placeholders.agentName"]',
-        )!,
-        value,
-      ),
-    );
+    act(async () => setNativeValue(nameInput(container), value));
 
   it('asks before Go to Tools leaves unsaved changes', async () => {
     await render();
     await typeName('Support bot');
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(true);
   });
 
@@ -995,7 +1032,7 @@ describe('NewAgent form', () => {
     await render();
     await act(async () => undefined);
     expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -1007,7 +1044,7 @@ describe('NewAgent form', () => {
     await typeName('Support bot');
     await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -1071,20 +1108,9 @@ describe('NewAgent form', () => {
         prompt_id: 'default',
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="draft" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'draft');
     expect(buttonByText('agents.form.buttons.publish').disabled).toBe(false);
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -1121,18 +1147,16 @@ describe('NewAgent form', () => {
     );
     await render();
     await typeName('Support bot');
-    await act(async () =>
-      setNativeValue(
-        container.querySelector<HTMLTextAreaElement>(
-          'textarea[placeholder="agents.form.placeholders.describeAgent"]',
-        )!,
-        'Helps',
-      ),
+    await type(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+      )!,
+      'Helps',
     );
     await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     const publish = buttonByText('agents.form.buttons.publish');
     expect(publish.disabled).toBe(true);
-    await act(async () => publish.click());
+    await click(publish);
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
     await act(async () =>
       finish({ ok: true, json: () => Promise.resolve({ id: 'agent-9' }) }),
@@ -1156,7 +1180,7 @@ describe('NewAgent form', () => {
     );
     await renderEdit({ updated_at: '2026-10-30T10:00:00.123456+00:00' });
     await typeName('Renamed');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const form = mocks.updateAgent.mock.calls.at(-1)![1];
     expect(form.get('expected_updated_at')).toBe(
       '2026-10-30T10:00:00.123456+00:00',
@@ -1164,11 +1188,7 @@ describe('NewAgent form', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       'agents.form.errors.staleWrite',
     );
-    expect(
-      container.querySelector<HTMLInputElement>(
-        'input[placeholder="agents.form.placeholders.agentName"]',
-      )!.value,
-    ).toBe('Renamed');
+    expect(nameInput(container).value).toBe('Renamed');
   });
 
   it('sends the stamp the last save answered with', async () => {
@@ -1177,9 +1197,9 @@ describe('NewAgent form', () => {
     );
     await renderEdit({ updated_at: 'stamp-1' });
     await typeName('Once');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     await typeName('Twice');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const form = mocks.updateAgent.mock.calls.at(-1)![1];
     expect(form.get('expected_updated_at')).toBe('stamp-2');
   });
@@ -1200,14 +1220,14 @@ describe('NewAgent form', () => {
       details().onConfigChange({ api_write_allowlist: ['t:a'] }, 'stamp-2'),
     );
     await typeName('Renamed');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const form = mocks.updateAgent.mock.calls.at(-1)![1];
     expect(form.get('expected_updated_at')).toBe('stamp-2');
   });
 
   it('lets Go to Tools go when the agent is saved', async () => {
     await renderEdit({});
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(
       container.querySelector('[data-testid="confirm-delete"]'),
     ).toBeNull();
@@ -1224,7 +1244,7 @@ describe('NewAgent form', () => {
       ],
     });
     expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -1419,11 +1439,9 @@ describe('NewAgent form', () => {
       ),
     );
     await renderEdit({});
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Renamed'));
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const name = nameInput(container);
+    await type(name, 'Renamed');
+    await click(buttonByText('agents.form.buttons.save'));
     const confirm = container.querySelector<HTMLButtonElement>(
       '[data-testid="confirm-sponsor"]',
     )!;
@@ -1434,7 +1452,7 @@ describe('NewAgent form', () => {
     const first = mocks.updateAgent.mock.calls[0][1];
     expect(first.get('confirm_sponsor')).toBeNull();
 
-    await act(async () => confirm.click());
+    await click(confirm);
     expect(mocks.updateAgent).toHaveBeenCalledTimes(2);
     const retried = mocks.updateAgent.mock.calls[1][1];
     expect(JSON.parse(retried.get('confirm_sponsor') as string)).toEqual([
@@ -1446,10 +1464,8 @@ describe('NewAgent form', () => {
   });
 
   const rename = async (value: string) => {
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, value));
+    const name = nameInput(container);
+    await type(name, value);
   };
 
   it('drops the remove-only row once the removal is saved', async () => {
@@ -1460,14 +1476,12 @@ describe('NewAgent form', () => {
         { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
       ],
     });
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[data-toggle="owners"]')!
-        .click(),
+    await click(
+      container.querySelector<HTMLButtonElement>('[data-toggle="owners"]')!,
     );
     // Still listed until saved, so it can be put back.
     expect(container.querySelector('[data-item="owners"]')).not.toBeNull();
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-item="owners"]')).toBeNull();
   });
@@ -1498,21 +1512,19 @@ describe('NewAgent form', () => {
     await renderEdit(withStoppedTool());
     const save = buttonByText('agents.form.buttons.save');
     expect(save.disabled).toBe(true);
-    await act(async () =>
-      buttonByText('agents.form.sponsors.takeOver').click(),
-    );
+    await click(buttonByText('agents.form.sponsors.takeOver'));
     // Nothing is taken over until the reader agrees in the dialog.
     expect(save.disabled).toBe(true);
     const confirm = container.querySelector<HTMLButtonElement>(
       '[data-testid="confirm-sponsor"]',
     )!;
     expect(confirm.textContent).toBe('Jira');
-    await act(async () => confirm.click());
+    await click(confirm);
     expect(container.textContent).toContain(
       'agents.form.sponsors.takeOverPending',
     );
     expect(save.disabled).toBe(false);
-    await act(async () => save.click());
+    await click(save);
     const sent = mocks.updateAgent.mock.calls[0][1];
     expect(JSON.parse(sent.get('confirm_sponsor') as string)).toEqual([
       'tool:t1',
@@ -1524,7 +1536,7 @@ describe('NewAgent form', () => {
   const openAdvanced = async () => {
     const trigger = buttonByText('agents.form.sections.advanced');
     if (trigger.getAttribute('aria-expanded') !== 'true') {
-      await act(async () => trigger.click());
+      await click(trigger);
     }
   };
   const limitInput = (key: 'contextLimitTokens' | 'historyLimitTokens') =>
@@ -1558,13 +1570,11 @@ describe('NewAgent form', () => {
       'false',
     );
     expect(limitInput('contextLimitTokens').disabled).toBe(true);
-    await act(async () => limitSwitch('contextLimit').click());
+    await click(limitSwitch('contextLimit'));
     // Switched on, it starts from a value the model's window allows.
     expect(limitInput('contextLimitTokens').value).toBe('100000');
-    await act(async () =>
-      setNativeValue(limitInput('contextLimitTokens'), '32000'),
-    );
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await type(limitInput('contextLimitTokens'), '32000');
+    await click(buttonByText('agents.form.buttons.save'));
     // The rest of the config rides along: a config save replaces it whole.
     expect(sentConfig()).toMatchObject({
       api_write_allowlist: ['t:a'],
@@ -1583,23 +1593,23 @@ describe('NewAgent form', () => {
     expect(input.value).toBe('32000');
     const save = buttonByText('agents.form.buttons.save');
     // Past the window is a note, not an error: the limit just has no effect.
-    await act(async () => setNativeValue(input, '200000'));
+    await type(input, '200000');
     expect(save.disabled).toBe(false);
     expect(input.getAttribute('aria-invalid')).toBeNull();
     expect(container.textContent).toContain(
       'agents.form.advanced.contextLimitAboveWindow',
     );
     // Below the server's floor is an error.
-    await act(async () => setNativeValue(input, '12000'));
+    await type(input, '12000');
     expect(save.disabled).toBe(true);
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(container.textContent).toContain('agents.form.advanced.limitRange');
     // Emptied while on is not a value either.
-    await act(async () => setNativeValue(input, ''));
+    await type(input, '');
     expect(save.disabled).toBe(true);
-    await act(async () => limitSwitch('contextLimit').click());
+    await click(limitSwitch('contextLimit'));
     expect(save.disabled).toBe(false);
-    await act(async () => save.click());
+    await click(save);
     expect(sentConfig().context_window_limit).toBeNull();
   });
 
@@ -1617,11 +1627,9 @@ describe('NewAgent form', () => {
     expect(container.textContent).toContain(
       'agents.form.advanced.historyLimitAboveWindow',
     );
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Renamed'));
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const name = nameInput(container);
+    await type(name, 'Renamed');
+    await click(buttonByText('agents.form.buttons.save'));
     expect(sentConfig()).toMatchObject({
       context_window_limit: 200_000,
       history_token_limit: 150_000,
@@ -1635,17 +1643,17 @@ describe('NewAgent form', () => {
       ...withModel(128_000),
     });
     await openAdvanced();
-    await act(async () => limitSwitch('historyLimit').click());
+    await click(limitSwitch('historyLimit'));
     const input = limitInput('historyLimitTokens');
     expect(input.value).toBe('8000');
     const save = buttonByText('agents.form.buttons.save');
-    await act(async () => setNativeValue(input, '32000'));
+    await type(input, '32000');
     expect(save.disabled).toBe(true);
     expect(container.textContent).toContain(
       'agents.form.advanced.historyLimitBelowContext',
     );
-    await act(async () => setNativeValue(input, '16000'));
-    await act(async () => save.click());
+    await type(input, '16000');
+    await click(save);
     expect(sentConfig()).toMatchObject({
       context_window_limit: 32000,
       history_token_limit: 16000,
@@ -1673,11 +1681,11 @@ describe('NewAgent form', () => {
     expect(fields().map((f) => f.value)).toEqual([
       'Run due diligence on a new vendor',
     ]);
-    await act(async () => buttonByText('agents.form.starters.add').click());
-    await act(async () => buttonByText('agents.form.starters.add').click());
+    await click(buttonByText('agents.form.starters.add'));
+    await click(buttonByText('agents.form.starters.add'));
     const save = buttonByText('agents.form.buttons.save');
-    await act(async () => setNativeValue(fields()[2], '  Which DPAs?  '));
-    await act(async () => save.click());
+    await type(fields()[2], '  Which DPAs?  ');
+    await click(save);
     const sent = mocks.updateAgent.mock.calls[0][1];
     expect(JSON.parse(sent.get('starters') as string)).toEqual([
       'Run due diligence on a new vendor',
@@ -1710,14 +1718,12 @@ describe('NewAgent form', () => {
     expect(container.textContent).toContain(
       'agents.form.resourceStates.reason.deleted',
     );
-    await act(async () =>
-      buttonByText('agents.form.resourceStates.remove').click(),
-    );
+    await click(buttonByText('agents.form.resourceStates.remove'));
     // Off the form, so off the notice too.
     expect(container.textContent).not.toContain(
       'agents.form.resourceStates.reason.deleted',
     );
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const sent = mocks.updateAgent.mock.calls[0][1];
     expect(JSON.parse(sent.get('tools') as string)).toEqual([]);
   });
@@ -1733,9 +1739,7 @@ describe('NewAgent form', () => {
         connection: { id: 'c1', connector_key: 'telegram', name: 'Telegram' },
       }),
     );
-    await act(async () =>
-      buttonByText('settings.connectors.status.reconnect').click(),
-    );
+    await click(buttonByText('settings.connectors.status.reconnect'));
     expect(mocks.reconnect).toHaveBeenCalledWith(
       { id: 'c1', connector_key: 'telegram' },
       undefined,
@@ -1758,7 +1762,7 @@ describe('NewAgent form', () => {
     );
     await renderEdit({});
     await rename('Renamed');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     expect(container.textContent).toContain(
       'agents.form.sponsors.confirmationOutdated',
     );
@@ -1840,22 +1844,9 @@ describe('NewAgent form', () => {
         prompt_id: 'default',
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Unsaved name'));
+    await mountForm(root, 'edit');
+    const name = nameInput(container);
+    await type(name, 'Unsaved name');
 
     const pushed = mocks.dispatch.mock.calls
       .map(([action]) => action)
@@ -1890,7 +1881,7 @@ describe('NewAgent form', () => {
       'agents.form.sections.preview',
     ]);
     const preview = items[1];
-    await act(async () => preview.click());
+    await click(preview);
     const sheet = document.querySelector('[data-slot="sheet-content"]')!;
     expect(sheet.textContent).toContain('agents.form.preview.publishTitle');
   });
@@ -1928,7 +1919,7 @@ describe('NewAgent form', () => {
       'has-[[data-variant=section-toggle]:focus-visible]:ring-3',
     );
 
-    await act(async () => toggle.click());
+    await click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(chevron.getAttribute('class')).toContain('rotate-90');
   });
@@ -2005,7 +1996,7 @@ describe('NewAgent form', () => {
       'settings.tools.groupAdded',
       'agents.form.toolsPopup.groupCustom',
     ]);
-    await act(async () => kinds[1].click());
+    await click(kinds[1]);
     expect(
       Array.from(tools.querySelectorAll('[data-item]')).map((item) =>
         item.getAttribute('data-item'),
@@ -2046,7 +2037,7 @@ describe('NewAgent form', () => {
         '[data-testid="picker-footer"] button',
       ),
     ).find((b) => b.textContent === 'settings.tools.addTool')!;
-    await act(async () => add.click());
+    await click(add);
     expect(mocks.addToolProps?.modalState).toBe('ACTIVE');
     const calls = mocks.toolsCalls.length;
     mocks.tools = [
@@ -2069,10 +2060,8 @@ describe('NewAgent form', () => {
     ).find(
       (picker) => picker.getAttribute('data-title') === 'settings.tools.label',
     )!;
-    await act(async () =>
-      tools
-        .querySelector<HTMLButtonElement>('[data-testid="picker-open"]')!
-        .click(),
+    await click(
+      tools.querySelector<HTMLButtonElement>('[data-testid="picker-open"]')!,
     );
     const badge = container.querySelector('[data-slot="badge"]');
     expect(badge?.textContent).toBe('settings.devices.online');
@@ -2092,10 +2081,8 @@ describe('NewAgent form', () => {
   // Item 42: the header's Cancel (shown once the form is dirty) is ghost.
   it('renders the header Cancel as a ghost pill once the form changes', async () => {
     await render();
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Support bot'));
+    const name = nameInput(container);
+    await type(name, 'Support bot');
     const cancel = buttonByText('agents.form.buttons.cancel');
     expect(cancel.getAttribute('data-variant')).toBe('ghost');
     expect(cancel.getAttribute('data-size')).toBe('field');
@@ -2119,23 +2106,21 @@ describe('NewAgent form', () => {
 
   it('marks JSON schema validity with token colours and lucide icons', async () => {
     await render();
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced').click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced'));
     const schema = Array.from(container.querySelectorAll('textarea')).find(
       (el) => el.className.includes('font-mono'),
     )!;
     expect(schema.getAttribute('data-slot')).toBe('textarea');
     expect(schema.getAttribute('data-size')).toBe('default');
 
-    await act(async () => setNativeValue(schema, '{ not json'));
+    await type(schema, '{ not json');
     const invalid = Array.from(container.querySelectorAll('div')).find(
       (el) => el.textContent === 'agents.form.advanced.invalidJson',
     )!;
     expect(invalid.className).toContain('text-destructive');
     expect(invalid.querySelector('svg.lucide-circle-x')).not.toBeNull();
 
-    await act(async () => setNativeValue(schema, '{}'));
+    await type(schema, '{}');
     const valid = Array.from(container.querySelectorAll('div')).find(
       (el) => el.textContent === 'agents.form.advanced.validJson',
     )!;
@@ -2243,18 +2228,7 @@ describe('NewAgent gating by role', () => {
         allowed_actions: allowed,
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'edit');
   };
 
   const buttonByText = (text: string) =>
@@ -2262,19 +2236,8 @@ describe('NewAgent gating by role', () => {
       b.textContent?.includes(text),
     );
 
-  const menuLabels = async () => {
-    const menu = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="agents.form.buttons.moreActions"]',
-    )!;
-    await act(async () => {
-      menu.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-    });
-    return Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).map((item) => item.textContent);
-  };
+  const menuLabels = async () =>
+    (await openToolbarMenu(container)).map((item) => item.textContent);
 
   const lastGuardrailsDisabled = () =>
     mocks.guardrailsProps.mock.calls.at(-1)?.[0].disabled;
@@ -2314,9 +2277,7 @@ describe('NewAgent gating by role', () => {
   it('lets an editor change guardrails and quotas', async () => {
     await renderEdit('editor', EDITOR);
     expect(lastGuardrailsDisabled()).toBe(false);
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced')!.click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced')!);
     const switches =
       container.querySelectorAll<HTMLButtonElement>('[role="switch"]');
     expect(switches.length).toBeGreaterThan(0);
@@ -2329,9 +2290,7 @@ describe('NewAgent gating by role', () => {
       EDITOR.filter((a) => a !== 'edit_policy'),
     );
     expect(lastGuardrailsDisabled()).toBe(true);
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced')!.click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced')!);
     const token = container.querySelector<HTMLInputElement>(
       'input[placeholder="agents.form.placeholders.enterTokenLimit"]',
     )!;
@@ -2369,10 +2328,10 @@ describe('NewAgent gating by role', () => {
         setModalState: (state: string) => void;
       };
     await menuLabels();
-    await act(async () =>
-      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-        .find((item) => item.textContent === 'agents.shareWithTeam')!
-        .click(),
+    await click(
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((item) => item.textContent === 'agents.shareWithTeam')!,
     );
     const share = mocks.shareProps.mock.calls.at(-1)![0] as {
       onOpenAccessDetails?: () => void;
@@ -2392,10 +2351,10 @@ describe('NewAgent gating by role', () => {
       OWNER.filter((a) => a !== 'manage_access_details'),
     );
     await menuLabels();
-    await act(async () =>
-      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-        .find((item) => item.textContent === 'agents.shareWithTeam')!
-        .click(),
+    await click(
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((item) => item.textContent === 'agents.shareWithTeam')!,
     );
     const share = mocks.shareProps.mock.calls.at(-1)![0] as {
       onOpenAccessDetails?: () => void;
@@ -2418,15 +2377,15 @@ describe('NewAgent gating by role', () => {
     );
     await renderEdit('owner', OWNER);
     await menuLabels();
-    await act(async () =>
-      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-        .find((item) => item.textContent === 'agents.form.buttons.delete')!
-        .click(),
+    await click(
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((item) => item.textContent === 'agents.form.buttons.delete')!,
     );
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
-        .click(),
+    await click(
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="confirm-delete"]',
+      )!,
     );
     await expect(mocks.submitResult).rejects.toThrow();
     await act(async () => undefined);
@@ -2494,14 +2453,7 @@ describe('NewAgent drafter', () => {
   });
 
   const render = async () => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <NewAgent mode="new" />
-          <RouterProbe />
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'new', { after: <RouterProbe /> });
   };
 
   const renderEdit = async (
@@ -2521,18 +2473,7 @@ describe('NewAgent drafter', () => {
         ...over,
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'edit');
   };
 
   const buttons = (root: ParentNode = container) =>
@@ -2550,10 +2491,6 @@ describe('NewAgent drafter', () => {
     document.querySelector<HTMLElement>(
       '[data-slot="side-panel"][data-state="open"], [data-slot="sheet-content"]',
     );
-  const nameInput = () =>
-    container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
   const drafted = () =>
     Array.from(container.querySelectorAll('[data-drafted]')).map(
       (el) => el.querySelector('label')?.textContent,
@@ -2566,9 +2503,21 @@ describe('NewAgent drafter', () => {
     const input = panel()!.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="drafter.askLabel"]',
     )!;
-    await act(async () => setNativeValue(input, text));
-    await act(async () => buttonByLabel('drafter.send', panel()!)!.click());
+    await type(input, text);
+    await click(buttonByLabel('drafter.send', panel()!)!);
   };
+  const requestLimit = () =>
+    container.querySelector<HTMLInputElement>(
+      'input[aria-label="agents.form.advanced.requestLimit"]',
+    )!;
+  /** The drawer's line for the prompt it wrote that waits unused. */
+  const parked = () =>
+    Array.from(
+      panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+    ).find((el) => el.textContent?.includes('drafter.agent.prompt.parked'));
+  /** The phone's step strip. */
+  const strip = () =>
+    container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
   /** The latest turn's Next (or Finish). */
   const next = () =>
     buttons(panel()!).find(
@@ -2600,18 +2549,7 @@ describe('NewAgent drafter', () => {
           answer = resolve;
         }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'edit');
     // Still loading: the form's stub has no access fields to read.
     expect(wand()).toBeUndefined();
     await act(async () =>
@@ -2636,7 +2574,7 @@ describe('NewAgent drafter', () => {
       description: '',
     });
     expect(wand()!.textContent).toContain('drafter.improve');
-    await act(async () => wand()!.click());
+    await click(wand()!);
     expect(panel()!.textContent).not.toContain('drafter.agent.build.intro');
   });
 
@@ -2647,9 +2585,7 @@ describe('NewAgent drafter', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     await renderEdit(['edit', 'publish', 'use', 'view']);
     // The Advanced panel draws the switch once open.
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced')!.click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced')!);
     const switches = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[role="switch"]'),
     );
@@ -2683,7 +2619,7 @@ describe('NewAgent drafter', () => {
     expect(wand()!.textContent).toContain('drafter.build');
     // No describe box on the form.
     expect(container.querySelector('textarea[rows="3"]')).toBeNull();
-    await act(async () => wand()!.click());
+    await click(wand()!);
     expect(panel()!.textContent).toContain('drafter.agent.build.intro');
     expect(
       panel()!
@@ -2694,9 +2630,7 @@ describe('NewAgent drafter', () => {
     expect(panel()!.textContent).toContain(
       'drafter.starters.website.titledrafter.starters.website.description',
     );
-    await act(async () =>
-      buttonByText('drafter.starters.website.title', panel()!)!.click(),
-    );
+    await click(buttonByText('drafter.starters.website.title', panel()!)!);
     expect(drafter.requests).toHaveLength(1);
     expect(drafter.requests[0]).toMatchObject({
       recipe: 'agent',
@@ -2744,7 +2678,7 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    expect(nameInput().value).toBe('Shipping help');
+    expect(nameInput(container).value).toBe('Shipping help');
     expect(drafted()).toEqual([
       'agents.form.labels.name',
       'agents.form.labels.description',
@@ -2760,8 +2694,8 @@ describe('NewAgent drafter', () => {
     expect(container.querySelector('[data-slot="drafted-strip"]')).toBeNull();
     expect(buttonByText('drafter.undoAll')).toBeUndefined();
 
-    await act(async () => buttonByLabel('drafter.undoField')!.click());
-    expect(nameInput().value).toBe('');
+    await click(buttonByLabel('drafter.undoField')!);
+    expect(nameInput(container).value).toBe('');
     expect(drafted()).not.toContain('agents.form.labels.name');
   });
 
@@ -2813,7 +2747,7 @@ describe('NewAgent drafter', () => {
         .querySelector('textarea[aria-label="drafter.askLabel"]')
         ?.getAttribute('placeholder'),
     ).toBe('drafter.agent.build.changePlaceholder');
-    await act(async () => next()!.click());
+    await click(next()!);
     expect(drafter.requests).toHaveLength(2);
     expect(lastRequest().messages).toEqual([
       { role: 'user', content: 'drafter.agent.build.continue' },
@@ -2902,7 +2836,7 @@ describe('NewAgent drafter', () => {
     expect(
       buttonByText('drafter.agent.build.checkForm', panel()!),
     ).toBeTruthy();
-    await act(async () => next()!.click());
+    await click(next()!);
     expect(lastRequest().context.step).toBe('safety');
     const header = panel()!.textContent!;
     expect(header).toContain('drafter.agent.build.filledAtOnce');
@@ -2942,11 +2876,7 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('A public shipping agent');
-    await act(async () => next()!.click());
-    const requestLimit = () =>
-      container.querySelector<HTMLInputElement>(
-        'input[aria-label="agents.form.advanced.requestLimit"]',
-      )!;
+    await click(next()!);
     // Advanced opens itself for the drafted limit.
     const advanced = buttonByText('agents.form.sections.advanced')!;
     expect(advanced.getAttribute('aria-expanded')).toBe('true');
@@ -2974,9 +2904,7 @@ describe('NewAgent drafter', () => {
     expect(next()!.textContent).toBe('drafter.agent.build.finish');
 
     // The row's badge undoes the limit: both limits off again.
-    await act(async () =>
-      buttonByLabel('drafter.undoField', requestRow)!.click(),
-    );
+    await click(buttonByLabel('drafter.undoField', requestRow)!);
     expect(requestLimit().disabled).toBe(true);
     expect(
       requestLimit()
@@ -2993,7 +2921,7 @@ describe('NewAgent drafter', () => {
         .drafted,
     ).toBe(false);
 
-    await act(async () => next()!.click());
+    await click(next()!);
     expect(panel()!.textContent).toContain('drafter.agent.build.done');
     expect(panel()!.textContent).toContain('drafter.agent.build.allFilled');
   });
@@ -3010,7 +2938,7 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    await act(async () => next()!.click());
+    await click(next()!);
     const doneLine = () =>
       panel()!.querySelector<HTMLElement>('[data-slot="build-done"]')!;
     // A warning in place of the done line, with the way to the field.
@@ -3018,17 +2946,15 @@ describe('NewAgent drafter', () => {
     expect(alert.textContent).toContain('drafter.agent.build.doneBlocked');
     expect(panel()!.textContent).not.toContain('drafter.agent.build.done ');
     // The folded step reads the form: no name yet.
-    expect(nameInput().value).toBe('');
-    await act(async () =>
-      buttonByText('drafter.agent.build.goTo', alert)!.click(),
-    );
+    expect(nameInput(container).value).toBe('');
+    await click(buttonByText('drafter.agent.build.goTo', alert)!);
     await act(
       () =>
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     );
-    expect(document.activeElement).toBe(nameInput());
+    expect(document.activeElement).toBe(nameInput(container));
     // Once it has a name, the done line is back.
-    await act(async () => setNativeValue(nameInput(), 'Shipping help'));
+    await type(nameInput(container), 'Shipping help');
     expect(doneLine().querySelector('[data-slot="alert"]')).toBeNull();
     expect(doneLine().textContent).toBe('drafter.agent.build.done');
   });
@@ -3071,9 +2997,7 @@ describe('NewAgent drafter', () => {
     await render();
     await ask('A shipping agent');
     expect(panel()!.textContent).toContain('drafter.agent.build.progress');
-    await act(async () =>
-      buttonByLabel('drafter.startOver', panel()!)!.click(),
-    );
+    await click(buttonByLabel('drafter.startOver', panel()!)!);
     // No step, no progress: the next message is free-form again.
     expect(panel()!.textContent).not.toContain('drafter.agent.build.progress');
     expect(panel()!.querySelector('[data-item="proposal"]')).toBeNull();
@@ -3093,7 +3017,7 @@ describe('NewAgent drafter', () => {
     // Open, the drawer is the build itself: no Resume.
     expect(wand()!.textContent).not.toContain('drafter.agent.build.resume');
     expect(wand()!.hasAttribute('aria-label')).toBe(false);
-    await act(async () => wand()!.click());
+    await click(wand()!);
     expect(panel()).toBeNull();
     expect(wand()!.textContent).toContain('drafter.agent.build.resume');
     expect(wand()!.getAttribute('aria-label')).toBe(
@@ -3104,7 +3028,7 @@ describe('NewAgent drafter', () => {
 
   it('offers improve rows on a saved agent, and Finish setup asks for safety', async () => {
     await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view']);
-    await act(async () => wand()!.click());
+    await click(wand()!);
     const text = panel()!.textContent!;
     expect(text).toContain('drafter.agent.improve.introPublished');
     expect(text).not.toContain('drafter.agent.build.progress');
@@ -3119,9 +3043,7 @@ describe('NewAgent drafter', () => {
       'drafter.agent.improve.writePrompt',
       'drafter.agent.improve.starters',
     ]);
-    await act(async () =>
-      buttonByText('drafter.agent.improve.finishSetup', panel()!)!.click(),
-    );
+    await click(buttonByText('drafter.agent.improve.finishSetup', panel()!)!);
     expect(lastRequest().context).toMatchObject({
       agent_id: 'agent-1',
       step: 'safety',
@@ -3137,7 +3059,7 @@ describe('NewAgent drafter', () => {
       limited_request_mode: true,
       request_limit: 100,
     });
-    await act(async () => wand()!.click());
+    await click(wand()!);
     expect(panel()!.textContent).toContain('drafter.agent.improve.intro');
     expect(
       buttonByText('drafter.agent.improve.finishSetup', panel()!),
@@ -3154,16 +3076,12 @@ describe('NewAgent drafter', () => {
     await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view']);
     await ask('Cap it at 500');
     await ask('300 is enough');
-    const requestLimit = () =>
-      container.querySelector<HTMLInputElement>(
-        'input[aria-label="agents.form.advanced.requestLimit"]',
-      )!;
     expect(requestLimit().value).toBe('300');
-    await act(async () =>
+    await click(
       buttonByLabel(
         'drafter.undoField',
         requestLimit().closest('[data-slot="setting-row"]')!,
-      )!.click(),
+      )!,
     );
     // No limit, as the agent had before either draft.
     expect(requestLimit().disabled).toBe(true);
@@ -3175,17 +3093,19 @@ describe('NewAgent drafter', () => {
       [proposal({ name: 'Shipping desk' }), { type: 'end' }],
     ];
     await renderEdit(['edit', 'publish', 'use', 'view']);
-    const before = nameInput().value;
+    const before = nameInput(container).value;
     await ask('Name it for shipping');
     await ask('Shorter');
-    expect(nameInput().value).toBe('Shipping desk');
-    await act(async () =>
+    expect(nameInput(container).value).toBe('Shipping desk');
+    await click(
       buttonByLabel(
         'drafter.undoField',
-        nameInput().closest<HTMLElement>('[data-slot="drafted-field"]')!,
-      )!.click(),
+        nameInput(container).closest<HTMLElement>(
+          '[data-slot="drafted-field"]',
+        )!,
+      )!,
     );
-    expect(nameInput().value).toBe(before);
+    expect(nameInput(container).value).toBe(before);
     expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
     const summaries = panel()!.querySelectorAll(
       '[data-slot="proposal-summary"]',
@@ -3218,7 +3138,7 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    await act(async () => buttonByText('agents.form.buttons.publish')!.click());
+    await click(buttonByText('agents.form.buttons.publish')!);
     await ask('Add a starter');
     await act(async () =>
       answer({ ok: true, json: () => Promise.resolve({ id: 'new-1' }) }),
@@ -3254,10 +3174,8 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    await act(async () => buttonByText('agents.form.buttons.publish')!.click());
-    await act(async () =>
-      buttonByLabel('drafter.startOver', panel()!)!.click(),
-    );
+    await click(buttonByText('agents.form.buttons.publish')!);
+    await click(buttonByLabel('drafter.startOver', panel()!)!);
     // As many items as before the Start over: still a newer conversation.
     await ask('Add a starter');
     await act(async () =>
@@ -3274,7 +3192,7 @@ describe('NewAgent drafter', () => {
     await render();
     await ask('Shipping agent');
     expect(drafted()).toEqual(['agents.form.labels.name']);
-    await act(async () => setNativeValue(nameInput(), 'My own name'));
+    await type(nameInput(container), 'My own name');
     expect(drafted()).toEqual([]);
   });
 
@@ -3328,7 +3246,7 @@ describe('NewAgent drafter', () => {
       await ask('A shipping agent for our website');
       // The view takes the main column; the form stays, hidden.
       expect(view()).not.toBeNull();
-      expect(nameInput().closest('.hidden')).not.toBeNull();
+      expect(nameInput(container).closest('.hidden')).not.toBeNull();
       expect(view()!.textContent).toContain('agents.newAgent');
       expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
       expect(viewName().value).toBe('Shipping support');
@@ -3349,7 +3267,7 @@ describe('NewAgent drafter', () => {
       ).toBe('drafter.agent.prompt.changePlaceholder');
 
       // The view's unsaved text goes with the next message, edits included.
-      await act(async () => setNativeValue(viewText(), 'My own text.'));
+      await type(viewText(), 'My own text.');
       drafter.scripts = [writes('Friendlier text.')];
       await ask('Make it friendlier');
       expect(lastRequest().context.form.prompt_draft).toEqual({
@@ -3361,7 +3279,7 @@ describe('NewAgent drafter', () => {
       expect(viewDrafted()).toContain('modals.prompts.promptText');
 
       use().focus();
-      await act(async () => use().click());
+      await click(use());
       await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
       // Focus lands on the Prompt field it set, not <body>.
       expect(
@@ -3377,7 +3295,7 @@ describe('NewAgent drafter', () => {
       ] as never[];
       // Back on the form with the prompt set and marked.
       expect(view()).toBeNull();
-      expect(nameInput().closest('.hidden')).toBeNull();
+      expect(nameInput(container).closest('.hidden')).toBeNull();
       expect(drafted()).toContain('agents.form.sections.prompt');
       // The drawer says so and ends the turn with what it set and Next.
       const message = Array.from(
@@ -3394,7 +3312,7 @@ describe('NewAgent drafter', () => {
       await ask('Shorter');
       expect(view()!.textContent).toContain('Shipping support');
       expect(viewText().value).toBe('Shorter text.');
-      await act(async () => use().click());
+      await click(use());
       expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
       // At the version it was saved at.
       expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
@@ -3406,7 +3324,7 @@ describe('NewAgent drafter', () => {
       expect(
         container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
       ).toContain('Shipping support');
-      await act(async () => next()!.click());
+      await click(next()!);
       expect(lastRequest().context.step).toBe('safety');
       expect(lastRequest().context.form).toMatchObject({
         prompt_id: 'np1',
@@ -3440,12 +3358,8 @@ describe('NewAgent drafter', () => {
       drafter.scripts = [writes()];
       await render();
       await ask('A shipping agent');
-      await act(async () => crumb().click());
+      await click(crumb());
       expect(view()).toBeNull();
-      const parked = () =>
-        Array.from(
-          panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
-        ).find((el) => el.textContent?.includes('drafter.agent.prompt.parked'));
       expect(parked()).toBeDefined();
       expect(next()).toBeUndefined();
       // An approval now isn't the step's Next: the prompt still waits.
@@ -3463,18 +3377,14 @@ describe('NewAgent drafter', () => {
       expect(drafter.requests).toHaveLength(2);
       expect(parked()).toBeDefined();
 
-      await act(async () =>
-        buttonByText('drafter.agent.prompt.open', parked()!)!.click(),
-      );
+      await click(buttonByText('drafter.agent.prompt.open', parked()!)!);
       expect(viewText().value).toBe(PROMPT_TEXT);
       expect(viewDrafted()).toContain('modals.prompts.promptText');
-      await act(async () => crumb().click());
-      await act(async () =>
-        buttonByText('drafter.agent.prompt.keep', parked()!)!.click(),
-      );
+      await click(crumb());
+      await click(buttonByText('drafter.agent.prompt.keep', parked()!)!);
       expect(parked()).toBeUndefined();
       expect(mocks.createPrompt).not.toHaveBeenCalled();
-      await act(async () => next()!.click());
+      await click(next()!);
       expect(lastRequest().context.form).toMatchObject({
         prompt_id: 'default',
         prompt_draft: null,
@@ -3500,21 +3410,13 @@ describe('NewAgent drafter', () => {
       ];
       await render();
       await ask('A shipping agent');
-      await act(async () => crumb().click());
-      const parked = () =>
-        Array.from(
-          panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
-        ).find((el) => el.textContent?.includes('drafter.agent.prompt.parked'));
+      await click(crumb());
       expect(parked()).toBeDefined();
-      await act(async () =>
-        buttonByText('agents.form.buttons.publish')!.click(),
-      );
+      await click(buttonByText('agents.form.buttons.publish')!);
       expect(mocks.createAgent).toHaveBeenCalledTimes(1);
       // The prompt it wrote wasn't sent: it still waits, and opens again.
       expect(parked()).toBeDefined();
-      await act(async () =>
-        buttonByText('drafter.agent.prompt.open', parked()!)!.click(),
-      );
+      await click(buttonByText('drafter.agent.prompt.open', parked()!)!);
       expect(viewText().value).toBe(PROMPT_TEXT);
     });
 
@@ -3523,14 +3425,14 @@ describe('NewAgent drafter', () => {
       drafter.scripts = [writes()];
       await render();
       await ask('A shipping agent');
-      await act(async () => use().click());
+      await click(use());
       mockState.preference.prompts = [
         { id: 'default', name: 'default', type: 'public' },
         { id: 'np1', name: 'Shipping support', type: 'private' },
       ] as never[];
       drafter.scripts = [writes('Shorter text.')];
       await ask('Shorter');
-      await act(async () => crumb().click());
+      await click(crumb());
       expect(view()).toBeNull();
       // The parked update still names the prompt it changes.
       await ask('Anything else?');
@@ -3548,7 +3450,7 @@ describe('NewAgent drafter', () => {
       expect(probe.state).toMatchObject({ promptView: true });
       await act(async () => probe.navigate!(-1));
       expect(view()).toBeNull();
-      expect(nameInput().closest('.hidden')).toBeNull();
+      expect(nameInput(container).closest('.hidden')).toBeNull();
       expect(panel()!.textContent).toContain('drafter.agent.prompt.parked');
     });
   });
@@ -3561,7 +3463,7 @@ describe('NewAgent drafter', () => {
     await ask('A shipping agent');
     // Continue would draft the step afresh and drop what was asked.
     expect(panel()!.querySelector('[data-slot="drafter-continue"]')).toBeNull();
-    await act(async () => buttonByText('drafter.retry', panel()!)!.click());
+    await click(buttonByText('drafter.retry', panel()!)!);
     expect(lastRequest().messages.at(-1)).toEqual({
       role: 'user',
       content: 'A shipping agent',
@@ -3576,9 +3478,7 @@ describe('NewAgent drafter', () => {
     await ask('A shipping agent');
     // A way past the error, under it rather than in it.
     const row = panel()!.querySelector('[data-slot="drafter-continue"]')!;
-    await act(async () =>
-      buttonByText('drafter.agent.build.continueStep', row)!.click(),
-    );
+    await click(buttonByText('drafter.agent.build.continueStep', row)!);
     expect(lastRequest().messages.at(-1)).toEqual({
       role: 'user',
       content: 'drafter.agent.build.continue',
@@ -3614,9 +3514,7 @@ describe('NewAgent drafter', () => {
     await render();
     await ask('Shipping agent');
     expect(lastRequest().context).not.toHaveProperty('skip_questions');
-    await act(async () =>
-      buttonByText('drafter.skipQuestions', panel()!)!.click(),
-    );
+    await click(buttonByText('drafter.skipQuestions', panel()!)!);
     // A hidden turn that takes no questions.
     expect(lastRequest().messages.at(-1)).toEqual({
       role: 'user',
@@ -3624,9 +3522,9 @@ describe('NewAgent drafter', () => {
     });
     expect(lastRequest().context).toMatchObject({ skip_questions: true });
     expect(panel()!.textContent).toContain('questions.skipped');
-    expect(nameInput().value).toBe('Shipping help');
+    expect(nameInput(container).value).toBe('Shipping help');
     // Only that turn.
-    await act(async () => next()!.click());
+    await click(next()!);
     expect(lastRequest().context.step).toBe('knowledge');
     expect(lastRequest().context).not.toHaveProperty('skip_questions');
   });
@@ -3654,13 +3552,11 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    const nameField = nameInput().closest<HTMLElement>(
+    const nameField = nameInput(container).closest<HTMLElement>(
       '[data-slot="drafted-field"]',
     )!;
-    await act(async () =>
-      buttonByLabel('drafter.undoField', nameField)!.click(),
-    );
-    expect(nameInput().value).toBe('');
+    await click(buttonByLabel('drafter.undoField', nameField)!);
+    expect(nameInput(container).value).toBe('');
     const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
     const rows = () =>
       Array.from(summary.querySelectorAll('[data-slot="filled-row"] p')).map(
@@ -3672,11 +3568,11 @@ describe('NewAgent drafter', () => {
       'agents.form.labels.description · Names who it serves',
     ]);
     // The folded step's rows say so too.
-    await act(async () => next()!.click());
+    await click(next()!);
     const folded = panel()!.querySelector<HTMLElement>(
       '[data-slot="build-finished"] [data-slot="drafter-step-row"]',
     )!;
-    await act(async () => buttons(folded)[0].click());
+    await click(buttons(folded)[0]);
     expect(
       Array.from(folded.querySelectorAll('[data-slot="filled-row"] p')).map(
         (p) => p.textContent,
@@ -3698,11 +3594,11 @@ describe('NewAgent drafter', () => {
     await render();
     await ask('Shipping agent');
     expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
-    await act(async () => setNativeValue(nameInput(), 'My own name'));
+    await type(nameInput(container), 'My own name');
     expect(panel()!.textContent).toContain('drafter.agent.formEdited');
     // Undo is no edit by hand.
-    await act(async () => setNativeValue(nameInput(), 'Shipping help'));
-    await act(async () => setNativeValue(nameInput(), ''));
+    await type(nameInput(container), 'Shipping help');
+    await type(nameInput(container), '');
     expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
   });
 
@@ -3715,7 +3611,7 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    await act(async () => setNativeValue(nameInput(), 'My own name'));
+    await type(nameInput(container), 'My own name');
     await act(async () =>
       land([
         proposal(
@@ -3725,7 +3621,7 @@ describe('NewAgent drafter', () => {
         { type: 'end' },
       ]),
     );
-    expect(nameInput().value).toBe('My own name');
+    expect(nameInput(container).value).toBe('My own name');
     expect(
       container.querySelector<HTMLTextAreaElement>(
         'textarea[placeholder="agents.form.placeholders.describeAgent"]',
@@ -3734,7 +3630,7 @@ describe('NewAgent drafter', () => {
     expect(panel()!.textContent).toContain('drafter.agent.formEdited');
     // The name kept is no drafted field: it has nothing to undo.
     expect(
-      nameInput()
+      nameInput(container)
         .closest('[data-slot="drafted-field"]')!
         .hasAttribute('data-drafted'),
     ).toBe(false);
@@ -3751,33 +3647,27 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    expect(nameInput().value).toBe('Shipping help');
-    const strip = () =>
-      container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
+    expect(nameInput(container).value).toBe('Shipping help');
     expect(strip()).not.toBeNull();
     expect(strip()!.className).toContain('lg:hidden');
     expect(strip()!.textContent).toContain('drafter.agent.build.check');
     // The strip brings the sheet back.
-    await act(async () =>
-      buttonByText('drafter.agent.build.check', strip()!)!.click(),
-    );
+    await click(buttonByText('drafter.agent.build.check', strip()!)!);
     expect(strip()).toBeNull();
     // Closed again, the strip is back; its Next runs the step's Next.
-    await act(async () => wand()!.click());
+    await click(wand()!);
     expect(panel()).toBeNull();
     const stripNext = buttonByText('drafter.agent.build.nextShort', strip()!)!;
     stripNext.focus();
-    await act(async () => stripNext.click());
+    await click(stripNext);
     expect(lastRequest().context.step).toBe('knowledge');
     // In the open sheet, where the turn shows it runs.
     expect(panel()).not.toBeNull();
     // Closed, focus goes to the wand: the Next that opened it is gone.
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(
-          'button[aria-label="sidePanel.close"]',
-        )!
-        .click(),
+    await click(
+      document.querySelector<HTMLButtonElement>(
+        'button[aria-label="sidePanel.close"]',
+      )!,
     );
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(panel()).toBeNull();
@@ -3800,12 +3690,8 @@ describe('NewAgent drafter', () => {
     ];
     await render();
     await ask('Shipping agent');
-    const strip = () =>
-      container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
     expect(panel()).toBeNull();
-    await act(async () =>
-      buttonByText('drafter.agent.build.finish', strip()!)!.click(),
-    );
+    await click(buttonByText('drafter.agent.build.finish', strip()!)!);
     // The done message lands in the open sheet.
     expect(panel()).not.toBeNull();
     expect(
@@ -3850,18 +3736,11 @@ describe('NewAgent drafter', () => {
     /** Open the Prompt picker and press a row's Edit or View. */
     const openFromRow = async (id: string) => {
       const trigger = promptTrigger();
-      await act(async () => {
-        trigger.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-        );
-        trigger.click();
-      });
-      await act(async () =>
-        document.body
-          .querySelector<HTMLButtonElement>(
-            `[cmdk-item][data-value="${id}"] [data-slot="combobox-row-action"]`,
-          )!
-          .click(),
+      await openCombobox(trigger);
+      await click(
+        document.body.querySelector<HTMLButtonElement>(
+          `[cmdk-item][data-value="${id}"] [data-slot="combobox-row-action"]`,
+        )!,
       );
     };
 
@@ -3877,18 +3756,7 @@ describe('NewAgent drafter', () => {
           access: 'owner',
         }),
       );
-      await act(async () => {
-        root.render(
-          <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-            <Routes>
-              <Route
-                path="/agents/edit/:agentId"
-                element={<NewAgent mode="edit" />}
-              />
-            </Routes>
-          </MemoryRouter>,
-        );
-      });
+      await mountForm(root, 'edit');
     };
 
     it('edits an own prompt in the view and saves it', async () => {
@@ -3898,8 +3766,8 @@ describe('NewAgent drafter', () => {
       expect(view()!.textContent).toContain('Deal Desk');
       expect(view()!.textContent).toContain('Tone');
       expect(viewText().value).toBe('Text of p1');
-      await act(async () => setNativeValue(viewText(), 'Shorter.'));
-      await act(async () => save()!.click());
+      await type(viewText(), 'Shorter.');
+      await click(save()!);
       expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
         id: 'p1',
         name: 'Tone',
@@ -3912,11 +3780,11 @@ describe('NewAgent drafter', () => {
     it('keeps the changes after a conflict as a copy, which the agent then uses', async () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      await type(viewText(), 'Shorter.');
       mocks.updatePrompt.mockImplementationOnce(() =>
         Promise.resolve(new Response('{}', { status: 409 })),
       );
-      await act(async () => save()!.click());
+      await click(save()!);
       // The view stays, says so, and Save now keeps the changes as a copy.
       expect(
         view()!.querySelector('[data-slot="prompt-conflict"]')!.textContent,
@@ -3925,9 +3793,7 @@ describe('NewAgent drafter', () => {
       mocks.createPrompt.mockImplementationOnce(() =>
         jsonResponse({ id: 'p9', updated_at: 'v9' }),
       );
-      await act(async () =>
-        buttonByText('settings.prompts.saveAsCopy', view()!)!.click(),
-      );
+      await click(buttonByText('settings.prompts.saveAsCopy', view()!)!);
       expect(mocks.updatePrompt).toHaveBeenCalledTimes(1);
       const copy = mocks.createPrompt.mock.calls[0][0] as {
         name: string;
@@ -3959,28 +3825,13 @@ describe('NewAgent drafter', () => {
       }
       // Left through the sidebar with the view open, then Back: the entry
       // the view pushed is where Back lands.
-      await act(async () => {
-        root.render(
-          <MemoryRouter
-            initialEntries={[
-              '/agents/edit/agent-1',
-              { pathname: '/agents/edit/agent-1', state: { promptView: true } },
-            ]}
-            initialIndex={1}
-          >
-            <Routes>
-              <Route
-                path="/agents/edit/:agentId"
-                element={
-                  <>
-                    <NewAgent mode="edit" />
-                    <StateProbe />
-                  </>
-                }
-              />
-            </Routes>
-          </MemoryRouter>,
-        );
+      await mountForm(root, 'edit', {
+        entries: [
+          '/agents/edit/agent-1',
+          { pathname: '/agents/edit/agent-1', state: { promptView: true } },
+        ],
+        initialIndex: 1,
+        beside: <StateProbe />,
       });
       expect(view()).toBeNull();
       expect(
@@ -3997,9 +3848,7 @@ describe('NewAgent drafter', () => {
       expect(viewText().value).toBe('Text of default');
       expect(viewText().readOnly).toBe(true);
       // Back on the form, the agent still has its prompt.
-      await act(async () =>
-        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
-      );
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
       expect(view()).toBeNull();
       expect(promptTrigger().textContent).toContain('Tone');
     });
@@ -4007,16 +3856,14 @@ describe('NewAgent drafter', () => {
     it('asks before leaving the view with unsaved text', async () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      await act(async () => setNativeValue(viewText(), 'Shorter.'));
-      await act(async () =>
-        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
-      );
+      await type(viewText(), 'Shorter.');
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
       expect(view()).not.toBeNull();
       // Save and leave.
-      await act(async () =>
-        document
-          .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
-          .click(),
+      await click(
+        document.querySelector<HTMLButtonElement>(
+          '[data-testid="confirm-delete"]',
+        )!,
       );
       await act(async () => {
         await mocks.submitResult;
@@ -4028,19 +3875,15 @@ describe('NewAgent drafter', () => {
     it("keeps the leave dialog open with the reason when the prompt can't be saved", async () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      await act(async () =>
-        setNativeValue(
-          view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
-          '',
-        ),
+      await type(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
+        '',
       );
-      await act(async () =>
-        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
-      );
-      await act(async () =>
-        document
-          .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
-          .click(),
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
+      await click(
+        document.querySelector<HTMLButtonElement>(
+          '[data-testid="confirm-delete"]',
+        )!,
       );
       await expect(mocks.submitResult).rejects.toThrow('name');
       expect(mocks.updatePrompt).not.toHaveBeenCalled();
@@ -4061,25 +3904,14 @@ describe('NewAgent drafter', () => {
           access: 'owner',
         }),
       );
-      await act(async () => {
-        root.render(
-          <MemoryRouter
-            initialEntries={[
-              { pathname: '/agents/edit/agent-1', state: { from: 'list' } },
-            ]}
-          >
-            <Routes>
-              <Route
-                path="/agents/edit/:agentId"
-                element={<NewAgent mode="edit" />}
-              />
-            </Routes>
-            <RouterProbe />
-          </MemoryRouter>,
-        );
+      await mountForm(root, 'edit', {
+        entries: [
+          { pathname: '/agents/edit/agent-1', state: { from: 'list' } },
+        ],
+        after: <RouterProbe />,
       });
       await openFromRow('p1');
-      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      await type(viewText(), 'Shorter.');
       await act(async () => probe.navigate!(-1));
       // Put back while it asks, with what the entry held.
       expect(view()).not.toBeNull();
@@ -4089,7 +3921,7 @@ describe('NewAgent drafter', () => {
     it('stays on the prompt, without scrolling the form, when Show in agent asks first', async () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      await type(viewText(), 'Shorter.');
       drafter.scripts = [
         [proposal({ starters: ['Where is my deal?'] }), { type: 'end' }],
       ];
@@ -4097,9 +3929,7 @@ describe('NewAgent drafter', () => {
       const scroll = vi
         .spyOn(Element.prototype, 'scrollIntoView')
         .mockImplementation(() => undefined);
-      await act(async () =>
-        buttonByText('drafter.agent.showInAgent', panel()!)!.click(),
-      );
+      await click(buttonByText('drafter.agent.showInAgent', panel()!)!);
       await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
       expect(view()).not.toBeNull();
       expect(scroll).not.toHaveBeenCalled();
@@ -4109,7 +3939,7 @@ describe('NewAgent drafter', () => {
     it('improves an own prompt with the drawer, filling the view instead of creating one', async () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      await act(async () => buttonByText('drafter.improve', view()!)!.click());
+      await click(buttonByText('drafter.improve', view()!)!);
       expect(view()).not.toBeNull();
       expect(panel()).not.toBeNull();
       expect(
@@ -4167,7 +3997,7 @@ describe('NewAgent drafter', () => {
         prompt_draft: { id: 'p3', name: 'Formal', content: 'Text of p3' },
       });
       expect(viewText().value).toBe('Formal, shorter.');
-      await act(async () => save()!.click());
+      await click(save()!);
       expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
         id: 'p3',
         content: 'Formal, shorter.',
@@ -4192,9 +4022,7 @@ describe('NewAgent drafter', () => {
         id: 'p1',
       });
       // Back on the form, then another prompt opened before the turn ends.
-      await act(async () =>
-        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
-      );
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
       await openFromRow('p3');
       await act(async () =>
         land([
@@ -4207,9 +4035,7 @@ describe('NewAgent drafter', () => {
       // The rewrite opens as a prompt of its own; Formal is untouched.
       expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
       expect(viewText().value).toBe('Rewritten.');
-      await act(async () =>
-        buttonByText('drafter.agent.prompt.use', view()!)!.click(),
-      );
+      await click(buttonByText('drafter.agent.prompt.use', view()!)!);
       expect(mocks.updatePrompt).not.toHaveBeenCalled();
       expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
         name: 'Rewrite',
@@ -4231,11 +4057,9 @@ describe('NewAgent drafter', () => {
         }),
       ];
       await ask('Rewrite it');
-      await act(async () =>
-        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
-      );
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
       await openFromRow('p3');
-      await act(async () => setNativeValue(viewText(), 'My formal text.'));
+      await type(viewText(), 'My formal text.');
       await act(async () =>
         land([
           proposal({
@@ -4249,7 +4073,7 @@ describe('NewAgent drafter', () => {
         view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
       ).toBe('Formal');
       expect(viewText().value).toBe('My formal text.');
-      await act(async () => save()!.click());
+      await click(save()!);
       expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
         id: 'p3',
         content: 'My formal text.',
@@ -4260,7 +4084,7 @@ describe('NewAgent drafter', () => {
     it('opens a prompt it wrote in a view of its own, never in a read-only one', async () => {
       await renderWithPrompt('p1');
       // The drawer open on the form, then a team prompt opened to read.
-      await act(async () => wand()!.click());
+      await click(wand()!);
       await openFromRow('p2');
       drafter.scripts = [
         [
@@ -4315,15 +4139,15 @@ describe('NewAgent drafter', () => {
       expect(panel()!.textContent).toContain('drafter.agent.prompt.reviewHint');
       // Save waits for the review.
       expect(save()!.disabled).toBe(true);
-      await act(async () =>
+      await click(
         buttonByText(
           'drafter.prompt.reject',
           review()!.querySelector('[data-change-id="e2"]')!,
-        )!.click(),
+        )!,
       );
       const acceptAll = buttonByText('drafter.prompt.acceptAll', panel()!)!;
       acceptAll.focus();
-      await act(async () => acceptAll.click());
+      await click(acceptAll);
       expect(review()).toBeNull();
       expect(viewText().value).toBe('Words of p1');
       expect(
@@ -4333,7 +4157,7 @@ describe('NewAgent drafter', () => {
       expect(document.activeElement).toBe(
         panel()!.querySelector('textarea[aria-label="drafter.askLabel"]'),
       );
-      await act(async () => save()!.click());
+      await click(save()!);
       expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
         id: 'p1',
         name: 'Tone',
@@ -4361,12 +4185,10 @@ describe('NewAgent drafter', () => {
         ]),
       ];
       await ask('Make the prompt plainer');
-      await act(async () =>
-        review()!
-          .querySelector<HTMLButtonElement>(
-            '[data-change-id="e1"] [data-action="accept"]',
-          )!
-          .click(),
+      await click(
+        review()!.querySelector<HTMLButtonElement>(
+          '[data-change-id="e1"] [data-action="accept"]',
+        )!,
       );
       await ask('Something else too');
       // The accepted change went along as the view's text.
@@ -4376,9 +4198,7 @@ describe('NewAgent drafter', () => {
         content: 'Words of p1',
       });
       expect(review()!.querySelectorAll('[data-change-id]')).toHaveLength(1);
-      await act(async () =>
-        buttonByText('drafter.prompt.discard', panel()!)!.click(),
-      );
+      await click(buttonByText('drafter.prompt.discard', panel()!)!);
       expect(review()).toBeNull();
       expect(viewText().value).toBe('Words of p1');
     });
@@ -4396,7 +4216,7 @@ describe('NewAgent drafter', () => {
       await ask('Add a starter');
       const show = buttonByText('drafter.agent.showInAgent', panel()!)!;
       expect(show).toBeDefined();
-      await act(async () => show.click());
+      await click(show);
       expect(view()).toBeNull();
       // On the form, nothing to show.
       await ask('Another one');
@@ -4429,9 +4249,7 @@ describe('NewAgent drafter', () => {
       expect(review()).not.toBeNull();
       expect(drafter.requests).toHaveLength(2);
       // The drawer's latest turn offers the review's actions.
-      await act(async () =>
-        buttonByText('drafter.prompt.acceptAll', panel()!)!.click(),
-      );
+      await click(buttonByText('drafter.prompt.acceptAll', panel()!)!);
       expect(viewText().value).toBe('Words of p1');
       // Once it is decided, the approval moves on.
       expect(drafter.requests).toHaveLength(3);
@@ -4439,8 +4257,6 @@ describe('NewAgent drafter', () => {
     });
 
     describe("a phone's step Next", () => {
-      const strip = () =>
-        container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
       /** A guided build on a phone, its basics on the Tone prompt. */
       const startOnPhone = async () => {
         media.isMobile = true;
@@ -4468,12 +4284,10 @@ describe('NewAgent drafter', () => {
         expect(review()).not.toBeNull();
         // Next would drop the undecided changes.
         expect(strip()).toBeNull();
-        await act(async () =>
-          review()!
-            .querySelector<HTMLButtonElement>(
-              '[data-change-id="e1"] [data-action="accept"]',
-            )!
-            .click(),
+        await click(
+          review()!.querySelector<HTMLButtonElement>(
+            '[data-change-id="e1"] [data-action="accept"]',
+          )!,
         );
         expect(review()).toBeNull();
         expect(strip()).not.toBeNull();
@@ -4531,9 +4345,7 @@ describe('NewAgent drafter', () => {
       ];
       await ask('Make the prompt plainer');
       expect(review()).toBeNull();
-      await act(async () =>
-        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
-      );
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
       expect(view()).toBeNull();
       // Opened later on its own, the prompt shows no stale review.
       await openFromRow('p1');
@@ -4588,10 +4400,8 @@ describe('NewAgent drafter', () => {
         ]),
       ];
       await ask('Plainer');
-      await act(async () =>
-        buttonByText('drafter.prompt.acceptAll', panel()!)!.click(),
-      );
-      await act(async () => save()!.click());
+      await click(buttonByText('drafter.prompt.acceptAll', panel()!)!);
+      await click(save()!);
       expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
         id: 'p1',
         content: 'Be short.\u200b Be kind.  ',
@@ -4618,7 +4428,7 @@ describe('NewAgent drafter', () => {
       expect(viewText().readOnly).toBe(true);
       expect(save()).toBeUndefined();
       // Improve on the crumb row makes the copy.
-      await act(async () => buttonByText('drafter.improve', view()!)!.click());
+      await click(buttonByText('drafter.improve', view()!)!);
       expect(
         view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
       ).toBe('Team tone copy');
@@ -4654,15 +4464,15 @@ describe('NewAgent drafter', () => {
       );
       await render();
       await openFromRow('default');
-      await act(async () => viewWand()!.click());
+      await click(viewWand()!);
       expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
       expect(view()!.textContent).toContain('modals.prompts.duplicatePrompt');
       expect(panel()).not.toBeNull();
       // "default copy" is listed already: the name has to change first.
       const name =
         view()!.querySelector<HTMLInputElement>('input[type="text"]')!;
-      await act(async () => setNativeValue(name, 'Mine'));
-      await act(async () => save()!.click());
+      await type(name, 'Mine');
+      await click(save()!);
       expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
         name: 'Mine',
         content: 'Text of default',
@@ -4679,27 +4489,20 @@ describe('NewAgent drafter', () => {
       const trigger = container.querySelector<HTMLButtonElement>(
         '[data-slot="combobox-trigger"]',
       )!;
-      await act(async () => {
-        trigger.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-        );
-        trigger.click();
-      });
-      await act(async () =>
-        Array.from(document.body.querySelectorAll('button'))
-          .find((b) => b.textContent === 'settings.prompts.addPrompt')!
-          .click(),
+      await openCombobox(trigger);
+      await click(
+        Array.from(document.body.querySelectorAll('button')).find(
+          (b) => b.textContent === 'settings.prompts.addPrompt',
+        )!,
       );
       expect(view()!.textContent).toContain('modals.prompts.addPrompt');
       expect(save()!.disabled).toBe(true);
-      await act(async () =>
-        setNativeValue(
-          view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
-          'Brand voice',
-        ),
+      await type(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
+        'Brand voice',
       );
-      await act(async () => setNativeValue(viewText(), 'Be brief.'));
-      await act(async () => save()!.click());
+      await type(viewText(), 'Be brief.');
+      await click(save()!);
       expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
         name: 'Brand voice',
         content: 'Be brief.',
@@ -4766,7 +4569,7 @@ describe('NewAgent drafter', () => {
       drafter.gaps = GAPS;
       await renderEdit(EDITOR);
       expect(drafter.gapsCalls).toEqual([]);
-      await act(async () => wand()!.click());
+      await click(wand()!);
       expect(drafter.gapsCalls).toEqual(['agent-1']);
       const headings = Array.from(panel()!.querySelectorAll('h3')).map(
         (h) => h.textContent,
@@ -4790,8 +4593,8 @@ describe('NewAgent drafter', () => {
         [{ type: 'message', text: 'Done.' }, { type: 'end' }],
       ];
       await renderEdit(EDITOR);
-      await act(async () => wand()!.click());
-      await act(async () => suggestion('gap-1')!.click());
+      await click(wand()!);
+      await click(suggestion('gap-1')!);
       expect(lastRequest().messages).toEqual([
         { role: 'user', content: 'drafter.agent.insights.fixIn' },
       ]);
@@ -4804,10 +4607,8 @@ describe('NewAgent drafter', () => {
         topic: 'Order status',
         gap_type: 'needs account data',
       });
-      await act(async () =>
-        buttonByLabel('drafter.startOver', panel()!)!.click(),
-      );
-      await act(async () => suggestion('findMore')!.click());
+      await click(buttonByLabel('drafter.startOver', panel()!)!);
+      await click(suggestion('findMore')!);
       expect(lastRequest().messages).toEqual([
         { role: 'user', content: 'drafter.agent.insights.findMore' },
       ]);
@@ -4824,12 +4625,10 @@ describe('NewAgent drafter', () => {
         jsonResponse({ id: 'agent-1' }),
       );
       await renderEdit(EDITOR, { status: 'draft' });
-      await act(async () => wand()!.click());
-      await act(async () => suggestion('gap-1')!.click());
+      await click(wand()!);
+      await click(suggestion('gap-1')!);
       expect(lastRequest().context.gap).toBeDefined();
-      await act(async () =>
-        buttonByText('agents.form.buttons.publish')!.click(),
-      );
+      await click(buttonByText('agents.form.buttons.publish')!);
       expect(mocks.updateAgent).toHaveBeenCalled();
       await ask('Shorter, please');
       expect(lastRequest().messages).toEqual([
@@ -4848,7 +4647,7 @@ describe('NewAgent drafter', () => {
       await renderEdit(EDITOR, {
         config: { analytics: { enabled: false, topics: [] } },
       });
-      await act(async () => wand()!.click());
+      await click(wand()!);
       expect(note()!.textContent).toContain('drafter.agent.insights.agentOff');
       expect(panel()!.querySelector('h3')).toBeNull();
       expect(panel()!.textContent).toContain('drafter.footer');
@@ -4858,9 +4657,7 @@ describe('NewAgent drafter', () => {
           '[data-testid="analytics-toggle"]',
         )!;
       expect(toggle().getAttribute('aria-expanded')).toBe('false');
-      await act(async () =>
-        buttonByText('drafter.agent.insights.turnOn', note()!)!.click(),
-      );
+      await click(buttonByText('drafter.agent.insights.turnOn', note()!)!);
       expect(toggle().getAttribute('aria-expanded')).toBe('true');
     });
 
@@ -4876,7 +4673,7 @@ describe('NewAgent drafter', () => {
         status: 'draft',
         config: { analytics: { enabled: false, topics: [] } },
       });
-      await act(async () => wand()!.click());
+      await click(wand()!);
       expect(note()!.textContent).toContain('drafter.agent.insights.agentOff');
       expect(buttonByText('drafter.agent.insights.turnOn', note()!)).toBe(
         undefined,
@@ -4892,13 +4689,13 @@ describe('NewAgent drafter', () => {
         rows: [],
       };
       await renderEdit(EDITOR);
-      await act(async () => wand()!.click());
+      await click(wand()!);
       expect(note()!.textContent).toBe('drafter.agent.insights.notEnough');
       await act(async () => root.unmount());
       root = createRoot(container);
       drafter.gaps = null;
       await renderEdit(EDITOR);
-      await act(async () => wand()!.click());
+      await click(wand()!);
       expect(note()).toBeNull();
       expect(panel()!.querySelector('h3')).toBeNull();
     });
@@ -4915,22 +4712,9 @@ describe('NewAgent drafter', () => {
           allowed_actions: EDITOR,
         }),
       );
-      await act(async () => {
-        root.render(
-          <MemoryRouter initialEntries={[url]}>
-            <Routes>
-              <Route
-                path="/agents/edit/:agentId"
-                element={
-                  <>
-                    <NewAgent mode="edit" />
-                    <SearchProbe />
-                  </>
-                }
-              />
-            </Routes>
-          </MemoryRouter>,
-        );
+      await mountForm(root, 'edit', {
+        entries: [url],
+        beside: <SearchProbe />,
       });
     };
     const search = { value: '' };
@@ -5103,8 +4887,8 @@ describe('NewAgent drafter', () => {
         ],
       ];
       await renderEdit(EDITOR);
-      await act(async () => wand()!.click());
-      await act(async () => suggestion('gap-2')!.click());
+      await click(wand()!);
+      await click(suggestion('gap-2')!);
       const guardrails = mocks.guardrailsProps.mock.calls.at(-1)![0] as {
         drafted: boolean;
         value: {
@@ -5180,8 +4964,8 @@ describe('NewAgent drafter', () => {
         ],
       ];
       await renderEdit(EDITOR);
-      await act(async () => wand()!.click());
-      await act(async () => suggestion('findMore')!.click());
+      await click(wand()!);
+      await click(suggestion('findMore')!);
       const cards = Array.from(
         panel()!.querySelectorAll('[data-slot="gap-card"]'),
       );
