@@ -66,7 +66,7 @@ describe('AccessTokenCreatedModal agent tool', () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  const render = (onCreateTool?: () => Promise<void>) =>
+  const render = (onCreateTool?: () => Promise<string[] | void>) =>
     act(() =>
       root.render(
         <AccessTokenCreatedModal
@@ -95,9 +95,28 @@ describe('AccessTokenCreatedModal agent tool', () => {
     container.remove();
   });
 
-  it('offers no tool when the token reads nothing agents use', () => {
+  it('offers no tool for a regenerated token', () => {
     render();
     expect(createButton()).toBeUndefined();
+  });
+
+  it('says which actions start switched off', async () => {
+    render(vi.fn().mockResolvedValue(['delete_agent', 'ask_agent']));
+    await act(async () => createButton()!.click());
+    expect(document.body.textContent).toContain(
+      'settings.accessTokens.created.toolSomeOff',
+    );
+  });
+
+  it('says nothing about switched-off actions when there are none', async () => {
+    render(vi.fn().mockResolvedValue([]));
+    await act(async () => createButton()!.click());
+    expect(document.body.textContent).toContain(
+      'settings.accessTokens.created.toolCreated',
+    );
+    expect(document.body.textContent).not.toContain(
+      'settings.accessTokens.created.toolSomeOff',
+    );
   });
 
   it('offers it as a secondary button and says when the tool is made', async () => {
