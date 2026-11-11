@@ -105,3 +105,20 @@ def test_json_parser_invalid_utf8_raises_document_parse_error(tmp_path):
     with pytest.raises(DocumentParseError, match="binary.json"):
         JSONParser().parse_file(path)
 
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param('{"x": ' + "9" * 5000 + "}", id="number-over-int-digit-limit"),
+        pytest.param("[" * 200_000, id="nesting-past-recursion-limit"),
+    ],
+)
+def test_json_parser_decoder_limits_raise_document_parse_error(tmp_path, content):
+    """Input the decoder refuses with ValueError or RecursionError fails the same way."""
+    from docsgpt.parser.file.base_parser import DocumentParseError
+
+    path = tmp_path / "poison.json"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(DocumentParseError, match="poison.json"):
+        JSONParser().parse_file(path)
+

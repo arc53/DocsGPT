@@ -67,7 +67,7 @@ class JSONParser(BaseParser):
         try:
             with open(file, "r", encoding="utf-8") as f:
                 data = json.load(f, **self._json_config)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise DocumentParseError(
                 f"Failed to parse {Path(file).name}: not valid JSON ({exc})."
             ) from exc
