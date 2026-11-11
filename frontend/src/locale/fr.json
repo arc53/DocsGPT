@@ -76,7 +76,9 @@
         "monitor_expired": "Moniteur expiré",
         "schedule": "Tâche planifiée terminée",
         "default": "Nouvelle réponse",
-        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc"
+        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc",
+        "schedule_paused": "Tâche planifiée en pause",
+        "schedule_failed": "Échec de la tâche planifiée"
       },
       "open": "Ouvrir",
       "fallbackTitle": "Votre assistant a du nouveau"

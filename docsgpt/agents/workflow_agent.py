@@ -15,7 +15,7 @@ from docsgpt.agents.workflows.schemas import (
     WorkflowNode,
     WorkflowRun,
 )
-from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine, add_token_usage
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.logging import LogContext, log_activity
@@ -64,6 +64,16 @@ class WorkflowAgent(BaseAgent):
         self._bridge_error: Optional[str] = None
         # Set by the engine when an agent node of a scheduled run reports it cannot do its step.
         self.cannot_complete: Optional[str] = None
+
+    @property
+    def token_usage(self) -> Dict[str, int]:
+        """The run's tokens: its own LLM's plus every agent node's."""
+        total = {"prompt_tokens": 0, "generated_tokens": 0}
+        add_token_usage(total, getattr(getattr(self, "llm", None), "token_usage", None))
+        engine = getattr(self, "_engine", None)
+        if engine is not None:
+            add_token_usage(total, engine.node_token_usage)
+        return total
 
     @log_activity()
     def gen(self, query: str, log_context: LogContext = None) -> Generator[Dict[str, str], None, None]:

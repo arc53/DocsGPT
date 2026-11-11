@@ -127,16 +127,17 @@ class ScheduleRunsRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def has_active_run(self, schedule_id: str) -> bool:
-        """True iff a ``pending``/``running`` run exists for the schedule."""
+    def has_active_run(self, schedule_id: str, *, trigger_source: Optional[str] = None) -> bool:
+        """True iff a ``pending``/``running`` run (of ``trigger_source``, when given) exists for the schedule."""
         scalar = self._conn.execute(
             text(
                 "SELECT 1 FROM schedule_runs "
                 "WHERE schedule_id = CAST(:id AS uuid) "
                 "AND status IN ('pending', 'running') "
+                "AND (CAST(:source AS text) IS NULL OR trigger_source = :source) "
                 "LIMIT 1"
             ),
-            {"id": str(schedule_id)},
+            {"id": str(schedule_id), "source": trigger_source},
         ).first()
         return scalar is not None
 

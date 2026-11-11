@@ -46,3 +46,18 @@ echo "install.sh is from $TAG"
 
 `--source-uri` alone proves the asset was built by this repository's release workflow, not which release it belongs to; the commit check binds it to the tag.
 
+### Releases before provenance
+
+Releases up to 1.1.0 have no provenance. Their assets were signed later with [cosign](https://github.com/sigstore/cosign), from the files as published, by a one-off `sign-release-assets.yml` workflow (run once on 2026-11-11, then removed); each signature is attached next to its file as `<file>.sigstore.json`. The signature says these are the files the project published, not how they were built. To check one:
+
+```bash
+gh release download 1.1.0 --repo arc53/DocsGPT --pattern install.sh --pattern install.sh.sigstore.json
+cosign verify-blob \
+  --bundle install.sh.sigstore.json \
+  --certificate-identity https://github.com/arc53/DocsGPT/.github/workflows/sign-release-assets.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  install.sh
+```
+
+Like `--source-uri` above, the signature covers the file's contents, not which release it is attached to.
+

@@ -74,7 +74,9 @@
         "monitor_expired": "監控已過期",
         "schedule": "排程工作已完成",
         "default": "新回覆",
-        "docs_gaps": "每週文件缺口摘要"
+        "docs_gaps": "每週文件缺口摘要",
+        "schedule_paused": "排程工作已暫停",
+        "schedule_failed": "排程工作失敗"
       },
       "open": "開啟",
       "fallbackTitle": "你的助理有新消息"
