@@ -75,7 +75,9 @@
         "monitor_expired": "Monitor abgelaufen",
         "schedule": "Geplante Aufgabe fertig",
         "default": "Neue Antwort",
-        "docs_gaps": "Wöchentliche Übersicht der Doku-Lücken"
+        "docs_gaps": "Wöchentliche Übersicht der Doku-Lücken",
+        "schedule_paused": "Geplante Aufgabe pausiert",
+        "schedule_failed": "Geplante Aufgabe fehlgeschlagen"
       },
       "open": "Öffnen",
       "fallbackTitle": "Dein Assistent hat Neuigkeiten"
@@ -1973,6 +1975,7 @@
         "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
         "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
         "mcp_cloudflare": "Workers, DNS, R2 und mehr über die Cloudflare-API verwalten.",
+        "mcp_excalidraw": "Erstelle Diagramme und erhalte einen Link zur Bearbeitung in Excalidraw.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -2320,7 +2323,9 @@
         "clear": "Löschen",
         "ingestionFailed": "Aufnahme fehlgeschlagen.",
         "tooManyFiles": "Diese Quelle hat mehr als {{limit}} Dateien, mehr als eine Quelle enthalten kann. Wähle einen kleineren Ordner, Pfad oder eine kleinere Auswahl.",
-        "tooManyTokens": "Diese Quelle hat mehr als {{limit}} Tokens Text, mehr als eine Quelle enthalten kann. Teile sie in kleinere Quellen auf."
+        "tooManyTokens": "Diese Quelle hat mehr als {{limit}} Tokens Text, mehr als eine Quelle enthalten kann. Teile sie in kleinere Quellen auf.",
+        "partialDownload_one": "{{count}} Element konnte nicht heruntergeladen werden und wurde ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
+        "partialDownload_other": "{{count}} Elemente konnten nicht heruntergeladen werden und wurden ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen."
       },
       "ingestors": {
         "local_file": {
@@ -2715,7 +2720,8 @@
       "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
       "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut.",
       "timeLimit": "Gestoppt: Zeitlimit erreicht. Der bisherige Fortschritt wurde gespeichert.",
-      "stopped": "Du hast diese Antwort gestoppt, bevor etwas geschrieben wurde. Versuche es erneut, um eine zu erhalten."
+      "stopped": "Du hast diese Antwort gestoppt, bevor etwas geschrieben wurde. Versuche es erneut, um eine zu erhalten.",
+      "noAnswer": "Das Modell hat immer weiter nachgedacht, ohne mit einer Antwort zu beginnen, und wurde deshalb gestoppt. Versuche es erneut oder wähle ein anderes Modell."
     },
     "reasoning": "Begründung",
     "wikiWrite": {
@@ -2837,6 +2843,24 @@
       "notRun": "nicht ausgeführt",
       "notRunMovedOn": "Nicht ausgeführt: Das Gespräch ging weiter, bevor dies genehmigt wurde.",
       "notRunExpired": "Nicht ausgeführt: Die Genehmigungsanfrage ist abgelaufen."
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "App wird geladen…",
+        "ready": "Interaktiv",
+        "failed": "Fehlgeschlagen"
+      },
+      "loading": "App wird geladen…",
+      "allow": "Erlauben",
+      "allowForView": "Für diese App erlauben",
+      "deny": "Ablehnen",
+      "reload": "App neu laden",
+      "approvalAsk": "Die App möchte {{tool}} ausführen. Erlauben?",
+      "failedTitle": "Die App konnte nicht geladen werden",
+      "failedDescription": "Ihr MCP-Server hat nicht geantwortet, oder die Ansicht ließ sich nicht starten.",
+      "frameTitle": "{{name}} (interaktive App)",
+      "callFailed": "Der Tool-Aufruf ist fehlgeschlagen",
+      "resultUnavailable": "Das Ergebnis ist nicht mehr verfügbar"
     },
     "quotaExceeded": {
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
@@ -4251,7 +4275,8 @@
         "missed": "Zeitpunkt verpasst",
         "overlap": "die vorherige Ausführung lief noch",
         "stream_error": "der Antwortstrom brach ab",
-        "empty_output": "es kam nichts heraus"
+        "empty_output": "es kam nichts heraus",
+        "cannot_complete": "der Agent kann diese Aufgabe nicht erledigen"
       },
       "viewRuns": "Ausführungen ansehen",
       "fromChat": "Aus {{name}}",

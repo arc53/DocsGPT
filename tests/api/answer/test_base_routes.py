@@ -75,6 +75,16 @@ class TestPrepareToolCallsForLogging:
             assert prepared[0]["result"] == "short text"
             assert prepared[0]["tool_name"] == "search"
 
+    def test_never_logs_an_mcp_app_views_result(self, mock_mongo_db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            ui = {"resource_uri": "ui://app/view.html", "tool_id": "t1", "result": {"structuredContent": {"k": 1}}}
+            tool_calls = [{"tool_name": "mcp_tool", "ui": ui}]
+            prepared = BaseAnswerResource()._prepare_tool_calls_for_logging(tool_calls)
+            assert prepared[0]["ui"] == {"resource_uri": "ui://app/view.html", "tool_id": "t1"}
+            assert "result" in tool_calls[0]["ui"]
+
 
 @pytest.mark.unit
 class TestCompleteStreamToolCalls:

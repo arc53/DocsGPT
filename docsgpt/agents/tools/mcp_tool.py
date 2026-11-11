@@ -4,18 +4,30 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import re
+import secrets
+import threading
 import time
+import weakref
+from collections.abc import Mapping
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
+from http import HTTPStatus
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
+from fastmcp.client.transports.base import TransportOptions
 from fastmcp.client.transports import (
     SSETransport,
     StdioTransport,
     StreamableHttpTransport,
 )
 import httpx2
+from mcp import ClientSession
+from mcp.client import advertise
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
@@ -26,6 +38,8 @@ from mcp.client.auth.utils import (
     issuers_match,
     validate_metadata_issuer,
 )
+from mcp.shared.dispatcher import CallOptions
+from mcp.shared.jsonrpc_dispatcher import JSONRPCDispatcher
 from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
 from mcp.shared.inbound import (
     MCP_PARAM_HEADER_PREFIX,
@@ -35,7 +49,7 @@ from mcp.shared.inbound import (
     x_mcp_header_map,
 )
 from mcp.shared.exceptions import MCPError
-from mcp.types import HEADER_MISMATCH
+from mcp.types import HEADER_MISMATCH, RequestId
 from mcp.shared.auth import (
     AuthorizationCodeResult,
     OAuthClientInformationFull,
@@ -45,6 +59,7 @@ from mcp.shared.auth import (
 from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
 
+from docsgpt.agents import mcp_apps
 from docsgpt.agents.tools.base import Tool
 from docsgpt.llm.tool_images import image_ref
 from docsgpt.api.user.tasks import mcp_oauth_task
@@ -57,6 +72,102 @@ from docsgpt.security.safe_url import UnsafeUserUrlError, guarded_async_client, 
 logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
+# One lock per client: a cached client is shared by every tool on its server, and
+# its session belongs to the event loop that opened it, so a second loop using it
+# at the same time waits on that session for good. A call that finds a shared
+# static-credential client busy runs on a client of its own instead
+# (``MCPTool._run_in_new_loop``); an OAuth client is waited for.
+_client_locks: "weakref.WeakKeyDictionary[Any, threading.RLock]" = weakref.WeakKeyDictionary()
+_client_locks_guard = threading.Lock()
+
+# MCP App views read from servers: (client cache key, ui:// URI) -> (read at, view).
+_ui_resource_cache: Dict[tuple, tuple] = {}
+_ui_resource_cache_guard = threading.Lock()
+UI_RESOURCE_TTL = 600
+UI_RESOURCE_CACHE_SIZE = 32
+
+
+def _is_http_401_error(error_msg: str) -> bool:
+    """Return whether an error message explicitly reports HTTP 401."""
+    return bool(
+        re.search(
+            r"\b(?:HTTP(?:/\d+(?:\.\d+)?)?\s+|status(?:\s+code)?\s*[:=]?\s*)401\b"
+            r"|\b401\s+Unauthorized\b",
+            error_msg,
+            re.IGNORECASE,
+        )
+    )
+
+
+@dataclass
+class _MCPRequestStatus:
+    status_code: int | None = None
+
+
+_mcp_request_status: ContextVar[_MCPRequestStatus | None] = ContextVar("_mcp_request_status", default=None)
+
+
+async def _capture_mcp_http_status(response: httpx2.Response) -> None:
+    """Record the HTTP status for the RPC that sent this POST."""
+    status = _mcp_request_status.get()
+    if status is None or response.request.method != "POST":
+        return
+    try:
+        payload = json.loads(response.request.content)
+    except (ValueError, httpx2.RequestNotRead):
+        return
+    if not isinstance(payload, dict):
+        return
+    if not isinstance(payload.get("id"), (str, int)):
+        return
+
+    # An auth retry can produce a later response for this same RPC.
+    status.status_code = response.status_code
+
+
+class _MCPHTTPDispatcher(JSONRPCDispatcher):
+    async def send_raw_request(
+        self,
+        method: str,
+        params: Mapping[str, Any] | None,
+        opts: CallOptions | None = None,
+        *,
+        _related_request_id: RequestId | None = None,
+    ) -> dict[str, Any]:
+        status = _MCPRequestStatus()
+        token = _mcp_request_status.set(status)
+        try:
+            return await super().send_raw_request(method, params, opts, _related_request_id=_related_request_id)
+        except MCPError as exc:
+            if status.status_code == HTTPStatus.UNAUTHORIZED:
+                exc.docsgpt_http_status = status.status_code
+            raise
+        finally:
+            _mcp_request_status.reset(token)
+
+
+class _MCPHTTPSession(ClientSession):
+    def __init__(self, read_stream, write_stream, **session_kwargs):
+        super().__init__(
+            dispatcher=_MCPHTTPDispatcher(read_stream, write_stream),
+            **session_kwargs,
+        )
+
+
+class _MCPStreamableHTTPTransport(StreamableHttpTransport):
+    @asynccontextmanager
+    async def connect_session(
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs,
+    ):
+        options = replace(
+            transport_options or TransportOptions(),
+            session_class=_MCPHTTPSession,
+        )
+        async with super().connect_session(transport_options=options, **session_kwargs) as session:
+            yield session
 
 
 def _mcp_http_client(
@@ -68,6 +179,24 @@ def _mcp_http_client(
     if timeout is None:
         timeout = httpx2.Timeout(MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT)
     return guarded_async_client(headers=headers, timeout=timeout, auth=auth)
+
+
+def _client_lock(client: Any) -> threading.RLock:
+    """The lock a client's operations take, one at a time; a fresh one for no client.
+
+    Args:
+        client: The FastMCP client an operation runs on.
+
+    Returns:
+        That client's lock.
+    """
+    if client is None:
+        return threading.RLock()
+    with _client_locks_guard:
+        lock = _client_locks.get(client)
+        if lock is None:
+            lock = _client_locks[client] = threading.RLock()
+        return lock
 
 
 def forget_cached_clients(*identities: str) -> None:
@@ -94,14 +223,25 @@ OAUTH_TASK_KEY_TTL = 900
 OAUTH_CANCELLED = "1"
 
 
-def _secret_fingerprint(secret: str) -> str:
-    """A short digest of a whole secret, for telling cached clients apart.
+# Salts the tokens that stand for secrets in cache keys; random per process, never stored.
+_SECRET_TOKEN_SALT = secrets.token_bytes(32)
+_SECRET_TOKEN_ROUNDS = 1_000
+
+
+def _secret_token(secret: str) -> str:
+    """An opaque token for a whole secret, for telling cached clients apart.
 
     A prefix of the secret itself is not enough: every fine-grained GitHub
     token starts with ``github_pat_``, so two users' tokens would share (and
-    reuse) one cached client carrying the first user's token.
+    reuse) one cached client carrying the first user's token. The token is
+    PBKDF2-HMAC-SHA256 under a salt that lives only in this process: the same
+    secret always gets the same token, no table of raw secrets is kept, and
+    the token is worthless outside the process. The salt, not the round
+    count, is what protects it; the rounds are kept low because this runs
+    every time a tool is built.
     """
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), _SECRET_TOKEN_SALT, _SECRET_TOKEN_ROUNDS)
+    return digest.hex()[:32]
 
 
 def param_header_maps(schemas: Dict[str, Any]) -> Dict[str, Dict[tuple, str]]:
@@ -254,9 +394,13 @@ class MCPTool(Tool):
         self._param_headers = param_header_maps(config.get("action_schemas") or {})
         self._cache_key = self._generate_cache_key()
         self._client = None
+        # Whether ``_client`` is the cached one other tools on the server share.
+        self._shared_client = False
         self.query_mode = config.get("query_mode", False)
         # Images the last call returned, for the model to see (``drain_native_parts``).
         self._native_queue: List[Dict] = []
+        # The last call's full result, for an MCP App view (``take_app_result``).
+        self._app_result: Optional[Dict] = None
 
         if self.server_url and self.auth_type != "oauth":
             self._setup_client()
@@ -308,13 +452,16 @@ class MCPTool(Tool):
             token = self.auth_credentials.get(
                 "bearer_token", ""
             ) or self.auth_credentials.get("access_token", "")
-            auth_key = f"bearer:{_secret_fingerprint(token)}" if token else "bearer:none"
+            auth_key = f"bearer:{_secret_token(token)}" if token else "bearer:none"
         elif self.auth_type == "api_key":
             api_key = self.auth_credentials.get("api_key", "")
-            auth_key = f"apikey:{_secret_fingerprint(api_key)}" if api_key else "apikey:none"
+            auth_key = f"apikey:{_secret_token(api_key)}" if api_key else "apikey:none"
         elif self.auth_type == "basic":
             username = self.auth_credentials.get("username", "")
-            auth_key = f"basic:{username}"
+            password = self.auth_credentials.get("password", "")
+            # The password too: two rows with one username and different
+            # passwords must not share a client or a cached view.
+            auth_key = f"basic:{username}:{_secret_token(password)}" if password else f"basic:{username}"
         else:
             auth_key = "none"
         return f"{self.server_url}#{self.transport_type}#{auth_key}"
@@ -332,6 +479,7 @@ class MCPTool(Tool):
             cached_data = _mcp_clients_cache[self._cache_key]
             if time.time() - cached_data["created_at"] < 300:
                 self._client = cached_data["client"]
+                self._shared_client = True
                 # One map per cached client: its hook reads the latest schemas.
                 shared = cached_data.setdefault("param_headers", {})
                 shared.update(self._param_headers)
@@ -339,6 +487,18 @@ class MCPTool(Tool):
                 return
             else:
                 del _mcp_clients_cache[self._cache_key]
+        self._client = self._build_client()
+        self._shared_client = shareable
+        if not shareable:
+            return
+        _mcp_clients_cache[self._cache_key] = {
+            "client": self._client,
+            "created_at": time.time(),
+            "param_headers": self._param_headers,
+        }
+
+    def _build_client(self) -> Client:
+        """A FastMCP client for this server, with its transport and auth."""
         transport = self._create_transport()
         auth = None
 
@@ -370,14 +530,13 @@ class MCPTool(Tool):
             ) or self.auth_credentials.get("access_token", "")
             if token:
                 auth = BearerAuth(token)
-        self._client = Client(transport, auth=auth)
-        if not shareable:
-            return
-        _mcp_clients_cache[self._cache_key] = {
-            "client": self._client,
-            "created_at": time.time(),
-            "param_headers": self._param_headers,
-        }
+        # Servers send their MCP App views only to a client that says it renders them.
+        extensions = (
+            {"extensions": [advertise(mcp_apps.EXTENSION_ID, {"mimeTypes": [mcp_apps.APP_MIME_TYPE]})]}
+            if mcp_apps.enabled()
+            else {}
+        )
+        return Client(transport, auth=auth, **extensions)
 
     def _create_transport(self):
         """Create appropriate transport based on configuration."""
@@ -412,7 +571,7 @@ class MCPTool(Tool):
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
         elif transport_type == "http":
-            return StreamableHttpTransport(
+            return _MCPStreamableHTTPTransport(
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
         elif transport_type == "stdio":
@@ -421,7 +580,7 @@ class MCPTool(Tool):
             env = self.auth_credentials if self.auth_credentials else None
             return StdioTransport(command=command, args=args, env=env)
         else:
-            return StreamableHttpTransport(
+            return _MCPStreamableHTTPTransport(
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
 
@@ -437,6 +596,7 @@ class MCPTool(Tool):
         ):
             client = _mcp_http_client(headers=headers, timeout=timeout, auth=auth)
             client.event_hooks.setdefault("request", []).append(_param_header_hook(header_maps))
+            client.event_hooks.setdefault("response", []).append(_capture_mcp_http_status)
             return client
 
         return factory
@@ -461,6 +621,9 @@ class MCPTool(Tool):
                 annotations = _annotation_hints(getattr(tool, "annotations", None))
                 if annotations:
                     tool_dict["annotations"] = annotations
+                ui = mcp_apps.tool_ui_metadata(getattr(tool, "meta", None))
+                if ui:
+                    tool_dict["ui"] = ui
                 tools_dict.append(tool_dict)
             elif isinstance(tool, dict):
                 tools_dict.append(tool)
@@ -481,24 +644,40 @@ class MCPTool(Tool):
         """Execute operation with FastMCP client."""
         if not self._client:
             raise Exception("FastMCP client not initialized")
-        async with self._client:
-            if operation == "ping":
-                return await self._client.ping()
-            elif operation == "list_tools":
-                tools_response = await self._client.list_tools()
-                self.available_tools = self._format_tools(tools_response)
-                self._refresh_param_headers(self.available_tools)
-                return self.available_tools
-            elif operation == "call_tool":
-                tool_name = args[0]
-                tool_args = kwargs
-                return await self._client.call_tool(tool_name, tool_args)
-            elif operation == "list_resources":
-                return await self._client.list_resources()
-            elif operation == "list_prompts":
-                return await self._client.list_prompts()
-            else:
-                raise Exception(f"Unknown operation: {operation}")
+        return await self._execute_on(self._client, operation, *args, **kwargs)
+
+    async def _execute_on(self, client: Client, operation: str, /, *args, **kwargs):
+        """Run ``operation`` in a session of its own on ``client``."""
+        try:
+            async with client:
+                if operation == "ping":
+                    return await client.ping()
+                elif operation == "list_tools":
+                    tools_response = await client.list_tools()
+                    self.available_tools = self._format_tools(tools_response)
+                    self._refresh_param_headers(self.available_tools)
+                    return self.available_tools
+                elif operation == "call_tool":
+                    tool_name = args[0]
+                    tool_args = kwargs
+                    return await client.call_tool(tool_name, tool_args)
+                elif operation == "call_tool_raw":
+                    # An MCP App's own call: a failed tool comes back as its result, not an exception.
+                    return await client.call_tool(
+                        args[0], args[1], raise_on_error=False
+                    )
+                elif operation == "read_resource":
+                    return await client.read_resource(args[0])
+                elif operation == "list_resources":
+                    return await client.list_resources()
+                elif operation == "list_prompts":
+                    return await client.list_prompts()
+                else:
+                    raise Exception(f"Unknown operation: {operation}")
+        except MCPError as exc:
+            if getattr(exc, "docsgpt_http_status", None) == HTTPStatus.UNAUTHORIZED:
+                raise Exception("HTTP 401 Unauthorized") from exc
+            raise
 
     _ERROR_MAP = [
         (concurrent.futures.TimeoutError, lambda op, t, _: f"Timed out after {t}s"),
@@ -507,7 +686,6 @@ class MCPTool(Tool):
 
     _ERROR_PATTERNS = {
         ("403", "Forbidden"): "Access denied (403 Forbidden)",
-        ("401", "Unauthorized"): "Authentication failed (401 Unauthorized)",
         ("ECONNREFUSED",): "Connection refused",
         ("SSL", "certificate"): "SSL/TLS error",
     }
@@ -516,24 +694,50 @@ class MCPTool(Tool):
         try:
             try:
                 asyncio.get_running_loop()
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        self._run_in_new_loop, operation, *args, **kwargs
-                    )
-                    return future.result(timeout=self.timeout)
             except RuntimeError:
                 return self._run_in_new_loop(operation, *args, **kwargs)
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            try:
+                future = executor.submit(self._run_in_new_loop, operation, *args, **kwargs)
+                return future.result(timeout=self.timeout)
+            finally:
+                # The caller waits no longer than the timeout; a late worker finishes on its own.
+                executor.shutdown(wait=False)
         except Exception as e:
             raise self._map_error(operation, e) from e
             raise self._map_error(operation, e) from e
 
     def _run_in_new_loop(self, operation, *args, **kwargs):
+        lock = _client_lock(self._client)
+        if not lock.acquire(blocking=False):
+            if self._fresh_client_when_busy():
+                # One slow call on a shared client must not hold up every other user's.
+                return self._run_loop(self._execute_on(self._build_client(), operation, *args, **kwargs))
+            # A wait for another call on the client counts against the timeout too.
+            timeout = self.timeout if isinstance(self.timeout, (int, float)) and self.timeout > 0 else -1
+            if not lock.acquire(timeout=timeout):
+                raise concurrent.futures.TimeoutError()
+        try:
+            return self._run_loop(self._execute_with_client(operation, *args, **kwargs))
+        finally:
+            lock.release()
+
+    def _fresh_client_when_busy(self) -> bool:
+        """Whether a call that finds the client busy may run on a client of its own.
+
+        Only a cached client shared on static credentials: an OAuth client's
+        tokens are refreshed through it, and two clients refreshing one
+        rotating token at once could sign the connection out.
+        """
+        return bool(getattr(self, "_shared_client", False)) and self.auth_type != "oauth"
+
+    @staticmethod
+    def _run_loop(coroutine: Any) -> Any:
+        """Run ``coroutine`` to completion on an event loop of its own."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(
-                self._execute_with_client(operation, *args, **kwargs)
-            )
+            return loop.run_until_complete(coroutine)
         finally:
             loop.close()
 
@@ -542,6 +746,8 @@ class MCPTool(Tool):
             if isinstance(exc, exc_type):
                 return Exception(msg_fn(operation, self.timeout, exc))
         error_msg = str(exc)
+        if _is_http_401_error(error_msg):
+            return Exception("Authentication failed (401 Unauthorized)")
         for patterns, friendly in self._ERROR_PATTERNS.items():
             if any(p.lower() in error_msg.lower() for p in patterns):
                 return Exception(friendly)
@@ -569,6 +775,7 @@ class MCPTool(Tool):
     def execute_action(self, action_name: str, **kwargs) -> Any:
         # Images a failed earlier call queued are not this call's.
         self._native_queue = []
+        self._app_result = None
         if not self.server_url:
             raise Exception("No MCP server configured")
         if not self._client:
@@ -591,8 +798,9 @@ class MCPTool(Tool):
             if _is_header_mismatch(e):
                 return self._retry_with_listed_schemas(action_name, cleaned_kwargs, e)
             lower_msg = error_msg.lower()
+            is_http_401 = _is_http_401_error(error_msg)
             is_auth_error = (
-                "401" in error_msg
+                is_http_401
                 or "unauthorized" in lower_msg
                 or "session expired" in lower_msg
                 or "re-authorize" in lower_msg
@@ -674,6 +882,7 @@ class MCPTool(Tool):
         """
         if not hasattr(result, "content"):
             return result
+        self._app_result = mcp_apps.app_result(result)
         content_list = []
         for item in result.content:
             kind = getattr(item, "type", None)
@@ -723,6 +932,90 @@ class MCPTool(Tool):
         """Images the last call returned, emptied as they are taken."""
         parts, self._native_queue = self._native_queue, []
         return parts
+
+    def take_app_result(self) -> Optional[Dict]:
+        """The last call's ``CallToolResult`` for an MCP App view, emptied as it is taken."""
+        result, self._app_result = getattr(self, "_app_result", None), None
+        return result
+
+    def read_ui_resource(self, uri: str) -> Dict:
+        """Read the MCP App view at ``uri``, cached per server sign-in for ``UI_RESOURCE_TTL``.
+
+        Args:
+            uri: The tool's ``_meta.ui.resourceUri``.
+
+        Returns:
+            ``html`` plus the resource's ``csp``, ``permissions`` and
+            ``prefersBorder``; see :func:`mcp_apps.resource_view`.
+
+        Raises:
+            ValueError: ``uri`` is not ``ui://`` or the resource is not an MCP App.
+        """
+        if not isinstance(uri, str) or not uri.startswith("ui://"):
+            raise ValueError("Not a ui:// resource")
+        if not self.server_url:
+            raise Exception("No MCP server configured")
+        key = (self._cache_key, uri)
+        cached = _ui_resource_cache.get(key)
+        if cached and time.time() - cached[0] < UI_RESOURCE_TTL:
+            return cached[1]
+        if not self._client:
+            self._setup_client()
+        contents = self._run_async_operation("read_resource", uri)
+        listing_meta = None if mcp_apps.declares_ui(contents) else self._listed_resource_meta(uri)
+        view = mcp_apps.resource_view(contents, listing_meta)
+        # Request threads share the cache: two evicting at once must not pick the same oldest entry.
+        with _ui_resource_cache_guard:
+            while len(_ui_resource_cache) >= UI_RESOURCE_CACHE_SIZE:
+                _ui_resource_cache.pop(next(iter(_ui_resource_cache)), None)
+            _ui_resource_cache[key] = (time.time(), view)
+        return view
+
+    def _listed_resource_meta(self, uri: str) -> Optional[Dict]:
+        """The ``_meta`` ``resources/list`` gives ``uri``, for a read that carried none."""
+        try:
+            listing = self._run_async_operation("list_resources")
+        except Exception:
+            logger.warning("MCP resources/list failed while reading %s", uri)
+            return None
+        for resource in listing or []:
+            if str(getattr(resource, "uri", "")) == uri:
+                meta = getattr(resource, "meta", None)
+                return meta if isinstance(meta, dict) else None
+        return None
+
+    def call_app_tool(self, action_name: str, arguments: Optional[Dict] = None) -> Dict:
+        """Run a tool an MCP App view asked for, and hand its full result back to the view.
+
+        The caller has checked the tool's visibility and permission.
+
+        Args:
+            action_name: The tool.
+            arguments: Its arguments.
+
+        Returns:
+            The ``CallToolResult`` as :func:`mcp_apps.app_result` projects it.
+        """
+        if not self.server_url:
+            raise Exception("No MCP server configured")
+        if not self._client:
+            self._setup_client()
+        arguments = dict(arguments or {})
+        conflict = self._pinned_param_conflict(action_name, arguments)
+        if conflict:
+            return {"content": [{"type": "text", "text": conflict}], "isError": True}
+        try:
+            result = self._run_async_operation("call_tool_raw", action_name, arguments)
+        except Exception as e:
+            if not _is_header_mismatch(e):
+                raise
+            # As ``execute_action``: the stored schema predates the server's header annotations.
+            self._run_async_operation("list_tools")
+            conflict = self._pinned_param_conflict(action_name, arguments)
+            if conflict:
+                return {"content": [{"type": "text", "text": conflict}], "isError": True}
+            result = self._run_async_operation("call_tool_raw", action_name, arguments)
+        return mcp_apps.app_result(result)
 
     def test_connection(self) -> Dict:
         if not self.server_url:
@@ -898,6 +1191,10 @@ class MCPTool(Tool):
             annotations = _annotation_hints(tool.get("annotations"))
             if annotations:
                 action["annotations"] = annotations
+            # The MCP App view this action renders, and who may call it (model, app).
+            ui = tool.get("ui") or mcp_apps.tool_ui_metadata(tool.get("_meta") or tool.get("meta"))
+            if ui:
+                action["ui"] = ui
             actions.append(action)
         return actions
 

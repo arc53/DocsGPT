@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -23,10 +24,11 @@ import {
 import Hero from '../Hero';
 import AgentStarters from '../hero/AgentStarters';
 import AddToKnowledgeAction from './AddToKnowledgeAction';
-import { deriveArtifactChips } from './artifactChips';
+import { conversationArtifactChips } from './artifactChips';
 import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
 import type { OpenArtifactRequest } from './artifactCards';
+import ChatLoadingSkeleton from './ChatLoadingSkeleton';
 import ConversationBubble from './ConversationBubble';
 import {
   FEEDBACK,
@@ -53,6 +55,11 @@ type ConversationMessagesProps = {
   queries: Query[];
   status: Status;
   showHeroOnEmpty?: boolean;
+  /**
+   * The chat is still being read (opened by its URL): with nothing to show
+   * yet, it draws as a loading chat, not as the empty one's hero.
+   */
+  isLoading?: boolean;
   /** The agent's starters, under `headerContent` while the chat is empty. */
   starters?: string[] | null;
   headerContent?: ReactNode;
@@ -78,6 +85,7 @@ type ConversationMessagesProps = {
 const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded';
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
+const MS_SPACER_SELECTOR = '[data-message-scroller-spacer]';
 const STICK_THRESHOLD_PX = 48;
 // The keys the message-scroller primitive treats as a user scroll.
 const SCROLL_KEYS = new Set([
@@ -89,6 +97,23 @@ const SCROLL_KEYS = new Set([
   'PageUp',
   ' ',
 ]);
+
+/** The pin spacer's rendered height; 0 when the primitive shows none. */
+function spacerHeight(vp: HTMLElement): number {
+  return vp.querySelector<HTMLElement>(MS_SPACER_SELECTOR)?.offsetHeight ?? 0;
+}
+
+/**
+ * How far the content's end lies below the viewport's bottom. The pin spacer
+ * is room, not content: while it shows, the end is above the bottom and this
+ * is negative.
+ */
+function contentEndDistance(
+  vp: HTMLElement,
+  spacer: number = spacerHeight(vp),
+): number {
+  return vp.scrollHeight - spacer - vp.scrollTop - vp.clientHeight;
+}
 
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
@@ -102,6 +127,7 @@ export default function ConversationMessages({
   status,
   handleFeedback,
   showHeroOnEmpty = true,
+  isLoading = false,
   starters,
   headerContent,
   onOpenArtifact,
@@ -117,8 +143,10 @@ export default function ConversationMessages({
   // ref minted on turn 1 still resolves, and edit_artifact still accepts it,
   // on turn 5. Resolving inline links against only the current turn's
   // artifacts made "the CSV from earlier" render as dead plain text.
+  // Once each: a background job's file is on the turn that started the job
+  // and on the reply that reported it.
   const conversationArtifacts = useMemo(
-    () => queries.flatMap((query) => deriveArtifactChips(query.tool_calls)),
+    () => conversationArtifactChips(queries),
     [queries],
   );
 
@@ -147,9 +175,36 @@ export default function ConversationMessages({
   // on the latest question but leaves the spacer at its height; re-armed when
   // the next question arrives. Before the follow effect, so it runs first.
   const pinReleasedRef = useRef(false);
+  // The primitive goes back to following the bottom whenever the content's
+  // end is in view, measured without the spacer, so with a spacer showing it
+  // always is. After a gesture that meant the next resize scrolled to the end
+  // with the spacer gone, and the turn dropped by the spacer's height; once
+  // the answer has ended, a late diagram that outgrew the spacer scrolled the
+  // question off the top. So while a spacer shows after either, the primitive
+  // does not follow the bottom; it scrolls freely or keeps the question
+  // pinned, and this component follows the answer's end itself.
+  const [pinHeld, setPinHeld] = useState(false);
+  const pinHeldRef = useRef(false);
+  const holdPin = (hold: boolean, sync = false) => {
+    if (pinHeldRef.current === hold) return;
+    pinHeldRef.current = hold;
+    if (sync) flushSync(() => setPinHeld(hold));
+    else setPinHeld(hold);
+  };
   useLayoutEffect(() => {
     pinReleasedRef.current = false;
+    holdPin(false);
   }, [queries.length]);
+  // Whether the question is pinned to the top: the follow and the resize
+  // re-pin below leave the scroll to the primitive then.
+  const isPinned = (vp: HTMLElement) =>
+    !pinReleasedRef.current && (pinHeldRef.current || spacerHeight(vp) > 0);
+
+  useLayoutEffect(() => {
+    if (status !== 'idle' || !hasMessages) return;
+    const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
+    if (vp && spacerHeight(vp) > 0) holdPin(true);
+  }, [status, hasMessages]);
 
   useEffect(() => {
     if (!hasMessages) return;
@@ -157,6 +212,8 @@ export default function ConversationMessages({
     if (!vp) return;
     const releasePin = () => {
       pinReleasedRef.current = true;
+      // Synchronous, so the primitive reads it on the scroll this gesture makes.
+      if (spacerHeight(vp) > 0) holdPin(true, true);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (SCROLL_KEYS.has(event.key)) releasePin();
@@ -172,12 +229,8 @@ export default function ConversationMessages({
     const onToggleClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (!target?.closest('[aria-expanded]')) return;
-      const spacer = vp.querySelector<HTMLElement>(
-        '[data-message-scroller-spacer]',
-      );
-      if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
-      const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-      if (dist >= STICK_THRESHOLD_PX) return;
+      if (isPinned(vp)) return;
+      if (contentEndDistance(vp) >= STICK_THRESHOLD_PX) return;
       stickToBottomRef.current = false;
       vp.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
     };
@@ -198,16 +251,31 @@ export default function ConversationMessages({
   // folding) shrank the content, and the browser clamps the scroll a frame
   // before the scroller re-pins: the turn jumped and snapped back. Each growth
   // raises the answer's min-height to match, so a shrink leaves blank space at
-  // its end instead; released when the stream ends.
+  // its end instead. The end of the stream (or a pause for approval) is such
+  // a shrink too: the live step window folds, and with no text there is no
+  // action row to take the status line's place. So the hold stays until the
+  // row stops being the latest answer, when the next question arrives.
   const [streamingAnswer, setStreamingAnswer] = useState<HTMLElement | null>(
     null,
   );
   const holdStreamingAnswer = status === 'loading';
+  const prevStatusRef = useRef(status);
+  useLayoutEffect(() => {
+    const el = streamingAnswer;
+    if (!el) return;
+    return () => {
+      el.style.minHeight = '';
+    };
+  }, [streamingAnswer]);
   useLayoutEffect(() => {
     const el = streamingAnswer;
     if (!el || !holdStreamingAnswer || typeof ResizeObserver === 'undefined')
       return;
-    let tallest = 0;
+    // A retry streams a new answer into the same row, so it starts its own
+    // hold; a turn resuming after an approval keeps the one it had.
+    if (prevStatusRef.current !== 'awaiting_tool_actions')
+      el.style.minHeight = '';
+    let tallest = parseFloat(el.style.minHeight) || 0;
     const observer = new ResizeObserver(([entry]) => {
       const height =
         entry.borderBoxSize?.[0]?.blockSize ??
@@ -217,11 +285,12 @@ export default function ConversationMessages({
       el.style.minHeight = `${height}px`;
     });
     observer.observe(el);
-    return () => {
-      observer.disconnect();
-      el.style.minHeight = '';
-    };
+    return () => observer.disconnect();
   }, [streamingAnswer, holdStreamingAnswer]);
+  // After the hold effect, so it reads the status the last commit had.
+  useLayoutEffect(() => {
+    prevStatusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     if (!hasMessages) return;
@@ -229,19 +298,25 @@ export default function ConversationMessages({
     if (!vp) return;
     const onScroll = () => {
       const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-      stickToBottomRef.current = dist < STICK_THRESHOLD_PX;
+      // Reading style.height (the primitive's inline value) avoids a reflow.
+      const spacer = vp.querySelector<HTMLElement>(MS_SPACER_SELECTOR);
+      const spacerH = spacer ? parseFloat(spacer.style.height) || 0 : 0;
+      const shownSpacerH = spacerCollapsedRef.current ? 0 : spacerH;
+      // At the bottom means at the content's end, spacer or not.
+      stickToBottomRef.current =
+        contentEndDistance(vp, shownSpacerH) < STICK_THRESHOLD_PX;
+      // The spacer is gone (the scroll-to-end button, a new pin): nothing
+      // left to hold.
+      if (shownSpacerH === 0) holdPin(false);
       // Collapse only once the spacer has scrolled fully below the fold
       // (dist >= its height) so removing it never shifts the visible content.
-      // Reading style.height (the primitive's inline value) avoids a reflow.
-      if (!spacerCollapsedRef.current) {
-        const spacer = vp.querySelector<HTMLElement>(
-          '[data-message-scroller-spacer]',
-        );
-        const spacerH = spacer ? parseFloat(spacer.style.height) || 0 : 0;
-        if (spacerH > STICK_THRESHOLD_PX && dist >= spacerH) {
-          spacerCollapsedRef.current = true;
-          setSpacerCollapsed(true);
-        }
+      if (
+        !spacerCollapsedRef.current &&
+        spacerH > STICK_THRESHOLD_PX &&
+        dist >= spacerH
+      ) {
+        spacerCollapsedRef.current = true;
+        setSpacerCollapsed(true);
       }
     };
     onScroll();
@@ -256,14 +331,32 @@ export default function ConversationMessages({
     // While the pin spacer holds the latest question at the top, the primitive
     // re-pins on resize a frame later; scrolling to the bottom here first made
     // the turn jump up and back on every growth. Once a gesture has released
-    // the pin, its leftover spacer no longer holds anything: follow.
-    const spacer = vp.querySelector<HTMLElement>(
-      '[data-message-scroller-spacer]',
-    );
-    if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
-    const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-    if (stickToBottomRef.current && dist > 0) vp.scrollTop = vp.scrollHeight;
+    // the pin, its leftover spacer no longer holds anything: follow the
+    // answer's end, not the spacer's, and only once it passes the bottom.
+    if (isPinned(vp)) return;
+    const dist = contentEndDistance(vp);
+    if (stickToBottomRef.current && dist > 0) vp.scrollTop += dist;
   }, [status, lastTurnContentLength, hasMessages]);
+
+  // The primitive re-pins to the bottom a frame after a resize, so content
+  // resizing in view while the chat sat at its end (an image with no size, a
+  // diagram rendering, an MCP App sizing itself, a run's artifact cards, the
+  // action row at the end of a stream) painted one frame with the end pushed
+  // below the fold. A ResizeObserver runs after layout and before paint, so
+  // following here lands in the same frame. Growth above the viewport is the
+  // browser's scroll anchoring, and a pinned question the primitive's.
+  const [contentEl, setContentEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const vp = contentEl?.closest<HTMLElement>(MS_VIEWPORT_SELECTOR);
+    if (!contentEl || !vp || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!stickToBottomRef.current || isPinned(vp)) return;
+      const dist = contentEndDistance(vp);
+      if (dist > 0) vp.scrollTop += dist;
+    });
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [contentEl]);
 
   const columnClass = isSplitView
     ? 'w-full max-w-325 px-2'
@@ -336,6 +429,7 @@ export default function ConversationMessages({
               thought={query.thought}
               sources={query.sources}
               toolCalls={query.tool_calls}
+              jobArtifacts={query.job_artifacts}
               segments={query.segments}
               workflowRunId={query.workflow_run_id}
               workflow={query.workflow}
@@ -344,6 +438,7 @@ export default function ConversationMessages({
               onOpenArtifact={onOpenArtifact}
               onToolAction={onToolAction}
               agentId={agentId}
+              messageId={query.messageId}
               isStreaming={false}
             />
           ) : null}
@@ -405,6 +500,7 @@ export default function ConversationMessages({
             thought={query.thought}
             sources={query.sources}
             toolCalls={query.tool_calls}
+            jobArtifacts={query.job_artifacts}
             segments={query.segments}
             workflowRunId={query.workflow_run_id}
             workflow={query.workflow}
@@ -415,6 +511,7 @@ export default function ConversationMessages({
             feedback={query.feedback}
             isStreaming={isCurrentlyStreaming}
             agentId={agentId}
+            messageId={query.messageId}
             handleFeedback={
               handleFeedback
                 ? (feedback) => handleFeedback(query, feedback, index)
@@ -443,6 +540,17 @@ export default function ConversationMessages({
     return null;
   };
 
+  if (queries.length === 0 && isLoading) {
+    return (
+      <div className="flex h-full w-full justify-center overflow-hidden sm:pt-6 lg:pt-12">
+        <div className={columnClass}>
+          {headerContent}
+          <ChatLoadingSkeleton />
+        </div>
+      </div>
+    );
+  }
+
   if (queries.length === 0) {
     return (
       <div className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-6 lg:pt-12">
@@ -470,10 +578,11 @@ export default function ConversationMessages({
   }
 
   return (
-    <MessageScrollerProvider autoScroll>
+    <MessageScrollerProvider autoScroll={!pinHeld}>
       <MessageScroller>
         <MessageScrollerViewport className="sm:pt-6 lg:pt-12">
           <MessageScrollerContent
+            ref={setContentEl}
             spacerClassName={spacerCollapsed ? 'max-h-0' : undefined}
             className={cn('mx-auto pb-7', columnClass)}
           >

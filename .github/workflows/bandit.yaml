@@ -7,6 +7,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions: {}
+
 jobs:
   bandit_scan:
     if: ${{ github.repository == 'arc53/DocsGPT' }}
@@ -18,18 +20,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install bandit  # Bandit is needed for this action
-          if [ -f docsgpt/requirements.txt ]; then pip install -r docsgpt/requirements.txt; fi
+          persist-credentials: false
 
+      # The action sets up its own Python and installs Bandit, which reads the
+      # source without importing it, so the project's dependencies are not needed.
       - name: Run Bandit scan
         # v1.0.1 hard-codes Python 3.8, which ubuntu-26.04 doesn't ship; main adds the python-version input.
         uses: PyCQA/bandit-action@7925d472505a4ec09ef471b22fe99c26fee47443 # main, 2026-10-27

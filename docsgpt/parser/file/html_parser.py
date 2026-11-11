@@ -71,7 +71,8 @@ def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> 
         MarkupTooDeepError: The tree is too deep and ``plain_when_too_deep`` is off.
     """
     from bs4 import CData, Declaration, ProcessingInstruction
-    from markdownify import MarkdownConverter
+
+    from docsgpt.parser.markdown_conversion import WhitespacePreservingConverter
 
     for tag in soup.find_all(_DROP_TAGS):
         tag.decompose()
@@ -86,7 +87,7 @@ def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> 
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
-    converter = converter or MarkdownConverter(**MARKDOWNIFY_OPTIONS)
+    converter = converter or WhitespacePreservingConverter(**MARKDOWNIFY_OPTIONS)
     try:
         markdown = converter.convert_soup(soup)
     except RecursionError as e:
