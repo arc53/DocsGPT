@@ -1889,7 +1889,8 @@
         "done": "完成",
         "createTool": "为智能体创建工具",
         "toolCreated": "工具已创建。可在 设置 › 工具 中找到，并添加到智能体。",
-        "toolFailed": "无法创建工具。"
+        "toolFailed": "无法创建工具。",
+        "toolSomeOff": "删除和向其他智能体提问的操作默认关闭。如有需要，请在工具中开启这些操作。"
       },
       "regenerate": {
         "action": "重新生成",

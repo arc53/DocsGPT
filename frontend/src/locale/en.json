@@ -1893,7 +1893,8 @@
         "done": "Done",
         "createTool": "Create tool for agents",
         "toolCreated": "Tool created. Find it in Settings › Tools and add it to an agent.",
-        "toolFailed": "Could not create the tool."
+        "toolFailed": "Could not create the tool.",
+        "toolSomeOff": "Deleting, and asking another agent, start switched off. Turn those actions on in the tool if you want them."
       },
       "regenerate": {
         "action": "Regenerate",

@@ -1965,7 +1965,8 @@
         "done": "Terminé",
         "createTool": "Créer un outil pour les agents",
         "toolCreated": "Outil créé. Retrouvez-le dans Paramètres › Outils et ajoutez-le à un agent.",
-        "toolFailed": "Impossible de créer l'outil."
+        "toolFailed": "Impossible de créer l'outil.",
+        "toolSomeOff": "La suppression et l’interrogation d’un autre agent sont désactivées au départ. Activez ces actions dans l’outil si besoin."
       },
       "regenerate": {
         "action": "Régénérer",
