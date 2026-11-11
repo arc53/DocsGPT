@@ -189,7 +189,7 @@ function UploadRow({
 
         {task.status === 'completed' && (
           <ToastStatus
-            status="success"
+            status={task.itemsNotDownloaded ? 'warning' : 'success'}
             label={t('modals.uploadDoc.progress.completed')}
           />
         )}
@@ -201,6 +201,14 @@ function UploadRow({
           />
         )}
       </ToastItem>
+
+      {task.status === 'completed' && !!task.itemsNotDownloaded && (
+        <ToastMessage>
+          {t('modals.uploadDoc.progress.partialDownload', {
+            count: task.itemsNotDownloaded,
+          })}
+        </ToastMessage>
+      )}
 
       {task.status === 'failed' &&
         (task.tokenLimitReached || task.errorMessage) && (

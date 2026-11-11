@@ -29,6 +29,7 @@ from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.guardrails import injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.connectors.base import ConnectorAuthError
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
@@ -4425,6 +4426,22 @@ def _link_source_to_connection(source_id: str, connection_id: str) -> None:
 # sources ingested before it re-ingest once. 2: each file's web link.
 _CONNECTOR_INGEST_VERSION = 2
 
+#: The ``reason`` on ``source.ingest.failed`` when the provider rejected the connection's sign-in.
+CONNECTOR_RECONNECT_REASON = "reconnect"
+_CONNECTOR_RECONNECT_MESSAGE = (
+    "The connected account's sign-in was rejected, so its files could not be downloaded. "
+    "Reconnect the account, then try again."
+)
+
+
+class ConnectorDownloadError(RuntimeError):
+    """A connector download got no files because they failed, not because there was nothing to download."""
+
+
+def _connector_download_losses(download_info: Dict[str, Any]) -> Tuple[int, int]:
+    """The ``(files_failed, folders_failed)`` a connector's download summary reports."""
+    return int(download_info.get("files_failed") or 0), int(download_info.get("folders_failed") or 0)
+
 
 def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
     """Combine a connector's selection fingerprint with the source's processing settings.
@@ -4802,10 +4819,31 @@ def _ingest_connector(
             download_info = remote_loader.download_to_directory(
                 temp_dir, api_source_config
             )
+            files_downloaded = int(download_info.get("files_downloaded") or 0)
+            files_failed, folders_failed = _connector_download_losses(download_info)
+            counts = (
+                f"downloaded={files_downloaded} failed={files_failed} folders_failed={folders_failed} "
+                f"skipped={int(download_info.get('files_skipped') or 0)}"
+            )
+            if download_info.get("error"):
+                raise ConnectorDownloadError(f"Could not download from {source_type}: {download_info['error']}")
+            if (files_failed or folders_failed) and not files_downloaded:
+                raise ConnectorDownloadError(
+                    f"None of the selected files could be downloaded from {source_type} "
+                    f"({files_failed} files and {folders_failed} folders failed). Try again later."
+                )
+            # What failed is left out of this index; the next sync downloads the whole selection again.
+            partial = (
+                {"partial": True, "files_failed": files_failed, "folders_failed": folders_failed}
+                if files_failed or folders_failed
+                else {}
+            )
+            if partial:
+                logging.error(f"Partial download from {source_type} for source {source_id_for_events}: {counts}")
+            else:
+                logging.info(f"Downloaded from {source_type} for source {source_id_for_events}: {counts}")
 
-            if download_info.get("empty_result", False) or not download_info.get(
-                "files_downloaded", 0
-            ):
+            if download_info.get("empty_result", False) or not files_downloaded:
                 logging.warning(f"No files were downloaded from {source_type}")
                 # Connector returned no files — surface as a benign
                 # ``completed`` event with zero tokens so the toast
@@ -4918,7 +4956,7 @@ def _ingest_connector(
             # The fingerprint lets the next sync skip an unchanged selection.
             # It is left out when a file failed, so that sync tries again.
             remote_data = {"provider": source_type, **api_source_config}
-            sync_fingerprint = _connector_sync_fingerprint(
+            sync_fingerprint = None if partial else _connector_sync_fingerprint(
                 download_info.get("sync_fingerprint"), config
             )
             if sync_fingerprint:
@@ -4987,6 +5025,7 @@ def _ingest_connector(
                     "operation": operation_mode,
                     **_task_id_field(self),
                     "tokens": tokens,
+                    **partial,
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
@@ -5002,10 +5041,12 @@ def _ingest_connector(
                 "type": source_type,
                 "id": source_id_for_events,
                 "status": "complete",
+                **partial,
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
+        auth_rejected = isinstance(e, ConnectorAuthError)
         _publish_source_event(
             user, actor_id,
             "source.ingest.failed",
@@ -5015,11 +5056,13 @@ def _ingest_connector(
                 "loader": source_type,
                 "operation": operation_mode,
                 **_task_id_field(self),
-                "error": str(e)[:1024],
-                **failure_fields(e),
+                "error": _CONNECTOR_RECONNECT_MESSAGE if auth_rejected else str(e)[:1024],
+                **({"reason": CONNECTOR_RECONNECT_REASON} if auth_rejected else failure_fields(e)),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
+        if auth_rejected:
+            raise ConnectorAuthError(_CONNECTOR_RECONNECT_MESSAGE) from e
         raise
 
 
