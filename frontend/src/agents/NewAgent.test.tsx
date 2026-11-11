@@ -129,6 +129,9 @@ const drafter = vi.hoisted(() => ({
 }));
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => drafter.config,
+  // Insights' topic suggestions read it with the token they were handed.
+  useDrafterConfigFor: (_token: string | null, wanted = true) =>
+    wanted ? drafter.config : null,
 }));
 vi.mock('../drafter/drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../drafter/drafterApi')>()),
