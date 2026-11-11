@@ -4698,8 +4698,6 @@
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
         "not_found": "an item that doesn't exist",
-        "no_access": "an item you can't open",
-        "invalid": "an item that isn't valid",
         "other": "an item it couldn't use",
         "not_allowed": "a setting your role can't change",
         "other_step": "a change for another step"

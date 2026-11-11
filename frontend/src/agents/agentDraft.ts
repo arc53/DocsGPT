@@ -741,13 +741,7 @@ export const AGENT_FIELD_LABEL_KEYS: Record<AgentDraftField, string> = {
 };
 
 /** Why the server left a part out; `other_step` is a field this step doesn't take. */
-const DROPPED_REASONS = [
-  'not_found',
-  'no_access',
-  'invalid',
-  'not_allowed',
-  'other_step',
-];
+const DROPPED_REASONS = ['not_found', 'not_allowed', 'other_step'];
 
 /** How many words a prompt's text has, for "Wrote a new prompt · 131 words". */
 const wordCount = (text: string): number =>

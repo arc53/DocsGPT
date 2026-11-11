@@ -4677,8 +4677,6 @@
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
         "not_found": "ein Element, das nicht existiert",
-        "no_access": "ein Element, das du nicht öffnen kannst",
-        "invalid": "ein ungültiges Element",
         "other": "ein Element, das nicht verwendet werden konnte",
         "not_allowed": "eine Einstellung, die deine Rolle nicht ändern darf",
         "other_step": "eine Änderung für einen anderen Schritt"

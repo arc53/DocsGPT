@@ -4649,8 +4649,6 @@
       "droppedLine": "{{field}}：{{reason}}",
       "droppedReasons": {
         "not_found": "一个不存在的项目",
-        "no_access": "一个你无法打开的项目",
-        "invalid": "一个无效的项目",
         "other": "一个无法使用的项目",
         "not_allowed": "你的角色无法更改的设置",
         "other_step": "属于其他步骤的更改"

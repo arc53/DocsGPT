@@ -4651,8 +4651,6 @@
       "droppedLine": "{{field}}：{{reason}}",
       "droppedReasons": {
         "not_found": "一個不存在的項目",
-        "no_access": "一個你無法開啟的項目",
-        "invalid": "一個無效的項目",
         "other": "一個無法使用的項目",
         "not_allowed": "你的角色無法變更的設定",
         "other_step": "屬於其他步驟的變更"

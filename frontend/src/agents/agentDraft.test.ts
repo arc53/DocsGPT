@@ -598,7 +598,7 @@ describe('agentDraft', () => {
         { field: 'model', summary: 'Not a draft field' },
       ],
       dropped: [
-        { field: 'tools', reason: 'no_access' },
+        { field: 'tools', reason: 'not_found' },
         { field: 'limits', reason: 'not_allowed' },
       ],
     })!;

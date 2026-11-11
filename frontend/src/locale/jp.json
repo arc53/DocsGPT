@@ -4651,8 +4651,6 @@
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
         "not_found": "存在しない項目",
-        "no_access": "開けない項目",
-        "invalid": "無効な項目",
         "other": "使用できない項目",
         "not_allowed": "あなたのロールでは変更できない設定",
         "other_step": "別のステップで行う変更"
