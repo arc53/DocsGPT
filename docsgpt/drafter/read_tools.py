@@ -1,12 +1,14 @@
 """The drafter's read tools: detail the compact workspace catalog leaves out.
 
-Most are lookups in the :class:`~docsgpt.drafter.catalog.Workspace` loaded for
-the caller before the draft started, so a tool can only return what the
-caller may open, and never touches the database or anything with side
-effects. ``get_source`` reads the one source's file tree it is asked about
-(the catalog leaves trees out), only for a source the workspace shows. The Insights reads (``get_gap_examples``, ``get_conversations``) are
-live but go through the workspace's ``insights_reader``, built for the one
-agent the caller may edit, and return a few capped rows of its conversations.
+Every tool answers from the :class:`~docsgpt.drafter.catalog.Workspace` read
+for the caller at the start of the turn, so it can only return what the caller
+may open, and none has side effects. Most are plain lookups in it; two kinds
+read the database while the turn runs. ``get_source`` reads the file tree of
+the one source it is asked about (the catalog leaves trees out), only for a
+source the workspace shows, and keeps it for the rest of the turn. The
+Insights reads (``get_gap_examples``, ``get_conversations``) go through the
+workspace's ``insights_reader``, built for the one agent the caller may edit,
+and return a few capped rows of its conversations.
 Results go back to the model fenced as data; a result's ``shown`` is what the
 panel lists as read (``read`` event) and is not sent to the model.
 """

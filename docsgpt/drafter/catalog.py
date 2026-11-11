@@ -8,8 +8,11 @@ tools are offered as the agent picker offers them. Nothing here writes: the
 list routes are not called because some of them have side effects (the agents
 listing upserts the user row).
 
-Everything is loaded once, before the draft streams, so the read tools are
-plain lookups and the stream never touches the database. Tool configs and
+The catalog is read once per turn, at the start of its stream and before the
+first model call, so most read tools are plain lookups. Two reads go back to
+the database while the turn runs: a source's file tree, read on the first
+``get_source`` for a source the workspace shows (:func:`source_files`), and the
+agent recipe's Insights reads through its ``insights_reader``. Tool configs and
 secrets are never read into it: a tool is its name, description and actions.
 """
 
