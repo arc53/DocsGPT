@@ -459,7 +459,7 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
         if context.get("step") is None and ws.agent:
             agent = editable_saved_agent(conn, user_id, ws.agent["id"])
             if agent:
-                _read_insights(conn, user_id, agent, context, out)
+                _read_insights(conn, agent, context, out)
         if context.get("step") == "safety" and out.insights:
             agent = editable_saved_agent(conn, user_id, ws.agent["id"]) if ws.agent else None
             # The form's sources the caller may attach, and those already on the saved agent.
@@ -475,7 +475,7 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
     return out
 
 
-def _read_insights(conn, user_id: str, agent: dict, context: dict, ws: AgentWorkspace) -> None:
+def _read_insights(conn, agent: dict, context: dict, ws: AgentWorkspace) -> None:
     """Fill the improve mode's Insights reads for a saved agent the caller may edit: its gap summary (with the
     read tools' reader while it is available) and the Logs conversation the user started from.
 
@@ -483,7 +483,7 @@ def _read_insights(conn, user_id: str, agent: dict, context: dict, ws: AgentWork
     """
     try:
         with conn.begin_nested():
-            ws.gaps = agent_gaps(conn, user_id, agent)
+            ws.gaps = agent_gaps(conn, agent)
         if ws.reads_insights():
             ws.insights_reader = InsightsReader.for_summary(agent, ws.gaps).focused(context.get("gap"))
     except Exception:

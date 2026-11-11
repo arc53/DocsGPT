@@ -37,18 +37,18 @@ class TestShape:
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
-        assert agent_gaps(pg_conn, "owner", _busy(pg_conn)) == {
+        assert agent_gaps(pg_conn, _busy(pg_conn)) == {
             "available": False, "reason": "off_on_this_instance", "conversations": 0, "needed": NEEDED,
             "days": DAYS, "rows": []}
 
     def test_off_for_the_agent(self, pg_conn):
-        result = agent_gaps(pg_conn, "owner", _busy(pg_conn, enabled=False))
+        result = agent_gaps(pg_conn, _busy(pg_conn, enabled=False))
         assert result["available"] is False and result["reason"] == "agent_off" and result["conversations"] == 0
 
     def test_not_enough_counts_analysed_conversations(self, pg_conn):
         bot = _busy(pg_conn, n=NEEDED - 1)
         seed.turn(pg_conn, str(bot["id"]), days_ago=DAYS + 2)
-        result = agent_gaps(pg_conn, "owner", bot)
+        result = agent_gaps(pg_conn, bot)
         assert (result["available"], result["reason"], result["conversations"]) == (False, "not_enough", NEEDED - 1)
         assert result["rows"] == []
 
@@ -56,7 +56,7 @@ class TestShape:
         bot = _busy(pg_conn)
         for p in (0.9, 0.8, 0.8):
             seed.turn(pg_conn, str(bot["id"]), gap={"confidently ungrounded": p, "other": 0.9})
-        result = agent_gaps(pg_conn, "owner", bot)
+        result = agent_gaps(pg_conn, bot)
         assert result["available"] is True and result["reason"] is None
         assert result["conversations"] == NEEDED + 3
         # 2.5 rounds up, as the Insights page shows it; nothing was labelled before, so no previous figure
@@ -70,7 +70,7 @@ class TestShape:
             seed.turn(pg_conn, aid, gap={"needs account data": 0.9}, topics={"Orders": 1.0})
         seed.turn(pg_conn, aid, gap={"docs missing": 0.9}, topics={"Returns": 1.0})
         seed.turn(pg_conn, aid, gap={"needs account data": 0.9}, topics={"Orders": 1.0}, days_ago=DAYS + 5)
-        rows = agent_gaps(pg_conn, "owner", bot)["rows"]
+        rows = agent_gaps(pg_conn, bot)["rows"]
         assert rows == [
             {"topic": "Orders", "gap_type": "needs account data", "expected": 3, "turns": 3, "previous": 1},
             {"topic": "Returns", "gap_type": "docs missing", "expected": 1, "turns": 1, "previous": 0},
@@ -82,7 +82,7 @@ class TestShape:
         every = {gap: 0.9 for gap in SUMMARY_GAP_TYPES}
         for topic in ("Orders", "Returns"):
             seed.turn(pg_conn, aid, gap=every, topics={topic: 1.0})
-        assert len(agent_gaps(pg_conn, "owner", bot)["rows"]) == gaps.MAX_ROWS
+        assert len(agent_gaps(pg_conn, bot)["rows"]) == gaps.MAX_ROWS
 
 
 @pytest.mark.unit

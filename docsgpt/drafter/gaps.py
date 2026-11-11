@@ -97,13 +97,14 @@ def unavailable(reason: str, conversations: int = 0) -> dict:
             "rows": []}
 
 
-def agent_gaps(conn: Connection, user_id: str, agent: dict) -> dict:
+def agent_gaps(conn: Connection, agent: dict) -> dict:
     """The agent's gap summary, read through ``conn``.
+
+    The summary is the agent's whole traffic, as its owner's Insights page shows it, so the caller must have
+    checked the agent is one they may edit (``topics_recipe.editable_agent``).
 
     Args:
         conn: A read-only connection.
-        user_id: The caller; the agent row must be one they may edit (``topics_recipe.editable_agent``). The
-            summary is the agent's whole traffic, as its owner's Insights page shows it.
         agent: The agent row.
 
     Returns:
@@ -182,7 +183,7 @@ def agent_gaps_for(user_id: str, agent_id: str) -> dict:
     from docsgpt.storage.db.session import db_readonly
 
     with db_readonly() as conn:
-        return agent_gaps(conn, user_id, topics_recipe.editable_agent(conn, user_id, agent_id))
+        return agent_gaps(conn, topics_recipe.editable_agent(conn, user_id, agent_id))
 
 
 def _question(value: Any, limit: int) -> str:
