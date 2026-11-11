@@ -61,7 +61,7 @@ def test_yaml_without_max_output_tokens_leaves_it_unset(tmp_path):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("value", [0, -5])
+@pytest.mark.parametrize("value", [0, -5, "true", "8192.5", "'8192'"])
 def test_yaml_rejects_a_non_positive_cap(tmp_path, value):
     from docsgpt.core.model_yaml import load_model_yamls
 
