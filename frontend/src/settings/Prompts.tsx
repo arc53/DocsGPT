@@ -44,6 +44,7 @@ import {
   setPrompts,
 } from '../preferences/preferenceSlice';
 import type { MenuOption } from '../components/ui/dropdown-menu';
+import { PRESET_PROMPT_IDS } from '../prompts/promptAccess';
 import { PromptDraftPanel } from '../prompts/PromptDraftPanel';
 import { PromptView } from '../prompts/PromptView';
 import {
@@ -73,8 +74,6 @@ const SECTIONS = [
 /** The kind track's values: All, then one per section. */
 const KINDS = ['all', ...SECTIONS.map((section) => section.key)] as const;
 type KindFilter = (typeof KINDS)[number];
-
-const PRESETS = ['default', 'creative', 'strict'];
 
 /**
  * Arrow keys move the checked radio card by card; the save waits this long
@@ -246,7 +245,7 @@ export default function Prompts() {
   const renderCard = (prompt: Prompt) => {
     const inChats = prompt.id === chatPrompt.id;
     // The presets open with the same lines, so they say what they do.
-    const description = PRESETS.includes(prompt.id)
+    const description = PRESET_PROMPT_IDS.includes(prompt.id)
       ? t(`settings.prompts.presets.${prompt.id}`)
       : prompt.preview;
     const options = menuOptions(prompt);

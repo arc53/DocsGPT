@@ -11,6 +11,7 @@ import type { AgentGapRow } from '../drafter/drafterApi';
 import type { UndoneKind } from '../drafter/DrafterStepRow';
 import type { ProposalReasonRow } from '../drafter/ProposalSummary';
 import type { DrafterStarter } from '../drafter/starters';
+import { PRESET_PROMPT_IDS } from '../prompts/promptAccess';
 import {
   joinList,
   NONE_OF_THESE,
@@ -20,6 +21,7 @@ import {
 import { isLogLabel, type LogLabel } from '../settings/logsLinks';
 import { formatCount } from '../utils/dateTimeUtils';
 import { getToolDisplayName } from '../utils/toolUtils';
+import { isCount, isString } from '../utils/wireGuards';
 import { newTopicId } from './analyticsConfig';
 import {
   ACTION_KEYS,
@@ -180,7 +182,6 @@ export type AgentDraftChange = {
   };
 }[AgentDraftField];
 
-const isString = (value: unknown): value is string => typeof value === 'string';
 const stringList = (value: unknown): string[] | undefined =>
   Array.isArray(value) ? value.filter(isString) : undefined;
 const isStep = (value: unknown): value is AgentBuildStep =>
@@ -237,9 +238,6 @@ function parseTopics(raw: unknown): AgentProposalFields['analytics'] {
     }));
   return parsed.length > 0 ? { topics: parsed } : undefined;
 }
-
-const isCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 function parseGapLinks(raw: unknown): AgentGapLink[] {
   if (!Array.isArray(raw)) return [];
@@ -726,8 +724,6 @@ export type ImproveSuggestion =
   | 'shorter'
   | 'tightenPrompt';
 
-/** Prompts every instance has: an agent on one has no prompt of its own. */
-const BUILTIN_PROMPTS = ['default', 'creative', 'strict'];
 /** Most improve rows the drawer offers. */
 const MAX_IMPROVE_ROWS = 4;
 /** A description longer than this is worth offering to shorten. */
@@ -752,7 +748,7 @@ export function improveSuggestions(
   { safety, promptDraft }: { safety: boolean; promptDraft: boolean },
 ): ImproveSuggestion[] {
   const ownPrompt =
-    promptDraft || (!!form.prompt && !BUILTIN_PROMPTS.includes(form.prompt));
+    promptDraft || (!!form.prompt && !PRESET_PROMPT_IDS.includes(form.prompt));
   const rows: (ImproveSuggestion | false)[] = [
     safety && 'safety',
     form.sources.length === 0 && form.tools.length === 0 && 'knowledge',

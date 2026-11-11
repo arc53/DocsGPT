@@ -79,7 +79,7 @@ import {
   setAgentFolders,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
-import { canEditPrompt } from '../prompts/promptAccess';
+import { canEditPrompt, PRESET_PROMPT_IDS } from '../prompts/promptAccess';
 
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
@@ -193,7 +193,6 @@ const PROMPT_KINDS = ['all', 'included', 'yours', 'shared'] as const;
 type PromptKind = (typeof PROMPT_KINDS)[number];
 const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
   kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
-const PROMPT_PRESETS = ['default', 'creative', 'strict'];
 const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
   safety: ShieldCheck,
   knowledge: BookOpen,
@@ -557,7 +556,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // A row's line, as its Prompts page card says it: a preset's purpose, else
   // the start of the prompt (the list names no sharer for a teammate's).
   const promptLine = (prompt: Prompt): string | undefined =>
-    PROMPT_PRESETS.includes(prompt.id) && prompt.type === 'public'
+    PRESET_PROMPT_IDS.includes(prompt.id) && prompt.type === 'public'
       ? t(`settings.prompts.presets.${prompt.id}`)
       : prompt.preview || undefined;
   // The prompt picker's groups, as the Prompts page has them.
@@ -585,7 +584,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     (pickedPromptId === initialAgentRef.current?.prompt_id
       ? agent.prompt_name
       : '') ||
-    (PROMPT_PRESETS.includes(pickedPromptId) ? pickedPromptId : '');
+    (PRESET_PROMPT_IDS.includes(pickedPromptId) ? pickedPromptId : '');
   const promptValueOption = pickedPromptLabel
     ? { value: pickedPromptId, label: pickedPromptLabel }
     : undefined;
