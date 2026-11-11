@@ -40,23 +40,30 @@ type SettingRowProps = {
   as?: 'label' | 'h2' | 'h3';
   /** A field under the row that belongs to it (a limit Input under a Switch). */
   after?: React.ReactNode;
+  /** Something that follows the title on its line (a status badge). */
+  titleAddon?: React.ReactNode;
   /**
-   * The drafter set this row's control: a DraftedBadge follows the title,
-   * its undo button named after `fieldLabel` (the title when it is text).
+   * @deprecated Use DraftedSettingRow (drafter/DraftedBadge); kept until the
+   * agent form's limit rows move to it.
    */
   drafted?: boolean;
+  /** @deprecated See `drafted`. */
   onUndo?: () => void;
+  /** @deprecated See `drafted`. */
   fieldLabel?: string;
   /** Layout only. */
   className?: string;
   /** The control on the right: a Switch, a small Input, a Select. */
   children?: React.ReactNode;
+} & {
+  /** Data attributes for the row's own element (a state its host marks). */
+  [data: `data-${string}`]: string | boolean | undefined;
 };
 
 /**
  * A settings row: title and muted description on the left, a control on the
  * right, 12px of padding above and below (none at the ends of its group).
- * A drafted row carries the DraftedBadge after its title.
+ * A `titleAddon` (a badge) follows the title on its line.
  * Like FormField it wires the control through context: the control gets the
  * row's id (`htmlFor`, or a generated one) and `aria-describedby` pointing at
  * the description. The `after` field is not wired.
@@ -69,11 +76,13 @@ function SettingRow({
   stack = false,
   as = 'label',
   after,
+  titleAddon,
   drafted = false,
   onUndo,
   fieldLabel,
   className,
   children,
+  ...data
 }: SettingRowProps) {
   const Heading = as === 'label' ? null : as;
   const generatedId = React.useId();
@@ -94,10 +103,20 @@ function SettingRow({
       {label}
     </Label>
   );
+  const legacyDrafted = !!onUndo && drafted;
+  const addon = legacyDrafted ? (
+    <DraftedBadge
+      onUndo={onUndo}
+      fieldLabel={fieldLabel ?? (typeof label === 'string' ? label : '')}
+    />
+  ) : (
+    titleAddon
+  );
   return (
     <div
       data-slot="setting-row"
-      data-drafted={onUndo && drafted ? true : undefined}
+      data-drafted={legacyDrafted || undefined}
+      {...data}
       className={cn('py-3 first:pt-0 last:pb-0', className)}
     >
       <div
@@ -112,15 +131,10 @@ function SettingRow({
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {onUndo && drafted ? (
+          {addon ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {title}
-              <DraftedBadge
-                onUndo={onUndo}
-                fieldLabel={
-                  fieldLabel ?? (typeof label === 'string' ? label : '')
-                }
-              />
+              {addon}
             </div>
           ) : (
             title

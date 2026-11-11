@@ -184,34 +184,21 @@ describe('SettingRows / SettingRow', () => {
     expect(limit.hasAttribute('aria-describedby')).toBe(false);
   });
 
-  it('puts the Drafted badge after the title of a drafted row', () => {
+  it('puts a title addon after the title, on its line', () => {
     const host = render(
       <SettingRow
         label="Request limiting"
         htmlFor="request-limiting"
-        drafted
-        onUndo={() => undefined}
+        titleAddon={<span data-testid="addon">New</span>}
+        data-state="marked"
       >
         <Switch />
       </SettingRow>,
     );
     const row = host.firstElementChild as HTMLElement;
-    expect(row.dataset.drafted).toBe('true');
-    const badge = row.querySelector('[data-slot="drafted-badge"]')!;
-    expect(badge.previousElementSibling?.tagName).toBe('LABEL');
-    expect(badge.querySelector('button')!.getAttribute('aria-label')).toBe(
-      'drafter.undoField',
-    );
-  });
-
-  it('shows no badge on a row that is not drafted', () => {
-    const host = render(
-      <SettingRow label="Request limiting" onUndo={() => undefined}>
-        <Switch />
-      </SettingRow>,
-    );
-    const row = host.firstElementChild as HTMLElement;
-    expect(row.hasAttribute('data-drafted')).toBe(false);
-    expect(row.querySelector('[data-slot="drafted-badge"]')).toBeNull();
+    expect(row.dataset.state).toBe('marked');
+    const addon = row.querySelector('[data-testid="addon"]')!;
+    expect(addon.previousElementSibling?.tagName).toBe('LABEL');
+    expect(addon.parentElement!.className).toContain('flex-wrap');
   });
 });

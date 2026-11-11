@@ -5,9 +5,11 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-import { SettingRow } from '@/components/ui/setting-row';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-import { DraftedBadge, DraftedField } from './DraftedBadge';
+import { Switch } from '@/components/ui/switch';
+
+import { DraftedBadge, DraftedField, DraftedSettingRow } from './DraftedBadge';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -27,14 +29,14 @@ function Field() {
 function Row() {
   const [drafted, setDrafted] = useState(true);
   return (
-    <SettingRow
+    <DraftedSettingRow
       label="Limit"
       htmlFor="limit"
       drafted={drafted}
       onUndo={() => setDrafted(false)}
     >
       <input id="limit" />
-    </SettingRow>
+    </DraftedSettingRow>
   );
 }
 
@@ -93,5 +95,47 @@ describe('DraftedBadge undo', () => {
     await act(async () => root.render(<Heading />));
     await undo();
     expect(document.activeElement).toBe(container.querySelector('h2 button'));
+  });
+});
+
+describe('DraftedSettingRow', () => {
+  const render = (element: React.ReactElement): HTMLElement => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(element);
+    return host.firstElementChild as HTMLElement;
+  };
+
+  it('puts the Drafted badge after the title of a drafted row', () => {
+    const row = render(
+      <DraftedSettingRow
+        label="Request limiting"
+        htmlFor="request-limiting"
+        drafted
+        onUndo={() => undefined}
+      >
+        <Switch />
+      </DraftedSettingRow>,
+    );
+    expect(row.dataset.slot).toBe('setting-row');
+    expect(row.dataset.drafted).toBe('true');
+    const badge = row.querySelector('[data-slot="drafted-badge"]')!;
+    expect(badge.previousElementSibling?.tagName).toBe('LABEL');
+    expect(badge.querySelector('button')!.getAttribute('aria-label')).toBe(
+      'drafter.undoField',
+    );
+  });
+
+  it('shows no badge on a row that is not drafted', () => {
+    const row = render(
+      <DraftedSettingRow
+        label="Request limiting"
+        drafted={false}
+        onUndo={() => undefined}
+      >
+        <Switch />
+      </DraftedSettingRow>,
+    );
+    expect(row.hasAttribute('data-drafted')).toBe(false);
+    expect(row.querySelector('[data-slot="drafted-badge"]')).toBeNull();
   });
 });

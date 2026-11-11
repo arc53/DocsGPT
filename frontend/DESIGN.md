@@ -876,11 +876,12 @@ descriptions. `stack` puts a control too wide for a phone row (a 224px
 picker) under the title below `sm` at full width; give the picker
 `w-full sm:w-56`. `after` holds a field that belongs to the row, 8px under it
 (the agent form's limit Inputs); it isn't wired, so it names itself
-(`aria-label`, or a FormField of its own). A row whose control the drafter
-set takes `drafted` + `onUndo` (+ `fieldLabel` when the title isn't plain
-text) and renders the `DraftedBadge` inline after its title, since
-`DraftedField` frames only inputs, textareas and pickers; a field in its
-`after` keeps its own `DraftedField`. Settings → General is the page-level example:
+(`aria-label`, or a FormField of its own). `titleAddon` puts a badge after
+the title, on its line. A row whose control the drafter set is a
+`DraftedSettingRow` (`drafter/DraftedBadge`): `drafted` + `onUndo` (+
+`fieldLabel` when the title isn't plain text) put the `DraftedBadge` there,
+since `DraftedField` frames only inputs, textareas and pickers; a field in
+its `after` keeps its own `DraftedField`. Settings → General is the page-level example:
 `PageToolbar` intro and rule, then `SectionHeader`ed groups of SettingRows in a
 `max-w-3xl` column. Inline "switch + label" pairs (a filter
 toggle) are not SettingRows.

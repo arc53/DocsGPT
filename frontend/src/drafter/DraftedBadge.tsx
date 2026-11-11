@@ -3,6 +3,7 @@ import { useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
+import { SettingRow, type SettingRowProps } from '@/components/ui/setting-row';
 import {
   Tooltip,
   TooltipContent,
@@ -142,5 +143,47 @@ export function DraftedField({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A SettingRow the drafter may set: while `drafted` (with an `onUndo`), a
+ * DraftedBadge follows its title and the row is marked `data-drafted`.
+ *
+ * Args:
+ *   drafted: Whether the row's control holds a drafted value.
+ *   onUndo: Undo for the badge; without it the row shows no badge.
+ *   fieldLabel: The row's name for the undo button; the title when it is
+ *     text.
+ *   props: The SettingRow's own props.
+ */
+export function DraftedSettingRow({
+  drafted,
+  onUndo,
+  fieldLabel,
+  ...props
+}: Omit<SettingRowProps, 'drafted' | 'onUndo' | 'fieldLabel'> & {
+  drafted: boolean;
+  onUndo?: () => void;
+  fieldLabel?: string;
+}) {
+  const shown = drafted && !!onUndo;
+  return (
+    <SettingRow
+      {...props}
+      data-drafted={shown || undefined}
+      titleAddon={
+        shown ? (
+          <DraftedBadge
+            onUndo={onUndo}
+            fieldLabel={
+              fieldLabel ?? (typeof props.label === 'string' ? props.label : '')
+            }
+          />
+        ) : (
+          props.titleAddon
+        )
+      }
+    />
   );
 }

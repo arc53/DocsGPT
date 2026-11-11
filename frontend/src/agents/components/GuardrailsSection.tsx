@@ -23,6 +23,7 @@ import { SettingRow } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleChip } from '@/components/ui/toggle-chip';
+import { DraftedSettingRow } from '@/drafter/DraftedBadge';
 
 import userService from '../../api/services/userService';
 import {
@@ -430,7 +431,7 @@ export function GuardrailsEditor({
         </Alert>
       )}
 
-      <SettingRow
+      <DraftedSettingRow
         label={enableLabel ?? t('agents.form.guardrails.enable')}
         description={
           enableDescription ?? t('agents.form.guardrails.enableDescription')
@@ -447,7 +448,7 @@ export function GuardrailsEditor({
           data-testid="guardrails-enabled"
           onCheckedChange={(checked) => patch({ enabled: checked })}
         />
-      </SettingRow>
+      </DraftedSettingRow>
 
       {config.enabled && (
         <>
