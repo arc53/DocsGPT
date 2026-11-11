@@ -286,6 +286,8 @@ A few things a token can do are never given to an agent:
 - Creating, changing or deleting custom models, which hold a provider key and the address every chat is sent to.
 - Uploading files, importing an agent definition and streaming chat, which an API tool cannot send.
 
+A token cannot change a tool that holds an access token, this one included: `update_tool` and the other tool update endpoints answer `403`. So an agent cannot switch on an action you left off, or point an action at another endpoint. Change the tool yourself, signed in, under **Settings › Tools**.
+
 An agent that can change tools still cannot read or move a credential a tool stores. Stored values come back masked, a tool or MCP server pointed at another server does not keep them, and connections and their OAuth sign-ins are closed to every token.
 
 Treat the agent like the token: anyone who can chat with an agent that has this tool can ask it to act on your account, and so can text the agent reads, such as a web page or a document in a source. Do not add the tool to an agent you share publicly, and prefer read scopes for an agent that reads content you do not control.

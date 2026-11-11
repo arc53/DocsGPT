@@ -481,7 +481,8 @@ CATALOG: tuple[Action, ...] = (
         "POST",
         "/api/update_tool",
         "Change a tool: its names, config, actions or whether it is on. Send only the fields to change. "
-        "A credential the tool already stores is kept unless a new one is sent, and never moves to another server.",
+        "A credential the tool already stores is kept unless a new one is sent, and never moves to another server. "
+        "A tool that holds an access token, like this one, cannot be changed this way.",
         {},
         {
             "id": _req("The tool's id, from list_tools."),

@@ -583,6 +583,66 @@ class TestCreateAgentTool:
         assert {"create_agent", "update_agent", "share_agent", "delete_agent"} <= set(body["actions"])
         assert body["inactive"] == ["delete_agent", "delete_agent_folder"]
 
+    @pytest.fixture
+    def tools_db(self, db):
+        """The tool routes on the test's connection too."""
+        from docsgpt.api.user.tools import routes as tool_routes
+
+        @contextmanager
+        def _yield_conn():
+            yield db
+
+        with patch.object(tool_routes, "db_session", _yield_conn), patch.object(
+            tool_routes, "db_readonly", _yield_conn
+        ):
+            yield db
+
+    @pytest.mark.parametrize(
+        "path, payload",
+        [
+            ("/api/update_tool", {"actions": [{"name": "api_tool_call", "active": True}]}),
+            ("/api/update_tool", {"customName": "mine"}),
+            ("/api/update_tool", {"config": {"actions": {}}}),
+            ("/api/update_tool_config", {"config": {"actions": {}}}),
+            ("/api/update_tool_actions", {"actions": []}),
+            ("/api/update_tool_status", {"status": True}),
+        ],
+    )
+    def test_a_token_cannot_change_a_tool_that_holds_a_token(self, client, tools_db, path, payload):
+        """Or an agent would switch its own deletes on, or point an action somewhere else."""
+        token, token_id = _new_token(client, scopes=["agents:write", "tools:write"])
+        tool_id = json.loads(_make_tool(client, token, token_id).data)["id"]
+        before = tools_db.execute(text("SELECT config, actions, status, custom_name FROM user_tools")).one()
+
+        response = client.post(path, json={"id": tool_id, **payload}, headers={"Authorization": f"Bearer {token}"})
+
+        assert response.status_code == 403
+        assert "signed in" in json.loads(response.data)["message"]
+        assert tools_db.execute(text("SELECT config, actions, status, custom_name FROM user_tools")).one() == before
+
+    def test_the_owner_signed_in_can_still_change_it(self, client, tools_db):
+        token, token_id = _new_token(client, scopes=["agents:write", "tools:write"])
+        tool_id = json.loads(_make_tool(client, token, token_id).data)["id"]
+        with _session():
+            response = client.post("/api/update_tool", json={"id": tool_id, "customName": "mine"})
+        assert response.status_code == 200
+        assert tools_db.execute(text("SELECT custom_name FROM user_tools")).scalar() == "mine"
+
+    def test_a_token_can_change_a_tool_without_a_token(self, client, tools_db):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        token, _ = _new_token(client, scopes=["tools:write"])
+        plain = UserToolsRepository(tools_db).create(
+            "alice", "api_tool", config={"actions": {}}, custom_name="weather", display_name="API Tool",
+            description="", config_requirements={}, actions=[], status=True,
+        )
+        response = client.post(
+            "/api/update_tool",
+            json={"id": str(plain["id"]), "customName": "forecast"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
     def test_the_secret_must_match_the_token(self, client, db):
         token, token_id = _new_token(client, scopes=["analytics:read"])
         other, _ = _new_token(client, name="other", scopes=["analytics:read"])
