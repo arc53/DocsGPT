@@ -10,7 +10,8 @@ import pytest
 
 from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import Workspace
-from docsgpt.drafter.prompt_recipe import CONTENT_MAX, MAX_EDITS, parse_context, validate
+from docsgpt.drafter.prompt_edits import CONTENT_MAX, MAX_EDITS
+from docsgpt.drafter.prompt_recipe import parse_context, validate
 from docsgpt.drafter.recipe import DraftRequest
 from docsgpt.drafter.service import parse_messages, prepare, PreparedDraft
 

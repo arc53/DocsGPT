@@ -43,7 +43,6 @@ from docsgpt.drafter.prompt_edits import (
     check_drafted_prompt,
     checks_for,
     CONTENT_MAX,
-    MAX_EDITS as MAX_EDITS,  # re-exported: tests/drafter/test_service.py imports it from here
     REASON_MAX,
 )
 from docsgpt.drafter.prompt_review import (
