@@ -155,7 +155,7 @@ class _FakeMessages:
 
 
 class _FakeAnthropic:
-    def __init__(self, api_key=None, base_url=None):
+    def __init__(self, api_key=None, base_url=None, http_client=None):
         self.api_key = api_key
         self.base_url = base_url
         self.messages = _FakeMessages()
@@ -165,6 +165,7 @@ class _FakeAnthropic:
 def patch_anthropic():
     fake = types.ModuleType("anthropic")
     fake.Anthropic = _FakeAnthropic
+    fake.DefaultHttpxClient = lambda **kwargs: kwargs
     # The real schema transformer: pure, and it is what pins the wire shape.
     fake.transform_schema = _real_transform_schema
 
@@ -588,22 +589,21 @@ class TestRawGen:
         )
         assert _sent(llm)["max_tokens"] == 1234
 
-    def test_sampling_params_forwarded(self, llm):
-        """anthropic 1.x dropped the sampling params from
-        ``messages.create``'s signature (passing one is a TypeError), so they
-        ride in ``extra_body``, which the SDK merges into the request JSON
-        as-is. The wire request is unchanged."""
+    def test_sampling_params_dropped(self, llm):
+        """API version 2026-10-21 (anthropic 2.x) 400s on ``temperature``,
+        ``top_p`` and ``top_k``, so they are not sent at all."""
         llm._raw_gen(
             llm,
             model="m",
             messages=[{"role": "user", "content": "hi"}],
             temperature=0.3,
             top_p=0.9,
+            top_k=5,
         )
         sent = _sent(llm)
-        assert sent["extra_body"] == {"temperature": 0.3, "top_p": 0.9}
-        assert "temperature" not in sent
-        assert "top_p" not in sent
+        assert "extra_body" not in sent
+        for key in ("temperature", "top_p", "top_k"):
+            assert key not in sent
 
     def test_openai_only_params_not_forwarded(self, llm):
         """OpenAI-shaped request params reach every provider via
@@ -948,6 +948,47 @@ class TestRawGenStream:
 # ---------------------------------------------------------------------------
 # Token usage
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestModelOutputCap:
+    """A model's ``max_output_tokens`` bounds ``max_tokens`` on both paths."""
+
+    MESSAGES = [{"role": "user", "content": "hi"}]
+
+    def _capped(self, llm, cap):
+        from docsgpt.core.model_settings import ModelCapabilities
+
+        llm.capabilities = ModelCapabilities(supports_tools=True, max_output_tokens=cap)
+        return llm
+
+    def test_cap_lowers_a_higher_explicit_value(self, llm):
+        self._capped(llm, 1000)._raw_gen(llm, model="m", messages=self.MESSAGES, max_tokens=5000)
+        assert _sent(llm)["max_tokens"] == 1000
+
+    def test_lower_explicit_value_is_kept(self, llm):
+        self._capped(llm, 1000)._raw_gen(llm, model="m", messages=self.MESSAGES, max_completion_tokens=300)
+        assert _sent(llm)["max_tokens"] == 300
+
+    def test_cap_bounds_the_default_on_the_stream_path(self, llm):
+        list(self._capped(llm, 1000)._raw_gen_stream(llm, model="m", messages=self.MESSAGES))
+        assert _sent(llm)["max_tokens"] == 1000
+
+    def test_cap_above_the_default_keeps_the_default(self, llm):
+        from docsgpt.llm.anthropic import DEFAULT_MAX_TOKENS
+
+        self._capped(llm, DEFAULT_MAX_TOKENS * 8)._raw_gen(llm, model="m", messages=self.MESSAGES)
+        assert _sent(llm)["max_tokens"] == DEFAULT_MAX_TOKENS
+
+    def test_stream_length_stop_reports_length(self, llm):
+        llm.anthropic.messages.stream_events = [
+            ev_block_start(0, types.SimpleNamespace(type="thinking", thinking="")),
+            ev_thinking_delta(0, "planning"),
+            ev_message_delta("max_tokens"),
+        ]
+        chunks = list(llm._raw_gen_stream(llm, model="m", messages=self.MESSAGES))
+        assert chunks == [{"type": "thought", "thought": "planning"}]
+        assert llm._last_finish_reason == "length"
 
 
 @pytest.mark.unit

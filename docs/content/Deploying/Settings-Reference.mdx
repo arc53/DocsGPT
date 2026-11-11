@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-11-11
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -185,6 +185,24 @@ Provider whose first model is the default when LLM_NAME names none: docsgpt, ope
 Type `str`, default unset.
 
 Default model id. For a cloud provider it must be an id from docsgpt/core/models/*.yaml or a MODELS_CONFIG_DIR YAML, e.g. gpt-5.5; any other name is ignored with a warning. With OPENAI_BASE_URL it is required and names the model(s) the server serves, comma-separated.
+
+### `LLM_FIRST_TOKEN_TIMEOUT`
+
+Type `float`, default `300`, must be `> 0`.
+
+Seconds allowed for a stream's first chunk, overridden by the model YAML first_token_timeout.
+
+### `LLM_STREAM_STALL_TIMEOUT`
+
+Type `float`, default `120`, must be `> 0`.
+
+Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout. After a reasoning chunk the longer of this and the first-token timeout applies.
+
+### `LLM_ANSWER_TIMEOUT`
+
+Type `float`, default `600`, must be `>= 0`.
+
+Seconds from the start of a stream for the answer to begin; a model still only reasoning then hands off to the fallback model, or the turn fails. Overridden by the model YAML answer_timeout. Raised to the model's first-token timeout when that is longer. 0 turns it off.
 
 ### `API_KEY`
 
@@ -1276,11 +1294,47 @@ Type `int`, default `8`, must be `>= 1`.
 
 Parallel file fetches per GitHub repo ingest.
 
+### `GITHUB_INGEST_MAX_ARCHIVE_BYTES`
+
+Type `int`, default `536870912`, must be `>= 0`.
+
+Largest repository tarball a GitHub ingest downloads (one API request for the whole repo); a bigger one falls back to per-file requests. 0 = always per-file.
+
 ### `INGEST_QUEUE`
 
 Type `str`, default `ingest`.
 
 Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest worker so a long ingest cannot hold the slots that beat tasks and attachments need. The shipped Compose and Kubernetes worker commands name `ingest` in -Q: if you change this, put the new name in every worker's explicit -Q list, or nothing runs ingests.
+
+### `INGEST_MAX_FILES`
+
+Type `int`, default `10000`, must be `>= 0`.
+
+Most files one source ingest or sync may hold. Checked once the files are listed (a GitHub repo's tree, an S3 prefix, a connector's download, an upload's extracted files) and again after loading, before anything is embedded; a source over it fails with reason too_many_files. The default is the same number as UPLOAD_MAX_ARCHIVE_FILES's, but the two are separate: raise both to let a bigger zip through. 0 disables.
+
+### `INGEST_MAX_TOKENS`
+
+Type `int`, default `20000000`, must be `>= 0`.
+
+Most tokens of chunked text one source ingest or sync may embed, counted after parsing and before any embedding; a source over it fails with reason too_many_tokens. 20 million tokens is about 80 MB of plain text, several hours of embedding on a CPU model. 0 disables.
+
+### `INGEST_MAX_CONCURRENT_PER_USER`
+
+Type `int`, default `3`, must be `>= 0`.
+
+Whole-source ingests (upload, remote, connector, re-ingest, sync) one user may run at the same time. A task over it goes back on the queue for about 30 seconds without starting, so the other worker slots stay free for other users. Each running task holds a slot lease in Redis that it renews while it runs; a killed worker's slot frees itself within two minutes. 0 disables.
+
+### `INGEST_RESUME_MAX_ATTEMPTS`
+
+Type `int`, default `3`, must be `>= 0`.
+
+Times the reconciler queues an ingest again after a restart or crash killed it mid-embed. The new task resumes from the last embedded chunk when the files still chunk the same way. Past this many the ingest is marked failed. 0 turns resuming off.
+
+### `INGEST_ORPHAN_TTL_HOURS`
+
+Type `int`, default `72`, must be `>= 0`.
+
+Hours after its last progress that an ingest which ended without a source (failed, stalled past its resumes, or stopped before the source was saved) has its vectors deleted by the hourly cleanup-orphaned-ingests task. 0 keeps them.
 
 ### `DOCUMENT_PARSE_QUEUE`
 
@@ -1603,6 +1657,18 @@ Type `str`, default unset.
 
 Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE_URI.
 
+### `MCP_APPS_ENABLED`
+
+Type `bool`, default `true`.
+
+Render MCP Apps (interactive views an MCP server ships with its tools, such as Excalidraw's canvas) inline in chat. Needs a sandbox origin (MCP_APPS_SANDBOX_URL); without one the chat shows the ordinary tool step and app-only tools stay offered to the model, as with this off.
+
+### `MCP_APPS_SANDBOX_URL`
+
+Type `str`, default unset.
+
+Address of the MCP Apps sandbox page, &lt;origin>/api/mcp_apps/sandbox, on an origin other than the app's, e.g. a sandbox. subdomain pointed at this API. Unset on a loopback API_URL uses the other loopback name (localhost and 127.0.0.1 are different origins); unset elsewhere turns MCP Apps off.
+
 
 ## Server
 
@@ -1637,6 +1703,12 @@ Outbound version check for security advisories: the worker sends its version, a 
 Type `str`, default unset.
 
 Public base URL for user-facing endpoint references in prompts, and the prefix of the artifact download URLs API responses carry (relative paths when unset).
+
+### `SAFE_URL_ALLOWED_HOSTS`
+
+Type `list[str]`, default `[]`.
+
+Private-network hosts that user-supplied URLs (API and MCP tools, read_webpage, monitors, custom model base URLs, the API tool a personal access token makes) may reach, as a comma list or JSON list. An entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `fd20:ce::254`, `metadata.google.internal`) and `0.0.0.0` are refused whatever is listed. Empty, every private address is refused.
 
 ### `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
 
@@ -1815,6 +1887,12 @@ Type `int`, default `600`, must be `> 0`.
 
 Wall-clock cap on one agent webhook run, in seconds (at least 30). Past it the run stops and its task ends with a "timeout" result; the worker kills it 60 seconds later if it has not stopped by then.
 
+### `AGENT_TRUSTED_ORIGINS`
+
+Type `list[str]`, default `["https://app.docsgpt.cloud", "https://ent.docsgpt.cloud"]`.
+
+Browser origins every agent that restricts its origins accepts besides its own list, as a JSON list or comma-separated origins. This instance's own frontend is always accepted too: API_URL, OIDC_FRONTEND_URL, and localhost:5173 when API_URL is on loopback. none (or []) trusts no extra origin; an empty value keeps the default.
+
 ### `ENABLE_TOOL_PREFETCH`
 
 Type `bool`, default `true`.
@@ -1892,6 +1970,42 @@ Documents per node extracted via the parsing worker. Each issues a separate bloc
 Type `int`, default `900`.
 
 Wall clock one node may spend on blocking parses, shared across all of them. Without it a node could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot.
+
+### `WORKFLOW_STREAM_MAX_EVENT_BYTES`
+
+Type `int`, default `32768`, must be `>= 1024`.
+
+Largest workflow step event a run streams, in bytes of JSON. A finished step whose output and state changes are larger is streamed as a summary (an output preview and the changed keys); the full values stay in the run's saved steps. A node set to stream_output: full is exempt.
+
+### `WORKFLOW_DOCUMENT_LINES_CACHE_TTL`
+
+Type `int`, default `86400`.
+
+Seconds the line-numbered text of a workflow input document (file_passing: lines) stays cached in Redis, keyed by the file's content hash, so a later run over the same file skips the parse. 0 disables the cache; a run still reads each document only once.
+
+### `WORKFLOW_LOOP_MAX_CONCURRENCY`
+
+Type `int`, default `4`, must be `>= 1`.
+
+Most items a loop node runs at once, whatever its own concurrency says. Each running item holds a thread and usually an LLM call.
+
+### `WORKFLOW_LOOP_MAX_ITEMS`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.
+
+### `WORKFLOW_RETRY_MAX_ATTEMPTS`
+
+Type `int`, default `5`, must be `>= 1`.
+
+Most attempts a workflow node's retry policy may ask for; 1 turns node retries off.
+
+### `WORKFLOW_RETRY_MAX_DELAY_SECONDS`
+
+Type `float`, default `300`, must be `>= 0`.
+
+Longest wait before one retry of a workflow node. A Retry-After longer than this fails the node instead of retrying early.
 
 ### `WORKFLOW_RUN_STALE_SECONDS`
 
@@ -2093,6 +2207,12 @@ Type `int`, default `3`.
 
 Consecutive failures after which a schedule is paused automatically.
 
+### `SCHEDULE_NOTIFY_RECURRING_FAILURES`
+
+Type `bool`, default `false`.
+
+Also notify the owner of a recurring schedule on the first failed run in a row, not only when the schedule pauses itself.
+
 ### `SCHEDULE_ONCE_MAX_HORIZON`
 
 Type `int`, default `31536000`.
@@ -2169,6 +2289,12 @@ Seconds between beat sweeps that mark lost jobs, fail jobs past their deadline a
 Type `int`, default `16`, must be `>= 1`.
 
 Threads per API or worker process that run tool calls a turn may hand off. A call that finds the pool full runs inline, as before.
+
+### `CONTINUATION_RUN_TIMEOUT`
+
+Type `int`, default `1200`, must be `>= 60`.
+
+Soft wall-clock backstop for a continuation task, in seconds; healthy rounds save before it.
 
 ### `AUTO_RESUME_ENABLED`
 

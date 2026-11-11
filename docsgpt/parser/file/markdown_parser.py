@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from docsgpt.parser.file.base_parser import BaseParser
-from docsgpt.utils import num_tokens_from_string
+from docsgpt.parser.tokenization import count_tokens_windowed
 
 # Only these names count as tags, so prose like "x < 10" or "List<String>" survives.
 _HTML_TAG_NAMES = """
@@ -90,7 +90,7 @@ class MarkdownParser(BaseParser):
     def tups_chunk_append(self, tups: List[Tuple[Optional[str], str]], current_header: Optional[str],
                           current_text: str):
         """Append to tups chunk."""
-        num_tokens = num_tokens_from_string(current_text)
+        num_tokens = count_tokens_windowed(current_text)
         if num_tokens > self._max_tokens:
             chunks = [current_text[i:i + self._max_tokens] for i in range(0, len(current_text), self._max_tokens)]
             for chunk in chunks:
@@ -119,9 +119,9 @@ class MarkdownParser(BaseParser):
             open_fence = self._next_fence_state(line, open_fence)
             header_match = None if in_code_block else re.match(r"^#+\s", line)
             if header_match:
-                if current_header is not None:
-                    if current_text == "" or None:
-                        continue
+                # An empty section contributes no tuple, but the header still
+                # advances: a body after a header chain belongs to the last one.
+                if current_header is not None and current_text:
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
                 current_header = line

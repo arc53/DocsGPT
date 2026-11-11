@@ -1,7 +1,7 @@
 ---
 title: OpenAI-Compatible API
 description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
-lastUpdated: 2026-10-18
+lastUpdated: 2026-10-27
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -244,6 +244,13 @@ If you send back the `conversation_id` of the response (top-level or in `docsgpt
 from what it saved at the pause instead of from the messages you re-send. The run keeps its server-side tool calls
 and their results, its reasoning and its files, so the model doesn't redo work, and the provider's prompt cache still
 covers what the paused round sent.
+
+A resumed round can also add files, for example one your tool just produced. Pass their ids in
+`docsgpt.attachments` (or send them as `file` parts) with the tool results. Files the run already has keep their
+refs, and new ones are numbered after them (`F2`, `F3`, ...) and listed in the response's `docsgpt.attachments`. They
+are not put into the prompt: the model's tools reach them by ref, id or filename, so say in the tool result which
+file you added. They go through the same attachment guardrails as a new turn's files, and an id that is not the
+agent owner's is skipped. Sending ids the run already has adds nothing.
 
 ```json
 {

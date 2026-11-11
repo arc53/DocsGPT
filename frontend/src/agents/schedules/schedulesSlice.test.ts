@@ -14,6 +14,7 @@ import reducer, {
   applyEvent,
   deleteSchedule,
   loadAllSchedules,
+  loadSchedulesForAgent,
   selectAllSchedules,
   setSchedulePaused,
   loadRunsForSchedule,
@@ -22,6 +23,7 @@ import reducer, {
   selectRunsForSchedule,
   selectScheduleById,
   selectSchedulesForAgent,
+  selectSchedulesLoadError,
   type SchedulesState,
 } from './schedulesSlice';
 
@@ -70,6 +72,129 @@ const seedWithSchedule = (): SchedulesState => {
     byAgent: { 'agent-1': [sampleSchedule()] } as Record<string, Schedule[]>,
   };
 };
+
+describe('agent schedule load isolation', () => {
+  const a = { agentId: 'agent-1', token: null };
+  const b = { agentId: 'agent-2', token: null };
+
+  it('keeps a late failure on A from showing an error on B', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(state, loadSchedulesForAgent.pending('b', b));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: b.agentId, schedules: [] },
+        'b',
+        b,
+      ),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('access denied'), 'a', a),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, b.agentId),
+    ).toBeNull();
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'access denied',
+    );
+    expect(selectSchedulesForAgent({ schedules: state }, b.agentId)).toEqual(
+      [],
+    );
+  });
+
+  it('ignores an older failure after the same agent retries successfully', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('old', a));
+    state = reducer(state, loadSchedulesForAgent.pending('new', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [sampleSchedule()] },
+        'new',
+        a,
+      ),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('old failure'), 'old', a),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, a.agentId),
+    ).toBeNull();
+    expect(
+      selectSchedulesForAgent({ schedules: state }, a.agentId),
+    ).toHaveLength(1);
+  });
+
+  it('ignores an older success after the latest request fails', () => {
+    let state = reducer(
+      seedWithSchedule(),
+      loadSchedulesForAgent.pending('old', a),
+    );
+    state = reducer(state, loadSchedulesForAgent.pending('new', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('new failure'), 'new', a),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [] },
+        'old',
+        a,
+      ),
+    );
+
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'new failure',
+    );
+    expect(
+      selectSchedulesForAgent({ schedules: state }, a.agentId),
+    ).toHaveLength(1);
+  });
+
+  it('does not clear another agent error when a different agent starts loading', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('access denied'), 'a', a),
+    );
+    state = reducer(state, loadSchedulesForAgent.pending('b', b));
+
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'access denied',
+    );
+    expect(
+      selectSchedulesLoadError({ schedules: state }, b.agentId),
+    ).toBeNull();
+  });
+
+  it('ignores responses from before a reset', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(state, resetSchedules());
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('old account'), 'a', a),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [sampleSchedule()] },
+        'a',
+        a,
+      ),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, a.agentId),
+    ).toBeNull();
+    expect(selectSchedulesForAgent({ schedules: state }, a.agentId)).toEqual(
+      [],
+    );
+  });
+});
 
 describe('schedulesSlice SSE event handling', () => {
   it('schedule.run.completed upserts run + bumps last_run_at', () => {

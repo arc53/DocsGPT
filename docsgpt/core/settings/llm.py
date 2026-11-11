@@ -28,6 +28,25 @@ class LLMSettings(SettingsGroup):
             "OPENAI_BASE_URL it is required and names the model(s) the server serves, comma-separated."
         ),
     )
+    LLM_FIRST_TOKEN_TIMEOUT: float = Field(
+        default=300, gt=0,
+        description="Seconds allowed for a stream's first chunk, overridden by the model YAML first_token_timeout.",
+    )
+    LLM_STREAM_STALL_TIMEOUT: float = Field(
+        default=120, gt=0,
+        description=(
+            "Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout. "
+            "After a reasoning chunk the longer of this and the first-token timeout applies."
+        ),
+    )
+    LLM_ANSWER_TIMEOUT: float = Field(
+        default=600, ge=0,
+        description=(
+            "Seconds from the start of a stream for the answer to begin; a model still only reasoning then "
+            "hands off to the fallback model, or the turn fails. Overridden by the model YAML answer_timeout. "
+            "Raised to the model's first-token timeout when that is longer. 0 turns it off."
+        ),
+    )
     API_KEY: Optional[str] = Field(default=None, description="LLM API key used by LLM_PROVIDER.")
 
     # Provider-specific API keys (for multi-model support).

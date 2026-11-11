@@ -19,6 +19,7 @@ from docsgpt.security.safe_url import (
     UnsafeUserUrlError,
     _GuardedAsyncTransport,
     _PinnedHTTPSTransport,
+    _pinned_session,
     guarded_async_client,
     pinned_fetch_bytes,
     pinned_request,
@@ -1215,6 +1216,89 @@ def test_pinned_session_verifies_tls_against_the_ascii_name(monkeypatch):
     assert captured["prepared"].headers["Host"] == "xn--bcher-kva.example"
 
 
+_CA_VARIABLES = ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE")
+
+
+def _session_for_ca_test():
+    """A pinned session for a resolvable public host, without touching DNS."""
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        return _pinned_session("https://api.openai.com/v1", None)[0]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("variable", _CA_VARIABLES)
+def test_pinned_session_keeps_a_custom_ca_bundle(monkeypatch, tmp_path, variable):
+    """A private CA still verifies: it does not change which address is dialled."""
+    bundle = tmp_path / "corp-ca.pem"
+    bundle.write_text("")
+    for name in _CA_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(variable, str(bundle))
+
+    session = _session_for_ca_test()
+    try:
+        assert session.verify == str(bundle)
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_session_verify_stays_on_without_a_custom_ca(monkeypatch):
+    """With no CA in the environment, verification stays on with the shipped bundle."""
+    for name in _CA_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+    session = _session_for_ca_test()
+    try:
+        assert session.verify is True
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_session_ignores_environment_proxies(monkeypatch):
+    """A proxy would re-resolve the host and discard the validated IP."""
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        session, pinned_url, _headers = _pinned_session("https://api.openai.com/v1", None)
+    try:
+        assert session.trust_env is False
+        assert session.merge_environment_settings(pinned_url, {}, None, None, None)["proxies"] == {}
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_dials_the_pinned_ip_not_the_environment_proxy(local_server, monkeypatch):
+    base, routes = local_server
+    port = base.rsplit(":", 1)[1]
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    _test_hosts_to_loopback(monkeypatch)
+    seen: list[str] = []
+
+    def record_host(handler):
+        seen.append(handler.headers["Host"])
+        handler.send_response(200)
+        handler.send_header("Content-Length", "2")
+        handler.end_headers()
+        handler.wfile.write(b"ok")
+
+    routes["/"] = record_host
+
+    body, response = pinned_fetch_bytes(f"http://pinned.test:{port}/", max_bytes=100, timeout=5)
+
+    assert body == b"ok"
+    assert response.status_code == 200
+    assert seen == [f"pinned.test:{port}"]
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("url", [
     "http://" + "a" * 64 + ".com/",
@@ -1488,3 +1572,192 @@ def test_reject_ambiguous_url_refuses(url):
 ])
 def test_reject_ambiguous_url_accepts(url):
     assert reject_ambiguous_url(url) is None
+
+
+# Percent-encoded hosts are refused outright.
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "http://127%2e0%2e0%2e1/",
+    "http://%31%32%37.0.0.1/",
+    "http://localhost%2e/",
+    "http://exa%6dple.com/",
+])
+def test_percent_encoded_host_is_refused(url):
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        with pytest.raises(UnsafeUserUrlError, match="percent-encodes its host"):
+            validate_user_base_url(url)
+
+
+# Operator allowlist (SAFE_URL_ALLOWED_HOSTS)
+
+
+@pytest.fixture
+def allow_hosts(monkeypatch):
+    """Set ``SAFE_URL_ALLOWED_HOSTS`` for one test."""
+    from docsgpt.core.settings import settings
+
+    def _set(*entries: str) -> None:
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", list(entries))
+
+    return _set
+
+
+@pytest.mark.unit
+def test_private_host_stays_blocked_with_an_empty_allowlist(allow_hosts):
+    allow_hosts()
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url("https://docs.intranet.example/")
+
+
+@pytest.mark.unit
+def test_allowlisted_hostname_passes_for_a_private_address(allow_hosts):
+    allow_hosts("Docs.Intranet.Example")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        assert validate_user_base_url("https://docs.intranet.example/v1") is None
+
+
+@pytest.mark.unit
+def test_pinned_request_dials_the_validated_ip_of_an_allowlisted_host(allow_hosts, monkeypatch):
+    allow_hosts("docs.intranet.example")
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        pinned_request("GET", "http://docs.intranet.example:8080/api", timeout=5)
+
+    assert captured["prepared"].url == "http://10.16.0.5:8080/api"
+    assert captured["prepared"].headers["Host"] == "docs.intranet.example:8080"
+
+
+@pytest.mark.unit
+def test_allowlisted_hostname_is_matched_in_idna_form(allow_hosts):
+    allow_hosts("xn--bcher-kva.intranet")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        assert validate_user_base_url("https://bücher.intranet/") is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("host", ["evil.example.com", "example.com.evil.net", "xexample.com"])
+def test_allowlisted_hostname_match_is_exact(allow_hosts, host):
+    allow_hosts("example.com")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url(f"https://{host}/")
+
+
+@pytest.mark.unit
+def test_cidr_entry_allows_addresses_inside_it(allow_hosts):
+    allow_hosts("10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.200.7")):
+        assert validate_user_base_url("https://wiki.corp.example/") is None
+    assert validate_user_base_url("http://10.16.3.4:9000/") is None
+
+
+@pytest.mark.unit
+def test_cidr_entry_blocks_addresses_outside_it(allow_hosts):
+    allow_hosts("10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.17.0.1")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url("https://wiki.corp.example/")
+    with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+        validate_user_base_url("http://192.168.1.1/")
+
+
+@pytest.mark.unit
+def test_every_resolved_address_must_be_public_or_allowed(allow_hosts):
+    allow_hosts("10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5", "192.168.1.1")):
+        with pytest.raises(UnsafeUserUrlError, match="192.168.1.1"):
+            validate_user_base_url("https://wiki.corp.example/")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("entries", "url", "resolved"),
+    [
+        (("169.254.169.254",), "http://169.254.169.254/latest/meta-data/", None),
+        (("169.254.0.0/16",), "http://169.254.170.2/v2/credentials", None),
+        (("0.0.0.0/0",), "http://169.254.169.254/", None),
+        (("fd00:ec2::254",), "http://[fd00:ec2::254]/", None),
+        (("fd00::/8",), "http://[fd00:ec2::254]/", None),
+        (("fd00::/8",), "http://[fd20:ce::254]/", None),
+        (("meta.corp.example", "fd00::/8"), "http://meta.corp.example/", "fd20:ce::254"),
+        (("100.100.100.200",), "http://100.100.100.200/", None),
+        (("::ffff:169.254.169.254",), "http://[::ffff:169.254.169.254]/", None),
+        (("0.0.0.0",), "http://0.0.0.0/", None),
+        (("::/0",), "http://[::]/", None),
+        (("metadata.google.internal",), "http://metadata.google.internal/", None),
+        (("meta.corp.example",), "http://meta.corp.example/", "169.254.169.254"),
+        (("meta.corp.example",), "http://meta.corp.example/", "fe80::1"),
+    ],
+)
+def test_metadata_and_unspecified_addresses_are_never_allowlistable(allow_hosts, entries, url, resolved):
+    allow_hosts(*entries)
+    if resolved is None:
+        with pytest.raises(UnsafeUserUrlError):
+            validate_user_base_url(url)
+        return
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo(resolved)):
+        with pytest.raises(UnsafeUserUrlError):
+            validate_user_base_url(url)
+
+
+@pytest.mark.unit
+def test_localhost_hostname_entry_does_not_unlock_loopback(allow_hosts):
+    allow_hosts("localhost")
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url("http://localhost:7091/")
+
+
+@pytest.mark.unit
+def test_hostname_entry_does_not_unlock_a_loopback_address(allow_hosts):
+    allow_hosts("docs.intranet.example")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("127.0.0.1")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url("http://docs.intranet.example/")
+
+
+@pytest.mark.unit
+def test_loopback_passes_only_when_listed_as_an_ip(allow_hosts):
+    allow_hosts("127.0.0.1", "::1")
+    assert validate_user_base_url("http://127.0.0.1:7091/") is None
+    assert validate_user_base_url("http://[::1]:7091/") is None
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("127.0.0.1")):
+        assert validate_user_base_url("http://docs.intranet.example/") is None
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url("http://127.0.0.2/")
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url("http://localhost/")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("url", "resolved"),
+    [("http://localhost./", "127.0.0.1"), ("http://metadata.google.internal./", "10.16.0.5")],
+)
+def test_trailing_dot_blocked_names_stay_blocked_by_name(allow_hosts, url, resolved):
+    allow_hosts("127.0.0.0/8", "10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo(resolved)):
+        with pytest.raises(UnsafeUserUrlError, match="internal-only name"):
+            validate_user_base_url(url)
+
+
+@pytest.mark.unit
+def test_allowlist_reads_a_comma_list_from_the_environment(monkeypatch):
+    from docsgpt.core.settings.server import ServerSettings
+
+    monkeypatch.setenv("SAFE_URL_ALLOWED_HOSTS", "docs.intranet.example, 10.16.0.0/16")
+    assert ServerSettings().SAFE_URL_ALLOWED_HOSTS == ["docs.intranet.example", "10.16.0.0/16"]
+
+
+@pytest.mark.unit
+def test_guarded_async_client_honours_the_allowlist(allow_hosts, monkeypatch):
+    allow_hosts("mcp.intranet.example")
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.intranet.example": [["10.16.0.9"]]})
+
+    _get(guarded_async_client(), "http://mcp.intranet.example/mcp")
+
+    assert captured[0]["url"].host == "10.16.0.9"
+    assert captured[0]["host_header"] == "mcp.intranet.example"

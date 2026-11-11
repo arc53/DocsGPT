@@ -21,6 +21,9 @@ from docsgpt.storage.db.repositories.conversations import ConversationsRepositor
 from .test_executor_handoff import _TOOLS, _call, _drain, _executor, _job_for, _SlowTool, _wait_for
 from .test_sandbox_runner import _Backend, _sandbox_job
 
+
+pytestmark = pytest.mark.fresh_db
+
 SECRET = "AKIAIOSFODNN7EXAMPLE"
 
 _BLOCK_RAVEN = {"check": "denylist", "stage": "tool_result", "action": "block", "settings": {"terms": ["raven"]}}

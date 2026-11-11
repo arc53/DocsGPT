@@ -10,6 +10,7 @@ GENERIC_ERROR_MESSAGE = "Please try again later. We apologize for any inconvenie
 
 CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
 IMAGE_UNREADABLE = "image_unreadable"
+NO_ANSWER = "no_answer"
 SERVER_ERROR = "server_error"
 
 # Longest error text kept for operators (turn logs); longer text is cut.
@@ -140,6 +141,18 @@ def user_facing_error(
         The code and message.
     """
     from docsgpt.agents.context_overflow import ContextOverflowError, is_context_length_error
+    from docsgpt.core.run_budget import is_budget_exhausted
+
+    from docsgpt.llm.deadlines import StreamNoAnswerError
+
+    if is_budget_exhausted(error):
+        return UserFacingError("time_limit", "Stopped: time limit.")
+    if isinstance(error, StreamNoAnswerError):
+        return UserFacingError(
+            NO_ANSWER,
+            "The model kept reasoning without starting an answer, so it was stopped. "
+            "Try again, or choose a different model.",
+        )
 
     if not is_context_length_error(error) and is_image_rejection_error(error):
         return _rejected_image_error(image_names or ())

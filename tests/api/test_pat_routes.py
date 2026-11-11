@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -11,7 +12,7 @@ from sqlalchemy import text
 
 from docsgpt.agents.tool_executor import api_tool_action_with_secrets
 from docsgpt.api.pat import routes as pat_routes
-from docsgpt.api.pat.agent_tool import CATALOG, build_actions
+from docsgpt.api.pat.agent_tool import CATALOG, LEFT_OUT, build_actions
 from docsgpt.api.pat import tokens as pat_tokens
 
 AGENT_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -415,19 +416,91 @@ def _new_token(client, **body):
 class TestBuildActions:
     def test_scopes_pick_the_actions(self):
         actions = build_actions(BASE, "dgpt_pat_x", ["analytics:read"], {})
-        assert sorted(actions) == ["get_feedback_counts", "get_logs", "get_message_counts", "get_trace"]
+        assert {"get_logs", "get_feedback_counts", "get_message_counts", "get_trace", "get_docs_gaps"} <= set(actions)
+        assert "list_agents" not in actions and "create_agent" not in actions
         assert actions["get_logs"]["url"] == f"{BASE}/api/get_user_logs"
         assert actions["get_logs"]["headers"]["properties"]["Authorization"]["value"] == "Bearer dgpt_pat_x"
 
+    def test_a_read_scope_brings_no_writes(self):
+        actions = build_actions(BASE, "t", ["agents:read"], {})
+        assert "get_agent" in actions
+        assert not {"create_agent", "update_agent", "delete_agent", "regenerate_agent_key"} & set(actions)
+
+    def test_a_write_scope_brings_the_reads_too(self):
+        actions = build_actions(BASE, "t", ["prompts:write"], {})
+        assert {"list_prompts", "create_prompt", "update_prompt", "delete_prompt"} <= set(actions)
+
+    def test_every_scope_brings_every_action(self):
+        from docsgpt.api.pat.tokens import SCOPES
+
+        assert set(build_actions(BASE, "t", list(SCOPES), {})) == {entry.name for entry in CATALOG}
+
     def test_a_restricted_token_gets_only_what_it_may_call(self):
         actions = build_actions(BASE, "t", ["agents:read", "analytics:read"], {"agents": [AGENT_A]})
-        assert sorted(actions) == ["list_agents"]
+        assert "list_agents" in actions and "get_agent" in actions
+        assert not {"get_logs", "get_trace", "get_message_counts"} & set(actions)
 
-    def test_every_action_is_a_read_only_pat_route(self):
+    def test_a_path_id_is_a_required_parameter_filled_into_the_url(self):
+        action = build_actions(BASE, "t", ["schedules:read"], {})["get_schedule_run"]
+        assert action["url"] == f"{BASE}/api/schedules/{{schedule_id}}/runs/{{run_id}}"
+        properties = action["query_params"]["properties"]
+        assert properties["schedule_id"]["required"] is True and properties["run_id"]["required"] is True
+
+    def test_deletes_and_agent_calls_start_switched_off(self):
+        from docsgpt.api.pat.tokens import SCOPES
+
+        actions = build_actions(BASE, "t", list(SCOPES), {})
+        off = {name for name, action in actions.items() if not action["active"]}
+        assert off == {
+            "delete_agent", "delete_agent_folder", "delete_schedule", "delete_source", "delete_chunk",
+            "delete_prompt", "delete_tool", "delete_workflow", "delete_conversation", "ask_agent",
+        }
+
+    def test_a_form_route_is_sent_as_a_form(self):
+        actions = build_actions(BASE, "t", ["sources:write"], {})
+        assert actions["ingest_remote_source"]["body_content_type"] == "application/x-www-form-urlencoded"
+        assert actions["create_wiki_source"]["body_content_type"] == "application/json"
+
+
+class TestCatalog:
+    def test_every_token_route_is_in_the_catalog_or_left_out_on_purpose(self):
+        """A new PAT route must be given to agents or listed in ``LEFT_OUT`` with the others like it."""
         from docsgpt.api.pat.rules import RULES
 
-        for _name, method, path, *_rest in CATALOG:
-            assert all(scope.endswith(":read") for scope in RULES[(path, method)].scopes)
+        catalog = {(entry.path, entry.method) for entry in CATALOG}
+        left_out = {route for routes in LEFT_OUT.values() for route in routes}
+        assert catalog <= set(RULES)
+        assert left_out <= set(RULES)
+        assert not catalog & left_out
+        assert set(RULES) - catalog - left_out == set()
+
+    def test_what_agents_never_get(self):
+        catalog = {(entry.path, entry.method) for entry in CATALOG}
+        assert ("/api/delete_all_conversations", "GET") not in catalog
+        assert not {(path, method) for path, method in catalog if path.startswith("/api/user/models") and method != "GET"}
+        assert not {path for path, _ in catalog if path in ("/stream", "/api/upload", "/api/store_attachment")}
+
+    def test_names_are_unique_and_short(self):
+        names = [entry.name for entry in CATALOG]
+        assert len(names) == len(set(names))
+        assert all(re.fullmatch(r"[a-z][a-z0-9_]{2,39}", name) for name in names)
+
+    def test_path_ids_are_declared_and_no_name_is_sent_twice(self):
+        """The model fills one flat argument list, so a query and a body parameter cannot share a name."""
+        for entry in CATALOG:
+            in_path = set(re.findall(r"<(?:\w+:)?(\w+)>", entry.path))
+            assert in_path <= set(entry.query), entry.name
+            assert all(entry.query[name]["required"] for name in in_path), entry.name
+            assert not set(entry.query) & set(entry.body), entry.name
+
+    def test_every_parameter_is_described(self):
+        for entry in CATALOG:
+            assert entry.description, entry.name
+            for name, spec in {**entry.query, **entry.body}.items():
+                assert spec["description"], f"{entry.name}.{name}"
+                assert spec["type"] in ("string", "integer", "boolean", "object", "array"), f"{entry.name}.{name}"
+                if spec["type"] == "array":
+                    assert "items" in spec, f"{entry.name}.{name}"
 
 
 class TestCreateAgentTool:
@@ -447,6 +520,33 @@ class TestCreateAgentTool:
         response = _make_tool(client, token, token_id, base_url="http://localhost:7091")
         assert response.status_code == 400
         assert db.execute(text("SELECT count(*) FROM user_tools")).scalar() == 0
+
+    def test_the_refusal_names_the_operator_allowlist(self, client, db, monkeypatch):
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        def _refuse(url):
+            raise UnsafeUserUrlError("private")
+
+        monkeypatch.setattr(pat_routes, "validate_user_base_url", _refuse)
+        token, token_id = _new_token(client, scopes=["analytics:read"])
+        response = _make_tool(client, token, token_id, base_url="https://docs.intranet.example")
+        assert "SAFE_URL_ALLOWED_HOSTS" in json.loads(response.data)["message"]
+
+    def test_an_allowlisted_private_host_is_accepted(self, client, db, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.security import safe_url
+
+        monkeypatch.setattr(pat_routes, "validate_user_base_url", safe_url.validate_user_base_url)
+        monkeypatch.setattr(
+            "docsgpt.security.safe_url.socket.getaddrinfo",
+            lambda *a, **k: [(None, None, None, None, ("10.16.0.5", 0))],
+        )
+        token, token_id = _new_token(client, scopes=["analytics:read"])
+        assert _make_tool(client, token, token_id, base_url="https://docs.intranet.example").status_code == 400
+
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", ["docs.intranet.example"])
+        response = _make_tool(client, token, token_id, base_url="https://docs.intranet.example")
+        assert response.status_code == 201
 
     def test_creates_an_api_tool_with_the_token_sealed(self, client, db):
         token, token_id = _new_token(client, name="analyst", scopes=["analytics:read", "conversations:read"])
@@ -470,10 +570,78 @@ class TestCreateAgentTool:
         action = api_tool_action_with_secrets(dict(row), "get_logs", "alice")
         assert action["headers"]["properties"]["Authorization"]["value"] == f"Bearer {token}"
 
-    def test_a_token_with_nothing_an_agent_reads_is_refused(self, client, db):
+    def test_a_token_that_can_call_nothing_is_refused(self, client, db, monkeypatch):
+        monkeypatch.setattr(pat_routes, "build_actions", lambda *args: {})
         token, token_id = _new_token(client, scopes=["chat:run"])
         response = _make_tool(client, token, token_id)
         assert response.status_code == 400
+        assert db.execute(text("SELECT count(*) FROM user_tools")).scalar() == 0
+
+    def test_a_write_token_gets_write_actions_with_deletes_off(self, client, db):
+        token, token_id = _new_token(client, scopes=["agents:write"])
+        body = json.loads(_make_tool(client, token, token_id).data)
+        assert {"create_agent", "update_agent", "share_agent", "delete_agent"} <= set(body["actions"])
+        assert body["inactive"] == ["delete_agent", "delete_agent_folder"]
+
+    @pytest.fixture
+    def tools_db(self, db):
+        """The tool routes on the test's connection too."""
+        from docsgpt.api.user.tools import routes as tool_routes
+
+        @contextmanager
+        def _yield_conn():
+            yield db
+
+        with patch.object(tool_routes, "db_session", _yield_conn), patch.object(
+            tool_routes, "db_readonly", _yield_conn
+        ):
+            yield db
+
+    @pytest.mark.parametrize(
+        "path, payload",
+        [
+            ("/api/update_tool", {"actions": [{"name": "api_tool_call", "active": True}]}),
+            ("/api/update_tool", {"customName": "mine"}),
+            ("/api/update_tool", {"config": {"actions": {}}}),
+            ("/api/update_tool_config", {"config": {"actions": {}}}),
+            ("/api/update_tool_actions", {"actions": []}),
+            ("/api/update_tool_status", {"status": True}),
+        ],
+    )
+    def test_a_token_cannot_change_a_tool_that_holds_a_token(self, client, tools_db, path, payload):
+        """Or an agent would switch its own deletes on, or point an action somewhere else."""
+        token, token_id = _new_token(client, scopes=["agents:write", "tools:write"])
+        tool_id = json.loads(_make_tool(client, token, token_id).data)["id"]
+        before = tools_db.execute(text("SELECT config, actions, status, custom_name FROM user_tools")).one()
+
+        response = client.post(path, json={"id": tool_id, **payload}, headers={"Authorization": f"Bearer {token}"})
+
+        assert response.status_code == 403
+        assert "signed in" in json.loads(response.data)["message"]
+        assert tools_db.execute(text("SELECT config, actions, status, custom_name FROM user_tools")).one() == before
+
+    def test_the_owner_signed_in_can_still_change_it(self, client, tools_db):
+        token, token_id = _new_token(client, scopes=["agents:write", "tools:write"])
+        tool_id = json.loads(_make_tool(client, token, token_id).data)["id"]
+        with _session():
+            response = client.post("/api/update_tool", json={"id": tool_id, "customName": "mine"})
+        assert response.status_code == 200
+        assert tools_db.execute(text("SELECT custom_name FROM user_tools")).scalar() == "mine"
+
+    def test_a_token_can_change_a_tool_without_a_token(self, client, tools_db):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        token, _ = _new_token(client, scopes=["tools:write"])
+        plain = UserToolsRepository(tools_db).create(
+            "alice", "api_tool", config={"actions": {}}, custom_name="weather", display_name="API Tool",
+            description="", config_requirements={}, actions=[], status=True,
+        )
+        response = client.post(
+            "/api/update_tool",
+            json={"id": str(plain["id"]), "customName": "forecast"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
 
     def test_the_secret_must_match_the_token(self, client, db):
         token, token_id = _new_token(client, scopes=["analytics:read"])

@@ -64,6 +64,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "对话已继续",
         "job": "后台任务已完成",
         "lost": "后台任务已中断",
         "monitor": "监控条件已触发",
@@ -73,7 +74,9 @@
         "monitor_expired": "监控已过期",
         "schedule": "计划任务已完成",
         "default": "新回复",
-        "docs_gaps": "每周文档缺口摘要"
+        "docs_gaps": "每周文档缺口摘要",
+        "schedule_paused": "计划任务已暂停",
+        "schedule_failed": "计划任务失败"
       },
       "open": "打开",
       "fallbackTitle": "你的助手有新消息"
@@ -87,6 +90,7 @@
       "failed": "无法开启通知"
     },
     "wake": {
+      "continuation": "对话已继续",
       "job": "后台任务已完成",
       "lost": "后台任务已中断",
       "monitor": "监控条件已触发",
@@ -99,24 +103,28 @@
       "cancelled": "后台任务已取消"
     }
   },
-  "demo": [
-    {
-      "header": "了解 DocsGPT",
-      "query": "DocsGPT 是什么"
-    },
-    {
-      "header": "总结文档",
-      "query": "总结当前情况"
-    },
-    {
-      "header": "编写代码",
-      "query": "为 /api/answer API 请求编写代码"
-    },
-    {
-      "header": "学习帮助",
-      "query": "为背景写出潜在问题"
+  "hero": {
+    "suggestions": {
+      "label": "建议",
+      "summarize": "总结“{{name}}”",
+      "compare": "比较“{{first}}”和“{{second}}”",
+      "service": {
+        "files": "查找我在 {{name}} 中的最新文件",
+        "knowledge": "{{name}} 本周有哪些变化？",
+        "projects": "{{name}} 本周有哪些进行中的工作？",
+        "dev": "{{name}} 本周有哪些变化？",
+        "business": "{{name}} 本周有什么新动态？",
+        "messaging": "总结 {{name}} 本周的消息",
+        "database": "{{name}} 中有哪些数据？",
+        "other": "能在 {{name}} 中找到什么？"
+      },
+      "continue": "继续“{{name}}”",
+      "addKnowledge": "添加知识，就能询问你自己的文档",
+      "connect": "连接 {{names}}",
+      "more": "更多服务",
+      "createAgent": "为特定任务创建智能体"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "登录以继续使用 DocsGPT",
     "signInWithSSO": "使用 SSO 登录",
@@ -130,10 +138,9 @@
     "label": "设置",
     "general": {
       "label": "一般",
-      "subtitle": "选择 DocsGPT 的外观、界面语言以及聊天使用的提示词。",
+      "subtitle": "选择 DocsGPT 的外观和界面语言。",
       "sections": {
         "appearance": "外观",
-        "chat": "聊天",
         "dangerZone": "危险操作"
       },
       "theme": "主题",
@@ -143,8 +150,6 @@
       "light": "浅色",
       "dark": "暗色",
       "chunks": "每个查询处理的块",
-      "prompt": "提示",
-      "promptDescription": "不使用智能体的聊天所用的系统提示词。智能体使用各自的提示词。",
       "deleteAllLabel": "删除所有对话",
       "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
       "addNew": "添加新的",
@@ -154,18 +159,7 @@
       "medium": "中",
       "high": "高",
       "unlimited": "无限",
-      "default": "默认",
-      "add": "添加",
-      "promptActions": {
-        "select": "选择提示词",
-        "edit": "编辑提示词",
-        "view": "查看提示词",
-        "duplicate": "复制提示词",
-        "delete": "删除提示词",
-        "deleteFailed": "无法删除此提示词。",
-        "saveFailed": "无法保存此提示词。",
-        "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。"
-      }
+      "default": "默认"
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
@@ -176,7 +170,7 @@
       "type": "类型",
       "tokenUsage": "令牌使用",
       "noData": "还没有知识",
-      "searchPlaceholder": "搜索...",
+      "searchPlaceholder": "搜索知识…",
       "addNew": "添加新文档",
       "addSource": "添加知识",
       "addChunk": "添加块",
@@ -623,7 +617,7 @@
         "fetchedAt": "{{when}}获取",
         "addPages": "添加页面",
         "addPagesHint": "立即获取，并在每次同步时保留。添加整个网站会重建此来源。",
-        "graphCost": "此来源有知识图谱。新页面会通过 LLM 添加到图谱中，每个文本块约调用一次。如果添加会重建此来源（例如来自其他网站的页面），整个图谱都会重建：整个来源的每个文本块约调用一次。",
+        "graphCost": "此来源有知识图谱。新页面会通过 LLM 添加到图谱中，每个文本块约调用一次。如果添加会重建此来源（例如来自其他网站的页面），图谱中已有的页面会保留其部分，只有新的或更改过的文本会发送给 LLM。",
         "addFailed": "无法添加页面。",
         "pageNotFetched": "有 1 个页面未能获取：{{url}}。它会保留在此来源的列表中，下次同步时会再次尝试获取。",
         "pagesNotFetched_one": "有 {{count}} 个页面未能获取。它们会保留在此来源的列表中，下次同步时会再次尝试获取。",
@@ -677,7 +671,7 @@
         "invalidConfig": "这些设置无效。请检查地址和限制。",
         "notFound": "此来源中已没有该页面或文件夹。请重新加载后再试。",
         "badSyncFrequency": "该同步计划不可用。",
-        "graphCostRebuild": "此来源有知识图谱。添加整个网站会重建此来源，因此图谱也会通过 LLM 重建：整个来源的每个文本块约调用一次。",
+        "graphCostRebuild": "此来源有知识图谱。添加整个网站会重建此来源。图谱中已有的页面会保留其部分；新的或更改过的文本会通过 LLM 添加，每个文本块约调用一次。",
         "tooManyPaths_one": "一次最多可移除 {{count}} 个页面。",
         "tooManyPaths_other": "一次最多可移除 {{count}} 个页面。",
         "notWebsite": "此来源不是网站来源。",
@@ -690,7 +684,22 @@
       "viaConnectionFiles_other": "通过 {{name}} · {{files}} 个文件",
       "item": {
         "tokens": "{{tokens}} 个令牌"
-      }
+      },
+      "tokenCount": "{{tokens}} 个令牌",
+      "kinds": {
+        "all": "全部",
+        "files": "文件",
+        "websites": "网站",
+        "synced": "已同步",
+        "wikis": "Wiki",
+        "shared": "共享"
+      },
+      "kindFilterLabel": "按类型筛选",
+      "needsAttention": "需要处理",
+      "allKnowledge": "全部知识",
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
+      "noKnowledgeFound": "未找到知识"
     },
     "analytics": {
       "label": "分析",
@@ -951,7 +960,6 @@
       "filterByChatbot": "按聊天机器人筛选",
       "selectChatbot": "选择聊天机器人",
       "none": "无",
-      "tableHeader": "API 生成 / 聊天机器人会话",
       "searchPlaceholder": "搜索日志...",
       "noLogs": "未找到日志",
       "levels": {
@@ -991,7 +999,8 @@
         "result": "结果",
         "source": "来源",
         "feedback": "反馈",
-        "passthrough": "透传参数"
+        "passthrough": "透传参数",
+        "retries": "重试"
       },
       "trace": {
         "view": "查看追踪",
@@ -1129,7 +1138,8 @@
         "topics": "主题"
       },
       "levelFilter": "级别",
-      "typeFilter": "事件类型"
+      "typeFilter": "事件类型",
+      "retriedStep_other": "{{node}}：尝试 {{count}} 次"
     },
     "teams": {
       "label": "团队",
@@ -1448,8 +1458,8 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "智能体可以执行的操作。内置工具在这里。已连接服务提供的工具归在该服务下。",
-      "searchPlaceholder": "搜索工具...",
+      "subtitle": "智能体可以执行的操作。自带工具随 DocsGPT 提供。已连接服务提供的工具归在该服务下。",
+      "searchPlaceholder": "搜索工具…",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",
       "selectToolSetup": "添加工具",
@@ -1589,13 +1599,67 @@
       "triggerLabel_one": "工具，已选 {{formatted}} 个",
       "triggerLabel_other": "工具，已选 {{formatted}} 个",
       "manageInConnectors": "在连接器中管理",
-      "defaultBadge": "默认",
       "noToolsYet": "还没有工具",
       "connectService": "连接服务",
       "filledBy": "填写方式",
       "loadError": "无法加载你的工具。",
       "deleteConsequence": "其设置和操作也会一并删除。此操作无法撤销。",
-      "deleteActionConsequence": "保存工具后即会移除。"
+      "deleteActionConsequence": "保存工具后即会移除。",
+      "groupIncluded": "自带",
+      "groupAdded": "已添加",
+      "filters": {
+        "all": "全部"
+      },
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
+      "groupServices": "服务",
+      "kindFilterLabel": "按类型筛选"
+    },
+    "prompts": {
+      "label": "提示词",
+      "subtitle": "系统提示词决定模型如何回答。你选择的提示词用于不使用智能体的聊天；智能体使用各自的提示词。",
+      "searchPlaceholder": "搜索提示词…",
+      "addPrompt": "添加提示词",
+      "manage": "前往提示词",
+      "select": "选择提示词",
+      "filters": {
+        "all": "全部"
+      },
+      "sections": {
+        "included": "自带",
+        "yours": "你的",
+        "shared": "团队共享"
+      },
+      "presets": {
+        "default": "根据你的文档回答并注明出处。文档无法回答时会说明，再用通用知识作答。",
+        "creative": "与 default 相同，另外提供想法、示例和富有想象力的角度，同时保持事实准确。",
+        "strict": "只根据你的文档、工具和聊天内容回答。缺少信息时会说明，而不是猜测。"
+      },
+      "chatPromptLabel": "不使用智能体的聊天所用的提示词",
+      "useInChats": "在聊天中使用 {{name}}",
+      "chatPromptFailed": "无法更改聊天使用的提示词。",
+      "actions": "{{name}} 的操作",
+      "edit": "编辑",
+      "view": "查看",
+      "duplicate": "创建副本",
+      "shareWithTeam": "与团队共享",
+      "delete": "删除",
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedByInChats_one": "有 {{formatted}} 个智能体和你的聊天在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedByInChats_other": "有 {{formatted}} 个智能体和你的聊天在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteInChats": "你的聊天正在使用它，删除后将改用默认提示词。此操作无法撤销。",
+      "deleteFailed": "无法删除此提示词。",
+      "saveFailed": "无法保存此提示词。",
+      "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。",
+      "loadError": "无法加载你的提示词。",
+      "noPromptsFound": "未找到提示词",
+      "kinds": {
+        "shared": "共享"
+      },
+      "kindFilterLabel": "按类型筛选",
+      "chatPromptOn": "用于无智能体的聊天",
+      "chatPromptOff": "在无智能体的聊天中使用"
     },
     "devices": {
       "label": "设备",
@@ -1651,7 +1715,8 @@
       "auditShow": "显示最近的命令",
       "auditHide": "隐藏最近的命令",
       "seen": "{{time}}在线",
-      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。"
+      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。",
+      "loadError": "无法加载此设备。"
     },
     "customModels": {
       "label": "自定义模型",
@@ -1784,6 +1849,8 @@
         "conversations": "对话",
         "analytics": "分析",
         "teams": "团队",
+        "runs": "工作流运行",
+        "artifacts": "产物",
         "chat": "聊天"
       },
       "create": {
@@ -1802,7 +1869,7 @@
         "impliedByWrite": "已包含在写入权限中",
         "restrict": "限制为特定资源",
         "restrictHint": "可选。将令牌限制为您选择的项目。列表留空表示允许全部。",
-        "restrictNoFamilies": "请先选择智能体、来源、提示词、工具或聊天的权限范围，才能限制其资源。",
+        "restrictNoFamilies": "请先选择智能体、来源、提示词、工具、工作流、工作流运行或聊天的权限范围，才能限制其资源。",
         "allSelected": "全部（不限制）",
         "noResources": "未找到任何内容。",
         "searchResources": "搜索...",
@@ -1822,7 +1889,8 @@
         "done": "完成",
         "createTool": "为智能体创建工具",
         "toolCreated": "工具已创建。可在 设置 › 工具 中找到，并添加到智能体。",
-        "toolFailed": "无法创建工具。"
+        "toolFailed": "无法创建工具。",
+        "toolSomeOff": "删除和向其他智能体提问的操作默认关闭。如有需要，请在工具中开启这些操作。"
       },
       "regenerate": {
         "action": "重新生成",
@@ -1876,6 +1944,7 @@
         "google_drive": "将文档、表格和 PDF 同步到知识库。",
         "share_point": "将 SharePoint 站点和 OneDrive 中的文件同步到知识库。",
         "confluence": "将 Confluence 空间和页面同步到知识库。",
+        "mcp_canva": "处理 Canva 设计，导出并使用品牌模板。",
         "s3": "将 S3 存储桶中的文档同步到知识库。",
         "reddit": "将符合你搜索条件的 Reddit 帖子同步到知识库。",
         "brave": "使用 Brave Search API 搜索网页和图片。",
@@ -1901,6 +1970,9 @@
         "mcp_context7": "查找库的最新文档和代码示例。",
         "mcp_alphavantage": "查询股票报价、基本面数据、外汇、加密货币、经济指标和市场新闻。",
         "mcp_neon": "查看 Neon Postgres 项目、分支和架构，并运行 SQL。",
+        "mcp_twelvedata": "查询股票、外汇、加密货币和 ETF 的行情、历史价格、技术指标和基本面数据。",
+        "mcp_cloudflare": "通过 Cloudflare API 管理 Workers、DNS、R2 等。",
+        "mcp_excalidraw": "绘制图表并获取可在 Excalidraw 中编辑的链接。",
         "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
       },
       "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
@@ -2017,6 +2089,7 @@
         "methodOauth": "使用 {{name}} 登录",
         "methodToken": "使用访问令牌",
         "credentialsRejected": "{{name}} 未接受这些凭据。请检查后重试。",
+        "rateLimited": "{{name}} 在 {{time}} 之前限制此账户的请求。请在此之后重试。",
         "setupReconnect": "请重新登录 {{name}} 以完成设置。",
         "setupDisabled": "管理员已关闭 {{name}}，因此无法设置。",
         "toolsUnavailable": "无法访问 {{name}} 的工具。请重试，或将其关闭以继续。",
@@ -2088,9 +2161,6 @@
         "ownerWarningNoAccount": "团队成员将以你的 {{name}} 账号操作。"
       },
       "createFailed": "无法添加连接器。请重试。",
-      "capabilityFilter": {
-        "clear": "显示所有连接器"
-      },
       "capabilityPlain": {
         "sync": "同步到知识库",
         "read": "查找信息",
@@ -2107,7 +2177,8 @@
         "searchRepositories": "搜索仓库",
         "repositories": "仓库",
         "updated": "更新于 {{date}}",
-        "loadFailed": "无法加载你的仓库。"
+        "loadFailed": "无法加载你的仓库。",
+        "rateLimited": "GitHub 在 {{time}} 之前限制此账户的请求。请在此之后重试。"
       },
       "linear": {
         "teams": "团队",
@@ -2148,25 +2219,55 @@
         "failed": "无法重命名账户。请重试。"
       },
       "browseAll": "浏览所有连接器",
-      "filters": {
-        "all": "全部",
-        "connected": "已连接",
-        "disconnected": "已断开"
-      },
-      "filterLabel": "筛选连接器",
-      "capabilityChip": {
-        "sync": "同步到知识库",
-        "tools": "为智能体提供工具"
-      },
       "injection": {
         "flagged": "疑似提示词注入",
         "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
       },
       "syncContent": "同步内容",
-      "openInKnowledge": "在知识库中打开"
+      "openInKnowledge": "在知识库中打开",
+      "capabilityShort": {
+        "sync": "同步",
+        "read": "查询",
+        "write": "执行操作"
+      },
+      "capabilityFilters": {
+        "all": "全部",
+        "sync": "知识",
+        "tools": "工具"
+      },
+      "capabilityFilterLabel": "按功能筛选",
+      "statusFilters": {
+        "all": "不限状态",
+        "reconnect": "需要登录",
+        "connected": "已连接",
+        "available": "未连接"
+      },
+      "statusFilterLabel": "按状态筛选",
+      "sections": {
+        "reconnect": "需要登录",
+        "connected": "已连接",
+        "available": "可用"
+      },
+      "addCustomDescription": "连接目录中没有的服务器或 API。"
     },
     "insights": {
       "label": "洞察"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} 个智能体在使用",
+      "agents_other": "{{formatted}} 个智能体在使用",
+      "others_one": "以及你团队中的另外 {{formatted}} 个",
+      "others_other": "以及你团队中的另外 {{formatted}} 个",
+      "agentsShort_one": "{{formatted}} 个智能体",
+      "agentsShort_other": "{{formatted}} 个智能体",
+      "filters": {
+        "all": "不限使用情况",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "filterLabel": "按使用情况筛选",
+      "inChatsOn": "已在我的聊天中启用",
+      "inChatsOff": "未在我的聊天中启用"
     }
   },
   "modals": {
@@ -2211,7 +2312,11 @@
         "dismiss": "关闭上传通知",
         "uploadProgress": "上传进度 {{progress}}%",
         "clear": "清除",
-        "ingestionFailed": "导入失败。"
+        "ingestionFailed": "导入失败。",
+        "tooManyFiles": "此来源的文件数超过上限 {{limit}} 个。请选择更小的文件夹、路径或选择范围。",
+        "tooManyTokens": "此来源的文本超过 {{limit}} 个令牌的上限。请将其拆分为更小的来源。",
+        "partialDownload_one": "有 {{count}} 个项目未能下载，已被跳过。请同步此来源以重试。",
+        "partialDownload_other": "有 {{count}} 个项目未能下载，已被跳过。请同步此来源以重试。"
       },
       "ingestors": {
         "local_file": {
@@ -2387,8 +2492,7 @@
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人",
-      "delete": "删除"
+      "promptTypePrivate": "私人"
     },
     "chunk": {
       "add": "添加块",
@@ -2530,10 +2634,8 @@
     },
     "sources": {
       "title": "来源",
-      "text": "选择知识",
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
-      "noSourcesAvailable": "还没有知识",
       "selectedCount": "已选 {{count}} 个",
       "triggerLabel_one": "知识库，已选 {{formatted}} 个",
       "triggerLabel_other": "知识库，已选 {{formatted}} 个",
@@ -2603,7 +2705,9 @@
       "contextLengthSizedKnowledge": "此消息及其附件大约需要 {{needed, number}} 个 token，超出了模型可接受的上限（{{available, number}} 个 token）。请发送更少或更小的文件，或使用“添加到知识库”来检索它们，而不是整个发送。",
       "serverError": "请稍后再试。给您带来不便，敬请谅解。",
       "clientDisconnect": "回复在生成任何内容之前就中断了。请重试。",
-      "stopped": "你在回复写出任何内容之前停止了它。请重试以获取回复。"
+      "timeLimit": "已停止：达到时间限制。当前进度已保存。",
+      "stopped": "你在回复写出任何内容之前停止了它。请重试以获取回复。",
+      "noAnswer": "模型一直在推理却没有开始回答，因此已停止。请重试，或选择其他模型。"
     },
     "reasoning": "推理",
     "wikiWrite": {
@@ -2726,6 +2830,24 @@
       "notRunMovedOn": "未运行：在批准之前，对话已继续。",
       "notRunExpired": "未运行：批准请求已过期。"
     },
+    "mcpApp": {
+      "state": {
+        "loading": "正在加载应用…",
+        "ready": "可交互",
+        "failed": "失败"
+      },
+      "loading": "正在加载应用…",
+      "allow": "允许",
+      "allowForView": "在此应用中允许",
+      "deny": "拒绝",
+      "reload": "重新加载应用",
+      "approvalAsk": "应用想要运行 {{tool}}。是否允许？",
+      "failedTitle": "无法加载应用",
+      "failedDescription": "其 MCP 服务器没有响应，或视图未能启动。",
+      "frameTitle": "{{name}}（交互式应用）",
+      "callFailed": "工具调用失败",
+      "resultUnavailable": "结果已不可用"
+    },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"
@@ -2827,6 +2949,17 @@
         "data": "数据",
         "other": "其他文件"
       }
+    },
+    "workflow": {
+      "title": "工作流",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "stepCount_other": "{{count}} 步",
+      "loopItems": "{{done}}/{{total}} 项",
+      "loopItemsFailed": "{{count}} 项失败",
+      "retrying": "正在重试 · 第 {{attempt}} 次尝试",
+      "retryingOf": "正在重试 · 第 {{attempt}} 次尝试，共 {{total}} 次",
+      "attempts_other": "尝试 {{count}} 次"
     }
   },
   "agents": {
@@ -2923,7 +3056,8 @@
         "basics": "基本信息",
         "knowledge": "知识与行为",
         "model": "模型",
-        "analytics": "洞察"
+        "analytics": "洞察",
+        "starters": "开场问题"
       },
       "placeholders": {
         "agentName": "智能体名称",
@@ -2935,25 +3069,16 @@
         "selectModels": "为此智能体选择模型",
         "selectDefaultModel": "选择默认模型",
         "enterTokenLimit": "输入令牌限制",
-        "enterRequestLimit": "输入请求限制"
+        "enterRequestLimit": "输入请求限制",
+        "contextLimitDefault": "模型默认值",
+        "historyLimitDefault": "接近上下文上限时总结"
       },
       "sourcePopup": {
-        "title": "选择知识",
-        "searchPlaceholder": "搜索知识...",
-        "noOptionsMessage": "还没有知识",
-        "groupOwn": "我的来源",
-        "groupTeam": "团队共享",
+        "searchPlaceholder": "搜索知识…",
         "noSourceHint": "可选。没有知识时，智能体只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "title": "选择工具",
-        "searchPlaceholder": "搜索工具...",
-        "noOptionsMessage": "没有可用的工具",
-        "groupBuiltin": "内置",
-        "groupDefault": "内置",
         "groupCustom": "自定义",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "已在此智能体上",
         "attachedHint": "由其他人添加。你可以将其移除。"
       },
       "modelsPopup": {
@@ -2982,6 +3107,16 @@
         "jsonSchemaDescription": "定义JSON架构以强制执行结构化输出格式",
         "validJson": "有效的JSON",
         "invalidJson": "无效的JSON - 修复后才能保存",
+        "contextLimit": "上下文上限",
+        "contextLimitDescription": "每次请求发送给模型的历史记录、文档和工具结果的最大 token 数。较早的消息会被总结，以保持在上限以内。关闭则使用模型的完整上下文窗口。",
+        "contextLimitAboveWindow": "超过 {{model}} 的上下文窗口（{{limit, number}} 个 token），因此不会生效。",
+        "limitRange": "请输入 {{min, number}} 到 {{max, number}} 之间的 token 数。",
+        "contextLimitTokens": "上下文上限（token）",
+        "historyLimit": "历史上限",
+        "historyLimitDescription": "每次请求逐字发送的早前消息的最大 token 数。超过后，较早的消息会被总结，保留最新的消息。关闭则仅在接近上下文上限时总结。",
+        "historyLimitTokens": "历史上限（token）",
+        "historyLimitBelowContext": "请输入至少 {{min, number}} 个 token，且低于上下文上限 {{limit, number}}。",
+        "historyLimitAboveWindow": "不低于 {{model}} 的上下文窗口（{{limit, number}} 个 token），因此不会生效。",
         "tokenLimiting": "令牌限制",
         "tokenLimitingDescription": "限制此智能体每天可使用的总令牌数",
         "requestLimiting": "请求限制",
@@ -2989,7 +3124,24 @@
         "systemPromptOverride": "允许覆盖提示词",
         "systemPromptOverrideDescription": "允许 v1 API 调用者替换此智能体的系统提示词",
         "tokenLimit": "令牌上限",
-        "requestLimit": "请求上限"
+        "requestLimit": "请求上限",
+        "origins": {
+          "label": "允许的来源",
+          "description": "只有列出的网站和此实例信任的网站可以使用此代理的 API 密钥调用它",
+          "inputLabel": "来源",
+          "hint": "不带路径的网站地址，例如 https://example.com。按 Enter 添加。",
+          "placeholder": "https://example.com",
+          "add": "添加",
+          "listLabel": "允许的来源",
+          "remove": "移除 {{origin}}",
+          "errors": {
+            "invalid": "请输入以 http:// 或 https:// 开头的地址，例如 https://example.com",
+            "path": "请去掉路径：来源只包含协议、主机和端口",
+            "duplicate": "{{origin}} 已在列表中",
+            "full": "最多可添加 {{max}} 个来源",
+            "required": "请至少添加一个来源，或关闭此设置"
+          }
+        }
       },
       "preview": {
         "savedVersion": "已保存版本",
@@ -3000,7 +3152,8 @@
       "externalKb": "外部知识库",
       "errors": {
         "publishFailed": "无法发布该助手，请重试。",
-        "saveDraftFailed": "无法保存草稿，请重试。"
+        "saveDraftFailed": "无法保存草稿，请重试。",
+        "staleWrite": "在你打开此智能体后，其他人保存了它。你的更改仍在这里：复制所需内容，重新加载页面后再次应用。"
       },
       "guardrails": {
         "enable": "启用防护栏",
@@ -3216,13 +3369,23 @@
           "description": "它可重叠，因此有自己的结果。这些结果将从洞察和日志中消失，重新添加后会从头开始。",
           "submit": "移除"
         }
+      },
+      "leave": {
+        "title": "不保存就离开？",
+        "description": "您在此处所做的更改将会丢失。",
+        "submit": "离开"
+      },
+      "starters": {
+        "description": "可选。有人与该智能体开始新对话时，显示在其卡片下方的问题，例如“你能帮我做什么？”。最多四个。",
+        "label": "问题 {{number}}",
+        "add": "添加问题",
+        "remove": "删除问题 {{number}}"
       }
     },
     "logs": {
       "title": "智能体日志",
       "lastUsedAt": "最后使用时间",
       "noUsageHistory": "无使用历史",
-      "tableHeader": "智能体端点日志",
       "description": "此智能体的 API 调用、计划运行和错误。"
     },
     "schedules": {
@@ -3390,6 +3553,7 @@
         "loadFailed": "无法加载运行记录。"
       },
       "actions": "计划操作",
+      "loadFailed": "无法加载计划。",
       "cancelTask": "取消任务",
       "failureStreak_one": "连续失败 {{count}} 次",
       "failureStreak_other": "连续失败 {{count}} 次",
@@ -3489,9 +3653,7 @@
       },
       "builder": {
         "deleteFailed": "无法删除工作流智能体",
-        "updateWorkflowFailed": "无法更新工作流",
         "updateAgentFailed": "无法更新智能体",
-        "createWorkflowFailed": "无法创建工作流",
         "createAgentFailed": "无法创建智能体",
         "saveFailed": "无法保存工作流",
         "defaultDescription": "工作流智能体：{{name}}",
@@ -3544,7 +3706,9 @@
         "documents": "文档",
         "documentsHint": "从上传或上游节点传给此智能体的文档。",
         "filePassing": "文件传递",
-        "filePassingHint": "自动：模型支持时以原生方式发送，否则提取文本。",
+        "filePassingHint": "自动：模型支持时以原生方式发送，否则提取文本。带编号的行：发送全文，每行标注 [D#:L#] 以便引用。",
+        "streamOutput": "聊天流中的步骤详情",
+        "streamOutputHint": "聊天流中已完成步骤的事件包含的内容。摘要模式在输出较大时发送预览，完整值保存在运行记录中。仅状态模式会从事件中去掉输出；若也不想让该节点的回答出现在聊天中，请关闭“将输出流式传输给用户”。",
         "structuredOutput": "结构化输出（JSON Schema）",
         "modelNoStructuredOutput": "所选模型不支持结构化输出。",
         "validSchema": "JSON Schema 有效",
@@ -3576,9 +3740,28 @@
         "deleteNode": "删除节点",
         "deleteConfirmUnnamed": "删除此工作流智能体？",
         "detailsTitle": "工作流详情",
-        "detailsDescription": "显示在智能体卡片上的名称、描述和图片。",
+        "detailsDescription": "智能体的卡片和对话设置。",
         "unsavedChanges": "未保存的更改",
-        "editDetailsMenu": "编辑详情"
+        "editDetailsMenu": "编辑详情",
+        "loopHint": "为列表中的每一项运行节点",
+        "loopIntro": "循环内的节点会针对工作流状态中某个列表的每一项各运行一次。每一项都在各自的状态副本上运行，循环按列表顺序为每一项保存一个结果。",
+        "loopItems": "列表项",
+        "loopItemsHint": "保存列表的状态变量，例如 extracted.items。",
+        "loopItemsInvalid": "请使用状态路径，例如 extracted.items。",
+        "loopItemVariable": "项变量",
+        "loopItemVariableHint": "循环内的节点以 {{example}} 读取当前项。",
+        "loopItemVariableInvalid": "请使用字母、数字和下划线，且不能使用 query 等保留名称。",
+        "loopConcurrency": "同时处理项数",
+        "loopMaxItems": "最多项数",
+        "loopOnError": "某项失败时",
+        "loopOnErrorFail": "停止并使循环失败",
+        "loopOnErrorSkip": "跳过该项",
+        "loopOnErrorCollect": "在原位置保留错误",
+        "loopOutputHint": "结果列表，每项一个结果。",
+        "loopResultVariable": "项结果",
+        "loopResultVariableHint": "其值作为每一项结果的变量。留空则使用最后运行的节点的输出。",
+        "loadFailedTitle": "无法加载工作流",
+        "loadFailedDescription": "没有任何更改。请重试，或稍后再来。"
       },
       "validation": {
         "nameRequired": "工作流名称为必填项",
@@ -3605,7 +3788,14 @@
         "caseNoVariable": "条件“{{name}}”的分支“{{handle}}”在简单模式下必须指定变量",
         "branchReachEnd": "条件“{{name}}”的分支“{{handle}}”最终必须到达结束节点",
         "codeRequired": "代码节点“{{name}}”必须包含要运行的代码",
-        "codeSchema": "代码节点“{{name}}”的 JSON Schema：{{error}}"
+        "codeSchema": "代码节点“{{name}}”的 JSON Schema：{{error}}",
+        "loopItems": "循环“{{name}}”需要一个要循环的列表",
+        "loopItemsPath": "循环“{{name}}”的列表项必须是状态路径，例如 extracted.items",
+        "loopItemVariable": "循环“{{name}}”的项变量无法使用",
+        "loopEmpty": "循环“{{name}}”内至少需要一个节点",
+        "loopEntry": "循环“{{name}}”必须恰好从一个节点开始",
+        "nodeRetry": "节点“{{name}}”的重试设置超出范围",
+        "retryDefaults": "工作流的默认重试设置超出范围"
       },
       "schema": {
         "notObject": "必须是有效的 JSON 对象",
@@ -3615,7 +3805,13 @@
       "filePassing": {
         "auto": "自动",
         "native": "原生",
-        "extract": "提取"
+        "extract": "提取",
+        "lines": "带编号的行"
+      },
+      "streamOutput": {
+        "summary": "较大时发送摘要",
+        "full": "始终完整",
+        "none": "仅状态"
       },
       "mobileBlocker": {
         "title": "请在更大的屏幕上打开",
@@ -3643,18 +3839,32 @@
         "variableTitle": "变量：{{name}}",
         "valueTitle": "值：{{value}}",
         "operationCount_one": "{{count}} 个操作",
-        "variableCount_one": "{{count}} 个变量"
+        "variableCount_one": "{{count}} 个变量",
+        "loop": "循环",
+        "loopSummary": "对 {{items}} 中的每个 {{variable}}",
+        "loopNoItems": "选择要循环的列表",
+        "loopEmpty": "将节点拖放到此处，为每个项运行一次"
       },
       "preview": {
         "executionDetails": "执行详情",
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "输出：",
+        "showFullOutput": "显示完整输出",
+        "fullOutputPending": "运行结束后即可查看完整输出。",
+        "fullOutputFailed": "无法加载完整输出。",
+        "fullOutputUnsaved": "保存工作流并重新运行后，才能加载大型步骤的完整输出。",
+        "outputNotStreamed": "此步骤的输出不会通过流发送。",
         "errorLabel": "错误：",
         "minimapHeading": "工作流",
         "emptyTitle": "测试工作流",
         "unsavedDraftAttachments": "在预览中附加文档前，请先保存工作流。",
         "stepCount_one": "（{{count}} 步）",
-        "backToRun": "返回运行"
+        "backToRun": "返回运行",
+        "loopItems": "{{done}}/{{total}} 项",
+        "loopItemsFailed": "{{count}} 项失败",
+        "retrying": "正在重试 · 第 {{attempt}} 次尝试",
+        "retryingOf": "正在重试 · 第 {{attempt}} 次尝试，共 {{total}} 次",
+        "attempts_other": "尝试 {{count}} 次"
       },
       "documents": {
         "modeAll": "所有输入文档",
@@ -3676,7 +3886,28 @@
       "zoomOut": "缩小",
       "fitView": "适应视图",
       "removeAssignment": "删除赋值 {{index}}",
-      "removeCondition": "删除条件 {{index}}"
+      "removeCondition": "删除条件 {{index}}",
+      "retry": {
+        "title": "重试",
+        "defaultsDescription": "尝试失败时智能体节点和代码节点的处理方式。节点自身的重试设置优先。",
+        "attempts": "最多尝试次数",
+        "inherit": "默认（{{value}}）",
+        "noRetry": "1（不重试）",
+        "backoff": "等待时间（秒）",
+        "backoffInvalid": "请输入 0 到 300 之间的数字，以逗号分隔。",
+        "backoffTooMany": "最多 10 个等待时间。",
+        "hint": "每次重试前等待 {{backoff}} 秒；最后一个等待时间会重复使用。",
+        "hintOff": "只运行一次。提高尝试次数即可在失败时重试。",
+        "on": "重试条件",
+        "onChoice": {
+          "transient": "错误和超时",
+          "invalid_output": "无效输出"
+        },
+        "onHint": {
+          "transient": "服务器错误、速率限制、超时、连接中断和空回复。",
+          "invalid_output": "回复不是有效的 JSON，或与结构化输出的架构不匹配。"
+        }
+      }
     },
     "typeModal": {
       "title": "创建新智能体",
@@ -3741,7 +3972,8 @@
     },
     "multiSelect": {
       "more_one": "另外 {{count}} 个",
-      "more_other": "另外 {{count}} 个"
+      "more_other": "另外 {{count}} 个",
+      "selectedGroup": "已选"
     }
   },
   "pageNotFound": {
@@ -3825,11 +4057,6 @@
   },
   "prompts": {
     "textAriaLabel": "提示文本"
-  },
-  "connectHero": {
-    "title": "连接你的数据",
-    "body": "与 {{names}} 进行对话。",
-    "more": "更多服务"
   },
   "common": {
     "close": "关闭",
@@ -4027,7 +4254,8 @@
         "missed": "错过了运行时间",
         "overlap": "上一次运行仍在进行",
         "stream_error": "回答流中断",
-        "empty_output": "没有产生任何输出"
+        "empty_output": "没有产生任何输出",
+        "cannot_complete": "智能体无法完成此任务"
       },
       "viewRuns": "查看运行",
       "fromChat": "来自 {{name}}",

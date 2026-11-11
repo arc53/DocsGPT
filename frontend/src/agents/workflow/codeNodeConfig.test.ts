@@ -109,6 +109,7 @@ describe('serializeCodeConfig', () => {
       output_variable: 'result',
       timeout: 30,
       json_schema: { type: 'object' },
+      retry: { max_attempts: 3, backoff_seconds: [5] },
     });
     expect(serialized).toEqual({
       code: 'print(1)',
@@ -116,6 +117,7 @@ describe('serializeCodeConfig', () => {
       output_variable: 'result',
       timeout: 30,
       json_schema: { type: 'object' },
+      retry: { max_attempts: 3, backoff_seconds: [5] },
     });
   });
 
@@ -142,6 +144,7 @@ describe('normalizeCodeConfig', () => {
       output_variable: '',
       timeout: 'soon',
       json_schema: [],
+      retry: 'yes',
     } as unknown as Record<string, unknown>);
     expect(config).toEqual({
       code: '',
@@ -156,6 +159,7 @@ describe('normalizeCodeConfig', () => {
       output_variable: 'result',
       timeout: 30,
       json_schema: { type: 'object' },
+      retry: { max_attempts: 2, on: ['transient'] },
     };
     const normalized = normalizeCodeConfig(saved);
     expect(serializeCodeConfig(normalized)).toEqual(saved);

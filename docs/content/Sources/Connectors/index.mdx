@@ -1,15 +1,16 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-11-03
 ---
 
 import { Callout } from 'nextra/components'
 import { Steps } from 'nextra/components'
+import Image from 'next/image'
 
 # Connectors
 
-A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Context7, Alpha Vantage, draw.io, CoinGecko, Neon, Airtable), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Context7, Alpha Vantage, Twelve Data, draw.io, CoinGecko, Neon, Airtable, Cloudflare, Excalidraw), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
 
 Connections are the single place credentials live when a service requires them. A synced source and an agent tool both point at a connection, so you sign in once when needed, reconnect when a token expires, and disconnect in one place.
 
@@ -32,7 +33,15 @@ Connections are the single place credentials live when a service requires them. 
 
 ## Using connectors
 
-Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
+Open **Settings > Connectors**. Services that need you to sign in again come first, then **Connected**, then **Available**. **All**, **Knowledge** and **Tools** narrow the list to services that sync content or give agents tools, and the **Any status** menu picks **Needs sign-in**, **Connected** or **Not connected**. Each card's last line names your account and what the service can do: **Syncs**, **Looks up**, **Acts**.
+
+<Image
+  src="/connectors-page.webp"
+  alt="The Connectors page: Search connectors, Add custom connector, the All, Knowledge and Tools filter with counts and the Any status menu, then Connected services (Google Drive, SharePoint, Amazon S3, Brave Search) with the account on each, and Available services, each card ending with Syncs, Looks up or Acts"
+  width={1440}
+  height={900}
+  style={{ width: '100%', height: 'auto', margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
 
 1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
 2. Choose what the connection sets up. Tool services create their tools right away. Services that only sync (Google Drive, SharePoint, Confluence, Amazon S3, Reddit) ask how to use them: **Sync content now** (picked) or **Just connect**. With **Just connect**, the account is connected and nothing is added yet; you can sync later with **Sync content** on the connection's page. GitHub and Linear, which also offer tools, ask with a **Sync into Knowledge** switch instead: off by default, on when you started from **Add knowledge**. To sync, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.
@@ -40,7 +49,7 @@ Open **Settings > Connectors**. Filters narrow the list by category, and **Conne
    The last step says what happened and offers the next one: **Open in Knowledge** for content you just synced, **Try it in chat** when you turned on tools, or **Sync content** when nothing syncs yet.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
-**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
+**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow. Tool lists group a connected service's tools under its name, with the account on each tool. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
 
 A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (each source opens in Knowledge, with **Sync now** in its menu), and its tools (on or off, and what each action may do). Disconnecting keeps synced content but stops its sync: **Sync now** and **Reingest** on such a source are refused until its account is connected again, and it never syncs with another of your accounts.
 
@@ -119,7 +128,7 @@ It also rewrites the secrets saved on tools and the API keys of custom models; t
 
 ### Outbound network access
 
-Custom MCP servers and the API Tool reach only hosts on the public internet: `localhost`, private, link-local and other reserved addresses are refused, and there is no allowlist. See [Outbound network access](/Deploying/Security#outbound-network-access).
+Custom MCP servers and the API Tool reach only hosts on the public internet: `localhost`, private, link-local and other reserved addresses are refused unless the operator lists the host in `SAFE_URL_ALLOWED_HOSTS` ([Allowing private hosts](/Deploying/Security#allowing-private-hosts)). See [Outbound network access](/Deploying/Security#outbound-network-access).
 
 ### Redirect URIs
 
@@ -306,13 +315,17 @@ Each post becomes one document with its title, subreddit, score, author and link
 
 ### MCP presets
 
-Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Context7, Alpha Vantage, Neon and Airtable are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Canva, Zapier, Trello, Miro, Resend, Cal.com, Context7, Alpha Vantage, Twelve Data, Neon, Airtable and Cloudflare are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
 
 Alpha Vantage gives agents read-only market data: stock quotes and history, company fundamentals and earnings, forex, crypto, commodities, economic indicators (CPI, GDP, unemployment, Treasury yields), technical indicators and news sentiment. Its server has 133 tools, more than some models take in one request (OpenAI's limit is 128), so 22 core tools start on and the rest start **Off**; `TOOL_CALL` still reaches any of them, and you can turn more on per action. Alpha Vantage accepts sign-ins only from DocsGPT cloud and `localhost`. A self-hosted instance on its own domain gets `invalid_redirect_uri` at sign-in; add it as a custom MCP connector instead, with your [free API key](https://www.alphavantage.co/support/#api-key) in the URL: `https://mcp.alphavantage.co/mcp?apikey=<KEY>`. The free tier allows 25 requests a day.
 
 draw.io is a remote MCP preset that needs no account or credentials. Pick its card and click **Connect** to give agents diagram tools. An agent can create an editable diagram and return a link that opens it in the draw.io editor. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option.
 
 CoinGecko is also a no-sign-in preset: pick its card and click **Connect**. Agents can then answer crypto questions with live prices, market caps, volumes, trending coins and price history. The server has two tools: its `search_docs` looks up CoinGecko SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. The keyless server shares rate limits across all users, so heavy use can be throttled. See [CoinGecko's MCP server docs](https://docs.coingecko.com/docs/mcp-server).
+
+Excalidraw is another no-sign-in preset: pick its card and click **Connect**. Ask an agent to draw a diagram and its `create_view` call draws a live, hand-drawn canvas inline in the answer, an MCP App (see [MCP Apps](/Tools/mcp-tools#mcp-apps)). The canvas's own tools (`export_to_excalidraw`, `save_checkpoint`, `read_checkpoint`) are for the canvas, not the agent: exporting to an editable excalidraw.com link is a button on the canvas. `export_to_excalidraw` and `save_checkpoint` change things, so the canvas asks before it runs them until you set them to **Always allow**. Where MCP Apps are off, the agent calls `export_to_excalidraw` itself and returns the link.
+
+Canva's server covers designs end to end: search and read designs, pages and content, create and edit them, generate images, upload assets, organize folders, read and write comments, and export to PDF, PNG, JPG, PPTX or MP4. Brand kits, brand templates, autofill and resizing a design to new dimensions need Canva Pro or above; the rest works on a free account.
 
 ### Neon
 

@@ -16,10 +16,17 @@ import {
 } from 'lucide-react';
 
 import userService from '../api/services/userService';
-import RoleBadge from '../components/RoleBadge';
+import RoleMeta from '../components/RoleMeta';
+import { MetaLine } from '../components/ui/meta-line';
 import { Avatar } from '../components/ui/avatar';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card, CardDescription, CardTitle } from '../components/ui/card';
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardTitle,
+} from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -39,7 +46,8 @@ import {
   agentLogsPath,
   sharedAgentPath,
 } from './paths';
-import { can } from '../utils/accessUtils';
+import { can, isOwner } from '../utils/accessUtils';
+import { cn } from '@/lib/utils';
 import { downloadBlob } from '../utils/browserUtils';
 import { canAgent } from './agentAccess';
 import { Agent } from './types';
@@ -296,6 +304,7 @@ export default function AgentCard({
     section === 'shared' ||
     ((section === 'user' || section === 'team') &&
       agent.status === 'published');
+  const shared = !isOwner(agent);
   const title = (
     <CardTitle title={agent.name} className="truncate capitalize">
       {agent.name}
@@ -310,7 +319,7 @@ export default function AgentCard({
       padding="lg"
       className="relative h-44 gap-1"
     >
-      <div className="mb-1 flex w-full items-center gap-1 px-1">
+      <div className="mb-1 flex w-full items-center gap-2 px-1">
         {/* Decorative: the title beside it names the agent. */}
         <Avatar
           src={agent.image}
@@ -319,10 +328,9 @@ export default function AgentCard({
           shape="circle"
           imgClassName="size-7 object-contain"
         />
+        {/* A state, so a pill (the workflow builder's Draft is the same). */}
         {agent.status === 'draft' && (
-          <p className="text-foreground text-xs opacity-50">
-            ({t('agents.card.draft')})
-          </p>
+          <Badge variant="neutral">{t('agents.card.draft')}</Badge>
         )}
       </div>
       {canOpen ? (
@@ -336,9 +344,22 @@ export default function AgentCard({
       ) : (
         <div className="px-1">{title}</div>
       )}
-      <CardDescription size="xs" className="mx-1 line-clamp-3">
+      <CardDescription
+        size="xs"
+        // A shared agent's meta line takes the third line.
+        className={cn('mx-1', shared ? 'line-clamp-2' : 'line-clamp-3')}
+      >
         {agent.description}
       </CardDescription>
+      {/* The reader's role is a fact about the agent: the meta line, not a
+          pill. */}
+      {shared ? (
+        <CardFooter className="mx-1 mt-auto">
+          <MetaLine>
+            <RoleMeta item={agent} />
+          </MetaLine>
+        </CardFooter>
+      ) : null}
       {/* After the open target, so Tab reaches the agent before its menu. */}
       {menuOptions.length > 0 && (
         <div className="absolute top-3 right-3 z-10">
@@ -349,9 +370,6 @@ export default function AgentCard({
           />
         </div>
       )}
-      {/* Team access badge — pinned to the top row, left of the ⋯ menu
-          (right-11 clears the 28px trigger at right-3) so the two align. */}
-      <RoleBadge item={agent} className="absolute top-4 right-11 z-10" />
       <ConfirmationModal
         message={t('agents.deleteConfirmation', {
           interpolation: { escapeValue: false },

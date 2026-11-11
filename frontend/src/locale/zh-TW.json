@@ -64,6 +64,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "對話已繼續",
         "job": "背景工作已完成",
         "lost": "背景工作已中斷",
         "monitor": "監控條件已觸發",
@@ -73,7 +74,9 @@
         "monitor_expired": "監控已過期",
         "schedule": "排程工作已完成",
         "default": "新回覆",
-        "docs_gaps": "每週文件缺口摘要"
+        "docs_gaps": "每週文件缺口摘要",
+        "schedule_paused": "排程工作已暫停",
+        "schedule_failed": "排程工作失敗"
       },
       "open": "開啟",
       "fallbackTitle": "你的助理有新消息"
@@ -87,6 +90,7 @@
       "failed": "無法啟用通知"
     },
     "wake": {
+      "continuation": "對話已繼續",
       "job": "背景工作已完成",
       "lost": "背景工作已中斷",
       "monitor": "監控條件已觸發",
@@ -99,24 +103,28 @@
       "cancelled": "背景工作已取消"
     }
   },
-  "demo": [
-    {
-      "header": "了解 DocsGPT",
-      "query": "什麼是 DocsGPT？"
-    },
-    {
-      "header": "摘要文件",
-      "query": "摘要目前的內容"
-    },
-    {
-      "header": "撰寫程式碼",
-      "query": "為 /api/answer 撰寫 API 請求程式碼"
-    },
-    {
-      "header": "學習輔助",
-      "query": "為此內容撰寫可能的問題"
+  "hero": {
+    "suggestions": {
+      "label": "建議",
+      "summarize": "摘要「{{name}}」",
+      "compare": "比較「{{first}}」和「{{second}}」",
+      "service": {
+        "files": "尋找我在 {{name}} 中的最新檔案",
+        "knowledge": "{{name}} 本週有哪些變更？",
+        "projects": "{{name}} 本週有哪些進行中的工作？",
+        "dev": "{{name}} 本週有哪些變更？",
+        "business": "{{name}} 本週有什麼新動態？",
+        "messaging": "摘要 {{name}} 本週的訊息",
+        "database": "{{name}} 中有哪些資料？",
+        "other": "能在 {{name}} 中找到什麼？"
+      },
+      "continue": "繼續「{{name}}」",
+      "addKnowledge": "新增知識，就能詢問你自己的文件",
+      "connect": "連線 {{names}}",
+      "more": "更多服務",
+      "createAgent": "為特定任務建立代理"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "登入以繼續使用 DocsGPT",
     "signInWithSSO": "使用 SSO 登入",
@@ -130,10 +138,9 @@
     "label": "設定",
     "general": {
       "label": "一般",
-      "subtitle": "選擇 DocsGPT 的外觀、介面語言以及聊天使用的提示詞。",
+      "subtitle": "選擇 DocsGPT 的外觀和介面語言。",
       "sections": {
         "appearance": "外觀",
-        "chat": "聊天",
         "dangerZone": "危險操作"
       },
       "theme": "主題",
@@ -143,8 +150,6 @@
       "light": "淺色",
       "dark": "深色",
       "chunks": "每次查詢處理的區塊數",
-      "prompt": "使用中的提示",
-      "promptDescription": "不使用代理的聊天所用的系統提示詞。代理會使用各自的提示詞。",
       "deleteAllLabel": "刪除所有對話",
       "deleteAllDescription": "永久刪除您帳戶中的所有對話。此操作無法復原。",
       "addNew": "新增",
@@ -154,18 +159,7 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無限制",
-      "default": "預設",
-      "add": "添加",
-      "promptActions": {
-        "select": "選擇提示詞",
-        "edit": "編輯提示詞",
-        "view": "檢視提示詞",
-        "duplicate": "複製提示詞",
-        "delete": "刪除提示詞",
-        "deleteFailed": "無法刪除此提示詞。",
-        "saveFailed": "無法儲存此提示詞。",
-        "editConflict": "其他人已變更此提示詞。請重新開啟以查看其版本。"
-      }
+      "default": "預設"
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",
@@ -176,7 +170,7 @@
       "type": "類型",
       "tokenUsage": "Token 使用量",
       "noData": "還沒有知識",
-      "searchPlaceholder": "搜尋...",
+      "searchPlaceholder": "搜尋知識…",
       "addNew": "新增文件",
       "addSource": "新增知識",
       "addChunk": "新增區塊",
@@ -623,7 +617,7 @@
         "fetchedAt": "{{when}}擷取",
         "addPages": "新增頁面",
         "addPagesHint": "立即擷取，並在每次同步時保留。新增整個網站會重建此來源。",
-        "graphCost": "此來源有知識圖譜。新頁面會透過 LLM 加入圖譜，每個區塊約呼叫一次。如果新增會重建此來源（例如來自其他網站的頁面），整個圖譜都會重建：整個來源的每個區塊約呼叫一次。",
+        "graphCost": "此來源有知識圖譜。新頁面會透過 LLM 加入圖譜，每個區塊約呼叫一次。如果新增會重建此來源（例如來自其他網站的頁面），圖譜中已有的頁面會保留其部分，只有新的或變更過的文字會傳送給 LLM。",
         "addFailed": "無法新增頁面。",
         "pageNotFetched": "有 1 個頁面無法擷取：{{url}}。它會保留在此來源的清單中，下次同步時會再次嘗試擷取。",
         "pagesNotFetched_one": "有 {{count}} 個頁面無法擷取。它們會保留在此來源的清單中，下次同步時會再次嘗試擷取。",
@@ -677,7 +671,7 @@
         "invalidConfig": "這些設定無效。請檢查網址和限制。",
         "notFound": "此來源中已沒有該頁面或資料夾。請重新載入後再試一次。",
         "badSyncFrequency": "該同步排程無法使用。",
-        "graphCostRebuild": "此來源有知識圖譜。新增整個網站會重建此來源，因此圖譜也會透過 LLM 重建：整個來源的每個區塊約呼叫一次。",
+        "graphCostRebuild": "此來源有知識圖譜。新增整個網站會重建此來源。圖譜中已有的頁面會保留其部分；新的或變更過的文字會透過 LLM 加入，每個區塊約呼叫一次。",
         "tooManyPaths_one": "一次最多可移除 {{count}} 個頁面。",
         "tooManyPaths_other": "一次最多可移除 {{count}} 個頁面。",
         "notWebsite": "此來源不是網站來源。",
@@ -690,7 +684,22 @@
       "viaConnectionFiles_other": "透過 {{name}} · {{files}} 個檔案",
       "item": {
         "tokens": "{{tokens}} Token"
-      }
+      },
+      "tokenCount": "{{tokens}} Token",
+      "kinds": {
+        "all": "全部",
+        "files": "檔案",
+        "websites": "網站",
+        "synced": "已同步",
+        "wikis": "Wiki",
+        "shared": "共享"
+      },
+      "kindFilterLabel": "依類型篩選",
+      "needsAttention": "需要處理",
+      "allKnowledge": "所有知識",
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
+      "noKnowledgeFound": "找不到知識"
     },
     "analytics": {
       "label": "分析",
@@ -951,7 +960,6 @@
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "none": "無",
-      "tableHeader": "API 生成 / 聊天機器人會話",
       "searchPlaceholder": "搜尋日誌...",
       "noLogs": "找不到日誌",
       "levels": {
@@ -991,7 +999,8 @@
         "result": "結果",
         "source": "來源",
         "feedback": "回饋",
-        "passthrough": "透傳參數"
+        "passthrough": "透傳參數",
+        "retries": "重試"
       },
       "trace": {
         "view": "檢視追蹤",
@@ -1129,7 +1138,8 @@
         "topics": "主題"
       },
       "levelFilter": "層級",
-      "typeFilter": "事件類型"
+      "typeFilter": "事件類型",
+      "retriedStep_other": "{{node}}：嘗試 {{count}} 次"
     },
     "teams": {
       "label": "團隊",
@@ -1448,8 +1458,8 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "代理可以執行的操作。內建工具在這裡。已連線服務提供的工具歸在該服務之下。",
-      "searchPlaceholder": "搜尋工具...",
+      "subtitle": "代理可以執行的操作。隨附工具隨 DocsGPT 提供。已連線服務提供的工具歸在該服務之下。",
+      "searchPlaceholder": "搜尋工具…",
       "addTool": "新增工具",
       "noToolsFound": "找不到工具",
       "selectToolSetup": "新增工具",
@@ -1589,13 +1599,67 @@
       "triggerLabel_one": "工具，已選 {{formatted}} 個",
       "triggerLabel_other": "工具，已選 {{formatted}} 個",
       "manageInConnectors": "在連接器中管理",
-      "defaultBadge": "預設",
       "noToolsYet": "還沒有工具",
       "connectService": "連接服務",
       "filledBy": "填寫方式",
       "loadError": "無法載入你的工具。",
       "deleteConsequence": "其設定與動作也會一併刪除。此操作無法復原。",
-      "deleteActionConsequence": "儲存工具後即會移除。"
+      "deleteActionConsequence": "儲存工具後即會移除。",
+      "groupIncluded": "隨附",
+      "groupAdded": "已新增",
+      "filters": {
+        "all": "全部"
+      },
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
+      "groupServices": "服務",
+      "kindFilterLabel": "依類型篩選"
+    },
+    "prompts": {
+      "label": "提示詞",
+      "subtitle": "系統提示詞決定模型如何回答。你選擇的提示詞用於不使用代理的聊天；代理會使用各自的提示詞。",
+      "searchPlaceholder": "搜尋提示詞…",
+      "addPrompt": "新增提示詞",
+      "manage": "前往提示詞",
+      "select": "選擇提示詞",
+      "filters": {
+        "all": "全部"
+      },
+      "sections": {
+        "included": "隨附",
+        "yours": "你的",
+        "shared": "團隊共享"
+      },
+      "presets": {
+        "default": "根據你的文件回答並註明出處。文件無法回答時會說明，再以一般知識作答。",
+        "creative": "與 default 相同，另外提供想法、範例和富有想像力的角度，同時保持事實正確。",
+        "strict": "只根據你的文件、工具和聊天內容回答。缺少資訊時會說明，而不是猜測。"
+      },
+      "chatPromptLabel": "不使用代理的聊天所用的提示詞",
+      "useInChats": "在聊天中使用 {{name}}",
+      "chatPromptFailed": "無法變更聊天使用的提示詞。",
+      "actions": "{{name}} 的操作",
+      "edit": "編輯",
+      "view": "檢視",
+      "duplicate": "建立副本",
+      "shareWithTeam": "與團隊分享",
+      "delete": "刪除",
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteUsedByInChats_one": "有 {{formatted}} 個代理和你的聊天正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteUsedByInChats_other": "有 {{formatted}} 個代理和你的聊天正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteInChats": "你的聊天正在使用它，刪除後將改用預設提示詞。此操作無法復原。",
+      "deleteFailed": "無法刪除此提示詞。",
+      "saveFailed": "無法儲存此提示詞。",
+      "editConflict": "其他人已變更此提示詞。請重新開啟以查看其版本。",
+      "loadError": "無法載入你的提示詞。",
+      "noPromptsFound": "找不到提示詞",
+      "kinds": {
+        "shared": "共享"
+      },
+      "kindFilterLabel": "依類型篩選",
+      "chatPromptOn": "用於無代理的聊天",
+      "chatPromptOff": "在無代理的聊天中使用"
     },
     "devices": {
       "label": "裝置",
@@ -1651,7 +1715,8 @@
       "auditShow": "顯示最近的指令",
       "auditHide": "隱藏最近的指令",
       "seen": "{{time}}上線",
-      "revokeConsequence": "此裝置上的 CLI 會中斷連線，配對也會被移除。重新配對即可再次連線。"
+      "revokeConsequence": "此裝置上的 CLI 會中斷連線，配對也會被移除。重新配對即可再次連線。",
+      "loadError": "無法載入此裝置。"
     },
     "customModels": {
       "label": "自訂模型",
@@ -1784,6 +1849,8 @@
         "conversations": "對話",
         "analytics": "分析",
         "teams": "團隊",
+        "runs": "工作流程執行",
+        "artifacts": "產出物",
         "chat": "聊天"
       },
       "create": {
@@ -1802,7 +1869,7 @@
         "impliedByWrite": "已包含在寫入權限中",
         "restrict": "限制為特定資源",
         "restrictHint": "選填。將權杖限制為您選擇的項目。清單留空表示允許全部。",
-        "restrictNoFamilies": "請先選擇代理、來源、提示詞、工具或聊天的權限範圍，才能限制其資源。",
+        "restrictNoFamilies": "請先選擇代理、來源、提示詞、工具、工作流程、工作流程執行或聊天的權限範圍，才能限制其資源。",
         "allSelected": "全部（不限制）",
         "noResources": "找不到任何內容。",
         "searchResources": "搜尋...",
@@ -1822,7 +1889,8 @@
         "done": "完成",
         "createTool": "為智慧體建立工具",
         "toolCreated": "工具已建立。可在 設定 › 工具 中找到，並加入智慧體。",
-        "toolFailed": "無法建立工具。"
+        "toolFailed": "無法建立工具。",
+        "toolSomeOff": "刪除和向其他智慧體提問的動作預設為關閉。如有需要，請在工具中開啟這些動作。"
       },
       "regenerate": {
         "action": "重新產生",
@@ -1875,6 +1943,7 @@
       "descriptions": {
         "google_drive": "將文件、試算表和 PDF 同步到知識庫。",
         "share_point": "將 SharePoint 網站和 OneDrive 中的檔案同步到知識庫。",
+        "mcp_canva": "處理 Canva 設計，匯出並使用品牌範本。",
         "confluence": "將 Confluence 空間和頁面同步到知識庫。",
         "s3": "將 S3 儲存貯體中的文件同步到知識庫。",
         "reddit": "將符合你搜尋條件的 Reddit 貼文同步到知識庫。",
@@ -1901,6 +1970,9 @@
         "mcp_context7": "查詢函式庫的最新文件與程式碼範例。",
         "mcp_alphavantage": "查詢股票報價、基本面資料、外匯、加密貨幣、經濟指標和市場新聞。",
         "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",
+        "mcp_twelvedata": "查詢股票、外匯、加密貨幣和 ETF 的報價、歷史價格、技術指標和基本面資料。",
+        "mcp_cloudflare": "透過 Cloudflare API 管理 Workers、DNS、R2 等。",
+        "mcp_excalidraw": "繪製圖表並取得可在 Excalidraw 中編輯的連結。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
@@ -2017,6 +2089,7 @@
         "methodOauth": "使用 {{name}} 登入",
         "methodToken": "使用存取權杖",
         "credentialsRejected": "{{name}} 未接受這些憑證。請檢查後再試一次。",
+        "rateLimited": "{{name}} 在 {{time}} 之前限制此帳戶的請求。請在此之後再試一次。",
         "setupReconnect": "請重新登入 {{name}} 以完成設定。",
         "setupDisabled": "管理員已關閉 {{name}}，因此無法設定。",
         "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次，或將其關閉以繼續。",
@@ -2088,9 +2161,6 @@
         "ownerWarningNoAccount": "團隊成員將以你的 {{name}} 帳號操作。"
       },
       "createFailed": "無法新增連接器。請再試一次。",
-      "capabilityFilter": {
-        "clear": "顯示所有連接器"
-      },
       "capabilityPlain": {
         "sync": "同步到知識庫",
         "read": "查詢資訊",
@@ -2107,7 +2177,8 @@
         "searchRepositories": "搜尋儲存庫",
         "repositories": "儲存庫",
         "updated": "更新於 {{date}}",
-        "loadFailed": "無法載入你的儲存庫。"
+        "loadFailed": "無法載入你的儲存庫。",
+        "rateLimited": "GitHub 在 {{time}} 之前限制此帳戶的請求。請在此之後再試一次。"
       },
       "linear": {
         "teams": "團隊",
@@ -2148,26 +2219,56 @@
         "failed": "無法重新命名帳戶。請再試一次。"
       },
       "browseAll": "瀏覽所有連接器",
-      "filters": {
-        "all": "全部",
-        "connected": "已連線",
-        "disconnected": "已中斷"
-      },
-      "filterLabel": "篩選連接器",
-      "capabilityChip": {
-        "sync": "同步到知識庫",
-        "tools": "為代理提供工具"
-      },
       "injection": {
         "flagged": "疑似提示詞注入",
         "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
         "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       },
       "syncContent": "同步內容",
-      "openInKnowledge": "在知識庫中開啟"
+      "openInKnowledge": "在知識庫中開啟",
+      "capabilityShort": {
+        "sync": "同步",
+        "read": "查詢",
+        "write": "執行操作"
+      },
+      "capabilityFilters": {
+        "all": "全部",
+        "sync": "知識",
+        "tools": "工具"
+      },
+      "capabilityFilterLabel": "依功能篩選",
+      "statusFilters": {
+        "all": "不限狀態",
+        "reconnect": "需要登入",
+        "connected": "已連線",
+        "available": "未連線"
+      },
+      "statusFilterLabel": "依狀態篩選",
+      "sections": {
+        "reconnect": "需要登入",
+        "connected": "已連線",
+        "available": "可用"
+      },
+      "addCustomDescription": "連接目錄中沒有的伺服器或 API。"
     },
     "insights": {
       "label": "洞察"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} 個代理正在使用",
+      "agents_other": "{{formatted}} 個代理正在使用",
+      "others_one": "以及你團隊中的另外 {{formatted}} 個",
+      "others_other": "以及你團隊中的另外 {{formatted}} 個",
+      "agentsShort_one": "{{formatted}} 個代理",
+      "agentsShort_other": "{{formatted}} 個代理",
+      "filters": {
+        "all": "不限使用情況",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "filterLabel": "依使用情況篩選",
+      "inChatsOn": "已在我的聊天中啟用",
+      "inChatsOff": "未在我的聊天中啟用"
     }
   },
   "modals": {
@@ -2212,7 +2313,11 @@
         "dismiss": "關閉上傳通知",
         "uploadProgress": "上傳進度 {{progress}}%",
         "clear": "清除",
-        "ingestionFailed": "匯入失敗。"
+        "ingestionFailed": "匯入失敗。",
+        "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
+        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。",
+        "partialDownload_one": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。",
+        "partialDownload_other": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。"
       },
       "ingestors": {
         "local_file": {
@@ -2388,8 +2493,7 @@
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人",
-      "delete": "刪除"
+      "promptTypePrivate": "私人"
     },
     "chunk": {
       "add": "新增區塊",
@@ -2532,10 +2636,8 @@
     },
     "sources": {
       "title": "來源",
-      "text": "選擇知識",
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源",
-      "noSourcesAvailable": "還沒有知識",
       "selectedCount": "已選 {{count}} 個",
       "triggerLabel_one": "知識庫，已選 {{formatted}} 個",
       "triggerLabel_other": "知識庫，已選 {{formatted}} 個",
@@ -2605,7 +2707,9 @@
       "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
       "serverError": "請稍後再試。造成不便，敬請見諒。",
       "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。",
-      "stopped": "你在回覆寫出任何內容之前停止了它。請重試以取得回覆。"
+      "timeLimit": "已停止：達到時間限制。目前進度已儲存。",
+      "stopped": "你在回覆寫出任何內容之前停止了它。請重試以取得回覆。",
+      "noAnswer": "模型一直在推理卻沒有開始回答，因此已停止。請重試，或選擇其他模型。"
     },
     "reasoning": "推理",
     "wikiWrite": {
@@ -2728,6 +2832,24 @@
       "notRunMovedOn": "未執行：在核准之前，對話已繼續。",
       "notRunExpired": "未執行：核准請求已過期。"
     },
+    "mcpApp": {
+      "state": {
+        "loading": "正在載入應用程式…",
+        "ready": "可互動",
+        "failed": "失敗"
+      },
+      "loading": "正在載入應用程式…",
+      "allow": "允許",
+      "allowForView": "在此應用程式中允許",
+      "deny": "拒絕",
+      "reload": "重新載入應用程式",
+      "approvalAsk": "應用程式想要執行 {{tool}}。要允許嗎？",
+      "failedTitle": "無法載入應用程式",
+      "failedDescription": "其 MCP 伺服器沒有回應，或檢視無法啟動。",
+      "frameTitle": "{{name}}（互動式應用程式）",
+      "callFailed": "工具呼叫失敗",
+      "resultUnavailable": "結果已無法使用"
+    },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
@@ -2829,6 +2951,17 @@
         "data": "資料",
         "other": "其他檔案"
       }
+    },
+    "workflow": {
+      "title": "工作流程",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "stepCount_other": "{{count}} 步",
+      "loopItems": "{{done}}/{{total}} 個項目",
+      "loopItemsFailed": "{{count}} 個失敗",
+      "retrying": "正在重試 · 第 {{attempt}} 次嘗試",
+      "retryingOf": "正在重試 · 第 {{attempt}} 次嘗試，共 {{total}} 次",
+      "attempts_other": "嘗試 {{count}} 次"
     }
   },
   "agents": {
@@ -2925,7 +3058,8 @@
         "basics": "基本資訊",
         "knowledge": "知識與行為",
         "model": "模型",
-        "analytics": "洞察"
+        "analytics": "洞察",
+        "starters": "開場問題"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -2937,25 +3071,16 @@
         "selectModels": "為此代理選擇模型",
         "selectDefaultModel": "選擇預設模型",
         "enterTokenLimit": "輸入權杖限制",
-        "enterRequestLimit": "輸入請求限制"
+        "enterRequestLimit": "輸入請求限制",
+        "contextLimitDefault": "模型預設值",
+        "historyLimitDefault": "接近上下文上限時摘要"
       },
       "sourcePopup": {
-        "title": "選擇知識",
-        "searchPlaceholder": "搜尋知識...",
-        "noOptionsMessage": "還沒有知識",
-        "groupOwn": "我的來源",
-        "groupTeam": "團隊共享",
+        "searchPlaceholder": "搜尋知識…",
         "noSourceHint": "選填。沒有知識時，代理只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "title": "選擇工具",
-        "searchPlaceholder": "搜尋工具...",
-        "noOptionsMessage": "沒有可用的工具",
-        "groupBuiltin": "內建",
-        "groupDefault": "內建",
         "groupCustom": "自訂",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "已在此智慧代理上",
         "attachedHint": "由其他人新增。你可以將其移除。"
       },
       "modelsPopup": {
@@ -2984,6 +3109,16 @@
         "jsonSchemaDescription": "定義JSON架構以強制執行結構化輸出格式",
         "validJson": "有效的JSON",
         "invalidJson": "無效的JSON - 修復後才能儲存",
+        "contextLimit": "上下文上限",
+        "contextLimitDescription": "每次請求傳送給模型的歷史紀錄、文件和工具結果的最大 token 數。較早的訊息會被摘要，以保持在上限以內。關閉則使用模型的完整上下文視窗。",
+        "contextLimitAboveWindow": "超過 {{model}} 的上下文視窗（{{limit, number}} 個 token），因此不會生效。",
+        "limitRange": "請輸入 {{min, number}} 到 {{max, number}} 之間的 token 數。",
+        "contextLimitTokens": "上下文上限（token）",
+        "historyLimit": "歷史上限",
+        "historyLimitDescription": "每次請求逐字傳送的先前訊息的最大 token 數。超過後，較早的訊息會被摘要，保留最新的訊息。關閉則僅在接近上下文上限時摘要。",
+        "historyLimitTokens": "歷史上限（token）",
+        "historyLimitBelowContext": "請輸入至少 {{min, number}} 個 token，且低於上下文上限 {{limit, number}}。",
+        "historyLimitAboveWindow": "不低於 {{model}} 的上下文視窗（{{limit, number}} 個 token），因此不會生效。",
         "tokenLimiting": "權杖限制",
         "tokenLimitingDescription": "限制此代理每天可使用的總權杖數",
         "requestLimiting": "請求限制",
@@ -2991,7 +3126,24 @@
         "systemPromptOverride": "允許覆蓋提示詞",
         "systemPromptOverrideDescription": "允許 v1 API 呼叫者替換此代理的系統提示詞",
         "tokenLimit": "權杖上限",
-        "requestLimit": "請求上限"
+        "requestLimit": "請求上限",
+        "origins": {
+          "label": "允許的來源",
+          "description": "只有列出的網站和此執行個體信任的網站可以使用此代理的 API 金鑰呼叫它",
+          "inputLabel": "來源",
+          "hint": "不含路徑的網站位址，例如 https://example.com。按 Enter 新增。",
+          "placeholder": "https://example.com",
+          "add": "新增",
+          "listLabel": "允許的來源",
+          "remove": "移除 {{origin}}",
+          "errors": {
+            "invalid": "請輸入以 http:// 或 https:// 開頭的位址，例如 https://example.com",
+            "path": "請去掉路徑：來源只包含協定、主機和連接埠",
+            "duplicate": "{{origin}} 已在清單中",
+            "full": "最多可新增 {{max}} 個來源",
+            "required": "請至少新增一個來源，或關閉此設定"
+          }
+        }
       },
       "preview": {
         "savedVersion": "已儲存版本",
@@ -3002,7 +3154,8 @@
       "externalKb": "外部知識庫",
       "errors": {
         "publishFailed": "無法發布該助理，請重試。",
-        "saveDraftFailed": "無法儲存草稿，請重試。"
+        "saveDraftFailed": "無法儲存草稿，請重試。",
+        "staleWrite": "在你開啟此智慧代理後，其他人儲存了它。你的變更仍在這裡：複製所需內容，重新載入頁面後再次套用。"
       },
       "guardrails": {
         "enable": "啟用防護機制",
@@ -3218,13 +3371,23 @@
           "description": "它可重疊，因此有自己的結果。這些結果將從洞察和日誌中消失，重新新增後會從頭開始。",
           "submit": "移除"
         }
+      },
+      "leave": {
+        "title": "要不儲存就離開嗎？",
+        "description": "您在此處所做的變更將會遺失。",
+        "submit": "離開"
+      },
+      "starters": {
+        "description": "選填。有人與此代理開始新對話時，顯示在其卡片下方的問題，例如「你能幫我做什麼？」。最多四個。",
+        "label": "問題 {{number}}",
+        "add": "新增問題",
+        "remove": "移除問題 {{number}}"
       }
     },
     "logs": {
       "title": "代理日誌",
       "lastUsedAt": "最後使用時間",
       "noUsageHistory": "無使用歷史",
-      "tableHeader": "代理端點日誌",
       "description": "此代理的 API 呼叫、排程執行和錯誤。"
     },
     "schedules": {
@@ -3392,6 +3555,7 @@
         "loadFailed": "無法載入執行紀錄。"
       },
       "actions": "排程操作",
+      "loadFailed": "無法載入排程。",
       "cancelTask": "取消任務",
       "failureStreak_one": "連續失敗 {{count}} 次",
       "failureStreak_other": "連續失敗 {{count}} 次",
@@ -3491,9 +3655,7 @@
       },
       "builder": {
         "deleteFailed": "無法刪除工作流程代理",
-        "updateWorkflowFailed": "無法更新工作流程",
         "updateAgentFailed": "無法更新代理",
-        "createWorkflowFailed": "無法建立工作流程",
         "createAgentFailed": "無法建立代理",
         "saveFailed": "無法儲存工作流程",
         "defaultDescription": "工作流程代理：{{name}}",
@@ -3546,7 +3708,9 @@
         "documents": "文件",
         "documentsHint": "從上傳或上游節點傳給此代理的文件。",
         "filePassing": "檔案傳遞",
-        "filePassingHint": "自動：模型支援時以原生方式傳送，否則擷取文字。",
+        "filePassingHint": "自動：模型支援時以原生方式傳送，否則擷取文字。帶編號的行：傳送全文，每行標註 [D#:L#] 以便引用。",
+        "streamOutput": "聊天串流中的步驟詳情",
+        "streamOutputHint": "聊天串流中已完成步驟的事件包含的內容。摘要模式在輸出較大時傳送預覽，完整值保存在執行紀錄中。僅狀態模式會從事件中移除輸出；若也不想讓此節點的回答出現在聊天中，請關閉「將輸出串流給使用者」。",
         "structuredOutput": "結構化輸出（JSON Schema）",
         "modelNoStructuredOutput": "所選模型不支援結構化輸出。",
         "validSchema": "JSON Schema 有效",
@@ -3578,9 +3742,28 @@
         "deleteNode": "刪除節點",
         "deleteConfirmUnnamed": "要刪除此工作流程代理嗎？",
         "detailsTitle": "工作流程詳細資料",
-        "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
+        "detailsDescription": "代理的卡片和對話設定。",
         "unsavedChanges": "未儲存的變更",
-        "editDetailsMenu": "編輯詳細資料"
+        "editDetailsMenu": "編輯詳細資料",
+        "loopHint": "為清單中的每個項目執行節點",
+        "loopIntro": "迴圈內的節點會針對工作流程狀態中某個清單的每個項目各執行一次。每個項目都在各自的狀態副本上執行，迴圈會依清單順序為每個項目儲存一個結果。",
+        "loopItems": "項目",
+        "loopItemsHint": "保存清單的狀態變數，例如 extracted.items。",
+        "loopItemsInvalid": "請使用狀態路徑，例如 extracted.items。",
+        "loopItemVariable": "項目變數",
+        "loopItemVariableHint": "迴圈內的節點以 {{example}} 讀取目前項目。",
+        "loopItemVariableInvalid": "請使用字母、數字和底線，且不能使用 query 等保留名稱。",
+        "loopConcurrency": "同時處理項目數",
+        "loopMaxItems": "最多項目數",
+        "loopOnError": "項目失敗時",
+        "loopOnErrorFail": "停止並使迴圈失敗",
+        "loopOnErrorSkip": "略過該項目",
+        "loopOnErrorCollect": "在原位置保留錯誤",
+        "loopOutputHint": "結果清單，每個項目一個結果。",
+        "loopResultVariable": "項目結果",
+        "loopResultVariableHint": "其值作為每個項目結果的變數。留空則使用最後執行之節點的輸出。",
+        "loadFailedTitle": "無法載入工作流程",
+        "loadFailedDescription": "沒有任何變更。請重試，或稍後再來。"
       },
       "validation": {
         "nameRequired": "工作流程名稱為必填",
@@ -3607,7 +3790,14 @@
         "caseNoVariable": "條件「{{name}}」的分支「{{handle}}」在簡易模式下必須指定變數",
         "branchReachEnd": "條件「{{name}}」的分支「{{handle}}」最終必須到達結束節點",
         "codeRequired": "程式碼節點「{{name}}」必須包含要執行的程式碼",
-        "codeSchema": "程式碼節點「{{name}}」的 JSON Schema：{{error}}"
+        "codeSchema": "程式碼節點「{{name}}」的 JSON Schema：{{error}}",
+        "loopItems": "迴圈「{{name}}」需要一個要迴圈處理的清單",
+        "loopItemsPath": "迴圈「{{name}}」的項目必須是狀態路徑，例如 extracted.items",
+        "loopItemVariable": "迴圈「{{name}}」的項目變數無法使用",
+        "loopEmpty": "迴圈「{{name}}」內至少需要一個節點",
+        "loopEntry": "迴圈「{{name}}」必須恰好從一個節點開始",
+        "nodeRetry": "節點「{{name}}」的重試設定超出範圍",
+        "retryDefaults": "工作流程的預設重試設定超出範圍"
       },
       "schema": {
         "notObject": "必須是有效的 JSON 物件",
@@ -3617,7 +3807,13 @@
       "filePassing": {
         "auto": "自動",
         "native": "原生",
-        "extract": "擷取"
+        "extract": "擷取",
+        "lines": "帶編號的行"
+      },
+      "streamOutput": {
+        "summary": "較大時傳送摘要",
+        "full": "一律完整",
+        "none": "僅狀態"
       },
       "mobileBlocker": {
         "title": "請在更大的螢幕上開啟",
@@ -3645,18 +3841,32 @@
         "variableTitle": "變數：{{name}}",
         "valueTitle": "值：{{value}}",
         "operationCount_one": "{{count}} 個操作",
-        "variableCount_one": "{{count}} 個變數"
+        "variableCount_one": "{{count}} 個變數",
+        "loop": "迴圈",
+        "loopSummary": "對 {{items}} 中的每個 {{variable}}",
+        "loopNoItems": "選擇要迴圈處理的清單",
+        "loopEmpty": "將節點拖放到此處，為每個項目執行一次"
       },
       "preview": {
         "executionDetails": "執行詳細資料",
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "輸出：",
+        "showFullOutput": "顯示完整輸出",
+        "fullOutputPending": "執行結束後即可查看完整輸出。",
+        "fullOutputFailed": "無法載入完整輸出。",
+        "fullOutputUnsaved": "儲存工作流程並重新執行後，才能載入大型步驟的完整輸出。",
+        "outputNotStreamed": "此步驟的輸出不會透過串流傳送。",
         "errorLabel": "錯誤：",
         "minimapHeading": "工作流程",
         "emptyTitle": "測試工作流程",
         "unsavedDraftAttachments": "在預覽中附加文件前，請先儲存工作流程。",
         "stepCount_one": "（{{count}} 步）",
-        "backToRun": "返回執行"
+        "backToRun": "返回執行",
+        "loopItems": "{{done}}/{{total}} 個項目",
+        "loopItemsFailed": "{{count}} 個失敗",
+        "retrying": "正在重試 · 第 {{attempt}} 次嘗試",
+        "retryingOf": "正在重試 · 第 {{attempt}} 次嘗試，共 {{total}} 次",
+        "attempts_other": "嘗試 {{count}} 次"
       },
       "documents": {
         "modeAll": "所有輸入文件",
@@ -3678,7 +3888,28 @@
       "zoomOut": "縮小",
       "fitView": "符合檢視",
       "removeAssignment": "移除指定 {{index}}",
-      "removeCondition": "移除條件 {{index}}"
+      "removeCondition": "移除條件 {{index}}",
+      "retry": {
+        "title": "重試",
+        "defaultsDescription": "嘗試失敗時代理節點與程式碼節點的處理方式。節點本身的重試設定優先。",
+        "attempts": "最多嘗試次數",
+        "inherit": "預設（{{value}}）",
+        "noRetry": "1（不重試）",
+        "backoff": "等待時間（秒）",
+        "backoffInvalid": "請輸入 0 到 300 之間的數字，以逗號分隔。",
+        "backoffTooMany": "最多 10 個等待時間。",
+        "hint": "每次重試前等待 {{backoff}} 秒；最後一個等待時間會重複使用。",
+        "hintOff": "只執行一次。提高嘗試次數即可在失敗時重試。",
+        "on": "重試條件",
+        "onChoice": {
+          "transient": "錯誤與逾時",
+          "invalid_output": "無效輸出"
+        },
+        "onHint": {
+          "transient": "伺服器錯誤、速率限制、逾時、連線中斷與空白回覆。",
+          "invalid_output": "回覆不是有效的 JSON，或與結構化輸出的結構描述不符。"
+        }
+      }
     },
     "typeModal": {
       "title": "建立新代理",
@@ -3743,7 +3974,8 @@
     },
     "multiSelect": {
       "more_one": "另外 {{count}} 個",
-      "more_other": "另外 {{count}} 個"
+      "more_other": "另外 {{count}} 個",
+      "selectedGroup": "已選取"
     }
   },
   "pageNotFound": {
@@ -3827,11 +4059,6 @@
   },
   "prompts": {
     "textAriaLabel": "提示文字"
-  },
-  "connectHero": {
-    "title": "連線你的資料",
-    "body": "與 {{names}} 進行對話。",
-    "more": "更多服務"
   },
   "common": {
     "close": "關閉",
@@ -4029,7 +4256,8 @@
         "missed": "錯過了執行時間",
         "overlap": "上一次執行仍在進行",
         "stream_error": "回答串流中斷",
-        "empty_output": "沒有產生任何輸出"
+        "empty_output": "沒有產生任何輸出",
+        "cannot_complete": "代理無法完成此任務"
       },
       "viewRuns": "查看執行",
       "fromChat": "來自 {{name}}",

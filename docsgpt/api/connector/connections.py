@@ -75,6 +75,13 @@ def _error(message: str, status: int, **extra):
     return make_response(jsonify({"success": False, "error": message, **extra}), status)
 
 
+def _rate_limited(err):
+    """429 for a rate-limited GitHub account: when it resets, so the UI can say so."""
+    response = _error(str(err), 429, code="rate_limited", retry_at=err.reset_at.isoformat())
+    response.headers["Retry-After"] = str(err.retry_after_seconds)
+    return response
+
+
 @connections_ns.route("/connections")
 class ConnectionsList(Resource):
     @api.doc(
@@ -106,6 +113,8 @@ class ConnectionsList(Resource):
                 label = label or github.token_account(credentials.get("access_token"))
             except github.TokenRejected as err:
                 return _error(str(err), 400, code="invalid_credentials")
+            except github.RateLimited as err:
+                return _rate_limited(err)
             except service.TransientConnectionError as err:
                 return _error(str(err), 502)
         try:
@@ -438,6 +447,8 @@ class ConnectionRepositories(Resource):
         except github.TokenRejected as err:
             service.mark_reconnect_needed(connection_id, str(err))
             return _error("Reconnect to continue", 409, code="reconnect")
+        except github.RateLimited as err:
+            return _rate_limited(err)
         except service.TransientConnectionError:
             return _error("GitHub is not responding. Try again.", 503)
         except Exception as err:

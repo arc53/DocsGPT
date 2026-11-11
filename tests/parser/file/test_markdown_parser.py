@@ -4,7 +4,8 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from docsgpt.parser.file.markdown_parser import MarkdownParser
-from docsgpt import utils
+from docsgpt.parser import tokenization
+from tests.parser.counter_fakes import spy_cl100k
 
 
 class _Enc:
@@ -16,8 +17,9 @@ class _Enc:
 
 
 @pytest.fixture(autouse=True)
-def _patch_tokenizer(monkeypatch):
-    monkeypatch.setattr(utils, "get_encoding", lambda: _Enc())
+def encoding(monkeypatch):
+    return spy_cl100k(monkeypatch, inner=_Enc())
+
 
 def test_markdown_init_parser():
     parser = MarkdownParser()
@@ -164,3 +166,56 @@ def test_markdown_fence_closes_with_crlf_line_endings():
     assert [h.strip() for h, _ in tups] == ["Install", "Usage"]
     assert "# install dependencies" in tups[0][1]
     assert "run it" in tups[1][1]
+
+
+def test_tups_chunk_append_small_text_golden():
+    parser = MarkdownParser(max_tokens=4)
+    assert parser.tups_chunk_append([], None, "ab\n") == [(None, "ab\n")]
+    assert parser.tups_chunk_append([], None, "abcdefghij\n") == [
+        (None, "abcd"),
+        (None, "efgh"),
+        (None, "ij\n"),
+    ]
+    assert parser.tups_chunk_append([("h", "x")], "# H", "abcde") == [("h", "x"), ("# H", "abcd"), ("# H", "e")]
+
+
+_WINDOW = 64
+
+
+def test_tups_chunk_append_counts_large_text_in_bounded_windows(encoding, monkeypatch):
+    monkeypatch.setattr(tokenization, "_WINDOW_CHARS", _WINDOW, raising=False)
+    text = "plain text line without any header\n" * 60
+    assert MarkdownParser(max_tokens=10**6).tups_chunk_append([], None, text) == [(None, text)]
+    assert max(encoding.encode_lengths) <= 2 * _WINDOW
+
+
+def test_tups_chunk_append_windowed_count_still_chunks_over_budget(encoding, monkeypatch):
+    monkeypatch.setattr(tokenization, "_WINDOW_CHARS", _WINDOW, raising=False)
+    tups = MarkdownParser(max_tokens=300).tups_chunk_append([], None, "x" * 1000)
+    assert [len(chunk) for _, chunk in tups] == [300, 300, 300, 100]
+    assert max(encoding.encode_lengths) <= 2 * _WINDOW
+
+
+def test_markdown_to_tups_keeps_later_header_after_consecutive_headers() -> None:
+    raw = "# H1\n# H2\nbody\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(raw)
+    assert tups == [("H2", "body\n\n")]
+
+
+def test_markdown_to_tups_keeps_only_last_header_when_several_chain() -> None:
+    raw = "# H1\n## H2\n### H3\nbody\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(raw)
+    assert tups == [("H3", "body\n\n")]
+
+
+def test_markdown_parse_file_attributes_a_body_to_the_header_above_it() -> None:
+    # parse_file puts the header in the text that gets embedded, so the wrong
+    # one here means the wrong heading is indexed with the body.
+    content = "# H1\n# H2\nbody\n"
+    parser = MarkdownParser()
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+
+    assert result == ["\n\nH2\nbody\n\n"]

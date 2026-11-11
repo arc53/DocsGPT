@@ -913,3 +913,45 @@ class TestPrescreenScope:
             ("classic", ["a", "b", "c", "stray"]), ("hybrid", ["h"]), ("graphrag", ["g"]),
         ]
         assert list(d._groups[0]["retrievals"]) == ["b"]
+
+
+@pytest.mark.unit
+class TestDispatcherCountsTheKnowledgeName:
+    """The merge and the post-rerank fit count each chunk's ``<knowledge>`` line, as the prompt renders it."""
+
+    @staticmethod
+    def _docs(n=5):
+        return [
+            {"text": f"chunk {i} " + "w" * 10, "filename": f"f{i}", "source_name": "n" * 40, "_base": i == 0}
+            for i in range(n)
+        ]
+
+    @staticmethod
+    def _counted(docs):
+        from docsgpt.retriever.base import quote_source_name
+
+        return sum(len(f"{quote_source_name(d['source_name'])}\n{d['filename']}\n{d['text']}") for d in docs)
+
+    def test_the_fit_after_a_rerank(self):
+        with patch("docsgpt.retriever.dispatcher.num_tokens_from_string", side_effect=len):
+            kept = Dispatcher._fit(self._docs(), 150)
+        assert kept and self._counted(kept) < 135
+
+    def test_the_merge_of_groups(self, _patch_llm_creator):
+        d = Dispatcher(
+            source={"question": "q", "active_docs": ["a", "b"]},
+            chat_history=[],
+            chunks=5,
+            doc_token_limit=150,
+            decoded_token={"sub": "u"},
+            sources=[
+                {"id": "a", "retrieval": RetrievalConfig(retriever="classic")},
+                {"id": "b", "retrieval": RetrievalConfig(retriever="hybrid")},
+            ],
+        )
+        assert len(d._groups) == 2
+        d._build_group_retriever = lambda group, budget: Mock(search=Mock(return_value=self._docs(3)))
+        d._stage_group = lambda query, retriever, group, docs, budget: docs
+        with patch("docsgpt.retriever.dispatcher.num_tokens_from_string", side_effect=len):
+            merged = d._search_groups("q")
+        assert merged and self._counted(merged) < 135

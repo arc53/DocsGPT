@@ -114,14 +114,31 @@ describe('Logs rows', () => {
     expect(body.dataset.state).toBe('closed');
   });
 
-  // O4 (c): the header strip reads like TableHead on its bg-muted strip.
-  it('draws the header strip text in foreground', () => {
-    const header = Array.from(container.querySelectorAll('p')).find(
-      (p) => p.textContent === 'settings.logs.tableHeader',
+  // A log table is a place on the page: a subtle Card, with no muted header
+  // strip (the page or section heading above already names it).
+  it('frames the rows in a subtle Card with no header strip', () => {
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
+    const panel = toggle.closest<HTMLElement>(
+      '[data-slot="card"][data-variant="subtle"]',
+    );
+    expect(panel).not.toBeNull();
+    expect(panel!.querySelector('.bg-muted')).toBeNull();
+  });
+
+  // The question is what a person wrote: proportional, and it fills the rest
+  // of the header row instead of wrapping at a fixed width.
+  it('sets the question in sans across the rest of the row', () => {
+    const question = Array.from(container.querySelectorAll('span')).find(
+      (span) => span.textContent === log.question,
     )!;
-    expect(header).toBeDefined();
-    expect(header.className).toContain('text-foreground');
-    expect(header.className).not.toContain('text-muted-foreground');
+    expect(question).toBeDefined();
+    const classes = question.className.split(' ');
+    expect(classes).toContain('font-sans');
+    expect(classes).toContain('flex-1');
+    expect(classes).toContain('min-w-0');
+    expect(question.className).not.toMatch(/\bmax-w-/);
   });
 
   // V3: the text and JSON blocks of an open row are ui/code-block CodeBlocks

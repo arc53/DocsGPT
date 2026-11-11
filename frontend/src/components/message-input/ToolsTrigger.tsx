@@ -22,6 +22,8 @@ type ToolsTriggerProps = {
   notice?: ReactNode;
   /** Opens the add-tool modal; the picker closes first. */
   onAddTool: () => void;
+  /** The kind filter drawn under the search (`useToolKindFilter`). */
+  filters?: ReactNode;
 };
 
 export default function ToolsTrigger({
@@ -33,6 +35,7 @@ export default function ToolsTrigger({
   loading,
   notice,
   onAddTool,
+  filters,
 }: ToolsTriggerProps) {
   const { t } = useTranslation();
   const count = selectedIds.length;
@@ -48,6 +51,10 @@ export default function ToolsTrigger({
       searchPlaceholder={t('settings.tools.searchPlaceholder')}
       emptyMessage={t('settings.tools.noToolsFound')}
       loading={loading}
+      // What is on when it opens comes first; a lone group needs no heading.
+      selectedFirst
+      loneGroupHeading={false}
+      filters={filters}
       footer={
         <div className="flex flex-col gap-3">
           {notice}

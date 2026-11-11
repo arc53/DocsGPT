@@ -223,3 +223,27 @@ class TestTheWorkerWait:
         from docsgpt.vectorstore.index_lock import WORKER_WAIT_SECONDS
 
         assert WORKER_WAIT_SECONDS == settings.CELERY_VISIBILITY_TIMEOUT // 2 > 0
+
+
+@pytest.mark.unit
+class TestConnectionFetchLock:
+    """One fetch at a time per connection, so parallel ingests can't share out its API budget."""
+
+    def test_holds_its_own_key_and_releases_it(self, fake_redis):
+        from docsgpt.vectorstore.index_lock import connection_fetch_lock, connection_fetch_lock_key
+
+        assert connection_fetch_lock_key("c-1") == "docsgpt:connection_fetch_lock:c-1"
+        with connection_fetch_lock("c-1"):
+            assert fake_redis.get(connection_fetch_lock_key("c-1")) is not None
+        assert fake_redis.get(connection_fetch_lock_key("c-1")) is None
+
+    def test_a_second_fetch_waits_then_gives_up_naming_the_connection(self, fake_redis):
+        from docsgpt.vectorstore.index_lock import SourceBusy, connection_fetch_lock
+
+        with connection_fetch_lock("c-1"):
+            with pytest.raises(SourceBusy, match="connection"):
+                with connection_fetch_lock("c-1", wait_seconds=0.1, poll_seconds=0.05):
+                    pass
+            # Another connection is not held up.
+            with connection_fetch_lock("c-2", wait_seconds=0):
+                pass

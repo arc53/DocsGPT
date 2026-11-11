@@ -20,7 +20,10 @@ class TestHeading:
             ("monitor_expired", "Monitor expired"),
             ("trigger", "Webhook received"),
             ("approval", "Approval received"),
+            ("continuation", "Conversation continued"),
             ("schedule", "Scheduled task finished"),
+            ("schedule_paused", "Scheduled task paused"),
+            ("schedule_failed", "Scheduled task failed"),
             ("docs_gaps", "Weekly docs-gap summary"),
         ],
     )

@@ -295,6 +295,23 @@ class TestUpdate:
         assert fetched["name"] == "old"
 
 
+class TestRemoveMetadataKey:
+    def test_drops_one_key_and_keeps_the_others(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u", metadata={"sync_state": "ok", "rechunk_pending": True})
+
+        assert repo.remove_metadata_key(created["id"], "u", "rechunk_pending") is True
+
+        assert repo.get(created["id"], "u")["metadata"] == {"sync_state": "ok"}
+
+    def test_wrong_user_is_a_noop(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u", metadata={"rechunk_pending": True})
+
+        assert repo.remove_metadata_key(created["id"], "other", "rechunk_pending") is False
+        assert repo.get(created["id"], "u")["metadata"] == {"rechunk_pending": True}
+
+
 class TestSetMetadataKey:
     def test_sets_one_key_and_keeps_the_others(self, pg_conn):
         repo = _repo(pg_conn)

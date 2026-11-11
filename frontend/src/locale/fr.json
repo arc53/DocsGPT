@@ -66,6 +66,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Conversation poursuivie",
         "job": "Tâche en arrière-plan terminée",
         "lost": "Tâche en arrière-plan interrompue",
         "monitor": "Moniteur déclenché",
@@ -75,7 +76,9 @@
         "monitor_expired": "Moniteur expiré",
         "schedule": "Tâche planifiée terminée",
         "default": "Nouvelle réponse",
-        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc"
+        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc",
+        "schedule_paused": "Tâche planifiée en pause",
+        "schedule_failed": "Échec de la tâche planifiée"
       },
       "open": "Ouvrir",
       "fallbackTitle": "Votre assistant a du nouveau"
@@ -89,6 +92,7 @@
       "failed": "Impossible d’activer les notifications"
     },
     "wake": {
+      "continuation": "Conversation poursuivie",
       "job": "Tâche en arrière-plan terminée",
       "lost": "Tâche en arrière-plan interrompue",
       "monitor": "Moniteur déclenché",
@@ -101,24 +105,28 @@
       "cancelled": "Tâche en arrière-plan annulée"
     }
   },
-  "demo": [
-    {
-      "header": "Découvrir DocsGPT",
-      "query": "Qu’est-ce que DocsGPT ?"
-    },
-    {
-      "header": "Résumer la documentation",
-      "query": "Résume le contexte actuel"
-    },
-    {
-      "header": "Écrire du code",
-      "query": "Écris le code d’une requête API vers /api/answer"
-    },
-    {
-      "header": "Aide à l’apprentissage",
-      "query": "Rédige des questions possibles sur le contexte"
+  "hero": {
+    "suggestions": {
+      "label": "Suggestions",
+      "summarize": "Résumer « {{name}} »",
+      "compare": "Comparer « {{first}} » avec « {{second}} »",
+      "service": {
+        "files": "Trouver mes fichiers les plus récents dans {{name}}",
+        "knowledge": "Qu’est-ce qui a changé dans {{name}} cette semaine ?",
+        "projects": "Qu’est-ce qui est en cours dans {{name}} cette semaine ?",
+        "dev": "Qu’est-ce qui a changé dans {{name}} cette semaine ?",
+        "business": "Quoi de neuf dans {{name}} cette semaine ?",
+        "messaging": "Résumer les messages de la semaine dans {{name}}",
+        "database": "Quelles données contient {{name}} ?",
+        "other": "Que pouvez-vous trouver dans {{name}} ?"
+      },
+      "continue": "Reprendre « {{name}} »",
+      "addKnowledge": "Ajouter des connaissances pour interroger vos propres documents",
+      "connect": "Connecter {{names}}",
+      "more": "autres",
+      "createAgent": "Créer un agent pour une tâche précise"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Connectez-vous pour accéder à DocsGPT",
     "signInWithSSO": "Se connecter avec SSO",
@@ -132,10 +140,9 @@
     "label": "Paramètres",
     "general": {
       "label": "Général",
-      "subtitle": "Choisissez l’apparence de DocsGPT, sa langue et le prompt utilisé par vos conversations.",
+      "subtitle": "Choisissez l’apparence de DocsGPT et sa langue.",
       "sections": {
         "appearance": "Apparence",
-        "chat": "Conversation",
         "dangerZone": "Zone de danger"
       },
       "theme": "Thème",
@@ -145,8 +152,6 @@
       "light": "Clair",
       "dark": "Sombre",
       "chunks": "Fragments traités par requête",
-      "prompt": "Prompt actif",
-      "promptDescription": "Le prompt système des conversations sans agent. Les agents utilisent le leur.",
       "deleteAllLabel": "Supprimer toutes les conversations",
       "deleteAllDescription": "Supprime définitivement toutes les conversations de votre compte. Cette action est irréversible.",
       "addNew": "Ajouter",
@@ -156,18 +161,7 @@
       "medium": "Moyen",
       "high": "Élevé",
       "unlimited": "Illimité",
-      "default": "Par défaut",
-      "add": "Ajouter",
-      "promptActions": {
-        "select": "Sélectionner un prompt",
-        "edit": "Modifier le prompt",
-        "view": "Afficher le prompt",
-        "duplicate": "Dupliquer le prompt",
-        "delete": "Supprimer le prompt",
-        "deleteFailed": "Impossible de supprimer ce prompt.",
-        "saveFailed": "Impossible d’enregistrer ce prompt.",
-        "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version."
-      }
+      "default": "Par défaut"
     },
     "sources": {
       "title": "Gérez ici tous les fichiers sources auxquels vous avez accès et ceux que vous avez importés.",
@@ -178,7 +172,7 @@
       "type": "Type",
       "tokenUsage": "Consommation de jetons",
       "noData": "Aucune connaissance pour l’instant",
-      "searchPlaceholder": "Rechercher…",
+      "searchPlaceholder": "Rechercher des connaissances…",
       "addNew": "Ajouter",
       "addSource": "Ajouter des connaissances",
       "addChunk": "Ajouter un fragment",
@@ -646,7 +640,7 @@
         "fetchedAt": "récupérée {{when}}",
         "addPages": "Ajouter des pages",
         "addPagesHint": "Récupérées maintenant et conservées à chaque synchronisation. Un site entier reconstruit la source.",
-        "graphCost": "Cette source a un graphe de connaissances. Les nouvelles pages y sont ajoutées avec un LLM, environ un appel par fragment. Si leur ajout reconstruit la source (une page d’un autre site), tout le graphe est reconstruit : environ un appel par fragment de toute la source.",
+        "graphCost": "Cette source a un graphe de connaissances. Les nouvelles pages y sont ajoutées avec un LLM, environ un appel par fragment. Si leur ajout reconstruit la source (une page d’un autre site), les pages déjà dans le graphe y gardent leur part, et seul le texte nouveau ou modifié est envoyé au LLM.",
         "addFailed": "Impossible d’ajouter les pages.",
         "pageNotFetched": "Une page n’a pas pu être récupérée : {{url}}. Elle reste dans la liste de cette source, et la prochaine synchronisation essaiera de nouveau de la récupérer.",
         "pagesNotFetched_one": "{{count}} page n’a pas pu être récupérée. Elle reste dans la liste de cette source, et la prochaine synchronisation essaiera de nouveau de la récupérer.",
@@ -706,7 +700,7 @@
         "invalidConfig": "Ces paramètres ne sont pas valides. Vérifiez les adresses et les limites.",
         "notFound": "Cette page ou ce dossier ne fait plus partie de la source. Rechargez-la et réessayez.",
         "badSyncFrequency": "Cette fréquence de synchronisation n’est pas disponible.",
-        "graphCostRebuild": "Cette source a un graphe de connaissances. Un site entier reconstruit la source, donc le graphe est lui aussi reconstruit avec un LLM : environ un appel par fragment de toute la source.",
+        "graphCostRebuild": "Cette source a un graphe de connaissances. Un site entier reconstruit la source. Les pages déjà dans le graphe y gardent leur part ; le texte nouveau ou modifié est ajouté avec un LLM, environ un appel par fragment.",
         "tooManyPaths_one": "Vous pouvez retirer jusqu’à {{count}} page à la fois.",
         "tooManyPaths_other": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
         "tooManyPaths_many": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
@@ -721,7 +715,23 @@
       "viaConnectionFiles_many": "via {{name}} · {{files}} fichiers",
       "item": {
         "tokens": "{{tokens}} jetons"
-      }
+      },
+      "tokenCount": "{{tokens}} jetons",
+      "kinds": {
+        "all": "Toutes",
+        "files": "Fichiers",
+        "websites": "Sites web",
+        "synced": "Synchronisées",
+        "wikis": "Wikis",
+        "shared": "Partagées"
+      },
+      "kindFilterLabel": "Filtrer par type",
+      "needsAttention": "À traiter",
+      "allKnowledge": "Toutes les connaissances",
+      "deleteUsedBy_one": "Utilisée par {{formatted}} agent, qui perd cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "noKnowledgeFound": "Aucune connaissance trouvée"
     },
     "analytics": {
       "label": "Statistiques",
@@ -996,7 +1006,6 @@
       "filterByChatbot": "Filtrer par chatbot",
       "selectChatbot": "Sélectionner un chatbot",
       "none": "Aucun",
-      "tableHeader": "Conversations générées par API / chatbot",
       "searchPlaceholder": "Rechercher dans les journaux…",
       "noLogs": "Aucun journal trouvé",
       "levels": {
@@ -1036,7 +1045,8 @@
         "result": "Résultat",
         "source": "Source",
         "feedback": "Avis",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Nouvelles tentatives"
       },
       "trace": {
         "view": "Voir la trace",
@@ -1181,7 +1191,10 @@
         "topics": "Sujets"
       },
       "levelFilter": "Niveau",
-      "typeFilter": "Type d’événement"
+      "typeFilter": "Type d’événement",
+      "retriedStep_one": "{{node}} : {{count}} tentative",
+      "retriedStep_many": "{{node}} : {{count}} tentatives",
+      "retriedStep_other": "{{node}} : {{count}} tentatives"
     },
     "teams": {
       "label": "Équipes",
@@ -1507,7 +1520,7 @@
     },
     "tools": {
       "label": "Outils",
-      "subtitle": "Les actions que vos agents peuvent effectuer. Les outils intégrés se trouvent ici. Les outils d’un service connecté sont regroupés sous ce service.",
+      "subtitle": "Les actions que vos agents peuvent effectuer. Les outils inclus sont fournis avec DocsGPT. Les outils d’un service connecté sont regroupés sous ce service.",
       "searchPlaceholder": "Rechercher des outils…",
       "addTool": "Ajouter un outil",
       "noToolsFound": "Aucun outil trouvé",
@@ -1515,7 +1528,7 @@
       "settingsIconAlt": "Icône des paramètres",
       "toolActions": "Actions de l’outil",
       "configureToolAria": "Configurer {{toolName}}",
-      "manageTools": "Accéder aux outils",
+      "manageTools": "Aller aux outils",
       "edit": "Modifier",
       "delete": "Supprimer",
       "reconnect": "Reconnecter",
@@ -1651,13 +1664,70 @@
       "triggerLabel_other": "Outils, {{formatted}} sélectionnés",
       "triggerLabel_many": "Outils, {{formatted}} sélectionnés",
       "manageInConnectors": "Gérer dans les connecteurs",
-      "defaultBadge": "Par défaut",
       "noToolsYet": "Aucun outil pour l’instant",
       "connectService": "Connecter un service",
       "filledBy": "Renseigné par",
       "loadError": "Impossible de charger vos outils.",
       "deleteConsequence": "Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
-      "deleteActionConsequence": "Elle sera supprimée lorsque vous enregistrerez l’outil."
+      "deleteActionConsequence": "Elle sera supprimée lorsque vous enregistrerez l’outil.",
+      "groupIncluded": "Inclus",
+      "groupAdded": "Ajoutés",
+      "filters": {
+        "all": "Tous"
+      },
+      "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui perd cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "groupServices": "Services",
+      "kindFilterLabel": "Filtrer par type"
+    },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "Les prompts système indiquent au modèle comment répondre. Celui que vous choisissez sert aux conversations sans agent ; les agents choisissent le leur.",
+      "searchPlaceholder": "Rechercher des prompts…",
+      "addPrompt": "Ajouter un prompt",
+      "manage": "Aller aux prompts",
+      "select": "Sélectionner un prompt",
+      "filters": {
+        "all": "Tous"
+      },
+      "sections": {
+        "included": "Inclus",
+        "yours": "Les vôtres",
+        "shared": "Partagés avec l’équipe"
+      },
+      "presets": {
+        "default": "Répond à partir de vos documents et les cite. S’ils ne couvrent pas la question, il le dit, puis répond avec des connaissances générales.",
+        "creative": "Comme default, avec en plus des idées, des exemples et des angles inventifs, sans rien perdre de l’exactitude des faits.",
+        "strict": "Répond uniquement à partir de vos documents, de vos outils et de la conversation. Signale ce qui manque au lieu de deviner."
+      },
+      "chatPromptLabel": "Prompt des conversations sans agent",
+      "useInChats": "Utiliser {{name}} dans les conversations",
+      "chatPromptFailed": "Impossible de changer le prompt de vos conversations.",
+      "actions": "Actions pour {{name}}",
+      "edit": "Modifier",
+      "view": "Afficher",
+      "duplicate": "Dupliquer",
+      "shareWithTeam": "Partager avec l’équipe",
+      "delete": "Supprimer",
+      "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui revient au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_one": "Utilisé par {{formatted}} agent et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_other": "Utilisé par {{formatted}} agents et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_many": "Utilisé par {{formatted}} agents et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteInChats": "Vos conversations l’utilisent et reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteFailed": "Impossible de supprimer ce prompt.",
+      "saveFailed": "Impossible d’enregistrer ce prompt.",
+      "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version.",
+      "loadError": "Impossible de charger vos prompts.",
+      "noPromptsFound": "Aucun prompt trouvé",
+      "kinds": {
+        "shared": "Partagés"
+      },
+      "kindFilterLabel": "Filtrer par type",
+      "chatPromptOn": "Utilisé dans les conversations sans agent",
+      "chatPromptOff": "Utiliser dans les conversations sans agent"
     },
     "devices": {
       "label": "Appareils",
@@ -1713,7 +1783,8 @@
       "auditShow": "Afficher les commandes récentes",
       "auditHide": "Masquer les commandes récentes",
       "seen": "vu {{time}}",
-      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter."
+      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter.",
+      "loadError": "Impossible de charger cet appareil."
     },
     "customModels": {
       "label": "Modèles personnalisés",
@@ -1853,6 +1924,8 @@
         "conversations": "Conversations",
         "analytics": "Statistiques",
         "teams": "Équipes",
+        "runs": "Exécutions de workflows",
+        "artifacts": "Artefacts",
         "chat": "Conversation"
       },
       "create": {
@@ -1872,7 +1945,7 @@
         "impliedByWrite": "Inclus avec l’accès en écriture",
         "restrict": "Limiter à des ressources précises",
         "restrictHint": "Facultatif. Limitez le jeton aux éléments sélectionnés. Laissez une liste vide pour tous les autoriser.",
-        "restrictNoFamilies": "Sélectionnez d’abord une portée pour les agents, sources, prompts, outils ou conversations afin d’en limiter les ressources.",
+        "restrictNoFamilies": "Sélectionnez d’abord une portée pour les agents, sources, prompts, outils, workflows, exécutions de workflows ou conversations afin d’en limiter les ressources.",
         "allSelected": "Tout (aucune restriction)",
         "noResources": "Aucun résultat.",
         "searchResources": "Rechercher…",
@@ -1892,7 +1965,8 @@
         "done": "Terminé",
         "createTool": "Créer un outil pour les agents",
         "toolCreated": "Outil créé. Retrouvez-le dans Paramètres › Outils et ajoutez-le à un agent.",
-        "toolFailed": "Impossible de créer l'outil."
+        "toolFailed": "Impossible de créer l'outil.",
+        "toolSomeOff": "La suppression et l’interrogation d’un autre agent sont désactivées au départ. Activez ces actions dans l’outil si besoin."
       },
       "regenerate": {
         "action": "Régénérer",
@@ -1945,6 +2019,7 @@
       "descriptions": {
         "google_drive": "Synchronisez Docs, Sheets et PDF dans Connaissances.",
         "share_point": "Synchronisez les fichiers des sites SharePoint et de OneDrive dans Connaissances.",
+        "mcp_canva": "Travaillez avec des designs Canva, exportez-les et utilisez des modèles de marque.",
         "confluence": "Synchronisez les espaces et pages Confluence dans Connaissances.",
         "s3": "Synchronisez les documents d’un bucket S3 dans Connaissances.",
         "reddit": "Synchronisez dans Connaissances les publications Reddit correspondant à vos recherches.",
@@ -1961,6 +2036,7 @@
         "mcp_stripe": "Consultez les clients, paiements et abonnements dans Stripe.",
         "mcp_drawio": "Créez des organigrammes modifiables et d’autres diagrammes avec draw.io.",
         "mcp_coingecko": "Consultez en direct les cours des cryptos, capitalisations, volumes, tendances et historiques de prix.",
+        "mcp_excalidraw": "Dessinez des diagrammes et obtenez un lien Excalidraw modifiable.",
         "mcp_clickup": "Recherchez, lisez et modifiez les tâches, documents et listes ClickUp, et ajoutez des commentaires.",
         "mcp_zapier": "Utilisez les actions activées dans votre compte Zapier MCP pour lire ou modifier les applications connectées.",
         "mcp_trello": "Trouvez des tableaux et cartes Trello, et créez ou modifiez des cartes.",
@@ -1971,6 +2047,8 @@
         "mcp_airtable": "Recherchez, lisez et modifiez des enregistrements dans les bases Airtable.",
         "mcp_alphavantage": "Consultez cours boursiers, données fondamentales, devises, cryptos, indicateurs économiques et actualités des marchés.",
         "mcp_neon": "Explorez les projets, branches et schémas Neon Postgres, et exécutez du SQL.",
+        "mcp_twelvedata": "Consultez cotations, historique des cours, indicateurs techniques et données fondamentales des actions, devises, cryptos et ETF.",
+        "mcp_cloudflare": "Gérez Workers, DNS, R2 et plus encore via l’API Cloudflare.",
         "github": "Synchronisez des dépôts dans Connaissances et laissez les agents lire le code, les tickets et les pull requests."
       },
       "empty": "Aucune connexion pour l’instant. Connectez un service pour synchroniser son contenu ou fournir de nouveaux outils aux agents.",
@@ -2093,6 +2171,7 @@
         "methodOauth": "Se connecter avec {{name}}",
         "methodToken": "Utiliser un jeton d’accès",
         "credentialsRejected": "{{name}} n’a pas accepté ces identifiants. Vérifiez-les et réessayez.",
+        "rateLimited": "{{name}} limite les requêtes de ce compte jusqu’à {{time}}. Réessayez ensuite.",
         "setupReconnect": "Reconnectez-vous à {{name}} pour terminer la configuration.",
         "setupDisabled": "Un administrateur a désactivé {{name}}, il ne peut donc pas être configuré.",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez, ou désactivez-les pour continuer.",
@@ -2170,9 +2249,6 @@
         "ownerWarningNoAccount": "Les membres de l’équipe agiront avec votre compte {{name}}."
       },
       "createFailed": "Impossible d’ajouter le connecteur. Réessayez.",
-      "capabilityFilter": {
-        "clear": "Afficher tous les connecteurs"
-      },
       "capabilityPlain": {
         "sync": "Se synchronise dans Connaissances",
         "read": "Consulte des informations",
@@ -2189,7 +2265,8 @@
         "searchRepositories": "Rechercher des dépôts",
         "repositories": "Dépôts",
         "updated": "Mis à jour {{date}}",
-        "loadFailed": "Impossible de charger vos dépôts."
+        "loadFailed": "Impossible de charger vos dépôts.",
+        "rateLimited": "GitHub limite les requêtes de ce compte jusqu’à {{time}}. Réessayez ensuite."
       },
       "linear": {
         "teams": "Équipes",
@@ -2232,16 +2309,6 @@
         "failed": "Impossible de renommer le compte. Réessayez."
       },
       "browseAll": "Parcourir tous les connecteurs",
-      "filters": {
-        "all": "Tous",
-        "connected": "Connectés",
-        "disconnected": "Déconnectés"
-      },
-      "filterLabel": "Filtrer les connecteurs",
-      "capabilityChip": {
-        "sync": "Se synchronise dans Connaissances",
-        "tools": "Fournit des outils aux agents"
-      },
       "injection": {
         "flagged": "Injection de prompt possible",
         "notice_one": "La description de {{formatted}} action ressemble à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-la dans Personnaliser avant de l’autoriser.",
@@ -2249,10 +2316,53 @@
         "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
       },
       "syncContent": "Synchroniser du contenu",
-      "openInKnowledge": "Ouvrir dans Connaissances"
+      "openInKnowledge": "Ouvrir dans Connaissances",
+      "capabilityShort": {
+        "sync": "Synchronise",
+        "read": "Consulte",
+        "write": "Agit"
+      },
+      "capabilityFilters": {
+        "all": "Tous",
+        "sync": "Connaissances",
+        "tools": "Outils"
+      },
+      "capabilityFilterLabel": "Filtrer par fonction",
+      "statusFilters": {
+        "all": "Tout statut",
+        "reconnect": "Connexion requise",
+        "connected": "Connectés",
+        "available": "Non connectés"
+      },
+      "statusFilterLabel": "Filtrer par statut",
+      "sections": {
+        "reconnect": "Connexion requise",
+        "connected": "Connectés",
+        "available": "Disponibles"
+      },
+      "addCustomDescription": "Connectez un serveur ou une API absent du catalogue."
     },
     "insights": {
       "label": "Analyses"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} agent l’utilise",
+      "agents_other": "{{formatted}} agents l’utilisent",
+      "agents_many": "{{formatted}} agents l’utilisent",
+      "others_one": "et {{formatted}} autre dans vos équipes",
+      "others_other": "et {{formatted}} autres dans vos équipes",
+      "others_many": "et {{formatted}} autres dans vos équipes",
+      "agentsShort_one": "{{formatted}} agent",
+      "agentsShort_other": "{{formatted}} agents",
+      "agentsShort_many": "{{formatted}} agents",
+      "filters": {
+        "all": "Tout usage",
+        "inUse": "En usage",
+        "unused": "Sans usage"
+      },
+      "filterLabel": "Filtrer par utilisation",
+      "inChatsOn": "Activé dans mes conversations",
+      "inChatsOff": "Désactivé dans mes conversations"
     }
   },
   "modals": {
@@ -2297,7 +2407,12 @@
         "dismiss": "Fermer la notification d’import",
         "uploadProgress": "Progression de l’import {{progress}} %",
         "clear": "Effacer",
-        "ingestionFailed": "Échec de l’ingestion."
+        "ingestionFailed": "Échec de l’ingestion.",
+        "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
+        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites.",
+        "partialDownload_one": "{{count}} élément n’a pas pu être téléchargé et a été ignoré. Synchronisez la source pour réessayer.",
+        "partialDownload_many": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer.",
+        "partialDownload_other": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer."
       },
       "ingestors": {
         "local_file": {
@@ -2473,8 +2588,7 @@
       "learnAboutPrompts": "En savoir plus sur les prompts →",
       "publicPromptEditDisabled": "Les prompts publics ne sont pas modifiables",
       "promptTypePublic": "public",
-      "promptTypePrivate": "privé",
-      "delete": "Supprimer"
+      "promptTypePrivate": "privé"
     },
     "chunk": {
       "add": "Ajouter un fragment",
@@ -2620,12 +2734,10 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choisir des connaissances",
       "link": "Lien de la source",
       "view_more_one": "{{count}} autre source",
       "view_more_other": "{{count}} autres sources",
       "view_more_many": "{{count}} autres sources",
-      "noSourcesAvailable": "Aucune connaissance pour l’instant",
       "selectedCount": "{{count}} sélectionné(s)",
       "triggerLabel_one": "Connaissances, {{formatted}} sélectionnée",
       "triggerLabel_other": "Connaissances, {{formatted}} sélectionnées",
@@ -2701,7 +2813,9 @@
       "contextLengthSizedKnowledge": "Ce message et ses fichiers joints nécessitent environ {{needed, number}} jetons, soit plus que ce que le modèle peut accepter ({{available, number}} jetons). Envoyez moins de fichiers ou des fichiers plus petits, ou utilisez Ajouter aux connaissances pour y effectuer des recherches au lieu de les envoyer en entier.",
       "serverError": "Veuillez réessayer plus tard. Nous vous prions de nous excuser pour la gêne occasionnée.",
       "clientDisconnect": "La réponse s’est arrêtée avant de produire quoi que ce soit. Réessayez.",
-      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une."
+      "timeLimit": "Arrêté : limite de temps atteinte. La progression a été enregistrée.",
+      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une.",
+      "noAnswer": "Le modèle a continué à réfléchir sans commencer de réponse, il a donc été arrêté. Réessayez ou choisissez un autre modèle."
     },
     "reasoning": "Raisonnement",
     "wikiWrite": {
@@ -2824,6 +2938,24 @@
       "notRunMovedOn": "Non exécuté : la conversation a continué avant l’approbation.",
       "notRunExpired": "Non exécuté : la demande d’approbation a expiré."
     },
+    "mcpApp": {
+      "state": {
+        "loading": "Chargement de l’app…",
+        "ready": "Interactive",
+        "failed": "Échec"
+      },
+      "loading": "Chargement de l’app…",
+      "allow": "Autoriser",
+      "allowForView": "Autoriser pour cette app",
+      "deny": "Refuser",
+      "reload": "Recharger l’app",
+      "approvalAsk": "L’app veut exécuter {{tool}}. L’autoriser ?",
+      "failedTitle": "Impossible de charger l’app",
+      "failedDescription": "Son serveur MCP n’a pas répondu, ou la vue n’a pas pu démarrer.",
+      "frameTitle": "{{name}} (app interactive)",
+      "callFailed": "L’appel de l’outil a échoué",
+      "resultUnavailable": "Le résultat n’est plus disponible"
+    },
     "quotaExceeded": {
       "tokens": "Vous avez utilisé {{used}} sur votre quota de {{limit}} jetons. Il sera réinitialisé le {{resetsAt}}.",
       "cost": "Vous avez utilisé {{used}} sur votre budget d’utilisation de {{limit}}. Il sera réinitialisé le {{resetsAt}}."
@@ -2931,6 +3063,21 @@
         "data": "Données",
         "other": "Autres fichiers"
       }
+    },
+    "workflow": {
+      "title": "Workflow",
+      "step": "Étape {{step}}",
+      "stepOf": "Étape {{step}} sur {{total}}",
+      "stepCount_one": "{{count}} étape",
+      "stepCount_other": "{{count}} étapes",
+      "stepCount_many": "{{count}} étapes",
+      "loopItems": "{{done}} éléments sur {{total}}",
+      "loopItemsFailed": "{{count}} en échec",
+      "retrying": "Nouvelle tentative · tentative {{attempt}}",
+      "retryingOf": "Nouvelle tentative · tentative {{attempt}} sur {{total}}",
+      "attempts_one": "{{count}} tentative",
+      "attempts_many": "{{count}} tentatives",
+      "attempts_other": "{{count}} tentatives"
     }
   },
   "agents": {
@@ -3027,7 +3174,8 @@
         "basics": "Informations de base",
         "knowledge": "Connaissances et comportement",
         "model": "Modèle",
-        "analytics": "Analyses"
+        "analytics": "Analyses",
+        "starters": "Questions de départ"
       },
       "placeholders": {
         "agentName": "Nom de l’agent",
@@ -3039,25 +3187,16 @@
         "selectModels": "Sélectionnez les modèles de cet agent",
         "selectDefaultModel": "Sélectionner le modèle par défaut",
         "enterTokenLimit": "Saisissez la limite de jetons",
-        "enterRequestLimit": "Saisissez la limite de requêtes"
+        "enterRequestLimit": "Saisissez la limite de requêtes",
+        "contextLimitDefault": "Valeur par défaut du modèle",
+        "historyLimitDefault": "Résumé près de la limite de contexte"
       },
       "sourcePopup": {
-        "title": "Sélectionner des connaissances",
         "searchPlaceholder": "Rechercher des connaissances…",
-        "noOptionsMessage": "Aucune connaissance pour l’instant",
-        "groupOwn": "Vos sources",
-        "groupTeam": "Partagées avec l’équipe",
         "noSourceHint": "Facultatif. Sans connaissances, l’agent répond uniquement à partir du modèle et de ses outils."
       },
       "toolsPopup": {
-        "title": "Sélectionner des outils",
-        "searchPlaceholder": "Rechercher des outils…",
-        "noOptionsMessage": "Aucun outil disponible",
-        "groupBuiltin": "Intégrés",
-        "groupDefault": "Intégrés",
         "groupCustom": "Personnalisés",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "Sur cet agent",
         "attachedHint": "Ajouté par quelqu’un d’autre. Vous pouvez le retirer."
       },
       "modelsPopup": {
@@ -3086,6 +3225,16 @@
         "jsonSchemaDescription": "Définissez un schéma JSON pour imposer un format de sortie structuré",
         "validJson": "JSON valide",
         "invalidJson": "JSON non valide : corrigez-le pour pouvoir enregistrer",
+        "contextLimit": "Limite de contexte",
+        "contextLimitDescription": "Nombre maximal de jetons d’historique, de documents et de résultats d’outils envoyés au modèle à chaque requête. Les messages plus anciens sont résumés pour rester en dessous. Désactivée, toute la fenêtre de contexte du modèle est utilisée.",
+        "contextLimitAboveWindow": "Au-delà de la fenêtre de contexte de {{model}} ({{limit, number}} jetons), cette limite est sans effet.",
+        "limitRange": "Saisissez entre {{min, number}} et {{max, number}} jetons.",
+        "contextLimitTokens": "Limite de contexte en jetons",
+        "historyLimit": "Limite d’historique",
+        "historyLimitDescription": "Nombre maximal de jetons de messages précédents envoyés mot pour mot à chaque requête. Au-delà, les plus anciens sont résumés et les plus récents conservés. Désactivée, le résumé n’a lieu que près de la limite de contexte.",
+        "historyLimitTokens": "Limite d’historique en jetons",
+        "historyLimitBelowContext": "Saisissez au moins {{min, number}} jetons, sous la limite de contexte de {{limit, number}}.",
+        "historyLimitAboveWindow": "Pas sous la fenêtre de contexte de {{model}} ({{limit, number}} jetons), cette limite est sans effet.",
         "tokenLimiting": "Limitation des jetons",
         "tokenLimitingDescription": "Limitez le nombre total de jetons que cet agent peut utiliser par jour",
         "requestLimiting": "Limitation des requêtes",
@@ -3093,7 +3242,24 @@
         "systemPromptOverride": "Autoriser le remplacement du prompt",
         "systemPromptOverrideDescription": "Permettre aux appelants de l’API v1 de remplacer le prompt système de cet agent",
         "tokenLimit": "Limite de jetons",
-        "requestLimit": "Limite de requêtes"
+        "requestLimit": "Limite de requêtes",
+        "origins": {
+          "label": "Origines autorisées",
+          "description": "Seuls les sites listés, et les sites auxquels cette instance fait confiance, peuvent appeler cet agent avec sa clé API",
+          "inputLabel": "Origine",
+          "hint": "Une adresse de site sans chemin, par exemple https://example.com. Appuyez sur Entrée pour l’ajouter.",
+          "placeholder": "https://example.com",
+          "add": "Ajouter",
+          "listLabel": "Origines autorisées",
+          "remove": "Retirer {{origin}}",
+          "errors": {
+            "invalid": "Saisissez une adresse commençant par http:// ou https://, par exemple https://example.com",
+            "path": "N’indiquez pas de chemin : une origine se limite au schéma, à l’hôte et au port",
+            "duplicate": "{{origin}} est déjà dans la liste",
+            "full": "Vous pouvez ajouter au maximum {{max}} origines",
+            "required": "Ajoutez au moins une origine, ou désactivez cette option"
+          }
+        }
       },
       "preview": {
         "savedVersion": "version enregistrée",
@@ -3104,7 +3270,8 @@
       "externalKb": "Base de connaissances externe",
       "errors": {
         "publishFailed": "Impossible de publier l’agent. Veuillez réessayer.",
-        "saveDraftFailed": "Impossible d’enregistrer le brouillon. Veuillez réessayer."
+        "saveDraftFailed": "Impossible d’enregistrer le brouillon. Veuillez réessayer.",
+        "staleWrite": "Quelqu’un d’autre a enregistré cet agent après que vous l’avez ouvert. Vos modifications sont toujours là : copiez ce dont vous avez besoin, rechargez la page et appliquez-les de nouveau."
       },
       "guardrails": {
         "enable": "Activer les garde-fous",
@@ -3326,13 +3493,23 @@
           "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l’ajouter à nouveau repart de zéro.",
           "submit": "Retirer"
         }
+      },
+      "leave": {
+        "title": "Quitter sans enregistrer ?",
+        "description": "Les modifications apportées ici seront perdues.",
+        "submit": "Quitter"
+      },
+      "starters": {
+        "description": "Facultatif. Questions affichées sous la carte de l’agent quand quelqu’un démarre une nouvelle discussion avec lui, comme « En quoi pouvez-vous m’aider ? ». Jusqu’à quatre.",
+        "label": "Question {{number}}",
+        "add": "Ajouter une question",
+        "remove": "Retirer la question {{number}}"
       }
     },
     "logs": {
       "title": "Journaux de l’agent",
       "lastUsedAt": "Dernière utilisation",
       "noUsageHistory": "Aucun historique d’utilisation",
-      "tableHeader": "Journaux du point de terminaison de l’agent",
       "description": "Appels API, exécutions planifiées et erreurs de cet agent."
     },
     "schedules": {
@@ -3503,6 +3680,7 @@
         "loadFailed": "Impossible de charger les exécutions."
       },
       "actions": "Actions de la planification",
+      "loadFailed": "Impossible de charger les planifications.",
       "cancelTask": "Annuler la tâche",
       "failureStreak_one": "{{count}} échec consécutif",
       "failureStreak_other": "{{count}} échecs consécutifs",
@@ -3609,9 +3787,7 @@
       },
       "builder": {
         "deleteFailed": "Échec de la suppression de l’agent de workflow",
-        "updateWorkflowFailed": "Échec de la mise à jour du workflow",
         "updateAgentFailed": "Échec de la mise à jour de l’agent",
-        "createWorkflowFailed": "Échec de la création du workflow",
         "createAgentFailed": "Échec de la création de l’agent",
         "saveFailed": "Échec de l’enregistrement du workflow",
         "defaultDescription": "Agent de workflow : {{name}}",
@@ -3664,7 +3840,9 @@
         "documents": "Documents",
         "documentsHint": "Documents transmis à cet agent depuis les imports ou les nœuds en amont.",
         "filePassing": "Transmission des fichiers",
-        "filePassingHint": "Auto : envoi natif si le modèle le prend en charge, sinon extraction du texte.",
+        "filePassingHint": "Auto : envoi natif si le modèle le prend en charge, sinon extraction du texte. Lignes numérotées : le texte entier, chaque ligne marquée [D#:L#] pour la citer.",
+        "streamOutput": "Détails des étapes dans le flux de la conversation",
+        "streamOutputHint": "Ce que contient l’événement d’une étape terminée dans le flux de la conversation. Résumé envoie un aperçu quand la sortie est volumineuse ; les valeurs complètes restent dans l’exécution. Statut seul retire la sortie de l’événement ; pour que la réponse du nœud n’apparaisse pas non plus dans la conversation, désactivez « Diffuser la sortie à l’utilisateur ».",
         "structuredOutput": "Sortie structurée (schéma JSON)",
         "modelNoStructuredOutput": "Le modèle sélectionné ne prend pas en charge la sortie structurée.",
         "validSchema": "Schéma JSON valide",
@@ -3696,9 +3874,28 @@
         "deleteNode": "Supprimer le nœud",
         "deleteConfirmUnnamed": "Supprimer cet agent de workflow ?",
         "detailsTitle": "Détails du workflow",
-        "detailsDescription": "Nom, description et image affichés sur la carte de l’agent.",
+        "detailsDescription": "La carte de l’agent et ses paramètres de discussion.",
         "unsavedChanges": "Modifications non enregistrées",
-        "editDetailsMenu": "Modifier les détails"
+        "editDetailsMenu": "Modifier les détails",
+        "loopHint": "Exécuter des nœuds pour chaque élément d’une liste",
+        "loopIntro": "Les nœuds de la boucle s’exécutent une fois pour chaque élément d’une liste de l’état du workflow. Chaque élément s’exécute sur sa propre copie de l’état, et la boucle enregistre un résultat par élément, dans l’ordre de la liste.",
+        "loopItems": "Éléments",
+        "loopItemsHint": "La variable d’état qui contient la liste, par exemple extracted.items.",
+        "loopItemsInvalid": "Utilisez un chemin d’état comme extracted.items.",
+        "loopItemVariable": "Variable d’élément",
+        "loopItemVariableHint": "Les nœuds de la boucle lisent l’élément courant sous la forme {{example}}.",
+        "loopItemVariableInvalid": "Utilisez des lettres, des chiffres et des traits de soulignement, pas un nom réservé comme query.",
+        "loopConcurrency": "Éléments simultanés",
+        "loopMaxItems": "Nombre maximal d’éléments",
+        "loopOnError": "En cas d’échec d’un élément",
+        "loopOnErrorFail": "Arrêter et faire échouer la boucle",
+        "loopOnErrorSkip": "Ignorer l’élément",
+        "loopOnErrorCollect": "Conserver l’erreur à sa place",
+        "loopOutputHint": "La liste des résultats, un par élément.",
+        "loopResultVariable": "Résultat de l’élément",
+        "loopResultVariableHint": "La variable dont la valeur est le résultat de chaque élément. Si elle est vide, la sortie du dernier nœud exécuté est utilisée.",
+        "loadFailedTitle": "Impossible de charger le workflow",
+        "loadFailedDescription": "Rien n’a été modifié. Réessayez, ou revenez dans un instant."
       },
       "validation": {
         "nameRequired": "Le nom du workflow est obligatoire",
@@ -3725,7 +3922,14 @@
         "caseNoVariable": "Le cas « {{handle}} » de la condition « {{name}} » doit indiquer une variable en mode Simple",
         "branchReachEnd": "La branche « {{handle}} » de la condition « {{name}} » doit finir par atteindre un nœud de fin",
         "codeRequired": "Le nœud de code « {{name}} » doit contenir du code à exécuter",
-        "codeSchema": "Nœud de code « {{name}} » : le schéma JSON {{error}}"
+        "codeSchema": "Nœud de code « {{name}} » : le schéma JSON {{error}}",
+        "loopItems": "La boucle « {{name}} » a besoin d’une liste à parcourir",
+        "loopItemsPath": "Les éléments de la boucle « {{name}} » doivent être un chemin d’état comme extracted.items",
+        "loopItemVariable": "La boucle « {{name}} » a une variable d’élément inutilisable",
+        "loopEmpty": "La boucle « {{name}} » doit contenir au moins un nœud",
+        "loopEntry": "La boucle « {{name}} » doit commencer par exactement un nœud",
+        "nodeRetry": "Le nœud « {{name}} » a des réglages de nouvelle tentative hors limites",
+        "retryDefaults": "Les nouvelles tentatives par défaut du workflow sont hors limites"
       },
       "schema": {
         "notObject": "doit être un objet JSON valide",
@@ -3735,7 +3939,13 @@
       "filePassing": {
         "auto": "Auto",
         "native": "Natif",
-        "extract": "Extraire"
+        "extract": "Extraire",
+        "lines": "Lignes numérotées"
+      },
+      "streamOutput": {
+        "summary": "Résumé si volumineux",
+        "full": "Toujours complet",
+        "none": "Statut seul"
       },
       "mobileBlocker": {
         "title": "Ouvrez sur un écran plus grand",
@@ -3765,7 +3975,11 @@
         "variableCount_other": "{{count}} variables",
         "variableCount_many": "{{count}} variables",
         "variableTitle": "Variable : {{name}}",
-        "valueTitle": "Valeur : {{value}}"
+        "valueTitle": "Valeur : {{value}}",
+        "loop": "Boucle",
+        "loopSummary": "Pour chaque {{variable}} dans {{items}}",
+        "loopNoItems": "Choisissez une liste à parcourir",
+        "loopEmpty": "Déposez des nœuds ici pour les exécuter une fois par élément"
       },
       "preview": {
         "executionDetails": "Détails de l’exécution",
@@ -3773,11 +3987,23 @@
         "stepCount_other": "({{count}} étapes)",
         "stepCount_many": "({{count}} étapes)",
         "outputLabel": "Sortie :",
+        "showFullOutput": "Afficher la sortie complète",
+        "fullOutputPending": "La sortie complète sera disponible à la fin de l’exécution.",
+        "fullOutputFailed": "Impossible de charger la sortie complète.",
+        "fullOutputUnsaved": "Enregistrez le workflow et relancez-le pour charger la sortie complète d’une étape volumineuse.",
+        "outputNotStreamed": "La sortie de cette étape n’est pas diffusée.",
         "errorLabel": "Erreur :",
         "minimapHeading": "Workflow",
         "emptyTitle": "Tester le workflow",
         "unsavedDraftAttachments": "Enregistrez le workflow avant de joindre des documents dans l’aperçu.",
-        "backToRun": "Retour à l’exécution"
+        "backToRun": "Retour à l’exécution",
+        "loopItems": "{{done}} éléments sur {{total}}",
+        "loopItemsFailed": "{{count}} en échec",
+        "retrying": "Nouvelle tentative · tentative {{attempt}}",
+        "retryingOf": "Nouvelle tentative · tentative {{attempt}} sur {{total}}",
+        "attempts_one": "{{count}} tentative",
+        "attempts_many": "{{count}} tentatives",
+        "attempts_other": "{{count}} tentatives"
       },
       "documents": {
         "modeAll": "Tous les documents d’entrée",
@@ -3794,6 +4020,27 @@
         "searchPlaceholder": "Rechercher des variables…",
         "empty": "Aucune variable trouvée",
         "addContext": "Ajouter du contexte"
+      },
+      "retry": {
+        "title": "Nouvelles tentatives",
+        "defaultsDescription": "Ce que font les nœuds agent et code quand une tentative échoue. Les réglages propres à un nœud ont la priorité.",
+        "attempts": "Tentatives max.",
+        "inherit": "Par défaut ({{value}})",
+        "noRetry": "1 (sans nouvelle tentative)",
+        "backoff": "Délais (s)",
+        "backoffInvalid": "Utilisez des nombres de 0 à 300, séparés par des virgules.",
+        "backoffTooMany": "Utilisez au plus 10 délais.",
+        "hint": "Attend {{backoff}} secondes avant chaque nouvelle tentative ; le dernier délai se répète.",
+        "hintOff": "S’exécute une fois. Augmentez les tentatives pour relancer en cas d’échec.",
+        "on": "Relancer en cas de",
+        "onChoice": {
+          "transient": "Erreurs et délais dépassés",
+          "invalid_output": "Sortie non valide"
+        },
+        "onHint": {
+          "transient": "Erreurs serveur, limites de débit, délais dépassés, connexions interrompues et réponses vides.",
+          "invalid_output": "Une réponse qui n’est pas du JSON valide ou ne correspond pas au schéma de sortie structurée."
+        }
       }
     },
     "typeModal": {
@@ -3863,7 +4110,8 @@
     "multiSelect": {
       "more_one": "+{{count}} autre",
       "more_other": "+{{count}} autres",
-      "more_many": "+{{count}} autres"
+      "more_many": "+{{count}} autres",
+      "selectedGroup": "Sélectionnés"
     }
   },
   "pageNotFound": {
@@ -3947,11 +4195,6 @@
   },
   "prompts": {
     "textAriaLabel": "Texte du prompt"
-  },
-  "connectHero": {
-    "title": "Connectez vos données",
-    "body": "Discutez avec {{names}}.",
-    "more": "autres"
   },
   "common": {
     "close": "Fermer",
@@ -4152,7 +4395,8 @@
         "missed": "horaire manqué",
         "overlap": "l’exécution précédente était encore en cours",
         "stream_error": "le flux de la réponse s’est interrompu",
-        "empty_output": "aucun résultat produit"
+        "empty_output": "aucun résultat produit",
+        "cannot_complete": "l’agent ne peut pas faire cette tâche"
       },
       "viewRuns": "Voir les exécutions",
       "fromChat": "Depuis {{name}}",

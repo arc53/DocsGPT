@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os.path
+from functools import partial
 from typing import Any, Callable, Optional
 
 from openai import BadRequestError, OpenAI
@@ -13,6 +14,7 @@ from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
 from docsgpt.llm.credential_scope import OPENAI_DEFAULT_BASE_URL, check_credential_scope
+from docsgpt.llm.deadlines import provider_event, stream_commit
 from docsgpt.llm.tool_images import (
     IMAGES_KEY,
     data_url,
@@ -991,6 +993,7 @@ class OpenAILLM(BaseLLM):
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        self._apply_output_token_cap(kwargs)
 
         # Defense-in-depth: drop tools / response_format if the
         # registry's capability flags deny them.
@@ -1066,6 +1069,7 @@ class OpenAILLM(BaseLLM):
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        self._apply_output_token_cap(kwargs)
 
         # See _raw_gen for rationale — drop tools/response_format when the
         # registry-provided capabilities say the model doesn't support them.
@@ -1118,12 +1122,12 @@ class OpenAILLM(BaseLLM):
         # The request is issued before the loop, so a tools-unsupported 400
         # lands here with nothing yielded yet — the retry inside
         # ``_create_with_tool_fallback`` can never duplicate delivered output.
-        response = self._create_with_tool_fallback(
-            self.client.chat.completions.create, request_params, model
-        )
+        create = partial(self.client.chat.completions.create, timeout=self._stream_transport_timeout())
+        response = self._create_with_tool_fallback(create, request_params, model)
 
         try:
             for line in response:
+                provider_event()
                 logging.debug(f"OpenAI stream line: {line}")
                 self._record_chat_usage(getattr(line, "usage", None))
                 if not getattr(line, "choices", None):
@@ -1598,7 +1602,7 @@ class OpenAILLM(BaseLLM):
             if kwargs.get("parallel_tool_calls") is not None:
                 params["parallel_tool_calls"] = bool(kwargs["parallel_tool_calls"])
 
-        store = bool(settings.OPENAI_RESPONSES_STORE)
+        store = bool(settings.OPENAI_RESPONSES_STORE) and not self.stateless
         params["store"] = store
         if store and previous_response_id:
             params["previous_response_id"] = previous_response_id
@@ -1722,7 +1726,7 @@ class OpenAILLM(BaseLLM):
 
     def _record_responses_metadata(self, response):
         rid = getattr(response, "id", None)
-        if rid:
+        if rid and not self.stateless:
             self._last_response_id = rid
         # The provider recorded this request, so the head it carried (or
         # kept) is now the chain's head — including "no head at all", when
@@ -1832,7 +1836,9 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        wanted = self._last_response_id or previous_response_id or self._imported_response_id
+        wanted = None if self.stateless else (
+            self._last_response_id or previous_response_id or self._imported_response_id
+        )
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
         input_items, previous_response_id = self._build_responses_input(messages, wanted)
@@ -1911,7 +1917,9 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        wanted = self._last_response_id or previous_response_id or self._imported_response_id
+        wanted = None if self.stateless else (
+            self._last_response_id or previous_response_id or self._imported_response_id
+        )
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
         input_items, previous_response_id = self._build_responses_input(messages, wanted)
@@ -1933,15 +1941,15 @@ class OpenAILLM(BaseLLM):
         self._note_prefix(params, model)
         # Issued before the event loop below, so the tool-less retry cannot
         # duplicate output already yielded.
-        response = self._create_with_tool_fallback(
-            self.client.responses.create, params, model
-        )
+        create = partial(self.client.responses.create, timeout=self._stream_transport_timeout())
+        response = self._create_with_tool_fallback(create, params, model)
 
         func_calls = {}
         reasoning_items = []
         refusal_delta_seen = False
         try:
             for event in response:
+                provider_event()
                 etype = getattr(event, "type", "")
                 if etype == "response.output_text.delta":
                     delta = getattr(event, "delta", "")
@@ -1999,21 +2007,25 @@ class OpenAILLM(BaseLLM):
                     status_error = self._responses_status_error(completed_response)
                     if status_error:
                         raise RuntimeError(status_error)
-                    self._stream_reached_finish = True
-                    self._record_responses_metadata(completed_response)
-                    self._last_reasoning_items = reasoning_items
-                    self._last_finish_reason = "tool_calls" if func_calls else "stop"
-                    if func_calls:
-                        tool_calls = []
-                        for position, index in enumerate(sorted(func_calls)):
-                            entry = func_calls[index]
-                            tool_calls.append(_RespToolCall(
-                                id=entry["call_id"],
-                                index=position,
-                                name=entry["name"],
-                                arguments=entry["arguments"],
-                            ))
-                        self._remember_reasoning(tool_calls, reasoning_items)
+                    tool_calls = [
+                        _RespToolCall(
+                            id=func_calls[index]["call_id"],
+                            index=position,
+                            name=func_calls[index]["name"],
+                            arguments=func_calls[index]["arguments"],
+                        )
+                        for position, index in enumerate(sorted(func_calls))
+                    ]
+                    # An abandoned stream must not overwrite the chain state
+                    # the fallback or next call relies on.
+                    with stream_commit():
+                        self._stream_reached_finish = True
+                        self._record_responses_metadata(completed_response)
+                        self._last_reasoning_items = reasoning_items
+                        self._last_finish_reason = "tool_calls" if func_calls else "stop"
+                        if tool_calls:
+                            self._remember_reasoning(tool_calls, reasoning_items)
+                    if tool_calls:
                         yield _RespChoice(
                             finish_reason="tool_calls",
                             delta=_RespDelta(tool_calls=tool_calls),
@@ -2023,9 +2035,10 @@ class OpenAILLM(BaseLLM):
                     details = getattr(incomplete_response, "incomplete_details", None)
                     reason = getattr(details, "reason", None)
                     if reason == "max_output_tokens":
-                        self._record_responses_metadata(incomplete_response)
-                        self._last_reasoning_items = reasoning_items
-                        self._last_finish_reason = "length"
+                        with stream_commit():
+                            self._record_responses_metadata(incomplete_response)
+                            self._last_reasoning_items = reasoning_items
+                            self._last_finish_reason = "length"
                         yield _RespChoice(
                             finish_reason="length",
                             delta=_RespDelta(tool_calls=None),
@@ -2067,6 +2080,15 @@ class OpenAILLM(BaseLLM):
         if self.capabilities is not None:
             return bool(self.capabilities.supports_structured_output)
         return True
+
+    def _apply_output_token_cap(self, kwargs):
+        """Bound ``max_completion_tokens`` by the model's ``max_output_tokens``.
+
+        The Responses path sends the same value as ``max_output_tokens``.
+        """
+        limit = self._capped_output_tokens(kwargs.get("max_completion_tokens"))
+        if limit is not None:
+            kwargs["max_completion_tokens"] = limit
 
     def _apply_reasoning_effort(self, kwargs):
         """Inject the model's configured reasoning_effort into ``kwargs``.

@@ -15,7 +15,7 @@ from docsgpt.agents.workflows.schemas import (
     WorkflowNode,
     WorkflowRun,
 )
-from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine, add_token_usage
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.logging import LogContext, log_activity
@@ -62,6 +62,18 @@ class WorkflowAgent(BaseAgent):
         # Set to a message when the input-document bridge fails fatally (quota), so
         # the run is finalized FAILED instead of running with missing documents.
         self._bridge_error: Optional[str] = None
+        # Set by the engine when an agent node of a scheduled run reports it cannot do its step.
+        self.cannot_complete: Optional[str] = None
+
+    @property
+    def token_usage(self) -> Dict[str, int]:
+        """The run's tokens: its own LLM's plus every agent node's."""
+        total = {"prompt_tokens": 0, "generated_tokens": 0}
+        add_token_usage(total, getattr(getattr(self, "llm", None), "token_usage", None))
+        engine = getattr(self, "_engine", None)
+        if engine is not None:
+            add_token_usage(total, engine.node_token_usage)
+        return total
 
     @log_activity()
     def gen(self, query: str, log_context: LogContext = None) -> Generator[Dict[str, str], None, None]:
@@ -167,7 +179,13 @@ class WorkflowAgent(BaseAgent):
         done = 0
         try:
             for event in events:
-                if record and event.get("type") == "workflow_step" and event.get("node_type") not in _NOT_STEPS:
+                # A loop item's own steps are progress within the loop's step.
+                if (
+                    record
+                    and event.get("type") == "workflow_step"
+                    and event.get("node_type") not in _NOT_STEPS
+                    and not event.get("parent_node_id")
+                ):
                     if event.get("status") == "running":
                         self._record_progress(
                             str(run_user_id),
@@ -179,6 +197,8 @@ class WorkflowAgent(BaseAgent):
                                     "title": event.get("node_title"),
                                     "type": event.get("node_type"),
                                     "started_at": datetime.now(timezone.utc).isoformat(),
+                                    # Set when the step is being retried.
+                                    **({"attempt": event["attempt"]} if event.get("attempt") else {}),
                                 },
                             },
                         )
@@ -224,9 +244,11 @@ class WorkflowAgent(BaseAgent):
             nodes_data = self._workflow_data.get("nodes", [])
             edges_data = self._workflow_data.get("edges", [])
 
+            retry_defaults = self._workflow_data.get("retry_defaults")
             workflow = Workflow(
                 name=self._workflow_data.get("name", "Embedded Workflow"),
                 description=self._workflow_data.get("description"),
+                retry_defaults=retry_defaults if isinstance(retry_defaults, dict) else None,
             )
 
             nodes = []
@@ -305,6 +327,7 @@ class WorkflowAgent(BaseAgent):
             workflow = Workflow(
                 name=workflow_row.get("name"),
                 description=workflow_row.get("description"),
+                retry_defaults=workflow_row.get("retry_defaults"),
             )
             nodes = [
                 WorkflowNode(
@@ -437,6 +460,7 @@ class WorkflowAgent(BaseAgent):
         if not persisted:
             return [], []
         from docsgpt.sandbox.artifacts_capture import persist_new_artifact
+        from docsgpt.storage.db.repositories.artifacts import RUN_INPUT_SOURCE
         from docsgpt.storage.storage_creator import StorageCreator
 
         storage = StorageCreator.get_storage()
@@ -484,6 +508,7 @@ class WorkflowAgent(BaseAgent):
                 mime_type=mime_type,
                 title=filename,
                 workflow_run_id=self._engine.workflow_run_id,
+                produced_by={"source": RUN_INPUT_SOURCE},
             )
             if ref is None:
                 dropped.append(f'Document "{filename}" could not be stored and was skipped.')
@@ -576,7 +601,7 @@ class WorkflowAgent(BaseAgent):
                 user=run_user_id,
                 status=status,
                 inputs=self._run_inputs(query),
-                outputs=self._serialize_state(self._engine.state),
+                outputs=self._serialize_state(self._engine.snapshot_state()),
                 steps=self._engine.get_execution_summary(),
                 created_at=datetime.now(timezone.utc),
                 completed_at=datetime.now(timezone.utc),
@@ -629,6 +654,9 @@ class WorkflowAgent(BaseAgent):
             return ExecutionStatus.FAILED
         if not self._engine or not self._engine.execution_log:
             return ExecutionStatus.COMPLETED
+        # A run cut off by the step cap has no failed node log, only this flag.
+        if self._engine.step_limit_reached:
+            return ExecutionStatus.FAILED
         for log in self._engine.execution_log:
             if log.get("status") == ExecutionStatus.FAILED.value:
                 return ExecutionStatus.FAILED

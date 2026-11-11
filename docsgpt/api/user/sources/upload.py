@@ -1,12 +1,16 @@
 """Source document management upload functionality."""
 
+import hashlib
+import hmac
 import json
 import os
 import posixpath
+import re
 import tempfile
 import uuid
 import zipfile
 from typing import Container, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -14,6 +18,7 @@ from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
+from docsgpt.api.user.idempotency import _synthesize_guard_key
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.task_owners import TaskOwnersUnavailable, get_task_owner
@@ -23,6 +28,8 @@ from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.remote.base import normalize_page_url
+from docsgpt.parser.remote.github_loader import GitHubLoader
 from docsgpt.parser.remote.website_loader import parse_website_config
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
@@ -219,6 +226,138 @@ def _release_claim(key):
             "Failed to release task_dedup claim for key=%s", key,
         )
 
+# Config fields that hold credentials. A source's identity never depends on
+# them, so its duplicate-submit key holds no digest of a secret.
+_CREDENTIAL_FIELD = re.compile(
+    r"password|passwd|secret|token|api_?key|credential|auth|session|(^|[_-])key($|[_-])", re.IGNORECASE,
+)
+
+
+def _without_url_credentials(value: str) -> str:
+    """``value`` with a URL's user info and credential-named query parameters dropped."""
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+        port = parts.port
+    except ValueError:
+        return value
+    if not parts.scheme or not host:
+        return value
+    netloc = f"{host}:{port}" if port else host
+    query = urlencode(
+        [(name, item) for name, item in parse_qsl(parts.query, keep_blank_values=True)
+         if not _CREDENTIAL_FIELD.search(name)]
+    )
+    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+
+
+def _without_credentials(value):
+    """``value`` with every credential-named field, URL user info and token parameter dropped, recursively.
+
+    Addresses in it are normalised as :func:`_normalized_address` does.
+    """
+    if isinstance(value, dict):
+        return {
+            str(key): _without_credentials(item) for key, item in value.items()
+            if not _CREDENTIAL_FIELD.search(str(key))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_without_credentials(item) for item in value]
+    if isinstance(value, str):
+        return _normalized_address(value)
+    return value
+
+
+def _normalized_address(value: str) -> str:
+    """A remote address as compared for duplicates: case-folded host, no fragment, sorted query, no trailing slash."""
+    value = _without_url_credentials(value.strip())
+    try:
+        parts = urlsplit(normalize_page_url(value))
+    except ValueError:
+        return value
+    if not parts.netloc:
+        return value
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query, ""))
+
+
+def _remote_source_identity(loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
+    """What names a remote source for duplicate submits, with no credential in it.
+
+    Args:
+        loader: The remote loader (``github``, ``crawler``, ``website``, ...).
+        source_data: What the loader is given: an address, or a config dict.
+        connection_id: The connection whose credentials it reads, if any;
+            it stands for those credentials.
+
+    Returns:
+        The loader, the connection id and the address, one per line; ``None`` when there is no address.
+    """
+    if isinstance(source_data, str):
+        address = (GitHubLoader.normalize_repo(source_data).lower() if loader == "github" else "")
+        address = address or _normalized_address(source_data)
+    elif isinstance(source_data, (dict, list)):
+        address = json.dumps(_without_credentials(source_data), sort_keys=True, default=str)
+    else:
+        return None
+    if not address:
+        return None
+    return f"{loader}\n{connection_id or ''}\n{address}"
+
+
+def _remote_in_flight_key(user: str, loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
+    """The marker key naming ``user``'s remote source, or ``None`` when there is no address to compare.
+
+    The identity is keyed with ``JWT_SECRET_KEY`` when there is one, so the
+    stored key can't be matched against guessed addresses offline.
+
+    Args:
+        user: The submitting user.
+        loader: The remote loader.
+        source_data: What the loader is given.
+        connection_id: The connection whose credentials it reads, if any.
+
+    Returns:
+        ``{user}:ingest-in-flight:{digest}``, or ``None``.
+    """
+    identity = _remote_source_identity(loader, source_data, connection_id)
+    if identity is None:
+        return None
+    secret = settings.JWT_SECRET_KEY
+    if isinstance(secret, str) and secret:
+        digest = hmac.new(secret.encode("utf-8"), identity.encode("utf-8"), hashlib.sha256).hexdigest()
+    else:
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return f"{user}:ingest-in-flight:{digest}"
+
+
+def _join_in_flight_ingest(marker_key: str, task_key: str, task_id: str, source_id: str) -> Optional[dict]:
+    """Mark this ingest as its source's one in flight, or return the one already in flight.
+
+    Args:
+        marker_key: From :func:`_remote_in_flight_key`.
+        task_key: The ``task_dedup`` key the new ingest runs under (claimed).
+        task_id: Its predetermined Celery task id.
+        source_id: Its source id.
+
+    Returns:
+        ``{"task_id", "source_id"}`` of the ingest already in flight, or
+        ``None`` when the new one should be queued.
+    """
+    # Twice: the marked ingest can end between the claim and the read.
+    for _ in range(2):
+        with db_session() as conn:
+            marked = IdempotencyRepository(conn).claim_in_flight_ingest(
+                marker_key, task_key=task_key, task_id=task_id, source_id=source_id,
+            )
+        if marked is not None:
+            return None
+        with db_readonly() as conn:
+            existing = IdempotencyRepository(conn).in_flight_ingest(marker_key)
+        if existing is not None:
+            return {"task_id": existing["task_id"], "source_id": existing["source_id"]}
+    return None
+
+
 def _enforce_audio_path_size_limit(file_path: str, filename: str) -> None:
     if not is_audio_filename(filename):
         return
@@ -320,6 +459,102 @@ def _source_archive_limits() -> ZipExtractionLimits:
         max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
         max_depth=settings.UPLOAD_MAX_ARCHIVE_DEPTH,
     )
+
+
+# ZIP-based document formats: parsed as documents, never unpacked as archives.
+_OFFICE_SUFFIXES = (
+    ".docx",
+    ".docm",
+    ".xlsx",
+    ".xlsm",
+    ".xlsb",
+    ".pptx",
+    ".pptm",
+    ".ppsx",
+    ".ppsm",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".epub",
+)
+
+
+class _UploadStager:
+    """Validate and stage uploaded files in a temporary directory before any storage write.
+
+    A file keeps the folder path it was sent with (a folder upload); a ZIP is
+    unpacked where it sat, keeping its folders. All ZIPs of one request share
+    one expansion budget. Two files that would land on one path are kept apart
+    (``name_2.ext``). Nothing reaches storage until every file has passed, so a
+    later oversized file or unsafe archive leaves no partial change behind.
+
+    Attributes:
+        pending: ``(local path, path relative to the source)`` for each staged file.
+        file_name_map: The name each loose file was sent with, by its relative path.
+        current_name: The file being staged, for an error message.
+    """
+
+    def __init__(self, temp_dir: str) -> None:
+        self.temp_dir = temp_dir
+        self.pending: list[tuple[str, str]] = []
+        self.file_name_map: dict[str, str] = {}
+        self.current_name = "uploaded archive"
+
+    def stage(self, files) -> None:
+        """Stage ``files`` (werkzeug ``FileStorage`` objects).
+
+        Raises:
+            UploadTooLargeError: A file is over ``UPLOAD_MAX_FILE_BYTES``.
+            AudioFileTooLargeError: An audio file is over the transcription limit.
+            ZipExtractionError: An archive failed the safety checks.
+        """
+        archive_budget = ZipExtractionBudget()
+        archive_limits = _source_archive_limits()
+        folder_names: dict[str, str] = {}
+        # Paths (relative to the source) already given to a staged file. A
+        # loose file and a ZIP member, or two names that clean up the same,
+        # would otherwise overwrite each other.
+        claimed_paths: set[str] = set()
+
+        for index, file in enumerate(files):
+            # A folder upload names each file by its path inside the folder;
+            # keep that tree under the source, as a ZIP does.
+            original_path = (file.filename or "").replace("\\", "/")
+            original_filename = os.path.basename(original_path)
+            safe_path = _safe_relative_upload_path(original_path, folder_names)
+            safe_file = posixpath.basename(safe_path)
+            self.current_name = safe_zip_error_message(original_filename or safe_file, max_chars=200)
+
+            upload_dir = os.path.join(self.temp_dir, str(index))
+            os.makedirs(upload_dir, exist_ok=True)
+            temp_file_path = os.path.join(upload_dir, safe_file)
+            copy_upload_to_path(file, temp_file_path)
+            _enforce_audio_path_size_limit(temp_file_path, safe_file)
+
+            if zipfile.is_zipfile(temp_file_path) and not safe_file.lower().endswith(_OFFICE_SUFFIXES):
+                extract_dir = os.path.join(upload_dir, "extracted")
+                extract_zip_safely(temp_file_path, extract_dir, archive_limits, archive_budget)
+                # A ZIP inside an uploaded folder unpacks where it sat.
+                archive_dir = posixpath.dirname(safe_path)
+                for root, _, extracted_files in os.walk(extract_dir):
+                    for extracted_file in extracted_files:
+                        local_path = os.path.join(root, extracted_file)
+                        _enforce_audio_path_size_limit(local_path, extracted_file)
+                        rel_path = _unique_file_path(
+                            posixpath.join(
+                                archive_dir,
+                                os.path.relpath(local_path, extract_dir).replace(os.sep, "/"),
+                            ),
+                            claimed_paths,
+                        )
+                        claimed_paths.add(rel_path)
+                        self.pending.append((local_path, rel_path))
+            else:
+                rel_path = _unique_file_path(safe_path, claimed_paths)
+                claimed_paths.add(rel_path)
+                if original_filename:
+                    self.file_name_map[rel_path] = original_filename
+                self.pending.append((temp_file_path, rel_path))
 
 
 def _audit_source_created(
@@ -424,7 +659,7 @@ class UploadFile(Resource):
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
         file_name_map = {}
 
-        active_upload_name = "uploaded archive"
+        stager: Optional[_UploadStager] = None
         try:
             storage = StorageCreator.get_storage()
 
@@ -432,94 +667,12 @@ class UploadFile(Resource):
             # later oversized file/archive cannot leave a partially accepted
             # source behind. All ZIPs in the request share one expansion budget.
             with tempfile.TemporaryDirectory() as temp_dir:
-                pending_files: list[tuple[str, str]] = []
-                archive_budget = ZipExtractionBudget()
-                archive_limits = _source_archive_limits()
-                folder_names: dict[str, str] = {}
-                # Paths (relative to the source) already given to a staged
-                # file. A loose file and a ZIP member, or two names that clean
-                # up the same, would otherwise overwrite each other.
-                claimed_paths: set[str] = set()
-
-                for index, file in enumerate(files):
-                    # A folder upload names each file by its path inside the
-                    # folder; keep that tree under the source, as a ZIP does.
-                    original_path = (file.filename or "").replace("\\", "/")
-                    original_filename = os.path.basename(original_path)
-                    safe_path = _safe_relative_upload_path(
-                        original_path, folder_names
-                    )
-                    safe_file = posixpath.basename(safe_path)
-                    active_upload_name = safe_zip_error_message(
-                        original_filename or safe_file, max_chars=200
-                    )
-
-                    upload_dir = os.path.join(temp_dir, str(index))
-                    os.makedirs(upload_dir, exist_ok=True)
-                    temp_file_path = os.path.join(upload_dir, safe_file)
-                    copy_upload_to_path(file, temp_file_path)
-                    _enforce_audio_path_size_limit(temp_file_path, safe_file)
-
-                    # Office/e-book containers are ZIP-based formats but must
-                    # be parsed as documents, not expanded as user archives.
-                    is_office_format = safe_file.lower().endswith(
-                        (
-                            ".docx",
-                            ".docm",
-                            ".xlsx",
-                            ".xlsm",
-                            ".xlsb",
-                            ".pptx",
-                            ".pptm",
-                            ".ppsx",
-                            ".ppsm",
-                            ".odt",
-                            ".ods",
-                            ".odp",
-                            ".epub",
-                        )
-                    )
-                    if zipfile.is_zipfile(temp_file_path) and not is_office_format:
-                        extract_dir = os.path.join(upload_dir, "extracted")
-                        extract_zip_safely(
-                            temp_file_path,
-                            extract_dir,
-                            archive_limits,
-                            archive_budget,
-                        )
-                        # A ZIP inside an uploaded folder unpacks where it sat.
-                        archive_dir = posixpath.dirname(safe_path)
-                        for root, _, extracted_files in os.walk(extract_dir):
-                            for extracted_file in extracted_files:
-                                local_path = os.path.join(root, extracted_file)
-                                _enforce_audio_path_size_limit(
-                                    local_path, extracted_file
-                                )
-                                rel_path = _unique_file_path(
-                                    posixpath.join(
-                                        archive_dir,
-                                        os.path.relpath(
-                                            local_path, extract_dir
-                                        ).replace(os.sep, "/"),
-                                    ),
-                                    claimed_paths,
-                                )
-                                claimed_paths.add(rel_path)
-                                pending_files.append(
-                                    (local_path, f"{base_path}/{rel_path}")
-                                )
-                    else:
-                        rel_path = _unique_file_path(safe_path, claimed_paths)
-                        claimed_paths.add(rel_path)
-                        if original_filename:
-                            file_name_map[rel_path] = original_filename
-                        pending_files.append(
-                            (temp_file_path, f"{base_path}/{rel_path}")
-                        )
-
-                for local_path, storage_path in pending_files:
+                stager = _UploadStager(temp_dir)
+                stager.stage(files)
+                file_name_map = stager.file_name_map
+                for local_path, rel_path in stager.pending:
                     with open(local_path, "rb") as staged_file:
-                        storage.save_file(staged_file, storage_path)
+                        storage.save_file(staged_file, f"{base_path}/{rel_path}")
             # Mint the source UUID up here so the HTTP response and the
             # worker's SSE envelopes share one id. With an idempotency
             # key we reuse the deterministic uuid5 (retried task lands on
@@ -562,6 +715,7 @@ class UploadFile(Resource):
                 413,
             )
         except (UploadTooLargeError, ZipExtractionError) as err:
+            active_upload_name = stager.current_name if stager else "uploaded archive"
             if isinstance(err, ZipExtractionError):
                 zip_error_detail = safe_zip_error_message(err)
                 current_app.logger.warning(
@@ -733,6 +887,8 @@ class UploadRemote(Resource):
         source_uuid = (
             _derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
         )
+        # The task_dedup key this request holds a claim on, released on failure.
+        claimed_key = scoped_key
         try:
             config = json.loads(data["data"])
             source_data = None
@@ -838,6 +994,26 @@ class UploadRemote(Resource):
                     "source_id": str(source_uuid),
                 }
                 return make_response(jsonify(response_payload), 200)
+            # The same user submitting a source already being ingested (a
+            # double click, a second tab) joins that ingest instead of
+            # starting another.
+            in_flight_key = _remote_in_flight_key(user, data["source"], source_data, connection_id)
+            if in_flight_key:
+                if claimed_key is None:
+                    # Keyless: claim the guard key the worker makes from
+                    # source_id, so the ingest counts as in flight while queued.
+                    claimed_key = _synthesize_guard_key("ingest_remote", {"source_id": str(source_uuid)})
+                    predetermined_task_id = str(uuid.uuid4())
+                    with db_session() as conn:
+                        IdempotencyRepository(conn).claim_task(
+                            key=claimed_key, task_name="ingest_remote", task_id=predetermined_task_id,
+                        )
+                joined = _join_in_flight_ingest(
+                    in_flight_key, claimed_key, predetermined_task_id, str(source_uuid),
+                )
+                if joined is not None:
+                    _release_claim(claimed_key)
+                    return make_response(jsonify({"success": True, **joined, "in_flight": True}), 200)
             remote_kwargs = {
                 "kwargs": {
                     "source_data": source_data,
@@ -858,8 +1034,8 @@ class UploadRemote(Resource):
             current_app.logger.error(
                 f"Error uploading remote source: {err}", exc_info=True
             )
-            if scoped_key:
-                _release_claim(scoped_key)
+            if claimed_key:
+                _release_claim(claimed_key)
             return make_response(jsonify({"success": False}), 400)
         response_task_id = predetermined_task_id or task.id
         _audit_source_created(
@@ -888,7 +1064,10 @@ class ManageSourceFiles(Resource):
                 ),
                 "operation": fields.String(
                     required=True,
-                    description="Operation: 'add', 'remove', or 'remove_directory'",
+                    description=(
+                        "Operation: 'add', 'remove', 'remove_directory', or 'sync' (the uploaded files and ZIPs "
+                        "become the source's whole file set; files not in the upload are removed)"
+                    ),
                 ),
                 "file_paths": fields.List(
                     fields.String,
@@ -900,7 +1079,7 @@ class ManageSourceFiles(Resource):
                     description="Directory path to remove (for remove_directory operation)",
                 ),
                 "file": fields.Raw(
-                    required=False, description="Files to add (for add operation)"
+                    required=False, description="Files to add (for add operation) or the new file set (for sync)"
                 ),
                 "parent_dir": fields.String(
                     required=False,
@@ -910,7 +1089,10 @@ class ManageSourceFiles(Resource):
         )
     )
     @api.doc(
-        description="Add files, remove files, or remove directories from an existing source",
+        description=(
+            "Add files, remove files, remove directories, or replace the whole file set (sync) of an existing "
+            "source. The source is then re-ingested: only added, removed and edited files are re-embedded."
+        ),
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -936,12 +1118,12 @@ class ManageSourceFiles(Resource):
                 ),
                 400,
             )
-        if operation not in ["add", "remove", "remove_directory"]:
+        if operation not in ["add", "remove", "remove_directory", "sync"]:
             return make_response(
                 jsonify(
                     {
                         "success": False,
-                        "message": "operation must be 'add', 'remove', or 'remove_directory'",
+                        "message": "operation must be 'add', 'remove', 'remove_directory', or 'sync'",
                     }
                 ),
                 400,
@@ -1110,6 +1292,114 @@ class ManageSourceFiles(Resource):
                             # (emitted by ``reingest_source_worker``)
                             # back to the reingest task — matches the
                             # upload route's source-id contract.
+                            "source_id": resolved_source_id,
+                        }
+                    ),
+                    200,
+                )
+            elif operation == "sync":
+                files = [file for file in request.files.getlist("file") if file.filename]
+                if parent_dir:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "parent_dir cannot be used with sync, which replaces the whole source",
+                            }
+                        ),
+                        400,
+                    )
+                # Without a directory of its own (a Website or connector
+                # source) there is nothing to replace, and an empty path
+                # would list the whole storage.
+                if not source_file_path:
+                    return make_response(
+                        jsonify({"success": False, "message": "This source keeps no files to sync"}),
+                        400,
+                    )
+                if not files:
+                    return make_response(
+                        jsonify({"success": False, "message": "No files provided for sync operation"}),
+                        400,
+                    )
+
+                # Claim before any storage mutation. See ``add`` branch
+                # comment for rationale.
+                predetermined_task_id = None
+                if scoped_key:
+                    predetermined_task_id, cached = _claim_task_or_get_cached(
+                        scoped_key, "reingest_source_task",
+                    )
+                    if cached is not None:
+                        cached_task_id = cached.pop("task_id", None)
+                        if cached_task_id is not None:
+                            cached["reingest_task_id"] = cached_task_id
+                        cached["source_id"] = resolved_source_id
+                        return make_response(jsonify(cached), 200)
+
+                # Every file is validated before the first storage write, and
+                # files the upload no longer has are removed only once the new
+                # ones are in place. The reingest re-embeds only what changed.
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    stager = _UploadStager(temp_dir)
+                    stager.stage(files)
+                    if not stager.pending:
+                        # An empty ZIP, or one of folders only: syncing it
+                        # would remove every file of the source.
+                        if scoped_key:
+                            _release_claim(scoped_key)
+                        return make_response(
+                            jsonify({"success": False, "message": "The upload holds no files to sync"}),
+                            400,
+                        )
+                    synced = {rel_path for _, rel_path in stager.pending}
+                    for local_path, rel_path in stager.pending:
+                        with open(local_path, "rb") as staged_file:
+                            storage.save_file(staged_file, f"{source_file_path}/{rel_path}")
+                removed_files = []
+                for storage_path in storage.list_files(source_file_path):
+                    # Local storage on Windows lists with backslashes. Stored
+                    # names never contain one (staging splits on it), so it is
+                    # always a separator here.
+                    rel_path = posixpath.relpath(storage_path.replace("\\", "/"), source_file_path)
+                    # A store that lists by bare prefix can name another
+                    # source's files (``src`` matching ``src-2/...``): never
+                    # delete outside this source's folder.
+                    if rel_path == ".." or rel_path.startswith("../"):
+                        continue
+                    if storage_path.endswith("/") or rel_path in synced:
+                        continue
+                    storage.delete_file(storage_path)
+                    removed_files.append(rel_path)
+                removed_files.sort()
+
+                with db_session() as conn:
+                    SourcesRepository(conn).update(
+                        resolved_source_id, owner,
+                        {"file_name_map": dict(stager.file_name_map)},
+                    )
+
+                from docsgpt.api.user.tasks import reingest_source_task
+
+                task = reingest_source_task.apply_async(
+                    kwargs={
+                        "source_id": resolved_source_id,
+                        "user": owner,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
+                    },
+                    task_id=predetermined_task_id,
+                )
+                claim_transferred = True
+
+                return make_response(
+                    jsonify(
+                        {
+                            "success": True,
+                            "message": f"Synced {len(synced)} files",
+                            "files": sorted(synced),
+                            "removed_files": removed_files,
+                            "reingest_task_id": task.id,
                             "source_id": resolved_source_id,
                         }
                     ),
@@ -1363,6 +1653,13 @@ class ManageSourceFiles(Resource):
             )
             return make_response(
                 jsonify({"success": False, "message": message}), 413
+            )
+        except ZipExtractionError as err:
+            if scoped_key and not claim_transferred:
+                _release_claim(scoped_key)
+            current_app.logger.warning("Rejected unsafe ZIP in a source sync: %s", safe_zip_error_message(err))
+            return make_response(
+                jsonify({"success": False, "message": "ZIP archive failed safety validation"}), 413
             )
         except Exception as err:
             # Release the dedup claim only if it wasn't transferred to

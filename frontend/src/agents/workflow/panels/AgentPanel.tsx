@@ -1,11 +1,19 @@
-import { useId, useState } from 'react';
+import {
+  type MouseEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
 import { type Edge, type Node } from 'reactflow';
 
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
-import { MultiSelect } from '@/components/ui/multi-select';
+import { MultiSelectTrigger } from '@/components/ui/multi-select';
 import { SectionHeader } from '@/components/ui/section-header';
 import {
   Select,
@@ -20,16 +28,41 @@ import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 
-import { getToolDisplayName } from '../../../utils/toolUtils';
-import { withAttachedOptions } from '../../sponsorConsent';
+import {
+  loadConnectors,
+  selectConnections,
+  selectConnectorCatalog,
+} from '../../../connectors/connectorsSlice';
+import {
+  selectSourceDocs,
+  selectToken,
+} from '../../../preferences/preferenceSlice';
+import type { AppDispatch } from '../../../store';
+import type { Connection } from '../../../connectors/types';
+import type { LeaveTo } from '../../../hooks/useLeaveGuard';
+import KnowledgePicker from '../../components/KnowledgePicker';
+import ToolsPicker from '../../components/ToolsPicker';
+import { useAttachAddedTools } from '../../hooks/useAttachAddedTools';
+import {
+  getToolDisplayName,
+  isWorkflowNodeToolVisible,
+} from '../../../utils/toolUtils';
+import type { RetryConfig } from '../../types/workflow';
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
+import NodeRetryControl from '../components/NodeRetryControl';
 import PromptTextArea from '../components/PromptTextArea';
+import StreamOutputField from '../components/StreamOutputField';
 import {
   DEFAULT_FILE_PASSING,
   FILE_PASSING_OPTIONS,
   FilePassing,
   normalizeFilePassing,
 } from '../documentConfig';
+import {
+  DEFAULT_STREAM_OUTPUT,
+  normalizeStreamOutput,
+} from '../streamOutputConfig';
+import { effectiveRetry } from '../retryConfig';
 import { NO_ESCAPE, schemaErrorText, type UserTool } from '../workflowHelpers';
 import { type NodePanelBodyProps } from './types';
 
@@ -40,13 +73,12 @@ interface AgentPanelProps extends NodePanelBodyProps {
   edges: Edge[];
   availableModels: Model[];
   availableTools: UserTool[];
-  sourceOptions: { value: string; label: string }[];
   /**
    * Names of the tools and sources the workflow's nodes reference, whoever
    * owns them: a selected one missing from the caller's own options (the
    * owner's private tool) still gets an option, so it can be removed.
    */
-  attachedTools?: { id: string; label: string }[];
+  attachedTools?: { id: string; label: string; name?: string }[];
   attachedSources?: { id: string; label: string }[];
   /** Upstream file variables the agent can read. */
   documentOptions: { value: string; label: string }[];
@@ -57,7 +89,31 @@ interface AgentPanelProps extends NodePanelBodyProps {
   /** False when the picked model can't return structured output. */
   modelSupportsStructuredOutput: boolean;
   onJsonSchemaChange: (text: string) => void;
+  /** The workflow's retry defaults, which an unset retry field inherits. */
+  retryDefaults?: RetryConfig | null;
+  /**
+   * Reloads the builder's tool list and returns it, so a tool added from the
+   * Tools picker's footer can go on the node.
+   */
+  onReloadTools: () => Promise<UserTool[]>;
+  /**
+   * A picker footer's Go to link, after the picker closes: the builder
+   * prevents it and asks first while the workflow has unsaved changes.
+   */
+  onNavigateAway?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  /**
+   * Leaves for a page from a dialog opened here (Add tool's Browse all, the
+   * API tool editor, Try it in chat): the builder asks first while the
+   * workflow has unsaved changes.
+   */
+  onLeaveTo?: LeaveTo;
+  /** Signs a broken connection behind the caller's tools in again. */
+  onReconnect?: (connection: Connection, mcpToolId?: string) => void;
 }
+
+/** A picked id added when missing, removed when present. */
+const toggled = (ids: string[], id: string): string[] =>
+  ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
 
 const SCHEMA_PLACEHOLDER = `{
   "type": "object",
@@ -68,8 +124,8 @@ const SCHEMA_PLACEHOLDER = `{
 }`;
 
 /**
- * Whether any advanced setting (documents, file passing, structured output)
- * differs from its default, so the disclosure opens on its own.
+ * Whether any advanced setting (documents, file passing, structured output,
+ * retries) differs from its default, so the disclosure opens on its own.
  *
  * Args:
  *   config: The agent node's config.
@@ -88,16 +144,18 @@ export function hasAdvancedAgentSettings(
   return (
     (Array.isArray(inputDocuments) && inputDocuments.length > 0) ||
     normalizeFilePassing(config?.file_passing) !== DEFAULT_FILE_PASSING ||
+    normalizeStreamOutput(config?.stream_output) !== DEFAULT_STREAM_OUTPUT ||
     (config?.json_schema !== undefined && config?.json_schema !== null) ||
     jsonSchemaText.trim() !== '' ||
-    Boolean(jsonSchemaError)
+    Boolean(jsonSchemaError) ||
+    (config?.retry !== undefined && config?.retry !== null)
   );
 }
 
 /**
  * Settings for an AI Agent node, grouped Model, Prompt, Knowledge and Output
- * like classic Overview, with documents, file passing and structured output
- * under an Advanced settings disclosure.
+ * like classic Overview, with documents, file passing, structured output and
+ * retries under an Advanced settings disclosure.
  */
 export default function AgentPanel({
   node,
@@ -106,7 +164,6 @@ export default function AgentPanel({
   edges,
   availableModels,
   availableTools,
-  sourceOptions,
   attachedTools = [],
   attachedSources = [],
   documentOptions,
@@ -114,6 +171,11 @@ export default function AgentPanel({
   jsonSchemaError,
   modelSupportsStructuredOutput,
   onJsonSchemaChange,
+  retryDefaults = null,
+  onReloadTools,
+  onNavigateAway,
+  onLeaveTo,
+  onReconnect,
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
@@ -126,26 +188,96 @@ export default function AgentPanel({
   const updateConfig = (patch: Record<string, unknown>) =>
     onUpdate({ config: { ...(node.data.config || {}), ...patch } });
 
+  const dispatch = useDispatch<AppDispatch>();
+  const token = useSelector(selectToken);
+  const storedDocs = useSelector(selectSourceDocs);
+  const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  // A node saves its sources by id, so a source without one can't be picked.
+  const sourceDocs = useMemo(
+    () => (storedDocs ?? []).filter((doc) => Boolean(doc.id)),
+    [storedDocs],
+  );
+  const pickedSources: string[] = config.sources || [];
+  const pickedTools: string[] = config.tools || [];
+
+  // An upload finishes after its dialog closes, maybe after the node did:
+  // its source goes on this node only while the panel still shows it.
+  const latest = useRef({ node, onUpdate });
+  const mounted = useRef(false);
+  useEffect(() => {
+    latest.current = { node, onUpdate };
+  });
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const attachUploadedSource = (nodeId: string, sourceId?: string) => {
+    if (!sourceId || !mounted.current) return;
+    const { node: current, onUpdate: update } = latest.current;
+    if (current.id !== nodeId) return;
+    const currentConfig = current.data.config || {};
+    const sources: string[] = currentConfig.sources || [];
+    if (sources.includes(sourceId)) return;
+    update({ config: { ...currentConfig, sources: [...sources, sourceId] } });
+  };
+  // A tool made from the Tools footer's Add tool goes on the node it was
+  // added from, once the reloaded list holds it, while the panel shows it.
+  const attachCreated = useAttachAddedTools(onReloadTools);
+  const attachToolsCreated = (nodeId: string, toolIds: string[]) =>
+    attachCreated(toolIds, (created) => {
+      const { node: current, onUpdate: update } = latest.current;
+      if (current.id !== nodeId) return;
+      const currentConfig = current.data.config || {};
+      const nodeTools: string[] = currentConfig.tools || [];
+      const added = created
+        .map((tool) => tool.id)
+        .filter((id) => !nodeTools.includes(id));
+      if (added.length === 0) return;
+      update({ config: { ...currentConfig, tools: [...nodeTools, ...added] } });
+    });
+
+  // The rows name the caller's connections and the catalog's services.
+  const openPicker = (setOpen: (open: boolean) => void) => (next: boolean) => {
+    setOpen(next);
+    if (next) dispatch(loadConnectors({ token }));
+  };
+
   const builtinModels = availableModels.filter((m) => m.source !== 'user');
   const userModels = availableModels.filter((m) => m.source === 'user');
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
-  // Marks an option only in the list; its chip keeps the plain name.
+  // Marks a row only in the list; its chip keeps the plain name.
   const attachedDescription = t('agents.form.sponsors.addedByOther');
-  const toolOptions = withAttachedOptions(
-    availableTools.map((tool) => ({
-      value: tool.id,
-      label: getToolDisplayName(tool),
-    })),
-    attachedTools,
-    config.tools || [],
-    attachedDescription,
+  // The attached tools picked on this node the caller can't list.
+  const attachedOnNode = useMemo(
+    () =>
+      attachedTools
+        .filter((tool) => pickedTools.includes(tool.id))
+        .map((tool) => ({
+          id: tool.id,
+          name: tool.name ?? '',
+          display_name: tool.label,
+        })),
+    [attachedTools, pickedTools],
   );
-  const nodeSourceOptions = withAttachedOptions(
-    sourceOptions,
-    attachedSources,
-    config.sources || [],
-    attachedDescription,
-  );
+
+  // The trigger's chips, in the order they were picked.
+  const sourceName = (id: string) =>
+    sourceDocs.find((doc) => doc.id === id)?.name ||
+    attachedSources.find((item) => item.id === id)?.label ||
+    id;
+  const toolName = (id: string) => {
+    const tool = availableTools.find((item) => item.id === id);
+    return (
+      (tool && getToolDisplayName(tool)) ||
+      attachedTools.find((item) => item.id === id)?.label ||
+      id
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -273,26 +405,65 @@ export default function AgentPanel({
           label={t('agents.workflow.builder.sources')}
           labelSurface="background"
         >
-          <MultiSelect
-            options={nodeSourceOptions}
-            selected={config.sources || []}
-            onChange={(newSources) => updateConfig({ sources: newSources })}
-            placeholder={t('agents.form.placeholders.selectSources')}
-            searchPlaceholder={t('agents.form.sourcePopup.searchPlaceholder')}
-            emptyText={t('agents.form.sourcePopup.noOptionsMessage')}
+          {/* The panel is docked beside the canvas, not a dialog, so the
+              popover needs no modal (on a phone it is its own sheet). */}
+          <KnowledgePicker
+            open={sourcesOpen}
+            onOpenChange={openPicker(setSourcesOpen)}
+            docs={sourceDocs}
+            selectedIds={pickedSources}
+            onToggle={(id) =>
+              updateConfig({ sources: toggled(pickedSources, id) })
+            }
+            connections={connections}
+            unlistedLabel={(id) =>
+              attachedSources.find((item) => item.id === id)?.label || id
+            }
+            unlistedLine={() => attachedDescription}
+            onNavigate={(event) => onNavigateAway?.(event)}
+            onUploaded={(sourceId) => attachUploadedSource(node.id, sourceId)}
+            onBrowseConnectors={
+              onLeaveTo
+                ? () => onLeaveTo('/settings/connectors?capability=sync')
+                : undefined
+            }
+            onLeaveTo={onLeaveTo}
+            trigger={
+              <MultiSelectTrigger
+                labels={pickedSources.map(sourceName)}
+                placeholder={t('agents.form.placeholders.selectSources')}
+              />
+            }
           />
         </FormField>
         <FormField
           label={t('agents.form.sections.tools')}
           labelSurface="background"
         >
-          <MultiSelect
-            options={toolOptions}
-            selected={config.tools || []}
-            onChange={(newTools) => updateConfig({ tools: newTools })}
-            placeholder={t('agents.form.placeholders.selectTools')}
-            searchPlaceholder={t('agents.form.toolsPopup.searchPlaceholder')}
-            emptyText={t('agents.form.toolsPopup.noOptionsMessage')}
+          <ToolsPicker
+            open={toolsOpen}
+            onOpenChange={openPicker(setToolsOpen)}
+            tools={availableTools}
+            filter={isWorkflowNodeToolVisible}
+            attached={attachedOnNode}
+            attachedLine={attachedDescription}
+            selectedIds={pickedTools}
+            onToggle={(id) => updateConfig({ tools: toggled(pickedTools, id) })}
+            connections={connections}
+            catalog={catalog}
+            onReconnect={onReconnect}
+            onNavigate={(event) => onNavigateAway?.(event)}
+            onReloadTools={() => void onReloadTools().catch(() => undefined)}
+            onToolsCreated={(toolIds) =>
+              void attachToolsCreated(node.id, toolIds)
+            }
+            onLeaveTo={onLeaveTo}
+            trigger={
+              <MultiSelectTrigger
+                labels={pickedTools.map(toolName)}
+                placeholder={t('agents.form.placeholders.selectTools')}
+              />
+            }
           />
         </FormField>
       </section>
@@ -377,6 +548,10 @@ export default function AgentPanel({
                 </SelectContent>
               </Select>
             </FormField>
+            <StreamOutputField
+              value={config.stream_output}
+              onChange={(value) => updateConfig({ stream_output: value })}
+            />
             <FormField
               label={t('agents.workflow.builder.structuredOutput')}
               labelSurface="background"
@@ -409,6 +584,13 @@ export default function AgentPanel({
                 placeholder={SCHEMA_PLACEHOLDER}
               />
             </FormField>
+            <NodeRetryControl
+              key={node.id}
+              value={config.retry}
+              onChange={(retry) => updateConfig({ retry })}
+              inherited={effectiveRetry(undefined, retryDefaults)}
+              showOn
+            />
           </div>
         </Collapsible>
       </div>

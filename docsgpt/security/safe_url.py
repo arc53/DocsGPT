@@ -34,6 +34,7 @@ dialing the chosen IP literal directly.
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import threading
 import time
@@ -79,6 +80,16 @@ _BLOCKED_HOSTNAMES: frozenset[str] = frozenset(
 # Carrier-grade NAT (RFC 6598). Python's ``ipaddress`` module does NOT
 # classify this range as ``is_private``, so we must check it explicitly.
 _CGNAT_NETWORK_V4: ipaddress.IPv4Network = ipaddress.IPv4Network("100.64.0.0/10")
+
+# Cloud metadata services outside the link-local range. Together with every
+# link-local and unspecified address, ``SAFE_URL_ALLOWED_HOSTS`` never opens them.
+_METADATA_IPS: frozenset[ipaddress.IPv4Address | ipaddress.IPv6Address] = frozenset(
+    {
+        ipaddress.ip_address("fd00:ec2::254"),  # AWS IMDS over IPv6
+        ipaddress.ip_address("fd20:ce::254"),  # Google Cloud metadata over IPv6
+        ipaddress.ip_address("100.100.100.200"),  # Alibaba Cloud, inside CGNAT
+    }
+)
 
 
 class UnsafeUserUrlError(ValueError):
@@ -136,6 +147,55 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT_NETWORK_V4:
         return True
     return False
+
+
+def _allowlist() -> tuple[set[str], list[ipaddress.IPv4Network | ipaddress.IPv6Network]]:
+    """``(hostnames, networks)`` of ``SAFE_URL_ALLOWED_HOSTS``; hostnames in IDNA form, lowercase."""
+
+    from docsgpt.core.settings import settings
+
+    names: set[str] = set()
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for raw in getattr(settings, "SAFE_URL_ALLOWED_HOSTS", None) or []:
+        entry = _strip_ipv6_brackets(str(raw or "").strip()).lower().rstrip(".")
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            # Not an address or range, so a hostname; one with no IDNA form never matches.
+            try:
+                names.add(_ascii_host(entry))
+            except UnsafeUserUrlError:
+                continue
+    return names, networks
+
+
+def allowed_by_operator(host: str | None, ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Whether ``SAFE_URL_ALLOWED_HOSTS`` lets a URL reach the blocked address ``ip``.
+
+    An IP/CIDR entry opens the addresses inside it; a hostname entry opens
+    whatever ``host`` resolved to, except loopback. Link-local, cloud metadata
+    and unspecified addresses are never opened.
+
+    Args:
+        host: The URL's hostname, or ``None`` when the URL names an IP literal.
+        ip: An address the URL's host resolved to (or the literal itself).
+    """
+
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    if ip.is_link_local or ip.is_unspecified or ip in _METADATA_IPS:
+        return False
+    names, networks = _allowlist()
+    if any(ip in network for network in networks):
+        return True
+    if host is None or ip.is_loopback:
+        return False
+    try:
+        return _ascii_host(host.lower().rstrip(".")) in names
+    except UnsafeUserUrlError:
+        return False
 
 
 def _resolve(host: str) -> Iterable[ipaddress.IPv4Address | ipaddress.IPv6Address]:
@@ -210,8 +270,8 @@ def reject_ambiguous_url(url: str) -> None:
 
     Raises:
         UnsafeUserUrlError: If the URL contains control characters, a
-            backslash or whitespace in its authority, or a host urllib3
-            reads differently.
+            backslash or whitespace in its authority, a percent-encoded
+            host, or a host urllib3 reads differently.
     """
 
     if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in url):
@@ -225,6 +285,10 @@ def reject_ambiguous_url(url: str) -> None:
         raise UnsafeUserUrlError(f"url {url!r} has a backslash or whitespace in its host part")
     if not host:
         return
+    # urllib3 decodes percent-escapes in a host and urlsplit keeps them, so the
+    # two spellings can differ; a hostname never needs them.
+    if "%" in host:
+        raise UnsafeUserUrlError(f"url {url!r} percent-encodes its host")
     # Re-parse the host urlsplit found so both sides get urllib3's spelling
     # (IDNA, brackets, case) before they are compared.
     bracketed = f"[{host}]" if ":" in host else host
@@ -276,15 +340,6 @@ def _validate_and_pick_ip(
     host = raw_host.lower()
     ascii_host = _ascii_host(host)
 
-    # Check the literal-string blocklist first. urlsplit().hostname strips
-    # IPv6 brackets, so we also test the bracketed form for completeness
-    # (matches the public-spec note about ``[::]``).
-    bracketed = f"[{host}]"
-    if host in _BLOCKED_HOSTNAMES or ascii_host in _BLOCKED_HOSTNAMES or bracketed in _BLOCKED_HOSTNAMES:
-        raise UnsafeUserUrlError(
-            f"hostname {raw_host!r} is not allowed (matches internal-only name)"
-        )
-
     # If the host is already an IP literal (with or without IPv6 brackets),
     # check it directly without going to DNS — DNS for an IP literal is a
     # no-op but it's clearer to short-circuit and gives a better message.
@@ -293,9 +348,27 @@ def _validate_and_pick_ip(
         literal = ipaddress.ip_address(candidate)
     except ValueError:
         literal = None
+    # An address the operator listed passes even when the blocklist below
+    # spells it (``::1``); names (``localhost``) never do.
+    operator_ip = literal is not None and _is_blocked_ip(literal) and allowed_by_operator(None, literal)
+
+    # Check the literal-string blocklist first. urlsplit().hostname strips
+    # IPv6 brackets, so we also test the bracketed form for completeness
+    # (matches the public-spec note about ``[::]``).
+    # A trailing dot names the same host (``localhost.``), so it is dropped first.
+    name = host.rstrip(".")
+    blocked_name = (
+        name in _BLOCKED_HOSTNAMES
+        or ascii_host.rstrip(".") in _BLOCKED_HOSTNAMES
+        or f"[{name}]" in _BLOCKED_HOSTNAMES
+    )
+    if blocked_name and not operator_ip:
+        raise UnsafeUserUrlError(
+            f"hostname {raw_host!r} is not allowed (matches internal-only name)"
+        )
 
     if literal is not None:
-        if _is_blocked_ip(literal):
+        if _is_blocked_ip(literal) and not operator_ip:
             raise UnsafeUserUrlError(
                 f"hostname {raw_host!r} resolves to blocked address {literal} "
                 f"(loopback/private/link-local/multicast/reserved/CGNAT)"
@@ -306,7 +379,7 @@ def _validate_and_pick_ip(
     # IDNA form is resolved: it is the name the request will carry.
     addresses = list(_resolve(ascii_host))
     for ip in addresses:
-        if _is_blocked_ip(ip):
+        if _is_blocked_ip(ip) and not allowed_by_operator(ascii_host, ip):
             raise UnsafeUserUrlError(
                 f"hostname {raw_host!r} resolves to blocked address {ip} "
                 f"(loopback/private/link-local/multicast/reserved/CGNAT)"
@@ -327,7 +400,9 @@ def validate_user_base_url(url: str) -> None:
     Resolve the URL's hostname to one or more IPs and reject if any
     resolved IP is private/loopback/link-local/multicast/reserved, or if
     the URL uses a non-http(s) scheme, or if the hostname is one of the
-    known dangerous strings (``localhost``, ``0.0.0.0``, ``[::]``).
+    known dangerous strings (``localhost``, ``0.0.0.0``, ``[::]``). A
+    private address the operator opened with ``SAFE_URL_ALLOWED_HOSTS``
+    passes (see :func:`allowed_by_operator`).
 
     Raises :class:`UnsafeUserUrlError` on rejection. Returns ``None`` on
     success.
@@ -542,6 +617,17 @@ def _pinned_session(
     request_headers["Host"] = host_header
 
     session = requests.Session()
+    # Off, or an env proxy would re-resolve the hostname and dial from its own
+    # vantage point: the validated IP is dropped and the TOCTOU window reopens.
+    session.trust_env = False
+    # ``trust_env`` also carries the CA bundle, which says nothing about which
+    # address is dialled: keep an operator's private CA for internal hosts.
+    session.verify = (
+        os.environ.get("REQUESTS_CA_BUNDLE")
+        or os.environ.get("CURL_CA_BUNDLE")
+        or os.environ.get("SSL_CERT_FILE")
+        or True
+    )
     if url_credentials and parts.username is not None:
         session.auth = (unquote(parts.username), unquote(parts.password or ""))
     if watchdog is not None:

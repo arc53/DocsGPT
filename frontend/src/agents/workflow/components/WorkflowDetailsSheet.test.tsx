@@ -12,6 +12,7 @@ vi.mock('../../../api/services/userService', () => ({
 
 import { DEFAULT_ANALYTICS } from '../../analyticsConfig';
 import type { AnalyticsConfig } from '../../types';
+import type { RetryConfig } from '../../types/workflow';
 import WorkflowDetailsSheet from './WorkflowDetailsSheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -19,7 +20,11 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const details = {
   name: 'Helpdesk Triage',
   description: 'Routes internal requests',
+  starters: ['How do I reset my VPN?'],
   allowPromptOverride: false,
+  contextWindowLimit: null,
+  historyTokenLimit: null,
+  retryDefaults: null,
 };
 
 describe('WorkflowDetailsSheet', () => {
@@ -44,6 +49,11 @@ describe('WorkflowDetailsSheet', () => {
       saving?: boolean;
       analytics?: AnalyticsConfig;
       available?: boolean;
+      contextWindowLimit?: number | null;
+      historyTokenLimit?: number | null;
+      policyEditable?: boolean;
+      retryDefaults?: RetryConfig | null;
+      starters?: string[];
     } = {},
   ) => {
     const handlers = { onOpenChange: vi.fn(), onSave: vi.fn() };
@@ -51,7 +61,16 @@ describe('WorkflowDetailsSheet', () => {
       root.render(
         <WorkflowDetailsSheet
           open
-          details={{ ...details, analytics: props.analytics }}
+          details={{
+            ...details,
+            analytics: props.analytics,
+            contextWindowLimit: props.contextWindowLimit ?? null,
+            historyTokenLimit: props.historyTokenLimit ?? null,
+            retryDefaults: props.retryDefaults ?? null,
+            starters: props.starters ?? details.starters,
+          }}
+          modelWindow={{ tokens: 128_000, name: 'Model One' }}
+          policyEditable={props.policyEditable}
           insights={{
             available: props.available ?? true,
             maxTopics: 15,
@@ -124,10 +143,179 @@ describe('WorkflowDetailsSheet', () => {
     expect(onSave).toHaveBeenCalledWith({
       name: 'Helpdesk Router',
       description: 'Routes internal requests',
+      starters: ['How do I reset my VPN?'],
       allowPromptOverride: false,
       analytics: DEFAULT_ANALYTICS,
+      contextWindowLimit: null,
+      historyTokenLimit: null,
+      retryDefaults: null,
       imageFile: null,
     });
+  });
+
+  const starterInputs = () =>
+    Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[maxlength="200"]'),
+    );
+
+  it('shows the saved starters, with a link to add more, as in the classic agent form', () => {
+    render({ starters: ['How do I reset my VPN?', 'Who approves leave?'] });
+    const card = Array.from(document.querySelectorAll('[data-slot="card"]'))[1];
+    expect(card.querySelector('h3')?.textContent).toBe(
+      'agents.form.sections.starters',
+    );
+    expect(card.textContent).toContain('agents.form.starters.description');
+    const inputs = starterInputs();
+    expect(inputs.every((input) => card.contains(input))).toBe(true);
+    expect(inputs.map((input) => input.value)).toEqual([
+      'How do I reset my VPN?',
+      'Who approves leave?',
+    ]);
+    expect(card.textContent).toContain('agents.form.starters.add');
+  });
+
+  it('counts a starter edit as a change, but not a blank or a repeat', () => {
+    const { onSave } = render();
+    const save = button('agents.form.buttons.save');
+    act(() => button('agents.form.starters.add').click());
+    expect(save.disabled).toBe(true);
+    type(starterInputs()[1], '   ');
+    expect(save.disabled).toBe(true);
+    type(starterInputs()[1], 'how do i reset my vpn?');
+    expect(save.disabled).toBe(true);
+    type(starterInputs()[1], 'Who approves leave?');
+    expect(save.disabled).toBe(false);
+
+    act(() => save.click());
+    expect(onSave.mock.calls[0][0].starters).toEqual([
+      'How do I reset my VPN?',
+      'Who approves leave?',
+    ]);
+  });
+
+  it('counts clearing every starter as a change', () => {
+    render();
+    type(starterInputs()[0], '');
+    expect(button('agents.form.buttons.save').disabled).toBe(false);
+  });
+
+  const limitInput = (key: 'contextLimitTokens' | 'historyLimitTokens') =>
+    document.querySelector(
+      `input[aria-label="agents.form.advanced.${key}"]`,
+    ) as HTMLInputElement;
+  const limitSwitch = (key: 'contextLimit' | 'historyLimit') => {
+    const label = Array.from(document.querySelectorAll('label')).find(
+      (el) => el.textContent === `agents.form.advanced.${key}`,
+    )!;
+    return document.getElementById(label.htmlFor) as HTMLButtonElement;
+  };
+
+  it('saves a context limit, and one switched off as null', () => {
+    const { onSave } = render({ contextWindowLimit: 64000 });
+    expect(limitInput('contextLimitTokens').value).toBe('64000');
+    type(limitInput('contextLimitTokens'), '32000');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].contextWindowLimit).toBe(32000);
+
+    act(() => limitSwitch('contextLimit').click());
+    expect(limitInput('contextLimitTokens').disabled).toBe(true);
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[1][0].contextWindowLimit).toBeNull();
+  });
+
+  it("notes, but saves, a context limit past the model's window", () => {
+    const { onSave } = render({ contextWindowLimit: 64000 });
+    type(limitInput('contextLimitTokens'), '200000');
+    expect(limitInput('contextLimitTokens').getAttribute('aria-invalid')).toBe(
+      null,
+    );
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.contextLimitAboveWindow',
+    );
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].contextWindowLimit).toBe(200000);
+  });
+
+  it('keeps Save disabled while a limit is out of range', () => {
+    render({ contextWindowLimit: 64000 });
+    type(limitInput('contextLimitTokens'), '12000');
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+    expect(limitInput('contextLimitTokens').getAttribute('aria-invalid')).toBe(
+      'true',
+    );
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.limitRange',
+    );
+  });
+
+  it('saves a history limit, noting one at the window', () => {
+    const { onSave } = render();
+    act(() => limitSwitch('historyLimit').click());
+    expect(limitInput('historyLimitTokens').value).toBe('8000');
+    type(limitInput('historyLimitTokens'), '128000');
+    expect(button('agents.form.buttons.save').disabled).toBe(false);
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.historyLimitAboveWindow',
+    );
+    type(limitInput('historyLimitTokens'), '3000');
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.limitRange',
+    );
+    type(limitInput('historyLimitTokens'), '12000');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].historyTokenLimit).toBe(12000);
+  });
+
+  it("saves an unrelated edit with a stored limit past the model's window", () => {
+    const { onSave } = render({
+      policyEditable: false,
+      contextWindowLimit: 200_000,
+    });
+    type(nameInput(), 'Helpdesk Router');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0].contextWindowLimit).toBe(200_000);
+  });
+
+  it('shows the limits read-only without edit_policy', () => {
+    render({ policyEditable: false, contextWindowLimit: 64000 });
+    expect(limitInput('contextLimitTokens').disabled).toBe(true);
+    expect(limitSwitch('contextLimit').disabled).toBe(true);
+    expect(limitSwitch('historyLimit').disabled).toBe(true);
+  });
+
+  it('saves retry defaults typed into the backoff field', () => {
+    const { onSave } = render({ retryDefaults: { max_attempts: 3 } });
+    const backoff = document.querySelector(
+      'input[inputmode="decimal"]',
+    ) as HTMLInputElement;
+    expect(backoff.disabled).toBe(false);
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+
+    type(backoff, '5, soon');
+    expect(document.body.textContent).toContain(
+      'agents.workflow.retry.backoffInvalid',
+    );
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+
+    type(backoff, '5, 20');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].retryDefaults).toEqual({
+      max_attempts: 3,
+      backoff_seconds: [5, 20],
+    });
+  });
+
+  it('leaves the backoff off while the defaults never retry', () => {
+    render();
+    const backoff = document.querySelector(
+      'input[inputmode="decimal"]',
+    ) as HTMLInputElement;
+    expect(backoff.disabled).toBe(true);
+    expect(document.body.textContent).toContain(
+      'agents.workflow.retry.hintOff',
+    );
   });
 
   it('closes on Cancel without saving', () => {
@@ -171,12 +359,12 @@ describe('WorkflowDetailsSheet', () => {
         'agents.form.sections.analytics',
     );
 
-  // IN-21: a workflow's insights, in a third card after Basics and Advanced.
+  // IN-21: a workflow's insights, in a card after Basics, Starters and Advanced.
   it('holds an Insights card after Advanced, its sub-headings one level down', () => {
     render();
     const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
     const card = insightsCard()!;
-    expect(cards.indexOf(card)).toBe(2);
+    expect(cards.indexOf(card)).toBe(3);
     expect(
       card.querySelector('[data-testid="analytics-topics"] h4'),
     ).not.toBeNull();

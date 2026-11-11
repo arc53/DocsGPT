@@ -16,12 +16,18 @@ losslessly, but WordPiece tokenizers do not: all-mpnet-base-v2 lowercases, so
 decoding ``"Hello World"`` yields ``"hello world"`` and would silently rewrite
 every stored document. Counters therefore cut the *original* string at
 character offsets the tokenizer reports.
+
+Tokenizers are fed bounded windows, never a whole document: an encode's
+per-token data costs hundreds of bytes per character. No tokenizer call sees
+more than ``2 * _WINDOW_CHARS`` characters, and windows end where
+pre-tokenizers already break, so counts on prose match a one-shot encode.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import unicodedata
 from typing import Iterator, List, Optional, Tuple
 
 from docsgpt.core.settings import settings
@@ -32,6 +38,83 @@ logger = logging.getLogger(__name__)
 
 _cache: dict = {}
 _cache_lock = threading.Lock()
+
+# Characters per tokenizer call; the split carry can double it.
+_WINDOW_CHARS = 65_536
+
+# Combining, enclosing and format marks (such as ZWJ) attach to the character
+# before them, so a cut must not land in front of one.
+_GLUE_CATEGORIES = frozenset({"Mn", "Mc", "Me", "Cf"})
+
+
+def _is_glue(char: str) -> bool:
+    """Whether ``char`` must stay with the character before it."""
+    code = ord(char)
+    # Lone surrogates and emoji skin-tone modifiers (their category, Sk, also
+    # holds standalone symbols such as ``^``).
+    if 0xD800 <= code <= 0xDFFF or 0x1F3FB <= code <= 0x1F3FF:
+        return True
+    return unicodedata.category(char) in _GLUE_CATEGORIES
+
+
+def _window_cut(text: str, start: int, size: int) -> int:
+    """Pick where the window starting at ``start`` ends.
+
+    The cut prefers places every supported pre-tokenizer already breaks at, so
+    tokenizing the two sides separately gives the tokens a one-shot encode
+    would.
+
+    Args:
+        text: Source text; it must extend past ``start + size``.
+        start: Index the window starts at.
+        size: Maximum window length.
+
+    Returns:
+        The exclusive end of the window, in ``(start + size // 2, start + size]``.
+    """
+    lo, hi = start + size // 2, start + size
+
+    # 1. After a newline that precedes text, where cl100k and the whitespace
+    #    pre-tokenizers end a pretoken. One followed by whitespace is mid-run.
+    i = text.rfind("\n", lo, hi)
+    while i != -1 and text[i + 1].isspace():
+        i = text.rfind("\n", lo, i)
+    if i != -1:
+        return i + 1
+
+    # 2. Before a space that follows text. cl100k (`` ?\p{L}+``) and Metaspace
+    #    attach a leading space to the next word, so cutting after the space
+    #    would split that token in two.
+    i = text.rfind(" ", lo + 1, hi)
+    while i != -1 and text[i - 1].isspace():
+        i = text.rfind(" ", lo + 1, i)
+    if i != -1:
+        return i
+
+    # 3. Hard cut, stepped back off any mark; a back half of only marks takes ``hi``.
+    p = hi
+    while p > lo and _is_glue(text[p]):
+        p -= 1
+    return p if p > lo else hi
+
+
+def _text_windows(text: str, size: int) -> Iterator[Tuple[int, int]]:
+    """Yield contiguous ``(start, end)`` character windows tiling ``text``.
+
+    Args:
+        text: Source text.
+        size: Maximum window length.
+
+    Yields:
+        Windows of at most ``size`` characters, each but the last covering
+        more than ``size // 2``. A text within ``size`` is a single window.
+    """
+    start = 0
+    while len(text) - start > size:
+        end = _window_cut(text, start, size)
+        yield start, end
+        start = end
+    yield start, len(text)
 
 
 def _windows(total: int, first: int, rest: int) -> Iterator[Tuple[int, int]]:
@@ -64,6 +147,13 @@ def _token_weight(start: int, end: int) -> int:
     return max(1, -(-span // _MAX_CHARS_PER_TOKEN))
 
 
+def _weigh(encoding) -> int:
+    """Tokens an encoding costs, charging collapsed runs by their span."""
+    if not encoding.offsets:
+        return len(encoding.ids)
+    return sum(_token_weight(start, end) for start, end in encoding.offsets)
+
+
 def _cap_piece_chars(pieces: List[str], first: int, rest: int) -> List[str]:
     """Cut any piece holding more characters than its budget can cover."""
     capped: List[str] = []
@@ -90,8 +180,20 @@ class TokenCounter:
     name = "unknown"
 
     def count(self, text: str) -> int:
-        """Number of tokens ``text`` occupies."""
-        raise NotImplementedError
+        """Number of tokens ``text`` occupies, counted window by window.
+
+        Equals a one-shot count on prose. A SentencePiece tokenizer that
+        prepends ``▁`` adds a token per newline seam; a hard cut can add a few.
+
+        Args:
+            text: Source text.
+
+        Returns:
+            The token count; 0 for an empty ``text``.
+        """
+        if not text:
+            return 0
+        return sum(self._count_one(text[start:end]) for start, end in _text_windows(text, _WINDOW_CHARS))
 
     def split(
         self, text: str, max_tokens: int, first_max_tokens: Optional[int] = None
@@ -108,6 +210,44 @@ class TokenCounter:
 
         Returns:
             The pieces, in order. An empty ``text`` yields an empty list.
+        """
+        if not text:
+            return []
+        rest = max(1, max_tokens)
+        first = max(1, first_max_tokens if first_max_tokens is not None else rest)
+        # Keep every piece but the last, which the window may have cut short,
+        # and carry it into the next segment. Boundaries may drift a token from
+        # a one-shot split, but every piece is a split output, so within budget.
+        pieces: List[str] = []
+        seg_start = 0
+        for _, end in _text_windows(text, _WINDOW_CHARS):
+            out = self._split_one(text[seg_start:end], first if not pieces else rest, rest)
+            for piece in out[:-1]:
+                pieces.append(piece)
+                seg_start += len(piece)
+            # Emit a carry longer than a window (a zero-token blank run) as it
+            # stands; left to grow, the work goes quadratic.
+            if end - seg_start > _WINDOW_CHARS:
+                pieces.append(text[seg_start:end])
+                seg_start = end
+        if seg_start < len(text):
+            pieces.append(text[seg_start:])
+        return pieces
+
+    def _count_one(self, text: str) -> int:
+        """Count a non-empty ``text`` of at most ``2 * _WINDOW_CHARS`` in one encode."""
+        raise NotImplementedError
+
+    def _split_one(self, text: str, first: int, rest: int) -> List[str]:
+        """Split a non-empty ``text`` of at most ``2 * _WINDOW_CHARS`` in one encode.
+
+        Args:
+            text: Source segment.
+            first: Budget for the first piece, at least 1.
+            rest: Budget for every later piece, at least 1.
+
+        Returns:
+            Pieces that reassemble ``text`` exactly.
         """
         raise NotImplementedError
 
@@ -189,18 +329,12 @@ class TiktokenCounter(TokenCounter):
     def __init__(self) -> None:
         self._encoding = get_encoding()
 
-    def count(self, text: str) -> int:
-        if not text:
-            return 0
+    def _count_one(self, text: str) -> int:
+        """Count ``text`` in cl100k tokens with one ``encode_ordinary``."""
         return len(self._encoding.encode_ordinary(text))
 
-    def split(
-        self, text: str, max_tokens: int, first_max_tokens: Optional[int] = None
-    ) -> List[str]:
-        if not text:
-            return []
-        rest = max(1, max_tokens)
-        first = max(1, first_max_tokens if first_max_tokens is not None else rest)
+    def _split_one(self, text: str, first: int, rest: int) -> List[str]:
+        """Split ``text`` at the character offsets of cl100k token windows."""
         tokens = self._encoding.encode_ordinary(text)
         if len(tokens) <= first:
             return [text]
@@ -244,24 +378,17 @@ class HuggingFaceCounter(TokenCounter):
     def _encode(self, text: str):
         return self._tokenizer.encode(text, add_special_tokens=False)
 
-    def count(self, text: str) -> int:
-        if not text:
-            return 0
-        encoding = self._encode(text)
-        if not encoding.offsets:
-            return len(encoding.ids)
-        return sum(_token_weight(start, end) for start, end in encoding.offsets)
+    def _count_one(self, text: str) -> int:
+        """Weighted token count of ``text`` in one encode."""
+        return _weigh(self._encode(text))
 
-    def split(
-        self, text: str, max_tokens: int, first_max_tokens: Optional[int] = None
-    ) -> List[str]:
-        if not text:
-            return []
-        rest = max(1, max_tokens)
-        first = max(1, first_max_tokens if first_max_tokens is not None else rest)
-        offsets = self._encode(text).offsets
-        if self.count(text) <= first:
+    def _split_one(self, text: str, first: int, rest: int) -> List[str]:
+        """Split ``text`` at the character offsets of weighted token windows."""
+        # One encode serves both the weight check and the offsets.
+        encoding = self._encode(text)
+        if _weigh(encoding) <= first:
             return [text]
+        offsets = encoding.offsets
 
         pieces: List[str] = []
         cursor = 0
@@ -354,6 +481,18 @@ def get_token_counter(embeddings_name: Optional[str] = None) -> TokenCounter:
         _cache[key] = counter
     logger.info("Chunking will count tokens with %s", counter.name)
     return counter
+
+
+def count_tokens_windowed(text: str) -> int:
+    """Count ``text`` in cl100k tokens, in bounded windows.
+
+    Args:
+        text: Text of any length.
+
+    Returns:
+        The token count; on prose it equals a one-shot count.
+    """
+    return TiktokenCounter().count(text)
 
 
 def reset_cache() -> None:

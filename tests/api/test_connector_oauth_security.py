@@ -439,7 +439,7 @@ class TestSignInBoundToStarter:
         assert _credentialed_rows(pg_conn, "victim") == []
 
     def test_starter_finishes_own_sign_in(self, app, pg_conn):
-        from docsgpt.api.connector.routes import _origin_of
+        from docsgpt.security.origins import normalize_origin
         from docsgpt.connectors import service
         from docsgpt.core.settings import settings
 
@@ -450,7 +450,7 @@ class TestSignInBoundToStarter:
 
         assert done.status_code == 200
         assert done.json["provider"] == "google_drive"
-        assert done.json["return_origin"] == _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI)
+        assert done.json["return_origin"] == normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI)
         fake_auth.exchange_code_for_tokens.assert_called_once_with("alice-code")
         rows = _credentialed_rows(pg_conn, "alice")
         assert [str(row.id) for row in rows] == [done.json["connection_id"]]

@@ -347,6 +347,31 @@ describe('ConversationBubble', () => {
     expect(container.innerHTML).toBe('');
   });
 
+  // A run that failed before it wrote anything still shows its steps.
+  it('shows a run with no answer when it has steps', async () => {
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        workflowRunId="run-1"
+        workflow={{
+          steps: [
+            {
+              nodeId: 'b',
+              nodeType: 'state',
+              title: 'Compute budget',
+              status: 'failed',
+              error: 'division by zero',
+            },
+          ],
+        }}
+        onOpenArtifact={() => {}}
+      />,
+    );
+    expect(
+      container.querySelector('button[aria-expanded]')?.textContent,
+    ).toContain(tr('conversation.workflow.title'));
+  });
+
   it('shows a run with no answer once it has files', async () => {
     runArtifactsMock.mockReturnValueOnce({
       items: [
@@ -373,6 +398,38 @@ describe('ConversationBubble', () => {
     expect(
       container.querySelectorAll('[data-slot="artifact-card"]'),
     ).toHaveLength(1);
+  });
+
+  it("renders a finished job's files under the reply that reports it", async () => {
+    const onOpenArtifact = vi.fn();
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        message="Your chart is ready."
+        onOpenArtifact={onOpenArtifact}
+        jobArtifacts={[
+          {
+            id: 'chart',
+            filename: 'chart.png',
+            ref: 'A1',
+            tool_name: 'code_executor',
+            job_id: 'j1',
+          },
+        ]}
+      />,
+    );
+    const cards = container.querySelectorAll('[data-slot="artifact-card"]');
+    expect(cards.length).toBe(1);
+    expect(cards[0].textContent).toContain('chart.png');
+    const open = cards[0].querySelector(
+      '[data-artifact-open]',
+    ) as HTMLButtonElement;
+    await act(async () => open.click());
+    expect(onOpenArtifact).toHaveBeenCalledWith({
+      id: 'chart',
+      toolName: 'code_executor',
+      version: undefined,
+    });
   });
 
   it('renders artifacts as cards under the answer and feedback as muted icon buttons', async () => {
@@ -449,6 +506,21 @@ describe('ConversationBubble', () => {
       expect(btn.hasAttribute('title')).toBe(false);
       expect(btn.dataset.state).toBe('closed');
     }
+  });
+
+  // An empty row's margins while streaming made the end of the stream a net
+  // shrink (the status line out, the buttons in), which jolts the chat scroll.
+  it('draws the action row only once the answer has finished streaming', async () => {
+    await render(
+      <ConversationBubble type="ANSWER" message="Partial" isStreaming />,
+    );
+    expect(container.querySelector('.my-2.ml-4')).toBeNull();
+
+    await render(<ConversationBubble type="ANSWER" message="Partial" />);
+    const copy = container.querySelector(
+      `button[aria-label="${en.conversation.copy}"]`,
+    );
+    expect(copy?.closest('.my-2.ml-4')).not.toBeNull();
   });
 
   it('renders the question edit actions as pill buttons', async () => {

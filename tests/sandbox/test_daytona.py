@@ -710,6 +710,7 @@ def test_exec_no_retry_when_wake_fails(sandbox):
     created.process.code_run.side_effect = RuntimeError("stopped")
     res = sandbox.exec("conv-1", "print('x')")
     assert res.status == "error"
+    assert res.sandbox_error is True
     assert created.process.code_run.call_count == 1
 
 
@@ -1187,6 +1188,7 @@ def test_a_code_run_timeout_is_reported_as_a_timeout_without_a_wake_retry(sandbo
     assert res.status == "error"
     assert res.error_name == "TimeoutError" and res.error_value == "execution exceeded 30s"
     assert res.runtime_invalidated is False
+    assert res.sandbox_error is False
     # A timeout is not a stopped sandbox: no refresh, no wake, no second run.
     assert created.process.code_run.call_count == 1
     sandbox._client.get.assert_not_called()

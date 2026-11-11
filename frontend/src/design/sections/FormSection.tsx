@@ -1,11 +1,13 @@
 import { Check, Search, X } from 'lucide-react';
 import { useState } from 'react';
+import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FormField } from '@/components/ui/form-field';
 import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MultiSelect } from '@/components/ui/multi-select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -17,6 +19,25 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Example, Section } from '../shared';
+
+// The Prompts page's cards: the radio picks the prompt for chats.
+const PROMPT_CARDS = [
+  {
+    value: 'default',
+    title: 'default',
+    description: 'Answers from your documents and cites them.',
+  },
+  {
+    value: 'creative',
+    title: 'creative',
+    description: 'Like default, plus ideas and examples.',
+  },
+  {
+    value: 'strict',
+    title: 'strict',
+    description: 'Answers only from your documents and tools.',
+  },
+];
 
 const MULTI_OPTIONS = [
   { value: 'pdf', label: 'PDF' },
@@ -36,6 +57,7 @@ export default function FormSection() {
   ]);
   const [scopes, setScopes] = useState<string[]>(['agents:read']);
   const [tokenLimit, setTokenLimit] = useState(true);
+  const [chatPrompt, setChatPrompt] = useState('creative');
   return (
     <Section
       id="forms"
@@ -312,6 +334,46 @@ export default function FormSection() {
             <Checkbox id="ds-cb-disabled" disabled defaultChecked />
             <Label htmlFor="ds-cb-disabled">Disabled</Label>
           </div>
+        </div>
+      </Example>
+      <Example
+        title="RadioGroup"
+        code='<RadioGroup value onValueChange aria-label> + <RadioGroupItem value aria-label size="sm | default"> (one of N cards or rows that carry their own content; the empty ring is muted-foreground so it holds on a filled card)'
+      >
+        <div className="flex flex-col gap-6">
+          <RadioGroup
+            value={chatPrompt}
+            onValueChange={setChatPrompt}
+            aria-label="Prompt for chats"
+          >
+            {/* A card grid goes inside the group; the group owns its gap. */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {PROMPT_CARDS.map((prompt) => (
+                <Card key={prompt.value} variant="filled" padding="default">
+                  <p className="text-foreground font-medium">{prompt.title}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {prompt.description}
+                  </p>
+                  <div className="mt-auto flex justify-end">
+                    <RadioGroupItem
+                      value={prompt.value}
+                      aria-label={`Use ${prompt.title} in chats`}
+                    />
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </RadioGroup>
+          <RadioGroup defaultValue="sm-a" aria-label="Small and disabled">
+            <div className="flex items-center gap-3">
+              <RadioGroupItem id="ds-radio-sm" value="sm-a" size="sm" />
+              <Label htmlFor="ds-radio-sm">Small (table cells)</Label>
+            </div>
+            <div className="flex items-center gap-3">
+              <RadioGroupItem id="ds-radio-disabled" value="off" disabled />
+              <Label htmlFor="ds-radio-disabled">Disabled</Label>
+            </div>
+          </RadioGroup>
         </div>
       </Example>
       <Example

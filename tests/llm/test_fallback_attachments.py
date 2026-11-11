@@ -88,6 +88,15 @@ class TestContextLengthErrors:
 
         assert list(primary.gen_stream(model="primary", messages=[{"role": "user", "content": "hi"}])) == ["fb"]
 
+    def test_byom_windows_are_read_by_registry_id(self, monkeypatch):
+        # By upstream name both miss and read the same default, which would refuse the retry.
+        _limits(monkeypatch, {"primary-uuid": 32_000, "backup-uuid": 128_000})
+        primary, backup = _pair(ContextLengthError("too long"), primary_model="llama3:8b", fallback_model="llama3:70b")
+        primary._canonical_model_id = "primary-uuid"
+        backup._canonical_model_id = "backup-uuid"
+
+        assert primary.gen(model="llama3:8b", messages=[{"role": "user", "content": "hi"}]) == "fb"
+
 
 def _file_messages(*file_ids):
     return [

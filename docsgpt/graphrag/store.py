@@ -154,6 +154,29 @@ def _lock_source(cursor, source_id: str) -> None:
     )
 
 
+def _add_missing_columns(cursor, table: str, columns: Dict[str, str]) -> None:
+    """Add the columns ``table`` lacks; an existing one costs no lock.
+
+    ``ADD COLUMN IF NOT EXISTS`` takes the table's exclusive lock even when the
+    column is there, and the schema check runs on a store's first write: it
+    would queue behind a build's open transaction on the table while holding
+    the lock on another table that build is about to write — a deadlock.
+    """
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = %s;",
+        (table,),
+    )
+    present = {row[0] for row in cursor.fetchall()}
+    for name, column_type in columns.items():
+        if name not in present:
+            cursor.execute(
+                sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS {} " + column_type + ";").format(
+                    sql.Identifier(table), sql.Identifier(name)
+                )
+            )
+
+
 def _safe_rollback(conn) -> None:
     """Roll back, tolerating a connection too broken to roll back."""
     try:
@@ -339,10 +362,7 @@ class GraphStore:
             # ``CREATE TABLE IF NOT EXISTS`` is a no-op on a database that
             # already has the table, so a column added after the fact needs its
             # own statement or every existing deployment silently lacks it.
-            cursor.execute(
-                f"ALTER TABLE graph_edges "
-                f"ADD COLUMN IF NOT EXISTS fact_embedding vector({dimension});"
-            )
+            _add_missing_columns(cursor, "graph_edges", {"fact_embedding": f"vector({dimension})"})
 
             cursor.execute(
                 """
@@ -364,6 +384,13 @@ class GraphStore:
                     PRIMARY KEY (source_id, chunk_id)
                 );
                 """
+            )
+            # What a ``done`` chunk was extracted from and with: a sync re-embeds
+            # every chunk under a new id and carries the graph over by content
+            # (``sync_graph_to_chunks``). Rows written before these existed
+            # stay NULL, and such a graph is rebuilt once on its next sync.
+            _add_missing_columns(
+                cursor, "graph_ingest_progress", {"content_hash": "TEXT", "extraction_key": "TEXT"}
             )
 
             cursor.execute(
@@ -689,6 +716,8 @@ class GraphStore:
         entities: List[Dict[str, Any]],
         relationships: List[Dict[str, Any]],
         name_embeddings: Dict[str, List[float]],
+        content_hash: Optional[str] = None,
+        extraction_key: Optional[str] = None,
     ) -> tuple[int, int]:
         """Write one chunk's extracted entities and relationships in one transaction.
 
@@ -706,7 +735,9 @@ class GraphStore:
         transaction, so the checkpoint and the rows it describes commit
         together and a replay of an already-applied chunk returns ``(0, 0)``
         without touching the graph. So does a chunk ``delete_chunks`` has
-        deleted (its tombstone), checked under the same source lock.
+        deleted (its tombstone), checked under the same source lock. The row
+        records ``content_hash`` and ``extraction_key``, which a sync matches
+        the re-embedded chunks against.
         Returns ``(nodes_upserted, edges_added)``.
         """
         self._ensure_tables_once()
@@ -778,12 +809,13 @@ class GraphStore:
 
                 cursor.execute(
                     """
-                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
-                    VALUES (%s, %s, 'done')
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status, content_hash, extraction_key)
+                    VALUES (%s, %s, 'done', %s, %s)
                     ON CONFLICT (source_id, chunk_id)
-                    DO UPDATE SET status = EXCLUDED.status;
+                    DO UPDATE SET status = EXCLUDED.status, content_hash = EXCLUDED.content_hash,
+                                  extraction_key = EXCLUDED.extraction_key;
                     """,
-                    (source_id, str(chunk_id)),
+                    (source_id, str(chunk_id), content_hash, extraction_key),
                 )
                 conn.commit()
                 return len(entities), edges_added
@@ -1815,11 +1847,19 @@ class GraphStore:
         finally:
             cursor.close()
 
-    def mark_chunk(self, source_id: str, chunk_id: str, status: str):
+    def mark_chunk(
+        self,
+        source_id: str,
+        chunk_id: str,
+        status: str,
+        content_hash: Optional[str] = None,
+        extraction_key: Optional[str] = None,
+    ):
         """Record a chunk's extraction status, reconnecting once if the connection died.
 
         A chunk's ``deleted`` tombstone is kept: a build marking a chunk that
-        was deleted meanwhile would otherwise clear it.
+        was deleted meanwhile would otherwise clear it. A ``done`` chunk
+        records what it was extracted from and with (see ``apply_chunk``).
         """
         self._ensure_tables_once()
 
@@ -1828,12 +1868,13 @@ class GraphStore:
             try:
                 cursor.execute(
                     """
-                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status, content_hash, extraction_key)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status,
+                        content_hash = EXCLUDED.content_hash, extraction_key = EXCLUDED.extraction_key
                     WHERE graph_ingest_progress.status IS DISTINCT FROM 'deleted';
                     """,
-                    (source_id, str(chunk_id), status),
+                    (source_id, str(chunk_id), status, content_hash, extraction_key),
                 )
                 conn.commit()
             except Exception as e:
@@ -1861,8 +1902,29 @@ class GraphStore:
         Raises:
             Exception: The underlying write failure, after a rollback.
         """
+        self.remap_chunks(source_id, {old_chunk_id: new_chunk_id})
+
+    def remap_chunks(self, source_id: str, mapping: Dict[str, str]) -> None:
+        """Point every graph reference to each old chunk id at its new id, in one transaction.
+
+        Node links, edge provenance and the extraction checkpoint all move,
+        each in one statement however many chunks a re-embed renamed. A
+        checkpoint row the new id already has that is not ``done`` (a failed
+        attempt) gives way to the old chunk's.
+
+        Args:
+            source_id: Source the chunks belong to.
+            mapping: Old chunk id to the id of the chunk that replaced it.
+
+        Raises:
+            Exception: The underlying write failure, after a rollback.
+        """
+        pairs = [(str(old), str(new)) for old, new in mapping.items() if str(old) != str(new)]
+        if not pairs:
+            return
         self._ensure_tables_once()
-        old_id, new_id = str(old_chunk_id), str(new_chunk_id)
+        old_ids = [old for old, _new in pairs]
+        new_ids = [new for _old, new in pairs]
 
         def _write(conn):
             cursor = conn.cursor()
@@ -1870,43 +1932,51 @@ class GraphStore:
                 _lock_source(cursor, source_id)
                 cursor.execute(
                     """
-                    UPDATE graph_node_chunks SET chunk_id = %s
-                    WHERE source_id = %s AND chunk_id = %s;
+                    UPDATE graph_node_chunks c SET chunk_id = m.new_id
+                    FROM unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
+                    WHERE c.source_id = %s AND c.chunk_id = m.old_id;
                     """,
-                    (new_id, source_id, old_id),
+                    (old_ids, new_ids, source_id),
                 )
-                # Rewrite the matching element in place, keeping array order.
+                # Rewrite the matching elements in place, keeping array order.
                 cursor.execute(
                     """
-                    UPDATE graph_edges
+                    UPDATE graph_edges e
                     SET source_chunk_ids = (
-                        SELECT jsonb_agg(
-                            CASE WHEN t.v #>> '{}' = %s THEN to_jsonb(%s::text) ELSE t.v END
-                            ORDER BY t.ord
-                        )
-                        FROM jsonb_array_elements(source_chunk_ids)
-                             WITH ORDINALITY AS t(v, ord)
+                        SELECT jsonb_agg(COALESCE(to_jsonb(m.new_id), t.v) ORDER BY t.ord)
+                        FROM jsonb_array_elements(e.source_chunk_ids) WITH ORDINALITY AS t(v, ord)
+                        LEFT JOIN unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
+                          ON m.old_id = t.v #>> '{}'
                     )
-                    WHERE source_id = %s
-                      AND jsonb_typeof(source_chunk_ids) = 'array'
+                    WHERE e.source_id = %s
+                      AND jsonb_typeof(e.source_chunk_ids) = 'array'
                       AND EXISTS (
-                          SELECT 1 FROM jsonb_array_elements(source_chunk_ids) AS s(v)
-                          WHERE s.v #>> '{}' = %s
+                          SELECT 1 FROM jsonb_array_elements(e.source_chunk_ids) AS s(v)
+                          WHERE s.v #>> '{}' = ANY(%s)
                       );
                     """,
-                    (old_id, new_id, source_id, old_id),
+                    (old_ids, new_ids, source_id, old_ids),
                 )
                 cursor.execute(
                     """
-                    UPDATE graph_ingest_progress SET chunk_id = %s
-                    WHERE source_id = %s AND chunk_id = %s;
+                    DELETE FROM graph_ingest_progress
+                    WHERE source_id = %s AND chunk_id = ANY(%s)
+                      AND status IS DISTINCT FROM 'done';
                     """,
-                    (new_id, source_id, old_id),
+                    (source_id, new_ids),
+                )
+                cursor.execute(
+                    """
+                    UPDATE graph_ingest_progress p SET chunk_id = m.new_id
+                    FROM unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
+                    WHERE p.source_id = %s AND p.chunk_id = m.old_id;
+                    """,
+                    (old_ids, new_ids, source_id),
                 )
                 conn.commit()
             except Exception as e:
                 _safe_rollback(conn)
-                logging.error(f"Error remapping graph chunk: {e}")
+                logging.error(f"Error remapping graph chunks: {e}")
                 raise
             finally:
                 cursor.close()
@@ -2091,6 +2161,32 @@ class GraphStore:
         except Exception as e:
             logging.error(f"Error getting progress: {e}")
             return {}
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def checkpoint(self, source_id: str) -> List[Dict[str, Any]]:
+        """Every extraction checkpoint row of a source, with what each chunk was extracted from.
+
+        Unlike ``get_progress`` a failed read raises: a sync deciding what to
+        keep must not mistake an unreadable checkpoint for an empty graph.
+
+        Returns:
+            ``{chunk_id, status, content_hash, extraction_key}`` dicts.
+        """
+        self._ensure_tables_once()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT chunk_id, status, content_hash, extraction_key FROM graph_ingest_progress "
+                "WHERE source_id = %s;",
+                (source_id,),
+            )
+            return [
+                {"chunk_id": row[0], "status": row[1], "content_hash": row[2], "extraction_key": row[3]}
+                for row in cursor.fetchall()
+            ]
         finally:
             cursor.close()
             conn.rollback()

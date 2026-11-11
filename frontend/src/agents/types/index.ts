@@ -106,6 +106,8 @@ export type Agent = {
   name: string;
   slug?: string;
   description: string;
+  /** Up to four questions shown under the agent's card on a new chat. */
+  starters?: string[];
   image: string;
   source: string;
   sources?: string[];
@@ -216,6 +218,21 @@ export type AgentConfig = {
   /** `tool_id:action` writes on the owner's accounts API-key callers may run. */
   api_write_allowlist?: string[];
   analytics?: AnalyticsConfig;
+  /** While on, the agent's API key works only from `allowed_origins`. */
+  restrict_origins?: boolean;
+  /** Origins (`https://example.com`) that may call the agent with its key. */
+  allowed_origins?: string[];
+  /**
+   * Most tokens of history, documents and tool results one request fills,
+   * below the model's window; null or absent uses the whole window.
+   */
+  context_window_limit?: number | null;
+  /**
+   * Most tokens of earlier messages one request replays word for word;
+   * past it, older messages are summarized. Below `context_window_limit`;
+   * null or absent summarizes only near the window.
+   */
+  history_token_limit?: number | null;
 };
 
 export type GuardrailCheckInfo = {

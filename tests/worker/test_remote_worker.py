@@ -7,8 +7,8 @@ pipeline, and the backend HTTP callback are all mocked — only the PG
 update is real.
 
 ``sync_worker`` reads rows out of ``sources`` whose ``sync_frequency``
-matches and dispatches them through ``sync`` → ``remote_worker``. We
-assert one seeded row is discovered and forwarded.
+matches and queues a ``sync_source`` task for each. We assert one seeded
+row is discovered and queued.
 """
 
 from __future__ import annotations
@@ -21,8 +21,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from docsgpt import worker
+from docsgpt.parser import tokenization
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from tests.parser.counter_fakes import spy_cl100k
 
 
 @pytest.mark.unit
@@ -83,10 +85,8 @@ class TestSyncWorker:
         task_self,
         monkeypatch,
     ):
-        """``sync_worker`` selects rows by ``sync_frequency`` and passes
-        each to ``sync``. We assert the seeded row is discovered and
-        forwarded with the right doc_id — the nested ``sync`` call is
-        stubbed so we don't re-run the whole remote pipeline here."""
+        """``sync_worker`` selects rows by ``sync_frequency`` and queues a
+        ``sync_source`` for each, with the right doc_id."""
         from docsgpt import worker
 
         src = SourcesRepository(pg_conn).create(
@@ -97,33 +97,25 @@ class TestSyncWorker:
             sync_frequency="weekly",
             remote_data={"url": "http://example.com"},
         )
-
-        captured: list[dict] = []
-
-        def _fake_sync(self, source_data, name_job, user, loader,
-                       sync_frequency, retriever, doc_id=None, directory="temp",
-                       connection_id=None, lock_wait_seconds=None, notify_skip=True):
-            captured.append({
-                "name_job": name_job,
-                "user": user,
-                "loader": loader,
-                "sync_frequency": sync_frequency,
-                "retriever": retriever,
-                "doc_id": doc_id,
-            })
-            return {"status": "success"}
-
-        monkeypatch.setattr(worker, "sync", _fake_sync)
+        SourcesRepository(pg_conn).create(
+            "daily-feed",
+            user_id="carol",
+            type="url",
+            sync_frequency="daily",
+            remote_data={"url": "http://example.com"},
+        )
+        apply_async = MagicMock(name="sync_source.apply_async")
+        monkeypatch.setattr("docsgpt.api.user.tasks.sync_source.apply_async", apply_async)
 
         result = worker.sync_worker(task_self, "weekly")
 
         assert result["total_sync_count"] == 1
-        assert result["sync_success"] == 1
-        assert len(captured) == 1
-        assert captured[0]["name_job"] == "weekly-feed"
-        assert captured[0]["user"] == "carol"
-        assert captured[0]["loader"] == "url"
-        assert captured[0]["doc_id"] == str(src["id"])
+        assert result["sync_dispatched"] == 1
+        queued = apply_async.call_args.kwargs["kwargs"]
+        assert queued["job_name"] == "weekly-feed"
+        assert queued["user"] == "carol"
+        assert queued["loader"] == "url"
+        assert queued["doc_id"] == str(src["id"])
 
     def test_connector_sources_are_skipped(
         self,
@@ -169,11 +161,11 @@ class TestSyncWorker:
         task_self,
         monkeypatch,
     ):
-        """Regression: remote_data reads back as a dict; sync_worker hands
-        the loader the Website config converted from it, not the raw dict."""
+        """Regression: remote_data reads back as a dict; a sync hands the
+        loader the Website config converted from it, not the raw dict."""
         from docsgpt import worker
 
-        SourcesRepository(pg_conn).create(
+        src = SourcesRepository(pg_conn).create(
             "docs-crawl",
             user_id="erin",
             type="crawler",
@@ -208,11 +200,11 @@ class TestSyncWorker:
             worker, "upload_index", lambda full_path, file_data: None
         )
 
-        result = worker.sync_worker(task_self, "weekly")
+        result = worker.sync(
+            task_self, {}, "docs-crawl", "erin", "crawler", "weekly", "classic", str(src["id"]),
+        )
 
-        assert result["total_sync_count"] == 1
-        assert result["sync_success"] == 1
-        assert result["sync_failure"] == 0
+        assert result == {"status": "success"}
         [config] = received
         assert [e["url"] for e in config["entries"]] == ["https://example.com"]
 
@@ -510,3 +502,49 @@ class TestSyncUsesTheSourcesConfig:
         assert result == {"status": "success"}
         assert captured["max_tokens"] == 400
         assert captured["min_tokens"] == 50
+
+
+@pytest.mark.unit
+class TestRemoteWorkerFileTokenCount:
+    def test_long_chunk_is_counted_in_bounded_windows(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        remote_pipeline,
+    ):
+        # Mostly whitespace, so the chunker can leave one chunk far longer than a window.
+        text = "a" + " \n\t" * 1_000 + "b"
+        remote_pipeline.loader.load_data.return_value = [
+            Document(text=text, extra_info={"file_path": "big.txt"}, doc_id="d1")
+        ]
+        identity_chunker = MagicMock(name="chunker")
+        identity_chunker.chunk.side_effect = lambda documents: documents
+        monkeypatch.setattr(
+            worker.ChunkerCreator, "create_chunker", lambda *args, **kwargs: identity_chunker
+        )
+        encoding = spy_cl100k(monkeypatch, window=256)
+        expected = tokenization.count_tokens_windowed(text)
+        encoding.encode_lengths.clear()
+
+        token_counts: list[int] = []
+        real_add = worker.add_file_to_structure
+
+        def _spy_add(*args, **kwargs):
+            token_counts.append(kwargs["token_count"])
+            return real_add(*args, **kwargs)
+
+        monkeypatch.setattr(worker, "add_file_to_structure", _spy_add)
+
+        worker.remote_worker(
+            task_self,
+            {"urls": ["http://example.com"]},
+            "feed",
+            "bob",
+            "crawler",
+            directory=str(tmp_path / "temp"),
+            operation_mode="upload",
+        )
+
+        assert token_counts == [expected]
+        assert max(encoding.encode_lengths) <= 2 * 256

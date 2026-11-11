@@ -18,8 +18,8 @@ from docsgpt.agents.headless_runner import run_agent_headless
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.quotas.service import QuotaExceededError
-from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.engine import get_engine
+from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
 )
@@ -52,7 +52,7 @@ def _agent_config_for_schedule(schedule: Dict[str, Any]) -> Optional[Dict[str, A
                 sql_text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
                 {"id": str(schedule["agent_id"])},
             ).fetchone()
-        return row_to_dict(row) if row is not None else None
+        return agent_row_to_dict(row)
     return _ephemeral_agent_for_agentless(schedule)
 
 
@@ -175,15 +175,98 @@ def _notify_appended(schedule: Dict[str, Any], message: Dict[str, Any], outcome:
     from docsgpt.notifications.notify import notify_user
 
     conversation_id = str(message["conversation_id"])
-    title = (schedule.get("name") or "").strip() or plain_preview(schedule.get("instruction") or "", 120)
     notify_user(
         user_id=str(schedule.get("user_id")),
         conversation_id=conversation_id,
         kind="schedule",
-        title=title or "Scheduled task",
+        title=_schedule_title(schedule),
         body=plain_preview(outcome.get("answer") or ""),
         url=f"/c/{conversation_id}",
     )
+
+
+def _schedule_title(schedule: Dict[str, Any]) -> str:
+    """A schedule as a notification names it: its name, else the head of its instruction."""
+    from docsgpt.notifications.kinds import plain_preview
+
+    title = (schedule.get("name") or "").strip() or plain_preview(schedule.get("instruction") or "", 120)
+    return title or "Scheduled task"
+
+
+#: Characters of a run's error a notification shows.
+_FAILURE_LINE_CHARS = 200
+
+
+def _failure_line(error_type: Optional[str], error_text: Optional[str]) -> str:
+    """A failed run's error as one line: its first line (a traceback's message, not its frames)."""
+    from docsgpt.notifications.kinds import plain_preview
+
+    first = next((line for line in str(error_text or "").splitlines() if line.strip()), "")
+    return plain_preview(first or error_type or "", _FAILURE_LINE_CHARS)
+
+
+def _notify_failing(schedule: Dict[str, Any], kind: str, error_type: Optional[str], error_text: Optional[str]) -> None:
+    """Tell a recurring schedule's owner it paused itself (``schedule_paused``) or started failing.
+
+    A recurring run has no conversation to land in, so without this only an
+    open tab ever learns of it. Open goes to the schedule. Never raises.
+    """
+    from docsgpt.notifications.notify import notify_user
+
+    schedule_id = str(schedule["id"])
+    notify_user(
+        user_id=str(schedule.get("user_id")),
+        conversation_id=None,
+        kind=kind,
+        title=_schedule_title(schedule)[:200],
+        body=_failure_line(error_type, error_text),
+        url=f"/activity/schedules?schedule={schedule_id}",
+        schedule_id=schedule_id,
+    )
+
+
+def _counts_toward_autopause(run: Dict[str, Any]) -> bool:
+    """Whether a failed run bumps the failure count; a Run now is watched by whoever started it, so it doesn't."""
+    return run.get("trigger_source") != "manual"
+
+
+def _autopause_if_due(schedules_repo: SchedulesRepository, schedule: Dict[str, Any], failures: int) -> bool:
+    """Pause a recurring schedule that has failed ``SCHEDULE_AUTOPAUSE_FAILURES`` runs in a row; True if it paused."""
+    if (
+        settings.SCHEDULE_AUTOPAUSE_FAILURES > 0
+        and failures >= settings.SCHEDULE_AUTOPAUSE_FAILURES
+        and schedule.get("trigger_type") == "recurring"
+    ):
+        return schedules_repo.autopause(str(schedule["id"]))
+    return False
+
+
+def _after_failure(
+    schedule: Dict[str, Any],
+    run: Dict[str, Any],
+    autopaused: bool,
+    failures: int,
+    error_type: Optional[str],
+    error_text: Optional[str],
+) -> None:
+    """Publish a pause and tell the owner: once per pause, or on the first failure in a row when switched on."""
+    if autopaused:
+        _publish_run_event(
+            "schedule.autopaused",
+            run,
+            schedule,
+            consecutive_failure_count=settings.SCHEDULE_AUTOPAUSE_FAILURES,
+        )
+        # Once per pause: ``autopause`` flips only an active schedule, so the
+        # runs a paused one still gets (Run now) don't notify again.
+        _notify_failing(schedule, "schedule_paused", error_type, error_text)
+    elif (
+        failures == 1
+        and settings.SCHEDULE_NOTIFY_RECURRING_FAILURES
+        and schedule.get("trigger_type") == "recurring"
+        and run.get("trigger_source") != "manual"
+    ):
+        _notify_failing(schedule, "schedule_failed", error_type, error_text)
 
 
 def _append_one_time_turn(
@@ -280,6 +363,28 @@ def _schedule_caller_rules(schedule: Dict[str, Any], agent_config: Dict[str, Any
     return {"external_caller": schedule.get("created_via") == "api", "public_link_caller": public}
 
 
+def _fail_before_start(run: Dict[str, Any], schedule: Dict[str, Any], reason: str) -> Dict[str, Any]:
+    """Record a run that could not start; it counts toward auto-pause like any other failure."""
+    failures, autopaused = 0, False
+    with get_engine().begin() as conn:
+        updated = ScheduleRunsRepository(conn).update(
+            str(run["id"]),
+            {
+                "status": "failed",
+                "finished_at": datetime.now(timezone.utc),
+                "error_type": "internal",
+                "error": reason,
+            },
+        )
+        if _counts_toward_autopause(run):
+            schedules_repo = SchedulesRepository(conn)
+            failures = schedules_repo.bump_failure_count(str(schedule["id"]))
+            autopaused = _autopause_if_due(schedules_repo, schedule, failures)
+    _publish_run_event("schedule.run.failed", updated or run, schedule, error=reason)
+    _after_failure(schedule, updated or run, autopaused, failures, "internal", reason)
+    return {"status": "failed", "reason": reason}
+
+
 def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Dict[str, Any]:
     """Execute one scheduled run by id; returns a result dict for tracing."""
     if not settings.POSTGRES_URI:
@@ -315,36 +420,10 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
 
     agent_config = _agent_config_for_schedule(schedule)
     if agent_config is None:
-        with engine.begin() as conn:
-            updated = ScheduleRunsRepository(conn).update(
-                run_id,
-                {
-                    "status": "failed",
-                    "finished_at": datetime.now(timezone.utc),
-                    "error_type": "internal",
-                    "error": "agent missing",
-                },
-            )
-            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
-        _publish_run_event("schedule.run.failed", updated or run, schedule,
-                           error="agent missing")
-        return {"status": "failed", "reason": "agent missing"}
+        return _fail_before_start(run, schedule, "agent missing")
 
     if not _scheduler_still_allowed(schedule, agent_config):
-        with engine.begin() as conn:
-            updated = ScheduleRunsRepository(conn).update(
-                run_id,
-                {
-                    "status": "failed",
-                    "finished_at": datetime.now(timezone.utc),
-                    "error_type": "internal",
-                    "error": "agent access revoked",
-                },
-            )
-            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
-        _publish_run_event("schedule.run.failed", updated or run, schedule,
-                           error="agent access revoked")
-        return {"status": "failed", "reason": "agent access revoked"}
+        return _fail_before_start(run, schedule, "agent access revoked")
 
     with engine.begin() as conn:
         if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):
@@ -400,6 +479,14 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
     if error_type is None and outcome.get("error_type"):
         error_type = str(outcome["error_type"])
         error_text = str(outcome.get("error") or "") or error_type
+
+    # The agent reported it has no way to do the task (``report_cannot_complete``,
+    # or the marker a model without tools opens its answer with; the runner
+    # reads both). Without this a schedule that can never work answers "I
+    # can't" every time as a success and never pauses.
+    if error_type is None and outcome.get("cannot_complete"):
+        error_type = "cannot_complete"
+        error_text = str(outcome["cannot_complete"])
 
     prompt_tokens = int(outcome.get("prompt_tokens", 0) or 0)
     generated_tokens = int(outcome.get("generated_tokens", 0) or 0)
@@ -460,16 +547,12 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         # counted every token twice. The run's own total stays on its row.
         schedules_repo = SchedulesRepository(conn)
         autopaused = False
+        count = 0
         if new_status == "success":
             schedules_repo.reset_failure_count(str(schedule["id"]))
-        elif new_status in ("failed", "timeout"):
+        elif new_status in ("failed", "timeout") and _counts_toward_autopause(run):
             count = schedules_repo.bump_failure_count(str(schedule["id"]))
-            if (
-                settings.SCHEDULE_AUTOPAUSE_FAILURES > 0
-                and count >= settings.SCHEDULE_AUTOPAUSE_FAILURES
-                and schedule.get("trigger_type") == "recurring"
-            ):
-                autopaused = schedules_repo.autopause(str(schedule["id"]))
+            autopaused = _autopause_if_due(schedules_repo, schedule, count)
         # Once: terminal-flip on cron-fired runs only; manual runs on a
         # still-active once-schedule leave the future cadence intact.
         if (
@@ -483,13 +566,21 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             )
 
     appended: Optional[Dict[str, Any]] = None
+    # A task set from a chat that the agent cannot do still answers there, so
+    # the user learns why instead of hearing nothing.
     if (
         schedule.get("trigger_type") == "once"
-        and new_status == "success"
+        and (new_status == "success" or error_type == "cannot_complete")
         and schedule.get("origin_conversation_id")
     ):
+        # A report with no answer around it still tells the chat why.
+        turn_outcome = (
+            {**outcome, "answer": error_text}
+            if error_type == "cannot_complete" and not (outcome.get("answer") or "").strip()
+            else outcome
+        )
         try:
-            appended = _append_one_time_turn(schedule, updated_run or run, outcome)
+            appended = _append_one_time_turn(schedule, updated_run or run, turn_outcome)
         except Exception:
             logger.exception(
                 "scheduler: append turn failed run=%s", run_id,
@@ -510,7 +601,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                 str(schedule["id"]),
                 run_id,
             )
-            _notify_appended(schedule, appended, outcome)
+            _notify_appended(schedule, appended, turn_outcome)
 
     if new_status == "success":
         _publish_run_event("schedule.run.completed", updated_run or run, schedule)
@@ -523,13 +614,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             error=error_text,
         )
 
-    if autopaused:
-        _publish_run_event(
-            "schedule.autopaused",
-            updated_run or run,
-            schedule,
-            consecutive_failure_count=settings.SCHEDULE_AUTOPAUSE_FAILURES,
-        )
+    _after_failure(schedule, updated_run or run, autopaused, count, error_type, error_text)
 
     return {
         "status": new_status,

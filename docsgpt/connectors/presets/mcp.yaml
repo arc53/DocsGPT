@@ -218,3 +218,43 @@
   auth_kind: mcp_oauth
   capabilities: [read]
   docs_url: https://context7.com/docs/resources/all-clients
+
+- key: mcp:twelvedata
+  name: Twelve Data
+  description: Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.
+  icon: twelvedata
+  category: business
+  mcp_url: https://mcp.twelvedata.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read]
+  docs_url: https://twelvedata.com/docs/mcp
+
+- key: mcp:canva
+  name: Canva
+  description: Work with Canva designs, export them and use brand templates.
+  icon: canva
+  category: business
+  mcp_url: https://mcp.canva.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://www.canva.dev/docs/mcp
+
+- key: mcp:cloudflare
+  name: Cloudflare
+  description: Manage Workers, DNS, R2 and more through the Cloudflare API.
+  icon: cloudflare
+  category: dev
+  mcp_url: https://mcp.cloudflare.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read]
+  docs_url: https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/
+
+- key: mcp:excalidraw
+  name: Excalidraw
+  description: Draw diagrams and get an editable Excalidraw link.
+  icon: excalidraw
+  category: projects
+  mcp_url: https://mcp.excalidraw.com/mcp
+  auth_kind: mcp
+  capabilities: [read, write]
+  docs_url: https://github.com/excalidraw/excalidraw-mcp

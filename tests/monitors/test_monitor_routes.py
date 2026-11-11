@@ -13,6 +13,9 @@ from docsgpt.monitors.checks import Content
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 @pytest.fixture()
 def client():
     from docsgpt.app import app as flask_app

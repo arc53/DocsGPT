@@ -122,9 +122,9 @@ def test_pdfplumber_pins_match_its_requirements():
 
 
 def test_pillow_and_pypdf_are_past_their_known_vulnerabilities():
-    """Pillow is 13.0.0+ and pypdf 6.21.2+."""
+    """Pillow is 13.0.0+ and pypdf 6.21.4+."""
     assert _pinned_version("pillow") >= (13, 0, 0)
-    assert _pinned_version("pypdf") >= (6, 21, 2)
+    assert _pinned_version("pypdf") >= (6, 21, 4)
 
 
 def test_pypdf2_is_not_installed_and_points_at_pypdf() -> None:

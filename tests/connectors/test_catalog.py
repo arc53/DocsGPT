@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from docsgpt.connectors import catalog
 
@@ -138,6 +139,25 @@ class TestPresets:
         assert definition.docs_url == "https://docs.coingecko.com/docs/mcp-server"
         assert definition.configured
 
+    def test_excalidraw_needs_no_credentials_or_server_settings(self):
+        definition = catalog.get_definition("mcp:excalidraw")
+
+        assert definition is not None
+        assert definition.name == "Excalidraw"
+        assert definition.icon == "excalidraw"
+        assert definition.category == "projects"
+        assert definition.publisher == "preset"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.excalidraw.com/mcp"
+        assert definition.docs_url == "https://github.com/excalidraw/excalidraw-mcp"
+        assert set(definition.capabilities) == {"read", "write"}
+        assert definition.tool_templates == ("mcp_tool",)
+        assert definition.configured
+        assert not definition.required_settings
+        assert not definition.credential_fields
+        assert not definition.oauth_scopes
+        assert definition.sync_ingestor is None
+
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 
@@ -272,6 +292,15 @@ def test_zapier_preset_uses_remote_oauth_catalog_contract():
     assert zapier.capabilities == ("read", "write")
     assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
 
+def test_canva_preset_in_catalog():
+    canva_preset = catalog.get_definition("mcp:canva")
+    
+    assert canva_preset is not None
+    assert canva_preset.mcp_url == "https://mcp.canva.com/mcp"
+    assert canva_preset.auth_kind == "mcp_oauth"
+    assert canva_preset.icon == "canva"
+    assert "read" in canva_preset.capabilities
+    assert "write" in canva_preset.capabilities
 
 def test_calcom_preset_uses_remote_oauth_catalog_contract():
     calcom = catalog.get_definition("mcp:calcom")
@@ -356,3 +385,36 @@ def test_context7_preset_uses_remote_oauth_catalog_contract() -> None:
     assert context7.auth_kind == "mcp_oauth"
     assert context7.capabilities == ("read",)
     assert context7.docs_url == "https://context7.com/docs/resources/all-clients"
+
+
+def test_twelvedata_preset_uses_remote_oauth_catalog_contract():
+    twelvedata = catalog.get_definition("mcp:twelvedata")
+
+    assert twelvedata is not None
+    assert twelvedata.name == "Twelve Data"
+    assert twelvedata.icon == "twelvedata"
+    assert twelvedata.category == "business"
+    assert twelvedata.mcp_url == "https://mcp.twelvedata.com/mcp"
+    assert twelvedata.mcp_base_url == "https://mcp.twelvedata.com"
+    assert twelvedata.auth_kind == "mcp_oauth"
+    assert twelvedata.capabilities == ("read",)
+    assert twelvedata.docs_url == "https://twelvedata.com/docs/mcp"
+
+
+def test_presets_have_unique_keys_and_servers():
+    """A repeated key overwrites a preset and a repeated host makes preset_for_url pick one."""
+    entries = yaml.safe_load(catalog._PRESETS_FILE.read_text(encoding="utf-8"))
+    keys = [entry["key"] for entry in entries]
+    hosts = [catalog.base_url(entry["mcp_url"]) for entry in entries]
+
+    assert len(keys) == len(set(keys))
+    assert len(hosts) == len(set(hosts))
+
+
+def test_cloudflare_preset_signs_in_with_mcp_oauth():
+    cloudflare = catalog.get_definition("mcp:cloudflare")
+    assert cloudflare.publisher == "preset"
+    assert cloudflare.mcp_url == "https://mcp.cloudflare.com/mcp"
+    assert cloudflare.auth_kind == "mcp_oauth"
+    assert cloudflare.capabilities == ("read",)
+    assert catalog.preset_for_url("https://mcp.cloudflare.com/mcp").key == "mcp:cloudflare"

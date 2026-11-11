@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-redux', () => ({
@@ -12,26 +12,36 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../hooks', () => ({
+  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
+}));
+
 vi.mock('../components/ToolIcon', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 vi.mock('../navigation/DetailBreadcrumb', () => ({ default: () => null }));
-// The revoke confirm's props; the test calls its handleSubmit directly.
+// Keep the real modal while capturing its props for direct handler checks.
 const confirmProps: { current: Record<string, unknown> | null } = {
   current: null,
 };
-vi.mock('../modals/ConfirmationModal', () => ({
-  default: (props: Record<string, unknown>) => {
-    confirmProps.current = props;
-    return null;
-  },
-}));
+vi.mock('../modals/ConfirmationModal', async (importOriginal) => {
+  const { default: ConfirmationModal } =
+    await importOriginal<typeof import('../modals/ConfirmationModal')>();
+  return {
+    default: (props: ComponentProps<typeof ConfirmationModal>) => {
+      confirmProps.current = props;
+      return <ConfirmationModal {...props} />;
+    },
+  };
+});
 
 const getDevice = vi.fn();
 const revokeDevice = vi.fn();
+const updateDevice = vi.fn();
 vi.mock('../api/services/devicesService', () => ({
   default: {
     get: (...args: unknown[]) => getDevice(...args),
     revoke: (...args: unknown[]) => revokeDevice(...args),
+    update: (...args: unknown[]) => updateDevice(...args),
     listAudit: () => Promise.resolve({ entries: [] }),
   },
 }));
@@ -51,6 +61,12 @@ const tool = {
   config: { device_id: 'dev-1' },
 } as unknown as UserToolType;
 
+const nextTool = {
+  ...tool,
+  id: 'tool-2',
+  config: { device_id: 'dev-2' },
+};
+
 const device = (overrides: Partial<Device>): Device => ({
   id: 'dev-1',
   name: 'Laptop',
@@ -60,6 +76,16 @@ const device = (overrides: Partial<Device>): Device => ({
   ...overrides,
 });
 
+const deferredDevice = () => {
+  let resolve!: (value: Device) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<Device>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 describe('RemoteDeviceConfig', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -67,6 +93,7 @@ describe('RemoteDeviceConfig', () => {
   beforeEach(() => {
     getDevice.mockReset();
     revokeDevice.mockReset();
+    updateDevice.mockReset();
     goBack.mockReset();
     confirmProps.current = null;
     container = document.createElement('div');
@@ -79,11 +106,17 @@ describe('RemoteDeviceConfig', () => {
     container.remove();
   });
 
+  const renderTool = async (selectedTool: UserToolType = tool) => {
+    await act(async () => {
+      root.render(
+        <RemoteDeviceConfig tool={selectedTool} handleGoBack={goBack} />,
+      );
+    });
+  };
+
   const render = async (d: Device) => {
     getDevice.mockResolvedValue(d);
-    await act(async () => {
-      root.render(<RemoteDeviceConfig tool={tool} handleGoBack={goBack} />);
-    });
+    await renderTool();
   };
 
   const badges = () =>
@@ -210,5 +243,241 @@ describe('RemoteDeviceConfig', () => {
       await submit();
     });
     expect(goBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed revoke keeps the real confirmation dialog open with an error', async () => {
+    revokeDevice.mockRejectedValue(new Error('Request failed (401)'));
+    await render(device({}));
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.tools.toolActions"]',
+    )!;
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    const revoke = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent === 'settings.devices.revoke')!;
+    await act(async () => revoke.click());
+
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog).not.toBeNull();
+    const submit = Array.from(dialog.querySelectorAll('button')).find(
+      (button) => button.textContent === 'settings.devices.revoke',
+    )!;
+    await act(async () => submit.click());
+
+    expect(revokeDevice).toHaveBeenCalledWith('dev-1', 'token');
+    expect(document.querySelector('[role="dialog"]')).toBe(dialog);
+    expect(dialog.getAttribute('data-state')).toBe('open');
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+    expect(goBack).not.toHaveBeenCalled();
+  });
+
+  const rename = async (value: string) => {
+    const input = Array.from(container.querySelectorAll('input')).find(
+      (el) => el.value === 'Laptop',
+    )!;
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setValue.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    return input;
+  };
+
+  const clickSave = async () => {
+    const save = Array.from(container.querySelectorAll('button')).find(
+      (el) => el.textContent === 'settings.tools.save',
+    )!;
+    await act(async () => save.click());
+  };
+
+  const title = () => container.querySelector('h2, h1')?.textContent;
+
+  it('a failed save keeps the device and the edit, and shows an error', async () => {
+    updateDevice.mockRejectedValue(new Error('auth'));
+    await render(device({}));
+    const input = await rename('Renamed');
+    await clickSave();
+
+    expect(updateDevice).toHaveBeenCalledWith(
+      'dev-1',
+      { name: 'Renamed' },
+      'token',
+    );
+    const alert = Array.from(
+      container.querySelectorAll<HTMLElement>('[role="alert"]'),
+    ).find((el) => el.textContent?.includes('common.actionFailed'));
+    expect(alert).toBeDefined();
+    expect(title()).toBe('Laptop');
+    expect(input.value).toBe('Renamed');
+  });
+
+  it('a successful save clears a previous error and shows the saved device', async () => {
+    updateDevice
+      .mockRejectedValueOnce(new Error('auth'))
+      .mockResolvedValueOnce(device({ name: 'Renamed' }));
+    await render(device({}));
+    await rename('Renamed');
+    await clickSave();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+    await clickSave();
+
+    expect(updateDevice).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(title()).toBe('Renamed');
+  });
+
+  it('loading another device clears the previous device save error', async () => {
+    updateDevice.mockRejectedValueOnce(new Error('auth'));
+    await render(device({}));
+    await rename('Renamed');
+    await clickSave();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+
+    getDevice.mockResolvedValueOnce(
+      device({ id: 'dev-2', name: 'Workstation' }),
+    );
+    await renderTool(nextTool);
+
+    expect(title()).toBe('Workstation');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each(['success', 'failure'] as const)(
+    'ignores a stale load %s after the selected device has loaded',
+    async (outcome) => {
+      const previousRequest = deferredDevice();
+      const currentRequest = deferredDevice();
+      getDevice
+        .mockReturnValueOnce(previousRequest.promise)
+        .mockReturnValueOnce(currentRequest.promise);
+      await renderTool();
+      await renderTool(nextTool);
+      await act(async () => {
+        currentRequest.resolve(device({ id: 'dev-2', name: 'Workstation' }));
+      });
+      expect(title()).toBe('Workstation');
+
+      await act(async () => {
+        if (outcome === 'success') {
+          previousRequest.resolve(device({}));
+        } else {
+          previousRequest.reject(new Error('Request failed (503)'));
+        }
+      });
+
+      expect(getDevice).toHaveBeenNthCalledWith(1, 'dev-1', 'token');
+      expect(getDevice).toHaveBeenNthCalledWith(2, 'dev-2', 'token');
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(title()).toBe('Workstation');
+    },
+  );
+
+  it.each(['success', 'failure'] as const)(
+    'a stale load %s does not finish the selected device loading state',
+    async (outcome) => {
+      const previousRequest = deferredDevice();
+      const currentRequest = deferredDevice();
+      getDevice
+        .mockReturnValueOnce(previousRequest.promise)
+        .mockReturnValueOnce(currentRequest.promise);
+      await renderTool();
+      await renderTool(nextTool);
+      await act(async () => {
+        if (outcome === 'success') {
+          previousRequest.resolve(device({}));
+        } else {
+          previousRequest.reject(new Error('Request failed (503)'));
+        }
+      });
+
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(container.querySelector('input')).toBeNull();
+      expect(container.textContent).not.toContain('Laptop');
+      await act(async () => {
+        currentRequest.resolve(device({ id: 'dev-2', name: 'Workstation' }));
+      });
+
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(title()).toBe('Workstation');
+    },
+  );
+
+  it('a failed load shows a retryable error, and Retry loads the device', async () => {
+    getDevice
+      .mockRejectedValueOnce(new Error('Request failed (503)'))
+      .mockResolvedValueOnce(device({}));
+    await act(async () => {
+      root.render(<RemoteDeviceConfig tool={tool} handleGoBack={goBack} />);
+    });
+
+    const loadError = () =>
+      container.querySelector<HTMLElement>(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      );
+    expect(loadError()?.textContent).toContain('settings.devices.loadError');
+    expect(container.querySelector('input')).toBeNull();
+
+    const retry = Array.from(loadError()!.querySelectorAll('button')).find(
+      (el) => el.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+
+    expect(getDevice).toHaveBeenCalledTimes(2);
+    expect(loadError()).toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(title()).toBe('Laptop');
+    expect(
+      Array.from(container.querySelectorAll('input')).some(
+        (el) => el.value === 'Laptop',
+      ),
+    ).toBe(true);
+  });
+
+  it('a failed load for another device hides stale settings until Retry succeeds', async () => {
+    await render(device({}));
+    expect(title()).toBe('Laptop');
+    const retryRequest = deferredDevice();
+    getDevice
+      .mockRejectedValueOnce(new Error('Request failed (503)'))
+      .mockReturnValueOnce(retryRequest.promise);
+    await act(async () => {
+      root.render(<RemoteDeviceConfig tool={nextTool} handleGoBack={goBack} />);
+    });
+
+    const loadError = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    );
+    expect(loadError?.textContent).toContain('settings.devices.loadError');
+    expect(container.querySelector('input')).toBeNull();
+    expect(container.textContent).not.toContain('Laptop');
+    const retry = Array.from(loadError!.querySelectorAll('button')).find(
+      (button) => button.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('input')).toBeNull();
+    expect(container.textContent).not.toContain('Laptop');
+    await act(async () => {
+      retryRequest.resolve(device({ id: 'dev-2', name: 'Workstation' }));
+    });
+
+    expect(getDevice).toHaveBeenNthCalledWith(2, 'dev-2', 'token');
+    expect(getDevice).toHaveBeenNthCalledWith(3, 'dev-2', 'token');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(title()).toBe('Workstation');
   });
 });

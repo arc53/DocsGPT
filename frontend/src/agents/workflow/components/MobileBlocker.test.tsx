@@ -77,14 +77,16 @@ describe('MobileBlocker', () => {
     expect(html).toContain('lucide-chart-no-axes-column');
   });
 
-  // Logs and Schedules exist only once published, like the builder's tabs.
-  it('leaves the tab links off a draft', () => {
+  // A draft keeps Logs for its preview runs; Analytics and Schedules wait
+  // until it's published, like the builder's tabs.
+  it('links only Logs on a draft', () => {
     const html = render(
       workflow({ status: 'draft' }),
       agentEditPath('wf1', true),
     );
     expect(html).toContain('agents.card.draft');
-    expect(html).not.toContain(`href="${agentLogsPath('wf1')}"`);
+    expect(html).toContain(`href="${agentLogsPath('wf1')}"`);
+    expect(html).not.toContain(`href="${agentAnalyticsPath('wf1')}"`);
     expect(html).not.toContain(`href="${agentSchedulesPath('wf1')}"`);
   });
 

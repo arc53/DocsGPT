@@ -22,6 +22,7 @@ graph through the same validation gate as the workflow API.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Any, Optional
 
@@ -37,6 +38,7 @@ from docsgpt.agents.default_tools import (
 )
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
+from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
 from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
@@ -44,7 +46,7 @@ from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
 from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.user_custom_models import (
@@ -411,6 +413,9 @@ def _serialize_prompt(conn, agent: dict, user: str):
     prompt_id = agent.get("prompt_id")
     if not prompt_id:
         return "default"
+    if str(prompt_id) in STORED_PROMPT_PRESETS:
+        # A preset has no row: the file carries its name.
+        return str(prompt_id)
     row = PromptsRepository(conn).get(str(prompt_id), user)
     if not row:
         return "default"
@@ -674,25 +679,91 @@ def _serialize_workflow(conn, agent: dict, user: str):
         "nodes": nodes_out,
         "edges": edges_out,
     }
+    if row.get("retry_defaults"):
+        block["retry_defaults"] = row["retry_defaults"]
     return block, tools, sources, model
 
 
-def _import_config(spec: dict) -> dict:
-    """Validate a spec's ``config`` through the same gate as the API.
+_ORIGIN_FIELDS = ("restrict_origins", "allowed_origins")
 
-    A YAML is hand-editable, so it must not be a way to install a control the
-    write path would have rejected. An invalid block is dropped rather than
-    failing the whole import, and the caller surfaces it as a warning.
-    """
+
+def _config_valid(raw) -> bool:
+    """Whether a file's ``config`` passes the API's validation as written."""
     from docsgpt.api.user.agents.routes import normalize_agent_config
 
     try:
-        return normalize_agent_config(spec.get("config")) or {}
+        normalize_agent_config(raw)
     except ValueError:
-        current_app.logger.warning(
-            "Dropping invalid guardrails config during agent import"
-        )
-        return {}
+        return False
+    return True
+
+
+def _valid_parts(raw: dict) -> dict:
+    """The settings of an invalid ``config`` that still validate, each on its own.
+
+    A setting that fails validation is left out, so it contributes nothing.
+    The origin policy is read leniently instead: a bad entry is dropped but a
+    restriction stays on, so a bad file can't open a key to any origin.
+    """
+    from docsgpt.api.user.agents.routes import normalize_agent_config
+    from docsgpt.guardrails.config import AgentConfig
+
+    parts: dict = {}
+    for key, value in raw.items():
+        if key in _ORIGIN_FIELDS:
+            continue
+        try:
+            parts[key] = normalize_agent_config({key: value})[key]
+        except (ValueError, KeyError):
+            continue
+    origins = {field: raw[field] for field in _ORIGIN_FIELDS if field in raw}
+    if origins:
+        policy = AgentConfig.parse(origins)
+        parts.update({field: copy.deepcopy(getattr(policy, field)) for field in origins})
+    return parts
+
+
+def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
+    """Validate a spec's ``config`` through the same gate as the API.
+
+    A YAML is hand-editable, so it must not be a way to install a control the
+    write path would have rejected. An invalid block does not fail the whole
+    import: the settings that still validate are kept (see ``_valid_parts``).
+
+    On an update, an origin setting the file does not state keeps the agent's
+    stored value, so a file exported before origins existed, or one with no
+    config, can't open the agent's key to any origin. A setting the file
+    states, ``restrict_origins: false`` included, is applied.
+
+    Args:
+        spec: The file's ``spec``.
+        current: The matched agent's stored config on an update, None on create.
+        warnings: Gets a note when the config is not imported as written.
+    """
+    from docsgpt.api.user.agents.routes import normalize_agent_config
+
+    raw = spec.get("config")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            pass
+    kept = {field: current[field] for field in _ORIGIN_FIELDS if field in (current or {})}
+    if (raw is None or raw == "") and kept:
+        raw = {}
+    if isinstance(raw, dict):
+        raw = {**{field: value for field, value in kept.items() if field not in raw}, **raw}
+    try:
+        return normalize_agent_config(raw) or {}
+    except ValueError as err:
+        reason = str(err)
+    if isinstance(raw, dict):
+        current_app.logger.warning("Dropping the invalid parts of an imported agent config")
+        warnings.append(f"Invalid config ({reason}); imported only the parts that are valid")
+        return _valid_parts(raw)
+    current_app.logger.warning("Ignoring an imported agent config that is not a mapping")
+    warnings.append("Config is not a mapping; it was not imported")
+    return _valid_parts(kept)
 
 
 def serialize_agent(conn, agent: dict, user: str) -> dict:
@@ -712,6 +783,7 @@ def serialize_agent(conn, agent: dict, user: str) -> dict:
     spec = {
         "name": agent.get("name") or "",
         "description": agent.get("description") or "",
+        "starters": stored_starters(agent),
         "agent_type": agent.get("agent_type") or "classic",
         "retriever": agent.get("retriever") or "classic",
         "chunks": int(agent["chunks"]) if agent.get("chunks") is not None else None,
@@ -815,6 +887,11 @@ def parse_agent_yaml(text: str) -> dict:
         raise AgentImportError("spec.name is required")
     if spec.get("agent_type") == "workflow":
         _validate_workflow_shape(spec)
+    # Held to the same rules as the agent routes; a file without them has none.
+    try:
+        spec["starters"] = normalize_starters(spec.get("starters"))
+    except StartersError as exc:
+        raise AgentImportError(f"spec.starters: {exc}") from exc
     for key in ("sources", "tools"):
         value = spec.get(key)
         if isinstance(value, list) and len(value) > MAX_LIST_ITEMS:
@@ -989,6 +1066,8 @@ def plan_import(conn, user: str, doc: dict) -> dict:
             user, prompt_spec.get("name") or "", prompt_spec.get("content") or ""
         )
         prompt = {"status": "reuse" if existing else "create", "name": prompt_spec.get("name") or ""}
+    elif prompt_spec in STORED_PROMPT_PRESETS:
+        prompt = {"status": "preset", "name": prompt_spec}
     else:
         prompt = {"status": "default"}
 
@@ -1050,7 +1129,21 @@ def plan_import(conn, user: str, doc: dict) -> dict:
 
 
 def _apply_prompt(conn, user: str, spec: dict) -> Optional[str]:
+    """The agent's ``prompt_id`` for the file's prompt.
+
+    Args:
+        conn: Open database connection.
+        user: The importing user.
+        spec: The document's ``spec``.
+
+    Returns:
+        A preset name (``creative`` / ``strict``), the id of the user's prompt
+        with the file's name and content (made when missing), or None for the
+        default and for an unknown name.
+    """
     prompt_spec = spec.get("prompt")
+    if prompt_spec in STORED_PROMPT_PRESETS:
+        return prompt_spec
     if not isinstance(prompt_spec, dict):
         return None
     row = PromptsRepository(conn).find_or_create(
@@ -1422,22 +1515,30 @@ def _apply_workflow(
 ):
     """Write the imported graph; returns the workflow id, None, or the sentinel.
 
-    The graph goes through the same validation gate as the workflow API
-    (``validate_workflow_structure``) so a hand-edited YAML can't install a
-    graph the write path would have rejected. When the matched agent already
-    owns a workflow the graph lands as a new version of it (mirroring
-    ``PUT /api/workflows/<id>``); otherwise a new workflow is created.
+    The graph goes through the same validation gate as an agent save with an
+    inline graph, so a hand-edited YAML can't install a graph the write path
+    would have rejected: the shape and the retry defaults always, and the full
+    ``validate_workflow_structure`` when the graph will run outside a builder.
+    A new agent lands as a draft and an update keeps the target's status, so
+    that is when the matched agent, or another agent on its workflow, already
+    runs outside its builder (``runs_outside_builder``). When the matched
+    agent already owns a workflow the graph lands as a new version of it,
+    read holding its row lock (mirroring ``PUT /api/workflows/<id>``);
+    otherwise a new workflow is created.
     """
     if "workflow" not in spec:
         return _WORKFLOW_UNCHANGED
     wf_spec = spec.get("workflow")
     if not isinstance(wf_spec, dict):
         return None
+    from docsgpt.api.user.agents.graph_checks import runs_outside_builder, workflow_runs_elsewhere
     from docsgpt.api.user.workflows.routes import (
         _write_graph,
         get_workflow_graph_version,
         normalize_agent_node_json_schemas,
+        retry_config_error,
         validate_workflow_structure,
+        workflow_graph_shape_errors,
     )
 
     nodes_data = []
@@ -1478,21 +1579,34 @@ def _apply_workflow(
         for edge in wf_spec.get("edges") or []
     ]
 
-    errors = validate_workflow_structure(nodes_data, edges_data, user_id=user)
-    if errors:
-        raise AgentImportError("Workflow validation failed: " + "; ".join(errors[:5]))
-    nodes_data = normalize_agent_node_json_schemas(nodes_data)
-
     wf_repo = WorkflowsRepository(conn)
-    name = wf_spec.get("name") or spec.get("name") or "Imported workflow"
-    description = wf_spec.get("description") or ""
-
+    agent_row = None
     existing = None
     if target.get("action") == "update" and target.get("agent_id"):
         agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user)
         existing_id = (agent_row or {}).get("workflow_id")
         if existing_id:
-            existing = wf_repo.get(str(existing_id), user)
+            locked = wf_repo.get_for_update(str(existing_id))
+            existing = locked if locked is not None and locked.get("user_id") == user else None
+    runs = agent_row is not None and (
+        runs_outside_builder(conn, agent_row)
+        or (existing is not None and workflow_runs_elsewhere(conn, existing["id"], str(agent_row["id"])))
+    )
+
+    errors = workflow_graph_shape_errors(nodes_data, edges_data)
+    if not errors and runs:
+        errors = validate_workflow_structure(nodes_data, edges_data, user_id=user)
+    retry_defaults = wf_spec.get("retry_defaults")
+    retry_error = retry_config_error(retry_defaults)
+    if retry_error:
+        errors.append(f"Workflow retry defaults {retry_error}")
+    if errors:
+        raise AgentImportError("Workflow validation failed: " + "; ".join(errors[:5]))
+    nodes_data = normalize_agent_node_json_schemas(nodes_data)
+
+    name = wf_spec.get("name") or spec.get("name") or "Imported workflow"
+    description = wf_spec.get("description") or ""
+
     if existing is not None:
         from docsgpt.api.user.resource_access import prune_sponsors
         from docsgpt.api.user.workflows.routes import _node_refs
@@ -1504,6 +1618,7 @@ def _apply_workflow(
             "name": name,
             "description": description,
             "current_graph_version": next_version,
+            "retry_defaults": retry_defaults,
         }
         # Sponsors of node resources the file dropped go too, so a stale
         # record can't vouch for the resource if someone adds it back.
@@ -1516,7 +1631,7 @@ def _apply_workflow(
         WorkflowEdgesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         return pg_workflow_id
 
-    created = wf_repo.create(user, name, description=description)
+    created = wf_repo.create(user, name, description=description, retry_defaults=retry_defaults)
     _write_graph(conn, str(created["id"]), 1, nodes_data, edges_data)
     return str(created["id"])
 
@@ -1591,6 +1706,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     # column defaults.
     authoritative: dict[str, Any] = {
         "description": spec.get("description") or "",
+        "starters": normalize_starters(spec.get("starters")),
         "agent_type": spec.get("agent_type") or "classic",
         "chunks": chunks_value,
         "prompt_id": prompt_id,
@@ -1602,7 +1718,9 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "limited_token_mode": bool(_limit(spec, "limited_token_mode")),
         "limited_request_mode": bool(_limit(spec, "limited_request_mode")),
         "allow_system_prompt_override": bool(spec.get("allow_system_prompt_override")),
-        "config": _import_config(spec),
+        "config": _import_config(
+            spec, (agents_repo.get(exclude_id, user) or {}).get("config") if is_update else None, warnings,
+        ),
         "slug": slug,
     }
     orphaned_workflow_id: Optional[str] = None
@@ -1700,9 +1818,12 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         # Row vanished between resolve and write — fall through to create.
 
     # A new agent starts from the admin's default guardrails, under the file's
-    # own; a file config that failed validation contributes nothing.
-    file_config = spec.get("config") if authoritative["config"] else None
-    created_config = _import_config({"config": agent_defaults.seed(conn, file_config)})
+    # own. Of a file config that failed validation, only the settings that
+    # validate count.
+    file_config = spec.get("config")
+    if not _config_valid(file_config):
+        file_config = authoritative["config"]
+    created_config = _import_config({"config": agent_defaults.seed(conn, file_config)}, None, [])
     row = agents_repo.create(
         user, spec.get("name"), "draft", **{**authoritative, **optional, "config": created_config}
     )

@@ -23,15 +23,16 @@ export type FlowItem =
 
 /**
  * Whether a call can sit in a step group. Approvals, wiki writes, the
- * scheduler and background jobs render as cards that carry actions, so they
- * stay in the column.
+ * scheduler, background jobs and MCP App views render as cards that carry
+ * actions, so they stay in the column.
  */
 export function isGroupable(call: ToolCallsType): boolean {
   return (
     call.status !== 'awaiting_approval' &&
     !isWikiWriteCall(call) &&
     call.tool_name !== 'scheduler' &&
-    !call.job_id
+    !call.job_id &&
+    !call.ui
   );
 }
 

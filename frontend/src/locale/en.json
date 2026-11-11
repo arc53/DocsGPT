@@ -65,6 +65,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Conversation continued",
         "job": "Background job finished",
         "lost": "Background job interrupted",
         "monitor": "Monitor matched",
@@ -74,7 +75,9 @@
         "monitor_expired": "Monitor expired",
         "schedule": "Scheduled task finished",
         "default": "New reply",
-        "docs_gaps": "Weekly docs-gap summary"
+        "docs_gaps": "Weekly docs-gap summary",
+        "schedule_paused": "Scheduled task paused",
+        "schedule_failed": "Scheduled task failed"
       },
       "open": "Open",
       "fallbackTitle": "Your assistant has an update"
@@ -88,6 +91,7 @@
       "failed": "Couldn't turn on notifications"
     },
     "wake": {
+      "continuation": "Conversation continued",
       "job": "Background job finished",
       "lost": "Background job interrupted",
       "monitor": "Monitor matched",
@@ -100,24 +104,28 @@
       "cancelled": "Background job cancelled"
     }
   },
-  "demo": [
-    {
-      "header": "Learn about DocsGPT",
-      "query": "What is DocsGPT?"
-    },
-    {
-      "header": "Summarize documentation",
-      "query": "Summarize current context"
-    },
-    {
-      "header": "Write Code",
-      "query": "Write code for api request to /api/answer"
-    },
-    {
-      "header": "Learning Assistance",
-      "query": "Write potential questions for context"
+  "hero": {
+    "suggestions": {
+      "label": "Suggestions",
+      "summarize": "Summarize {{name}}",
+      "compare": "Compare {{first}} with {{second}}",
+      "service": {
+        "files": "Find my most recent files in {{name}}",
+        "knowledge": "What changed in {{name}} this week?",
+        "projects": "What's in progress in {{name}} this week?",
+        "dev": "What changed in {{name}} this week?",
+        "business": "What's new in {{name}} this week?",
+        "messaging": "Summarize this week's messages in {{name}}",
+        "database": "What data is in {{name}}?",
+        "other": "What can you find in {{name}}?"
+      },
+      "continue": "Continue \"{{name}}\"",
+      "addKnowledge": "Add knowledge to ask about your own documents",
+      "connect": "Connect {{names}}",
+      "more": "more",
+      "createAgent": "Create an agent for a specific job"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Sign in to continue to DocsGPT",
     "signInWithSSO": "Sign in with SSO",
@@ -131,10 +139,9 @@
     "label": "Settings",
     "general": {
       "label": "General",
-      "subtitle": "Choose how DocsGPT looks, which language it uses, and the prompt your chats use.",
+      "subtitle": "Choose how DocsGPT looks and which language it uses.",
       "sections": {
         "appearance": "Appearance",
-        "chat": "Chat",
         "dangerZone": "Danger zone"
       },
       "theme": "Theme",
@@ -144,8 +151,6 @@
       "light": "Light",
       "dark": "Dark",
       "chunks": "Chunks processed per query",
-      "prompt": "Active prompt",
-      "promptDescription": "The system prompt for chats without an agent. Agents use their own.",
       "deleteAllLabel": "Delete all conversations",
       "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
       "addNew": "Add New",
@@ -155,18 +160,7 @@
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "Default",
-      "add": "Add",
-      "promptActions": {
-        "select": "Select a prompt",
-        "edit": "Edit prompt",
-        "view": "View prompt",
-        "duplicate": "Duplicate prompt",
-        "delete": "Delete prompt",
-        "deleteFailed": "Couldn't delete this prompt.",
-        "saveFailed": "Couldn't save this prompt.",
-        "editConflict": "Someone else changed this prompt. Reopen it to see their version."
-      }
+      "default": "Default"
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
@@ -177,7 +171,7 @@
       "type": "Type",
       "tokenUsage": "Token Usage",
       "noData": "No knowledge yet",
-      "searchPlaceholder": "Search...",
+      "searchPlaceholder": "Search knowledge…",
       "addNew": "Add New",
       "addSource": "Add knowledge",
       "addChunk": "Add chunk",
@@ -625,7 +619,7 @@
         "fetchedAt": "fetched {{when}}",
         "addPages": "Add pages",
         "addPagesHint": "Fetched now and kept in every sync. A whole site rebuilds the source.",
-        "graphCost": "This source has a knowledge graph. New pages are added to it with an LLM, about one call per chunk. If adding them rebuilds the source (a page on another site), the whole graph is rebuilt: about one call per chunk of the whole source.",
+        "graphCost": "This source has a knowledge graph. New pages are added to it with an LLM, about one call per chunk. If adding them rebuilds the source (a page on another site), the pages already in the graph keep their part of it, and only new or changed text goes to the LLM.",
         "addFailed": "Couldn’t add the pages.",
         "pageNotFetched": "One page couldn’t be fetched: {{url}}. It stays on this source’s list, and the next sync tries it again.",
         "pagesNotFetched_one": "{{count}} page couldn’t be fetched. It stays on this source’s list, and the next sync tries it again.",
@@ -680,7 +674,7 @@
         "invalidConfig": "These settings aren’t valid. Check the addresses and limits.",
         "notFound": "That page or folder isn’t in this source any more. Reload it and try again.",
         "badSyncFrequency": "That sync schedule isn’t available.",
-        "graphCostRebuild": "This source has a knowledge graph. A whole site rebuilds the source, so the graph is rebuilt with an LLM too: about one call per chunk of the whole source.",
+        "graphCostRebuild": "This source has a knowledge graph. A whole site rebuilds the source. The pages already in the graph keep their part of it; new or changed text is added with an LLM, about one call per chunk.",
         "tooManyPaths_one": "You can remove up to {{count}} page at once.",
         "tooManyPaths_other": "You can remove up to {{count}} pages at once.",
         "notWebsite": "This source isn’t a website source.",
@@ -693,7 +687,22 @@
       "viaConnectionFiles_other": "via {{name}} · {{files}} files",
       "item": {
         "tokens": "{{tokens}} tokens"
-      }
+      },
+      "tokenCount": "{{tokens}} tokens",
+      "kinds": {
+        "all": "All",
+        "files": "Files",
+        "websites": "Websites",
+        "synced": "Synced",
+        "wikis": "Wikis",
+        "shared": "Shared"
+      },
+      "kindFilterLabel": "Filter by kind",
+      "needsAttention": "Needs attention",
+      "allKnowledge": "All knowledge",
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this source. Its files and chunks are deleted too. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this source. Its files and chunks are deleted too. This can't be undone.",
+      "noKnowledgeFound": "No knowledge found"
     },
     "analytics": {
       "label": "Analytics",
@@ -954,7 +963,6 @@
       "filterByChatbot": "Filter by chatbot",
       "selectChatbot": "Select chatbot",
       "none": "None",
-      "tableHeader": "API generated / chatbot conversations",
       "searchPlaceholder": "Search logs...",
       "noLogs": "No logs found",
       "levels": {
@@ -994,7 +1002,8 @@
         "result": "Result",
         "source": "Source",
         "feedback": "Feedback",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Retries"
       },
       "trace": {
         "view": "View trace",
@@ -1132,7 +1141,9 @@
         "topics": "Topics"
       },
       "levelFilter": "Level",
-      "typeFilter": "Event type"
+      "typeFilter": "Event type",
+      "retriedStep_one": "{{node}}: {{count}} attempt",
+      "retriedStep_other": "{{node}}: {{count}} attempts"
     },
     "teams": {
       "label": "Teams",
@@ -1451,8 +1462,8 @@
     },
     "tools": {
       "label": "Tools",
-      "subtitle": "Actions your agents can take. Built-in tools live here. Tools from a connected service are grouped under that service.",
-      "searchPlaceholder": "Search tools...",
+      "subtitle": "Actions your agents can take. Included tools come with DocsGPT. Tools from a connected service are grouped under that service.",
+      "searchPlaceholder": "Search tools…",
       "addTool": "Add tool",
       "noToolsFound": "No tools found",
       "selectToolSetup": "Add a tool",
@@ -1592,13 +1603,67 @@
       "triggerLabel_one": "Tools, {{formatted}} selected",
       "triggerLabel_other": "Tools, {{formatted}} selected",
       "manageInConnectors": "Manage in Connectors",
-      "defaultBadge": "Default",
       "noToolsYet": "No tools yet",
       "connectService": "Connect a service",
       "filledBy": "Filled in by",
       "loadError": "Could not load your tools.",
       "deleteConsequence": "Its settings and actions are deleted too. This can't be undone.",
-      "deleteActionConsequence": "It's removed when you save the tool."
+      "deleteActionConsequence": "It's removed when you save the tool.",
+      "groupIncluded": "Included",
+      "groupAdded": "Added",
+      "filters": {
+        "all": "All"
+      },
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this tool. Its settings and actions are deleted too. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this tool. Its settings and actions are deleted too. This can't be undone.",
+      "groupServices": "Services",
+      "kindFilterLabel": "Filter by kind"
+    },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "System prompts tell the model how to answer. The one you pick is used in chats without an agent; agents choose their own.",
+      "searchPlaceholder": "Search prompts…",
+      "addPrompt": "Add prompt",
+      "manage": "Go to Prompts",
+      "select": "Select a prompt",
+      "filters": {
+        "all": "All"
+      },
+      "sections": {
+        "included": "Included",
+        "yours": "Yours",
+        "shared": "Shared with team"
+      },
+      "presets": {
+        "default": "Answers from your documents and cites them. When they don't cover the question, it says so, then answers from general knowledge.",
+        "creative": "Like default, plus ideas, examples and imaginative angles, with the facts kept accurate.",
+        "strict": "Answers only from your documents, tools and the chat. Says what is missing instead of guessing."
+      },
+      "chatPromptLabel": "Prompt for chats without an agent",
+      "useInChats": "Use {{name}} in chats",
+      "chatPromptFailed": "Couldn't change the prompt your chats use.",
+      "actions": "Actions for {{name}}",
+      "edit": "Edit",
+      "view": "View",
+      "duplicate": "Duplicate",
+      "shareWithTeam": "Share with team",
+      "delete": "Delete",
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which goes back to the default prompt. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which go back to the default prompt. This can't be undone.",
+      "deleteUsedByInChats_one": "Used by {{formatted}} agent and your chats, which go back to the default prompt. This can't be undone.",
+      "deleteUsedByInChats_other": "Used by {{formatted}} agents and your chats, which go back to the default prompt. This can't be undone.",
+      "deleteInChats": "Your chats use it and go back to the default prompt. This can't be undone.",
+      "deleteFailed": "Couldn't delete this prompt.",
+      "saveFailed": "Couldn't save this prompt.",
+      "editConflict": "Someone else changed this prompt. Reopen it to see their version.",
+      "loadError": "Couldn't load your prompts.",
+      "noPromptsFound": "No prompts found",
+      "kinds": {
+        "shared": "Shared"
+      },
+      "kindFilterLabel": "Filter by kind",
+      "chatPromptOn": "Used in chats without an agent",
+      "chatPromptOff": "Use in chats without an agent"
     },
     "devices": {
       "label": "Devices",
@@ -1654,7 +1719,8 @@
       "auditShow": "Show recent commands",
       "auditHide": "Hide recent commands",
       "seen": "seen {{time}}",
-      "revokeConsequence": "The CLI on this device is disconnected and the pairing removed. Pair it again to reconnect."
+      "revokeConsequence": "The CLI on this device is disconnected and the pairing removed. Pair it again to reconnect.",
+      "loadError": "Couldn't load this device."
     },
     "customModels": {
       "label": "Custom Models",
@@ -1787,6 +1853,8 @@
         "conversations": "Conversations",
         "analytics": "Analytics",
         "teams": "Teams",
+        "runs": "Workflow runs",
+        "artifacts": "Artifacts",
         "chat": "Chat"
       },
       "create": {
@@ -1805,7 +1873,7 @@
         "impliedByWrite": "Included with write access",
         "restrict": "Restrict to specific resources",
         "restrictHint": "Optional. Limit the token to the items you select. Leave a list empty to allow all of them.",
-        "restrictNoFamilies": "Select a scope for agents, sources, prompts, tools or chat first to restrict its resources.",
+        "restrictNoFamilies": "Select a scope for agents, sources, prompts, tools, workflows, workflow runs or chat first to restrict its resources.",
         "allSelected": "All (no restriction)",
         "noResources": "Nothing found.",
         "searchResources": "Search...",
@@ -1825,7 +1893,8 @@
         "done": "Done",
         "createTool": "Create tool for agents",
         "toolCreated": "Tool created. Find it in Settings › Tools and add it to an agent.",
-        "toolFailed": "Could not create the tool."
+        "toolFailed": "Could not create the tool.",
+        "toolSomeOff": "Deleting, and asking another agent, start switched off. Turn those actions on in the tool if you want them."
       },
       "regenerate": {
         "action": "Regenerate",
@@ -1878,6 +1947,7 @@
       "descriptions": {
         "google_drive": "Sync Docs, Sheets and PDFs into Knowledge.",
         "share_point": "Sync files from SharePoint sites and OneDrive into Knowledge.",
+        "mcp_canva": "Work with Canva designs, export them and use brand templates.",
         "confluence": "Sync Confluence spaces and pages into Knowledge.",
         "s3": "Sync documents from an S3 bucket into Knowledge.",
         "reddit": "Sync Reddit posts that match your searches into Knowledge.",
@@ -1904,6 +1974,9 @@
         "mcp_context7": "Look up up-to-date documentation and code examples for libraries.",
         "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
         "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
+        "mcp_twelvedata": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
+        "mcp_cloudflare": "Manage Workers, DNS, R2 and more through the Cloudflare API.",
+        "mcp_excalidraw": "Draw diagrams and get an editable Excalidraw link.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -2022,6 +2095,7 @@
         "methodOauth": "Sign in with {{name}}",
         "methodToken": "Use an access token",
         "credentialsRejected": "{{name}} did not accept these credentials. Check them and try again.",
+        "rateLimited": "{{name}} is limiting requests from this account until {{time}}. Try again after that.",
         "setupReconnect": "Sign in to {{name}} again to finish setting it up.",
         "setupDisabled": "An admin turned off {{name}}, so it can't be set up.",
         "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
@@ -2095,9 +2169,6 @@
         "ownerWarningNoAccount": "Team members will act as your {{name}} account."
       },
       "createFailed": "Could not add the connector. Try again.",
-      "capabilityFilter": {
-        "clear": "Show all connectors"
-      },
       "capabilityPlain": {
         "sync": "Syncs into Knowledge",
         "read": "Looks things up",
@@ -2114,7 +2185,8 @@
         "searchRepositories": "Search repositories",
         "repositories": "Repositories",
         "updated": "Updated {{date}}",
-        "loadFailed": "Could not load your repositories."
+        "loadFailed": "Could not load your repositories.",
+        "rateLimited": "GitHub is limiting requests from this account until {{time}}. Try again after that."
       },
       "linear": {
         "teams": "Teams",
@@ -2156,26 +2228,56 @@
         "failed": "Could not rename the account. Try again."
       },
       "browseAll": "Browse all connectors",
-      "filters": {
-        "all": "All",
-        "connected": "Connected",
-        "disconnected": "Disconnected"
-      },
-      "filterLabel": "Filter connectors",
-      "capabilityChip": {
-        "sync": "Syncs into Knowledge",
-        "tools": "Gives agents tools"
-      },
       "injection": {
         "flagged": "Possible prompt injection",
         "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
         "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
       },
       "syncContent": "Sync content",
-      "openInKnowledge": "Open in Knowledge"
+      "openInKnowledge": "Open in Knowledge",
+      "capabilityShort": {
+        "sync": "Syncs",
+        "read": "Looks up",
+        "write": "Acts"
+      },
+      "capabilityFilters": {
+        "all": "All",
+        "sync": "Knowledge",
+        "tools": "Tools"
+      },
+      "capabilityFilterLabel": "Filter by what it does",
+      "statusFilters": {
+        "all": "Any status",
+        "reconnect": "Needs sign-in",
+        "connected": "Connected",
+        "available": "Not connected"
+      },
+      "statusFilterLabel": "Filter by status",
+      "sections": {
+        "reconnect": "Needs sign-in",
+        "connected": "Connected",
+        "available": "Available"
+      },
+      "addCustomDescription": "Connect a server or API that isn't in the catalog."
     },
     "insights": {
       "label": "Insights"
+    },
+    "usage": {
+      "agents_one": "Used by {{formatted}} agent",
+      "agents_other": "Used by {{formatted}} agents",
+      "others_one": "and {{formatted}} other on your teams",
+      "others_other": "and {{formatted}} others on your teams",
+      "agentsShort_one": "{{formatted}} agent",
+      "agentsShort_other": "{{formatted}} agents",
+      "filters": {
+        "all": "Any use",
+        "inUse": "In use",
+        "unused": "Unused"
+      },
+      "filterLabel": "Filter by use",
+      "inChatsOn": "On in my chats",
+      "inChatsOff": "Off in my chats"
     }
   },
   "modals": {
@@ -2220,7 +2322,11 @@
         "dismiss": "Dismiss upload toast",
         "uploadProgress": "Upload progress {{progress}}%",
         "clear": "Clear",
-        "ingestionFailed": "Ingestion failed."
+        "ingestionFailed": "Ingestion failed.",
+        "tooManyFiles": "This source has more than {{limit}} files, the most one source can hold. Choose a smaller folder, path or selection.",
+        "tooManyTokens": "This source has more than {{limit}} tokens of text, the most one source can hold. Split it into smaller sources.",
+        "partialDownload_one": "{{count}} item couldn’t be downloaded, so it was left out. Sync the source to try it again.",
+        "partialDownload_other": "{{count}} items couldn’t be downloaded, so they were left out. Sync the source to try them again."
       },
       "ingestors": {
         "local_file": {
@@ -2396,8 +2502,7 @@
       "learnAboutPrompts": "Learn about Prompts →",
       "publicPromptEditDisabled": "Public prompts cannot be edited",
       "promptTypePublic": "public",
-      "promptTypePrivate": "private",
-      "delete": "Delete"
+      "promptTypePrivate": "private"
     },
     "chunk": {
       "add": "Add chunk",
@@ -2541,11 +2646,9 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choose knowledge",
       "link": "Source link",
       "view_more_one": "{{count}} more source",
       "view_more_other": "{{count}} more sources",
-      "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} selected",
       "triggerLabel_one": "Knowledge, {{formatted}} selected",
       "triggerLabel_other": "Knowledge, {{formatted}} selected",
@@ -2617,7 +2720,9 @@
       "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
       "serverError": "Please try again later. We apologize for any inconvenience.",
       "clientDisconnect": "The response stopped before anything was produced. Try again.",
-      "stopped": "You stopped this answer before it wrote anything. Try again to get one."
+      "timeLimit": "Stopped: time limit. Progress so far is saved.",
+      "stopped": "You stopped this answer before it wrote anything. Try again to get one.",
+      "noAnswer": "The model kept reasoning without starting an answer, so it was stopped. Try again, or choose a different model."
     },
     "reasoning": "Reasoning",
     "wikiWrite": {
@@ -2740,6 +2845,24 @@
       "notRunMovedOn": "Not run: the conversation moved on before this was approved.",
       "notRunExpired": "Not run: the approval request expired."
     },
+    "mcpApp": {
+      "state": {
+        "loading": "Loading the app…",
+        "ready": "Interactive",
+        "failed": "Failed"
+      },
+      "loading": "Loading the app…",
+      "allow": "Allow",
+      "allowForView": "Allow for this app",
+      "deny": "Deny",
+      "reload": "Reload app",
+      "approvalAsk": "The app wants to run {{tool}}. Allow it?",
+      "failedTitle": "The app couldn't load",
+      "failedDescription": "Its MCP server didn't answer, or the view failed to start.",
+      "frameTitle": "{{name}} (interactive app)",
+      "callFailed": "The tool call failed",
+      "resultUnavailable": "The result is no longer available"
+    },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
@@ -2844,6 +2967,19 @@
         "data": "Data",
         "other": "Other files"
       }
+    },
+    "workflow": {
+      "title": "Workflow",
+      "step": "Step {{step}}",
+      "stepOf": "Step {{step}} of {{total}}",
+      "stepCount_one": "{{count}} step",
+      "stepCount_other": "{{count}} steps",
+      "loopItems": "{{done}} of {{total}} items",
+      "loopItemsFailed": "{{count}} failed",
+      "retrying": "Retrying · attempt {{attempt}}",
+      "retryingOf": "Retrying · attempt {{attempt}} of {{total}}",
+      "attempts_one": "{{count}} attempt",
+      "attempts_other": "{{count}} attempts"
     }
   },
   "agents": {
@@ -2940,7 +3076,8 @@
         "basics": "Basics",
         "knowledge": "Knowledge and behaviour",
         "model": "Model",
-        "analytics": "Insights"
+        "analytics": "Insights",
+        "starters": "Starters"
       },
       "placeholders": {
         "agentName": "Agent name",
@@ -2952,25 +3089,16 @@
         "selectModels": "Select models for this agent",
         "selectDefaultModel": "Select default model",
         "enterTokenLimit": "Enter token limit",
-        "enterRequestLimit": "Enter request limit"
+        "enterRequestLimit": "Enter request limit",
+        "contextLimitDefault": "Model default",
+        "historyLimitDefault": "Summarized near the context limit"
       },
       "sourcePopup": {
-        "title": "Select knowledge",
-        "searchPlaceholder": "Search knowledge...",
-        "noOptionsMessage": "No knowledge yet",
-        "groupOwn": "Your sources",
-        "groupTeam": "Shared with team",
+        "searchPlaceholder": "Search knowledge…",
         "noSourceHint": "Optional. Without knowledge the agent answers from the model and its tools only."
       },
       "toolsPopup": {
-        "title": "Select Tools",
-        "searchPlaceholder": "Search tools...",
-        "noOptionsMessage": "No tools available",
-        "groupBuiltin": "Built-in",
-        "groupDefault": "Built-in",
         "groupCustom": "Custom",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "On this agent",
         "attachedHint": "Added by someone else. You can remove it."
       },
       "modelsPopup": {
@@ -2999,6 +3127,16 @@
         "jsonSchemaDescription": "Define a JSON schema to enforce structured output format",
         "validJson": "Valid JSON",
         "invalidJson": "Invalid JSON - fix to enable saving",
+        "contextLimit": "Context limit",
+        "contextLimitDescription": "Most tokens of history, documents and tool results sent to the model per request. Older messages are summarized to stay under it. Off uses the model's full context window.",
+        "contextLimitAboveWindow": "Past the context window of {{model}} ({{limit, number}} tokens), so it has no effect.",
+        "limitRange": "Enter {{min, number}} to {{max, number}} tokens.",
+        "contextLimitTokens": "Context limit in tokens",
+        "historyLimit": "History limit",
+        "historyLimitDescription": "Most tokens of earlier messages sent word for word per request. Older ones past it are summarized and the latest kept. Off summarizes only near the context limit.",
+        "historyLimitTokens": "History limit in tokens",
+        "historyLimitBelowContext": "Enter at least {{min, number}} tokens, below the context limit of {{limit, number}}.",
+        "historyLimitAboveWindow": "At or past the context window of {{model}} ({{limit, number}} tokens), so it has no effect.",
         "tokenLimiting": "Token limiting",
         "tokenLimitingDescription": "Limit daily total tokens that can be used by this agent",
         "requestLimiting": "Request limiting",
@@ -3006,7 +3144,24 @@
         "systemPromptOverride": "Allow prompt override",
         "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt",
         "tokenLimit": "Token limit",
-        "requestLimit": "Request limit"
+        "requestLimit": "Request limit",
+        "origins": {
+          "label": "Allowed origins",
+          "description": "Only the listed websites, and the sites this instance trusts, can call this agent with its API key",
+          "inputLabel": "Origin",
+          "hint": "A website address without a path, such as https://example.com. Press Enter to add it.",
+          "placeholder": "https://example.com",
+          "add": "Add",
+          "listLabel": "Allowed origins",
+          "remove": "Remove {{origin}}",
+          "errors": {
+            "invalid": "Enter an address that starts with http:// or https://, such as https://example.com",
+            "path": "Leave out the path: an origin is only the scheme, host and port",
+            "duplicate": "{{origin}} is already in the list",
+            "full": "You can add at most {{max}} origins",
+            "required": "Add at least one origin, or turn this off"
+          }
+        }
       },
       "preview": {
         "savedVersion": "saved version",
@@ -3017,7 +3172,8 @@
       "externalKb": "External KB",
       "errors": {
         "publishFailed": "Could not publish the agent. Please try again.",
-        "saveDraftFailed": "Could not save the draft. Please try again."
+        "saveDraftFailed": "Could not save the draft. Please try again.",
+        "staleWrite": "Someone else saved this agent after you opened it. Your changes are still here: copy what you need, reload the page, and apply them again."
       },
       "guardrails": {
         "enable": "Enable guardrails",
@@ -3234,13 +3390,23 @@
           "description": "It can overlap, so it has results of its own. They disappear from Insights and Logs, and adding it again starts from scratch.",
           "submit": "Remove"
         }
+      },
+      "leave": {
+        "title": "Leave without saving?",
+        "description": "The changes you made here will be lost.",
+        "submit": "Leave"
+      },
+      "starters": {
+        "description": "Optional. Questions shown under the agent's card when someone starts a new chat with it, such as \"What can you help me with?\" Up to four.",
+        "label": "Starter {{number}}",
+        "add": "Add a starter",
+        "remove": "Remove starter {{number}}"
       }
     },
     "logs": {
       "title": "Agent Logs",
       "lastUsedAt": "Last used at",
       "noUsageHistory": "No usage history",
-      "tableHeader": "Agent endpoint logs",
       "description": "API calls, scheduled runs and errors for this agent."
     },
     "schedules": {
@@ -3408,6 +3574,7 @@
         "loadFailed": "Couldn't load the runs."
       },
       "actions": "Schedule actions",
+      "loadFailed": "Couldn't load the schedules.",
       "cancelTask": "Cancel task",
       "failureStreak_one": "{{count}} failure in a row",
       "failureStreak_other": "{{count}} failures in a row",
@@ -3512,9 +3679,7 @@
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",
-        "updateWorkflowFailed": "Failed to update workflow",
         "updateAgentFailed": "Failed to update agent",
-        "createWorkflowFailed": "Failed to create workflow",
         "createAgentFailed": "Failed to create agent",
         "saveFailed": "Failed to save workflow",
         "defaultDescription": "Workflow agent: {{name}}",
@@ -3567,7 +3732,9 @@
         "documents": "Documents",
         "documentsHint": "Documents passed to this agent from uploads or upstream nodes.",
         "filePassing": "File passing",
-        "filePassingHint": "Auto: send native when the model supports it, otherwise extract text.",
+        "filePassingHint": "Auto: send native when the model supports it, otherwise extract text. Numbered lines: the whole text, each line marked [D#:L#] for citing.",
+        "streamOutput": "Step details in the chat stream",
+        "streamOutputHint": "What a finished step's event in the chat stream carries. Summary sends a preview when the output is large; the full values stay in the run. Status only leaves the output out of the event; to keep the node's answer out of the chat too, turn off Stream output to user.",
         "structuredOutput": "Structured Output (JSON Schema)",
         "modelNoStructuredOutput": "Selected model does not support structured output.",
         "validSchema": "Valid JSON schema",
@@ -3599,9 +3766,28 @@
         "deleteNode": "Delete node",
         "deleteConfirmUnnamed": "Delete this workflow agent?",
         "detailsTitle": "Workflow details",
-        "detailsDescription": "Name, description and image shown on the agent card.",
+        "detailsDescription": "The agent's card and its chat settings.",
         "unsavedChanges": "Unsaved changes",
-        "editDetailsMenu": "Edit details"
+        "editDetailsMenu": "Edit details",
+        "loopHint": "Run nodes for each item in a list",
+        "loopIntro": "The nodes inside the loop run once for each item of a list in the workflow state. Each item runs on its own copy of the state, and the loop stores one result per item, in the list's order.",
+        "loopItems": "Items",
+        "loopItemsHint": "The state variable that holds the list, such as extracted.items.",
+        "loopItemsInvalid": "Use a state path such as extracted.items.",
+        "loopItemVariable": "Item variable",
+        "loopItemVariableHint": "Nodes inside the loop read the current item as {{example}}.",
+        "loopItemVariableInvalid": "Use letters, digits and underscores, not a reserved name such as query.",
+        "loopConcurrency": "Items at once",
+        "loopMaxItems": "Most items",
+        "loopOnError": "When an item fails",
+        "loopOnErrorFail": "Stop and fail the loop",
+        "loopOnErrorSkip": "Leave the item out",
+        "loopOnErrorCollect": "Keep the error in its place",
+        "loopOutputHint": "The list of results, one per item.",
+        "loopResultVariable": "Item result",
+        "loopResultVariableHint": "The variable whose value is each item's result. Empty uses the output of the last node that ran.",
+        "loadFailedTitle": "Unable to load workflow",
+        "loadFailedDescription": "Nothing was changed. Retry, or come back in a moment."
       },
       "validation": {
         "nameRequired": "Workflow name is required",
@@ -3628,7 +3814,14 @@
         "caseNoVariable": "Condition \"{{name}}\" case \"{{handle}}\" must specify a variable in Simple mode",
         "branchReachEnd": "Branch \"{{handle}}\" of condition \"{{name}}\" must eventually reach an end node",
         "codeRequired": "Code node \"{{name}}\" must have code to run",
-        "codeSchema": "Code node \"{{name}}\" JSON schema {{error}}"
+        "codeSchema": "Code node \"{{name}}\" JSON schema {{error}}",
+        "loopItems": "Loop \"{{name}}\" needs a list to loop over",
+        "loopItemsPath": "Loop \"{{name}}\" items must be a state path such as extracted.items",
+        "loopItemVariable": "Loop \"{{name}}\" has an item variable that can't be used",
+        "loopEmpty": "Loop \"{{name}}\" needs at least one node inside it",
+        "loopEntry": "Loop \"{{name}}\" must start at exactly one node",
+        "nodeRetry": "Node \"{{name}}\" has retry settings out of range",
+        "retryDefaults": "The workflow's retry defaults are out of range"
       },
       "schema": {
         "notObject": "must be a valid JSON object",
@@ -3638,7 +3831,13 @@
       "filePassing": {
         "auto": "Auto",
         "native": "Native",
-        "extract": "Extract"
+        "extract": "Extract",
+        "lines": "Numbered lines"
+      },
+      "streamOutput": {
+        "summary": "Summary when large",
+        "full": "Always full",
+        "none": "Status only"
       },
       "mobileBlocker": {
         "title": "Open on a larger screen",
@@ -3666,18 +3865,33 @@
         "variableCount_one": "{{count}} variable",
         "variableCount_other": "{{count}} variables",
         "variableTitle": "Variable: {{name}}",
-        "valueTitle": "Value: {{value}}"
+        "valueTitle": "Value: {{value}}",
+        "loop": "Loop",
+        "loopSummary": "For each {{variable}} in {{items}}",
+        "loopNoItems": "Choose a list to loop over",
+        "loopEmpty": "Drop nodes here to run them once per item"
       },
       "preview": {
         "executionDetails": "Execution Details",
         "stepCount_one": "({{count}} step)",
         "stepCount_other": "({{count}} steps)",
         "outputLabel": "Output:",
+        "showFullOutput": "Show full output",
+        "fullOutputPending": "The full output is available once the run ends.",
+        "fullOutputFailed": "Couldn't load the full output.",
+        "fullOutputUnsaved": "Save the workflow and run it again to load a large step's full output.",
+        "outputNotStreamed": "This step's output isn't streamed.",
         "errorLabel": "Error:",
         "minimapHeading": "Workflow",
         "emptyTitle": "Test the workflow",
         "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview.",
-        "backToRun": "Back to the run"
+        "backToRun": "Back to the run",
+        "loopItems": "{{done}} of {{total}} items",
+        "loopItemsFailed": "{{count}} failed",
+        "retrying": "Retrying · attempt {{attempt}}",
+        "retryingOf": "Retrying · attempt {{attempt}} of {{total}}",
+        "attempts_one": "{{count}} attempt",
+        "attempts_other": "{{count}} attempts"
       },
       "documents": {
         "modeAll": "All input docs",
@@ -3694,6 +3908,27 @@
         "searchPlaceholder": "Search variables...",
         "empty": "No variables found",
         "addContext": "Add context"
+      },
+      "retry": {
+        "title": "Retries",
+        "defaultsDescription": "What agent and code nodes do when an attempt fails. A node's own retry settings override these.",
+        "attempts": "Max attempts",
+        "inherit": "Default ({{value}})",
+        "noRetry": "1 (no retries)",
+        "backoff": "Retry delays (s)",
+        "backoffInvalid": "Use numbers from 0 to 300, separated by commas.",
+        "backoffTooMany": "Use at most 10 delays.",
+        "hint": "Waits {{backoff}} seconds before each retry; the last delay repeats.",
+        "hintOff": "Runs once. Raise the attempts to retry failures.",
+        "on": "Retry on",
+        "onChoice": {
+          "transient": "Errors and timeouts",
+          "invalid_output": "Invalid output"
+        },
+        "onHint": {
+          "transient": "Server errors, rate limits, timeouts, dropped connections and empty replies.",
+          "invalid_output": "A reply that isn't valid JSON or doesn't match the structured-output schema."
+        }
       }
     },
     "typeModal": {
@@ -3759,7 +3994,8 @@
     },
     "multiSelect": {
       "more_one": "+{{count}} more",
-      "more_other": "+{{count}} more"
+      "more_other": "+{{count}} more",
+      "selectedGroup": "Selected"
     }
   },
   "pageNotFound": {
@@ -3864,11 +4100,6 @@
         "model": "{{model}} ({{tokens}} tokens)"
       }
     }
-  },
-  "connectHero": {
-    "title": "Connect your data",
-    "body": "Chat with {{names}}.",
-    "more": "more"
   },
   "common": {
     "close": "Close",
@@ -4066,7 +4297,8 @@
         "missed": "missed its time",
         "overlap": "the previous run was still going",
         "stream_error": "the answer stream broke",
-        "empty_output": "it produced nothing"
+        "empty_output": "it produced nothing",
+        "cannot_complete": "the agent can't do this task"
       },
       "viewRuns": "View runs",
       "fromChat": "From {{name}}",

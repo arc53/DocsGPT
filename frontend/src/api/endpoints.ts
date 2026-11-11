@@ -3,6 +3,7 @@ const endpoints = {
     CONFIG: '/api/config',
     ME: '/api/user/me',
     QUOTA: '/api/user/quota',
+    PREFERENCES: '/api/user/preferences',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
@@ -224,6 +225,8 @@ const endpoints = {
     RESTORE_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}/restore`,
     WORKFLOWS: '/api/workflows',
+    WORKFLOW_RUN_STEP: (workflowRunId: string, stepIndex: number) =>
+      `/api/workflow_runs/${encodeURIComponent(workflowRunId)}/steps/${stepIndex}`,
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,

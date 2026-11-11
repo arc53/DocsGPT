@@ -1,7 +1,7 @@
 ---
 title: Analytics and Logs
 description: Read the Analytics charts, the Insights figures and docs gaps, filter the Logs list by label and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-11-11
 ---
 
 import { Callout } from 'nextra/components'
@@ -15,6 +15,8 @@ DocsGPT records every chat, API call, scheduled run and webhook run. You review 
 - **Logs**: every entry, newest first, with its execution trace. An agent's Logs also has its [guardrail activity](#guardrail-activity).
 
 For your account they are **Settings → Monitoring → Analytics**, **Insights** and **Logs**. For one agent, they are in the agent's sidebar under **Monitoring**, after **Overview** and **Schedules**. The workflow builder has no sidebar, so its toolbar lists the same pages as tabs: **Overview**, **Schedules**, **Analytics**, **Insights** and **Logs**.
+
+A draft agent has only **Logs** under **Monitoring**, so you can debug its Preview runs before you publish it. **Schedules**, **Analytics** and **Insights** appear once it is published. A workflow's Preview runs are logged once the draft has been saved.
 
 For a readable list of what your automations did (scheduled, webhook and workflow runs, background jobs and monitor wakes), use [Activity → History](/Using/activity#history); Logs stays the full technical record.
 
@@ -288,7 +290,7 @@ The same data is available over the API, scoped the same way, with an agent's id
 An agent can read these logs through an API tool, for example to report the most common complaints every morning:
 
 1. Create a [personal access token](/API/personal-access-tokens) with `analytics:read`, plus `conversations:read` if the agent should open whole conversations and `agents:read` if it should look up agent ids. Leave it unrestricted: a token limited to some agents can't read logs.
-2. In **Token created**, select **Create tool for agents**. This adds an API tool named **DocsGPT API (*token name*)** with the endpoints the token can read: `list_agents`, `get_logs`, `get_feedback_counts`, `get_message_counts`, `get_conversation` and `get_trace`. The token is stored, encrypted, as the tool's `Authorization` header.
+2. In **Token created**, select **Create tool for agents**. This adds an API tool named **DocsGPT API (*token name*)** with an action for each endpoint the token can call, among them `list_agents`, `get_logs`, `get_feedback_counts`, `get_message_counts`, `get_docs_gaps`, `get_conversation` and `get_trace`. The token is stored, encrypted, as the tool's `Authorization` header. A token with write scopes gives the agent write actions too: see [Let an agent work in your account](/API/personal-access-tokens#let-an-agent-work-in-your-account).
 3. Add the tool to an agent, give it a [schedule](/Agents/schedules) such as "Read yesterday's disliked answers of the Support bot and list the three most common problems", and a tool to report through, such as Telegram or an MCP server for your issue tracker.
 
 The tool calls the API at the address this web app uses. Agent tools can't call `localhost` or private IP addresses, so on an instance reached at such an address the button reports that agents can't reach it and creates nothing. To avoid reporting the same problem twice, have the agent keep notes of what it reported with the memory tool.
