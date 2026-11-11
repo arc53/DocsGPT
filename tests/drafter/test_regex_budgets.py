@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from docsgpt.drafter import agent_recipe, prompt_checks, prompt_recipe
+from docsgpt.drafter import prompt_checks, prompt_review, safety_wording
 
 # The patterns as they were, to check the linear ones match the same texts.
 _OLD_MASKED = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}|```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`\n]+`", re.S)
@@ -61,46 +61,46 @@ class TestAgentRecipePatterns:
     @pytest.mark.parametrize("unit", ["1 ", "1,", " ", "1 k", "1 -", "9"])
     def test_limits_patterns_are_linear(self, unit: str) -> None:
         text = unit * (100_000 // len(unit))
-        assert not _fast(agent_recipe._STATED["limits"].search, text)
-        assert not _fast(agent_recipe._CLAIM_MENTIONS["limits"].search, text)
+        assert not _fast(safety_wording._STATED["limits"].search, text)
+        assert not _fast(safety_wording._CLAIM_MENTIONS["limits"].search, text)
 
     def test_guardrails_pattern_is_linear(self) -> None:
-        assert not _fast(agent_recipe._STATED["guardrails"].search, "guardrail " * 10_000)
+        assert not _fast(safety_wording._STATED["guardrails"].search, "guardrail " * 10_000)
 
     def test_limits_patterns_match_what_they_did(self) -> None:
         alphabet = ["1", "0", ",", ".", " ", "'", " ", "k", "K", "-", "requests", "token", "tokens", "a", "\n"]
         for text in _samples(alphabet):
-            assert bool(agent_recipe._STATED["limits"].search(text)) == bool(_OLD_STATED_LIMITS.search(text)), text
-            assert bool(agent_recipe._CLAIM_MENTIONS["limits"].search(text)) == bool(
+            assert bool(safety_wording._STATED["limits"].search(text)) == bool(_OLD_STATED_LIMITS.search(text)), text
+            assert bool(safety_wording._CLAIM_MENTIONS["limits"].search(text)) == bool(
                 _OLD_CLAIM_LIMITS.search(text)
             ), text
 
     def test_guardrails_pattern_matches_what_it_did(self) -> None:
         alphabet = ["guardrail", "guardrails", "pii", "secrets", " ", "\n", "checks", "and", "x", ","]
         for text in _samples(alphabet):
-            assert bool(agent_recipe._STATED["guardrails"].search(text)) == bool(
+            assert bool(safety_wording._STATED["guardrails"].search(text)) == bool(
                 _OLD_STATED_GUARDRAILS.search(text)
             ), text
 
     def test_numbers_survive_long_digit_runs(self) -> None:
-        assert _fast(agent_recipe._numbers, "1" * 100_000) == set()
-        assert _fast(agent_recipe._numbers, "1" * 100_000 + "k") == set()
-        assert _fast(agent_recipe._numbers, "1 " * 50_000) == {1}
+        assert _fast(safety_wording._numbers, "1" * 100_000) == set()
+        assert _fast(safety_wording._numbers, "1" * 100_000 + "k") == set()
+        assert _fast(safety_wording._numbers, "1 " * 50_000) == {1}
 
     def test_numbers_still_read_groupings(self) -> None:
-        assert agent_recipe._numbers("Cap it at 1,000 requests or 2k tokens, 5 000 a day") == {1000, 2, 2000, 5000}
+        assert safety_wording._numbers("Cap it at 1,000 requests or 2k tokens, 5 000 a day") == {1000, 2, 2000, 5000}
 
 
 @pytest.mark.unit
 class TestCodeNote:
     def test_whitespace_runs_are_linear(self) -> None:
-        assert _fast(prompt_recipe._no_codes, "a" + " " * 100_000 + "b") == "a" + " " * 100_000 + "b"
+        assert _fast(prompt_review._no_codes, "a" + " " * 100_000 + "b") == "a" + " " * 100_000 + "b"
 
     def test_same_matches_as_before(self) -> None:
         alphabet = [" ", "\n", "(", ")", "server", " check", "checks", ":", "a_b", ",", "x", "boundaries_missing"]
         for text in _samples(alphabet):
             old = [m.span() for m in _OLD_CODE_NOTE.finditer(text)]
-            assert [m.span() for m in prompt_recipe._CODE_NOTE.finditer(text)] == old, text
+            assert [m.span() for m in prompt_review._CODE_NOTE.finditer(text)] == old, text
 
 
 @pytest.mark.unit

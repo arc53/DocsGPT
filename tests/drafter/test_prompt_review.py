@@ -12,14 +12,11 @@ from docsgpt.drafter.prompt_recipe import (
     context_data,
     instructions,
     load_workspace,
-    MAX_FINDINGS,
     parse_context,
     PROMPT_RECIPE,
-    PromptWorkspace,
-    read_agents,
-    REVIEW_CHECKS,
     validate,
 )
+from docsgpt.drafter.prompt_review import MAX_FINDINGS, PromptWorkspace, read_agents, REVIEW_CHECKS
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid
 from docsgpt.drafter.runner import build_messages, run_draft
 from docsgpt.storage.db.repositories.agents import AgentsRepository

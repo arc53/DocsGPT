@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from docsgpt.drafter.prompt_recipe import check_drafted_prompt
+from docsgpt.drafter.prompt_edits import check_drafted_prompt
 from docsgpt.drafter.prompt_rules import TEMPLATE_PROBLEM
 from docsgpt.drafter.recipe import clean_id, DraftRequest, ID_CHARS, ProposalInvalid
 

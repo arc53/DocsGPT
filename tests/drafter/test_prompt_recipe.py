@@ -8,12 +8,10 @@ import pytest
 
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.output import echo_length, EVENT_CHARS
+from docsgpt.drafter.prompt_edits import apply_edits, CONTENT_MAX, MAX_EDITS
 from docsgpt.drafter.prompt_recipe import (
-    apply_edits,
-    CONTENT_MAX,
     context_data,
     instructions,
-    MAX_EDITS,
     parse_context,
     PROMPT_RECIPE,
     READ_MAX,
@@ -456,7 +454,7 @@ class TestTurn:
 
 @pytest.mark.unit
 def test_a_prompt_already_over_the_cap_takes_edits_that_do_not_make_it_longer():
-    from docsgpt.drafter.prompt_recipe import apply_edits, CONTENT_MAX
+    from docsgpt.drafter.prompt_edits import apply_edits, CONTENT_MAX
 
     long = "Be brief. " + "x" * CONTENT_MAX
     _, shorter = apply_edits(long, [{"find": "Be brief. ", "replace": "", "reason": "Shorter."}])
@@ -471,7 +469,7 @@ def test_a_prompt_already_over_the_cap_takes_edits_that_do_not_make_it_longer():
 
 @pytest.mark.unit
 def test_an_edits_replacement_loses_invisible_characters_but_keeps_its_line_breaks():
-    from docsgpt.drafter.prompt_recipe import apply_edits
+    from docsgpt.drafter.prompt_edits import apply_edits
 
     edits, result = apply_edits("You help.", [
         {"find": "You help.", "replace": "You help.\n- Be​ kind\x07.‮", "reason": "Adds a rule."},
