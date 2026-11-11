@@ -6,7 +6,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-import { Alert, AlertDescription, AlertTitle } from './alert';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from './alert';
 import { TooltipProvider } from './tooltip';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -126,6 +126,28 @@ describe('Alert description', () => {
     expect(description.className.split(' ')).toContain(
       '[&_[data-slot=button][data-variant=link][data-tone=current]]:underline',
     );
+  });
+});
+
+describe('Alert action', () => {
+  it("is a link button in the Alert's colour that a form never submits", async () => {
+    await render(<AlertAction>Try again</AlertAction>);
+    const button = container.querySelector('button')!;
+    expect(button.getAttribute('type')).toBe('button');
+    expect(button.dataset.variant).toBe('link');
+    expect(button.dataset.size).toBe('text');
+    expect(button.dataset.tone).toBe('current');
+  });
+
+  it('puts no type on the link it wraps', async () => {
+    await render(
+      <AlertAction asChild>
+        <a href="#guide">Setup guide</a>
+      </AlertAction>,
+    );
+    const link = container.querySelector('a')!;
+    expect(link.hasAttribute('type')).toBe(false);
+    expect(link.dataset.tone).toBe('current');
   });
 });
 

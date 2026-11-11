@@ -46,6 +46,42 @@ export function loadDrafterConfig(
 }
 
 /**
+ * The drafter's config for a session token, read once per token, for a
+ * component that has the token from its host rather than the store. While it
+ * loads, whenever it can't be read and while not `wanted`, it is `null`.
+ *
+ * Args:
+ *   token: The session token.
+ *   wanted: Read it at all; false reads nothing.
+ *
+ * Returns:
+ *   The config, or null while unknown.
+ */
+export function useDrafterConfigFor(
+  token: string | null,
+  wanted = true,
+): DrafterConfig | null {
+  const key = token ?? '';
+  const [config, setConfig] = useState<{
+    key: string;
+    value: DrafterConfig;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!wanted) return;
+    let cancelled = false;
+    void loadDrafterConfig(token).then((value) => {
+      if (!cancelled) setConfig({ key, value });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [wanted, key, token]);
+
+  return wanted && config?.key === key ? config.value : null;
+}
+
+/**
  * The drafter's config for the signed-in user, read once per token. While it
  * loads, and whenever it can't be read, it is `null`, so every wand entry
  * point stays hidden until the server says the drafter is on.
@@ -54,22 +90,5 @@ export function loadDrafterConfig(
  *   The config, or null while unknown.
  */
 export function useDrafterConfig(): DrafterConfig | null {
-  const token = useSelector(selectToken);
-  const key = token ?? '';
-  const [config, setConfig] = useState<{
-    key: string;
-    value: DrafterConfig;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void loadDrafterConfig(token).then((value) => {
-      if (!cancelled) setConfig({ key, value });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [key, token]);
-
-  return config?.key === key ? config.value : null;
+  return useDrafterConfigFor(useSelector(selectToken));
 }

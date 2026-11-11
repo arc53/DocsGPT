@@ -8,6 +8,7 @@ import {
 } from '../preferences/preferenceSlice';
 import { OPTION_KEYS } from '../settings/insights/format';
 import { can } from '../utils/accessUtils';
+import { isUuid } from '../utils/wireGuards';
 import { GuardedAgentContext } from './hooks/useAgent';
 import { agentEditPath, isWorkflowAgent } from './paths';
 import type { Agent } from './types';
@@ -53,9 +54,6 @@ export const IMPROVE_PARAMS = [
   'message',
 ] as const;
 
-/** A conversation or message id as the server takes it. */
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Longest gap type and names a link carries (a topic name is at most 60). */
 const GAP_TYPE_MAX = 64;
 const NAME_MAX = 300;
@@ -105,10 +103,10 @@ export function readImproveHandoff(
   const kind = params.get('improve');
   if (kind === 'conversation') {
     const id = params.get('conversation') ?? '';
-    if (!UUID_RE.test(id)) return null;
+    if (!isUuid(id)) return null;
     // A malformed answer id is left out: the conversation still goes.
     const message = params.get('message') ?? '';
-    return UUID_RE.test(message)
+    return isUuid(message)
       ? { kind, conversation_id: id, message_id: message }
       : { kind, conversation_id: id };
   }

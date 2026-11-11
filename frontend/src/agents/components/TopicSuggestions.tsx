@@ -20,8 +20,7 @@ import {
   type TopicsStatus,
   type TopicSuggestion,
 } from '../../drafter/topicsDraft';
-import type { DrafterConfig } from '../../drafter/drafterApi';
-import { loadDrafterConfig } from '../../drafter/useDrafterConfig';
+import { useDrafterConfigFor } from '../../drafter/useDrafterConfig';
 import { useDrafterSession } from '../../drafter/useDrafterSession';
 import { formatShare, joinList } from '../../settings/insights/format';
 import { formatCount } from '../../utils/dateTimeUtils';
@@ -62,28 +61,6 @@ export type TopicSuggestions = {
   /** The running or finished suggestions, inline above the topics; null when closed. */
   panel: React.ReactNode;
 };
-
-/** The drafter's config while `wanted`; null before it is read. */
-function useDrafterConfigFor(
-  wanted: boolean,
-  token: string | null,
-): DrafterConfig | null {
-  const [config, setConfig] = React.useState<{
-    token: string | null;
-    value: DrafterConfig;
-  } | null>(null);
-  React.useEffect(() => {
-    if (!wanted) return;
-    let cancelled = false;
-    void loadDrafterConfig(token).then((value) => {
-      if (!cancelled) setConfig({ token, value });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [wanted, token]);
-  return wanted && config?.token === token ? config.value : null;
-}
 
 /**
  * The agent's suggestion status, read while `agentId` is set: null before it
@@ -155,7 +132,7 @@ export function useTopicSuggestions({
 }: TopicSuggestionsOptions): TopicSuggestions {
   const { t } = useTranslation();
   const wanted = enabled && !!agentId;
-  const drafter = useDrafterConfigFor(wanted, token);
+  const drafter = useDrafterConfigFor(token, wanted);
   const offered = wanted && drafter?.enabled === true;
   const saved = savedEnabled ?? config.enabled;
   const { status, failed, retry } = useTopicsStatus(

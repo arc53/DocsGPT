@@ -21,7 +21,12 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import isEqual from 'lodash/isEqual';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { Progress } from '@/components/ui/progress';
@@ -262,15 +267,7 @@ export function DraftPanel({
   // Start over fixes a full or refused conversation, so it is a link in
   // the notice's own text.
   const startOverLink = (
-    <Button
-      type="button"
-      variant="link"
-      size="text"
-      tone="current"
-      onClick={startOver}
-    >
-      {t('drafter.startOver')}
-    </Button>
+    <AlertAction onClick={startOver}>{t('drafter.startOver')}</AlertAction>
   );
   const bodyRef = useRef<HTMLDivElement>(null);
   // The body as state too: a phone sheet mounts its content a render after

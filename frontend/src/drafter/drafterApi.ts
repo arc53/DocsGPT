@@ -3,6 +3,7 @@ import endpoints from '../api/endpoints';
 import { isQuotaError } from '../conversation/quotaError';
 import type { Question } from '../components/QuestionCards';
 import { readSSEStream } from '../events/eventStreamClient';
+import { isCount } from '../utils/wireGuards';
 
 /**
  * The server's caps on the history a turn sends (docsgpt/drafter/service.py):
@@ -205,9 +206,6 @@ export type AgentGaps = {
   days: number;
   rows: AgentGapRow[];
 };
-
-const isCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 const GAPS_REASONS: AgentGapsReason[] = [
   'off_on_this_instance',

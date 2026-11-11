@@ -1,6 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
-import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import type { PromptDetail } from './usePromptDetail';
@@ -83,16 +88,12 @@ export function PromptConflictNotice({
       <AlertDescription>
         <p>
           {t('settings.prompts.conflict.description')}{' '}
-          <Button
-            type="button"
-            variant="link"
-            size="text"
-            tone="current"
+          <AlertAction
             onClick={() => void detail.save({ asCopy: true })}
             disabled={disabled}
           >
             {t('settings.prompts.saveAsCopy')}
-          </Button>
+          </AlertAction>
         </p>
       </AlertDescription>
     </Alert>

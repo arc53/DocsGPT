@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -815,7 +815,7 @@ export default function MCPServerModal({
                 {testResult.authorization_url && (
                   <>
                     {' '}
-                    <Button variant="link" size="text" tone="current" asChild>
+                    <AlertAction asChild>
                       <a
                         href={testResult.authorization_url}
                         target="_blank"
@@ -832,7 +832,7 @@ export default function MCPServerModal({
                       >
                         {t('settings.tools.mcp.openAuthPage')}
                       </a>
-                    </Button>
+                    </AlertAction>
                   </>
                 )}
               </p>

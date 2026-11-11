@@ -2,8 +2,12 @@ import type { MouseEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/alert';
 
 import { DRAFTER_PROMPT_CHARS, type DrafterErrorCode } from './drafterApi';
 
@@ -82,25 +86,17 @@ export function DrafterErrorAlert({
           {retry && (
             <>
               {' '}
-              <Button
-                type="button"
-                variant="link"
-                size="text"
-                tone="current"
-                onClick={onRetry}
-              >
-                {t('drafter.retry')}
-              </Button>
+              <AlertAction onClick={onRetry}>{t('drafter.retry')}</AlertAction>
             </>
           )}
           {refusedKey && (
             <>
               {' '}
-              <Button variant="link" size="text" tone="current" asChild>
+              <AlertAction asChild>
                 <Link to={TASK_MODEL_SETTINGS_PATH} onClick={onNavigate}>
                   {t('drafter.errors.model_auth.fix')}
                 </Link>
-              </Button>
+              </AlertAction>
             </>
           )}
           {fix && <> {fix}</>}

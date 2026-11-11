@@ -3,6 +3,17 @@ import { can } from '../utils/accessUtils';
 
 // Presets (`public`) carry no access fields and are never edited in place.
 
+/** The built-in prompts' ids, which every instance has. */
+export const PRESET_PROMPT_IDS: readonly string[] = [
+  'default',
+  'creative',
+  'strict',
+];
+
+/** The built-in prompts as the prompt list holds them before it is read. */
+export const presetPrompts = (): Prompt[] =>
+  PRESET_PROMPT_IDS.map((id) => ({ name: id, id, type: 'public' }));
+
 /** Whether the caller may change the prompt's name and text. */
 export const canEditPrompt = (prompt: Prompt) =>
   prompt.type !== 'public' && can(prompt, 'edit');

@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -1082,15 +1082,9 @@ function ServiceSection({
             <AlertDescription title={shown.last_error ?? undefined}>
               <p>
                 {problem(shown)}{' '}
-                <Button
-                  type="button"
-                  variant="link"
-                  size="text"
-                  tone="current"
-                  onClick={() => handlers.onReconnect(shown)}
-                >
+                <AlertAction onClick={() => handlers.onReconnect(shown)}>
                   {t('settings.connectors.status.reconnect')}
-                </Button>
+                </AlertAction>
               </p>
             </AlertDescription>
           </Alert>

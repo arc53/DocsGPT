@@ -1353,7 +1353,8 @@ hand-rolled `rounded-lg bg-<role>/10` box.
 no quiet default; a note is `info` with `role="note"`. 14px
 corners (`rounded-xl`), like a popover. Every variant is the same
 shape: `border-<role>/50 bg-<role>/10 text-<role>`. Children are
-`AlertTitle` and `AlertDescription`.
+`AlertTitle` and `AlertDescription`; `AlertAction` is the fix link at the
+end of the description (below).
 
 The variant draws its icon: destructive `CircleAlert`, warning
 `TriangleAlert`, success `CircleCheck`, info `Info`. Never pass an icon child, and no per-site overrides: a lock, a
@@ -1368,10 +1369,11 @@ A static note is `variant="info" role="note"` (see Where a message lives);
 
 An action that fixes what the Alert says (Try again, Reconnect, Start over,
 Open Access details, Add to Knowledge) is a link in the Alert's own colour
-at the end of its text: `Button variant="link" size="text" tone="current"`
-after the last sentence in the description's `<p>` ("… Nothing in the form
-changed. Try again"), with `asChild` around a router `<Link>` or an `<a>`
-when it navigates and `loading` while it runs. `AlertDescription` underlines
+at the end of its text: `AlertAction` (a `Button variant="link" size="text"
+tone="current"`, `type="button"`) after the last sentence in the
+description's `<p>` ("… Nothing in the form changed. Try again"), with
+`asChild` around a router `<Link>` or an `<a>` when it navigates and
+`loading` while it runs. `AlertDescription` underlines
 it at rest, not only on hover: in the text's own colour, the underline is all
 that marks it as a link. Never a framed Button
 (`outline`, `default`, `secondary`) inside an Alert: a filled or bordered

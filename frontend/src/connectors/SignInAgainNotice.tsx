@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
-import { Alert, AlertDescription } from '../components/ui/alert';
-import { Button } from '../components/ui/button';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { selectConnectorCatalog } from './connectorsSlice';
 import { reconnectsInPlace } from './launchRules';
 import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
@@ -81,15 +80,9 @@ export default function SignInAgainNotice({
                 name: connection.name,
                 interpolation: { escapeValue: false },
               })}{' '}
-              <Button
-                type="button"
-                variant="link"
-                size="text"
-                tone="current"
-                onClick={() => onReconnect(connection)}
-              >
+              <AlertAction onClick={() => onReconnect(connection)}>
                 {t('settings.connectors.status.reconnect')}
-              </Button>
+              </AlertAction>
             </p>
           </AlertDescription>
         </Alert>

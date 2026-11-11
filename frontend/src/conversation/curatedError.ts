@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 
+import { isRecord } from '../utils/wireGuards';
 import type { Query } from './conversationModels';
 
 /** Values a curated error was worded from (``needed_tokens``…). */
@@ -12,8 +13,7 @@ export interface StreamError {
   params?: ErrorParams;
 }
 
-const isParams = (value: unknown): value is ErrorParams =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+const isParams = (value: unknown): value is ErrorParams => isRecord(value);
 
 /**
  * The text, code and params of a stream ``error`` event. A curated error

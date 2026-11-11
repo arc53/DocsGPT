@@ -55,14 +55,6 @@ const mocks = vi.hoisted(() => ({
   // The turn stays open after its events, as while the model works.
   hang: false,
 }));
-vi.mock('../../drafter/useDrafterConfig', () => ({
-  loadDrafterConfig: () =>
-    Promise.resolve({
-      enabled: mocks.drafterEnabled,
-      model: null,
-      reason: mocks.drafterEnabled ? null : 'disabled',
-    }),
-}));
 vi.mock('../../drafter/topicsDraft', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../drafter/topicsDraft')>()),
   getTopicsStatus: (agentId: string) => {
@@ -74,6 +66,12 @@ vi.mock('../../drafter/topicsDraft', async (importOriginal) => ({
 }));
 vi.mock('../../drafter/drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../drafter/drafterApi')>()),
+  getDrafterConfig: () =>
+    Promise.resolve({
+      enabled: mocks.drafterEnabled,
+      model: null,
+      reason: mocks.drafterEnabled ? null : 'disabled',
+    }),
   streamDrafter: async (
     request: DrafterRequest,
     _token: string | null,
@@ -85,6 +83,7 @@ vi.mock('../../drafter/drafterApi', async (importOriginal) => ({
   },
 }));
 
+import { resetDrafterConfigCache } from '../../drafter/useDrafterConfig';
 import { analyticsOf } from '../analyticsConfig';
 import InsightsSettingsBody from './InsightsSettingsBody';
 
@@ -180,6 +179,7 @@ describe('topic suggestions in the Insights settings', () => {
 
   beforeEach(() => {
     latest = undefined;
+    resetDrafterConfigCache();
     mocks.drafterEnabled = true;
     mocks.status = {
       available: true,

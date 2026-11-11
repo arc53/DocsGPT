@@ -1,8 +1,7 @@
 import apiClient from '../api/client';
 import endpoints from '../api/endpoints';
+import { isString } from '../utils/wireGuards';
 import type { PromptCheckFacts } from './promptCheckText';
-
-const isString = (value: unknown): value is string => typeof value === 'string';
 
 /**
  * `POST /api/check_prompt`'s `checks`, malformed entries dropped: each needs

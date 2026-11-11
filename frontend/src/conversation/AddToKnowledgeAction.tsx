@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '../components/ui/button';
+import { AlertAction } from '../components/ui/alert';
 import {
   type KnowledgeFile,
   useAddToKnowledge,
@@ -34,11 +34,7 @@ export default function AddToKnowledgeAction({
   }
   return (
     <>
-      <Button
-        type="button"
-        variant="link"
-        size="text"
-        tone="current"
+      <AlertAction
         loading={pending}
         onClick={async () => {
           if (await addToKnowledge(files)) {
@@ -48,7 +44,7 @@ export default function AddToKnowledgeAction({
         }}
       >
         {t('conversation.attachments.addToKnowledge')}
-      </Button>
+      </AlertAction>
       {error && <> {error}</>}
     </>
   );

@@ -51,6 +51,7 @@ import {
 } from '../components/ui/select';
 import { useLoaderState } from '../hooks';
 import { cn } from '../lib/utils';
+import { isUuid } from '../utils/wireGuards';
 import {
   selectAnalyticsEnabled,
   selectToken,
@@ -82,10 +83,6 @@ const MAX_REQUEST_ROWS = 100;
 
 /** The most pages read looking for a linked message before giving up. */
 const MAX_TARGET_PAGES = 10;
-
-/** A conversation id as the API takes it: a UUID, else it refuses the call. */
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The label filter's keys under `settings.logs.labels`. */
 const LABEL_KEYS: Record<(typeof LOG_LABELS)[number], string> = {
@@ -131,7 +128,7 @@ export default function Logs({ agentId, analytics, agent }: LogsProps) {
     if (drafterConfig?.enabled !== true) return null;
     if (log.event_type !== 'chat' || log.running) return null;
     const conversationId = log.conversation_id;
-    if (!conversationId || !UUID_RE.test(conversationId)) return null;
+    if (!conversationId || !isUuid(conversationId)) return null;
     const flagged =
       log.feedback?.text === 'dislike' ||
       (log.labels ?? []).some((label) => IMPROVE_LABELS.includes(label));
@@ -142,7 +139,7 @@ export default function Logs({ agentId, analytics, agent }: LogsProps) {
     if (!canImproveAgent(record)) return null;
     // The answer the row is on, so the drafter reads that one.
     const messageId =
-      log.message_id && UUID_RE.test(log.message_id) ? log.message_id : null;
+      log.message_id && isUuid(log.message_id) ? log.message_id : null;
     return agentImprovePath(id, {
       kind: 'conversation',
       conversation_id: conversationId,
@@ -159,7 +156,7 @@ export default function Logs({ agentId, analytics, agent }: LogsProps) {
   // it and leave an error with no way out.
   const rawConversation = searchParams.get('conversation');
   const conversationFilter =
-    rawConversation && UUID_RE.test(rawConversation) ? rawConversation : null;
+    rawConversation && isUuid(rawConversation) ? rawConversation : null;
   const messageTarget = searchParams.get('message') || null;
   // The server's flag from Redux (read at start-up), so the filter row is
   // whole on the first paint instead of growing a select later.

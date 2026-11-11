@@ -1,4 +1,5 @@
 import apiClient from '../api/client';
+import { isRecord } from '../utils/wireGuards';
 
 /** Whether an agent has enough recent conversations for topic suggestions. */
 export const TOPICS_STATUS_ENDPOINT = '/api/drafter/topics/status';
@@ -66,9 +67,6 @@ export type TopicsProposal = {
   };
 };
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const str = (value: unknown): string =>
   typeof value === 'string' ? value : '';
 
@@ -86,10 +84,10 @@ const num = (value: unknown): number | null =>
  *   The proposal, or null.
  */
 export function parseTopicsProposal(raw: unknown): TopicsProposal | null {
-  if (!isObject(raw) || !Array.isArray(raw.topics)) return null;
-  const sample = isObject(raw.sample) ? raw.sample : {};
-  const unmatched = isObject(sample.unmatched) ? sample.unmatched : null;
-  const capacity = isObject(raw.capacity) ? raw.capacity : {};
+  if (!isRecord(raw) || !Array.isArray(raw.topics)) return null;
+  const sample = isRecord(raw.sample) ? raw.sample : {};
+  const unmatched = isRecord(sample.unmatched) ? sample.unmatched : null;
+  const capacity = isRecord(raw.capacity) ? raw.capacity : {};
   return {
     message: str(raw.message),
     sample: {
@@ -104,7 +102,7 @@ export function parseTopicsProposal(raw: unknown): TopicsProposal | null {
           }
         : null,
     },
-    topics: raw.topics.filter(isObject).flatMap((topic) =>
+    topics: raw.topics.filter(isRecord).flatMap((topic) =>
       str(topic.id) && str(topic.name)
         ? [
             {
@@ -122,7 +120,7 @@ export function parseTopicsProposal(raw: unknown): TopicsProposal | null {
         : [],
     ),
     left_out: (Array.isArray(raw.left_out) ? raw.left_out : [])
-      .filter(isObject)
+      .filter(isRecord)
       .map((item) => ({ name: str(item.name), reason: str(item.reason) }))
       .filter((item) => item.name),
     capacity: {

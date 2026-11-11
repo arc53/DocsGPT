@@ -2,11 +2,10 @@ import { Database, ScrollText, Wrench } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Button } from '@/components/ui/button';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 
 import ConnectorIcon from '../../connectors/ConnectorIcon';
@@ -218,15 +217,9 @@ export default function AgentUsesSection({
                       {/* Access details lists these writes once there is a
                           key (a draft gets one when it is published). */}
                       {!agent.key && <> {t(`${K}.accessDetailsNeedsKey`)}</>}{' '}
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="text"
-                        tone="current"
-                        onClick={onOpenAccessDetails}
-                      >
+                      <AlertAction onClick={onOpenAccessDetails}>
                         {t(`${K}.openAccessDetails`)}
-                      </Button>
+                      </AlertAction>
                     </>
                   )}
                 </p>

@@ -4,6 +4,7 @@
  * proposal off the stream, applying the accepted edits and splitting the
  * text into the diff the review shows.
  */
+import { asRecord, isString } from '../utils/wireGuards';
 
 /** One server-checked change: `find` occurs once in the text it was made for. */
 export type PromptEdit = {
@@ -107,8 +108,6 @@ export function promptDrafterMode(content: string): 'improve' | 'write' {
   return promptAsRead(content) ? 'improve' : 'write';
 }
 
-const isString = (value: unknown): value is string => typeof value === 'string';
-
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter(isString) : [];
 }
@@ -139,11 +138,6 @@ export function readPromptEdits(raw: unknown): PromptEdit[] {
     }));
 }
 
-const record = (value: unknown): Record<string, unknown> | null =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-
 const text = (value: unknown): string => (isString(value) ? value : '');
 
 /**
@@ -156,15 +150,15 @@ function readFindings(raw: unknown, edits: PromptEdit[]): ReviewFinding[] {
   if (!Array.isArray(raw)) return [];
   const editIds = new Set(edits.map((edit) => edit.id));
   return raw.flatMap((item): ReviewFinding[] => {
-    const value = record(item);
+    const value = asRecord(item);
     if (!value || !isString(value.id)) return [];
     if (value.severity !== 'fix' && value.severity !== 'look') return [];
     const source = value.source === 'server' ? 'server' : 'model';
     const code = isString(value.code) && value.code ? value.code : null;
     const title = text(value.title).trim();
     if (source === 'server' ? !code : !title) return [];
-    const ask = record(value.ask);
-    const agent = record(value.agent);
+    const ask = asRecord(value.ask);
+    const agent = asRecord(value.agent);
     return [
       {
         id: value.id,
