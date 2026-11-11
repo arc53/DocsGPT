@@ -1231,6 +1231,25 @@ class TestTokenStaysFreshDuringDownload:
         assert "at2" not in caplog.text
 
     @pytest.mark.unit
+    @pytest.mark.parametrize("inputs", [
+        {"file_ids": ["f1"]},
+        {"folder_id": "d1"},
+        {"folder_id": "d1", "search_query": "report"},
+        {"shared": True},
+    ])
+    def test_browsing_raises_when_the_refreshed_token_is_rejected(self, loader_shared, inputs):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        loader_shared._refresh_rejected_token = MagicMock(return_value={"access_token": "at2"})
+        rejected = _graph_response(401, _GRAPH_401_BODY)
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=rejected), patch(
+            "docsgpt.parser.connectors.share_point.loader.requests.post", return_value=rejected,
+        ):
+            with pytest.raises(ConnectorAuthError):
+                loader_shared.load_data(inputs)
+        loader_shared._refresh_rejected_token.assert_called_once_with("at")
+
+    @pytest.mark.unit
     def test_shared_search_post_retries_with_the_refreshed_token(self, loader_shared):
         drive = _graph_response(data={"webUrl": "https://contoso-my.sharepoint.com/personal/u"})
         search = _graph_response(data={"value": [{"hitsContainers": [{"total": 0, "hits": []}]}]})
