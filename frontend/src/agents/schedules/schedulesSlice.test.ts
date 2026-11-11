@@ -800,6 +800,52 @@ describe('createSchedule with a test run', () => {
     });
   });
 
+  it('keeps a finished run over a reload read before it finished', () => {
+    let state = reducer(
+      seedState(),
+      sseEventReceived({
+        id: 'evt-done',
+        type: 'schedule.run.failed',
+        ts: '2026-05-19T12:00:05Z',
+        payload: {
+          schedule_id: 'sched-new',
+          run_id: 'run-test',
+          error_type: 'cannot_complete',
+          error: 'No CRM tool.',
+        },
+      } as SSEEvent),
+    );
+    state = reducer(
+      state,
+      loadRunsForSchedule.fulfilled(
+        {
+          scheduleId: 'sched-new',
+          runs: [
+            sampleRun({
+              id: 'run-test',
+              schedule_id: 'sched-new',
+              status: 'running',
+              trigger_source: 'manual',
+              prompt_tokens: 12,
+            }),
+          ],
+          offset: 0,
+          limit: RUNS_PAGE_SIZE,
+        },
+        'stale',
+        { id: 'sched-new', token: null },
+      ),
+    );
+    const [run] = selectRunsForSchedule({ schedules: state }, 'sched-new');
+    expect(run).toMatchObject({
+      status: 'failed',
+      error_type: 'cannot_complete',
+      error: 'No CRM tool.',
+      trigger_source: 'manual',
+      prompt_tokens: 12,
+    });
+  });
+
   it('leaves the run log alone without one', () => {
     const state = reducer(
       seedState(),

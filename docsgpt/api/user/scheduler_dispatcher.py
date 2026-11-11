@@ -112,6 +112,14 @@ def dispatch_due_runs() -> Dict[str, int]:
                 counts["advanced"] += 1
                 continue
 
+            # A one-time task's own run waits for a run started by hand (a
+            # test run, Run now) to end: skipping it as an overlap would
+            # lose it, since a manual run doesn't close the task.
+            if trigger_type == "once" and runs_repo.has_active_run(
+                str(schedule["id"]), trigger_source="manual",
+            ):
+                continue
+
             # Overlap guard: never enqueue while a previous run is active.
             if runs_repo.has_active_run(str(schedule["id"])):
                 runs_repo.record_skipped(
@@ -227,14 +235,17 @@ def enqueue_test_run(run: Dict[str, Any], session: Callable[[], ContextManager[A
         return run
     except Exception:
         logger.exception("schedules: failed to enqueue test run %s", run_id)
-    with session() as conn:
-        failed = ScheduleRunsRepository(conn).update(
-            run_id,
-            {
-                "status": "failed",
-                "finished_at": datetime.now(timezone.utc),
-                "error_type": "internal",
-                "error": "the test run could not be started",
-            },
-        )
-    return failed or {**run, "status": "failed"}
+    fields = {
+        "status": "failed",
+        "finished_at": datetime.now(timezone.utc),
+        "error_type": "internal",
+        "error": "the test run could not be started",
+    }
+    try:
+        with session() as conn:
+            failed = ScheduleRunsRepository(conn).update(run_id, fields)
+    except Exception:
+        # The schedule is saved either way; the reconciler fails the pending row later.
+        logger.exception("schedules: failed to mark test run %s failed", run_id)
+        failed = None
+    return failed or {**run, **fields}

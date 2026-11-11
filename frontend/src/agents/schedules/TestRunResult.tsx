@@ -23,6 +23,10 @@ const FINISHED: ScheduleRunStatus[] = [
   'skipped',
 ];
 
+// How often a run still going is read again, in case its SSE result was
+// missed (a dropped stream doesn't always replay it).
+const POLL_MS = 10_000;
+
 export type TestRunResultProps = {
   scheduleId: string;
   runId: string;
@@ -59,6 +63,15 @@ export default function TestRunResult({
       loadedFinished.current = true;
     }
     dispatch(loadRunsForSchedule({ id: scheduleId, token }));
+  }, [dispatch, scheduleId, token, finished, hasRun]);
+
+  useEffect(() => {
+    if (!hasRun || finished) return;
+    const timer = setInterval(
+      () => dispatch(loadRunsForSchedule({ id: scheduleId, token })),
+      POLL_MS,
+    );
+    return () => clearInterval(timer);
   }, [dispatch, scheduleId, token, finished, hasRun]);
 
   const cannotComplete =

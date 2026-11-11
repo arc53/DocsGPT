@@ -371,3 +371,74 @@ class TestStuckTestRunOfAOneTimeTask:
         assert stored["status"] == "active"
         assert stored["next_run_at"] == schedule["next_run_at"]
         assert stored["consecutive_failure_count"] == 0
+
+
+@pytest.mark.fresh_db
+class TestOneTimeTaskDueDuringItsTestRun:
+    """A one-time task that comes due while its test run is still going waits for it instead of being skipped."""
+
+    @pytest.fixture
+    def dispatch_engine(self, pg_engine, monkeypatch):
+        monkeypatch.setattr("docsgpt.api.user.scheduler_dispatcher.get_engine", lambda: pg_engine)
+        monkeypatch.setattr(
+            "docsgpt.api.user.scheduler_dispatcher.settings",
+            type("S", (), {"POSTGRES_URI": str(pg_engine.url), "SCHEDULE_MISFIRE_GRACE": 60})(),
+        )
+        return pg_engine
+
+    def test_it_runs_once_the_test_ends(self, dispatch_engine, enqueued):
+        from docsgpt.api.user.scheduler_dispatcher import dispatch_due_runs
+
+        with dispatch_engine.begin() as conn:
+            agent_id = _make_agent(conn)
+            due = _now() - timedelta(seconds=5)
+            schedule = SchedulesRepository(conn).create(
+                user_id="u1", agent_id=agent_id, trigger_type="once",
+                instruction="check the deploy", run_at=due, next_run_at=due,
+            )
+            test = ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now() - timedelta(minutes=1), trigger_source="manual",
+            )
+
+        dispatch_due_runs()
+
+        with dispatch_engine.connect() as conn:
+            runs = _runs(conn, str(schedule["id"]))
+            stored = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert [r["trigger_source"] for r in runs] == ["manual"]
+        assert stored["next_run_at"] == schedule["next_run_at"]
+        assert enqueued == []
+
+        with dispatch_engine.begin() as conn:
+            ScheduleRunsRepository(conn).update(str(test["id"]), {"status": "success"})
+        dispatch_due_runs()
+
+        with dispatch_engine.connect() as conn:
+            runs = _runs(conn, str(schedule["id"]))
+        cron = [r for r in runs if r["trigger_source"] == "cron"]
+        assert [r["status"] for r in cron] == ["pending"]
+        assert enqueued == [str(cron[0]["id"])]
+
+
+def test_a_failed_enqueue_whose_status_cannot_be_saved_still_returns_the_run():
+    from docsgpt.api.user.scheduler_dispatcher import enqueue_test_run
+
+    @contextmanager
+    def _down():
+        raise ConnectionError("database down")
+        yield  # pragma: no cover
+
+    run = {"id": "00000000-0000-0000-0000-000000000001", "schedule_id": "s1", "status": "pending"}
+
+    def _apply_async(**_kw):
+        raise ConnectionError("broker down")
+
+    with patch(
+        "docsgpt.api.user.tasks.execute_scheduled_run",
+        type("T", (), {"apply_async": staticmethod(_apply_async)}),
+    ):
+        out = enqueue_test_run(run, _down)
+
+    assert out["id"] == run["id"]
+    assert out["status"] == "failed"
+    assert out["error_type"] == "internal"

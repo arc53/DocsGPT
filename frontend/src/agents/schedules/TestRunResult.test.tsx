@@ -210,6 +210,27 @@ describe('TestRunResult', () => {
     expect(fix?.getAttribute('href')).toBe('/settings/tools');
   });
 
+  it('reads a run still going again, in case its result event was missed', async () => {
+    vi.useFakeTimers();
+    try {
+      await seed();
+      await render();
+      expect(service.listRuns).not.toHaveBeenCalled();
+      service.listRuns.mockResolvedValue({
+        runs: [{ ...testRun, status: 'success' }],
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(service.listRuns).toHaveBeenCalled();
+      expect(container.textContent).toContain(
+        'agents.schedules.testRun.succeeded',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('loads the run when the store does not have it yet (a chat card)', async () => {
     service.listRuns.mockResolvedValue({ runs: [testRun] });
     await render();

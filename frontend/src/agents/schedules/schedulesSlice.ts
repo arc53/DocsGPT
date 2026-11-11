@@ -14,6 +14,12 @@ import type {
   UserSchedule,
 } from '../types/schedule';
 
+/** Run statuses that have not finished yet. */
+export const ACTIVE_RUN_STATUSES: ScheduleRun['status'][] = [
+  'pending',
+  'running',
+];
+
 /** Runs per request; a shorter page means the log has reached its oldest run. */
 export const RUNS_PAGE_SIZE = 50;
 
@@ -394,7 +400,25 @@ const schedulesSlice = createSlice({
       .addCase(loadRunsForSchedule.fulfilled, (state, action) => {
         const { scheduleId, runs, offset, limit } = action.payload;
         if (offset === 0) {
-          state.runsBySchedule[scheduleId] = runs;
+          // A run never goes back from finished: an answer read before its
+          // SSE result (or an earlier reload) keeps the result it has here.
+          const finished = new Map(
+            (state.runsBySchedule[scheduleId] ?? [])
+              .filter((run) => !ACTIVE_RUN_STATUSES.includes(run.status))
+              .map((run) => [run.id, run]),
+          );
+          state.runsBySchedule[scheduleId] = runs.map((run) => {
+            const known = finished.get(run.id);
+            return known && ACTIVE_RUN_STATUSES.includes(run.status)
+              ? {
+                  ...run,
+                  status: known.status,
+                  error_type: known.error_type,
+                  error: known.error,
+                  finished_at: known.finished_at,
+                }
+              : run;
+          });
         } else {
           // Runs that arrived over SSE shift the window, so an older page
           // can repeat the last rows already listed.
