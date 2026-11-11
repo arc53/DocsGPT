@@ -1,14 +1,15 @@
-"""The drafter's read tools: detail the compact workspace catalog leaves out.
+"""The drafter's read tools: detail the workspace overview leaves out.
 
-Every tool answers from the :class:`~docsgpt.drafter.catalog.Workspace` read
+Every tool answers for the :class:`~docsgpt.drafter.catalog.Workspace` read
 for the caller at the start of the turn, so it can only return what the caller
-may open, and none has side effects. Most are plain lookups in it; two kinds
-read the database while the turn runs. ``get_source`` reads the file tree of
-the one source it is asked about (the catalog leaves trees out), only for a
-source the workspace shows, and keeps it for the rest of the turn. The
-Insights reads (``get_gap_examples``, ``get_conversations``) go through the
-workspace's ``insights_reader``, built for the one agent the caller may edit,
-and return a few capped rows of its conversations.
+may attach, and none has side effects. The overview holds names and a line of
+meta; the detail is read from the database while the turn runs, for the one
+row a tool is asked about, and kept for the rest of the turn: a prompt's text
+(``get_prompt``), a tool's actions (``get_tool``), a source's file tree
+(``get_source``). Built-in prompts and tools answer from memory. The Insights
+reads (``get_gap_examples``, ``get_conversations``) go through the workspace's
+``insights_reader``, built for the one agent the caller may edit, and return a
+few capped rows of its conversations.
 Results go back to the model fenced as data; a result's ``shown`` is what the
 panel lists as read (``read`` event) and is not sent to the model.
 """
@@ -18,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional
 
-from docsgpt.drafter.catalog import source_files, Workspace
+from docsgpt.drafter.catalog import is_template, prompt_text, row_of, source_files, tool_detail, Workspace
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.storage.db.repositories.conversation_labels import LOG_LABELS, SUMMARY_GAP_TYPES
 
@@ -34,13 +35,17 @@ def _id_arg(args: dict, key: str) -> str:
 
 
 def get_prompt(ws: Workspace, args: dict) -> dict:
-    """A prompt's full text by id (a built-in prompt by name)."""
+    """A prompt's full text by id (a built-in prompt by name), marked when it is a template."""
     prompt_id = _id_arg(args, "prompt_id")
-    text = ws.prompt_texts.get(prompt_id)
+    row = row_of(ws, "prompts", prompt_id)
+    text = prompt_text(ws, prompt_id)
     if text is None:
-        return {"error": "No prompt with that id in the workspace."}
-    row = next((p for p in ws.prompts if p["id"] == prompt_id), {})
-    return {"id": prompt_id, "name": row.get("name", prompt_id), "content": text}
+        return {"error": "This prompt's text could not be read right now. Go by its name." if row
+                else "No prompt with that id in the workspace."}
+    out = {"id": prompt_id, "name": (row or {}).get("name", prompt_id), "content": text}
+    if is_template(text):
+        out["template"] = True
+    return out
 
 
 def get_source(ws: Workspace, args: dict) -> dict:
@@ -50,7 +55,7 @@ def get_source(ws: Workspace, args: dict) -> dict:
     each read down and refuses the ones past it.
     """
     source_id = _id_arg(args, "source_id")
-    row = next((s for s in ws.sources if s["id"] == source_id), None)
+    row = row_of(ws, "sources", source_id)
     if row is None:
         return {"error": "No source with that id in the workspace."}
     left = getattr(ws, "source_reads_left", None)
@@ -67,9 +72,11 @@ def get_source(ws: Workspace, args: dict) -> dict:
 def get_tool(ws: Workspace, args: dict) -> dict:
     """A tool's actions with their descriptions and the parameters the model fills."""
     tool_id = _id_arg(args, "tool_id")
-    detail = ws.tool_details.get(tool_id)
-    if detail is None or not any(t["id"] == tool_id for t in ws.tools):
-        return {"error": "No tool with that id in the workspace."}
+    row = row_of(ws, "tools", tool_id)
+    detail = tool_detail(ws, tool_id) if row else None
+    if detail is None:
+        return {"error": "This tool's actions could not be read right now. Go by its name and description." if row
+                else "No tool with that id in the workspace."}
     return detail
 
 

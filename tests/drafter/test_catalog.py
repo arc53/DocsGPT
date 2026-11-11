@@ -146,7 +146,8 @@ class TestToolDetail:
         }}, "encrypted_credentials": "ciphertext"}
         tool = _tool(pg_conn, ALICE, config=config, display_name="Users API")
         ws = _load(pg_conn)
-        detail = run_read_tool("get_tool", ws, {"tool_id": str(tool["id"])})
+        with _db(pg_conn):
+            detail = run_read_tool("get_tool", ws, {"tool_id": str(tool["id"])})
         assert detail["actions"] == [{"name": "get_users", "description": "List users"}]
         everything = json.dumps([ws.summary(), ws.tool_details])
         for secret in ("sk-secret", "ciphertext", "api.example.com", "X-Key"):
@@ -161,7 +162,8 @@ class TestToolDetail:
         ]
         tool = _tool(pg_conn, ALICE, name="mcp_tool", actions=actions, display_name="Docs MCP")
         ws = _load(pg_conn)
-        detail = run_read_tool("get_tool", ws, {"tool_id": str(tool["id"])})
+        with _db(pg_conn):
+            detail = run_read_tool("get_tool", ws, {"tool_id": str(tool["id"])})
         assert detail["actions"] == [
             {"name": "search", "description": "Search the docs"},
             {"name": "evil", "description_withheld": True},
@@ -170,13 +172,22 @@ class TestToolDetail:
 
     def test_read_tools_refuse_ids_outside_the_workspace(self, pg_conn):
         foreign = PromptsRepository(pg_conn).create(BOB, "Bob's", "secret plan")
+        theirs = _tool(pg_conn, BOB, display_name="Bob's tool")
+        hidden = _source(pg_conn, "Bob's contracts", BOB, structure={"rates.md": {}})
         ws = _load(pg_conn)
-        assert run_read_tool("get_prompt", ws, {"prompt_id": str(foreign["id"])}) == {
-            "error": "No prompt with that id in the workspace."
-        }
-        assert "error" in run_read_tool("get_tool", ws, {"tool_id": "nope"})
-        assert "error" in run_read_tool("get_source", ws, {"source_id": "nope"})
-        assert "error" in run_read_tool("delete_everything", ws, {})
+        with _db(pg_conn):
+            assert run_read_tool("get_prompt", ws, {"prompt_id": str(foreign["id"])}) == {
+                "error": "No prompt with that id in the workspace."
+            }
+            assert run_read_tool("get_tool", ws, {"tool_id": str(theirs["id"])}) == {
+                "error": "No tool with that id in the workspace."
+            }
+            assert run_read_tool("get_source", ws, {"source_id": str(hidden["id"])}) == {
+                "error": "No source with that id in the workspace."
+            }
+            assert "error" in run_read_tool("get_tool", ws, {"tool_id": "nope"})
+            assert "error" in run_read_tool("get_source", ws, {"source_id": "nope"})
+            assert "error" in run_read_tool("delete_everything", ws, {})
 
     def test_get_source_lists_file_paths(self, pg_conn):
         structure = {"guides": {"returns.md": {"token_count": 10}}, "faq.md": {"token_count": 5}}
@@ -212,13 +223,102 @@ class TestToolDetail:
 
 
 @pytest.mark.unit
-def test_text_is_cleaned_and_capped(pg_conn):
-    PromptsRepository(pg_conn).create(ALICE, "Bell\x07name", "x" * 20000)
-    ws = _load(pg_conn)
-    row = next(p for p in ws.prompts if p["kind"] == "own")
-    assert row["name"] == "Bellname"
-    assert len(row["preview"]) <= 160
-    assert len(ws.prompt_texts[row["id"]]) <= 12000
+class TestOverview:
+    """The overview is names and a line of meta; texts, actions and files are read on demand."""
+
+    def test_rows_carry_names_and_meta_and_no_text_or_actions(self, pg_conn):
+        prompt = PromptsRepository(pg_conn).create(ALICE, "Support voice", "You help customers. SECRET-TEXT")
+        tool = _tool(pg_conn, ALICE, name="mcp_tool", display_name="Docs MCP", description="d" * 400,
+                     actions=[{"name": "search_docs", "description": "Search", "active": True}])
+        source = SourcesRepository(pg_conn).create("Help Center", user_id=ALICE, type="url", tokens="1200")
+        ws = _load(pg_conn)
+        assert next(p for p in ws.prompts if p["id"] == str(prompt["id"])) == {
+            "id": str(prompt["id"]), "name": "Support voice", "kind": "own",
+        }
+        row = next(t for t in ws.tools if t["id"] == str(tool["id"]))
+        assert set(row) == {"id", "name", "kind", "description"} and len(row["description"]) == 100
+        assert ws.sources == [{"id": str(source["id"]), "name": "Help Center", "type": "url", "tokens": 1200}]
+        dumped = json.dumps(ws.summary())
+        assert "SECRET-TEXT" not in dumped and "search_docs" not in dumped
+        assert all(set(t) <= {"id", "name", "kind", "description", "shared"} for t in ws.tools)
+
+    def test_the_catalog_reads_no_prompt_text_and_get_prompt_reads_one_once(self, pg_conn):
+        prompt = PromptsRepository(pg_conn).create(ALICE, "Support voice", "You help {{ company }}.")
+        PromptsRepository(pg_conn).create(ALICE, "Other", "Unread.")
+        repo = PromptsRepository
+        with patch.object(repo, "list_for_user", side_effect=AssertionError("reads every text")), patch.object(
+            repo, "list_by_ids", autospec=True, side_effect=repo.list_by_ids
+        ) as texts:
+            ws = _load(pg_conn)
+            assert texts.call_count == 0 and set(ws.prompt_texts) == {"default", "creative", "strict"}
+            with _db(pg_conn):
+                first = run_read_tool("get_prompt", ws, {"prompt_id": str(prompt["id"])})
+                again = run_read_tool("get_prompt", ws, {"prompt_id": str(prompt["id"])})
+        assert first == again == {"id": str(prompt["id"]), "name": "Support voice",
+                                  "content": "You help {{ company }}.", "template": True}
+        assert texts.call_count == 1
+
+    def test_the_catalog_reads_no_tool_config_and_get_tool_reads_one_once(self, pg_conn):
+        tool = _tool(pg_conn, ALICE, name="mcp_tool", display_name="Docs MCP", description="d" * 400,
+                     actions=[{"name": "search_docs", "description": "Search", "active": True}])
+        _tool(pg_conn, ALICE, display_name="Other")
+        repo = UserToolsRepository
+        with patch.object(repo, "list_for_user", side_effect=AssertionError("reads every config")), patch.object(
+            repo, "list_by_ids", autospec=True, side_effect=repo.list_by_ids
+        ) as details:
+            ws = _load(pg_conn)
+            assert details.call_count == 0 and str(tool["id"]) not in ws.tool_details
+            with _db(pg_conn):
+                first = run_read_tool("get_tool", ws, {"tool_id": str(tool["id"])})
+                again = run_read_tool("get_tool", ws, {"tool_id": str(tool["id"])})
+        assert first == again and first["actions"] == [{"name": "search_docs", "description": "Search"}]
+        assert first["name"] == "Docs MCP" and len(first["description"]) == 300
+        assert details.call_count == 1
+
+    def test_a_builtin_tools_actions_are_read_without_the_database(self, pg_conn):
+        ws = _load(pg_conn)
+        builtin = next(t for t in ws.tools if t["kind"] == "built-in")
+        with patch("docsgpt.storage.db.session.db_readonly", side_effect=AssertionError("reads the database")):
+            detail = run_read_tool("get_tool", ws, {"tool_id": builtin["id"]})
+        assert detail["id"] == builtin["id"] and isinstance(detail["actions"], list)
+
+    def test_a_prompt_or_tool_that_cant_be_read_is_an_error_for_the_model(self, pg_conn):
+        prompt = PromptsRepository(pg_conn).create(ALICE, "Support voice", "You help customers.")
+        tool = _tool(pg_conn, ALICE, display_name="Users API")
+        ws = _load(pg_conn)
+        with patch.object(PromptsRepository, "list_by_ids", side_effect=RuntimeError("db")), patch.object(
+            UserToolsRepository, "list_by_ids", side_effect=RuntimeError("db")
+        ), _db(pg_conn):
+            text = run_read_tool("get_prompt", ws, {"prompt_id": str(prompt["id"])})
+            detail = run_read_tool("get_tool", ws, {"tool_id": str(tool["id"])})
+        assert "could not be read" in text["error"] and "content" not in text
+        assert "could not be read" in detail["error"] and "actions" not in detail
+
+    def test_the_agent_recipe_reads_the_text_of_the_forms_prompt_and_no_other(self, pg_conn):
+        from docsgpt.drafter import agent_recipe
+        from docsgpt.drafter.recipe import DraftRequest
+
+        repo = PromptsRepository(pg_conn)
+        used = repo.create(BOB, "Team voice", "Be kind to customers.")
+        _share(pg_conn, "prompt", used["id"], ALICE)
+        repo.create(ALICE, "Other", "UNREAD-TEXT")
+        context = agent_recipe.parse_context({"form": {"prompt_id": str(used["id"])}})
+        with _db(pg_conn), patch.object(agent_recipe, "load_models"):
+            ws = agent_recipe.AGENT_RECIPE.load_workspace(ALICE, context)
+        assert set(ws.prompt_texts) == {"default", "creative", "strict", str(used["id"])}
+        with patch("docsgpt.storage.db.session.db_readonly", side_effect=AssertionError("reads again")):
+            data = agent_recipe.context_data(DraftRequest(ALICE, "agent", [], context, "drafter:t"), ws)
+        assert data["prompt"] == {"kind": "existing", "id": str(used["id"]), "content": "Be kind to customers.",
+                                  "mode": "persona"}
+
+    def test_text_is_cleaned_and_capped(self, pg_conn):
+        prompt = PromptsRepository(pg_conn).create(ALICE, "Bell\x07name", "x" * 20000)
+        ws = _load(pg_conn)
+        row = next(p for p in ws.prompts if p["kind"] == "own")
+        assert row["name"] == "Bellname"
+        with _db(pg_conn):
+            text = run_read_tool("get_prompt", ws, {"prompt_id": str(prompt["id"])})
+        assert len(text["content"]) == 12000
 
 
 @pytest.mark.unit

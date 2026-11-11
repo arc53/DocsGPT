@@ -77,7 +77,14 @@ from docsgpt.drafter.agent_instructions import (
     STARTERS,
     STEP_GUIDES,
 )
-from docsgpt.drafter.catalog import is_template, load_models, read_workspace, Workspace
+from docsgpt.drafter.catalog import (
+    is_template,
+    load_models,
+    prompt_text,
+    PROMPT_CHARS,
+    read_workspace,
+    Workspace,
+)
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.gaps import (
     agent_gaps,
@@ -435,9 +442,10 @@ def saved_prompt_text(conn, user_id: str, prompt_id: str) -> Optional[str]:
 def _load(user_id: str, context: dict) -> AgentWorkspace:
     """The caller's workspace plus what this request's step needs, read in one read-only transaction.
 
-    Every step reads the whole text of the prompt edits may change. The safety step also reads the instance's
-    guardrail menu and Insights switch, the folders of the agent's sources, and whether a saved agent has enough
-    conversations for Suggest from conversations; the saved agent's row is read once for both.
+    Every step reads the text of the form's saved prompt, the one prompt the model is always shown: whole when
+    edits may change it. The safety step also reads the instance's guardrail menu and Insights switch, the folders
+    of the agent's sources, and whether a saved agent has enough conversations for Suggest from conversations; the
+    saved agent's row is read once for both.
     """
     from docsgpt.storage.db.session import db_readonly
 
@@ -453,9 +461,12 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
             text = saved_prompt_text(conn, user_id, editable)
             if text is not None and len(text) > READ_MAX:
                 out.long_prompt = editable
+                out.prompt_texts[editable] = clean_text(text, PROMPT_CHARS)
             elif text is not None:
                 # The model reads the prompt it may edit whole, not the catalog's cut copy.
                 out.editable_prompt_text = out.prompt_texts[editable] = text
+        if not form.get("prompt_draft"):
+            prompt_text(out, form.get("prompt_id") or "default", conn)
         if context.get("step") is None and ws.agent:
             agent = editable_saved_agent(conn, user_id, ws.agent["id"])
             if agent:
@@ -529,7 +540,7 @@ def _current_prompt(form: dict, ws: Workspace) -> tuple[Optional[str], str]:
     whole = getattr(ws, "editable_prompt_text", None)
     if whole is not None and prompt_id == _editable_prompt(form, ws):
         return prompt_id, whole
-    return prompt_id, ws.prompt_texts.get(prompt_id, "")
+    return prompt_id, prompt_text(ws, prompt_id) or ""
 
 
 def _editable_prompt(form: dict, ws: Workspace) -> Optional[str]:
@@ -639,7 +650,7 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
     else:
         prompt_id = form.get("prompt_id") or "default"
         data["prompt"] = {"kind": "existing", "id": prompt_id}
-        text = ws.prompt_texts.get(prompt_id)
+        text = prompt_text(ws, prompt_id)
         if text and prompt_id not in BUILTIN_PROMPTS:
             data["prompt"]["content"] = text
     _, current = _current_prompt(form, ws)
