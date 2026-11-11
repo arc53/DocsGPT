@@ -1,7 +1,7 @@
 ---
 title: Security Checklist
 description: Harden a DocsGPT install before other people or the internet can reach it - bind addresses, the choice of AUTH_TYPE, the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-11-11
 ---
 
 import { Callout } from 'nextra/components'
@@ -59,6 +59,21 @@ Do not generate a new `ENCRYPTION_SECRET_KEY` over an existing one, or add one t
 ## Use HTTPS beyond a trusted network
 
 Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt up --domain` and the standalone file's `https` profile run Caddy, which obtains and renews a certificate. Otherwise put your own TLS reverse proxy in front of port 7091, and point `API_URL`, `OIDC_FRONTEND_URL`, `OIDC_REDIRECT_URI` and `CONNECTOR_REDIRECT_BASE_URI` at the public HTTPS address. `API_URL` is where the links the backend hands out (agent images, webhooks, device pairing, MCP OAuth callbacks) point; `docsgpt up` sets it for `--domain` and `--expose network` unless you already set your own. Where the API and the worker share one `.env` (a pip install, `docsgpt up --native`), also set `WORKER_API_URL=http://127.0.0.1:7091`, or the worker sends its calls, with `INTERNAL_KEY`, out through the public address and back.
+
+### Client IPs behind a proxy
+
+The audit log, a token's last-used address and the access log record the client's IP. Behind a proxy the connection comes from the proxy, so the API reads `X-Forwarded-For` (and `X-Forwarded-Proto`) only when the peer is listed in `TRUSTED_PROXIES`. It walks the header from the right and records the first address that is not trusted, so a client cannot forge the entries before it. The default, `private`, trusts loopback and private addresses, which covers Caddy, Traefik, Dokploy, Docker networks and Kubernetes ingresses with no setup. A proxy on a public address is not trusted, so its headers are ignored.
+
+| In front of the API | Set |
+|---|---|
+| A proxy or ingress on a private network | Nothing: the default is `private`. |
+| Cloudflare, directly or through a private proxy | `TRUSTED_PROXIES=private,cloudflare`, or `TRUST_CF_CONNECTING_IP=true`. Without either, the audit log records a Cloudflare edge address. |
+| A load balancer on public addresses (Google Cloud's `35.191.0.0/16` and `130.211.0.0/22`, for example) | `TRUSTED_PROXIES=private,35.191.0.0/16,130.211.0.0/22` |
+| Nothing: clients connect to the API directly | `TRUSTED_PROXIES=none`, so no header is believed. |
+
+`cloudflare` expands to Cloudflare's published ranges. `TRUST_CF_CONNECTING_IP=true` takes the address from Cloudflare's `CF-Connecting-IP` header instead, but only when the request arrives from a Cloudflare address, directly or through a trusted proxy. A request that bypasses Cloudflare cannot set it. Avoid `TRUSTED_PROXIES=*`: it records the leftmost `X-Forwarded-For` entry, which any client can write, because Cloudflare and most proxies append to the header rather than replace it.
+
+The API applies these rules itself; `docsgpt api` and the Docker image turn off the server's own forwarded-header handling so nothing runs before them. When you start `uvicorn` yourself, pass `--no-proxy-headers` for the same reason. `flask run` serves only the Flask app and records the peer address.
 
 ## Outbound network access
 

@@ -45,6 +45,8 @@ class BoundedDrainUvicornWorker(UvicornWorker):
         "loop": "auto",
         "http": "auto",
         "timeout_graceful_shutdown": settings.GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+        # The app resolves forwarded headers itself (TRUSTED_PROXIES, docsgpt/security/client_ip.py).
+        "proxy_headers": False,
     }
 
     async def _serve(self) -> None:

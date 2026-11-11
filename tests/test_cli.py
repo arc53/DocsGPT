@@ -130,6 +130,7 @@ class TestApi:
         uvicorn.run.assert_called_once_with(
             "docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True,
             reload_dirs=[str(package_dir())], timeout_graceful_shutdown=cli.RELOAD_SHUTDOWN_TIMEOUT,
+            proxy_headers=False,
         )
 
     def test_reload_does_not_wait_out_open_streams(self, monkeypatch):
