@@ -135,6 +135,13 @@ class TestUserFacingError:
         assert public.code == "server_error"
         assert public.message == GENERIC_ERROR_MESSAGE
 
+    def test_reasoning_that_never_answered_says_so(self):
+        from docsgpt.llm.deadlines import StreamNoAnswerError
+
+        public = user_facing_error(StreamNoAnswerError("No answer within 600 seconds."))
+        assert public.code == "no_answer"
+        assert "without starting an answer" in public.message
+
     def test_the_v1_wording_does_not_point_at_the_web_ui(self):
         error = ContextOverflowError("x", needed_tokens=300_000, available_tokens=200_000, stage="build")
         public = user_facing_error(error, surface="v1")

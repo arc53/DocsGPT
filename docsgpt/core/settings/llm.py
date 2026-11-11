@@ -39,6 +39,14 @@ class LLMSettings(SettingsGroup):
             "After a reasoning chunk the longer of this and the first-token timeout applies."
         ),
     )
+    LLM_ANSWER_TIMEOUT: float = Field(
+        default=600, ge=0,
+        description=(
+            "Seconds from the start of a stream for the answer to begin; a model still only reasoning then "
+            "hands off to the fallback model, or the turn fails. Overridden by the model YAML answer_timeout. "
+            "Raised to the model's first-token timeout when that is longer. 0 turns it off."
+        ),
+    )
     API_KEY: Optional[str] = Field(default=None, description="LLM API key used by LLM_PROVIDER.")
 
     # Provider-specific API keys (for multi-model support).

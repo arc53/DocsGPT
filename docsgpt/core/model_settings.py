@@ -31,6 +31,10 @@ class ModelCapabilities:
     supports_streaming: bool = True
     supported_attachment_types: List[str] = field(default_factory=list)
     context_window: int = 128000
+    # Most tokens one call may generate, reasoning included where the provider
+    # counts it. Sent in each provider's own parameter; a lower per-request
+    # limit wins. None leaves the provider's default.
+    max_output_tokens: Optional[int] = None
     # USD per 1M tokens; consumed by ``docsgpt/pricing.py``. ``None`` means
     # "not declared": the call is recorded at $0 unless
     # ``QUOTA_UNPRICED_RATE_PER_MILLION`` is set.
@@ -46,6 +50,7 @@ class ModelCapabilities:
     # Responses path; ignored by providers that don't accept it.
     first_token_timeout: Optional[float] = None
     stall_timeout: Optional[float] = None
+    answer_timeout: Optional[float] = None
     reasoning_effort: Optional[str] = None
     # Which OpenAI wire protocol the model speaks: "chat_completions"
     # (the default) or "responses" (the /v1/responses endpoint). Set per

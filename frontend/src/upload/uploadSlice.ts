@@ -97,6 +97,11 @@ export interface UploadTask {
    * no worker code path sets ``limited: true`` today.
    */
   tokenLimitReached?: boolean;
+  /**
+   * Files and folders a connector ingest could not download and left out,
+   * from a ``partial`` ``source.ingest.completed``; unset when none were.
+   */
+  itemsNotDownloaded?: number;
 }
 
 /** ``attachment.*`` events held for a row that has not learned its id yet. */
@@ -198,6 +203,11 @@ const CAPPED_INGEST_MESSAGES: Record<string, string> = {
   too_many_tokens: 'modals.uploadDoc.progress.tooManyTokens',
 };
 
+/** Failures worded by their ``reason`` alone: the connected account was rejected. */
+const REASON_INGEST_MESSAGES: Record<string, string> = {
+  reconnect: 'settings.connectors.detail.expired',
+};
+
 /**
  * The message a ``source.ingest.failed`` event shows on its upload row.
  *
@@ -205,8 +215,9 @@ const CAPPED_INGEST_MESSAGES: Record<string, string> = {
  *   payload: The event's payload.
  *
  * Returns:
- *   The translated cap message for a source over a size cap, else the
- *   worker's ``error``, else a generic failure.
+ *   The translated cap message for a source over a size cap, the reconnect
+ *   message when the account was rejected, else the worker's ``error``,
+ *   else a generic failure.
  */
 export function ingestFailureMessage(payload: Record<string, unknown>): string {
   const key =
@@ -216,9 +227,27 @@ export function ingestFailureMessage(payload: Record<string, unknown>): string {
   if (key && typeof payload.limit === 'number') {
     return i18n.t(key, { limit: payload.limit.toLocaleString() });
   }
+  const reasonKey =
+    typeof payload.reason === 'string'
+      ? REASON_INGEST_MESSAGES[payload.reason]
+      : undefined;
+  if (reasonKey) return i18n.t(reasonKey);
   return typeof payload.error === 'string'
     ? payload.error
     : i18n.t('modals.uploadDoc.progress.ingestionFailed');
+}
+
+/**
+ * How many files and folders a partial connector download left out, from
+ * its ``source.ingest.completed`` payload; 0 for a complete one.
+ */
+export function itemsNotDownloaded(payload: Record<string, unknown>): number {
+  if (payload.partial !== true) return 0;
+  const count = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? value
+      : 0;
+  return count(payload.files_failed) + count(payload.folders_failed);
 }
 
 /**
@@ -600,6 +629,7 @@ export const uploadSlice = createSlice({
             task.progress = 100;
             task.errorMessage = undefined;
             task.tokenLimitReached = false;
+            task.itemsNotDownloaded = itemsNotDownloaded(payload) || undefined;
             if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
           }
           break;
