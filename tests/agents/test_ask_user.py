@@ -50,9 +50,9 @@ class Handler(LLMHandler):
         yield from response
 
 
-def _executor(mode: str | None) -> tuple[ToolExecutor, Dict]:
+def _executor(offers_questions: bool) -> tuple[ToolExecutor, Dict]:
     executor = ToolExecutor()
-    executor.questions = mode
+    executor.offers_questions = offers_questions
     tools: Dict = {}
     add_ask_user_tool(tools, enabled=True)
     executor.prepare_tools_for_llm(tools)
@@ -229,14 +229,14 @@ SEARCH_TOOL = {
 
 @pytest.mark.unit
 class TestAttachment:
-    def _agent(self, *, mode="cards", headless=False, scope=None, json_schema=None, tools=True):
+    def _agent(self, *, offers_questions=True, headless=False, scope=None, json_schema=None, tools=True):
         from docsgpt.agents.classic_agent import ClassicAgent
 
         llm = Mock()
         llm._supports_tools = tools
         llm.__class__.__name__ = "MockLLM"
         executor = ToolExecutor(headless=headless)
-        executor.questions = mode
+        executor.offers_questions = offers_questions
         executor.allowed_tool_ids = scope
         return ClassicAgent(
             endpoint="stream", llm_name="openai", model_id="m", api_key="k",
@@ -250,31 +250,30 @@ class TestAttachment:
 
     def test_a_turn_with_no_other_tools_does_not_get_it(self):
         """Without tools the model is called with none, so its answers stay cacheable."""
-        agent = self._agent(mode="cards")
+        agent = self._agent()
         assert not self._attached(agent, {})
         assert not agent.tools
 
     def test_a_saved_entry_alone_is_not_another_tool(self):
         tools_dict: Dict = {}
         add_ask_user_tool(tools_dict, enabled=True)
-        assert not self._attached(self._agent(mode="cards"), tools_dict)
+        assert not self._attached(self._agent(), tools_dict)
 
     def test_an_interactive_chat_turn_gets_it(self):
-        agent = self._agent(mode="cards")
+        agent = self._agent()
         assert self._attached(agent)
         assert ASK_USER in {t["function"]["name"] for t in agent.tools}
 
     @pytest.mark.parametrize(
         "kwargs",
         [
-            {"mode": None},
-            {"mode": "text"},
+            {"offers_questions": False},
             {"headless": True},
             {"scope": []},
             {"json_schema": {"type": "object", "properties": {"a": {"type": "string"}}}},
             {"tools": False},
         ],
-        ids=["no-mode", "retired-text-mode", "headless", "workflow-node", "structured-output", "no-tool-support"],
+        ids=["no-questions", "headless", "workflow-node", "structured-output", "no-tool-support"],
     )
     def test_other_turns_do_not(self, kwargs):
         assert not self._attached(self._agent(**kwargs))
@@ -282,7 +281,7 @@ class TestAttachment:
     def test_a_saved_entry_is_dropped_when_the_turn_offers_no_questions(self):
         tools_dict: Dict = {}
         add_ask_user_tool(tools_dict, enabled=True)
-        assert not self._attached(self._agent(mode=None), tools_dict)
+        assert not self._attached(self._agent(offers_questions=False), tools_dict)
 
     def test_a_client_tool_of_the_same_name_keeps_it(self):
         client = {"name": "client_ask", "client_side": True, "actions": [{"name": ASK_USER, "parameters": {}}]}
@@ -305,7 +304,7 @@ class TestAttachment:
 @pytest.mark.unit
 class TestCheckPause:
     def test_cards_pause_on_awaiting_answer_with_normalized_questions(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         pause = executor.check_pause(tools, _call(), "MockLLM")
 
         assert pause["pause_type"] == "awaiting_answer"
@@ -316,9 +315,8 @@ class TestCheckPause:
         assert set(pause["arguments"]) == {"message", "questions"}
         assert executor.questions_asked is True
 
-    @pytest.mark.parametrize("mode", [None, "text"])
-    def test_without_cards_the_call_is_refused(self, mode):
-        executor, tools = _executor(mode)
+    def test_without_questions_the_call_is_refused(self):
+        executor, tools = _executor(False)
         pause = executor.check_pause(tools, _call(), "MockLLM")
 
         assert pause["pause_type"] == "headless_denied"
@@ -326,7 +324,7 @@ class TestCheckPause:
         assert executor.questions_asked is False
 
     def test_a_second_round_is_refused(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         executor.questions_asked = True
         pause = executor.check_pause(tools, _call(), "MockLLM")
 
@@ -334,7 +332,7 @@ class TestCheckPause:
         assert pause["model_text"] == ONE_ROUND_TEXT
 
     def test_beside_other_calls_it_is_refused_without_using_the_round(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         executor.calls_this_round = 2
         pause = executor.check_pause(tools, _call(), "MockLLM")
 
@@ -342,7 +340,7 @@ class TestCheckPause:
         assert executor.questions_asked is False
 
     def test_invalid_questions_get_one_corrected_try(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         bad = {"questions": [{"text": "Sure?", "multi": True, "options": [
             {"label": "None", "exclusive": True}, {"label": "All", "exclusive": True}, "PII"]}]}
 
@@ -364,7 +362,7 @@ class TestCheckPause:
 @pytest.mark.unit
 class TestHandler:
     def test_cards_pause_event_carries_the_questions(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         events, (_messages, pending) = _drain(Handler().handle_tool_calls(_agent(executor), [_call()], tools, []))
 
         (event,) = [e for e in events if e.get("type") == "tool_call"]
@@ -374,7 +372,7 @@ class TestHandler:
         assert pending[0]["pause_type"] == "awaiting_answer"
 
     def test_cards_streaming_pauses_the_turn(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         agent = _agent(executor)
         events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
 
@@ -384,7 +382,7 @@ class TestHandler:
 
     def test_the_pause_events_keep_their_shape(self):
         """Clients get the cards beside the call and as its arguments, though the saved call holds them once."""
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         agent = _agent(executor)
         events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
         message, questions = normalize_questions(ARGS)
@@ -408,7 +406,7 @@ class TestHandler:
         assert list(sent) == [*stored, "message", "questions"]
 
     def test_a_refusal_is_sent_to_the_model_and_kept_as_a_failed_call(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         executor.questions_asked = True
         events, (messages, pending) = _drain(Handler().handle_tool_calls(_agent(executor), [_call()], tools, []))
 
@@ -683,13 +681,14 @@ class TestRetiredQuestions:
 
 @pytest.mark.unit
 class TestPausedTurnState:
-    def test_the_mode_and_the_asked_round_survive_a_pause(self):
+    @pytest.mark.parametrize("offers_questions", [True, False])
+    def test_the_offer_and_the_asked_round_survive_a_pause(self, offers_questions):
         from docsgpt.agents.classic_agent import ClassicAgent
 
         llm = Mock()
         llm._backup_models = []
         executor = ToolExecutor()
-        executor.questions = "cards"
+        executor.offers_questions = offers_questions
         executor.questions_asked = True
         agent = ClassicAgent(
             endpoint="stream", llm_name="openai", model_id="m", api_key="k",
@@ -697,7 +696,7 @@ class TestPausedTurnState:
         )
         state = agent.paused_turn_state()
 
-        assert state["questions"] == "cards"
+        assert state["questions"] is offers_questions
         assert state["questions_asked"] is True
 
 
@@ -722,7 +721,7 @@ class TestQuestionOutputGuardrails(_ResumeHarness):
 
     def _cards(self, guardrails: Dict) -> tuple[ToolExecutor, Dict, Mock]:
         screening_agent, _ = self._agent(guardrails)
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         executor.question_screen = screening_agent._screen_questions
         agent = _agent(executor)
         agent._pending_continuation = None
@@ -835,7 +834,7 @@ class TestRefusedCallsKeepNoArguments:
         assert executor.tool_calls[-1]["status"] == "error"
 
     def test_a_second_round(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         executor.questions_asked = True
         shown, messages = self._run(executor, tools, self.LEAKY)
 
@@ -843,7 +842,7 @@ class TestRefusedCallsKeepNoArguments:
         assert messages[-1]["content"] == ONE_ROUND_TEXT
 
     def test_a_call_beside_other_tools(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         executor.calls_this_round = 2
         pause = executor.check_pause(tools, _call(args=self.LEAKY), "MockLLM")
 
@@ -851,7 +850,7 @@ class TestRefusedCallsKeepNoArguments:
         assert pause["arguments"] == {}
 
     def test_invalid_questions(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         shown, _messages = self._run(executor, tools, {"message": "seats secret", "questions": []})
 
         self._assert_no_raw_text(executor, shown)
@@ -865,7 +864,7 @@ class TestRefusedCallsKeepNoArguments:
         assert executor.tool_calls[-1]["error_type"] == "questions_not_asked"
 
     def test_the_model_still_gets_its_own_call_back(self):
-        executor, tools = _executor("cards")
+        executor, tools = _executor(True)
         executor.questions_asked = True
         _shown, messages = self._run(executor, tools, self.LEAKY)
 

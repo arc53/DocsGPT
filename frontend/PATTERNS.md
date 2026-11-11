@@ -512,7 +512,7 @@ that order into blocks:
 
 A turn can pause on clarifying questions: the model's `ask_user` call
 (`conversation/QuestionBlock`, read by `questionCall.ts`). The web app asks
-for them as cards on every `/stream` request (`questions: "cards"`). While
+for them as cards on every `/stream` request (`capabilities: ["forms"]`). While
 the call is `awaiting_answer`, its block sits on the `mr-5 ml-6` column: the
 model's lead-in `message` as answer text, then `components/QuestionCards`,
 the drafter's cards (`Card variant="subtle" padding="sm"`, the place

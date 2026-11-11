@@ -819,11 +819,11 @@ class ToolExecutor:
         # Secrets the owner chose to show the assistant (``{secret: reference}``),
         # looked up once per turn: a raw one in a call is taken as its reference.
         self._exposed_secrets: Optional[Dict[str, str]] = None
-        # How this turn shows the model's clarifying questions (``ask_user``):
-        # ``cards`` pauses the turn for the client to draw them. None (headless
-        # runs, workflow nodes, research steps, every client that doesn't draw
-        # forms) offers no questions at all.
-        self.questions: Optional[str] = None
+        # Whether this turn may ask the model's clarifying questions
+        # (``ask_user``), pausing for the client to draw them as cards. Off
+        # for headless runs, workflow nodes, research steps and every client
+        # that doesn't draw forms.
+        self.offers_questions = False
         # A question round was asked in this user message (survives a resume
         # through the paused state): a second one is refused.
         self.questions_asked = False
@@ -1665,7 +1665,7 @@ class ToolExecutor:
             when the call is refused (what the model is told, and the short
             reason kept on the message); otherwise the normalized questions.
         """
-        if self.questions not in ask_user.QUESTION_MODES:
+        if self.offers_questions is not True:
             return ask_user.UNAVAILABLE_TEXT, "questions can't be shown here", None, []
         if self.questions_asked is True:
             return ask_user.ONE_ROUND_TEXT, "already asked in this turn", None, []

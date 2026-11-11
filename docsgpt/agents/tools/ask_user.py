@@ -22,11 +22,6 @@ from docsgpt.agents.tools.base import Tool
 ASK_USER_TOOL_ID = "ask_user"
 ASK_USER = "ask_user"
 
-#: How a turn shows questions (``ToolExecutor.questions``): as cards the client draws.
-CARDS = "cards"
-#: The modes a turn (or its paused state) may hold; anything else offers no questions.
-QUESTION_MODES = frozenset({CARDS})
-
 #: The pause type of a turn waiting for the user to answer its questions.
 AWAITING_ANSWER = "awaiting_answer"
 
@@ -80,6 +75,20 @@ def add_ask_user_tool(tools_dict: Dict[str, Any], enabled: bool) -> bool:
     actions = [{**meta, "active": True} for meta in AskUserTool().get_actions_metadata()]
     tools_dict[ASK_USER_TOOL_ID] = {"id": ASK_USER_TOOL_ID, "name": ASK_USER, "actions": actions, "config": {}}
     return True
+
+
+def offered_questions(saved: Any) -> bool:
+    """Whether a paused turn's saved ``questions`` offered questions.
+
+    It is a bool; a turn paused before that saved ``"cards"`` instead.
+
+    Args:
+        saved: The paused state's ``questions`` value.
+
+    Returns:
+        Whether the turn offered questions.
+    """
+    return saved is True or saved == "cards"
 
 
 def is_awaiting_answer(call: Any) -> bool:

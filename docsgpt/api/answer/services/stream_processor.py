@@ -44,7 +44,7 @@ from docsgpt.core.model_utils import (
     validate_model_id,
 )
 from docsgpt.agents.client_capabilities import FORMS, parse_capabilities
-from docsgpt.agents.tools.ask_user import CARDS, QUESTION_MODES, is_awaiting_answer
+from docsgpt.agents.tools.ask_user import is_awaiting_answer, offered_questions
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
@@ -631,9 +631,9 @@ class StreamProcessor:
         """
         return parse_capabilities(self.data.get("capabilities"))
 
-    def _questions_for_client(self) -> Optional[str]:
-        """``cards`` when the client draws question forms, else None: no ``ask_user`` this turn."""
-        return CARDS if FORMS in self.client_capabilities else None
+    def _client_draws_forms(self) -> bool:
+        """Whether the client draws question forms; without them a turn has no ``ask_user``."""
+        return FORMS in self.client_capabilities
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -2489,8 +2489,8 @@ class StreamProcessor:
         tool_executor.conversation_id = conversation_id
         # A turn that offered questions still does after its resume when the
         # resuming client draws forms too; one that asked already can't again.
-        if agent_config.get("questions") in QUESTION_MODES:
-            tool_executor.questions = self._questions_for_client()
+        if offered_questions(agent_config.get("questions")):
+            tool_executor.offers_questions = self._client_draws_forms()
         tool_executor.questions_asked = bool(agent_config.get("questions_asked")) or any(
             is_awaiting_answer(call) for call in pending_tool_calls or []
         )
@@ -2834,7 +2834,7 @@ class StreamProcessor:
         # client draws them as forms (the web app); every other caller gets
         # the turn without ``ask_user``, as before questions existed.
         if str(agent_type or "").strip().lower() in QUESTION_AGENT_TYPES:
-            tool_executor.questions = self._questions_for_client()
+            tool_executor.offers_questions = self._client_draws_forms()
         # Pass client-side tools so they get merged in get_tools()
         client_tools = self.data.get("client_tools")
         if client_tools:

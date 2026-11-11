@@ -41,7 +41,7 @@ def resume(monkeypatch):
     built = {}
 
     def make_executor(**kw):
-        built["executor"] = MagicMock(client_tools=None, questions=None, questions_asked=False)
+        built["executor"] = MagicMock(client_tools=None, offers_questions=False, questions_asked=False)
         return built["executor"]
 
     monkeypatch.setattr(cont_mod, "ContinuationService", lambda: service)
@@ -63,7 +63,7 @@ def resume(monkeypatch):
 class TestQuestionActions:
     def test_an_answer_resumes(self, resume):
         sp, service, _built = resume
-        service.claim_state.return_value = _state(questions="cards")
+        service.claim_state.return_value = _state(questions=True)
 
         result = sp.resume_from_tool_actions([{"call_id": "c1", "answer": "Team size? → 11-50"}], CONV_ID)
 
@@ -88,38 +88,41 @@ class TestQuestionActions:
 
 
 class TestRestoredQuestionState:
-    def test_a_resuming_client_that_renders_forms_keeps_the_questions(self, resume):
+    # ``"cards"``: a turn paused before the saved offer became a bool.
+    @pytest.mark.parametrize("saved", [True, "cards"])
+    def test_a_resuming_client_that_renders_forms_keeps_the_questions(self, resume, saved):
         sp, service, built = resume
         sp.data = {"capabilities": ["forms"]}
-        service.claim_state.return_value = _state(pause_type="awaiting_approval", questions="cards")
+        service.claim_state.return_value = _state(pause_type="awaiting_approval", questions=saved)
 
         sp.resume_from_tool_actions([{"call_id": "c1", "decision": "approved"}], CONV_ID)
 
-        assert built["executor"].questions == "cards"
+        assert built["executor"].offers_questions is True
         assert built["executor"].questions_asked is False
 
     @pytest.mark.parametrize("data", [{}, {"capabilities": "forms"}, {"questions": "cards"}])
     def test_a_resuming_client_without_forms_gets_no_questions(self, resume, data):
         sp, service, built = resume
         sp.data = data
-        service.claim_state.return_value = _state(pause_type="awaiting_approval", questions="cards")
+        service.claim_state.return_value = _state(pause_type="awaiting_approval", questions=True)
 
         sp.resume_from_tool_actions([{"call_id": "c1", "decision": "approved"}], CONV_ID)
 
-        assert built["executor"].questions is None
+        assert built["executor"].offers_questions is False
 
-    def test_a_turn_that_offered_no_questions_still_does_not(self, resume):
+    @pytest.mark.parametrize("saved", [None, False])
+    def test_a_turn_that_offered_no_questions_still_does_not(self, resume, saved):
         sp, service, built = resume
         sp.data = {"capabilities": ["forms"]}
-        service.claim_state.return_value = _state(pause_type="awaiting_approval")
+        service.claim_state.return_value = _state(pause_type="awaiting_approval", questions=saved)
 
         sp.resume_from_tool_actions([{"call_id": "c1", "decision": "approved"}], CONV_ID)
 
-        assert built["executor"].questions is None
+        assert built["executor"].offers_questions is False
 
     def test_answering_the_questions_uses_the_turns_round(self, resume):
         sp, service, built = resume
-        service.claim_state.return_value = _state(questions="cards")
+        service.claim_state.return_value = _state(questions=True)
 
         sp.resume_from_tool_actions([{"call_id": "c1", "skipped": True}], CONV_ID)
 
@@ -128,7 +131,7 @@ class TestRestoredQuestionState:
     def test_a_round_asked_before_an_approval_pause_is_remembered(self, resume):
         sp, service, built = resume
         service.claim_state.return_value = _state(
-            pause_type="awaiting_approval", questions="cards", questions_asked=True,
+            pause_type="awaiting_approval", questions=True, questions_asked=True,
         )
 
         sp.resume_from_tool_actions([{"call_id": "c1", "decision": "approved"}], CONV_ID)
@@ -161,8 +164,8 @@ class TestNewTurnQuestionMode:
 
     @pytest.mark.parametrize("data", [{"capabilities": ["forms"]}, {"capabilities": ["mermaid", "forms", 3]}])
     def test_a_client_that_renders_forms_gets_question_cards(self, data):
-        assert self._executor("classic", data).questions == "cards"
-        assert self._executor("agentic", data).questions == "cards"
+        assert self._executor("classic", data).offers_questions is True
+        assert self._executor("agentic", data).offers_questions is True
 
     @pytest.mark.parametrize(
         "data",
@@ -170,9 +173,9 @@ class TestNewTurnQuestionMode:
     )
     def test_a_client_without_forms_gets_no_questions(self, data):
         """API agents, the widget and bots send no capabilities: the turn runs as it did before questions."""
-        assert self._executor("classic", data).questions is None
-        assert self._executor("agentic", data).questions is None
+        assert self._executor("classic", data).offers_questions is False
+        assert self._executor("agentic", data).offers_questions is False
 
     @pytest.mark.parametrize("agent_type", ["research", "workflow"])
     def test_research_and_workflow_agents_offer_none(self, agent_type):
-        assert self._executor(agent_type, {"capabilities": ["forms"]}).questions is None
+        assert self._executor(agent_type, {"capabilities": ["forms"]}).offers_questions is False

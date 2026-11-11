@@ -1129,18 +1129,16 @@ class BaseAgent(ABC):
     def _offers_questions(self) -> bool:
         """Whether this turn offers ``ask_user``.
 
-        Only an interactive chat turn whose request set a questions mode
-        (``ToolExecutor.questions``), on a model that takes tools. Never a
+        Only an interactive chat turn whose client draws question forms
+        (``ToolExecutor.offers_questions``), on a model that takes tools. Never a
         headless run, a workflow node (its tools are an explicit scope) or a
         turn whose answer must be structured output.
 
         Returns:
             True when the tool is attached.
         """
-        from docsgpt.agents.tools.ask_user import QUESTION_MODES
-
         executor = self.tool_executor
-        if getattr(executor, "questions", None) not in QUESTION_MODES:
+        if getattr(executor, "offers_questions", False) is not True:
             return False
         if getattr(executor, "headless", False) is True or getattr(executor, "allowed_tool_ids", None) is not None:
             return False
@@ -2609,8 +2607,8 @@ class BaseAgent(ABC):
             lists the ids an attachment control withheld, which the resume
             keeps out of every tool), ``last_compression_at``,
             ``backup_models``, ``decisions`` (None when nothing was
-            recorded), ``context_window_limit``, ``questions`` (the turn's
-            questions mode, None when it offers none) and ``questions_asked``;
+            recorded), ``context_window_limit``, ``questions`` (whether the
+            turn offers questions) and ``questions_asked``;
             all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
@@ -2635,10 +2633,7 @@ class BaseAgent(ABC):
                 "withheld": sorted(self.withheld_attachments),
             }
         backup_models = getattr(self.llm, "_backup_models", None)
-        from docsgpt.agents.tools.ask_user import QUESTION_MODES
-
         executor = getattr(self, "tool_executor", None)
-        questions = getattr(executor, "questions", None)
         return {
             "attachments": files,
             "last_compression_at": _epoch_text(getattr(self, "last_compression_at", None)),
@@ -2649,7 +2644,7 @@ class BaseAgent(ABC):
             "context_window_limit": getattr(self, "context_window_limit", None),
             # Whether the turn offers questions, and whether it asked already:
             # one question round per user message, resumes included.
-            "questions": questions if questions in QUESTION_MODES else None,
+            "questions": getattr(executor, "offers_questions", False) is True,
             "questions_asked": getattr(executor, "questions_asked", False) is True,
         }
 
