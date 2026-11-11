@@ -1650,15 +1650,14 @@ class ToolExecutor:
         """Whether ``tool_data`` is the server-attached ``ask_user`` tool (a client tool of that name is not)."""
         return tool_data.get("name") == ask_user.ASK_USER and not tool_data.get("client_side")
 
-    def _ask_user_check(
-        self, arguments: Dict, *, count_invalid: bool
-    ) -> Tuple[Optional[str], Optional[str], Optional[str], List[Dict]]:
+    def _ask_user_check(self, arguments: Dict) -> Tuple[Optional[str], Optional[str], Optional[str], List[Dict]]:
         """Whether an ``ask_user`` call may ask, and its questions normalized.
+
+        Questions that can't be shown count towards the one corrected try the
+        model gets.
 
         Args:
             arguments: The call's arguments.
-            count_invalid: Count questions that can't be shown towards the
-                one corrected try the model gets.
 
         Returns:
             ``(model text, reason, message, questions)``: the first two are set
@@ -1675,11 +1674,10 @@ class ToolExecutor:
             message, questions = normalize_questions(arguments)
         except QuestionsInvalid as exc:
             last_try = self._invalid_questions >= 1
-            if count_invalid:
-                self._invalid_questions += 1
-                if last_try:
-                    # No third try: the model answers without asking.
-                    self.questions_asked = True
+            self._invalid_questions += 1
+            if last_try:
+                # No third try: the model answers without asking.
+                self.questions_asked = True
             return ask_user.invalid_text(exc.problems, last_try), "the questions were invalid", None, []
         return None, None, message, questions
 
@@ -1722,7 +1720,7 @@ class ToolExecutor:
             "arguments": arguments,
             "thought_signature": getattr(call, "thought_signature", None),
         }
-        model_text, reason, message, questions = self._ask_user_check(arguments, count_invalid=True)
+        model_text, reason, message, questions = self._ask_user_check(arguments)
         if model_text is not None:
             # A refused round shows nothing, so none of the model's text goes
             # to the client, the journal or the kept record; the model's own

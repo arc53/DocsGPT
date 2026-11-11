@@ -849,9 +849,6 @@ class BaseAgent(ABC):
             call_id = pending["call_id"]
             args = pending["arguments"]
             action = actions_by_id.get(call_id)
-            if not action and ask_user.is_awaiting_answer(pending):
-                # Questions nobody answered: the model goes ahead without them.
-                action = {"call_id": call_id, "skipped": True}
             if not action:
                 action = {
                     "call_id": call_id,
