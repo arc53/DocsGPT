@@ -1126,8 +1126,12 @@ class WorkflowEngine:
         node_llm = getattr(node_agent, "llm", None)
         if node_llm is None or node_llm is getattr(self.agent, "llm", None):
             return
+        # A fallback model bills its own LLM; read the cached one, never build it here.
+        fallback_llm = getattr(node_llm, "_fallback_llm", None)
         with self._token_usage_lock:
             add_token_usage(self.node_token_usage, getattr(node_llm, "token_usage", None))
+            if fallback_llm is not None:
+                add_token_usage(self.node_token_usage, getattr(fallback_llm, "token_usage", None))
 
     def _note_cannot_complete(self, node: WorkflowNode, node_agent: Any, last_round: str) -> None:
         """Note on the run's agent whether this agent node reported it cannot do its step.

@@ -167,6 +167,16 @@ class TestWorkflowNodeTokenUsage:
         assert engine.state["results"] == ["done", "done", "done"]
         assert engine.node_token_usage == {"prompt_tokens": 30, "generated_tokens": 6}
 
+    def test_a_fallback_models_tokens_count(self, monkeypatch):
+        node_agent = _MeteredNodeAgent(50, 5)
+        node_agent.llm._fallback_llm = SimpleNamespace(token_usage={"prompt_tokens": 40, "generated_tokens": 4})
+        _nodes_answer(monkeypatch, node_agent)
+        engine = _chain(_agent_node("ask"))
+
+        list(engine.execute({}, "go"))
+
+        assert engine.node_token_usage == {"prompt_tokens": 90, "generated_tokens": 9}
+
     def test_cache_bins_are_carried_when_reported(self):
         total = {"prompt_tokens": 1, "generated_tokens": 1}
 
