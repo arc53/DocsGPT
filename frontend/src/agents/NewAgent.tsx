@@ -34,7 +34,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
@@ -1549,18 +1549,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 ),
                 interpolation: { escapeValue: false },
               })}{' '}
-              <Button
-                type="button"
-                variant="link"
-                size="text"
-                tone="current"
-                onClick={() => goToBlocker(blockers[0])}
-              >
+              <AlertAction onClick={() => goToBlocker(blockers[0])}>
                 {t('drafter.agent.build.goTo', {
                   field: t(BLOCKER_LABEL_KEYS[blockers[0]]),
                   interpolation: { escapeValue: false },
                 })}
-              </Button>
+              </AlertAction>
             </p>
           </AlertDescription>
         </Alert>
@@ -2208,15 +2202,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             {canSubmit && (
               <>
                 {' '}
-                <Button
-                  type="button"
-                  variant="link"
-                  size="text"
-                  tone="current"
-                  onClick={turnOnInsights}
-                >
+                <AlertAction onClick={turnOnInsights}>
                   {t('drafter.agent.insights.turnOn')}
-                </Button>
+                </AlertAction>
               </>
             )}
           </p>
