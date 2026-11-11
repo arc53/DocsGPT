@@ -225,6 +225,11 @@ def _notify_failing(schedule: Dict[str, Any], kind: str, error_type: Optional[st
     )
 
 
+def _counts_toward_autopause(run: Dict[str, Any]) -> bool:
+    """Whether a failed run bumps the failure count; a Run now is watched by whoever started it, so it doesn't."""
+    return run.get("trigger_source") != "manual"
+
+
 def _autopause_if_due(schedules_repo: SchedulesRepository, schedule: Dict[str, Any], failures: int) -> bool:
     """Pause a recurring schedule that has failed ``SCHEDULE_AUTOPAUSE_FAILURES`` runs in a row; True if it paused."""
     if (
@@ -360,6 +365,7 @@ def _schedule_caller_rules(schedule: Dict[str, Any], agent_config: Dict[str, Any
 
 def _fail_before_start(run: Dict[str, Any], schedule: Dict[str, Any], reason: str) -> Dict[str, Any]:
     """Record a run that could not start; it counts toward auto-pause like any other failure."""
+    failures, autopaused = 0, False
     with get_engine().begin() as conn:
         updated = ScheduleRunsRepository(conn).update(
             str(run["id"]),
@@ -370,9 +376,10 @@ def _fail_before_start(run: Dict[str, Any], schedule: Dict[str, Any], reason: st
                 "error": reason,
             },
         )
-        schedules_repo = SchedulesRepository(conn)
-        failures = schedules_repo.bump_failure_count(str(schedule["id"]))
-        autopaused = _autopause_if_due(schedules_repo, schedule, failures)
+        if _counts_toward_autopause(run):
+            schedules_repo = SchedulesRepository(conn)
+            failures = schedules_repo.bump_failure_count(str(schedule["id"]))
+            autopaused = _autopause_if_due(schedules_repo, schedule, failures)
     _publish_run_event("schedule.run.failed", updated or run, schedule, error=reason)
     _after_failure(schedule, updated or run, autopaused, failures, "internal", reason)
     return {"status": "failed", "reason": reason}
@@ -543,7 +550,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         count = 0
         if new_status == "success":
             schedules_repo.reset_failure_count(str(schedule["id"]))
-        elif new_status in ("failed", "timeout"):
+        elif new_status in ("failed", "timeout") and _counts_toward_autopause(run):
             count = schedules_repo.bump_failure_count(str(schedule["id"]))
             autopaused = _autopause_if_due(schedules_repo, schedule, count)
         # Once: terminal-flip on cron-fired runs only; manual runs on a
