@@ -278,7 +278,8 @@ class TestStuckManualRun:
     def test_a_recurring_schedule_does_not_count_it(self, pg_engine, patched_engine, running):
         with pg_engine.begin() as conn:
             schedule, cron_run, agent_id = _make_pending_run(conn)
-            ScheduleRunsRepository(conn).update(cron_run["id"], {"status": "success"})
+            ScheduleRunsRepository(conn).update(cron_run["id"], {"status": "failed"})
+            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
             run = ScheduleRunsRepository(conn).record_pending(
                 str(schedule["id"]), "u1", agent_id, _now() - timedelta(minutes=1), trigger_source="manual",
             )
@@ -291,7 +292,7 @@ class TestStuckManualRun:
             sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
         assert row["status"] == ("timeout" if running else "failed")
         assert sched["status"] == "active"
-        assert sched["consecutive_failure_count"] == 0
+        assert sched["consecutive_failure_count"] == 1
 
 
 class TestCleanup:

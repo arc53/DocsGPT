@@ -114,7 +114,8 @@ def dispatch_due_runs() -> Dict[str, int]:
 
             # A one-time task's own run waits for a Run now of it to end:
             # skipping it as an overlap would lose it, since a manual run
-            # doesn't close the task. A later tick picks it up.
+            # doesn't close the task. A later tick picks it up. ``list_due``
+            # leaves these out already; this catches a Run now committed since.
             if trigger_type == "once" and runs_repo.has_active_run(
                 str(schedule["id"]), trigger_source="manual",
             ):
