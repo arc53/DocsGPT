@@ -80,7 +80,10 @@ jobs:
 
       # After the generators: the two generated pages date themselves.
       - name: Re-date the pages whose content changed
-        run: node docs/scripts/sync-dates.mjs --write | tee "$RUNNER_TEMP/dates.txt"
+        run: |
+          # Without pipefail, tee's exit status would hide a failed sync.
+          set -o pipefail
+          node docs/scripts/sync-dates.mjs --write | tee "$RUNNER_TEMP/dates.txt"
 
       - name: Open or update the pull request
         env:
