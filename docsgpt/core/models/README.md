@@ -274,3 +274,21 @@ it the call hands off to the fallback model, or fails when there is none. It
 overrides `LLM_ANSWER_TIMEOUT` (600 s, `0` turns the global default off),
 and the global default is never shorter than the model's first-token
 timeout. Once the answer has started only the stall timer applies.
+
+## Output-token cap
+
+`max_output_tokens` (a positive integer, per model or in `defaults:`) bounds
+how many tokens one call may generate. It is sent as `max_completion_tokens`
+on Chat Completions, `max_output_tokens` on the Responses API and Gemini, and
+`max_tokens` on Anthropic, where it only lowers the 4096 default. A lower
+per-request limit (`max_tokens` / `max_completion_tokens` from a caller) wins;
+a higher one is lowered to the cap. Unset, requests carry no limit beyond the
+caller's.
+
+A stream that stops on the output limit (`finish_reason: length`, Anthropic
+`max_tokens`, Gemini `MAX_TOKENS`, a Responses `incomplete` for
+`max_output_tokens`) before any answer text or tool call hands off to the
+fallback model like one past its `answer_timeout`, and logs
+`llm_stream_no_answer` with `reason=length_no_answer`; with no fallback the
+turn fails with the `no_answer` error. A stream that has started its answer
+keeps the partial answer.
