@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from docsgpt.parser.schema.base import Document
 
 
+class ConnectorAuthError(ValueError):
+    """The provider still rejects the access token after a refresh, or the token cannot be refreshed.
+
+    A download raises it instead of skipping the item, since every request after it would fail
+    the same way. A refresh failure is chained as ``__cause__``.
+    """
+
+
 class BaseConnectorAuth(ABC):
     """
     Abstract base class for connector authentication.
