@@ -453,6 +453,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/images/<string:agent_id>/<string:capability>": ("*",),
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
+    # MCP App views run in the chat page; a token has no view to serve.
+    "/api/mcp_apps/sandbox": ("*",),
+    "/api/mcp_apps/resource": ("*",),
+    "/api/mcp_apps/call": ("*",),
+    "/api/mcp_apps/result": ("*",),
     "/api/artifact/<artifact_id>": ("*",),
     # Reading artifacts is ``artifacts:read`` (RULES); changing them needs a session.
     "/api/artifacts/<artifact_id>": ("DELETE",),

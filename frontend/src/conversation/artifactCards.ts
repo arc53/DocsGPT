@@ -1,4 +1,4 @@
-import { deriveArtifactChips } from './artifactChips';
+import { deriveArtifactChips, type JobArtifact } from './artifactChips';
 import type { ToolCallsType } from './types';
 
 /**
@@ -141,11 +141,15 @@ export function artifactKind({
   return 'file';
 }
 
-/** One card per artifact a turn's completed tool calls produced. */
+/**
+ * One card per artifact a turn's completed tool calls produced, and per file
+ * of the background jobs it reports (``jobArtifacts``).
+ */
 export function cardsFromToolCalls(
   toolCalls: ToolCallsType[] | undefined,
+  jobArtifacts?: JobArtifact[],
 ): ArtifactCardItem[] {
-  return deriveArtifactChips(toolCalls).map((chip) => ({
+  return deriveArtifactChips(toolCalls, jobArtifacts).map((chip) => ({
     id: chip.id,
     title: chip.title || chip.filename || chip.label,
     kind: artifactKind({ filename: chip.filename, toolName: chip.toolName }),

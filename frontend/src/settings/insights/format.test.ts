@@ -246,7 +246,8 @@ describe('bucketLabel', () => {
         'week',
         'en-GB',
       ),
-    ).toBe('19–24 Oct');
+      // Newer ICU sets the dash between spaces, older ICU doesn't.
+    ).toMatch(/^19\s?–\s?24 Oct$/);
     expect(
       bucketLabel(
         { bucket: '2026-09-28', bucket_end: '2026-10-04' },

@@ -471,6 +471,10 @@ class BaseAnswerResource:
                 value = item.get(key)
                 if isinstance(value, str) and len(value) > max_chars:
                     item[key] = value[:max_chars]
+            ui = item.get("ui")
+            if isinstance(ui, dict) and "result" in ui:
+                # An MCP App view's result is the view's alone, never logged.
+                item["ui"] = {key: value for key, value in ui.items() if key != "result"}
             prepared.append(item)
         return prepared
 
