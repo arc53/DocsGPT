@@ -511,9 +511,9 @@ def _run_agent_headless(
                     answer_full = ""
                     thought = ""
             # A workflow's work is its nodes: its tool calls stay in the engine's
-            # execution log and its node agents own their LLMs, so neither
-            # ``tool_calls`` nor the token tally below sees them. Counting
-            # completed steps is the only evidence a quiet workflow ran at all.
+            # execution log, so ``tool_calls`` never sees them, and a node that
+            # only calls tools may stream nothing. Counting completed steps is
+            # the evidence a quiet workflow ran at all.
             elif event.get("type") == "workflow_step":
                 if event.get("status") == "completed":
                     steps_completed += 1
@@ -618,8 +618,10 @@ def _run_agent_headless(
         logger.exception("Guardrail audit flush failed for headless agent %s", agent_id)
 
     # Use the LLM accumulator (gen_token_usage / stream_token_usage decorators);
-    # current_token_count is a context-size sentinel, not a usage tally.
-    llm_usage = getattr(getattr(agent, "llm", None), "token_usage", None) or {}
+    # current_token_count is a context-size sentinel, not a usage tally. A
+    # workflow's node agents own their LLMs, so its agent sums them all.
+    usage_holder = agent if agent_type == "workflow" else getattr(agent, "llm", None)
+    llm_usage = getattr(usage_holder, "token_usage", None) or {}
     prompt_tokens = int(llm_usage.get("prompt_tokens", 0) or 0)
     generated_tokens = int(llm_usage.get("generated_tokens", 0) or 0)
 

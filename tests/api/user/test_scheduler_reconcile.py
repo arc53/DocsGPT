@@ -234,6 +234,67 @@ class TestReconciler:
         assert sched["consecutive_failure_count"] == 1
 
 
+def _age_stuck(conn, run: dict, *, running: bool) -> None:
+    """Push a run past the reconciler's stuck window, as ``running`` or ``pending``."""
+    if running:
+        ScheduleRunsRepository(conn).mark_running(run["id"], "t-stuck")
+        column = "started_at"
+    else:
+        column = "created_at"
+    conn.execute(
+        text(
+            f"UPDATE schedule_runs SET {column} = now() - interval '120 minutes' "
+            "WHERE id = CAST(:i AS uuid)"
+        ),
+        {"i": run["id"]},
+    )
+
+
+class TestStuckManualRun:
+    """A stuck Run now is failed without counting toward auto-pause or closing a one-time task."""
+
+    @pytest.mark.parametrize("running", [False, True])
+    def test_a_one_time_task_stays_active_with_its_next_run(self, pg_engine, patched_engine, running):
+        with pg_engine.begin() as conn:
+            schedule, cron_run, agent_id = _make_once_pending_run(conn)
+            # The task's own run hasn't happened yet: only the manual one exists.
+            conn.execute(text("DELETE FROM schedule_runs WHERE id = CAST(:i AS uuid)"), {"i": cron_run["id"]})
+            run = ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now(), trigger_source="manual",
+            )
+            _age_stuck(conn, run, running=running)
+
+        run_reconciliation()
+
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(run["id"])
+            sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert row["status"] == ("timeout" if running else "failed")
+        assert sched["status"] == "active"
+        assert sched["next_run_at"] == schedule["next_run_at"]
+        assert sched["consecutive_failure_count"] == 0
+
+    @pytest.mark.parametrize("running", [False, True])
+    def test_a_recurring_schedule_does_not_count_it(self, pg_engine, patched_engine, running):
+        with pg_engine.begin() as conn:
+            schedule, cron_run, agent_id = _make_pending_run(conn)
+            ScheduleRunsRepository(conn).update(cron_run["id"], {"status": "failed"})
+            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+            run = ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now() - timedelta(minutes=1), trigger_source="manual",
+            )
+            _age_stuck(conn, run, running=running)
+
+        run_reconciliation()
+
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(run["id"])
+            sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert row["status"] == ("timeout" if running else "failed")
+        assert sched["status"] == "active"
+        assert sched["consecutive_failure_count"] == 1
+
+
 class TestCleanup:
     def test_cleanup_schedule_runs_trims_old_rows(self, pg_engine, monkeypatch):
         from docsgpt.api.user.tasks import cleanup_schedule_runs as _task

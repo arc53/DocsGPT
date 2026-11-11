@@ -17,13 +17,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _run(agent_config, monkeypatch, events=None):
+def _run(agent_config, monkeypatch, events=None, run_usage=None):
     """Drive ``run_agent_headless`` and capture the agent-factory kwargs."""
     from docsgpt.agents import headless_runner as hr
 
     agent = MagicMock(name="agent")
     agent.gen.return_value = iter(events if events is not None else [{"answer": "ok"}])
     agent.llm.token_usage = {"prompt_tokens": 1, "generated_tokens": 1}
+    if run_usage is not None:
+        agent.token_usage = run_usage
 
     captured = {}
 
@@ -135,10 +137,9 @@ class TestHeadlessWorkflowBinding:
         """Completed nodes are the workflow's proof of work.
 
         A workflow's tool calls never reach the caller as ``tool_calls``
-        events (the engine keeps them in its execution log) and its node
-        agents carry their own LLMs, so the runner's token tally is 0. Without
-        a step count, a side-effecting workflow looks identical to one that
-        did nothing at all.
+        events (the engine keeps them in its execution log), and a node that
+        only calls tools streams nothing. Without a step count, a
+        side-effecting workflow looks identical to one that did nothing at all.
         """
         _, outcome = _run(
             {
@@ -177,3 +178,26 @@ class TestHeadlessWorkflowBinding:
 
         assert outcome["steps_completed"] == 0
         assert outcome["error_type"] == "stream_error"
+
+
+@pytest.mark.unit
+class TestHeadlessWorkflowTokenUsage:
+    def test_a_workflow_reports_its_nodes_tokens(self, monkeypatch):
+        """Its node agents own their LLMs; the workflow agent's total sums them."""
+        _, outcome = _run(
+            {"user_id": "u1", "id": "agent-1", "agent_type": "workflow", "workflow_id": "wf-1",
+             "default_model_id": "m"},
+            monkeypatch,
+            run_usage={"prompt_tokens": 200, "generated_tokens": 50},
+        )
+
+        assert (outcome["prompt_tokens"], outcome["generated_tokens"]) == (200, 50)
+
+    def test_a_classic_agent_still_reports_its_llms_tokens(self, monkeypatch):
+        _, outcome = _run(
+            {"user_id": "u1", "id": "agent-1", "agent_type": "classic", "default_model_id": "m"},
+            monkeypatch,
+            run_usage={"prompt_tokens": 200, "generated_tokens": 50},
+        )
+
+        assert (outcome["prompt_tokens"], outcome["generated_tokens"]) == (1, 1)
