@@ -1203,6 +1203,10 @@
           "description": "ISO 8601 — required when trigger_type == 'once'",
           "type": "string"
         },
+        "test_run": {
+          "description": "Also run it once now as a test (trigger_source 'manual'); its cadence is unchanged. The response's test_run is the run, or null for a one-time task due too soon to test.",
+          "type": "boolean"
+        },
         "timezone": {
           "type": "string"
         },

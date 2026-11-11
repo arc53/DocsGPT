@@ -308,6 +308,7 @@ export default function ScheduleFormModal({
         open={open}
         onOpenChange={(o) => !o && onClose()}
         title={t('agents.schedules.testRun.title')}
+        size="lg"
         description={schedule.name || undefined}
         footer={
           <Button type="button" size="lg" shape="pill" onClick={onClose}>

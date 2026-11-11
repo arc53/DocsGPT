@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { TableContainer } from '@/components/ui/table';
 
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../../store';
@@ -82,7 +83,13 @@ export default function TestRunResult({
               : t('agents.schedules.testRun.succeeded')}
         </p>
       </div>
-      {run && <RunTable runs={[run]} />}
+      {/* Its own scroller: a narrow dialog or chat card scrolls the row
+          sideways, and the sticky head stays on it. */}
+      {run && (
+        <TableContainer>
+          <RunTable runs={[run]} />
+        </TableContainer>
+      )}
       {cannotComplete !== null && (
         <>
           <Alert variant="warning">
