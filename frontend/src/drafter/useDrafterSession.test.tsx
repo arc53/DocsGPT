@@ -266,7 +266,7 @@ describe('useDrafterSession', () => {
     );
     await act(async () => session.stop());
     expect(session.streaming).toBe(false);
-    // The Stop is part of the record (decision 97).
+    // The Stop is part of the record.
     const kinds = ['user', 'status', 'stopped'];
     expect(session.items.map((item) => item.kind)).toEqual(kinds);
     // Events after the Stop are dropped.
@@ -281,7 +281,7 @@ describe('useDrafterSession', () => {
     expect(sent(1)).toEqual([{ role: 'user', content: 'Try again, shorter' }]);
   });
 
-  // Decision 97: a turn that goes quiet says it is still waiting.
+  // A turn that goes quiet says it is still waiting.
   it('is waiting once a running turn has had no event for 30 s', async () => {
     vi.useFakeTimers();
     try {
@@ -383,7 +383,7 @@ describe('useDrafterSession', () => {
     expect(session.items).toEqual([]);
   });
 
-  // Decision 92: the answered cards are the record, so answers draw no bubble.
+  // The answered cards are the record, so answers draw no bubble.
   it('sends answers without a bubble, keeps them on the questions, and closes the rest', async () => {
     stream.scripts = [
       [QUESTIONS, { type: 'end' }],

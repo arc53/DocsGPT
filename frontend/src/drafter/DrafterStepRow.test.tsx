@@ -60,7 +60,7 @@ describe('DrafterStepRow', () => {
     expect(rows[0].querySelector('p')!.className).toContain('wrap-break-word');
   });
 
-  // Decision 93: an undone field says so, and the step row counts it.
+  // An undone field says so, and the step row counts it.
   it('mutes an undone field and counts it on the step row', async () => {
     await act(async () =>
       root.render(

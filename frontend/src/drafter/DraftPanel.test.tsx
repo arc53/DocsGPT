@@ -424,7 +424,7 @@ describe('DraftPanel', () => {
       ],
     ];
     await ask('A shipping agent');
-    // Skip is the host's to offer (decision 96): none was given here.
+    // Skip is the host's to offer: none was given here.
     expect(button('drafter.skipQuestions')).toBeUndefined();
     const radio = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
@@ -451,7 +451,7 @@ describe('DraftPanel', () => {
     ).toContain('Stop');
   });
 
-  // Decision 92: a question left blank reads Skipped, as the chat's record.
+  // A question left blank reads Skipped, as the chat's record.
   it('marks a question left blank as skipped, and a skipped round too', async () => {
     const twoQuestions: DrafterEvent = {
       type: 'questions',
@@ -558,7 +558,7 @@ describe('DraftPanel', () => {
     expect(button('drafter.retry')).toBeUndefined();
   });
 
-  // Decision 105: a refused key can't be fixed by trying again.
+  // A refused key can't be fixed by trying again.
   it('names a task model whose key was refused and links to changing it', async () => {
     stream.scripts = [[{ type: 'error', code: 'model_auth' }, { type: 'end' }]];
     await ask('Draft it');
@@ -574,7 +574,7 @@ describe('DraftPanel', () => {
     expect(fix.getAttribute('data-tone')).toBe('current');
   });
 
-  // Decision 104: "Change model" never sits alone at the end of the line.
+  // "Change model" never sits alone at the end of the line.
   it('balances the footer line so its link does not wrap alone', () => {
     const link = container.querySelector('a[href="/settings/general"]')!;
     expect(link.closest('p')!.className).toContain('text-pretty');
@@ -706,7 +706,7 @@ describe('DraftPanel', () => {
     expect(askBar().value).toBe('');
   });
 
-  // Decision 63: after Stop or an error the step can go on (Continue).
+  // After Stop or an error the step can go on (Continue).
   it('offers the way on under the latest error, and after a Stop', async () => {
     await act(async () =>
       root.render(
@@ -727,7 +727,7 @@ describe('DraftPanel', () => {
     await ask('Again');
     expect(button('Continue')).toBeUndefined();
     await act(async () => button('drafter.stop')!.click());
-    // Decision 97: the chat's stopped note, with the way on under it.
+    // The chat's stopped note, with the way on under it.
     const note = container.querySelector('[data-item="stopped"]')!;
     expect(note.getAttribute('role')).toBe('note');
     expect(note.getAttribute('data-variant')).toBe('info');

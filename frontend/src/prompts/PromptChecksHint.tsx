@@ -19,7 +19,7 @@ type PromptChecksHintProps = {
 };
 
 /**
- * The prompt field's hint (decision 82): the no-model checks as an inline
+ * The prompt field's hint: the no-model checks as an inline
  * toggle, "2 things to check", closed by default and absent when there are
  * none, opening a muted list worded per check (with its line), then "Review
  * the whole prompt with DocsGPT" when the host can send a review. A

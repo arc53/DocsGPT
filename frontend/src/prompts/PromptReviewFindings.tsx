@@ -27,7 +27,7 @@ type PromptReviewFindingsProps = {
 };
 
 /**
- * A prompt review's findings in the drawer (decision 81): To fix, then
+ * A prompt review's findings in the drawer: To fix, then
  * Worth a look, each a SectionHeader with its count over a subtle Card of
  * ListRows (the title, a muted detail, and one link at the end: "Change n"
  * to the change in the editor, the finding's ask, which prefills the ask
