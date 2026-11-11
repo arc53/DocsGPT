@@ -76,7 +76,9 @@
         "monitor_expired": "Moniteur expiré",
         "schedule": "Tâche planifiée terminée",
         "default": "Nouvelle réponse",
-        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc"
+        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc",
+        "schedule_paused": "Tâche planifiée en pause",
+        "schedule_failed": "Échec de la tâche planifiée"
       },
       "open": "Ouvrir",
       "fallbackTitle": "Votre assistant a du nouveau"
@@ -2406,7 +2408,10 @@
         "clear": "Effacer",
         "ingestionFailed": "Échec de l’ingestion.",
         "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
-        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites."
+        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites.",
+        "partialDownload_one": "{{count}} élément n’a pas pu être téléchargé et a été ignoré. Synchronisez la source pour réessayer.",
+        "partialDownload_many": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer.",
+        "partialDownload_other": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer."
       },
       "ingestors": {
         "local_file": {
@@ -2808,7 +2813,8 @@
       "serverError": "Veuillez réessayer plus tard. Nous vous prions de nous excuser pour la gêne occasionnée.",
       "clientDisconnect": "La réponse s’est arrêtée avant de produire quoi que ce soit. Réessayez.",
       "timeLimit": "Arrêté : limite de temps atteinte. La progression a été enregistrée.",
-      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une."
+      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une.",
+      "noAnswer": "Le modèle a continué à réfléchir sans commencer de réponse, il a donc été arrêté. Réessayez ou choisissez un autre modèle."
     },
     "reasoning": "Raisonnement",
     "wikiWrite": {
@@ -4388,7 +4394,8 @@
         "missed": "horaire manqué",
         "overlap": "l’exécution précédente était encore en cours",
         "stream_error": "le flux de la réponse s’est interrompu",
-        "empty_output": "aucun résultat produit"
+        "empty_output": "aucun résultat produit",
+        "cannot_complete": "l’agent ne peut pas faire cette tâche"
       },
       "viewRuns": "Voir les exécutions",
       "fromChat": "Depuis {{name}}",

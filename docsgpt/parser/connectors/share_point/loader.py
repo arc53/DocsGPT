@@ -3,37 +3,44 @@ SharePoint/OneDrive loader for DocsGPT.
 Loads documents from SharePoint/OneDrive using Microsoft Graph API.
 """
 
-import functools
 import logging
 import os
-from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Dict, Any, Literal, Optional, Tuple
 from urllib.parse import quote
 
 import requests
 
-from docsgpt.parser.connectors.base import BaseConnectorLoader
+from docsgpt.parser.connectors.base import BaseConnectorLoader, ConnectorAuthError
 from docsgpt.parser.connectors.share_point.auth import SharePointAuth
 from docsgpt.parser.schema.base import Document
 
 
-def _retry_on_auth_failure(func):
-    """Retry once after refreshing the access token on 401/403 responses."""
-    @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        try:
-            return func(self, *args, **kwargs)
-        except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code in (401, 403):
-                logging.info(f"Auth failure in {func.__name__}, refreshing token and retrying")
-                try:
-                    self._apply_token_info(self._refresh_rejected_token(self.access_token))
-                except Exception as refresh_error:
-                    raise ValueError(
-                        f"Authentication failed and could not be refreshed: {refresh_error}"
-                    ) from e
-                return func(self, *args, **kwargs)
-            raise
-    return wrapper
+DownloadStatus = Literal['downloaded', 'skipped', 'failed']
+
+
+@dataclass
+class DownloadCounts:
+    """What a download walk got: files downloaded, skipped (unsupported type) or failed, and folders it could not list."""
+
+    downloaded: int = 0
+    skipped: int = 0
+    failed: int = 0
+    folders_failed: int = 0
+
+    def add(self, status: DownloadStatus) -> None:
+        if status == 'downloaded':
+            self.downloaded += 1
+        elif status == 'skipped':
+            self.skipped += 1
+        else:
+            self.failed += 1
+
+    def merge(self, other: 'DownloadCounts') -> None:
+        self.downloaded += other.downloaded
+        self.skipped += other.skipped
+        self.failed += other.failed
+        self.folders_failed += other.folders_failed
 
 
 class SharePointLoader(BaseConnectorLoader):
@@ -99,8 +106,47 @@ class SharePointLoader(BaseConnectorLoader):
                 from docsgpt.connectors import service
 
                 self._apply_token_info(service.get_valid_token_info(self.connection_id))
-            except Exception:
-                raise ValueError("Failed to refresh access token")
+            except Exception as exc:
+                raise ConnectorAuthError("Failed to refresh access token") from exc
+
+    def _graph_request(
+        self, method: str, url: str, *, headers: Optional[Dict[str, str]] = None, **kwargs: Any,
+    ) -> requests.Response:
+        """Send a Graph request with an unexpired token; on 401, refresh the token and retry once.
+
+        Raises:
+            ConnectorAuthError: The token could not be refreshed, or Graph answered 401 to the refreshed one.
+        """
+        send = getattr(requests, method.lower())
+        kwargs.setdefault('timeout', 100)
+        self._ensure_valid_token()
+        response = send(url, headers={**self._get_headers(), **(headers or {})}, **kwargs)
+        if response.status_code != 401:
+            return response
+
+        logging.warning(f"Graph answered 401, refreshing the access token ({self._describe_auth_failure(response)})")
+        try:
+            self._apply_token_info(self._refresh_rejected_token(self.access_token))
+        except Exception as exc:
+            raise ConnectorAuthError(f"Graph rejected the access token and it could not be refreshed: {exc}") from exc
+
+        response = send(url, headers={**self._get_headers(), **(headers or {})}, **kwargs)
+        if response.status_code == 401:
+            detail = self._describe_auth_failure(response)
+            logging.error(f"Graph answered 401 again after the token refresh ({detail})")
+            raise ConnectorAuthError(f"Graph rejected the refreshed access token ({detail})")
+        return response
+
+    @staticmethod
+    def _describe_auth_failure(response: requests.Response) -> str:
+        """Graph's error code and message and its ``WWW-Authenticate`` challenge, without the token."""
+        try:
+            error = response.json().get('error') or {}
+            code, message = error.get('code'), error.get('message')
+        except Exception:
+            code = message = None
+        challenge = (response.headers or {}).get('WWW-Authenticate')
+        return f"code={code}, message={message}, WWW-Authenticate={challenge}"
 
     def _get_item_url(self, item_ref: str) -> str:
         if ':' in item_ref:
@@ -146,6 +192,8 @@ class SharePointLoader(BaseConnectorLoader):
                 extra_info=doc_metadata
             )
 
+        except ConnectorAuthError:
+            raise
         except Exception as e:
             logging.error(f"Error processing file: {e}")
             return None
@@ -174,6 +222,8 @@ class SharePointLoader(BaseConnectorLoader):
                                 search_query.lower() in doc.extra_info.get('file_name', '').lower()
                             ):
                                 documents.append(doc)
+                    except ConnectorAuthError:
+                        raise
                     except Exception as e:
                         logging.error(f"Error loading file {file_id}: {e}")
                         continue
@@ -204,29 +254,23 @@ class SharePointLoader(BaseConnectorLoader):
             logging.error(f"Error loading data from SharePoint/OneDrive: {e}", exc_info=True)
             raise
 
-    @_retry_on_auth_failure
     def _load_file_by_id(self, file_id: str, load_content: bool = True) -> Optional[Document]:
-        self._ensure_valid_token()
-
         try:
             url = self._get_item_url(file_id)
             params = {'$select': 'id,name,file,createdDateTime,lastModifiedDateTime,size'}
-            response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
+            response = self._graph_request('GET', url, params=params)
             response.raise_for_status()
 
             file_metadata = response.json()
             return self._process_file(file_metadata, load_content=load_content)
 
-        except requests.exceptions.HTTPError:
+        except ConnectorAuthError:
             raise
         except Exception as e:
             logging.error(f"Error loading file {file_id}: {e}")
             return None
 
-    @_retry_on_auth_failure
     def _list_items_in_parent(self, parent_id: str, limit: int = 100, load_content: bool = False, page_token: Optional[str] = None, search_query: Optional[str] = None) -> List[Document]:
-        self._ensure_valid_token()
-
         documents: List[Document] = []
 
         try:
@@ -242,9 +286,9 @@ class SharePointLoader(BaseConnectorLoader):
                     search_url = f"{self.GRAPH_API_BASE}/drives/{drive_id}/root/search(q='{encoded_query}')"
                 else:
                     search_url = f"{self.GRAPH_API_BASE}/me/drive/search(q='{encoded_query}')"
-                response = requests.get(search_url, headers=self._get_headers(), params=params, timeout=100)
+                response = self._graph_request('GET', search_url, params=params)
             else:
-                response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
+                response = self._graph_request('GET', url, params=params)
 
             response.raise_for_status()
 
@@ -285,6 +329,8 @@ class SharePointLoader(BaseConnectorLoader):
                 self.next_page_token = None
             return documents
 
+        except ConnectorAuthError:
+            raise
         except Exception as e:
             logging.error(f"Error listing items under parent {parent_id}: {e}")
             return documents
@@ -310,14 +356,11 @@ class SharePointLoader(BaseConnectorLoader):
     def _get_user_drive_web_url(self) -> Optional[str]:
         """Fetch the current user's OneDrive web URL for KQL path exclusion."""
         try:
-            response = requests.get(
-                f"{self.GRAPH_API_BASE}/me/drive",
-                headers=self._get_headers(),
-                params={'$select': 'webUrl'},
-                timeout=100,
-            )
+            response = self._graph_request('GET', f"{self.GRAPH_API_BASE}/me/drive", params={'$select': 'webUrl'})
             response.raise_for_status()
             return response.json().get('webUrl')
+        except ConnectorAuthError:
+            raise
         except Exception as e:
             logging.warning(f"Could not fetch user drive web URL: {e}")
             return None
@@ -336,7 +379,6 @@ class SharePointLoader(BaseConnectorLoader):
         then page through that array locally using `page_token` as a simple integer offset.
         This avoids relying on buggy or inconsistent remote `from`/`size` semantics.
         """
-        self._ensure_valid_token()
         documents: List[Document] = []
 
         try:
@@ -357,9 +399,7 @@ class SharePointLoader(BaseConnectorLoader):
                 ]
             }
 
-            headers = self._get_headers()
-            headers["Content-Type"] = "application/json"
-            response = requests.post(url, headers=headers, json=body, timeout=100)
+            response = self._graph_request('POST', url, headers={"Content-Type": "application/json"}, json=body)
             response.raise_for_status()
             results = response.json()
 
@@ -469,17 +509,16 @@ class SharePointLoader(BaseConnectorLoader):
 
             return documents
 
+        except ConnectorAuthError:
+            raise
         except Exception as e:
             logging.error(f"Error listing shared items via search API: {e}", exc_info=True)
             return documents
 
-    @_retry_on_auth_failure
     def _download_file_content(self, file_id: str) -> Optional[str]:
-        self._ensure_valid_token()
-
         try:
             url = f"{self._get_item_url(file_id)}/content"
-            response = requests.get(url, headers=self._get_headers(), timeout=100)
+            response = self._graph_request('GET', url)
             response.raise_for_status()
 
             try:
@@ -488,17 +527,17 @@ class SharePointLoader(BaseConnectorLoader):
                 logging.error(f"Could not decode file {file_id} as text")
                 return None
 
-        except requests.exceptions.HTTPError:
+        except ConnectorAuthError:
             raise
         except Exception as e:
             logging.error(f"Error downloading file {file_id}: {e}")
             return None
 
-    def _download_single_file(self, file_id: str, local_dir: str) -> bool:
+    def _download_single_file(self, file_id: str, local_dir: str) -> DownloadStatus:
         try:
             url = self._get_item_url(file_id)
             params = {'$select': 'id,name,file,webUrl'}
-            response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
+            response = self._graph_request('GET', url, params=params)
             response.raise_for_status()
 
             metadata = response.json()
@@ -507,14 +546,14 @@ class SharePointLoader(BaseConnectorLoader):
             mime_type = file_data.get('mimeType', 'application/octet-stream')
 
             if mime_type not in self.SUPPORTED_MIME_TYPES:
-                logging.info(f"Skipping unsupported file type: {mime_type}")
-                return False
+                logging.info(f"Skipping unsupported file type: {mime_type} for file {file_name}")
+                return 'skipped'
 
             os.makedirs(local_dir, exist_ok=True)
             full_path = os.path.join(local_dir, file_name)
 
             download_url = f"{self._get_item_url(file_id)}/content"
-            download_response = requests.get(download_url, headers=self._get_headers(), timeout=100)
+            download_response = self._graph_request('GET', download_url)
             download_response.raise_for_status()
 
             with open(full_path, 'wb') as f:
@@ -522,13 +561,15 @@ class SharePointLoader(BaseConnectorLoader):
 
             if metadata.get('webUrl'):
                 self._file_urls[full_path] = metadata['webUrl']
-            return True
+            return 'downloaded'
+        except ConnectorAuthError:
+            raise
         except Exception as e:
-            logging.error(f"Error in _download_single_file: {e}")
-            return False
+            logging.error(f"Error downloading file {file_id}: {e}")
+            return 'failed'
 
-    def _download_folder_recursive(self, folder_id: str, local_dir: str, recursive: bool = True) -> int:
-        files_downloaded = 0
+    def _download_folder_recursive(self, folder_id: str, local_dir: str, recursive: bool = True) -> DownloadCounts:
+        counts = DownloadCounts()
         try:
             os.makedirs(local_dir, exist_ok=True)
 
@@ -536,7 +577,7 @@ class SharePointLoader(BaseConnectorLoader):
             params = {'$top': 1000}
 
             while url:
-                response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
+                response = self._graph_request('GET', url, params=params)
                 response.raise_for_status()
 
                 results = response.json()
@@ -551,51 +592,56 @@ class SharePointLoader(BaseConnectorLoader):
                         if recursive:
                             subfolder_path = os.path.join(local_dir, item_name)
                             os.makedirs(subfolder_path, exist_ok=True)
-                            subfolder_files = self._download_folder_recursive(
-                                item_id,
-                                subfolder_path,
-                                recursive
-                            )
-                            files_downloaded += subfolder_files
-                            logging.info(f"Downloaded {subfolder_files} files from subfolder {item_name}")
+                            subfolder = self._download_folder_recursive(item_id, subfolder_path, recursive)
+                            counts.merge(subfolder)
+                            logging.info(f"Downloaded {subfolder.downloaded} files from subfolder {item_name}")
                     else:
-                        success = self._download_single_file(item_id, local_dir)
-                        if success:
-                            files_downloaded += 1
+                        status = self._download_single_file(item_id, local_dir)
+                        counts.add(status)
+                        if status == 'downloaded':
                             logging.info(f"Downloaded file: {item_name}")
-                        else:
+                        elif status == 'failed':
                             logging.warning(f"Failed to download file: {item_name}")
 
                 url = results.get('@odata.nextLink')
 
-            return files_downloaded
+            return counts
 
+        except ConnectorAuthError:
+            raise
         except Exception as e:
             logging.error(f"Error in _download_folder_recursive for folder {folder_id}: {e}", exc_info=True)
-            return files_downloaded
+            counts.folders_failed += 1
+            return counts
 
-    def _download_folder_contents(self, folder_id: str, local_dir: str, recursive: bool = True) -> int:
-        try:
-            self._ensure_valid_token()
-            return self._download_folder_recursive(folder_id, local_dir, recursive)
-        except Exception as e:
-            logging.error(f"Error downloading folder {folder_id}: {e}", exc_info=True)
-            return 0
-
-    def _download_file_to_directory(self, file_id: str, local_dir: str) -> bool:
+    def _download_file_to_directory(self, file_id: str, local_dir: str) -> DownloadStatus:
         try:
             self._ensure_valid_token()
             return self._download_single_file(file_id, local_dir)
+        except ConnectorAuthError:
+            raise
         except Exception as e:
             logging.error(f"Error downloading file {file_id}: {e}", exc_info=True)
-            return False
+            return 'failed'
 
     def download_to_directory(self, local_dir: str, source_config: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Download the selected files and folders into ``local_dir``.
+
+        Returns:
+            ``files_downloaded``, ``files_failed``, ``folders_failed`` (folders that
+            could not be listed, so their files are missing), ``files_skipped``
+            (unsupported types), ``empty_result``, ``directory_path``,
+            ``source_type``, ``config_used`` and ``file_urls``, plus ``error`` when
+            the download could not run.
+
+        Raises:
+            ConnectorAuthError: Graph rejects the access token even after a refresh.
+        """
         if source_config is None:
             source_config = {}
 
         config = source_config if source_config else getattr(self, 'config', {})
-        files_downloaded = 0
+        counts = DownloadCounts()
         self._file_urls = {}
 
         try:
@@ -608,8 +654,7 @@ class SharePointLoader(BaseConnectorLoader):
                     file_ids = [file_ids]
 
                 for file_id in file_ids:
-                    if self._download_file_to_directory(file_id, local_dir):
-                        files_downloaded += 1
+                    counts.add(self._download_file_to_directory(file_id, local_dir))
 
             if folder_ids:
                 if isinstance(folder_ids, str):
@@ -619,7 +664,7 @@ class SharePointLoader(BaseConnectorLoader):
                     try:
                         url = self._get_item_url(folder_id)
                         params = {'$select': 'id,name'}
-                        response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
+                        response = self._graph_request('GET', url, params=params)
                         response.raise_for_status()
 
                         folder_metadata = response.json()
@@ -627,38 +672,41 @@ class SharePointLoader(BaseConnectorLoader):
                         folder_path = os.path.join(local_dir, folder_name)
                         os.makedirs(folder_path, exist_ok=True)
 
-                        folder_files = self._download_folder_recursive(
-                            folder_id,
-                            folder_path,
-                            recursive
-                        )
-                        files_downloaded += folder_files
-                        logging.info(f"Downloaded {folder_files} files from folder {folder_name}")
+                        folder = self._download_folder_recursive(folder_id, folder_path, recursive)
+                        counts.merge(folder)
+                        logging.info(f"Downloaded {folder.downloaded} files from folder {folder_name}")
+                    except ConnectorAuthError:
+                        raise
                     except Exception as e:
                         logging.error(f"Error downloading folder {folder_id}: {e}", exc_info=True)
+                        counts.folders_failed += 1
 
             if not file_ids and not folder_ids:
                 raise ValueError("No folder_ids or file_ids provided for download")
 
-            return {
-                "files_downloaded": files_downloaded,
-                "directory_path": local_dir,
-                "empty_result": files_downloaded == 0,
-                "source_type": "share_point",
-                "config_used": config,
-                "file_urls": self._relative_file_urls(local_dir),
-            }
+            logging.info(
+                f"SharePoint/OneDrive download finished: downloaded={counts.downloaded} skipped={counts.skipped} "
+                f"failed={counts.failed} folders_failed={counts.folders_failed}"
+            )
+            return self._download_result(local_dir, config, counts)
 
+        except ConnectorAuthError:
+            raise
         except Exception as e:
-            return {
-                "files_downloaded": files_downloaded,
-                "directory_path": local_dir,
-                "empty_result": True,
-                "source_type": "share_point",
-                "config_used": config,
-                "file_urls": self._relative_file_urls(local_dir),
-                "error": str(e)
-            }
+            return {**self._download_result(local_dir, config, counts), "empty_result": True, "error": str(e)}
+
+    def _download_result(self, local_dir: str, config: Dict[str, Any], counts: DownloadCounts) -> Dict[str, Any]:
+        return {
+            "files_downloaded": counts.downloaded,
+            "files_failed": counts.failed,
+            "folders_failed": counts.folders_failed,
+            "files_skipped": counts.skipped,
+            "directory_path": local_dir,
+            "empty_result": counts.downloaded == 0,
+            "source_type": "share_point",
+            "config_used": config,
+            "file_urls": self._relative_file_urls(local_dir),
+        }
 
     def _relative_file_urls(self, local_dir: str) -> Dict[str, str]:
         """The downloaded files' links, keyed by their path under ``local_dir``."""

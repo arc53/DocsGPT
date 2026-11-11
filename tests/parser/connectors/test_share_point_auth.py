@@ -254,13 +254,109 @@ class TestMapTokenResponse:
         assert mapped["allows_shared_content"] is True
 
     @pytest.mark.unit
-    def test_missing_claims_uses_defaults(self, auth):
+    def test_missing_claims_leaves_claim_fields_unset(self, auth):
         result = {"access_token": "at", "refresh_token": "rt"}
         mapped = auth.map_token_response(result)
         assert mapped["token_uri"] is None
         assert mapped["expiry"] is None
         assert mapped["user_info"]["name"] is None
+        # None, so a refresh without an id_token keeps the stored value instead of overwriting it.
+        assert mapped["allows_shared_content"] is None
+
+
+_NOW = 1_800_000_000
+_WORK_TID = "72f988bf-86f1-41af-91ab-2d7cd011db47"
+_PERSONAL_TID = "9188040d-6c67-4c5b-b112-36a304b66dad"
+
+
+def _id_token_claims(tid, iat=_NOW):
+    """Claims MSAL decodes from a v2.0 id_token; it lives one hour, independently of the access token."""
+    return {
+        "aud": "ms-client-id",
+        "iss": f"https://login.microsoftonline.com/{tid}/v2.0",
+        "iat": iat,
+        "nbf": iat,
+        "exp": iat + 3600,
+        "name": "Test User",
+        "oid": "00000000-0000-0000-0000-00000000abcd",
+        "preferred_username": "test@example.com",
+        "sub": "subject",
+        "tid": tid,
+        "ver": "2.0",
+    }
+
+
+def _token_response(expires_in, claims=None):
+    """A token endpoint response as MSAL returns it, with or without an id_token."""
+    result = {
+        "token_type": "Bearer",
+        "scope": "Files.Read Sites.Read.All User.Read openid profile email",
+        "expires_in": expires_in,
+        "ext_expires_in": expires_in,
+        "access_token": "access-token",
+        "refresh_token": "refresh-token",
+        "token_source": "identity_provider",
+    }
+    if claims is not None:
+        result["id_token"] = "header.payload.signature"
+        result["id_token_claims"] = claims
+    return result
+
+
+class TestAccessTokenExpiry:
+
+    @pytest.fixture(autouse=True)
+    def _clock(self):
+        with patch("docsgpt.parser.connectors.share_point.auth.time.time", return_value=_NOW + 0.7):
+            yield
+
+    @pytest.mark.unit
+    def test_work_account_expiry_comes_from_expires_in(self, auth):
+        # A work/school access token lives 60-90 minutes; the id_token one hour.
+        mapped = auth.map_token_response(_token_response(4787, _id_token_claims(_WORK_TID)))
+        assert mapped["expiry"] == _NOW + 4787
+        assert mapped["allows_shared_content"] is True
+
+    @pytest.mark.unit
+    def test_personal_account_expiry_comes_from_expires_in(self, auth):
+        mapped = auth.map_token_response(_token_response(3600, _id_token_claims(_PERSONAL_TID, iat=_NOW - 600)))
+        assert mapped["expiry"] == _NOW + 3600
         assert mapped["allows_shared_content"] is False
+
+    @pytest.mark.unit
+    def test_string_expires_in_is_accepted(self, auth):
+        assert auth.map_token_response(_token_response("3599", _id_token_claims(_WORK_TID)))["expiry"] == _NOW + 3599
+
+    @pytest.mark.unit
+    def test_without_expires_in_falls_back_to_id_token_exp(self, auth):
+        result = _token_response(3600, _id_token_claims(_WORK_TID))
+        del result["expires_in"]
+        assert auth.map_token_response(result)["expiry"] == _NOW + 3600
+
+    @pytest.mark.unit
+    def test_refresh_without_id_token_still_sets_expiry(self, auth, mock_msal):
+        mock_msal.acquire_token_by_refresh_token.return_value = _token_response(3600)
+        refreshed = auth.refresh_access_token("old-rt")
+        assert refreshed["expiry"] == _NOW + 3600
+        assert refreshed["access_token"] == "access-token"
+        assert refreshed["allows_shared_content"] is None
+        assert refreshed["token_uri"] is None
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("tid", [_WORK_TID, _PERSONAL_TID])
+    def test_refresh_with_id_token_uses_the_access_token_lifetime(self, auth, mock_msal, tid):
+        # The refresh's id_token was issued earlier than the new access token.
+        mock_msal.acquire_token_by_refresh_token.return_value = _token_response(
+            5000, _id_token_claims(tid, iat=_NOW - 3000),
+        )
+        assert auth.refresh_access_token("old-rt")["expiry"] == _NOW + 5000
+
+    @pytest.mark.unit
+    def test_exchange_sets_expiry_from_expires_in(self, auth, mock_msal):
+        mock_msal.acquire_token_by_authorization_code.return_value = _token_response(
+            4200, _id_token_claims(_WORK_TID),
+        )
+        assert auth.exchange_code_for_tokens("code")["expiry"] == _NOW + 4200
 
 
 class _FakeRepo:
