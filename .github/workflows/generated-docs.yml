@@ -1,0 +1,119 @@
+# Rebuilds the docs files that are generated from the code, and re-dates the
+# docs pages whose content changed, on main after every merge. The result opens
+# as a pull request for review, so the files stay in the repository (the site
+# builds on Vercel from a shallow clone, with no Python) but no feature pull
+# request carries them: two pull requests that each regenerated the same file,
+# or bumped the same page's lastUpdated, used to conflict.
+#
+#   docs/data/swagger.json                          python -m docsgpt.api.reference --write
+#   docs/content/Deploying/Settings-Reference.mdx   python -m docsgpt.core.settings.reference --write
+#   docs/data/mcp-presets.json                      python -m docsgpt.connectors.reference --write
+#   docs/public/llms.txt                            node docs/scripts/generate-llms.mjs
+#   lastUpdated in docs/content/**                  node docs/scripts/sync-dates.mjs --write
+#
+# docs/scripts/check-generated.mjs and check-dates.mjs keep them out of other
+# pull requests. Needs "Allow GitHub Actions to create and approve pull
+# requests" in Settings > Actions > General.
+name: Generated docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docsgpt/**'
+      - 'docs/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/generated-docs.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+# The branch is rebuilt from main each time, so only the newest run matters.
+concurrency:
+  group: generated-docs
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    if: github.repository == 'arc53/DocsGPT'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: generated-docs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # sync-dates walks main's history back to its baseline.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install the backend
+        run: uv sync --frozen
+
+      - name: Regenerate the reference files
+        run: |
+          uv run --no-sync python -m docsgpt.core.settings.reference --write
+          uv run --no-sync python -m docsgpt.api.reference --write
+          uv run --no-sync python -m docsgpt.connectors.reference --write
+          node docs/scripts/generate-llms.mjs
+
+      # After the generators: the two generated pages date themselves.
+      - name: Re-date the pages whose content changed
+        run: node docs/scripts/sync-dates.mjs --write | tee "$RUNNER_TEMP/dates.txt"
+
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          paths=(docs/data docs/public/llms.txt docs/content)
+          if [ -z "$(git status --porcelain -- "${paths[@]}")" ]; then
+            echo "The generated files and the page dates are current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add -- "${paths[@]}"
+          git commit -q -m "Update the generated docs files"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH"
+          {
+            echo "Brings the generated docs files and the pages' \`lastUpdated\` dates up to date with"
+            echo "\`main\` at ${GITHUB_SHA::7}. The branch is rebuilt from \`main\` after every merge, so"
+            echo "don't add commits to it; merge it as it is."
+            echo
+            echo "Files:"
+            echo
+            echo '```'
+            git show --stat --format= HEAD
+            echo '```'
+            echo
+            echo "Dates:"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/dates.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head "$BRANCH" --title "Update the generated docs files" \
+              --body-file "$RUNNER_TEMP/body.md"
+          fi

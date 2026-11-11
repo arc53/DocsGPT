@@ -6,7 +6,10 @@
     "start": "next start",
     "llms": "node scripts/generate-llms.mjs",
     "llms:check": "node scripts/generate-llms.mjs --check",
-    "dates:check": "node scripts/check-dates.mjs"
+    "dates:check": "node scripts/check-dates.mjs",
+    "dates:sync": "node scripts/sync-dates.mjs",
+    "generated:check": "node scripts/check-generated.mjs",
+    "test": "node --test \"scripts/*.test.mjs\""
   },
   "license": "MIT",
   "dependencies": {

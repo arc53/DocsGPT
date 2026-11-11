@@ -10,14 +10,13 @@ import logging
 import types
 import typing
 import warnings
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings, settings
 from docsgpt.core.docs_pages import read_last_updated
-from docsgpt.core.settings.reference import reference_path, render_reference, updated_reference
+from docsgpt.core.settings.reference import render_reference, updated_reference
 
 SECRET_FIELDS = (
     "API_KEY",
@@ -278,16 +277,6 @@ class TestReference:
             prose = "".join(line.split("`")[::2])  # drop the inside of every code span
             prose = prose.replace("\\{", "").replace("\\}", "")  # escaped braces are fine
             assert "<" not in prose and "{" not in prose and "}" not in prose, f"line {lineno}: {line}"
-
-    def test_checked_in_reference_is_current(self):
-        path: Path = reference_path()
-        if not path.exists():
-            pytest.skip("docs tree not present (installed package, not a checkout)")
-        current = path.read_text(encoding="utf-8")
-        assert current == updated_reference(current), (
-            "docs/content/Deploying/Settings-Reference.mdx is stale; "
-            "run: python -m docsgpt.core.settings.reference --write"
-        )
 
 
 @pytest.mark.unit

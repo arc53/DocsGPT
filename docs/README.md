@@ -26,8 +26,9 @@ node scripts/check-links.mjs   # after a build: check internal links and #anchor
 
 Run `npm run build` before opening a PR that touches the docs: it fails on broken MDX. The
 [docs workflow](../.github/workflows/docs.yml) runs the same build on pull requests that change
-`docs/`, checks the internal links in the built pages, checks that `public/llms.txt` is
-current, and checks every page's `lastUpdated` date.
+`docs/`, checks the internal links in the built pages, checks every page's `lastUpdated` date, and
+fails a pull request that changes a [generated file](#generated-pages) or the date of a page
+that already exists.
 
 ## Where things live
 
@@ -52,15 +53,20 @@ current, and checks every page's `lastUpdated` date.
 - `page-meta.js`: each page's canonical URL, share card and JSON-LD, built from its frontmatter.
   `app/sitemap.js` serves `/sitemap.xml` from the same data; `public/robots.txt` and the share
   image `public/og/default.png` are static files.
+- `data/mcp-presets.json`: the curated MCP connector presets, generated from
+  `docsgpt/connectors/presets/mcp/` and rendered by `components/McpPresets.jsx`.
 - `scripts/check-dates.mjs`: checks every page's `lastUpdated` date (`npm run dates:check`).
+- `scripts/sync-dates.mjs`: dates the pages whose content changed on `main` (`npm run dates:sync`).
+- `scripts/check-generated.mjs`: fails when a pull request changes a generated file.
 
 ## Page frontmatter
 
 Every page sets `title`, `description` and `lastUpdated` (`YYYY-MM-DD`). `lastUpdated` is
-shown at the bottom of the page and becomes the sitemap's `lastmod`, so bump it when you
-change what the page tells the reader and leave it for typo and formatting fixes.
-[AGENTS.md](AGENTS.md) has the full rule. CI fails on a missing, malformed or future date and,
-on pull requests, warns about pages that changed without a new date:
+shown at the bottom of the page and becomes the sitemap's `lastmod`. A new page gets today's
+date. On a page that already exists you leave it alone: after your change merges, the
+"Generated docs" workflow dates the page with the day its content changed. [AGENTS.md](AGENTS.md)
+has the full rule. CI fails on a missing, malformed or future date and, on pull requests, on
+an existing page whose date was changed:
 
 ```bash
 npm run dates:check
@@ -68,32 +74,23 @@ npm run dates:check
 
 ## Generated pages
 
-`content/Deploying/Settings-Reference.mdx` is generated from the settings definitions in
-`docsgpt/core/settings/`. Don't edit it by hand, its `lastUpdated` date included: the generator keeps the date while
-the content is unchanged and sets today's date when it changes. From the repository root,
-with the backend environment active:
+Four files are generated, and so are the `lastUpdated` dates above. The
+["Generated docs" workflow](../.github/workflows/generated-docs.yml) rebuilds them on `main`
+after every merge and opens a pull request with the result, so **don't change them in your
+own pull request**: CI fails if you do (`npm run generated:check`). They stay in the
+repository because the site builds on Vercel without the backend.
 
-```bash
-python -m docsgpt.core.settings.reference --write
-```
+| File | Generated from | Command |
+| --- | --- | --- |
+| `content/Deploying/Settings-Reference.mdx` | the settings definitions in `docsgpt/core/settings/` | `python -m docsgpt.core.settings.reference --write` |
+| `data/swagger.json` | the backend's routes | `python -m docsgpt.api.reference --write` |
+| `data/mcp-presets.json` | the preset files in `docsgpt/connectors/presets/mcp/` | `python -m docsgpt.connectors.reference --write` |
+| `public/llms.txt` | the sidebar (`content/**/_meta.js`) and each page's `description` | `npm run llms` |
 
-`data/swagger.json` is generated from the backend's routes. After adding or changing a route,
-regenerate it from the repository root (CI fails while it is stale); when the snapshot changes,
-this also sets `content/API/reference.mdx`'s `lastUpdated` to today:
-
-```bash
-python -m docsgpt.api.reference --write
-```
-
-`public/llms.txt` is generated from the sidebar: the `content/**/_meta.js` files give the
-sections, the order and the link titles, and each page's frontmatter `description` gives its
-note. Hidden entries are left out. After adding, moving or removing a page, or changing its
-`description`, regenerate it from `docs/` (CI fails while it is stale):
-
-```bash
-npm run llms          # rewrite public/llms.txt
-npm run llms:check    # what CI runs: fails if the committed file is out of date
-```
+The Python commands run from the repository root with the backend environment active.
+Without `--write` they print the result, which is how you preview it. The two generated pages
+date themselves: the settings reference keeps its `lastUpdated` while its content is
+unchanged, and a changed Swagger snapshot sets `content/API/reference.mdx`'s date to today.
 
 ## Style
 

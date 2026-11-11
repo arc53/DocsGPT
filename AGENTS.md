@@ -206,6 +206,7 @@ process, so a green run on one selection and an abort on another is expected.
 
 ```bash
 cd frontend && npm run lint
+cd frontend && npm test
 cd frontend && npm run build
 ```
 
@@ -215,8 +216,9 @@ cd frontend && npm run build
 cd docs && npm run dates:check && npm run build
 ```
 
-Read `docs/AGENTS.md` first: every page carries a `lastUpdated` date that you bump when
-you change what the page tells the reader.
+Read `docs/AGENTS.md` first. Leave the `lastUpdated` date of an existing page alone (a new
+page gets today's date) and leave the generated files alone: the "Generated docs" workflow
+updates both on `main` after the merge, and CI fails a pull request that changes them.
 
 If Vale is installed locally and you edited prose, also run:
 
@@ -251,8 +253,9 @@ vale .
 - Parsers live in `docsgpt/parser/` and handle different document formats in the ingestion stage.
 - Agents and tools are in `docsgpt/agents/` and `docsgpt/agents/tools/`.
 - Celery setup/config lives in `docsgpt/celery_init.py` and `docsgpt/celeryconfig.py`.
-- Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`; regenerate the docs reference with `python -m docsgpt.core.settings.reference --write`.
-- REST routes are documented from the flask-restx Swagger document; after adding or changing a route, regenerate the docs snapshot with `python -m docsgpt.api.reference --write` (CI fails if `docs/data/swagger.json` is stale).
+- Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`. Don't regenerate the docs reference (`docs/content/Deploying/Settings-Reference.mdx`) in your branch: the "Generated docs" workflow (`.github/workflows/generated-docs.yml`) does it on `main` after the merge, and CI fails a pull request that changes the file.
+- REST routes are documented from the flask-restx Swagger document; the snapshot `docs/data/swagger.json` is regenerated the same way, on `main` after the merge, so leave it out of your branch too.
+- A curated MCP connector preset is one file, `docsgpt/connectors/presets/mcp/<name>.yaml` (see the README there). The docs' preset table is generated from those files after the merge.
 
 ### Frontend
 
@@ -265,6 +268,8 @@ vale .
   keep typography, spacing, radius and motion on its roles.
 - Every user-visible string, attributes included (`aria-label`, `label`, `placeholder`, `title`, `alt`), is a `t()`
   key in all eight locales under `frontend/src/locale/` (`de en es fr jp ru zh zh-TW`). Admin pages stay English.
+  The files keep their keys sorted at every level: put a new key where its name goes, or run `npm run locale:sort`
+  (the pre-commit hook does). `npm test` and CI fail on an unsorted file.
 
 #### Icons
 

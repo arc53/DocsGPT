@@ -4,13 +4,15 @@
 // structured data's dateModified, so it must be present, real, and not in the
 // future. It fails on any of those.
 //
-// With --base <git ref> it also compares each page against that ref and warns
-// about pages whose content changed while lastUpdated did not. That is only a
-// warning: a typo fix or a link rename shouldn't move the date; a change a
-// reader would care about should.
+// With --base <git ref> it also compares each page against that ref and fails
+// when a page that already existed there has a different lastUpdated. A pull
+// request leaves the date of an existing page alone: the "Generated docs"
+// workflow dates pages on main after the merge (scripts/sync-dates.mjs), so
+// two pull requests that change the same page no longer conflict on that line.
+// A new page still arrives with its own date.
 //
 //   node scripts/check-dates.mjs                 check every page
-//   node scripts/check-dates.mjs --base HEAD^1   also warn about changed, undated pages
+//   node scripts/check-dates.mjs --base HEAD^1   also fail on a re-dated existing page
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -109,7 +111,7 @@ const latest = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0,
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: DOCS_ROOT, encoding: 'utf8' }).trim();
 
 let errors = 0;
-let warnings = 0;
+let redated = 0;
 for (const path of listPages(CONTENT_DIR).sort()) {
   const file = relative(repoRoot, path);
   const text = readFileSync(path, 'utf8');
@@ -122,17 +124,23 @@ for (const path of listPages(CONTENT_DIR).sort()) {
   }
   if (!base) continue;
   const before = readAtRef(base, file);
-  if (before === undefined || before === text) continue;
-  const undated = (source) => source.replace(FIELD_RE, '');
-  if (readLastUpdated(before) === value && undated(before) !== undated(text)) {
-    report('warning', file, `changed without moving lastUpdated (still ${value}); bump it if readers would care`);
-    warnings += 1;
+  if (before === undefined) continue;
+  const previous = readLastUpdated(before);
+  if (previous !== undefined && previous !== value) {
+    report(
+      'error',
+      file,
+      `has lastUpdated ${value}, changed from ${previous}. Put ${previous} back: pages are dated on main after ` +
+        'the merge, so pull requests leave the date of an existing page alone (see docs/AGENTS.md).',
+    );
+    redated += 1;
   }
 }
 
 const pages = listPages(CONTENT_DIR).length;
-if (errors) {
-  console.error(`${errors} of ${pages} pages have a missing or invalid lastUpdated date.`);
+if (errors || redated) {
+  if (errors) console.error(`${errors} of ${pages} pages have a missing or invalid lastUpdated date.`);
+  if (redated) console.error(`${redated} existing page(s) had their lastUpdated date changed.`);
   process.exit(1);
 }
-console.log(`lastUpdated is valid on all ${pages} pages${warnings ? `; ${warnings} changed page(s) kept their date` : ''}.`);
+console.log(`lastUpdated is valid on all ${pages} pages.`);
