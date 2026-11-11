@@ -364,6 +364,68 @@ class TestCleanSchema:
         result = llm._clean_schema(schema)
         assert "title" not in result["items"]
 
+    def test_nested_object_properties_preserved(self, llm):
+        """Test that nested object field names are preserved (issue #3230)."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "start": {"type": "string"},
+                        },
+                        "required": ["title"],
+                    },
+                },
+                "options": {
+                    "type": "object",
+                    "properties": {
+                        "notify": {"type": "boolean"},
+                    },
+                },
+            },
+            "required": ["events"],
+        }
+        result = llm._clean_schema(schema)
+
+        # Top-level properties should be preserved
+        assert "events" in result["properties"]
+        assert "options" in result["properties"]
+
+        # Nested object fields should be preserved
+        assert "title" in result["properties"]["events"]["items"]["properties"]
+        assert "start" in result["properties"]["events"]["items"]["properties"]
+        assert "notify" in result["properties"]["options"]["properties"]
+
+        # Nested required should be preserved
+        assert result["properties"]["events"]["items"]["required"] == ["title"]
+
+        # Top-level required should be preserved
+        assert result["required"] == ["events"]
+
+    def test_user_field_names_not_filtered(self, llm):
+        """Test that user-defined field names (not schema keywords) are preserved."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "custom_field": {"type": "string"},
+                "another_field": {"type": "number"},
+                "min": {"type": "string"},  # field name matches a schema keyword
+            },
+        }
+        result = llm._clean_schema(schema)
+
+        # All user-defined field names should be preserved
+        assert "custom_field" in result["properties"]
+        assert "another_field" in result["properties"]
+        assert "min" in result["properties"]
+
+        # The "min" field's value should be cleaned (type uppercased)
+        assert result["properties"]["min"]["type"] == "STRING"
+
 
 # ---------------------------------------------------------------------------
 # _clean_tools_format

@@ -491,10 +491,16 @@ class GoogleLLM(BaseLLM):
         match = re.search(r"gemini-(\d+)", str(model or ""))
         return bool(match) and int(match.group(1)) >= 3
 
-    def _clean_schema(self, schema_obj):
+    def _clean_schema(self, schema_obj, is_properties=False):
         """
         Recursively remove unsupported fields from schema objects
         and validate required properties.
+
+        Args:
+            schema_obj: The schema object to clean
+            is_properties: If True, this dict represents object properties (field names),
+                           so keys should not be filtered (they are user-defined field names,
+                           not schema keywords)
         """
         if not isinstance(schema_obj, dict):
             return schema_obj
@@ -514,14 +520,24 @@ class GoogleLLM(BaseLLM):
 
         cleaned = {}
         for key, value in schema_obj.items():
-            if key not in allowed_fields:
+            # When inside a properties dict, keys are user-defined field names,
+            # not schema keywords, so we keep all keys and only clean their values
+            if is_properties:
+                if isinstance(value, dict):
+                    cleaned[key] = self._clean_schema(value, is_properties=False)
+                elif isinstance(value, list):
+                    cleaned[key] = [self._clean_schema(item, is_properties=False) for item in value]
+                else:
+                    cleaned[key] = value
+            elif key not in allowed_fields:
                 continue
             elif key == "type" and isinstance(value, str):
                 cleaned[key] = value.upper()
             elif isinstance(value, dict):
-                cleaned[key] = self._clean_schema(value)
+                # When recursing into "properties", mark that we're now inside a properties dict
+                cleaned[key] = self._clean_schema(value, is_properties=(key == "properties"))
             elif isinstance(value, list):
-                cleaned[key] = [self._clean_schema(item) for item in value]
+                cleaned[key] = [self._clean_schema(item, is_properties=is_properties) for item in value]
             else:
                 cleaned[key] = value
         # Validate that required properties actually exist in properties
