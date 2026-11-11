@@ -200,11 +200,7 @@ class TestAdminModelDefaults:
     def failures(self, monkeypatch):
         from tests.activity.conftest import FakeRedis
 
-        class _Redis(FakeRedis):
-            def get(self, key):
-                return self.kv.get(key) if self._alive(key) else None
-
-        fake = _Redis()
+        fake = FakeRedis()
         monkeypatch.setattr("docsgpt.drafter.service._turn_store", lambda: fake)
         return fake
 

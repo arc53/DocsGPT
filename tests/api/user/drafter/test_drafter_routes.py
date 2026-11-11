@@ -337,14 +337,11 @@ class TestStream:
 
 
 class _Redis(FakeRedis):
-    """The Activity tests' fake Redis, with ``get``, ``set(nx=True)`` and the sorted-set calls running turns use."""
+    """The Activity tests' fake Redis, with ``set(nx=True)`` and the sorted-set calls running turns use."""
 
     def __init__(self) -> None:
         super().__init__()
         self.zsets: dict = {}
-
-    def get(self, key):
-        return self.kv.get(key) if self._alive(key) else None
 
     def set(self, key, value, ex=None, nx=False):
         if nx and self._alive(key):
