@@ -228,7 +228,12 @@ class TestFallbackLLMResolution:
         """No backup models + no global FALLBACK_* → fallback_llm is None."""
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
+            MagicMock(
+                FALLBACK_LLM_PROVIDER=None,
+                LLM_FIRST_TOKEN_TIMEOUT=300,
+                LLM_STREAM_STALL_TIMEOUT=120,
+                LLM_ANSWER_TIMEOUT=0,
+            ),
         )
         primary = FakeLLM(backup_models=[])
         assert primary.fallback_llm is None
@@ -265,7 +270,12 @@ class TestNonStreamingFallback:
         """Primary fails and no fallback configured → exception propagates."""
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
+            MagicMock(
+                FALLBACK_LLM_PROVIDER=None,
+                LLM_FIRST_TOKEN_TIMEOUT=300,
+                LLM_STREAM_STALL_TIMEOUT=120,
+                LLM_ANSWER_TIMEOUT=0,
+            ),
         )
         primary = FakeLLM(fail_at=0, backup_models=[])
         with pytest.raises(RuntimeError, match="primary model unavailable"):
@@ -294,7 +304,12 @@ class TestNoFallbackFailureLog:
     def _no_fallback(self, monkeypatch):
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
+            MagicMock(
+                FALLBACK_LLM_PROVIDER=None,
+                LLM_FIRST_TOKEN_TIMEOUT=300,
+                LLM_STREAM_STALL_TIMEOUT=120,
+                LLM_ANSWER_TIMEOUT=0,
+            ),
         )
 
     @staticmethod
@@ -379,7 +394,12 @@ class TestStreamingFallback:
         """Primary stream fails and no fallback → exception propagates."""
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
+            MagicMock(
+                FALLBACK_LLM_PROVIDER=None,
+                LLM_FIRST_TOKEN_TIMEOUT=300,
+                LLM_STREAM_STALL_TIMEOUT=120,
+                LLM_ANSWER_TIMEOUT=0,
+            ),
         )
         primary = FakeLLM(stream_chunks=["x"], fail_at=0, backup_models=[])
         with pytest.raises(RuntimeError, match="mid-stream failure"):
@@ -528,7 +548,12 @@ class TestStreamingFallback:
         """
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
+            MagicMock(
+                FALLBACK_LLM_PROVIDER=None,
+                LLM_FIRST_TOKEN_TIMEOUT=300,
+                LLM_STREAM_STALL_TIMEOUT=120,
+                LLM_ANSWER_TIMEOUT=0,
+            ),
         )
         primary = FakeLLM(
             stream_chunks=["ok1"],

@@ -1,5 +1,6 @@
 import type { AnswerSource } from './chatCompanion';
 import { AnswerSegment } from './answerSegments';
+import type { JobArtifact } from './artifactChips';
 import { ToolCallsType } from './types';
 
 // Backend placeholder for a producer that ended before writing an answer.
@@ -96,6 +97,9 @@ export interface Query {
   thought?: string;
   sources?: AnswerSource[];
   tool_calls?: ToolCallsType[];
+  // Files of the background jobs this answer reports (a continuation turn's
+  // ``metadata.job_artifacts``); the turn that started each job lists them too.
+  job_artifacts?: JobArtifact[];
   // Arrival-ordered layout of the fields above, so answer text, reasoning and
   // tool calls render where they happened. Recorded live, and rebuilt on load
   // from the order the backend saved (``hydrateSegments``); when that is absent

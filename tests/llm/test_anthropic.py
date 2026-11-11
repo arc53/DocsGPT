@@ -951,6 +951,47 @@ class TestRawGenStream:
 
 
 @pytest.mark.unit
+class TestModelOutputCap:
+    """A model's ``max_output_tokens`` bounds ``max_tokens`` on both paths."""
+
+    MESSAGES = [{"role": "user", "content": "hi"}]
+
+    def _capped(self, llm, cap):
+        from docsgpt.core.model_settings import ModelCapabilities
+
+        llm.capabilities = ModelCapabilities(supports_tools=True, max_output_tokens=cap)
+        return llm
+
+    def test_cap_lowers_a_higher_explicit_value(self, llm):
+        self._capped(llm, 1000)._raw_gen(llm, model="m", messages=self.MESSAGES, max_tokens=5000)
+        assert _sent(llm)["max_tokens"] == 1000
+
+    def test_lower_explicit_value_is_kept(self, llm):
+        self._capped(llm, 1000)._raw_gen(llm, model="m", messages=self.MESSAGES, max_completion_tokens=300)
+        assert _sent(llm)["max_tokens"] == 300
+
+    def test_cap_bounds_the_default_on_the_stream_path(self, llm):
+        list(self._capped(llm, 1000)._raw_gen_stream(llm, model="m", messages=self.MESSAGES))
+        assert _sent(llm)["max_tokens"] == 1000
+
+    def test_cap_above_the_default_keeps_the_default(self, llm):
+        from docsgpt.llm.anthropic import DEFAULT_MAX_TOKENS
+
+        self._capped(llm, DEFAULT_MAX_TOKENS * 8)._raw_gen(llm, model="m", messages=self.MESSAGES)
+        assert _sent(llm)["max_tokens"] == DEFAULT_MAX_TOKENS
+
+    def test_stream_length_stop_reports_length(self, llm):
+        llm.anthropic.messages.stream_events = [
+            ev_block_start(0, types.SimpleNamespace(type="thinking", thinking="")),
+            ev_thinking_delta(0, "planning"),
+            ev_message_delta("max_tokens"),
+        ]
+        chunks = list(llm._raw_gen_stream(llm, model="m", messages=self.MESSAGES))
+        assert chunks == [{"type": "thought", "thought": "planning"}]
+        assert llm._last_finish_reason == "length"
+
+
+@pytest.mark.unit
 class TestUsageReporting:
 
     def test_non_streaming_usage_recorded(self, llm):

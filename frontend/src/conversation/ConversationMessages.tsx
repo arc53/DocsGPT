@@ -24,7 +24,7 @@ import {
 import Hero from '../Hero';
 import AgentStarters from '../hero/AgentStarters';
 import AddToKnowledgeAction from './AddToKnowledgeAction';
-import { deriveArtifactChips } from './artifactChips';
+import { conversationArtifactChips } from './artifactChips';
 import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
 import type { OpenArtifactRequest } from './artifactCards';
@@ -147,8 +147,10 @@ export default function ConversationMessages({
   // ref minted on turn 1 still resolves, and edit_artifact still accepts it,
   // on turn 5. Resolving inline links against only the current turn's
   // artifacts made "the CSV from earlier" render as dead plain text.
+  // Once each: a background job's file is on the turn that started the job
+  // and on the reply that reported it.
   const conversationArtifacts = useMemo(
-    () => queries.flatMap((query) => deriveArtifactChips(query.tool_calls)),
+    () => conversationArtifactChips(queries),
     [queries],
   );
 
@@ -436,6 +438,7 @@ export default function ConversationMessages({
               thought={query.thought}
               sources={query.sources}
               toolCalls={query.tool_calls}
+              jobArtifacts={query.job_artifacts}
               segments={query.segments}
               workflowRunId={query.workflow_run_id}
               workflow={query.workflow}
@@ -507,6 +510,7 @@ export default function ConversationMessages({
             thought={query.thought}
             sources={query.sources}
             toolCalls={query.tool_calls}
+            jobArtifacts={query.job_artifacts}
             segments={query.segments}
             workflowRunId={query.workflow_run_id}
             workflow={query.workflow}

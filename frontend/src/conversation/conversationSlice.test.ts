@@ -551,6 +551,39 @@ describe('mapServerQueryToClient woken turns', () => {
       metadata: { segments: [] },
     });
     expect(query).not.toHaveProperty('wake');
+    expect(query).not.toHaveProperty('job_artifacts');
+  });
+
+  it("carries the finished job's files the reply reports", () => {
+    const query = mapServerQueryToClient({
+      prompt: '[Background event - not a user message] job: run_code',
+      response: 'Your chart is ready.',
+      status: 'complete',
+      metadata: {
+        wake: { source: 'job', ref_id: 'j1', dedupe_key: 'job:j1:final' },
+        continuation: true,
+        job_artifacts: [
+          {
+            id: 'a1',
+            filename: 'chart.png',
+            ref: 'A1',
+            tool_name: 'code_executor',
+            job_id: 'j1',
+          },
+          { filename: 'no-id.csv' },
+          'junk',
+        ],
+      },
+    });
+    expect(query.job_artifacts).toEqual([
+      {
+        id: 'a1',
+        filename: 'chart.png',
+        ref: 'A1',
+        tool_name: 'code_executor',
+        job_id: 'j1',
+      },
+    ]);
   });
 });
 

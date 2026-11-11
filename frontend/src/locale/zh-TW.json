@@ -2342,7 +2342,9 @@
         "clear": "清除",
         "ingestionFailed": "匯入失敗。",
         "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
-        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。"
+        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。",
+        "partialDownload_one": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。",
+        "partialDownload_other": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。"
       },
       "ingestors": {
         "local_file": {
@@ -2721,7 +2723,8 @@
       "serverError": "請稍後再試。造成不便，敬請見諒。",
       "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。",
       "timeLimit": "已停止：達到時間限制。目前進度已儲存。",
-      "stopped": "你在回覆寫出任何內容之前停止了它。請重試以取得回覆。"
+      "stopped": "你在回覆寫出任何內容之前停止了它。請重試以取得回覆。",
+      "noAnswer": "模型一直在推理卻沒有開始回答，因此已停止。請重試，或選擇其他模型。"
     },
     "reasoning": "推理",
     "wikiWrite": {
@@ -4292,7 +4295,8 @@
         "missed": "錯過了執行時間",
         "overlap": "上一次執行仍在進行",
         "stream_error": "回答串流中斷",
-        "empty_output": "沒有產生任何輸出"
+        "empty_output": "沒有產生任何輸出",
+        "cannot_complete": "代理無法完成此任務"
       },
       "viewRuns": "查看執行",
       "fromChat": "來自 {{name}}",

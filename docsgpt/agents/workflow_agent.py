@@ -62,6 +62,8 @@ class WorkflowAgent(BaseAgent):
         # Set to a message when the input-document bridge fails fatally (quota), so
         # the run is finalized FAILED instead of running with missing documents.
         self._bridge_error: Optional[str] = None
+        # Set by the engine when an agent node of a scheduled run reports it cannot do its step.
+        self.cannot_complete: Optional[str] = None
 
     @log_activity()
     def gen(self, query: str, log_context: LogContext = None) -> Generator[Dict[str, str], None, None]:

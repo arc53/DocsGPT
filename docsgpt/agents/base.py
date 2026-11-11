@@ -19,8 +19,10 @@ from docsgpt.agents.attachment_budget import (
     plan_listing,
 )
 from docsgpt.agents.attachment_dispatch import AttachmentDispatch
+from docsgpt.agents.cannot_complete import CANNOT_COMPLETE_MARKER
 from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
+from docsgpt.agents.tools.report_cannot_complete import add_report_cannot_complete_tool
 from docsgpt.agents.tools.view_image import add_view_image_tool
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
@@ -1083,6 +1085,16 @@ class BaseAgent(ABC):
         return self.tool_executor._build_tool_parameters(action)
 
     def _prepare_tools(self, tools_dict):
+        # A scheduled run reports a task it has no means to do with a call,
+        # so the scheduler can fail the run (and pause the schedule). An
+        # answer held to a JSON schema gets it only beside tools it already
+        # has: some providers refuse tools and a response schema together.
+        if (
+            getattr(self, "endpoint", None) == "schedule"
+            and self._llm_supports_tools()
+            and (not getattr(self, "json_schema", None) or bool(tools_dict))
+        ):
+            self.reports_cannot_complete_by_tool = add_report_cannot_complete_tool(tools_dict)
         # A vision model can look at the images its tools point to.
         if self._llm_supports_tools() and reads_images(self.llm):
             add_view_image_tool(tools_dict)
@@ -2162,9 +2174,32 @@ class BaseAgent(ABC):
         "The user's message is that task, not a request to schedule it. You are the "
         "reminder or the recurring check, so carry the task out now and report the "
         "result, in the language the task is written in. Do not tell the user that "
-        "you cannot schedule, remind or repeat tasks: this run is that. If a step "
-        "needs something you do not have (a tool, an account), say which step and why."
+        "you cannot schedule, remind or repeat tasks: this run is that."
     )
+    # How the run says the task, or a step it needs, can't be done with what
+    # it has: a call when the model has tools, else a marker on its answer.
+    CANNOT_COMPLETE_TOOL_NOTE = (
+        "If the task, or a step it needs, cannot be done with what you have (a tool, an "
+        "account, access), call report_cannot_complete with one line naming that step and "
+        "what is missing, then answer with what you could still do. Do not call it when "
+        "you did the task."
+    )
+    CANNOT_COMPLETE_MARKER_NOTE = (
+        "If the task, or a step it needs, cannot be done with what you have (a tool, an "
+        f"account, access), begin your answer with {CANNOT_COMPLETE_MARKER} (exactly so, in "
+        "English) and one line naming that step and what is missing; anything you could "
+        f"still do goes after that line. Never begin with {CANNOT_COMPLETE_MARKER} when you "
+        "did the task."
+    )
+
+    def scheduled_run_note(self) -> str:
+        """The scheduled-run note, with the way this run reports a task it can't do."""
+        if getattr(self, "reports_cannot_complete_by_tool", False):
+            return f"{self.SCHEDULED_RUN_NOTE} {self.CANNOT_COMPLETE_TOOL_NOTE}"
+        # An answer held to a JSON schema can't open with a marker.
+        if getattr(self, "json_schema", None):
+            return self.SCHEDULED_RUN_NOTE
+        return f"{self.SCHEDULED_RUN_NOTE} {self.CANNOT_COMPLETE_MARKER_NOTE}"
 
     def _build_messages(
         self,
@@ -2209,11 +2244,8 @@ class BaseAgent(ABC):
         if getattr(self, "endpoint", None) == "schedule":
             # Without it a reminder firing on time reads "Remind me: ..." as a
             # request to set one, and answers that it cannot send reminders.
-            system_prompt = (
-                f"{system_prompt}\n\n---\n\n{self.SCHEDULED_RUN_NOTE}"
-                if system_prompt
-                else self.SCHEDULED_RUN_NOTE
-            )
+            note = self.scheduled_run_note()
+            system_prompt = f"{system_prompt}\n\n---\n\n{note}" if system_prompt else note
 
         # What the model accepts decides what fails; the agent's context
         # limit only decides how much history, documents and files ride along.

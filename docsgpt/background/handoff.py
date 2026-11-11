@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 #: that called them (``view_image`` shows this turn's model an image), or they
 #: are the background machinery itself (``monitor`` hands back the link or
 #: baseline the user is waiting for).
-NEVER_BACKGROUND_TOOLS = frozenset({"check_job", "view_image", "attachments", "monitor", "ask_user"})
+NEVER_BACKGROUND_TOOLS = frozenset(
+    {"check_job", "view_image", "attachments", "monitor", "ask_user", "report_cannot_complete"}
+)
 
 #: Arguments the background layer reads and the tool never sees.
 CONTROL_ARGS = ("background", "watch")

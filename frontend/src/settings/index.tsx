@@ -69,7 +69,7 @@ export default function Settings() {
       response = await userService.deletePath(doc.id ?? '', token);
     } catch (error) {
       console.error(error);
-      throw new Error(t('settings.sources.errors.delete'));
+      throw new Error(t('settings.sources.errors.delete'), { cause: error });
     }
     if (!response.ok) {
       // A page change or a sync holding the source: it can be tried again.

@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-11
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -197,6 +197,12 @@ Seconds allowed for a stream's first chunk, overridden by the model YAML first_t
 Type `float`, default `120`, must be `> 0`.
 
 Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout. After a reasoning chunk the longer of this and the first-token timeout applies.
+
+### `LLM_ANSWER_TIMEOUT`
+
+Type `float`, default `600`, must be `>= 0`.
+
+Seconds from the start of a stream for the answer to begin; a model still only reasoning then hands off to the fallback model, or the turn fails. Overridden by the model YAML answer_timeout. Raised to the model's first-token timeout when that is longer. 0 turns it off.
 
 ### `API_KEY`
 

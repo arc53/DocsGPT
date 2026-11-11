@@ -1205,7 +1205,7 @@ export default function MessageInput({
       return;
     }
 
-    let stream: MediaStream | null = null;
+    let stream: MediaStream;
     try {
       setVoiceError(null);
       stream = await getUserMediaStream({ audio: true });

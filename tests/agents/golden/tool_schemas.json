@@ -816,6 +816,17 @@
       }
     }
   },
+  "report_cannot_complete.report_cannot_complete": {
+    "type": "object",
+    "required": [
+      "reason"
+    ],
+    "properties": {
+      "reason": {
+        "type": "string"
+      }
+    }
+  },
   "scheduler.cancel_scheduled_task": {
     "type": "object",
     "required": [
