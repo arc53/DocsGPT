@@ -10,7 +10,14 @@ from docsgpt.cache import gen_cache, stream_cache
 
 from docsgpt.core.settings import settings
 from docsgpt.core.run_budget import check_round, is_budget_exhausted
-from docsgpt.llm.deadlines import StreamNoAnswerError, StreamStalledError, is_thought, timed_stream
+from docsgpt.llm.deadlines import (
+    StreamLengthNoAnswerError,
+    StreamNoAnswerError,
+    StreamStalledError,
+    carries_answer,
+    is_thought,
+    timed_stream,
+)
 from docsgpt.error import bounded_error_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
@@ -777,6 +784,22 @@ class BaseLLM(ABC):
             self._note_answer(fallback, fallback.model_id, fallback=True, reason=fallback_reason(e))
             return result
 
+    def _max_output_tokens(self) -> Optional[int]:
+        """The model's ``max_output_tokens`` from its YAML, or None when it sets none."""
+        cap = getattr(self.capabilities, "max_output_tokens", None)
+        if isinstance(cap, bool) or not isinstance(cap, int) or cap <= 0:
+            return None
+        return cap
+
+    def _capped_output_tokens(self, requested: Any) -> Any:
+        """The output-token limit to send: ``requested`` lowered to the model's cap, or the cap when unset."""
+        cap = self._max_output_tokens()
+        if cap is None:
+            return requested
+        if isinstance(requested, (int, float)) and not isinstance(requested, bool) and 0 < requested < cap:
+            return requested
+        return cap
+
     def _stream_deadlines(self) -> StreamDeadlines:
         """This model's first-token, inter-chunk and time-to-answer deadlines.
 
@@ -807,15 +830,23 @@ class BaseLLM(ABC):
         return httpx2.Timeout(max(deadlines.first_token, deadlines.stall), connect=5.0)
 
     def _timed_stream(self, factory: Callable[[], Iterator[Any]]) -> Iterator[Any]:
-        """Apply this model's deadlines to each provider attempt."""
+        """Apply this model's deadlines to each provider attempt.
+
+        A stream that ends on the output-token limit before any answer text
+        or tool call raises ``StreamLengthNoAnswerError``, so it hands off to
+        the fallback like a model that never starts its answer in time.
+        """
         deadlines = self._stream_deadlines()
+        answered = False
         try:
-            yield from timed_stream(
+            for chunk in timed_stream(
                 factory,
                 first_token=deadlines.first_token,
                 stall=deadlines.stall,
                 answer_deadline=deadlines.answer,
-            )
+            ):
+                answered = answered or carries_answer(chunk)
+                yield chunk
         except StreamNoAnswerError:
             logger.warning(
                 "llm_stream_no_answer: reason=no_answer model=%s answer_timeout=%gs",
@@ -829,6 +860,22 @@ class BaseLLM(ABC):
                 },
             )
             raise
+        if not answered and getattr(self, "_last_finish_reason", None) == "length":
+            # The finish signal ended an empty answer, so the error is no trailing-frame failure.
+            self._stream_reached_finish = False
+            max_output_tokens = self._max_output_tokens()
+            logger.warning(
+                "llm_stream_no_answer: reason=length_no_answer model=%s max_output_tokens=%s",
+                self.model_id,
+                max_output_tokens,
+                extra={
+                    "reason": "length_no_answer",
+                    "model": self.model_id,
+                    "provider": self.provider_name,
+                    "max_output_tokens": max_output_tokens,
+                },
+            )
+            raise StreamLengthNoAnswerError("The output-token limit was reached before the answer started.")
 
     def _stream_with_fallback(
         self, decorated_method, method_name, decorators, *args, **kwargs
@@ -860,7 +907,7 @@ class BaseLLM(ABC):
                     self._note_answer(self, primary_model)
                 chunks_yielded += 1
                 reasoned = reasoned or is_thought(chunk)
-                answer_yielded = answer_yielded or not is_thought(chunk)
+                answer_yielded = answer_yielded or carries_answer(chunk)
                 yield chunk
             return
         except Exception as e:
@@ -910,7 +957,7 @@ class BaseLLM(ABC):
                             self._note_answer(self, primary_model)
                         chunks_yielded += 1
                         reasoned = reasoned or is_thought(chunk)
-                        answer_yielded = answer_yielded or not is_thought(chunk)
+                        answer_yielded = answer_yielded or carries_answer(chunk)
                         yield chunk
                     return
                 except Exception as retry_e:

@@ -19,6 +19,10 @@ class StreamNoAnswerError(StreamStalledError):
     """A provider kept reasoning past its time-to-answer limit without starting the answer."""
 
 
+class StreamLengthNoAnswerError(StreamNoAnswerError):
+    """A provider used up its output-token limit without starting the answer."""
+
+
 class StreamAbandoned(BaseException):
     """The consumer gave up on this stream; its reader stops at the next provider event."""
 
@@ -95,6 +99,21 @@ def stream_commit() -> Iterator[None]:
 def is_thought(chunk: Any) -> bool:
     """Whether a stream chunk is reasoning rather than the answer."""
     return isinstance(chunk, dict) and chunk.get("type") == "thought"
+
+
+def carries_answer(chunk: Any) -> bool:
+    """Whether a stream chunk delivers part of the answer: text or a tool call.
+
+    Reasoning does not, nor does the bare length-stop marker the Responses
+    path yields when the output cap cuts a response off.
+    """
+    if isinstance(chunk, str):
+        return bool(chunk)
+    if is_thought(chunk):
+        return False
+    if getattr(chunk, "finish_reason", None) == "length":
+        return bool(getattr(getattr(chunk, "delta", None), "tool_calls", None))
+    return True
 
 
 def timed_stream(

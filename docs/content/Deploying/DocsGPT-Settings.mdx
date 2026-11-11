@@ -1,7 +1,7 @@
 ---
 title: App Configuration
 description: "Configure DocsGPT through .env: LLM provider and keys, custom models, upload limits, document parsing, speech-to-text, authentication and production secrets."
-lastUpdated: 2026-10-11
+lastUpdated: 2026-11-11
 ---
 
 import { Callout } from 'nextra/components'
@@ -197,6 +197,27 @@ directory), the app logs a `WARNING` at boot and continues with just
 the built-in catalog — it does **not** fail to start. If a YAML
 declares an unknown provider name or has a schema error, the app
 **does** fail to start, with the offending file path in the message.
+
+### Capping a model's output
+
+A model, or a provider's `defaults:` block, can set `max_output_tokens` (a
+positive integer) to bound how many tokens one call may generate:
+
+```yaml
+models:
+  - id: my-reasoning-model
+    max_output_tokens: 32768
+```
+
+DocsGPT sends it in each provider's own parameter: `max_completion_tokens`
+on Chat Completions, `max_output_tokens` on the Responses API and Gemini,
+and `max_tokens` on Anthropic. A request that asks for a lower limit keeps
+it; one that asks for more is lowered to the cap. On Anthropic the cap only
+lowers the 4096-token default DocsGPT sends. Reasoning models count their
+reasoning against this limit on most providers. A streamed call that reaches
+the cap before it starts its answer hands off to the fallback model, or fails
+with a "no answer" error when there is none; a streamed call that has started
+its answer keeps what it wrote. Without the field, requests are unchanged.
 
 ## Document Upload Limits
 
