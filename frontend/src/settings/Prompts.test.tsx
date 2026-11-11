@@ -56,25 +56,16 @@ vi.mock('../hooks', async (importOriginal) => ({
 
 const drafter = vi.hoisted(() => ({
   config: null as null | { enabled: boolean },
-  scripts: [] as DrafterEvent[][],
-  requests: [] as DrafterRequest[],
-  // The turn stays open after its events, as while the model works.
-  hang: false,
 }));
+const stream = await vi.hoisted(async () =>
+  (await import('../drafter/testing/fakeDrafterStream')).fakeDrafterStream(),
+);
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => drafter.config,
 }));
 vi.mock('../drafter/drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../drafter/drafterApi')>()),
-  streamDrafter: async (
-    request: DrafterRequest,
-    _token: string | null,
-    onEvent: (event: DrafterEvent) => void,
-  ) => {
-    drafter.requests.push(JSON.parse(JSON.stringify(request)));
-    (drafter.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
-    if (drafter.hang) await new Promise(() => undefined);
-  },
+  streamDrafter: stream.streamDrafter,
 }));
 
 // The checks hint's server read, as it stands once typing pauses.
@@ -110,7 +101,7 @@ vi.mock('../teams/ShareToTeamModal', () => ({
   },
 }));
 
-import type { DrafterEvent, DrafterRequest } from '../drafter/drafterApi';
+import type { DrafterEvent } from '../drafter/drafterApi';
 import actionToastReducer from '../notifications/actionToastSlice';
 import preferenceReducer, {
   setPrompt,
@@ -200,9 +191,7 @@ describe('Prompts page', () => {
     drafter.config = null;
     media.isMobile = false;
     promptChecks.value = [];
-    drafter.scripts = [];
-    drafter.requests = [];
-    drafter.hang = false;
+    stream.reset();
     shareModalProps.mockReset();
     confirm.props = null;
     store = makeStore();
@@ -1074,7 +1063,7 @@ describe('Prompts page', () => {
     await click(
       panel()!.querySelector<HTMLButtonElement>('[data-suggestion="website"]')!,
     );
-    expect(drafter.requests[0].context).toMatchObject({
+    expect(stream.requests[0].context).toMatchObject({
       mode: 'write',
       prompt: { id: 'p-own', content: '' },
     });
@@ -1094,7 +1083,7 @@ describe('Prompts page', () => {
 
   it('asks before writing from a starter, and drafts at once on Skip', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       [
         {
           type: 'questions',
@@ -1120,21 +1109,21 @@ describe('Prompts page', () => {
     await click(
       panel()!.querySelector<HTMLButtonElement>('[data-suggestion="website"]')!,
     );
-    expect(drafter.requests[0]).toMatchObject({
+    expect(stream.requests[0]).toMatchObject({
       messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
       context: { mode: 'write', starter: 'website' },
     });
-    expect(drafter.requests[0].context).not.toHaveProperty('skip_questions');
+    expect(stream.requests[0].context).not.toHaveProperty('skip_questions');
     const field = panel()!.querySelector<HTMLInputElement>(
       '[data-question="q1"] input',
     )!;
     expect(field.placeholder).toBe('e.g. Northwind');
     await click(button('drafter.skipQuestions', panel()!)!);
-    expect(drafter.requests[1].messages.at(-1)).toEqual({
+    expect(stream.requests[1].messages.at(-1)).toEqual({
       role: 'user',
       content: 'drafter.prompt.skipMessage',
     });
-    expect(drafter.requests[1].context).toMatchObject({
+    expect(stream.requests[1].context).toMatchObject({
       mode: 'write',
       starter: 'website',
       skip_questions: true,
@@ -1160,7 +1149,7 @@ describe('Prompts page', () => {
 
   it("offers the model's next changes and puts an assumption in the ask bar", async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(WRITE), [{ type: 'end' }]];
+    stream.scripts = [proposal(WRITE), [{ type: 'end' }]];
     await render();
     await click(button('settings.prompts.addPrompt')!);
     await click(button('drafter.prompt.write', view()!)!);
@@ -1171,7 +1160,7 @@ describe('Prompts page', () => {
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
       );
     });
-    expect(drafter.requests[0].context).toMatchObject({ starter: null });
+    expect(stream.requests[0].context).toMatchObject({ starter: null });
     await click(
       panel()!.querySelector<HTMLButtonElement>(
         '[data-slot="prompt-draft-assumptions"] button',
@@ -1191,7 +1180,7 @@ describe('Prompts page', () => {
       'Make it shorter',
     ]);
     await click(next[0]);
-    expect(drafter.requests[1]).toMatchObject({
+    expect(stream.requests[1]).toMatchObject({
       messages: [
         { role: 'user', content: 'A website chat for Meridian Freight' },
         { role: 'assistant' },
@@ -1203,7 +1192,7 @@ describe('Prompts page', () => {
 
   it('reviews an improvement inline and finishes it from the drawer', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(IMPROVE)];
+    stream.scripts = [proposal(IMPROVE)];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1211,7 +1200,7 @@ describe('Prompts page', () => {
     await click(
       panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
     );
-    expect(drafter.requests[0]).toMatchObject({
+    expect(stream.requests[0]).toMatchObject({
       recipe: 'prompt',
       messages: [
         { role: 'user', content: 'drafter.prompt.suggestions.clearer' },
@@ -1253,7 +1242,7 @@ describe('Prompts page', () => {
 
   it("saves a copy from the drawer's Save prompt after a conflict", async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(IMPROVE)];
+    stream.scripts = [proposal(IMPROVE)];
     withText('You check vendors.');
     service.updatePrompt.mockImplementation(() => response({}, false, 409));
     service.createPrompt.mockImplementation(() => response({ id: 'p-copy' }));
@@ -1281,7 +1270,7 @@ describe('Prompts page', () => {
   it('closes the sheet on a phone to step through the changes, and opens it when they are chosen', async () => {
     media.isMobile = true;
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       proposal({
         ...IMPROVE,
         edits: [
@@ -1330,7 +1319,7 @@ describe('Prompts page', () => {
   it("opens the sheet again from the review's Back to DocsGPT on a phone", async () => {
     media.isMobile = true;
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(IMPROVE)];
+    stream.scripts = [proposal(IMPROVE)];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1352,7 +1341,7 @@ describe('Prompts page', () => {
 
   it('keeps the drawer open for one by one on a desktop', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(IMPROVE)];
+    stream.scripts = [proposal(IMPROVE)];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1368,7 +1357,7 @@ describe('Prompts page', () => {
 
   it('offers Save prompt under the latest result while the prompt has unsaved changes', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(IMPROVE), proposal(IMPROVE)];
+    stream.scripts = [proposal(IMPROVE), proposal(IMPROVE)];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1498,7 +1487,7 @@ describe('Prompts page', () => {
 
   it('reviews the prompt against the checklist and lists what it found', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(REVIEW), [{ type: 'end' }]];
+    stream.scripts = [proposal(REVIEW), [{ type: 'end' }]];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1506,7 +1495,7 @@ describe('Prompts page', () => {
     await click(
       panel()!.querySelector<HTMLButtonElement>('[data-suggestion="review"]')!,
     );
-    expect(drafter.requests[0]).toMatchObject({
+    expect(stream.requests[0]).toMatchObject({
       messages: [
         { role: 'user', content: 'drafter.prompt.suggestions.review' },
       ],
@@ -1561,13 +1550,13 @@ describe('Prompts page', () => {
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
       );
     });
-    expect(drafter.requests[1].context).toMatchObject({ mode: 'improve' });
+    expect(stream.requests[1].context).toMatchObject({ mode: 'improve' });
   });
 
   it('says it is reviewing the prompt while a review turn runs, drafting otherwise', async () => {
     drafter.config = { enabled: true };
-    drafter.hang = true;
-    drafter.scripts = [[{ type: 'status', step: 'drafting' }]];
+    stream.hang = true;
+    stream.scripts = [[{ type: 'status', step: 'drafting' }]];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1581,7 +1570,7 @@ describe('Prompts page', () => {
 
   it('offers Skip on the questions an improvement asks, drafting at once for that turn', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       [
         {
           type: 'questions',
@@ -1607,14 +1596,14 @@ describe('Prompts page', () => {
     await click(
       panel()!.querySelector<HTMLButtonElement>('[data-suggestion="unsure"]')!,
     );
-    expect(drafter.requests[0].context).toMatchObject({ mode: 'improve' });
-    expect(drafter.requests[0].context).not.toHaveProperty('skip_questions');
+    expect(stream.requests[0].context).toMatchObject({ mode: 'improve' });
+    expect(stream.requests[0].context).not.toHaveProperty('skip_questions');
     await click(button('drafter.skipQuestions', panel()!)!);
-    expect(drafter.requests[1].messages.at(-1)).toEqual({
+    expect(stream.requests[1].messages.at(-1)).toEqual({
       role: 'user',
       content: 'drafter.prompt.skipMessage',
     });
-    expect(drafter.requests[1].context).toMatchObject({
+    expect(stream.requests[1].context).toMatchObject({
       mode: 'improve',
       skip_questions: true,
     });
@@ -1622,8 +1611,8 @@ describe('Prompts page', () => {
 
   it('says it is drafting while an improve turn runs', async () => {
     drafter.config = { enabled: true };
-    drafter.hang = true;
-    drafter.scripts = [[{ type: 'status', step: 'drafting' }]];
+    stream.hang = true;
+    stream.scripts = [[{ type: 'status', step: 'drafting' }]];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1637,7 +1626,7 @@ describe('Prompts page', () => {
 
   it('links the ask of a finding worth a look, not only of one to fix', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       proposal({
         ...REVIEW,
         edits: [],
@@ -1671,7 +1660,7 @@ describe('Prompts page', () => {
 
   it('opens an agent a finding is about through the leave guard', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       proposal({
         ...REVIEW,
         edits: [],
@@ -1702,7 +1691,7 @@ describe('Prompts page', () => {
 
   it('says all checks pass for a clean prompt', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       proposal({
         ...REVIEW,
         edits: [],
@@ -1740,13 +1729,13 @@ describe('Prompts page', () => {
     act(() => root.unmount());
     root = createRoot(container);
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal({ ...REVIEW, edits: [], findings: [] })];
+    stream.scripts = [proposal({ ...REVIEW, edits: [], findings: [] })];
     await render();
     await openCard('Vendor checks');
     expect(panel()).toBeNull();
     await click(button('prompts.checksHint.review', hint())!);
     expect(panel()).not.toBeNull();
-    expect(drafter.requests[0]).toMatchObject({
+    expect(stream.requests[0]).toMatchObject({
       messages: [
         { role: 'user', content: 'drafter.prompt.suggestions.review' },
       ],
@@ -1756,7 +1745,7 @@ describe('Prompts page', () => {
 
   it('ends an open review with the choices so far when a new request goes', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [proposal(IMPROVE), [{ type: 'end' }]];
+    stream.scripts = [proposal(IMPROVE), [{ type: 'end' }]];
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -1771,7 +1760,7 @@ describe('Prompts page', () => {
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
       );
     });
-    expect(drafter.requests[1].context).toMatchObject({
+    expect(stream.requests[1].context).toMatchObject({
       prompt: { content: 'You check vendors.' },
     });
     expect(view()!.querySelector('[data-slot="prompt-review"]')).toBeNull();
@@ -1781,7 +1770,7 @@ describe('Prompts page', () => {
   // The server checks the whole proposal; a part of it can break the template.
   it('refuses to save a template that a partly accepted review broke', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       proposal({
         ...IMPROVE,
         edits: [
@@ -1824,7 +1813,7 @@ describe('Prompts page', () => {
 
   it('starts the drawer over from its header', async () => {
     drafter.config = { enabled: true };
-    drafter.scripts = [
+    stream.scripts = [
       [{ type: 'message', text: 'It reads well.' }, { type: 'end' }],
     ];
     withText('You check vendors.');

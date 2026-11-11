@@ -9,6 +9,7 @@ import {
 } from 'react-router-dom';
 
 import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
+import type { DrafterEvent } from '../drafter/drafterApi';
 
 // What the drafter's Insights requests were worded with (the mock's text is
 // the key alone).
@@ -101,32 +102,35 @@ vi.mock('react-redux', () => ({
 }));
 
 // The drafter: its config (off unless a test turns it on) and its stream,
-// which plays one script of events per turn.
+// which plays one script of events per turn (a promise is a turn whose
+// events land when it resolves).
 const drafter = vi.hoisted(() => ({
   config: null as null | {
     enabled: boolean;
     model: { id: string; display_name: string } | null;
     reason: null;
   },
-  // A promise is a turn whose events land when it resolves.
-  scripts: [] as (unknown[] | Promise<unknown[]>)[],
   // The agent's gap summary (`GET /api/drafter/agent_gaps`), and who asked.
   gaps: null as unknown,
   gapsCalls: [] as string[],
-  requests: [] as {
-    recipe: string;
-    messages: { role: string; content: string }[];
-    context: {
-      agent_id: string | null;
-      step?: string | null;
-      earlier?: string[];
-      gap?: { topic: string | null; gap_type: string };
-      conversation_id?: string;
-      message_id?: string;
-      form: Record<string, unknown>;
-    };
-  }[],
 }));
+const stream = await vi.hoisted(async () =>
+  (await import('../drafter/testing/fakeDrafterStream')).fakeDrafterStream(),
+);
+/** A request the drawer sent, with the agent form's context. */
+type SentRequest = {
+  recipe: string;
+  messages: { role: string; content: string }[];
+  context: {
+    agent_id: string | null;
+    step?: string | null;
+    earlier?: string[];
+    gap?: { topic: string | null; gap_type: string };
+    conversation_id?: string;
+    message_id?: string;
+    form: Record<string, unknown>;
+  };
+};
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => drafter.config,
   // Insights' topic suggestions read it with the token they were handed.
@@ -135,14 +139,7 @@ vi.mock('../drafter/useDrafterConfig', () => ({
 }));
 vi.mock('../drafter/drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../drafter/drafterApi')>()),
-  streamDrafter: async (
-    request: (typeof drafter.requests)[number],
-    _token: string | null,
-    onEvent: (event: unknown) => void,
-  ) => {
-    drafter.requests.push(JSON.parse(JSON.stringify(request)));
-    (await (drafter.scripts.shift() ?? [{ type: 'end' }])).forEach(onEvent);
-  },
+  streamDrafter: stream.streamDrafter,
   getAgentGaps: async (agentId: string) => {
     drafter.gapsCalls.push(agentId);
     return (
@@ -2409,7 +2406,7 @@ describe('NewAgent drafter', () => {
   const proposal = (
     fields: Record<string, unknown>,
     progress: { steps?: string[]; next_step?: string | null } = {},
-  ) => ({
+  ): DrafterEvent => ({
     type: 'proposal',
     proposal: {
       message: 'The draft is in the form.',
@@ -2437,8 +2434,7 @@ describe('NewAgent drafter', () => {
     await act(async () => root.unmount());
     container.remove();
     drafter.config = null;
-    drafter.scripts = [];
-    drafter.requests = [];
+    stream.reset();
     drafter.gaps = null;
     drafter.gapsCalls = [];
     mocks.createAgent.mockReset();
@@ -2498,7 +2494,7 @@ describe('NewAgent drafter', () => {
     Array.from(container.querySelectorAll('[data-drafted]')).map(
       (el) => el.querySelector('label')?.textContent,
     );
-  const lastRequest = () => drafter.requests.at(-1)!;
+  const lastRequest = () => stream.requests.at(-1)! as SentRequest;
 
   /** Open the drawer (unless it is open) and send a message from its composer. */
   const ask = async (text: string) => {
@@ -2634,8 +2630,8 @@ describe('NewAgent drafter', () => {
       'drafter.starters.website.titledrafter.starters.website.description',
     );
     await click(buttonByText('drafter.starters.website.title', panel()!)!);
-    expect(drafter.requests).toHaveLength(1);
-    expect(drafter.requests[0]).toMatchObject({
+    expect(stream.requests).toHaveLength(1);
+    expect(stream.requests[0]).toMatchObject({
       recipe: 'agent',
       messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
       context: {
@@ -2657,7 +2653,7 @@ describe('NewAgent drafter', () => {
         },
       },
     });
-    expect(drafter.requests[0].context.form).not.toHaveProperty(
+    expect((stream.requests[0] as SentRequest).context.form).not.toHaveProperty(
       'pending_prompt',
     );
     expect(panel()!.textContent).toContain('drafter.agent.build.progress');
@@ -2667,7 +2663,7 @@ describe('NewAgent drafter', () => {
     mocks.tools = [
       { id: 'tool-1', name: 'api_tool', display_name: 'Tracking' },
     ];
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({
           name: 'Shipping help',
@@ -2703,7 +2699,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('gives reasons only for the fields the draft changed, and announces them', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         {
           type: 'proposal',
@@ -2734,7 +2730,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('moves to the next step on Next, with the earlier words and a hidden message', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal(
           { name: 'Shipping help desk', description: 'Answers shipping.' },
@@ -2751,7 +2747,7 @@ describe('NewAgent drafter', () => {
         ?.getAttribute('placeholder'),
     ).toBe('drafter.agent.build.changePlaceholder');
     await click(next()!);
-    expect(drafter.requests).toHaveLength(2);
+    expect(stream.requests).toHaveLength(2);
     expect(lastRequest().messages).toEqual([
       { role: 'user', content: 'drafter.agent.build.continue' },
     ]);
@@ -2770,7 +2766,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('takes an empty proposal as the step approved and moves on', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
         { type: 'end' },
@@ -2783,7 +2779,7 @@ describe('NewAgent drafter', () => {
     await render();
     await ask('A shipping agent');
     await ask('ok, next');
-    expect(drafter.requests).toHaveLength(3);
+    expect(stream.requests).toHaveLength(3);
     expect(lastRequest().context.step).toBe('knowledge');
     expect(lastRequest().context.earlier).toEqual([
       'A shipping agent',
@@ -2792,7 +2788,7 @@ describe('NewAgent drafter', () => {
   });
 
   it("doesn't move on when every part of a proposal was dropped", async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
         { type: 'end' },
@@ -2816,13 +2812,13 @@ describe('NewAgent drafter', () => {
     await render();
     await ask('A shipping agent');
     await ask('Use the handbook');
-    expect(drafter.requests).toHaveLength(2);
+    expect(stream.requests).toHaveLength(2);
     expect(panel()!.textContent).toContain('drafter.agent.droppedLine');
     expect(next()).toBeDefined();
   });
 
   it('jumps past the steps one description covered', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal(
           {
@@ -2852,7 +2848,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('applies limits and guardrails from the safety step, and undoes them', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal(
           { name: 'Shipping help desk' },
@@ -2930,7 +2926,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('says what Publish needs when the build ends without it', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal(
           { description: 'Helps with shipping' },
@@ -2963,7 +2959,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('reads an agent as unchanged once its drafted guardrails are undone', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({
           guardrails: {
@@ -2991,7 +2987,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('starts the build over from the drawer, back at its plan', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
         { type: 'end' },
@@ -3009,7 +3005,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('reads Resume while a build is unfinished', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
         { type: 'end' },
@@ -3072,7 +3068,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('undoes a field drafted twice back to before the first draft', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [proposal({ limits: { mode: 'requests', value: 500 } }), { type: 'end' }],
       [proposal({ limits: { mode: 'requests', value: 300 } }), { type: 'end' }],
     ];
@@ -3091,7 +3087,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('reads an Undo of a field drafted twice as undone, not as an edit', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [proposal({ name: 'Shipping help' }), { type: 'end' }],
       [proposal({ name: 'Shipping desk' }), { type: 'end' }],
     ];
@@ -3129,7 +3125,7 @@ describe('NewAgent drafter', () => {
           answer = resolve;
         }),
     );
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal(
           { name: 'Shipping help', description: 'Answers shipping.' },
@@ -3165,7 +3161,7 @@ describe('NewAgent drafter', () => {
           answer = resolve;
         }),
     );
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal(
           { name: 'Shipping help', description: 'Answers shipping.' },
@@ -3191,7 +3187,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('drops the mark of a field edited by hand', async () => {
-    drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
+    stream.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
     await render();
     await ask('Shipping agent');
     expect(drafted()).toEqual(['agents.form.labels.name']);
@@ -3207,7 +3203,7 @@ describe('NewAgent drafter', () => {
       name: 'Shipping support',
       content: PROMPT_TEXT,
     };
-    const writes = (content = PROMPT_TEXT) => [
+    const writes = (content = PROMPT_TEXT): DrafterEvent[] => [
       proposal(
         {
           prompt: { ...WRITTEN, content },
@@ -3244,7 +3240,7 @@ describe('NewAgent drafter', () => {
       mocks.createPrompt.mockImplementation(() =>
         jsonResponse({ id: 'np1', updated_at: 'v1' }),
       );
-      drafter.scripts = [writes()];
+      stream.scripts = [writes()];
       await render();
       await ask('A shipping agent for our website');
       // The view takes the main column; the form stays, hidden.
@@ -3271,7 +3267,7 @@ describe('NewAgent drafter', () => {
 
       // The view's unsaved text goes with the next message, edits included.
       await type(viewText(), 'My own text.');
-      drafter.scripts = [writes('Friendlier text.')];
+      stream.scripts = [writes('Friendlier text.')];
       await ask('Make it friendlier');
       expect(lastRequest().context.form.prompt_draft).toEqual({
         name: 'Shipping support',
@@ -3311,7 +3307,7 @@ describe('NewAgent drafter', () => {
       ).toBeTruthy();
 
       // A change asked for afterwards updates the same prompt.
-      drafter.scripts = [writes('Shorter text.')];
+      stream.scripts = [writes('Shorter text.')];
       await ask('Shorter');
       expect(view()!.textContent).toContain('Shipping support');
       expect(viewText().value).toBe('Shorter text.');
@@ -3336,7 +3332,7 @@ describe('NewAgent drafter', () => {
     });
 
     it('lists what a written prompt does to the one it replaces, as edits do', async () => {
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal({
             prompt: { ...WRITTEN, checks: ['citations_removed'] },
@@ -3358,7 +3354,7 @@ describe('NewAgent drafter', () => {
     });
 
     it('keeps the prompt in the step on Back, then opens it again or keeps the old one', async () => {
-      drafter.scripts = [writes()];
+      stream.scripts = [writes()];
       await render();
       await ask('A shipping agent');
       await click(crumb());
@@ -3366,7 +3362,7 @@ describe('NewAgent drafter', () => {
       expect(parked()).toBeDefined();
       expect(next()).toBeUndefined();
       // An approval now isn't the step's Next: the prompt still waits.
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal({}, { steps: ['prompt'], next_step: 'safety' }),
           { type: 'end' },
@@ -3377,7 +3373,7 @@ describe('NewAgent drafter', () => {
         name: 'Shipping support',
         content: PROMPT_TEXT,
       });
-      expect(drafter.requests).toHaveLength(2);
+      expect(stream.requests).toHaveLength(2);
       expect(parked()).toBeDefined();
 
       await click(buttonByText('drafter.agent.prompt.open', parked()!)!);
@@ -3398,7 +3394,7 @@ describe('NewAgent drafter', () => {
       mocks.createAgent.mockImplementation(() =>
         jsonResponse({ id: 'new-1', key: 'k1' }),
       );
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal(
             {
@@ -3425,7 +3421,7 @@ describe('NewAgent drafter', () => {
 
     it('keeps the id of the used prompt on an update left unsaved', async () => {
       mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
-      drafter.scripts = [writes()];
+      stream.scripts = [writes()];
       await render();
       await ask('A shipping agent');
       await click(use());
@@ -3433,7 +3429,7 @@ describe('NewAgent drafter', () => {
         { id: 'default', name: 'default', type: 'public' },
         { id: 'np1', name: 'Shipping support', type: 'private' },
       ] as never[];
-      drafter.scripts = [writes('Shorter text.')];
+      stream.scripts = [writes('Shorter text.')];
       await ask('Shorter');
       await click(crumb());
       expect(view()).toBeNull();
@@ -3447,7 +3443,7 @@ describe('NewAgent drafter', () => {
     });
 
     it('returns to the form on browser Back', async () => {
-      drafter.scripts = [writes()];
+      stream.scripts = [writes()];
       await render();
       await ask('A shipping agent');
       expect(probe.state).toMatchObject({ promptView: true });
@@ -3459,7 +3455,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('sends the failed message again on Try again, with no Continue', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [{ type: 'error', code: 'model_error' }, { type: 'end' }],
     ];
     await render();
@@ -3474,9 +3470,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('offers Continue on the step after an error Try again cannot fix', async () => {
-    drafter.scripts = [
-      [{ type: 'error', code: 'model_auth' }, { type: 'end' }],
-    ];
+    stream.scripts = [[{ type: 'error', code: 'model_auth' }, { type: 'end' }]];
     await render();
     await ask('A shipping agent');
     // A way past the error, under it rather than in it.
@@ -3490,7 +3484,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('skips a question round and drafts with what it has', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         {
           type: 'questions',
@@ -3533,7 +3527,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('marks a field undone in the form as undone in the drawer', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         {
           type: 'proposal',
@@ -3588,7 +3582,7 @@ describe('NewAgent drafter', () => {
   });
 
   it('notes a field edited in the form since the turn', async () => {
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
         { type: 'end' },
@@ -3606,8 +3600,8 @@ describe('NewAgent drafter', () => {
   });
 
   it('keeps a field edited in the form while the turn ran, and says so', async () => {
-    let land: (events: unknown[]) => void = () => undefined;
-    drafter.scripts = [
+    let land: (events: DrafterEvent[]) => void = () => undefined;
+    stream.scripts = [
       new Promise((resolve) => {
         land = resolve;
       }),
@@ -3642,7 +3636,7 @@ describe('NewAgent drafter', () => {
   it('steps the sheet aside on a phone and keeps the step in a strip', async () => {
     media.isMobile = true;
     media.isDesktop = false;
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
         { type: 'end' },
@@ -3682,7 +3676,7 @@ describe('NewAgent drafter', () => {
   it("opens the sheet for a phone strip's Finish", async () => {
     media.isMobile = true;
     media.isDesktop = false;
-    drafter.scripts = [
+    stream.scripts = [
       [
         proposal(
           { name: 'Shipping help', description: 'Helps with shipping' },
@@ -3925,7 +3919,7 @@ describe('NewAgent drafter', () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
       await type(viewText(), 'Shorter.');
-      drafter.scripts = [
+      stream.scripts = [
         [proposal({ starters: ['Where is my deal?'] }), { type: 'end' }],
       ];
       await ask('Add a starter');
@@ -3948,7 +3942,7 @@ describe('NewAgent drafter', () => {
       expect(
         buttonByText('drafter.improve', view()!)!.getAttribute('aria-expanded'),
       ).toBe('true');
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal({
             prompt: { kind: 'new', name: 'Other', content: 'Tighter.' },
@@ -3985,7 +3979,7 @@ describe('NewAgent drafter', () => {
       ] as never[];
       await renderWithPrompt('p1');
       await openFromRow('p3');
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal({
             prompt: { kind: 'new', name: 'Other', content: 'Formal, shorter.' },
@@ -4014,8 +4008,8 @@ describe('NewAgent drafter', () => {
       ] as never[];
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      let land: (events: unknown[]) => void = () => undefined;
-      drafter.scripts = [
+      let land: (events: DrafterEvent[]) => void = () => undefined;
+      stream.scripts = [
         new Promise((resolve) => {
           land = resolve;
         }),
@@ -4053,8 +4047,8 @@ describe('NewAgent drafter', () => {
       ] as never[];
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      let land: (events: unknown[]) => void = () => undefined;
-      drafter.scripts = [
+      let land: (events: DrafterEvent[]) => void = () => undefined;
+      stream.scripts = [
         new Promise((resolve) => {
           land = resolve;
         }),
@@ -4089,7 +4083,7 @@ describe('NewAgent drafter', () => {
       // The drawer open on the form, then a team prompt opened to read.
       await click(wand()!);
       await openFromRow('p2');
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal({
             prompt: { kind: 'new', name: 'Warm tone', content: 'Be warm.' },
@@ -4112,7 +4106,7 @@ describe('NewAgent drafter', () => {
 
     const promptEdits = (
       edits: { id: string; find: string; replace: string; reason: string }[],
-    ) => [
+    ): DrafterEvent[] => [
       proposal({ prompt: { kind: 'edit', id: 'p1', edits, checks: [] } }),
       { type: 'end' },
     ];
@@ -4121,7 +4115,7 @@ describe('NewAgent drafter', () => {
 
     it("reviews changes to the agent's own prompt in its view, then saves it", async () => {
       await renderWithPrompt('p1');
-      drafter.scripts = [
+      stream.scripts = [
         promptEdits([
           { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
           {
@@ -4173,7 +4167,7 @@ describe('NewAgent drafter', () => {
 
     it('ends an open review with the choices so far on a new request, and Discard keeps the text', async () => {
       await renderWithPrompt('p1');
-      drafter.scripts = [
+      stream.scripts = [
         promptEdits([
           { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
           {
@@ -4209,7 +4203,7 @@ describe('NewAgent drafter', () => {
     it('offers Show in agent when a turn changes the form behind the prompt view', async () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
-      drafter.scripts = [
+      stream.scripts = [
         [proposal({ starters: ['Where is my deal?'] }), { type: 'end' }],
         [
           proposal({ starters: ['Where is my deal?', 'Rates?'] }),
@@ -4230,7 +4224,7 @@ describe('NewAgent drafter', () => {
 
     it('waits for an open review before an approval moves the build on', async () => {
       await render();
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal(
             { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
@@ -4250,12 +4244,12 @@ describe('NewAgent drafter', () => {
       await ask('A deal desk on my Tone prompt');
       await ask('Plainer prompt, then go on');
       expect(review()).not.toBeNull();
-      expect(drafter.requests).toHaveLength(2);
+      expect(stream.requests).toHaveLength(2);
       // The drawer's latest turn offers the review's actions.
       await click(buttonByText('drafter.prompt.acceptAll', panel()!)!);
       expect(viewText().value).toBe('Words of p1');
       // Once it is decided, the approval moves on.
-      expect(drafter.requests).toHaveLength(3);
+      expect(stream.requests).toHaveLength(3);
       expect(lastRequest().context.step).toBe('knowledge');
     });
 
@@ -4265,7 +4259,7 @@ describe('NewAgent drafter', () => {
         media.isMobile = true;
         media.isDesktop = false;
         await render();
-        drafter.scripts = [
+        stream.scripts = [
           [
             proposal(
               { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
@@ -4311,7 +4305,7 @@ describe('NewAgent drafter', () => {
 
     it("holds the desktop Next while changes wait for the saved prompt's text", async () => {
       await render();
-      drafter.scripts = [
+      stream.scripts = [
         [
           proposal(
             { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
@@ -4341,7 +4335,7 @@ describe('NewAgent drafter', () => {
       mocks.getSinglePrompt.mockImplementationOnce(() =>
         jsonResponse({}, false),
       );
-      drafter.scripts = [
+      stream.scripts = [
         promptEdits([
           { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
         ]),
@@ -4358,7 +4352,7 @@ describe('NewAgent drafter', () => {
 
     it('counts only the changes that fit the saved text, and says how many did not', async () => {
       await renderWithPrompt('p1');
-      drafter.scripts = [
+      stream.scripts = [
         promptEdits([
           { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
           { id: 'e2', find: 'Not there', replace: 'x', reason: 'r' },
@@ -4374,7 +4368,7 @@ describe('NewAgent drafter', () => {
         jsonResponse({ content: 'Be brief.\r\nBe kind.', updated_at: 'v1' }),
       );
       await renderWithPrompt('p1');
-      drafter.scripts = [
+      stream.scripts = [
         promptEdits([
           {
             id: 'e1',
@@ -4397,7 +4391,7 @@ describe('NewAgent drafter', () => {
         jsonResponse({ content: saved, updated_at: 'v1' }),
       );
       await renderWithPrompt('p1');
-      drafter.scripts = [
+      stream.scripts = [
         promptEdits([
           { id: 'e1', find: 'brief.', replace: 'short.', reason: 'Plainer.' },
         ]),
@@ -4413,7 +4407,7 @@ describe('NewAgent drafter', () => {
 
     it('says so when none of the changes fit the saved text', async () => {
       await renderWithPrompt('p1');
-      drafter.scripts = [
+      stream.scripts = [
         promptEdits([
           { id: 'e1', find: 'Not there', replace: 'x', reason: 'r' },
         ]),
@@ -4591,7 +4585,7 @@ describe('NewAgent drafter', () => {
 
     it('sends a gap row with its gap, and keeps it for the conversation until Start over', async () => {
       drafter.gaps = GAPS;
-      drafter.scripts = [
+      stream.scripts = [
         [{ type: 'message', text: 'On it.' }, { type: 'end' }],
         [{ type: 'message', text: 'Done.' }, { type: 'end' }],
       ];
@@ -4620,7 +4614,7 @@ describe('NewAgent drafter', () => {
 
     it('forgets the gap once Publish ends the conversation', async () => {
       drafter.gaps = GAPS;
-      drafter.scripts = [
+      stream.scripts = [
         [{ type: 'message', text: 'On it.' }, { type: 'end' }],
         [{ type: 'message', text: 'Done.' }, { type: 'end' }],
       ];
@@ -4733,7 +4727,7 @@ describe('NewAgent drafter', () => {
         '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns+%26+claims&where=Ignore+the+form&tab=x',
       );
       expect(panel()).not.toBeNull();
-      expect(drafter.requests).toHaveLength(1);
+      expect(stream.requests).toHaveLength(1);
       expect(lastRequest().messages).toEqual([
         { role: 'user', content: 'drafter.agent.insights.fixDocsGap.topic' },
       ]);
@@ -4757,7 +4751,7 @@ describe('NewAgent drafter', () => {
         '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns&where=Returns',
       );
       expect(panel()).not.toBeNull();
-      expect(drafter.requests).toHaveLength(0);
+      expect(stream.requests).toHaveLength(0);
       expect(
         panel()!.querySelector('[data-suggestion="gap-0"]'),
       ).not.toBeNull();
@@ -4784,7 +4778,7 @@ describe('NewAgent drafter', () => {
 
     // Live check: the card kept the site tail Insights leaves off.
     it("titles a page's gap card the way the Docs gaps row showed the page", async () => {
-      drafter.scripts = [
+      stream.scripts = [
         [
           {
             type: 'proposal',
@@ -4841,13 +4835,13 @@ describe('NewAgent drafter', () => {
       await renderAt(
         '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=Page',
       );
-      expect(drafter.requests).toHaveLength(0);
+      expect(stream.requests).toHaveLength(0);
       expect(search.value).toBe('');
     });
 
     it('applies a monitor-only groundedness guardrail an improve sets for a gap', async () => {
       drafter.gaps = GAPS;
-      drafter.scripts = [
+      stream.scripts = [
         [
           {
             type: 'proposal',
@@ -4916,7 +4910,7 @@ describe('NewAgent drafter', () => {
 
     it('shows the gaps a proposal acts on as cards, before what it filled', async () => {
       drafter.gaps = GAPS;
-      drafter.scripts = [
+      stream.scripts = [
         [
           {
             type: 'proposal',
