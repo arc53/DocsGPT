@@ -2,7 +2,11 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
-import { MemoryRouter } from 'react-router-dom';
+import {
+  MemoryRouter,
+  useNavigate,
+  type NavigateFunction,
+} from 'react-router-dom';
 
 const service = vi.hoisted(() => ({ listAll: vi.fn() }));
 vi.mock('../api/services/schedulesService', () => ({ default: service }));
@@ -60,12 +64,20 @@ describe('AllSchedules', () => {
     container.remove();
   });
 
+  // Navigates inside the mounted page, as a notification's Open does.
+  let navigateTo: NavigateFunction | null = null;
+  function NavigateHandle() {
+    navigateTo = useNavigate();
+    return null;
+  }
+
   const render = async (path = '/activity/schedules') => {
     await act(async () => {
       root.render(
         <Provider store={makeStore()}>
           <TooltipProvider>
             <MemoryRouter initialEntries={[path]}>
+              <NavigateHandle />
               <AllSchedules />
             </MemoryRouter>
           </TooltipProvider>
@@ -154,6 +166,44 @@ describe('AllSchedules', () => {
       'false',
     );
     expect(scrolled).toEqual(['s2']);
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown })
+      .scrollIntoView;
+  });
+
+  it('a link followed while a search is set clears it, then scrolls', async () => {
+    const atScroll: { search: string; rows: number }[] = [];
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(() => {
+        atScroll.push({
+          search:
+            container.querySelector<HTMLInputElement>('input')?.value ?? '',
+          rows: container.querySelectorAll('[data-schedule-id]').length,
+        });
+      }),
+    });
+    service.listAll.mockResolvedValue({
+      schedules: [
+        schedule({ id: 's1', name: 'Daily digest' }),
+        schedule({ id: 's2', name: 'Nightly CRM digest' }),
+      ],
+    });
+    await render();
+    const input = container.querySelector<HTMLInputElement>('input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'Nightly');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(container.querySelectorAll('[data-schedule-id]')).toHaveLength(1);
+
+    await act(async () => {
+      navigateTo!('/activity/schedules?schedule=s2');
+    });
+
+    expect(atScroll).toEqual([{ search: '', rows: 2 }]);
     delete (HTMLElement.prototype as { scrollIntoView?: unknown })
       .scrollIntoView;
   });
