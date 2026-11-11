@@ -133,6 +133,31 @@ def _readable_chat_prompt(conn: Connection, user_id: str, stored: Optional[str])
 MAX_MODEL_ID_LENGTH = 256
 
 
+def task_model_status(choice: Optional[str], user_id: Optional[str], fallback: Optional[str]) -> dict:
+    """The task model fields Settings › General's and Admin › Defaults' GETs share.
+
+    Args:
+        choice: The stored task model: the user's, or the instance's when ``user_id`` is None.
+        user_id: Whose choice; None for the instance's.
+        fallback: What runs without a choice.
+
+    Returns:
+        dict: ``task_model_id``, the choice while it can still run (else
+        ``None``); ``task_model_unavailable``, whether a choice is stored that
+        can't run (a disabled or deleted model), which only a null ``PUT``
+        clears; and ``task_model_error``, the last refused-key failure of the
+        task model that runs now (``{model_id, code, at}``) or ``None``.
+    """
+    from docsgpt.drafter.service import model_failure
+
+    usable = model_is_usable(choice, user_id)
+    return {
+        "task_model_id": choice if usable else None,
+        "task_model_unavailable": choice is not None and not usable,
+        "task_model_error": model_failure(user_id, choice if usable else fallback),
+    }
+
+
 def _task_models(conn: Connection, user_id: str) -> dict:
     """The caller's task model as GET reports it.
 
@@ -141,25 +166,13 @@ def _task_models(conn: Connection, user_id: str) -> dict:
         user_id: The caller.
 
     Returns:
-        dict: ``task_model_id``, the caller's choice while they can still run
-        it (else ``None``); ``task_model_unavailable``, whether a choice is
-        stored that can't run (a disabled or deleted model), which only a
-        null ``PUT`` clears; ``task_model_error``, the last refused-key failure
-        of the task model that runs now (``{model_id, code, at}``) or ``None``;
-        and ``instance_task_model_id``, what runs without one (the admin's,
+        dict: :func:`task_model_status` for the caller's choice, and
+        ``instance_task_model_id``, what runs without one (the admin's,
         ``TASK_MODEL_ID`` or the default model).
     """
-    from docsgpt.drafter.service import model_failure
-
     user_choice, instance_choice = model_defaults.stored_task_models(conn, user_id)
-    usable = model_is_usable(user_choice, user_id)
     instance_model = resolve_task_model_id(None, None, instance_choice)
-    return {
-        "task_model_id": user_choice if usable else None,
-        "task_model_unavailable": user_choice is not None and not usable,
-        "task_model_error": model_failure(user_id, user_choice if usable else instance_model),
-        "instance_task_model_id": instance_model,
-    }
+    return {**task_model_status(user_choice, user_id, instance_model), "instance_task_model_id": instance_model}
 
 
 def _task_model_value(value) -> tuple[bool, Optional[str]]:

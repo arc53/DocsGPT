@@ -27,11 +27,12 @@ from docsgpt import decisions
 from docsgpt.api.admin.guardrails import audit, injection_model, validation_error
 from docsgpt.api.admin.routes import _actor, admin_ns
 from docsgpt.api.user.authz import admin_required
+from docsgpt.api.user.me.routes import task_model_status
 from docsgpt.core.model_registry import ModelRegistry
 from docsgpt.core.model_utils import model_is_usable, resolve_task_model_id
 from docsgpt.core.settings import settings
 from docsgpt.decisions import features
-from docsgpt.drafter.service import forget_model_failure, model_failure
+from docsgpt.drafter.service import forget_model_failure
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db import agent_defaults, model_defaults, source_defaults
@@ -161,14 +162,10 @@ def _models_body(conn) -> dict:
     ``task_model_error`` is the last refused-key failure of the model that
     runs for members without a choice (``{model_id, code, at}``), else ``None``.
     """
-    stored = model_defaults.stored_task_model(conn)
-    usable = model_is_usable(stored)
     fallback = resolve_task_model_id(None, None, None)
     return {
         "success": True,
-        "task_model_id": stored if usable else None,
-        "task_model_unavailable": stored is not None and not usable,
-        "task_model_error": model_failure(None, stored if usable else fallback),
+        **task_model_status(model_defaults.stored_task_model(conn), None, fallback),
         "fallback_model_id": fallback,
         "models": _builtin_models(),
     }

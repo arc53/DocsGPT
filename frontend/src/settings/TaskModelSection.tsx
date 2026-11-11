@@ -4,34 +4,21 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import { Alert, AlertDescription } from '../components/ui/alert';
 import { EmptyState } from '../components/ui/empty-state';
 import { SectionHeader } from '../components/ui/section-header';
 import { Skeleton } from '../components/ui/skeleton';
 import { resetDrafterConfigCache } from '../drafter/useDrafterConfig';
-import { SettingRow, SettingRows } from '../components/ui/setting-row';
+import { SettingRows } from '../components/ui/setting-row';
 import type { Model } from '../models/types';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
+import TaskModelRow, {
+  refusedModel,
+  TASK_MODEL_UNAVAILABLE as UNAVAILABLE,
+} from './components/TaskModelRow';
 
 /** The Select value of "Use instance default": no pick of the user's own (saved as null). */
 const INSTANCE_DEFAULT = '__instance__';
-/**
- * A stored pick that can't run (a disabled or deleted model): the instance
- * default runs meanwhile, and the stored one again if it comes back. No
- * option shows it, so picking any one, Use instance default included,
- * replaces it.
- */
-const UNAVAILABLE = '__unavailable__';
 
 type Loaded = {
   /** The caller's pick, `UNAVAILABLE`, else `INSTANCE_DEFAULT`. */
@@ -44,18 +31,6 @@ type Loaded = {
    * (`task_model_error`, code `model_auth`); null when none did.
    */
   refusedModelId: string | null;
-};
-
-/** The model a `task_model_error` names, when it is a refused key. */
-const refusedModel = (error: unknown): string | null => {
-  if (!error || typeof error !== 'object') return null;
-  const { model_id: modelId, code } = error as {
-    model_id?: unknown;
-    code?: unknown;
-  };
-  return code === 'model_auth' && typeof modelId === 'string' && modelId
-    ? modelId
-    : null;
 };
 
 /**
@@ -163,44 +138,16 @@ export default function TaskModelSection() {
     );
   }
 
-  const builtin = loaded.models.filter((m) => m.source !== 'user');
-  const own = loaded.models.filter((m) => m.source === 'user');
-  const nameOf = (modelId: string) =>
-    loaded.models.find((m) => m.id === modelId)?.display_name ?? modelId;
   const instanceModel = loaded.instanceModelId
-    ? nameOf(loaded.instanceModelId)
+    ? (loaded.models.find((m) => m.id === loaded.instanceModelId)
+        ?.display_name ?? loaded.instanceModelId)
     : null;
-  const instanceLabel = instanceModel
-    ? t('settings.general.taskModelInstanceDefault', { model: instanceModel })
-    : t('settings.general.taskModelInstanceDefaultUnnamed');
+  const unnamed = t('settings.general.taskModelInstanceDefaultUnnamed');
   // The model that runs now: the pick, else the instance default.
   const running =
     loaded.value === INSTANCE_DEFAULT || loaded.value === UNAVAILABLE
       ? loaded.instanceModelId
       : loaded.value;
-  const refused =
-    loaded.refusedModelId !== null && running === loaded.refusedModelId
-      ? nameOf(loaded.refusedModelId)
-      : null;
-  const pickedLabel =
-    loaded.value === INSTANCE_DEFAULT
-      ? instanceLabel
-      : loaded.value === UNAVAILABLE
-        ? undefined
-        : nameOf(loaded.value);
-  const renderItem = (model: Model) => (
-    <SelectItem
-      key={model.id}
-      value={model.id}
-      suffix={
-        model.id === loaded.refusedModelId
-          ? t('settings.general.taskModelFailedItem')
-          : undefined
-      }
-    >
-      <span className="truncate">{model.display_name}</span>
-    </SelectItem>
-  );
 
   const save = async (value: string): Promise<boolean> => {
     try {
@@ -259,81 +206,43 @@ export default function TaskModelSection() {
     <section className="flex flex-col gap-4">
       <SectionHeader title={t('settings.general.sections.models')} />
       <SettingRows>
-        <SettingRow
+        <TaskModelRow
+          id={id}
           label={t('settings.general.taskModel')}
           description={t('settings.general.taskModelDescription')}
-          htmlFor={id}
-          stack
-          after={
-            loaded.value === UNAVAILABLE || refused ? (
-              <Alert variant="warning">
-                <AlertDescription>
-                  {loaded.value === UNAVAILABLE
-                    ? t('settings.general.taskModelUnavailable')
-                    : t('settings.general.taskModelFailed', {
-                        model: refused,
-                        interpolation: { escapeValue: false },
-                      })}
-                </AlertDescription>
-              </Alert>
-            ) : undefined
+          value={loaded.value}
+          onChange={change}
+          defaultValue={INSTANCE_DEFAULT}
+          defaultLabel={
+            instanceModel
+              ? t('settings.general.taskModelInstanceDefault', {
+                  model: instanceModel,
+                })
+              : unnamed
           }
-        >
-          <Select
-            value={loaded.value === UNAVAILABLE ? '' : loaded.value}
-            onValueChange={change}
-          >
-            <SelectTrigger
-              id={id}
-              // Grows to its value, up to 384px (room for the instance
-              // default's label with its model), then ends in "…" (the
-              // whole name as its title).
-              className="w-full sm:w-auto sm:max-w-96 sm:min-w-56"
-              size="field"
-              shape="pill"
-              title={pickedLabel}
-            >
-              <SelectValue
-                placeholder={t('settings.general.taskModelUnavailableValue')}
-              >
-                {loaded.value === INSTANCE_DEFAULT && instanceModel ? (
-                  // A phone's full-width trigger (16px text) can't fit the
-                  // model's name as well: it shows the choice, and the list
-                  // and the title name the model.
-                  <>
-                    <span className="truncate sm:hidden">
-                      {t('settings.general.taskModelInstanceDefaultUnnamed')}
-                    </span>
-                    <span className="hidden truncate sm:block">
-                      {instanceLabel}
-                    </span>
-                  </>
-                ) : undefined}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent fit>
-              <SelectItem value={INSTANCE_DEFAULT}>
-                <span className="truncate">{instanceLabel}</span>
-              </SelectItem>
-              {builtin.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>
-                    {t('settings.customModels.modelsGroup.builtin')}
-                  </SelectLabel>
-                  {builtin.map(renderItem)}
-                </SelectGroup>
-              )}
-              {own.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>
-                    {t('settings.customModels.modelsGroup.user')}
-                  </SelectLabel>
-                  {own.map(renderItem)}
-                </SelectGroup>
-              )}
-            </SelectContent>
-          </Select>
-        </SettingRow>
+          defaultShortLabel={unnamed}
+          groups={[
+            {
+              label: t('settings.customModels.modelsGroup.builtin'),
+              models: loaded.models.filter((m) => m.source !== 'user'),
+            },
+            {
+              label: t('settings.customModels.modelsGroup.user'),
+              models: loaded.models.filter((m) => m.source === 'user'),
+            },
+          ]}
+          runningModelId={running}
+          refusedModelId={loaded.refusedModelId}
+          unavailableValue={t('settings.general.taskModelUnavailableValue')}
+          refusedSuffix={t('settings.general.taskModelFailedItem')}
+          unavailableNote={t('settings.general.taskModelUnavailable')}
+          refusedNote={(model) =>
+            t('settings.general.taskModelFailed', {
+              model,
+              interpolation: { escapeValue: false },
+            })
+          }
+        />
       </SettingRows>
     </section>
   );

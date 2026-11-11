@@ -14,14 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { LoadingState } from '../components/ui/loading-state';
 import { SectionHeader } from '../components/ui/section-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import { SettingRow, SettingRows } from '../components/ui/setting-row';
+import { SettingRows } from '../components/ui/setting-row';
 import { resetDrafterConfigCache } from '../drafter/useDrafterConfig';
 import type { SourceRetrievalConfig } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -31,6 +24,10 @@ import RetrievalOptions, {
   optionsToConfig,
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+import TaskModelRow, {
+  refusedModel,
+  TASK_MODEL_UNAVAILABLE,
+} from '../settings/components/TaskModelRow';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import { LoadError } from './AdminUI';
 import { type InjectionModel, InjectionModelOff } from './injectionModel';
@@ -79,8 +76,6 @@ type ModelDefaultsBody = {
 
 /** The Select value for "no instance task model". */
 export const TASK_MODEL_UNSET = '__unset__';
-/** A stored task model that can't run: no option shows it, so any pick replaces it. */
-const TASK_MODEL_UNAVAILABLE = '__unavailable__';
 
 /** The form: the retrieval options, the new-agent guardrails and the task model. */
 type Values = {
@@ -250,23 +245,6 @@ export default function Defaults() {
   const fallbackName =
     models.models.find((m) => m.id === models.fallback_model_id)
       ?.display_name ?? models.fallback_model_id;
-  // A model whose provider refused its key on its last task: marked in the
-  // list, and named in a warning while it is the one that runs.
-  const refusedId =
-    models.task_model_error?.code === 'model_auth'
-      ? models.task_model_error.model_id
-      : null;
-  const runningId = models.task_model_id ?? models.fallback_model_id;
-  const refusedName =
-    refusedId && refusedId === runningId
-      ? (models.models.find((m) => m.id === refusedId)?.display_name ??
-        refusedId)
-      : null;
-  const unsetLabel = fallbackName ? `Not set (${fallbackName})` : 'Not set';
-  const pickedLabel =
-    value.taskModel === TASK_MODEL_UNSET
-      ? unsetLabel
-      : models.models.find((m) => m.id === value.taskModel)?.display_name;
   const valid =
     isPrescreenConfigValid(value.retrieval) &&
     !guardrailsIncomplete(value.agentGuardrails);
@@ -416,76 +394,29 @@ export default function Defaults() {
             description="Takes effect at once: the next draft, graph build or monitor check uses it. Users can pick their own task model in Settings › General; this one is for everyone who hasn't."
           />
           <SettingRows>
-            <SettingRow
+            <TaskModelRow
+              id="defaults-task-model"
               label="Task model"
               description="Drafts forms, builds knowledge graphs and checks monitors. Built-in models only. Chats use the agent's model."
-              htmlFor="defaults-task-model"
-              stack
-              after={
-                value.taskModel === TASK_MODEL_UNAVAILABLE ? (
-                  <Alert variant="warning">
-                    <AlertDescription>
-                      {
-                        "The stored task model can't run (it was disabled or removed), so the fallback runs. It runs again if it comes back: pick Not set or another model and save to replace it."
-                      }
-                    </AlertDescription>
-                  </Alert>
-                ) : refusedName ? (
-                  <Alert variant="warning">
-                    <AlertDescription>
-                      {`${refusedName} couldn't run its last task: its provider refused the API key. Check the key, or pick another model.`}
-                    </AlertDescription>
-                  </Alert>
-                ) : undefined
+              value={value.taskModel}
+              onChange={(taskModel) => setValue({ ...value, taskModel })}
+              defaultValue={TASK_MODEL_UNSET}
+              defaultLabel={
+                fallbackName ? `Not set (${fallbackName})` : 'Not set'
               }
-            >
-              <Select
-                value={
-                  value.taskModel === TASK_MODEL_UNAVAILABLE
-                    ? ''
-                    : value.taskModel
-                }
-                onValueChange={(taskModel) => setValue({ ...value, taskModel })}
-              >
-                <SelectTrigger
-                  id="defaults-task-model"
-                  // Grows to its value, up to 384px (the Not set label with its
-                  // model's name fits), then ends in "…".
-                  className="w-full sm:w-auto sm:max-w-96 sm:min-w-56"
-                  size="field"
-                  shape="pill"
-                  title={pickedLabel}
-                >
-                  <SelectValue placeholder="Unavailable model">
-                    {value.taskModel === TASK_MODEL_UNSET && fallbackName ? (
-                      // A phone's full-width trigger (16px text) can't fit
-                      // the model's name as well: the list and the title
-                      // name it.
-                      <>
-                        <span className="truncate sm:hidden">Not set</span>
-                        <span className="hidden truncate sm:block">
-                          {unsetLabel}
-                        </span>
-                      </>
-                    ) : undefined}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent fit>
-                  <SelectItem value={TASK_MODEL_UNSET}>
-                    <span className="truncate">{unsetLabel}</span>
-                  </SelectItem>
-                  {models.models.map((m) => (
-                    <SelectItem
-                      key={m.id}
-                      value={m.id}
-                      suffix={m.id === refusedId ? '· key refused' : undefined}
-                    >
-                      <span className="truncate">{m.display_name}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </SettingRow>
+              defaultShortLabel="Not set"
+              groups={[{ models: models.models }]}
+              // A model whose provider refused its key on its last task:
+              // marked in the list, and named in a warning while it runs.
+              runningModelId={models.task_model_id ?? models.fallback_model_id}
+              refusedModelId={refusedModel(models.task_model_error)}
+              unavailableValue="Unavailable model"
+              refusedSuffix="· key refused"
+              unavailableNote="The stored task model can't run (it was disabled or removed), so the fallback runs. It runs again if it comes back: pick Not set or another model and save to replace it."
+              refusedNote={(model) =>
+                `${model} couldn't run its last task: its provider refused the API key. Check the key, or pick another model.`
+              }
+            />
           </SettingRows>
         </section>
       </div>
