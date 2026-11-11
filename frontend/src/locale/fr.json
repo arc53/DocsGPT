@@ -2811,7 +2811,8 @@
       "serverError": "Veuillez réessayer plus tard. Nous vous prions de nous excuser pour la gêne occasionnée.",
       "clientDisconnect": "La réponse s’est arrêtée avant de produire quoi que ce soit. Réessayez.",
       "timeLimit": "Arrêté : limite de temps atteinte. La progression a été enregistrée.",
-      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une."
+      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une.",
+      "noAnswer": "Le modèle a continué à réfléchir sans commencer de réponse, il a donc été arrêté. Réessayez ou choisissez un autre modèle."
     },
     "reasoning": "Raisonnement",
     "wikiWrite": {

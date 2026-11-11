@@ -2811,7 +2811,8 @@
       "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
       "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo.",
       "timeLimit": "Detenido: límite de tiempo alcanzado. El progreso se ha guardado.",
-      "stopped": "Detuviste esta respuesta antes de que escribiera nada. Inténtalo de nuevo para obtener una."
+      "stopped": "Detuviste esta respuesta antes de que escribiera nada. Inténtalo de nuevo para obtener una.",
+      "noAnswer": "El modelo siguió razonando sin empezar a responder, así que se detuvo. Inténtalo de nuevo o elige otro modelo."
     },
     "reasoning": "Razonamiento",
     "wikiWrite": {
