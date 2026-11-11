@@ -553,6 +553,25 @@ def _check_list_method(name: str, items: list, args: tuple) -> tuple:
     return args
 
 
+def _filter_arg(args: tuple, kwargs: Mapping[str, Any], position: int, keyword: str, default: Any = None) -> Any:
+    """A filter call's argument: the positional one at ``position`` (the value is 0), else ``keyword``."""
+    return args[position] if len(args) > position else kwargs.get(keyword, default)
+
+
+# Filters checked by their value and sizes: the check, called with the
+# value and then these arguments, each ``(position, keyword[, default])``
+# for :func:`_filter_arg`. ``join``, ``format`` and ``sum`` have their own.
+_FILTER_CHECKS: Dict[str, tuple] = {
+    "center": (lambda _value, width: _check_width(width), ((1, "width"),)),
+    "indent": (_check_indent, ((1, "width"),)),
+    "wordwrap": (_check_wordwrap, ((1, "width", 79), (3, "wrapstring"))),
+    "tojson": (_check_json_indent, ((1, "indent"),)),
+    "replace": (_check_replace, ((1, "old"), (2, "new"), (3, "count"))),
+    "batch": (lambda _value, size: _check_width(size), ((1, "linecount"),)),
+    "slice": (lambda _value, size: _check_width(size), ((1, "slices"),)),
+}
+
+
 def _filter_guard(name: str, args: tuple, kwargs: Mapping[str, Any], environment: Any) -> tuple:
     """Refuse a filter call that would build an oversized string before it runs.
 
@@ -567,34 +586,23 @@ def _filter_guard(name: str, args: tuple, kwargs: Mapping[str, Any], environment
         _check_text(args[0])
     if name == "join" and args:
         value = args[0] if isinstance(args[0], (str, list, tuple)) else list(args[0])
-        attribute = args[2] if len(args) > 2 else kwargs.get("attribute")
-        separator = args[1] if len(args) > 1 else kwargs.get("d", "")
+        attribute = _filter_arg(args, kwargs, 2, "attribute")
+        separator = _filter_arg(args, kwargs, 1, "d", "")
         items = list(value)
         if attribute is not None:
             getter = make_attrgetter(environment, attribute)
             items = [getter(item) for item in items]
         _check_joined(items, separator)
         return (value, *args[1:])
-    if name == "center":
-        _check_width(args[1] if len(args) > 1 else kwargs.get("width"))
-    elif name == "indent" and args:
-        _check_indent(args[0], args[1] if len(args) > 1 else kwargs.get("width"))
-    elif name == "wordwrap" and args:
-        _check_wordwrap(
-            args[0],
-            args[1] if len(args) > 1 else kwargs.get("width", 79),
-            args[3] if len(args) > 3 else kwargs.get("wrapstring"),
-        )
-    elif name == "tojson" and args:
-        _check_json_indent(args[0], args[1] if len(args) > 1 else kwargs.get("indent"))
-    elif name == "format" and args and isinstance(args[0], str):
+    if name == "format" and args and isinstance(args[0], str):
         _check_percent_format(args[0], args[1:] if len(args) > 1 else dict(kwargs) if kwargs else ())
-    elif name == "replace" and args:
-        _check_replace(*args, **{k: v for k, v in kwargs.items() if k in ("old", "new", "count")})
     elif name == "sum" and args:
-        _check_sum(environment, *args, **{k: v for k, v in kwargs.items() if k in ("attribute", "start")})
-    elif name in ("batch", "slice") and len(args) > 1:
-        _check_width(args[1])
+        _check_sum(
+            environment, args[0], _filter_arg(args, kwargs, 1, "attribute"), _filter_arg(args, kwargs, 2, "start", 0)
+        )
+    elif name in _FILTER_CHECKS and args:
+        check, params = _FILTER_CHECKS[name]
+        check(args[0], *(_filter_arg(args, kwargs, *param) for param in params))
     return args
 
 

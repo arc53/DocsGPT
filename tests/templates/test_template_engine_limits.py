@@ -288,6 +288,8 @@ ARGUMENT_GUARDS = [
     ("{{ ([[1]] * 100) | tojson(10) }}", "indented JSON too long"),
     ('{{ [1] | batch(5000, "x") | list | length }}', "width too large"),
     ("{{ [1] | slice(5000) | list | length }}", "width too large"),
+    ('{{ [1] | batch(linecount=5000, fill_with="x") | list | length }}', "width too large"),
+    ("{{ [1] | slice(slices=5000) | list | length }}", "width too large"),
     ('{{ ("x" * 100).translate({120: "y" * 100}) }}', "translated text too long"),
     ('{% set a = [] %}{% for i in range(2000) %}{{ a.append(i) or "" }}{% endfor %}', "list too long"),
     ('{% set a = [] %}{% for i in range(2000) %}{{ a.insert(0, i) or "" }}{% endfor %}', "list too long"),
