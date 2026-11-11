@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from docsgpt.drafter.catalog import is_template, NAME_CHARS, Workspace
 from docsgpt.drafter.composer_ref import PERSONA_MARKER, persona_frame
@@ -61,7 +61,15 @@ from docsgpt.drafter.prompt_rules import (
     template_parses,
     tool_variables_problem,
 )
-from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
+from docsgpt.drafter.recipe import (
+    BadDraftRequest,
+    clean_id,
+    DraftRequest,
+    MESSAGE_MAX,
+    ProposalInvalid,
+    Recipe,
+    register,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +100,6 @@ class PromptTooLong(BadDraftRequest):
         self.limit = limit
 MAX_EDITS = 20
 REASON_MAX = 300
-MESSAGE_MAX = 600
 MAX_WARNINGS = 3
 WARNING_MAX = 300
 MAX_ASSUMPTIONS = 3
@@ -108,8 +115,6 @@ ASK_PREFILL_MAX = 200
 #: Most agents using the prompt the review reads, and tool names listed per agent.
 MAX_AGENTS = 20
 MAX_AGENT_TOOLS = 15
-
-_ID_CHARS = 100
 
 #: ``checks`` codes, in the order they are reported.
 CHECK_TO_TEMPLATE = "to_template"
@@ -155,7 +160,6 @@ def parse_context(raw: Any) -> dict:
     prompt = raw.get("prompt")
     if not isinstance(prompt, dict):
         raise BadDraftRequest("context.prompt must be an object")
-    prompt_id = prompt.get("id")
     raw_content = prompt.get("content")
     if isinstance(raw_content, str) and len(raw_content) > RAW_READ_MAX:
         raise PromptTooLong(READ_MAX)
@@ -169,7 +173,7 @@ def parse_context(raw: Any) -> dict:
     return {
         "mode": mode,
         "prompt": {
-            "id": prompt_id.strip()[:_ID_CHARS] if isinstance(prompt_id, str) and prompt_id.strip() else None,
+            "id": clean_id(prompt.get("id")),
             "name": clean_text(prompt.get("name"), NAME_MAX),
             "content": content,
         },
@@ -745,36 +749,35 @@ def apply_numbered_edits(content: str, edits: list[dict]) -> tuple[list[dict], s
     return out, result, ids
 
 
-def _check_text(result: str, previous: str, req: DraftRequest, *, edited: bool = True) -> None:
-    """Template syntax and tool-variable rules for a drafted prompt text.
+def check_drafted_prompt(result: str, previous: str, req: DraftRequest, *, edited: bool,
+                         ask_instead: str = "Ask the user for it", earlier: Sequence[str] = ()) -> None:
+    """The rules every drafted prompt text follows, in the agent and prompt recipes alike.
 
-    Edits to a prompt whose text didn't parse before (a template with a stray
-    ``{%``) leave the user's own mistake in place, so it isn't blamed on them.
-    A whole new text is the model's alone: it is refused whenever it doesn't parse.
+    The template syntax must parse. Edits to a prompt whose text didn't parse
+    before (a template with a stray ``{%``) leave the user's own mistake in
+    place, so it isn't blamed on them; a whole new text is the model's alone:
+    it is refused whenever it doesn't parse. It adds no tool variables the user
+    didn't ask for, and edits never add a blank or drop the retrieved
+    documents' marker (``prompt_checks.edit_problems``).
 
     Args:
         result: The drafted text.
         previous: The prompt's text before the change; tool variables already in it stay allowed.
         req: The draft request, whose messages may ask for tool variables.
         edited: Whether ``result`` is ``previous`` with edits applied, rather than a whole new text.
+        ask_instead: What an edit that needs a detail only the user knows does instead of a blank.
+        earlier: What the user wrote before this conversation, which counts as asking for tool variables too.
 
     Raises:
-        ProposalInvalid: The text doesn't parse, or adds tool variables the user didn't ask for.
+        ProposalInvalid: The text doesn't parse, adds tool variables the user didn't ask for, or (edits only) adds
+            a blank or drops the documents' marker.
     """
     if not template_parses(result) and (not edited or not previous or template_parses(previous)):
         raise ProposalInvalid([TEMPLATE_PROBLEM])
-    problem = tool_variables_problem(result, previous, req)
+    problem = tool_variables_problem(result, previous, req, earlier)
     if problem:
         raise ProposalInvalid([problem])
-
-
-def _check_edits(result: str, previous: str, mode: str) -> None:
-    """Edits never add a blank or drop the retrieved documents' marker (``prompt_checks.edit_problems``).
-
-    Raises:
-        ProposalInvalid: They do.
-    """
-    problems = edit_problems(previous, result, _ASK_INSTEAD[mode])
+    problems = edit_problems(previous, result, ask_instead) if edited else []
     if problems:
         raise ProposalInvalid(problems)
 
@@ -906,8 +909,7 @@ def _review(args: dict, req: DraftRequest, ws: Workspace, message: str) -> dict:
     current = req.context["prompt"]["content"]
     raw_edits = [e for e in args.get("edits") or [] if isinstance(e, dict)]
     edits, result, edit_ids = apply_numbered_edits(current, raw_edits)
-    _check_text(result, current, req)
-    _check_edits(result, current, "review")
+    check_drafted_prompt(result, current, req, edited=True, ask_instead=_ASK_INSTEAD["review"])
     findings = _model_findings(args, req, ws, edit_ids, len(raw_edits))
     reported = {f["check"] for f in findings}
     server = []
@@ -946,8 +948,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         return _review(args, req, ws, message)
     if req.context["mode"] == "improve":
         edits, result = apply_edits(current, [e for e in args.get("edits") or [] if isinstance(e, dict)])
-        _check_text(result, current, req)
-        _check_edits(result, current, "improve")
+        check_drafted_prompt(result, current, req, edited=True, ask_instead=_ASK_INSTEAD["improve"])
         return {
             "mode": "improve",
             "message": message,
@@ -969,7 +970,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         problems.append(f"The prompt can be at most {CONTENT_MAX} characters.")
     if problems:
         raise ProposalInvalid(problems)
-    _check_text(content, current, req, edited=False)
+    check_drafted_prompt(content, current, req, edited=False)
     return {
         "mode": "write",
         "message": message,

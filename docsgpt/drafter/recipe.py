@@ -13,6 +13,25 @@ from typing import Any, Callable, Optional, Union
 
 from docsgpt.drafter.catalog import Workspace
 
+#: Characters of an id a request sends (an agent, a prompt, a source).
+ID_CHARS = 100
+#: Characters of a proposal's message to the user.
+MESSAGE_MAX = 600
+
+
+def clean_id(value: Any) -> Optional[str]:
+    """An id from a request's context, stripped and cut to :data:`ID_CHARS`.
+
+    Args:
+        value: The raw value.
+
+    Returns:
+        The id, or None when ``value`` isn't a string with something besides spaces.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()[:ID_CHARS]
+
 
 class BadDraftRequest(ValueError):
     """The request can't be drafted (unknown recipe, malformed context); the message is safe to show."""

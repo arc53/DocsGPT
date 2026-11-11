@@ -38,7 +38,15 @@ from docsgpt.analytics.config import (
 from docsgpt.analytics.insights import MIN_SAMPLE
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.fencing import clean_text
-from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
+from docsgpt.drafter.recipe import (
+    BadDraftRequest,
+    clean_id,
+    DraftRequest,
+    MESSAGE_MAX,
+    ProposalInvalid,
+    Recipe,
+    register,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +71,8 @@ MEASURE_FEATURE = "drafter_topics"
 #: Most suggestions kept, most left-out entries, and text caps.
 MAX_SUGGESTIONS = 8
 MAX_LEFT_OUT = 10
-MESSAGE_MAX = 600
 NOTE_MAX = 300
 REASON_MAX = 300
-_ID_CHARS = 100
 
 
 # ---------------------------------------------------------------------------
@@ -190,10 +196,10 @@ def parse_context(raw: Any) -> dict:
         BadDraftRequest: No agent id: suggestions need a saved agent.
     """
     raw = raw if isinstance(raw, dict) else {}
-    agent_id = raw.get("agent_id")
-    if not isinstance(agent_id, str) or not agent_id.strip():
+    agent_id = clean_id(raw.get("agent_id"))
+    if not agent_id:
         raise BadDraftRequest("context.agent_id is required")
-    return {"agent_id": agent_id.strip()[:_ID_CHARS]}
+    return {"agent_id": agent_id}
 
 
 def editable_agent(conn: Connection, user_id: str, agent_id: str) -> dict:

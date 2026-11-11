@@ -49,15 +49,27 @@ from docsgpt.drafter.prompt_rules import (
     hand_off_rule,
     HAND_OFF_OPTIONS,
     no_placeholders,
-    TEMPLATE_PROBLEM,
-    template_parses,
-    tool_variables_problem,
 )
-from docsgpt.drafter.prompt_checks import edit_problems
 from docsgpt.drafter.prompt_recipe import (
-    apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE, PromptTooLong, RAW_READ_MAX, READ_MAX,
+    apply_edits,
+    CHECK_TO_PERSONA,
+    check_drafted_prompt,
+    checks_for,
+    PROMPT_RECIPE,
+    PromptTooLong,
+    RAW_READ_MAX,
+    READ_MAX,
 )
-from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
+from docsgpt.drafter.recipe import (
+    BadDraftRequest,
+    clean_id,
+    DraftRequest,
+    ID_CHARS,
+    MESSAGE_MAX,
+    ProposalInvalid,
+    Recipe,
+    register,
+)
 from docsgpt.drafter.runner import question_rounds
 from docsgpt.drafter import topics_recipe
 from docsgpt.drafter.topics_recipe import TopicsWorkspace
@@ -100,7 +112,6 @@ MAX_REFS = 30
 LIMIT_MAX = 1_000_000_000
 #: Most Insights topics one proposal adds.
 MAX_NEW_TOPICS = 4
-MESSAGE_MAX = 600
 REASON_SUMMARY_MAX = 200
 MAX_REASONS = 10
 MAX_NOTES = 3
@@ -110,7 +121,6 @@ NOTE_MAX = 300
 _FORM_TEXT = {"name": 200, "description": 2000, "agent_type": 40}
 _FORM_MAX_REFS = 200
 _FORM_MAX_NAMES = 100
-_ID_CHARS = 100
 #: Most of the user's messages from finished steps a request sends, and characters of one.
 MAX_EARLIER = 12
 EARLIER_CHARS = 2000
@@ -220,12 +230,12 @@ class AgentWorkspace(Workspace):
 
 
 def _ids(value: Any) -> list[str]:
-    """Distinct non-empty ids of a form list, each cut to ``_ID_CHARS``, at most ``_FORM_MAX_REFS`` read."""
+    """Distinct non-empty ids of a form list, each cleaned (:func:`clean_id`), at most ``_FORM_MAX_REFS`` read."""
     if not isinstance(value, list):
         return []
     out: list[str] = []
     for item in value[:_FORM_MAX_REFS]:
-        ref = item.strip()[:_ID_CHARS] if isinstance(item, str) else ""
+        ref = clean_id(item)
         if ref and ref not in out:
             out.append(ref)
     return out
@@ -325,8 +335,7 @@ def parse_context(raw: Any) -> dict:
     form: dict[str, Any] = {key: clean_text(form_raw.get(key), cap) for key, cap in _FORM_TEXT.items()}
     form["sources"] = _ids(form_raw.get("sources"))
     form["tools"] = _ids(form_raw.get("tools"))
-    prompt_id = form_raw.get("prompt_id")
-    form["prompt_id"] = prompt_id.strip()[:_ID_CHARS] if isinstance(prompt_id, str) and prompt_id.strip() else None
+    form["prompt_id"] = clean_id(form_raw.get("prompt_id"))
     draft = form_raw.get("prompt_draft")
     form["prompt_draft"] = None
     if isinstance(draft, dict) and isinstance(draft.get("content"), str):
@@ -337,23 +346,19 @@ def parse_context(raw: Any) -> dict:
             raise PromptTooLong(READ_MAX)
         form["prompt_draft"] = {"name": clean_text(draft.get("name"), PROMPT_NAME_MAX), "content": content}
         # The saved prompt whose unsaved changes the view holds; none for a new prompt.
-        draft_id = draft.get("id")
-        if isinstance(draft_id, str) and draft_id.strip():
-            form["prompt_draft"]["id"] = draft_id.strip()[:_ID_CHARS]
+        draft_id = clean_id(draft.get("id"))
+        if draft_id:
+            form["prompt_draft"]["id"] = draft_id
     starters = form_raw.get("starters")
     form["starters"] = [clean_text(s, 300) for s in starters[:10] if isinstance(s, str) and s.strip()] \
         if isinstance(starters, list) else []
     form.update(_parse_policy(form_raw))
     earlier = raw.get("earlier") if isinstance(raw.get("earlier"), list) else []
-    agent_id = raw.get("agent_id")
     starter = raw.get("starter")
-    conversation_id = raw.get("conversation_id")
-    conversation_id = conversation_id.strip()[:_ID_CHARS] \
-        if step is None and isinstance(conversation_id, str) and conversation_id.strip() else None
-    message_id = raw.get("message_id")
+    conversation_id = clean_id(raw.get("conversation_id")) if step is None else None
     return {
         "skip_questions": raw.get("skip_questions") is True,
-        "agent_id": agent_id.strip()[:_ID_CHARS] if isinstance(agent_id, str) and agent_id.strip() else None,
+        "agent_id": clean_id(raw.get("agent_id")),
         "step": step,
         "starter": starter if isinstance(starter, str) and starter in STARTERS else None,
         "earlier": _earlier(earlier),
@@ -362,8 +367,7 @@ def parse_context(raw: Any) -> dict:
         "gap": _parse_gap(raw.get("gap")) if step is None else None,
         "conversation_id": conversation_id,
         # The Logs row the user clicked, read only inside that conversation.
-        "message_id": message_id.strip()[:_ID_CHARS]
-        if conversation_id and isinstance(message_id, str) and message_id.strip() else None,
+        "message_id": clean_id(raw.get("message_id")) if conversation_id else None,
     }
 
 
@@ -591,33 +595,42 @@ def _topic_room(form: dict, ws: AgentWorkspace) -> dict[str, int]:
     return {"free": room["one_per_question_free"], "max": room["one_per_question_max"]}
 
 
+def _safety_unavailable(form: dict, ws: AgentWorkspace) -> dict[str, Optional[str]]:
+    """Why each safety part (:data:`SAFETY_FIELDS`) can't be set for this caller on this instance; None when it can.
+
+    Limits and guardrails need ``edit_policy`` (``no_access``); guardrails also a menu (``off_on_this_instance``).
+    Topics need Insights on here and for the agent, no Suggest from conversations, and room.
+    """
+    if not ws.insights:
+        topics = "off_on_this_instance"
+    elif not form["analytics"]["enabled"]:
+        topics = "turned_off_for_this_agent"
+    elif ws.topics_from_conversations:
+        topics = "suggest_from_conversations"
+    elif not _topic_room(form, ws)["max"]:
+        topics = "no_room"
+    else:
+        topics = None
+    if not ws.policy_editable:
+        return {"limits": "no_access", "guardrails": "no_access", "analytics": topics}
+    return {"limits": None, "guardrails": None if ws.guardrail_menu else "off_on_this_instance", "analytics": topics}
+
+
 def _safety_options(form: dict, ws: AgentWorkspace) -> dict:
     """What the safety step may set for this caller on this instance, for the model."""
-    no_access = {"available": False, "why": "no_access"}
+    off = {part: {"available": False, "why": why} for part, why in _safety_unavailable(form, ws).items() if why}
     defaults = settings.DEFAULT_AGENT_LIMITS
-    limits = {
+    limits = off.get("limits") or {
         "available": True,
         "recommended": {"requests": defaults["request_limit"], "tokens": defaults["token_limit"]},
-    } if ws.policy_editable else no_access
-    if not ws.policy_editable:
-        guardrails = no_access
-    elif not ws.guardrail_menu:
-        guardrails = {"available": False, "why": "off_on_this_instance"}
-    else:
-        guardrails = {"available": True, "checks": [
-            {"id": check, "controls": [{"stage": stage, "action": action} for stage, action in GUARDRAIL_MENU[check]]}
-            for check in ws.guardrail_menu
-        ]}
-    room = _topic_room(form, ws)
-    if not ws.insights:
-        topics = {"available": False, "why": "off_on_this_instance"}
-    elif not form["analytics"]["enabled"]:
-        topics = {"available": False, "why": "turned_off_for_this_agent"}
-    elif ws.topics_from_conversations:
-        topics = {"available": False, "why": "suggest_from_conversations"}
-    elif not room["max"]:
-        topics = {"available": False, "why": "no_room"}
-    else:
+    }
+    guardrails = off.get("guardrails") or {"available": True, "checks": [
+        {"id": check, "controls": [{"stage": stage, "action": action} for stage, action in GUARDRAIL_MENU[check]]}
+        for check in ws.guardrail_menu
+    ]}
+    topics = off.get("analytics")
+    if topics is None:
+        room = _topic_room(form, ws)
         topics = {"available": True, "room": room["free"]}
         if room["max"] > room["free"]:
             topics["room_pushing_folders_out"] = room["max"] - room["free"]
@@ -780,10 +793,7 @@ repeat in a note what the message, a reason or a gap's needs already say. Never 
 review or save the draft: the panel shows that."""
 
 GUIDED = """You are building a new agent with the user in four steps, in this order:
-- basics: name, description.
-- knowledge: sources, tools, agent_type.
-- prompt: prompt, starters.
-- safety: limits, guardrails, analytics.
+""" + "\n".join(f"- {step}: {', '.join(STEP_FIELDS[step])}." for step in STEPS) + """
 Each step is its own short conversation; the user moves on when they are happy with it.
 - Fast path: also set a later step's fields (never safety's) when the user's words name or clearly imply them, \
 for example "answer from the Help Center" (sources) or "use the strict prompt" (prompt). Otherwise leave later \
@@ -1126,7 +1136,7 @@ def _refs(
         if not ref or ref in out:
             continue
         if ref not in allowed:
-            dropped.append({"field": field_name, "id": ref[:_ID_CHARS], "reason": "not_found"})
+            dropped.append({"field": field_name, "id": ref[:ID_CHARS], "reason": "not_found"})
             missing += 1
             continue
         out.append(ref)
@@ -1157,14 +1167,9 @@ def _new_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> dict:
         problems.append(f"The prompt can be at most {PROMPT_CONTENT_MAX} characters.")
     if problems:
         raise ProposalInvalid(problems)
-    if not template_parses(content):
-        raise ProposalInvalid([TEMPLATE_PROBLEM])
-    _, current = _current_prompt(req.context["form"], ws)
-    problem = tool_variables_problem(content, current, req, req.context["earlier"])
-    if problem:
-        raise ProposalInvalid([problem])
+    replaced, current = _current_prompt(req.context["form"], ws)
+    check_drafted_prompt(content, current, req, edited=False, earlier=req.context["earlier"])
     checks = checks_for(current, content)
-    replaced, _ = _current_prompt(req.context["form"], ws)
     if replaced in BUILTIN_PROMPTS:
         # A built-in reads as a template only once composed: plain text in its place keeps DocsGPT's sections.
         checks = [check for check in checks if check != CHECK_TO_PERSONA]
@@ -1189,14 +1194,7 @@ def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict
     edits, result = apply_edits(current, [e for e in raw.get("edits") or [] if isinstance(e, dict)])
     if not edits:
         return None
-    if not template_parses(result) and template_parses(current):
-        raise ProposalInvalid([TEMPLATE_PROBLEM])
-    problem = tool_variables_problem(result, current, req, req.context["earlier"])
-    if problem:
-        raise ProposalInvalid([problem])
-    problems = edit_problems(current, result, "Ask the user for it")
-    if problems:
-        raise ProposalInvalid(problems)
+    check_drafted_prompt(result, current, req, edited=True, earlier=req.context["earlier"])
     # The edits fit the prompt's whole saved text (or the view's unsaved text), the text the form applies them to.
     return {"kind": "edit", "id": target, "edits": edits, "checks": checks_for(current, result)}
 
@@ -1272,11 +1270,7 @@ def _topics(raw: Any, form: dict, ws: AgentWorkspace, notes: list[str]) -> list[
     items = [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
     if len(items) > MAX_NEW_TOPICS:
         raise ProposalInvalid([f"Suggest at most {MAX_NEW_TOPICS} topics."])
-    # A hidden folder's name is free: the owner can bring that subject back as a topic of their own.
-    hidden = {name.lower() for name in form["analytics"]["hidden_folders"]}
-    taken = {name.lower() for name in form["analytics"]["topics"]} | {
-        f["name"].lower() for f in ws.folders if f["name"].lower() not in hidden
-    }
+    taken = set(_topic_view(form, ws).taken_names())
     out: list[dict] = []
     problems: list[str] = []
     for item in items:
@@ -1321,12 +1315,7 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
             fix.
     """
     form = req.context["form"]
-    available = {
-        "limits": ws.policy_editable,
-        "guardrails": ws.policy_editable and bool(ws.guardrail_menu),
-        "analytics": ws.insights and form["analytics"]["enabled"] and not ws.topics_from_conversations
-        and _topic_room(form, ws)["max"] > 0,
-    }
+    available = {part: why is None for part, why in _safety_unavailable(form, ws).items()}
     wanted = []
     for key in SAFETY_FIELDS:
         if key not in raw_fields:
@@ -1767,7 +1756,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             if prompt_id in allowed or prompt_id in BUILTIN_PROMPTS:
                 fields["prompt"] = {"kind": "existing", "id": prompt_id}
             else:
-                dropped.append({"field": "prompt", "id": prompt_id[:_ID_CHARS], "reason": "not_found"})
+                dropped.append({"field": "prompt", "id": prompt_id[:ID_CHARS], "reason": "not_found"})
     if step == "safety":
         _policy(raw_fields, req, ws, fields, dropped, server_notes)
     elif insights and "guardrails" in raw_fields:
