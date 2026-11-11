@@ -459,8 +459,26 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
     return standalone
 
 
-def _approvals(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
-    """Paused turns waiting for the user to approve a tool call, soonest to expire first."""
+# The pause each kind of "needs you" item waits on.
+_PAUSE_TYPES = {"approval": "awaiting_approval", "question": "awaiting_answer"}
+
+
+def _paused_turns(conn: Connection, user_id: str, kind: str) -> List[Dict[str, Any]]:
+    """Paused turns waiting on the user, soonest to expire first.
+
+    An ``approval`` waits for the user to approve a tool call and lists the
+    ``tools`` waiting; a ``question`` waits for answers to the assistant's
+    questions and has no ``tools``. A turn paused on both is listed under each.
+
+    Args:
+        conn: A read-only connection.
+        user_id: Whose turns.
+        kind: ``approval`` or ``question``.
+
+    Returns:
+        ``kind`` items, ``id`` ``<kind>:<conversation_id>``.
+    """
+    pause_type = _PAUSE_TYPES[kind]
     rows = query_rows(
         conn,
         """
@@ -474,75 +492,18 @@ def _approvals(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
           AND p.expires_at > now()
           AND EXISTS (
               SELECT 1 FROM json_array_elements(p.pending_tool_calls) e
-              WHERE e ->> 'pause_type' = 'awaiting_approval'
+              WHERE e ->> 'pause_type' = :pause_type
           )
         ORDER BY p.expires_at ASC
         LIMIT :limit
         """,
-        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+        {"user_id": user_id, "pause_type": pause_type, "limit": PER_KIND_LIMIT},
     )
     out = []
     for r in rows:
-        calls = r.get("pending_tool_calls") or []
-        tools = []
-        for call in calls if isinstance(calls, list) else []:
-            if isinstance(call, dict) and call.get("pause_type") == "awaiting_approval":
-                name = call.get("tool_name") or call.get("name")
-                if name and name not in tools:
-                    tools.append(name)
-        out.append(
-            {
-                "kind": "approval",
-                "id": f"approval:{r['conversation_id']}",
-                "conversation_id": _str(r["conversation_id"]),
-                "title": r.get("conversation_name") or None,
-                "agent_id": _str(r.get("agent_id")),
-                "agent_name": r.get("agent_name"),
-                "tools": tools,
-                "created_at": _iso(r.get("created_at")),
-                "expires_at": _iso(r.get("expires_at")),
-            }
-        )
-    return out
-
-
-def _questions(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
-    """Paused turns waiting for the user to answer the assistant's questions, soonest to expire first.
-
-    Shaped like an approval (``_approvals``) without ``tools``; a turn paused
-    on both an approval and questions is listed under each.
-
-    Args:
-        conn: A read-only connection.
-        user_id: Whose turns.
-
-    Returns:
-        ``question`` items, ``id`` ``question:<conversation_id>``.
-    """
-    rows = query_rows(
-        conn,
-        """
-        SELECT p.conversation_id, p.created_at, p.expires_at,
-               c.name AS conversation_name, c.agent_id, a.name AS agent_name
-        FROM pending_tool_state p
-        JOIN conversations c ON c.id = p.conversation_id
-        LEFT JOIN agents a ON a.id = c.agent_id
-        WHERE p.user_id = :user_id
-          AND p.status = 'pending'
-          AND p.expires_at > now()
-          AND EXISTS (
-              SELECT 1 FROM json_array_elements(p.pending_tool_calls) e
-              WHERE e ->> 'pause_type' = 'awaiting_answer'
-          )
-        ORDER BY p.expires_at ASC
-        LIMIT :limit
-        """,
-        {"user_id": user_id, "limit": PER_KIND_LIMIT},
-    )
-    return [
-        {
-            "kind": "question",
-            "id": f"question:{r['conversation_id']}",
+        item: Dict[str, Any] = {
+            "kind": kind,
+            "id": f"{kind}:{r['conversation_id']}",
             "conversation_id": _str(r["conversation_id"]),
             "title": r.get("conversation_name") or None,
             "agent_id": _str(r.get("agent_id")),
@@ -550,8 +511,17 @@ def _questions(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
             "created_at": _iso(r.get("created_at")),
             "expires_at": _iso(r.get("expires_at")),
         }
-        for r in rows
-    ]
+        if kind == "approval":
+            calls = r.get("pending_tool_calls") or []
+            tools: List[str] = []
+            for call in calls if isinstance(calls, list) else []:
+                if isinstance(call, dict) and call.get("pause_type") == pause_type:
+                    name = call.get("tool_name") or call.get("name")
+                    if name and name not in tools:
+                        tools.append(name)
+            item["tools"] = tools
+        out.append(item)
+    return out
 
 
 def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
@@ -767,8 +737,8 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     running += _fold_workflows(running, _running_workflows(conn, user_id))
     running += _running_ingests(conn, user_id, markers)
 
-    approvals = _approvals(conn, user_id)
-    questions = _questions(conn, user_id)
+    approvals = _paused_turns(conn, user_id, "approval")
+    questions = _paused_turns(conn, user_id, "question")
     needs_you = approvals + questions + _autopaused_schedules(conn, user_id)
     up_next = _up_next(conn, user_id, current)
     # Knowledge syncs join the schedules: one batch per frequency due today.
