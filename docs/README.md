@@ -77,7 +77,8 @@ npm run dates:check
 Four files are generated, and so are the `lastUpdated` dates above. The
 ["Generated docs" workflow](../.github/workflows/generated-docs.yml) rebuilds them on `main`
 after every merge and opens a pull request with the result, so **don't change them in your
-own pull request**: CI fails if you do (`npm run generated:check`). They stay in the
+own pull request**: CI fails if you do (`npm run generated:check -- --base origin/main` is the
+same check). They stay in the
 repository because the site builds on Vercel without the backend.
 
 | File | Generated from | Command |

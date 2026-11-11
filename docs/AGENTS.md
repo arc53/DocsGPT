@@ -38,7 +38,7 @@ request on an existing page whose date changed.
 
 ## Generated files
 
-Don't change these in a pull request; CI fails if you do (`npm run generated:check`). The
+Don't change these in a pull request; CI fails if you do (`npm run generated:check -- --base origin/main` is the same check). The
 "Generated docs" workflow rebuilds them on `main` after the merge and opens its own pull
 request, which is the only place they change:
 

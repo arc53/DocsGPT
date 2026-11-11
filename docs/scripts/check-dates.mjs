@@ -106,6 +106,16 @@ if (baseIndex !== -1 && !base) {
   process.exit(2);
 }
 
+if (base) {
+  // An unreadable ref would make every page look new, and so pass.
+  try {
+    execFileSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd: DOCS_ROOT, stdio: 'pipe' });
+  } catch {
+    console.error(`--base ${base} is not a commit in this clone`);
+    process.exit(2);
+  }
+}
+
 // A day of slack, so an author ahead of UTC can date a page with their own today.
 const latest = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: DOCS_ROOT, encoding: 'utf8' }).trim();

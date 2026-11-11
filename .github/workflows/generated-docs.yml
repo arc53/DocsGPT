@@ -36,7 +36,9 @@ concurrency:
 
 jobs:
   regenerate:
-    if: github.repository == 'arc53/DocsGPT'
+    # Only from main: a manual run on another branch would push that branch's
+    # commits to generated-docs along with the generated files.
+    if: github.repository == 'arc53/DocsGPT' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -83,8 +85,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           paths=(docs/data docs/public/llms.txt docs/content)
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -z "$(git status --porcelain -- "${paths[@]}")" ]; then
             echo "The generated files and the page dates are current."
+            # A pull request left from an earlier run now holds files older than main.
+            if [ -n "$pr" ]; then
+              gh pr close "$pr" --comment "main at ${GITHUB_SHA::7} needs no generated changes, so this is out of date."
+            fi
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -110,7 +117,6 @@ jobs:
             cat "$RUNNER_TEMP/dates.txt"
             echo '```'
           } > "$RUNNER_TEMP/body.md"
-          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
           else
