@@ -37,7 +37,6 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { MetaLine } from '@/components/ui/meta-line';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -79,17 +78,9 @@ import {
   selectPrompts,
   setAgentFolders,
   setSelectedAgent,
-  setPrompts,
 } from '../preferences/preferenceSlice';
 import { canEditPrompt } from '../prompts/promptAccess';
-import { PromptView } from '../prompts/PromptView';
-import {
-  PromptConflictNotice,
-  PromptLeaveDialog,
-  PromptSaveButton,
-  promptSaveDisabled,
-} from '../prompts/PromptViewChrome';
-import { usePromptDetail } from '../prompts/usePromptDetail';
+
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { useMediaQuery } from '../hooks';
@@ -110,8 +101,6 @@ import {
   type DrafterSendOptions,
   useDrafterSession,
 } from '../drafter/useDrafterSession';
-import { usePromptReview } from '../drafter/usePromptReview';
-import type { PromptEdit } from '../drafter/promptDraft';
 import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
 import { joinList } from '../settings/insights/format';
@@ -170,7 +159,6 @@ import {
   type AgentDraftForm,
   type AgentImproveFocus,
   type AgentLimitsValue,
-  type PromptDraft,
   agentDraftContext,
   agentDraftValues,
   agentProposalSummary,
@@ -187,6 +175,7 @@ import {
   topicName,
 } from './agentDraft';
 import { useAgentBuild } from './useAgentBuild';
+import { useAgentPromptView } from './useAgentPromptView';
 import { useAgentProposals } from './useAgentProposals';
 import { useAgentGaps } from './useAgentGaps';
 import { IMPROVE_PARAMS, readImproveHandoff } from './improveLink';
@@ -601,363 +590,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     ? { value: pickedPromptId, label: pickedPromptLabel }
     : undefined;
 
-  /** Load the prompts the pickers read again (after a prompt is saved). */
-  const reloadPrompts = () =>
-    userService
-      .getPrompts(token)
-      .then((response: Response) => (response.ok ? response.json() : null))
-      .then((list: Prompt[] | null) => {
-        if (Array.isArray(list)) dispatch(setPrompts(list));
-      })
-      .catch((error: unknown) => console.error(error));
-
-  // The prompt view (decision 64): a prompt shown in place of the form, the
-  // form kept as it is under it. The drafter opens a prompt it wrote there
-  // (`drafter`: Use this prompt saves it and sets it on the agent); the
-  // picker's Add prompt and each row's Edit or View open one too (`picker`:
-  // Save). A history entry makes browser Back return to the form.
   const location = useLocation();
-  const [promptOrigin, setPromptOrigin] = useState<'drafter' | 'picker'>(
-    'picker',
-  );
-  // The prompt the drafter wrote and the user hasn't used or turned down
-  // yet: kept while the view is closed, so the drawer can open it again.
-  const [promptDraft, setPromptDraft] = useState<PromptDraft | null>(null);
-  // The prompt Use this prompt saved, with its text: a later draft while the
-  // agent still uses it updates it instead of creating another.
-  const usedPromptRef = useRef<{ prompt: Prompt; content: string } | null>(
-    null,
-  );
-  // Use this prompt went through and nothing was sent since: the drawer
-  // ends that turn with what it set and the step's Next.
-  const [promptUsed, setPromptUsed] = useState(false);
-  // Leaving the picker's view with unsaved text asks first.
-  const [leavingPrompt, setLeavingPrompt] = useState(false);
-  const promptDetail = usePromptDetail({
-    prompts,
-    onSaved: (saved) => handlePromptSaved(saved),
-  });
-  const promptViewOpen = promptDetail.target !== null;
-  const promptValues = useMemo(
-    () => ({ name: promptDetail.name, content: promptDetail.content }),
-    [promptDetail.name, promptDetail.content],
-  );
-  const { setName: setPromptName, setContent: setPromptContent } = promptDetail;
-  const promptDrafted = useDraftedFields<'name' | 'content'>(
-    promptValues,
-    (field, previous) =>
-      (field === 'name' ? setPromptName : setPromptContent)(
-        typeof previous === 'string' ? previous : '',
-      ),
-  );
-  // The drafter's changes to a saved prompt, under review in the view.
-  const promptReview = usePromptReview(setPromptContent, promptDrafted);
-  // The prompt text the drafter reads: the open view's once loaded, with the
-  // id of the saved prompt it shows (opened from a picker row, it needn't be
-  // the agent's), else the drafter's unused prompt.
-  const viewTargetId =
-    promptDetail.target?.kind === 'edit' ? promptDetail.target.prompt.id : null;
-  const draftOfPrompt: PromptDraft | null =
-    promptViewOpen && promptDetail.status === 'ready'
-      ? viewTargetId
-        ? { ...promptValues, id: viewTargetId }
-        : promptValues
-      : promptDraft;
-
-  const viewInHistory =
-    (location.state as { promptView?: boolean } | null)?.promptView === true;
-  // Back onto the view's entry with no view open (the page was left through
-  // the sidebar while it was): the entry goes too, so one more Back leaves
-  // the form rather than two.
-  useEffect(() => {
-    if (viewInHistory && !promptViewOpen) navigate(-1);
-    // Only as the form mounts.
-  }, []);
-  // Each opening pushes the history entry Back pops, unless one is there.
-  useEffect(() => {
-    if (!promptViewOpen || viewInHistory) return;
-    const state =
-      location.state && typeof location.state === 'object'
-        ? location.state
-        : {};
-    navigate(
-      {
-        pathname: location.pathname,
-        search: location.search,
-        hash: location.hash,
-      },
-      { state: { ...state, promptView: true } },
-    );
-  }, [promptDetail.key]);
-
-  /** Close the view and drop its history entry. */
-  const closePromptView = () => {
-    promptReview.clear();
-    promptDetail.close();
-    if (viewInHistory) navigate(-1);
-    // Back on the form where the prompt is picked, with focus there when
-    // the view's button that closed it (Use this prompt) took it along.
-    requestAnimationFrame(() => {
-      const picker = document.getElementById(promptPickerId);
-      picker?.scrollIntoView?.({ block: 'center' });
-      const active = document.activeElement;
-      if (!active || active === document.body || !active.isConnected)
-        picker?.focus({ preventScroll: true });
-    });
-  };
-
-  /**
-   * Back to the form (the crumb, or browser Back with `popped`): the
-   * drafter's prompt stays in the step unsaved; unsaved text of the
-   * picker's asks first. Returns whether the view closed (false while it
-   * asks).
-   */
-  const leavePromptView = (popped = false): boolean => {
-    if (promptOrigin === 'drafter') {
-      // An update of the prompt Use this prompt saved keeps its id.
-      setPromptDraft(draftOfPrompt ?? promptValues);
-      closePromptView();
-      return true;
-    }
-    if (promptDetail.dirty) {
-      // Browser Back already left the entry: put it back while asking, with
-      // the rest of what the entry held.
-      if (popped) {
-        const state =
-          location.state && typeof location.state === 'object'
-            ? location.state
-            : {};
-        navigate(
-          {
-            pathname: location.pathname,
-            search: location.search,
-            hash: location.hash,
-          },
-          { state: { ...state, promptView: true } },
-        );
-      }
-      setLeavingPrompt(true);
-      return false;
-    }
-    closePromptView();
-    return true;
-  };
-
-  const wasInHistoryRef = useRef(viewInHistory);
-  useEffect(() => {
-    const was = wasInHistoryRef.current;
-    wasInHistoryRef.current = viewInHistory;
-    if (was && !viewInHistory && promptViewOpen) leavePromptView(true);
-  }, [viewInHistory]);
-
-  /** Open a prompt from the picker: to edit, or to read when the role can't. */
-  const openPickerPrompt = (prompt: Prompt) => {
-    setPromptOrigin('picker');
-    promptDrafted.clear();
-    promptDetail.open(prompt);
-  };
-  /** The picker's Add prompt. */
-  const addPickerPrompt = () => {
-    setPromptOrigin('picker');
-    promptDrafted.clear();
-    promptDetail.add();
-  };
-  /** A copy of a prompt the caller can't change, with the drawer open on it. */
-  const improvePromptCopy = (prompt: Prompt) => {
-    setPromptOrigin('picker');
-    promptDrafted.clear();
-    setDrafterOpen(true);
-    void promptDetail.duplicate(prompt, { draft: true });
-  };
-
-  /**
-   * Which prompt the open view shows, so a turn's answer can tell it is
-   * still the one the turn read: the drafter's own (new, or the update of
-   * the prompt it used), a saved prompt, or one opening of a new prompt.
-   */
-  const promptViewIdentity = (): string | null => {
-    if (!promptDetail.target) return null;
-    if (promptOrigin === 'drafter') return 'drafter';
-    return promptDetail.target.kind === 'edit'
-      ? `edit:${promptDetail.target.prompt.id}`
-      : `new:${promptDetail.key}`;
-  };
-  // The prompt the running turn read (its prompt_draft): the open view's
-  // once loaded, else the drafter's own.
-  const sentPromptRef = useRef<string | null>('drafter');
-
-  /**
-   * Put a prompt the drafter wrote in the view: into the open one when it
-   * is still the prompt the turn read (a saved prompt opened from the
-   * picker keeps its name), or a new view, which updates the prompt this
-   * conversation already used while the agent still has it. A prompt the
-   * caller can only read is never written into (it has no Save): the new
-   * view takes its place. Another prompt opened since, with unsaved text,
-   * stays: the written one waits in the step. Each changed field is marked
-   * Drafted with undo.
-   */
-  const showWrittenPrompt = (written: PromptDraft) => {
-    if (
-      promptViewOpen &&
-      !promptDetail.readOnly &&
-      promptViewIdentity() === sentPromptRef.current
-    ) {
-      const keepsName =
-        promptOrigin === 'picker' && promptDetail.target?.kind === 'edit';
-      if (!keepsName && written.name && written.name !== promptDetail.name) {
-        promptDrafted.mark('name', promptDetail.name, written.name);
-        setPromptName(written.name);
-      }
-      if (written.content !== promptDetail.content) {
-        promptDrafted.mark('content', promptDetail.content, written.content);
-        setPromptContent(written.content);
-      }
-      return;
-    }
-    if (promptViewOpen && promptOrigin === 'picker' && promptDetail.dirty) {
-      setPromptDraft(written);
-      return;
-    }
-    const used = usedPromptRef.current;
-    const updates =
-      used && draftFormRef.current.prompt === used.prompt.id ? used : null;
-    const previous =
-      promptDraft ??
-      (updates
-        ? { name: updates.prompt.name, content: updates.content }
-        : { name: '', content: '' });
-    setPromptOrigin('drafter');
-    promptDetail.openWith(written, updates?.prompt);
-    if (written.name !== previous.name)
-      promptDrafted.mark('name', previous.name, written.name);
-    if (written.content !== previous.content)
-      promptDrafted.mark('content', previous.content, written.content);
-    setPromptDraft(written);
-  };
-
-  // Changes to a saved prompt wait for its text when the view loads it
-  // (`raw`: the proposal they came in).
-  const [pendingEdits, setPendingEdits] = useState<{
-    raw: object;
-    id: string;
-    edits: PromptEdit[];
-  } | null>(null);
-  // How many of a proposal's changes fit the text, for its summary.
-  const fittingRef = useRef(new WeakMap<object, number>());
-  /**
-   * Review the drafter's changes on the open prompt's text, those that fit
-   * it as the server reads it; the characters outside a change stay.
-   */
-  const reviewPromptEdits = (raw: object, edits: PromptEdit[]) => {
-    const fitting = promptReview.start(edits, promptDetail.content);
-    fittingRef.current.set(raw, fitting);
-    if (fitting === 0)
-      drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
-  };
-  // They belong to that opening: a view closed or showing another prompt
-  // drops them, so opening the prompt later shows no stale review. A load
-  // error keeps them for the view's Retry.
-  useEffect(() => {
-    if (!pendingEdits) return;
-    if (viewTargetId !== pendingEdits.id) setPendingEdits(null);
-    else if (promptDetail.status === 'ready') {
-      setPendingEdits(null);
-      reviewPromptEdits(pendingEdits.raw, pendingEdits.edits);
-    }
-  }, [pendingEdits, promptDetail.status, promptDetail.key, viewTargetId]);
-
-  /**
-   * Show the drafter's changes to the agent's own saved prompt: in its view
-   * when that is open, else it opens (loading its saved text and version)
-   * and the review starts once the text is in. The drawer stays the
-   * agent's; nothing is saved until the view's Save.
-   */
-  const showPromptEdits = (raw: object, id: string, edits: PromptEdit[]) => {
-    if (viewTargetId === id && promptDetail.status === 'ready') {
-      reviewPromptEdits(raw, edits);
-      return;
-    }
-    const prompt = prompts.find((item) => item.id === id);
-    if (!prompt) {
-      drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
-      return;
-    }
-    setPendingEdits({ raw, id, edits });
-    setPromptOrigin('picker');
-    promptDrafted.clear();
-    promptDetail.open(prompt);
-  };
-
-  /** Turn the drafter's unused prompt down: the agent keeps its prompt. */
-  const dropPromptDraft = () => {
-    if (promptViewOpen && promptOrigin === 'drafter') closePromptView();
-    setPromptDraft(null);
-    promptDrafted.clear();
-  };
-
-  /** Open the drafter's unused prompt again (the drawer's Open prompt). */
-  const reopenPromptDraft = () => {
-    if (!promptDraft) return;
-    const used = usedPromptRef.current;
-    setPromptOrigin('drafter');
-    promptDetail.openWith(
-      promptDraft,
-      used && draftFormRef.current.prompt === used.prompt.id
-        ? used.prompt
-        : undefined,
-    );
-  };
-
-  /**
-   * A save in the view went through: the pickers' list has it at once.
-   * The drafter's prompt is set on the agent (marked Drafted, undo puts the
-   * old one back) and the drawer says so; a prompt added from the picker is
-   * picked.
-   */
-  const handlePromptSaved = ({ id, name }: { id: string; name: string }) => {
-    const target = promptDetail.target;
-    // A copy kept after a conflict stands in for the agent's prompt it
-    // copied, as a new prompt does.
-    const created =
-      target?.kind === 'new' ||
-      (target?.kind === 'edit' &&
-        target.prompt.id !== id &&
-        draftFormRef.current.prompt === target.prompt.id);
-    const listed = prompts.find((prompt) => prompt.id === id);
-    dispatch(
-      setPrompts(
-        listed
-          ? prompts.map((prompt) =>
-              prompt.id === id ? { ...prompt, name } : prompt,
-            )
-          : [...prompts, { id, name, type: 'private' }],
-      ),
-    );
-    void reloadPrompts();
-    if (promptOrigin === 'drafter') {
-      usedPromptRef.current = {
-        prompt: listed ? { ...listed, name } : { id, name, type: 'private' },
-        content: promptDetail.content,
-      };
-      const previous = draftFormRef.current.prompt;
-      if (previous !== id) {
-        writeDraftField('prompt', id);
-        drafted.mark('prompt', previous, id);
-      }
-      setPromptDraft(null);
-      setPromptUsed(true);
-      const starters = drafted.isDrafted('starters')
-        ? cleanStarters(draftFormRef.current.starters).length
-        : 0;
-      drafterSession.addMessage(
-        starters > 0
-          ? t('drafter.agent.prompt.saved', { count: starters })
-          : t('drafter.agent.prompt.savedOnly'),
-      );
-    } else if (created) setAgent((prev) => ({ ...prev, prompt_id: id }));
-    promptDrafted.clear();
-    closePromptView();
-  };
 
   // Who added a source or tool, joined to its picker row's line.
   const sourceAddedBy = useCallback(
@@ -1249,6 +882,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [rawUserTools, attachedTools],
   );
 
+  // The prompt view: a prompt shown in place of the form, from the drafter
+  // or the Prompt picker.
+  const promptView = useAgentPromptView({
+    prompts,
+    pickerId: promptPickerId,
+    getForm: () => draftFormRef.current,
+    drafted,
+    writeField: writeDraftField,
+    addMessage: (text) => drafterSession.addMessage(text),
+    openDrafter: () => setDrafterOpen(true),
+  });
+  const {
+    open: promptViewOpen,
+    review: promptReview,
+    parked: promptDraft,
+  } = promptView;
+
   /** Bring the first drafted field into view, after the form has drawn it. */
   const scrollToDrafted = () =>
     requestAnimationFrame(() =>
@@ -1269,10 +919,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     onApplied: (proposal, raw, changed) => {
       const prompt = proposal.fields.prompt;
       if (prompt?.kind === 'new')
-        showWrittenPrompt({ name: prompt.name, content: prompt.content });
+        promptView.showWritten({ name: prompt.name, content: prompt.content });
       else if (prompt?.kind === 'edit')
-        showPromptEdits(raw, prompt.id, prompt.edits);
-      else if (prompt?.kind === 'existing') dropPromptDraft();
+        promptView.showEdits(raw, prompt.id, prompt.edits);
+      else if (prompt?.kind === 'existing') promptView.dropDraft();
       if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
       if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
       // An approval while the prompt it wrote is unused isn't the step's
@@ -1306,18 +956,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     recipe: 'agent',
     getContext: () => {
       // A new request ends an open review with the choices so far.
-      promptReview.finish(promptDetail.content);
-      sentPromptRef.current =
-        promptViewOpen && promptDetail.status === 'ready'
-          ? promptViewIdentity()
-          : 'drafter';
+      promptView.markSent();
       turnsRef.current += 1;
       proposals.markSent(draftFormRef.current);
       return agentDraftContext(
         agent.id || null,
         draftFormRef.current,
         buildRef.current.context(),
-        draftOfPrompt,
+        promptView.draft,
         improveFocusRef.current,
       );
     },
@@ -1347,7 +993,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         interpolation: { escapeValue: false },
       }),
     // Changes to a prompt under review, or on their way to it, come first.
-    hold: promptReview.review !== null || pendingEdits !== null,
+    hold: promptReview.review !== null || promptView.editsPending,
   });
   const buildRef = useRef(build);
   buildRef.current = build;
@@ -1372,7 +1018,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     send: (text: string, options?: DrafterSendOptions) => {
       if (text === finishSetupText) build.focus('safety');
       else if (buildable && drafterSession.items.length === 0) build.start();
-      setPromptUsed(false);
+      promptView.setUsed(false);
       drafterSession.send(text, options);
     },
   };
@@ -1387,7 +1033,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     setHandoffName(null);
     setPendingGap(null);
     proposals.clearRows();
-    setPromptUsed(false);
+    promptView.setUsed(false);
   };
 
   /**
@@ -1395,7 +1041,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * drafts the step with what it has, asking nothing.
    */
   const skipQuestions = () => {
-    setPromptUsed(false);
+    promptView.setUsed(false);
     drafterSession.send(t('drafter.prompt.skipMessage'), {
       hidden: true,
       skipQuestions: true,
@@ -1488,7 +1134,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   /** The step's Next: the saved prompt's turn end goes with the step. */
   const goNext = () => {
-    setPromptUsed(false);
+    promptView.setUsed(false);
     build.next();
   };
 
@@ -1541,10 +1187,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // are undecided (under review, or waiting for the saved text): Next would
   // drop them.
   const nextReady =
-    build.ready && !promptDraft && !promptReview.review && !pendingEdits;
+    build.ready &&
+    !promptDraft &&
+    !promptReview.review &&
+    !promptView.editsPending;
   // On a proposal it moves to the end of the turn once Use this prompt
   // saved it.
-  const nextOnProposal = nextReady && !promptUsed;
+  const nextOnProposal = nextReady && !promptView.used;
 
   const renderAgentProposal = (
     raw: unknown,
@@ -1557,7 +1206,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       proposal,
       t,
       appliedFields(raw),
-      raw && typeof raw === 'object' ? fittingRef.current.get(raw) : undefined,
+      promptView.fitting(raw),
     );
     const written = proposal.fields.prompt;
     // What a written or changed prompt does to the one it replaces first.
@@ -1610,7 +1259,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           shape="pill"
           onClick={() => {
             // Not while it asks about the prompt's unsaved text.
-            if (leavePromptView()) scrollToDrafted();
+            if (promptView.leave()) scrollToDrafted();
           }}
         >
           {t('drafter.agent.showInAgent')}
@@ -1678,7 +1327,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // What the drawer adds after the conversation: the saved prompt's turn
   // end (what it set, and the step's Next), or the prompt it wrote waiting
   // unsaved while the form shows (Open prompt, or keep the agent's prompt).
-  const drawerAfter = promptUsed ? (
+  const drawerAfter = promptView.used ? (
     <ProposalSummary
       rows={[
         {
@@ -1710,7 +1359,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             type="button"
             size="sm"
             shape="pill"
-            onClick={reopenPromptDraft}
+            onClick={promptView.reopenDraft}
           >
             {t('drafter.agent.prompt.open')}
           </Button>
@@ -1719,7 +1368,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             variant="outline"
             size="sm"
             shape="pill"
-            onClick={dropPromptDraft}
+            onClick={promptView.dropDraft}
           >
             {t('drafter.agent.prompt.keep', {
               name: pickedPromptLabel,
@@ -2081,10 +1730,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         improveFocusRef.current = {};
         setHandoffName(null);
         proposals.clearRows();
-        setPromptDraft(null);
-        setPromptUsed(false);
-        usedPromptRef.current = null;
-        promptDrafted.clear();
+        promptView.forget();
       }
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
@@ -2403,9 +2049,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // connectors) ask first while the form has unsaved changes.
   // The prompt view's unsaved text counts too.
   const leaveGuard = useLeaveGuard(
-    hasChanges ||
-      promptDraft !== null ||
-      (promptViewOpen && promptDetail.dirty),
+    hasChanges || promptDraft !== null || promptView.dirty,
   );
   // A broken connection signs in again in place, or on its connector page,
   // which is an exit like any other.
@@ -2468,7 +2112,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         // offered until limits and safety were ever set.
         improveSuggestions(draftForm, {
           safety: isSafetyUnset(draftForm) && !skippedSteps.includes('safety'),
-          promptDraft: !!draftOfPrompt,
+          promptDraft: !!promptView.draft,
         }).map((key) => ({
           key,
           Icon: IMPROVE_ICONS[key],
@@ -2551,7 +2195,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const gapsReason =
     !buildable && agentGaps && !agentGaps.available ? agentGaps.reason : null;
   const turnOnInsights = () => {
-    if (promptViewOpen && !leavePromptView()) return;
+    if (promptViewOpen && !promptView.leave()) return;
     // A phone's sheet covers the form the section is on.
     if (isMobile) setDrafterOpen(false);
     setInsightsOpenSignal((signal) => signal + 1);
@@ -2657,103 +2301,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     compactOnPhone: true,
   };
 
-  // The open prompt as the list has it (a built-in says so in the byline).
-  const viewTarget = promptDetail.target;
-  const viewSaved = viewTarget?.kind === 'edit' ? viewTarget.prompt : null;
-  const viewBuiltIn = viewSaved?.type === 'public';
-  // A prompt the caller can't change is improved as a copy, when they may
-  // copy it.
-  const viewImprovable =
-    !promptDetail.readOnly || (!!viewSaved && can(viewSaved, 'duplicate'));
-  const promptViewByline =
-    promptOrigin === 'picker'
-      ? viewBuiltIn
-        ? t('modals.prompts.viewDescription')
-        : viewTarget?.kind === 'new' && viewTarget.copyOf
-          ? t('modals.prompts.duplicateDescription', {
-              name: viewTarget.copyOf,
-              interpolation: { escapeValue: false },
-            })
-          : null
-      : null;
-  const promptSaveOff = promptSaveDisabled(
-    promptDetail,
-    drafterSession.streaming || promptReview.review !== null,
-  );
-  const promptView = viewTarget ? (
-    <PromptView
-      parent={{
-        label: agent.name?.trim() || t('agents.newAgent'),
-        onClick: () => leavePromptView(),
-      }}
-      label={
-        viewSaved
-          ? viewSaved.name
-          : promptOrigin === 'drafter'
-            ? t('drafter.agent.prompt.newPrompt')
-            : viewTarget.kind === 'new' && viewTarget.copyOf
-              ? t('modals.prompts.duplicatePrompt')
-              : t('modals.prompts.addPrompt')
-      }
-      actions={
-        <>
-          {drafterEnabled && viewImprovable && (
-            <WandButton
-              {...wandProps}
-              open={promptDetail.readOnly ? undefined : drafterOpen}
-              onClick={() =>
-                // A prompt the caller can't change is improved as a copy.
-                promptDetail.readOnly && viewSaved
-                  ? improvePromptCopy(viewSaved)
-                  : setDrafterOpen((open) => !open)
-              }
-            />
-          )}
-          {!promptDetail.readOnly && (
-            <PromptSaveButton
-              detail={promptDetail}
-              disabled={promptSaveOff}
-              label={
-                promptOrigin === 'drafter'
-                  ? t('drafter.agent.prompt.use')
-                  : undefined
-              }
-            />
-          )}
-        </>
-      }
-      byline={promptViewByline ? <MetaLine>{promptViewByline}</MetaLine> : null}
-      loading={promptDetail.status === 'loading'}
-      onRetry={promptDetail.status === 'error' ? promptDetail.retry : undefined}
-      notice={
-        <PromptConflictNotice detail={promptDetail} disabled={promptSaveOff} />
-      }
-      idPrefix="agent-prompt"
-      name={promptDetail.name}
-      setName={setPromptName}
-      content={promptDetail.content}
-      setContent={setPromptContent}
-      isReadOnly={promptDetail.readOnly}
-      showViewOnlyNotice={promptDetail.readOnly && !viewBuiltIn}
-      review={promptReview.review}
-      onDecide={promptReview.decide}
-      draftedName={{
-        drafted: promptDrafted.isDrafted('name'),
-        onUndo: () => promptDrafted.undo('name'),
-      }}
-      draftedContent={{
-        drafted: promptDrafted.isDrafted('content'),
-        onUndo: () => promptDrafted.undo('content'),
-      }}
-      nameError={
-        promptDetail.nameExists && promptDetail.name
-          ? t('modals.prompts.nameExists')
-          : undefined
-      }
-      locked={drafterSession.streaming}
-    />
-  ) : null;
-
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
       {hasChanges && (
@@ -2806,7 +2353,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         >
           {signInAgain.modals}
           {leaveGuard.dialog}
-          {promptView}
+          {promptView.render({
+            parentLabel: agent.name?.trim() || t('agents.newAgent'),
+            streaming: drafterSession.streaming,
+            wand: drafterEnabled
+              ? {
+                  props: wandProps,
+                  toggle: () => setDrafterOpen((open) => !open),
+                }
+              : null,
+          })}
           {/* Hidden, not unmounted, under the prompt view: the form keeps
           every unsaved part of itself. */}
           <div className={promptViewOpen ? 'hidden' : 'contents'}>
@@ -3073,7 +2629,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                                   },
                                 ),
                                 icon: editable ? <Pencil /> : <Eye />,
-                                onSelect: () => openPickerPrompt(prompt),
+                                onSelect: () => promptView.openPicker(prompt),
                               };
                             }}
                             placeholder={t('settings.prompts.select')}
@@ -3089,7 +2645,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                                 actionLabel={t('settings.prompts.addPrompt')}
                                 onAction={() => {
                                   close();
-                                  addPickerPrompt();
+                                  promptView.addPicker();
                                 }}
                               />
                             )}
@@ -3557,17 +3113,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             )}
           </div>
-          {leavingPrompt && (
-            <PromptLeaveDialog
-              detail={promptDetail}
-              reviewing={promptReview.review !== null}
-              onClose={() => setLeavingPrompt(false)}
-              onLeave={() => {
-                promptDrafted.clear();
-                closePromptView();
-              }}
-            />
-          )}
+          {promptView.dialog}
           {sponsoredSave.modal}
           {agentMenu.modals}
           <AgentDetailsModal
