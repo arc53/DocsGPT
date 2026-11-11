@@ -126,8 +126,9 @@ class ClientAddressMiddleware:
 
     Starting at the peer, each hop that is a trusted proxy hands over to the
     ``X-Forwarded-For`` entry it appended, right to left; the first untrusted
-    hop is the client. With ``trust_cf_connecting_ip``, reaching a Cloudflare
-    hop ends the walk at ``CF-Connecting-IP`` instead. An entry that is not an
+    hop is the client (under ``*`` that is the leftmost entry). With
+    ``trust_cf_connecting_ip``, reaching a Cloudflare hop ends the walk at
+    ``CF-Connecting-IP`` instead. An entry that is not an
     IP (``unknown``) breaks the chain, and the last valid hop is kept. A
     trusted peer's ``X-Forwarded-Proto`` sets the scheme.
     """
@@ -165,9 +166,6 @@ class ClientAddressMiddleware:
 
     def _resolve(self, peer: _Address, scope: Scope) -> _Address:
         forwarded = [entry for value in _header_values(scope, b"x-forwarded-for") for entry in value.split(",")]
-        if self._trust_all:
-            first = _parse_address(forwarded[0]) if forwarded else None
-            return first or peer
         current = peer
         for entry in reversed(forwarded):
             if self._trust_cf and _in(current, _CLOUDFLARE):

@@ -146,9 +146,9 @@ class TestProxyChains:
         r = _client(PROXY).get("/flask/ip", headers={"X-Forwarded-For": "192.168.1.4, 10.0.0.2"})
         assert r.json()["ip"] == "192.168.1.4"
 
-    def test_star_ignores_unparseable_leftmost(self):
+    def test_star_stops_at_unparseable_entry(self):
         r = _client(PROXY, trusted=("*",)).get("/flask/ip", headers={"X-Forwarded-For": "unknown, 1.2.3.4"})
-        assert r.json()["ip"] == PROXY
+        assert r.json()["ip"] == "1.2.3.4"
 
     def test_none_trusts_nobody(self):
         _assert_every_type(_client(PROXY, trusted=()), {"X-Forwarded-For": CLIENT}, PROXY)
@@ -204,6 +204,12 @@ class TestCloudflare:
         """Both settings on and the headers disagree: the Cloudflare hop hands over to its header."""
         headers = {"X-Forwarded-For": f"{SPOOF}, 198.51.100.44, {CF_EDGE}", "CF-Connecting-IP": CLIENT}
         _assert_every_type(_client(PROXY, trusted=("private", "cloudflare"), cf=True), headers, CLIENT)
+
+    def test_cf_header_with_star(self):
+        """``*`` still hands a Cloudflare hop over to its header, direct or forwarded."""
+        _assert_every_type(_client(CF_EDGE, trusted=("*",), cf=True), {"CF-Connecting-IP": CLIENT}, CLIENT)
+        headers = {"X-Forwarded-For": f"{SPOOF}, {CF_EDGE}", "CF-Connecting-IP": CLIENT}
+        _assert_every_type(_client(PROXY, trusted=("*",), cf=True), headers, CLIENT)
 
     def test_cf_header_absent_keeps_edge(self):
         _assert_every_type(_client(PROXY, cf=True), {"X-Forwarded-For": CF_EDGE}, CF_EDGE)
