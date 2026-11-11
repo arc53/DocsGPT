@@ -248,3 +248,13 @@
   auth_kind: mcp_oauth
   capabilities: [read]
   docs_url: https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/
+
+- key: mcp:excalidraw
+  name: Excalidraw
+  description: Draw diagrams and get an editable Excalidraw link.
+  icon: excalidraw
+  category: projects
+  mcp_url: https://mcp.excalidraw.com/mcp
+  auth_kind: mcp
+  capabilities: [read, write]
+  docs_url: https://github.com/excalidraw/excalidraw-mcp

@@ -103,24 +103,28 @@
       "cancelled": "Tarea en segundo plano cancelada"
     }
   },
-  "demo": [
-    {
-      "header": "Aprende sobre DocsGPT",
-      "query": "¿Qué es DocsGPT?"
-    },
-    {
-      "header": "Resumir documentación",
-      "query": "Resumir contexto actual"
-    },
-    {
-      "header": "Escribir Código",
-      "query": "Escribir código para solicitud de API a /api/answer"
-    },
-    {
-      "header": "Asistencia de Aprendizaje",
-      "query": "Escribe posibles preguntas para el contexto"
+  "hero": {
+    "suggestions": {
+      "label": "Sugerencias",
+      "summarize": "Resume {{name}}",
+      "compare": "Compara {{first}} con {{second}}",
+      "service": {
+        "files": "Busca mis archivos más recientes en {{name}}",
+        "knowledge": "¿Qué cambió en {{name}} esta semana?",
+        "projects": "¿Qué está en curso en {{name}} esta semana?",
+        "dev": "¿Qué cambió en {{name}} esta semana?",
+        "business": "¿Qué hay de nuevo en {{name}} esta semana?",
+        "messaging": "Resume los mensajes de esta semana en {{name}}",
+        "database": "¿Qué datos hay en {{name}}?",
+        "other": "¿Qué puedes encontrar en {{name}}?"
+      },
+      "continue": "Continúa con «{{name}}»",
+      "addKnowledge": "Añade conocimiento para preguntar por tus propios documentos",
+      "connect": "Conecta {{names}}",
+      "more": "más",
+      "createAgent": "Crea un agente para una tarea concreta"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Inicia sesión para continuar en DocsGPT",
     "signInWithSSO": "Iniciar sesión con SSO",
@@ -2041,6 +2045,7 @@
         "mcp_neon": "Explora proyectos, ramas y esquemas de Postgres en Neon, y ejecuta SQL.",
         "mcp_twelvedata": "Consulta cotizaciones, historial de precios, indicadores técnicos y datos fundamentales de acciones, divisas, criptomonedas y ETF.",
         "mcp_cloudflare": "Gestiona Workers, DNS, R2 y más a través de la API de Cloudflare.",
+        "mcp_excalidraw": "Dibuja diagramas y obtén un enlace para editarlos en Excalidraw.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
@@ -2399,7 +2404,9 @@
         "dismiss": "Descartar notificación de subida",
         "uploadProgress": "Progreso de subida {{progress}}%",
         "clear": "Limpiar",
-        "ingestionFailed": "La ingesta falló."
+        "ingestionFailed": "La ingesta falló.",
+        "tooManyFiles": "Esta fuente tiene más de {{limit}} archivos, el máximo que admite una fuente. Elige una carpeta, ruta o selección más pequeña.",
+        "tooManyTokens": "Esta fuente tiene más de {{limit}} tokens de texto, el máximo que admite una fuente. Divídela en fuentes más pequeñas."
       },
       "ingestors": {
         "local_file": {
@@ -2924,6 +2931,24 @@
       "notRunMovedOn": "No ejecutado: la conversación siguió antes de que se aprobara.",
       "notRunExpired": "No ejecutado: la solicitud de aprobación caducó."
     },
+    "mcpApp": {
+      "state": {
+        "loading": "Cargando la app…",
+        "ready": "Interactiva",
+        "failed": "Error"
+      },
+      "loading": "Cargando la app…",
+      "allow": "Permitir",
+      "allowForView": "Permitir en esta app",
+      "deny": "Denegar",
+      "reload": "Recargar la app",
+      "approvalAsk": "La app quiere ejecutar {{tool}}. ¿Lo permites?",
+      "failedTitle": "No se pudo cargar la app",
+      "failedDescription": "Su servidor MCP no respondió o la vista no pudo iniciarse.",
+      "frameTitle": "{{name}} (app interactiva)",
+      "callFailed": "La llamada a la herramienta falló",
+      "resultUnavailable": "El resultado ya no está disponible"
+    },
     "quotaExceeded": {
       "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}.",
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."
@@ -3142,7 +3167,8 @@
         "basics": "Básico",
         "knowledge": "Conocimiento y comportamiento",
         "model": "Modelo",
-        "analytics": "Información"
+        "analytics": "Información",
+        "starters": "Preguntas de inicio"
       },
       "placeholders": {
         "agentName": "Nombre del agente",
@@ -3465,6 +3491,12 @@
         "title": "¿Salir sin guardar?",
         "description": "Se perderán los cambios que hiciste aquí.",
         "submit": "Salir"
+      },
+      "starters": {
+        "description": "Opcional. Preguntas que aparecen bajo la tarjeta del agente cuando alguien empieza un chat nuevo con él, como «¿En qué me puedes ayudar?». Hasta cuatro.",
+        "label": "Pregunta {{number}}",
+        "add": "Añadir una pregunta",
+        "remove": "Quitar la pregunta {{number}}"
       }
     },
     "logs": {
@@ -3830,7 +3862,7 @@
         "deleteNode": "Eliminar nodo",
         "deleteConfirmUnnamed": "¿Eliminar este agente de flujo de trabajo?",
         "detailsTitle": "Detalles del flujo de trabajo",
-        "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
+        "detailsDescription": "La tarjeta del agente y sus ajustes de chat.",
         "unsavedChanges": "Cambios sin guardar",
         "editDetailsMenu": "Editar detalles",
         "loopHint": "Ejecuta nodos para cada elemento de una lista",
@@ -4157,11 +4189,6 @@
   "prompts": {
     "textAriaLabel": "Texto del prompt"
   },
-  "connectHero": {
-    "title": "Conecta tus datos",
-    "body": "Chatea con {{names}}.",
-    "more": "más"
-  },
   "common": {
     "close": "Cerrar",
     "viewOnlyNotice": "Puedes ver esto, pero tu rol no puede cambiarlo.",
@@ -4361,7 +4388,8 @@
         "missed": "se perdió su hora",
         "overlap": "la ejecución anterior seguía en curso",
         "stream_error": "se cortó la respuesta",
-        "empty_output": "no produjo nada"
+        "empty_output": "no produjo nada",
+        "cannot_complete": "el agente no puede hacer esta tarea"
       },
       "viewRuns": "Ver ejecuciones",
       "fromChat": "De {{name}}",

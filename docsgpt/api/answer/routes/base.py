@@ -23,6 +23,7 @@ from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -470,6 +471,10 @@ class BaseAnswerResource:
                 value = item.get(key)
                 if isinstance(value, str) and len(value) > max_chars:
                     item[key] = value[:max_chars]
+            ui = item.get("ui")
+            if isinstance(ui, dict) and "result" in ui:
+                # An MCP App view's result is the view's alone, never logged.
+                item["ui"] = {key: value for key, value in ui.items() if key != "result"}
             prepared.append(item)
         return prepared
 
@@ -1204,8 +1209,10 @@ class BaseAnswerResource:
                 elif "sources" in line:
                     _mark_streaming_once()
                     truncated_sources = []
-                    source_log_docs = line["sources"]
-                    for source in line["sources"]:
+                    # Copies without the prompt-only keys: these go to the
+                    # client and the stored turn; the agent keeps its own.
+                    source_log_docs = client_sources(line["sources"])
+                    for source in source_log_docs:
                         truncated_source = source.copy()
                         if "text" in truncated_source:
                             truncated_source["text"] = (

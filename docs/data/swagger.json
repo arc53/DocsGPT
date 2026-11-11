@@ -45,6 +45,18 @@
       ],
       "type": "object"
     },
+    "AgentStartersModel": {
+      "properties": {
+        "api_key": {
+          "description": "The agent's API key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_key"
+      ],
+      "type": "object"
+    },
     "AnswerModel": {
       "properties": {
         "active_docs": {
@@ -320,6 +332,13 @@
         },
         "sources": {
           "description": "List of source identifiers for multiple sources",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "starters": {
+          "description": "Up to 4 questions a new chat with the agent offers, each at most 200 characters; trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string",
           "items": {
             "type": "string"
           },
@@ -938,6 +957,65 @@
       ],
       "type": "object"
     },
+    "McpAppCallModel": {
+      "properties": {
+        "approved": {
+          "description": "The user approved this call, for a tool that needs approval",
+          "type": "boolean"
+        },
+        "arguments": {
+          "description": "Its arguments",
+          "type": "object"
+        },
+        "name": {
+          "description": "The tool the view calls",
+          "type": "string"
+        },
+        "tool_id": {
+          "description": "The MCP tool row the view belongs to",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tool_id"
+      ],
+      "type": "object"
+    },
+    "McpAppResourceModel": {
+      "properties": {
+        "tool_id": {
+          "description": "The MCP tool row the call ran on",
+          "type": "string"
+        },
+        "uri": {
+          "description": "The view's ui:// resource",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_id",
+        "uri"
+      ],
+      "type": "object"
+    },
+    "McpAppResultModel": {
+      "properties": {
+        "call_id": {
+          "description": "The call that drew the view",
+          "type": "string"
+        },
+        "message_id": {
+          "description": "The message the call belongs to",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "message_id"
+      ],
+      "type": "object"
+    },
     "MoveAgent": {
       "properties": {
         "agent_id": {
@@ -1474,6 +1552,13 @@
         },
         "sources": {
           "description": "List of source identifiers for multiple sources",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "starters": {
+          "description": "Up to 4 questions a new chat with the agent offers, each at most 200 characters; trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string",
           "items": {
             "type": "string"
           },
@@ -2522,6 +2607,40 @@
         ],
         "x-pat-scopes": [
           "agents:write"
+        ]
+      }
+    },
+    "/api/agent_starters": {
+      "post": {
+        "description": "List the starters (suggested first questions) of the agent an API key belongs to. Returns {\"starters\": [...]}, empty when the agent has none.\nReturns:\n    ``{\"starters\": [...]}`` with 200; 400 when ``api_key`` is missing\n    and 401 when it belongs to no agent.",
+        "operationId": "post_agent_starters_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AgentStartersModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's starters"
+          },
+          "400": {
+            "description": "api_key is missing"
+          },
+          "401": {
+            "description": "Invalid API key"
+          }
+        },
+        "summary": "Return the agent's starters",
+        "tags": [
+          "answer"
+        ],
+        "x-pat-scopes": [
+          "chat:run"
         ]
       }
     },
@@ -4729,6 +4848,104 @@
         "x-pat-scopes": [
           "sources:write"
         ]
+      }
+    },
+    "/api/mcp_apps/call": {
+      "post": {
+        "description": "Run a tool an MCP App view calls. Only tools visible to the app; a tool that needs approval answers 409 needs_approval until the call is sent approved.",
+        "operationId": "post_mcp_app_call",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/McpAppCallModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_apps/resource": {
+      "post": {
+        "description": "Read an MCP App view's HTML and its declared CSP and permissions.",
+        "operationId": "post_mcp_app_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/McpAppResourceModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_apps/result": {
+      "post": {
+        "description": "Read back the tool result an MCP App view was handed live, for a reopened conversation. The caller needs the access that reloading the conversation needs.",
+        "operationId": "post_mcp_app_result",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/McpAppResultModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_apps/sandbox": {
+      "get": {
+        "description": "The sandbox page an MCP App view runs in, served with a CSP built from the view's declared domains. Only on the sandbox origin (MCP_APPS_SANDBOX_URL), never one of the app's.",
+        "operationId": "get_mcp_app_sandbox",
+        "parameters": [
+          {
+            "description": "The view's _meta.ui.csp, as JSON",
+            "in": "query",
+            "name": "csp",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/mcp_server/auth_status": {
@@ -7826,6 +8043,10 @@
     {
       "description": "Current user identity and roles",
       "name": "me"
+    },
+    {
+      "description": "MCP Apps: interactive tool views in chat",
+      "name": "mcp_apps"
     },
     {
       "description": "Available models",

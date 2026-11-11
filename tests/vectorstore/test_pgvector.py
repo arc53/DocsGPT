@@ -764,3 +764,39 @@ class TestStoreEmbeddingsKey:
         default = inspect.signature(store_cls.__init__).parameters["embeddings_key"].default
 
         assert default is None
+
+
+@pytest.mark.unit
+class TestPGVectorStorePurgeIndex:
+    def test_deletes_in_batches_until_a_short_one(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="src9")
+        counts = iter([2, 2, 1])
+
+        def _execute(sql, params):
+            mock_cursor.rowcount = next(counts)
+
+        mock_cursor.execute.side_effect = _execute
+
+        assert store.purge_index(batch_size=2) == 5
+        assert mock_cursor.execute.call_count == 3
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "LIMIT %s" in sql
+        assert params == ("src9", 2)
+        # One short transaction per batch.
+        assert mock_conn.commit.call_count == 3
+
+
+@pytest.mark.unit
+class TestChunkCountsBySource:
+    def test_groups_by_source(self):
+        from docsgpt.vectorstore import pgvector
+
+        conn = MagicMock()
+        conn.__enter__.return_value = conn
+        conn.cursor.return_value.__enter__.return_value.fetchall.return_value = [("a", 3), ("b", 1)]
+        psycopg = MagicMock()
+        psycopg.connect.return_value = conn
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            assert pgvector.chunk_counts_by_source(connection_string="postgresql://x/y") == {"a": 3, "b": 1}
+        sql = conn.cursor.return_value.__enter__.return_value.execute.call_args[0][0]
+        assert "GROUP BY source_id" in sql

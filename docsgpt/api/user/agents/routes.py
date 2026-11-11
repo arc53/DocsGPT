@@ -77,6 +77,7 @@ from docsgpt.api.user.workflows.routes import (
     workflow_graph_errors,
     write_graph_save,
 )
+from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
 from docsgpt.api.user.agents.graph_checks import (
     graph_validation_failed as _graph_validation_failed,
     runs_outside_builder as _runs_outside_builder,
@@ -161,6 +162,7 @@ AGENT_TYPE_SCHEMAS = {
             "request_limit",
             "allow_system_prompt_override",
             "config",
+            "starters",
         ],
     },
     "workflow": {
@@ -183,6 +185,7 @@ AGENT_TYPE_SCHEMAS = {
             "request_limit",
             "allow_system_prompt_override",
             "config",
+            "starters",
         ],
     },
 }
@@ -473,6 +476,8 @@ def _format_agent_output(
         "name": agent.get("name", ""),
         "slug": agent.get("slug", "") or "",
         "description": agent.get("description", "") or "",
+        # Shown on a new chat to anyone who may use the agent, unlike ``config``.
+        "starters": stored_starters(agent),
         "image": (
             generate_image_url(
                 agent["image"], agent["id"], agent.get("user_id")
@@ -610,6 +615,8 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         kwargs["models"] = data["models"]
     if "config" in allowed_fields and data.get("config") is not None:
         kwargs["config"] = data["config"]
+    if "starters" in allowed_fields and data.get("starters") is not None:
+        kwargs["starters"] = data["starters"]
 
     return kwargs
 
@@ -893,6 +900,14 @@ class CreateAgent(Resource):
                 required=False,
                 description="Allow API callers to override the system prompt via the v1 endpoint",
             ),
+            "starters": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Up to 4 questions a new chat with the agent offers, each at most 200 characters; "
+                    "trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string"
+                ),
+            ),
         },
     )
 
@@ -969,6 +984,11 @@ class CreateAgent(Resource):
                 data.pop("config", None)
             else:
                 data["config"] = normalized_config
+        if "starters" in data:
+            try:
+                data["starters"] = normalize_starters(data.get("starters"))
+            except StartersError as exc:
+                return _reject(str(exc), user, "starters")
         if data.get("status") not in ["draft", "published"]:
             return make_response(
                 jsonify(
@@ -1255,6 +1275,14 @@ class UpdateAgent(Resource):
                 required=False,
                 description="Allow API callers to override the system prompt via the v1 endpoint",
             ),
+            "starters": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Up to 4 questions a new chat with the agent offers, each at most 200 characters; "
+                    "trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string"
+                ),
+            ),
         },
     )
 
@@ -1280,7 +1308,7 @@ class UpdateAgent(Resource):
                 data = request.get_json()
             else:
                 data = request.form.to_dict()
-                json_fields = ["tools", "sources", "json_schema", "models", "config"]
+                json_fields = ["tools", "sources", "json_schema", "models", "config", "starters"]
                 for field in json_fields:
                     if field in data and data[field]:
                         try:
@@ -1358,6 +1386,7 @@ class UpdateAgent(Resource):
                     "folder_id",
                     "workflow",
                     "allow_system_prompt_override",
+                    "starters",
                 ]
 
                 for field in allowed_fields:
@@ -1579,6 +1608,13 @@ class UpdateAgent(Resource):
                             update_fields["prompt_id"] = value
                         else:
                             return _reject(f"Invalid prompt_id: {value}", user, field)
+                    elif field == "starters":
+                        # Content like the description: anyone who may edit
+                        # the agent may change them.
+                        try:
+                            update_fields["starters"] = normalize_starters(data.get("starters"))
+                        except StartersError as exc:
+                            return _reject(str(exc), user, field)
                     elif field == "allow_system_prompt_override":
                         raw_value = data.get("allow_system_prompt_override", False)
                         update_fields["allow_system_prompt_override"] = (
@@ -2204,6 +2240,7 @@ class PinnedAgents(Resource):
                         "id": str(agent["id"]),
                         "name": agent.get("name", ""),
                         "description": agent.get("description", ""),
+                        "starters": stored_starters(agent),
                         "image": (
                             generate_image_url(
                                 agent["image"], agent["id"], agent.get("user_id")
@@ -2259,6 +2296,7 @@ class GetTemplateAgents(Resource):
                     "id": str(agent["id"]),
                     "name": agent.get("name"),
                     "description": agent.get("description") or "",
+                    "starters": stored_starters(agent),
                     "image": (
                         generate_image_url(
                             agent["image"], agent["id"], agent.get("user_id")
@@ -2439,7 +2477,7 @@ class AdoptAgent(Resource):
                 )
                 if adopted_image:
                     create_kwargs["image"] = adopted_image
-                for col in ("json_schema", "models", "shared_metadata", "config"):
+                for col in ("json_schema", "models", "shared_metadata", "config", "starters"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
                 # The adopted agent starts from the admin's default guardrails,

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
 
 from docsgpt import tracing
+from docsgpt.agents.cannot_complete import cannot_complete_reason
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from docsgpt.agents.workflows.retry import (
@@ -273,6 +274,9 @@ class WorkflowEngine:
         # A loop item's own retrieved documents. Items run side by side, so
         # they keep these here rather than on the shared ``self.agent``.
         self._item_docs: Optional[List[Dict[str, Any]]] = None
+        # What the current agent node's retrieval searched and which sources
+        # failed (see ``_retrieve_node_sources``); None when it searched nothing.
+        self._node_search_outcome = None
         # Serializes code nodes on the run's one sandbox session: concurrent loop
         # items would otherwise overwrite each other's state.json and captures.
         self._sandbox_lock = threading.Lock()
@@ -856,6 +860,7 @@ class WorkflowEngine:
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
+        self._node_search_outcome = None
         node_docs = (
             self._retrieve_node_sources(node_config) if node_config.sources else []
         )
@@ -944,6 +949,7 @@ class WorkflowEngine:
                 node_config.prompt_template
             ),
             "sources_were_searched": bool(node_config.sources),
+            "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
             "context_window_limit": getattr(self.agent, "context_window_limit", None),
@@ -1012,6 +1018,8 @@ class WorkflowEngine:
         structured_response_parts: List[str] = []
         has_structured_response = False
         first_chunk = True
+        # The text after the node's last tool call: its model's final round.
+        last_round_parts: List[str] = []
         for event in node_agent.gen(formatted_prompt):
             # A tool that pauses for approval makes the LLM handler yield
             # ``tool_calls_pending`` and end. An ephemeral node agent has no resume path,
@@ -1023,9 +1031,12 @@ class WorkflowEngine:
                     "supported inside a workflow. Disable require_approval for tools used in "
                     "workflow nodes."
                 )
+            if event.get("type") == "tool_call":
+                last_round_parts = []
             if "answer" in event:
                 chunk = str(event["answer"])
                 full_response_parts.append(chunk)
+                last_round_parts.append(chunk)
                 if event.get("structured"):
                     has_structured_response = True
                     structured_response_parts.append(chunk)
@@ -1065,6 +1076,11 @@ class WorkflowEngine:
             output_value = parsed_structured
             self._validate_structured_output(node_json_schema, output_value)
 
+        if getattr(self.agent, "endpoint", None) == "schedule" and self._loop_item is None:
+            # A JSON answer carries no marker: only the tool reports for it.
+            structured = has_structured_response or node_json_schema is not None
+            self._note_cannot_complete(node, node_agent, "" if structured else "".join(last_round_parts))
+
         if streams_to_user:
             for event in held_events:
                 if first_chunk and hasattr(self, "_has_streamed"):
@@ -1078,6 +1094,18 @@ class WorkflowEngine:
 
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
+
+    def _note_cannot_complete(self, node: WorkflowNode, node_agent: Any, last_round: str) -> None:
+        """Note on the run's agent whether this agent node reported it cannot do its step.
+
+        The last agent node to run outside a loop decides, so a later agent
+        node (a branch that handles the failure, a fallback) clears an earlier
+        report, and one loop item's report never fails the whole run. Loop
+        items run side by side and never get here, so nothing races.
+        """
+        reported = getattr(getattr(node_agent, "tool_executor", None), "cannot_complete", None)
+        reason = reported if isinstance(reported, str) and reported else cannot_complete_reason(last_round)
+        self.agent.cannot_complete = f"{node.title}: {reason}" if reason else None
 
     def _execute_code_node(
         self, node: WorkflowNode
@@ -2377,13 +2405,16 @@ class WorkflowEngine:
         Returns:
             list: Retrieved documents, empty when there was nothing to fetch.
         """
+        from docsgpt.retriever.base import SearchOutcome, search_outcome_of
         from docsgpt.retriever.retriever_creator import RetrieverCreator
         from docsgpt.retriever.stages.relevance import apply_relevance
 
+        self._node_search_outcome = None
         query = self.state.get("query", "")
         if not query:
             return []
 
+        sources: list = []
         try:
             sources = self._authorized_node_sources(node_config.sources)
             retriever = RetrieverCreator.create_retriever(
@@ -2395,6 +2426,7 @@ class WorkflowEngine:
                 decoded_token=self.agent.decoded_token,
             )
             docs = retriever.search(query)
+            self._node_search_outcome = search_outcome_of(retriever, sources)
             if docs:
                 try:
                     rerankers = self._node_rerankers(sources)
@@ -2419,6 +2451,12 @@ class WorkflowEngine:
             return docs or []
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
+            if self._node_search_outcome is None:
+                # The search itself raised, which is not "nothing matched":
+                # the node agent is told the sources could not be searched.
+                # Only the authorized ones: the raw configured ids may name
+                # another user's source, whose name would reach the model.
+                self._node_search_outcome = SearchOutcome.of(sources, sources)
             return []
 
     @staticmethod

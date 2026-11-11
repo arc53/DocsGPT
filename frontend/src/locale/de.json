@@ -102,24 +102,28 @@
       "cancelled": "Hintergrundaufgabe abgebrochen"
     }
   },
-  "demo": [
-    {
-      "header": "Über DocsGPT lernen",
-      "query": "Was ist DocsGPT?"
-    },
-    {
-      "header": "Dokumentation zusammenfassen",
-      "query": "Fasse den aktuellen Kontext zusammen"
-    },
-    {
-      "header": "Code schreiben",
-      "query": "Schreibe Code für eine API-Anfrage an /api/answer"
-    },
-    {
-      "header": "Lernunterstützung",
-      "query": "Schreibe mögliche Fragen zum Kontext"
+  "hero": {
+    "suggestions": {
+      "label": "Vorschläge",
+      "summarize": "{{name}} zusammenfassen",
+      "compare": "{{first}} mit {{second}} vergleichen",
+      "service": {
+        "files": "Meine neuesten Dateien in {{name}} finden",
+        "knowledge": "Was hat sich diese Woche in {{name}} geändert?",
+        "projects": "Was ist diese Woche in {{name}} in Arbeit?",
+        "dev": "Was hat sich diese Woche in {{name}} geändert?",
+        "business": "Was gibt es diese Woche Neues in {{name}}?",
+        "messaging": "Die Nachrichten dieser Woche in {{name}} zusammenfassen",
+        "database": "Welche Daten enthält {{name}}?",
+        "other": "Was findest du in {{name}}?"
+      },
+      "continue": "„{{name}}“ fortsetzen",
+      "addKnowledge": "Wissen hinzufügen, um Fragen zu eigenen Dokumenten zu stellen",
+      "connect": "{{names}} verbinden",
+      "more": "mehr",
+      "createAgent": "Einen Agenten für eine bestimmte Aufgabe erstellen"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Melde dich an, um mit DocsGPT fortzufahren",
     "signInWithSSO": "Mit SSO anmelden",
@@ -1969,6 +1973,7 @@
         "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
         "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
         "mcp_cloudflare": "Workers, DNS, R2 und mehr über die Cloudflare-API verwalten.",
+        "mcp_excalidraw": "Erstelle Diagramme und erhalte einen Link zur Bearbeitung in Excalidraw.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -2314,7 +2319,9 @@
         "dismiss": "Upload-Benachrichtigung schließen",
         "uploadProgress": "Upload-Fortschritt {{progress}}%",
         "clear": "Löschen",
-        "ingestionFailed": "Aufnahme fehlgeschlagen."
+        "ingestionFailed": "Aufnahme fehlgeschlagen.",
+        "tooManyFiles": "Diese Quelle hat mehr als {{limit}} Dateien, mehr als eine Quelle enthalten kann. Wähle einen kleineren Ordner, Pfad oder eine kleinere Auswahl.",
+        "tooManyTokens": "Diese Quelle hat mehr als {{limit}} Tokens Text, mehr als eine Quelle enthalten kann. Teile sie in kleinere Quellen auf."
       },
       "ingestors": {
         "local_file": {
@@ -2832,6 +2839,24 @@
       "notRunMovedOn": "Nicht ausgeführt: Das Gespräch ging weiter, bevor dies genehmigt wurde.",
       "notRunExpired": "Nicht ausgeführt: Die Genehmigungsanfrage ist abgelaufen."
     },
+    "mcpApp": {
+      "state": {
+        "loading": "App wird geladen…",
+        "ready": "Interaktiv",
+        "failed": "Fehlgeschlagen"
+      },
+      "loading": "App wird geladen…",
+      "allow": "Erlauben",
+      "allowForView": "Für diese App erlauben",
+      "deny": "Ablehnen",
+      "reload": "App neu laden",
+      "approvalAsk": "Die App möchte {{tool}} ausführen. Erlauben?",
+      "failedTitle": "Die App konnte nicht geladen werden",
+      "failedDescription": "Ihr MCP-Server hat nicht geantwortet, oder die Ansicht ließ sich nicht starten.",
+      "frameTitle": "{{name}} (interaktive App)",
+      "callFailed": "Der Tool-Aufruf ist fehlgeschlagen",
+      "resultUnavailable": "Das Ergebnis ist nicht mehr verfügbar"
+    },
     "quotaExceeded": {
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
@@ -3045,7 +3070,8 @@
         "basics": "Grundlagen",
         "knowledge": "Wissen und Verhalten",
         "model": "Modell",
-        "analytics": "Einblicke"
+        "analytics": "Einblicke",
+        "starters": "Einstiegsfragen"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -3363,6 +3389,12 @@
         "title": "Ohne Speichern verlassen?",
         "description": "Deine Änderungen hier gehen verloren.",
         "submit": "Verlassen"
+      },
+      "starters": {
+        "description": "Optional. Fragen, die unter der Karte des Agenten erscheinen, wenn jemand einen neuen Chat mit ihm beginnt, etwa „Wobei kannst du mir helfen?“ Bis zu vier.",
+        "label": "Einstiegsfrage {{number}}",
+        "add": "Einstiegsfrage hinzufügen",
+        "remove": "Einstiegsfrage {{number}} entfernen"
       }
     },
     "logs": {
@@ -3723,7 +3755,7 @@
         "deleteNode": "Knoten löschen",
         "deleteConfirmUnnamed": "Diesen Workflow-Agenten löschen?",
         "detailsTitle": "Workflow-Details",
-        "detailsDescription": "Name, Beschreibung und Bild, die auf der Agentenkarte angezeigt werden.",
+        "detailsDescription": "Die Karte des Agenten und seine Chat-Einstellungen.",
         "unsavedChanges": "Nicht gespeicherte Änderungen",
         "editDetailsMenu": "Details bearbeiten",
         "loopHint": "Knoten für jedes Element einer Liste ausführen",
@@ -4042,11 +4074,6 @@
   "prompts": {
     "textAriaLabel": "Prompt-Text"
   },
-  "connectHero": {
-    "title": "Daten verbinden",
-    "body": "Chatte mit {{names}}.",
-    "more": "mehr"
-  },
   "common": {
     "close": "Schließen",
     "viewOnlyNotice": "Du kannst dies ansehen, aber deine Rolle kann es nicht ändern.",
@@ -4243,7 +4270,8 @@
         "missed": "Zeitpunkt verpasst",
         "overlap": "die vorherige Ausführung lief noch",
         "stream_error": "der Antwortstrom brach ab",
-        "empty_output": "es kam nichts heraus"
+        "empty_output": "es kam nichts heraus",
+        "cannot_complete": "der Agent kann diese Aufgabe nicht erledigen"
       },
       "viewRuns": "Ausführungen ansehen",
       "fromChat": "Aus {{name}}",

@@ -926,3 +926,28 @@ def test_is_supported_document_follows_the_upload_whitelist():
         assert S3Loader.is_text_file(None, key) or S3Loader.is_supported_document(None, key), suffix
     assert S3Loader.is_supported_document(None, "bucket/file.doc")
     assert not S3Loader.is_supported_document(None, "bucket/file.exe")
+
+
+class TestLoadDataFileCap:
+    def test_a_listing_over_ingest_max_files_fails_before_any_object_is_read(
+        self, s3_loader, mock_boto3, monkeypatch,
+    ):
+        from docsgpt.core.settings import settings
+        from docsgpt.parser.ingest_limits import IngestTooLarge
+
+        monkeypatch.setattr(settings, "INGEST_MAX_FILES", 2)
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        paginator = MagicMock()
+        mock_client.get_paginator.return_value = paginator
+        # Images are never read, so they don't count.
+        paginator.paginate.return_value = [
+            {"Contents": [{"Key": "a.md"}, {"Key": "b.txt"}, {"Key": "c.png"}, {"Key": "d.jpg"}]},
+        ]
+        s3_loader.load_data({"aws_access_key_id": "k", "aws_secret_access_key": "s", "bucket": "b"})
+
+        paginator.paginate.return_value = [{"Contents": [{"Key": "a.md"}, {"Key": "b.txt"}, {"Key": "c.md"}]}]
+        mock_client.get_object.reset_mock()
+        with pytest.raises(IngestTooLarge):
+            s3_loader.load_data({"aws_access_key_id": "k", "aws_secret_access_key": "s", "bucket": "b"})
+        mock_client.get_object.assert_not_called()

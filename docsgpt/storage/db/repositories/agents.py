@@ -126,7 +126,7 @@ class AgentsRepository:
             "limited_token_mode", "limited_request_mode",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
-            "tools", "json_schema", "models", "config", "resource_sponsors", "legacy_mongo_id",
+            "tools", "json_schema", "models", "config", "resource_sponsors", "starters", "legacy_mongo_id",
             "created_at", "updated_at", "last_used_at",
         }
 
@@ -140,7 +140,7 @@ class AgentsRepository:
                 if prompt_preset is not None:
                     values["prompt_preset"] = prompt_preset
                 continue
-            if col in ("tools", "json_schema", "models", "shared_metadata", "config", "resource_sponsors"):
+            if col in ("tools", "json_schema", "models", "shared_metadata", "config", "resource_sponsors", "starters"):
                 # JSONB columns: pass the Python object directly. SQLAlchemy
                 # Core's JSONB type processor json.dumps it once during
                 # bind; pre-serialising would double-encode and the value
@@ -340,7 +340,7 @@ class AgentsRepository:
         allowed = {
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
-            "config", "resource_sponsors",
+            "config", "resource_sponsors", "starters",
             "default_model_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",
             "limited_token_mode", "token_limit",
@@ -354,7 +354,7 @@ class AgentsRepository:
             return False
         values: dict = {}
         for col, val in filtered.items():
-            if col in ("tools", "json_schema", "models", "shared_metadata", "config", "resource_sponsors"):
+            if col in ("tools", "json_schema", "models", "shared_metadata", "config", "resource_sponsors", "starters"):
                 values[col] = val
             elif col == "prompt_id":
                 values["prompt_id"], values["prompt_preset"] = split_prompt_ref(val)
@@ -418,7 +418,7 @@ class AgentsRepository:
         allowed = {
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
-            "config", "resource_sponsors",
+            "config", "resource_sponsors", "starters",
             "default_model_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",
             "limited_token_mode", "token_limit",
@@ -433,7 +433,7 @@ class AgentsRepository:
 
         values: dict = {}
         for col, val in filtered.items():
-            if col in ("tools", "json_schema", "models", "shared_metadata", "config", "resource_sponsors"):
+            if col in ("tools", "json_schema", "models", "shared_metadata", "config", "resource_sponsors", "starters"):
                 # See note in create(): JSONB columns receive Python
                 # objects, the type processor handles serialisation.
                 values[col] = val

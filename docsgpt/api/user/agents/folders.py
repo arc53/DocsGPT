@@ -8,6 +8,7 @@ from flask_restx import Namespace, Resource, fields
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.user.agents.starters import stored_starters
 from docsgpt.api.user.resource_access import AccessDenied, payload_for, require, settings_many
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
@@ -138,7 +139,7 @@ class AgentFolder(Resource):
 
                 agents_rows = conn.execute(
                     _sql_text(
-                        "SELECT id, name, description FROM agents "
+                        "SELECT id, name, description, starters FROM agents "
                         "WHERE user_id = :user_id AND folder_id = CAST(:fid AS uuid) "
                         "ORDER BY created_at DESC"
                     ),
@@ -153,6 +154,7 @@ class AgentFolder(Resource):
                         "id": str(row._mapping["id"]),
                         "name": row._mapping["name"],
                         "description": row._mapping.get("description", "") or "",
+                        "starters": stored_starters(row._mapping),
                         **payload_for("agent", "owner", switches[str(row._mapping["id"])]),
                     }
                     for row in agents_rows

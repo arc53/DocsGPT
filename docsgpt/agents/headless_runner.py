@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
+from docsgpt.agents.cannot_complete import cannot_complete_reason, drop_cannot_complete_marker
 from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.api.answer.segments import merge_tool_calls, separated
 from docsgpt.api.answer.services.prompt_renderer import (
@@ -29,12 +30,14 @@ from docsgpt.api.answer.services.stream_processor import (
     source_for_docs,
     wiki_tool_config,
 )
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
 from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
+from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db.session import db_readonly
@@ -101,6 +104,30 @@ def _wiki_config(
     except Exception:
         logger.exception("Failed to resolve wiki tool config for a headless run")
         return None
+
+
+def _scheduled_cannot_complete(
+    agent: Any, tool_executor: Any, agent_type: str, answer: str, last_round_start: int
+) -> tuple[Optional[str], str]:
+    """A scheduled run's report that it can't do its task, and its answer as stored.
+
+    A ``report_cannot_complete`` call wins; a workflow's engine notes its
+    nodes' reports on the agent. Only a model given no such tool is told to
+    open its answer with the marker, so only its last round's text is read.
+    """
+    if agent_type == "workflow":
+        noted = getattr(agent, "cannot_complete", None)
+        return (noted if isinstance(noted, str) and noted else None), answer
+    reported = getattr(tool_executor, "cannot_complete", None)
+    if isinstance(reported, str) and reported:
+        return reported, answer
+    last_round = answer[last_round_start:]
+    reason = cannot_complete_reason(last_round)
+    if reason is None:
+        return None, answer
+    # Keep the paragraph break that set the last round off from the text before it.
+    lead = last_round[: len(last_round) - len(last_round.lstrip())] if last_round_start else ""
+    return reason, answer[:last_round_start] + lead + drop_cannot_complete_marker(last_round)
 
 
 def run_agent_headless(
@@ -310,6 +337,7 @@ def _run_agent_headless(
     # agents pre-fetch, and ``agentic_tool`` sources are searched either way.
     use = plan_source_use(agent_type, per_source_list(per_source, "agentic_tool"))
     retrieved_docs: List[Dict[str, Any]] = []
+    search_outcome: Optional[SearchOutcome] = None
     prefetch_sources = per_source_list(per_source, use.exposure)
     # A pre-fetch scoped to an exposure with no source in it searches nothing.
     if use.prefetch and (use.exposure is None or prefetch_sources):
@@ -332,12 +360,17 @@ def _run_agent_headless(
             conversation_id=conversation_id,
             **retriever_kwargs,
         )
+        source_ids = retriever_kwargs["source"].get("active_docs") or []
+        source_ids = [source_ids] if isinstance(source_ids, str) else list(source_ids)
         try:
             docs = retriever.search(retrieval_query or query)
+            search_outcome = search_outcome_of(retriever, source_ids)
             if docs:
                 retrieved_docs = docs
         except Exception as exc:
             logger.warning("Headless retrieve failed: %s", exc)
+            # Nothing was searched; the agent says so instead of "nothing found".
+            search_outcome = SearchOutcome.of(source_ids, source_ids)
 
     tool_executor = ToolExecutor(
         user_api_key=user_api_key,
@@ -390,6 +423,7 @@ def _run_agent_headless(
         "prompt_embeds_documents": prompt_embeds_documents(raw_prompt),
         "prompt_cites_sources": prompt_requests_citations(raw_prompt),
         "sources_were_searched": bool(source_active),
+        "search_outcome": search_outcome,
         "decoded_token": decoded_token,
         "attachments": [],
         "json_schema": json_schema,
@@ -447,6 +481,8 @@ def _run_agent_headless(
     steps_completed = 0
     # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
     tool_since_text = False
+    # Where the text of the model's last round starts: after its last tool call.
+    last_round_start = 0
     stopped = False
     events = agent.gen(query=query)
     if should_stop is not None:
@@ -456,6 +492,10 @@ def _run_agent_headless(
         for event in events:
             if not isinstance(event, dict):
                 continue
+            if "sources" in event:
+                # The observer streams them and the outcome is stored, so both
+                # get copies without the keys only the prompt may carry.
+                event = {**event, "sources": client_sources(event["sources"])}
             # ``Agent.gen`` reports a failed stream with an error event rather than
             # by raising. Dropping it here (as this loop used to) makes a broken run
             # indistinguishable from one that simply had nothing to say, and the
@@ -480,6 +520,8 @@ def _run_agent_headless(
             elif event.get("type") == "tool_call":
                 tool_since_text = True
             elif "answer" in event:
+                if tool_since_text:
+                    last_round_start = len(answer_full)
                 chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
                 if chunk.strip():
                     tool_since_text = False
@@ -539,11 +581,18 @@ def _run_agent_headless(
         tool_calls = merge_tool_calls(tool_calls, tool_executor.get_truncated_tool_calls())
 
     denied = list(getattr(tool_executor, "headless_denials", []))
+    cannot_complete: Optional[str] = None
+    if endpoint == "schedule":
+        cannot_complete, answer_full = _scheduled_cannot_complete(
+            agent, tool_executor, agent_type, answer_full, last_round_start
+        )
     error: Optional[str] = None
     if budget_error:
         error_type = "TimeLimit"
         error = stream_error
-    elif denied and not answer_full.strip():
+    # A refused tool is the exact cause of a run that then says it couldn't
+    # do its task, so the refusal, which names the tool, is what's recorded.
+    elif denied and (not answer_full.strip() or cannot_complete):
         error_type = "tool_not_allowed"
         blocked = ", ".join(
             str(d.get("tool_name") or d.get("action_name") or "?") for d in denied
@@ -554,6 +603,8 @@ def _run_agent_headless(
         error = stream_error
     else:
         error_type = None
+    if error_type:
+        cannot_complete = None
     if stream_error:
         logger.warning(
             "Headless run for agent %s failed mid-stream: %s", agent_id, stream_error
@@ -583,6 +634,7 @@ def _run_agent_headless(
         "error_type": error_type,
         "error": error,
         "steps_completed": steps_completed,
+        "cannot_complete": cannot_complete,
         "model_id": model_id,
         "metadata": message_metadata,
         "stopped": stopped,

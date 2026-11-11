@@ -101,24 +101,28 @@
       "cancelled": "背景工作已取消"
     }
   },
-  "demo": [
-    {
-      "header": "了解 DocsGPT",
-      "query": "什麼是 DocsGPT？"
-    },
-    {
-      "header": "摘要文件",
-      "query": "摘要目前的內容"
-    },
-    {
-      "header": "撰寫程式碼",
-      "query": "為 /api/answer 撰寫 API 請求程式碼"
-    },
-    {
-      "header": "學習輔助",
-      "query": "為此內容撰寫可能的問題"
+  "hero": {
+    "suggestions": {
+      "label": "建議",
+      "summarize": "摘要「{{name}}」",
+      "compare": "比較「{{first}}」和「{{second}}」",
+      "service": {
+        "files": "尋找我在 {{name}} 中的最新檔案",
+        "knowledge": "{{name}} 本週有哪些變更？",
+        "projects": "{{name}} 本週有哪些進行中的工作？",
+        "dev": "{{name}} 本週有哪些變更？",
+        "business": "{{name}} 本週有什麼新動態？",
+        "messaging": "摘要 {{name}} 本週的訊息",
+        "database": "{{name}} 中有哪些資料？",
+        "other": "能在 {{name}} 中找到什麼？"
+      },
+      "continue": "繼續「{{name}}」",
+      "addKnowledge": "新增知識，就能詢問你自己的文件",
+      "connect": "連線 {{names}}",
+      "more": "更多服務",
+      "createAgent": "為特定任務建立代理"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "登入以繼續使用 DocsGPT",
     "signInWithSSO": "使用 SSO 登入",
@@ -1965,6 +1969,7 @@
         "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",
         "mcp_twelvedata": "查詢股票、外匯、加密貨幣和 ETF 的報價、歷史價格、技術指標和基本面資料。",
         "mcp_cloudflare": "透過 Cloudflare API 管理 Workers、DNS、R2 等。",
+        "mcp_excalidraw": "繪製圖表並取得可在 Excalidraw 中編輯的連結。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
@@ -2305,7 +2310,9 @@
         "dismiss": "關閉上傳通知",
         "uploadProgress": "上傳進度 {{progress}}%",
         "clear": "清除",
-        "ingestionFailed": "匯入失敗。"
+        "ingestionFailed": "匯入失敗。",
+        "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
+        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。"
       },
       "ingestors": {
         "local_file": {
@@ -2819,6 +2826,24 @@
       "notRunMovedOn": "未執行：在核准之前，對話已繼續。",
       "notRunExpired": "未執行：核准請求已過期。"
     },
+    "mcpApp": {
+      "state": {
+        "loading": "正在載入應用程式…",
+        "ready": "可互動",
+        "failed": "失敗"
+      },
+      "loading": "正在載入應用程式…",
+      "allow": "允許",
+      "allowForView": "在此應用程式中允許",
+      "deny": "拒絕",
+      "reload": "重新載入應用程式",
+      "approvalAsk": "應用程式想要執行 {{tool}}。要允許嗎？",
+      "failedTitle": "無法載入應用程式",
+      "failedDescription": "其 MCP 伺服器沒有回應，或檢視無法啟動。",
+      "frameTitle": "{{name}}（互動式應用程式）",
+      "callFailed": "工具呼叫失敗",
+      "resultUnavailable": "結果已無法使用"
+    },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
@@ -3027,7 +3052,8 @@
         "basics": "基本資訊",
         "knowledge": "知識與行為",
         "model": "模型",
-        "analytics": "洞察"
+        "analytics": "洞察",
+        "starters": "開場問題"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -3344,6 +3370,12 @@
         "title": "要不儲存就離開嗎？",
         "description": "您在此處所做的變更將會遺失。",
         "submit": "離開"
+      },
+      "starters": {
+        "description": "選填。有人與此代理開始新對話時，顯示在其卡片下方的問題，例如「你能幫我做什麼？」。最多四個。",
+        "label": "問題 {{number}}",
+        "add": "新增問題",
+        "remove": "移除問題 {{number}}"
       }
     },
     "logs": {
@@ -3704,7 +3736,7 @@
         "deleteNode": "刪除節點",
         "deleteConfirmUnnamed": "要刪除此工作流程代理嗎？",
         "detailsTitle": "工作流程詳細資料",
-        "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
+        "detailsDescription": "代理的卡片和對話設定。",
         "unsavedChanges": "未儲存的變更",
         "editDetailsMenu": "編輯詳細資料",
         "loopHint": "為清單中的每個項目執行節點",
@@ -4022,11 +4054,6 @@
   "prompts": {
     "textAriaLabel": "提示文字"
   },
-  "connectHero": {
-    "title": "連線你的資料",
-    "body": "與 {{names}} 進行對話。",
-    "more": "更多服務"
-  },
   "common": {
     "close": "關閉",
     "viewOnlyNotice": "你可以檢視此內容，但你的角色無法變更它。",
@@ -4223,7 +4250,8 @@
         "missed": "錯過了執行時間",
         "overlap": "上一次執行仍在進行",
         "stream_error": "回答串流中斷",
-        "empty_output": "沒有產生任何輸出"
+        "empty_output": "沒有產生任何輸出",
+        "cannot_complete": "代理無法完成此任務"
       },
       "viewRuns": "查看執行",
       "fromChat": "來自 {{name}}",

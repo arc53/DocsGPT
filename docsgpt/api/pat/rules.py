@@ -414,6 +414,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/answer", "POST"): _rule("chat:run", **_CHAT),
     ("/stream", "POST"): _rule("chat:run", **_CHAT),
     ("/api/search", "POST"): _rule("chat:run", **_CHAT),
+    ("/api/agent_starters", "POST"): _rule("chat:run", **_CHAT),
     ("/api/store_attachment", "POST"): _rule("chat:run", family=None),
     ("/api/sources/<string:source_id>/search", "POST"): _rule(
         "chat:run", family=None, refs=(("sources", (VIEW, "source_id")),)
@@ -452,6 +453,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/images/<string:agent_id>/<string:capability>": ("*",),
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
+    # MCP App views run in the chat page; a token has no view to serve.
+    "/api/mcp_apps/sandbox": ("*",),
+    "/api/mcp_apps/resource": ("*",),
+    "/api/mcp_apps/call": ("*",),
+    "/api/mcp_apps/result": ("*",),
     "/api/artifact/<artifact_id>": ("*",),
     # Reading artifacts is ``artifacts:read`` (RULES); changing them needs a session.
     "/api/artifacts/<artifact_id>": ("DELETE",),

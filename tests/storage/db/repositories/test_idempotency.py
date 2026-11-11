@@ -5,7 +5,8 @@ the upload/webhook flows; this file pins the repository contract:
 
 - TTL-aware upsert: stale-row replacement is atomic, fresh-row conflict
   still returns ``None``.
-- ``cleanup_expired`` deletes only past-TTL rows from both tables.
+- ``cleanup_expired`` deletes only past-TTL rows from both tables, and keeps
+  a task row whose lease is live or lapsed within the TTL.
 """
 
 from __future__ import annotations
@@ -199,6 +200,39 @@ class TestClaimTask:
         assert row["status"] == "completed"
         assert row["task_id"] == "winner-id"
 
+    def test_old_row_with_a_live_lease_is_not_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.claim_task(key="k-run", task_name="ingest", task_id="original")
+        repo.try_claim_lease(key="k-run", task_name="ingest", task_id="original", owner_id="w1")
+        _backdate_task(pg_conn, "k-run", secs_ago=30 * 3600)
+
+        assert repo.claim_task(key="k-run", task_name="ingest", task_id="second") is None
+        row = _read_task(pg_conn, "k-run")
+        assert row["task_id"] == "original"
+        assert row["attempt_count"] == 1
+        # The same-key request is handed the running task, not told it vanished.
+        assert repo.get_task("k-run")["task_id"] == "original"
+
+    def test_old_row_whose_lease_lapsed_recently_is_not_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(key="k-crash", task_name="ingest", task_id="original", owner_id="w1")
+        _backdate_task(pg_conn, "k-crash", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "k-crash", secs_ago=3600)
+
+        assert repo.claim_task(key="k-crash", task_name="ingest", task_id="second") is None
+        assert _read_task(pg_conn, "k-crash")["attempt_count"] == 1
+
+    def test_old_row_whose_lease_lapsed_past_the_ttl_is_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(key="k-dead", task_name="ingest", task_id="original", owner_id="w1")
+        _backdate_task(pg_conn, "k-dead", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "k-dead", secs_ago=25 * 3600)
+
+        assert repo.get_task("k-dead") is None
+        row = repo.claim_task(key="k-dead", task_name="ingest", task_id="second")
+        assert row["task_id"] == "second"
+        assert row["attempt_count"] == 0
+
     def test_pending_row_still_blocks_within_ttl(self, pg_conn):
         """Concurrency contract: while a task is in flight, same-key
         requests still collapse onto the in-flight ``task_id``.
@@ -316,6 +350,59 @@ class TestCleanupExpired:
         counts = repo.cleanup_expired()
         assert counts["task_dedup_deleted"] == 0
         assert _read_task(pg_conn, "t-edge") is not None
+
+    def test_old_row_with_live_lease_survives(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-running", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        _backdate_task(pg_conn, "t-running", secs_ago=30 * 3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 0
+        row = _read_task(pg_conn, "t-running")
+        assert row is not None
+        assert row["lease_owner_id"] == "w1"
+        assert repo.refresh_lease("t-running", "w1") is True
+
+    def test_old_row_whose_lease_lapsed_recently_survives(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-crashed", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        _backdate_task(pg_conn, "t-crashed", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "t-crashed", secs_ago=3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 0
+        # The redelivered run keeps counting attempts toward the poison guard.
+        assert repo.try_claim_lease(
+            key="t-crashed", task_name="ingest", task_id="t1", owner_id="w2",
+        ) == 2
+
+    def test_old_pending_row_with_long_expired_lease_is_deleted(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-dead", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        _backdate_task(pg_conn, "t-dead", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "t-dead", secs_ago=25 * 3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 1
+        assert _read_task(pg_conn, "t-dead") is None
+
+    def test_old_completed_row_is_deleted(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-done", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        repo.finalize_task("t-done", result_json={"ok": True}, status="completed")
+        _backdate_task(pg_conn, "t-done", secs_ago=25 * 3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 1
+        assert _read_task(pg_conn, "t-done") is None
 
 
 # ----------------------------------------------------------------------
@@ -527,3 +614,52 @@ class TestLiveLeaseKeys:
 
         assert repo.live_lease_keys(["live", "expired", "released", "done", "absent"]) == {"live"}
         assert repo.live_lease_keys([]) == set()
+
+
+class TestInFlightIngest:
+    """A marker names a user's remote source and points at the ingest running it."""
+
+    def _mark(self, repo, task_key, task_id, source_id="s1"):
+        return repo.claim_in_flight_ingest("u:ingest-in-flight:x", task_key=task_key, task_id=task_id,
+                                           source_id=source_id)
+
+    def test_a_queued_ingest_blocks_and_is_reported(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.claim_task("u:k1", "ingest_remote", "t1")
+        assert self._mark(repo, "u:k1", "t1") is not None
+
+        repo.claim_task("u:k2", "ingest_remote", "t2")
+        assert self._mark(repo, "u:k2", "t2", "s2") is None
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") == {"task_id": "t1", "source_id": "s1"}
+
+    def test_a_resumed_ingest_counts_under_its_resume_task_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.claim_task("u:k1", "ingest_remote", "t1")
+        self._mark(repo, "u:k1", "t1")
+        repo.try_claim_lease("u:k1", "ingest_remote", "t1", "dead", ttl_seconds=1)
+        pg_conn.execute(text(
+            "UPDATE task_dedup SET lease_expires_at = now() - interval '1 hour' WHERE idempotency_key = 'u:k1'"
+        ))
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") is None
+
+        repo.reset_for_resume("u:k1", "t1-resumed")
+
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") == {"task_id": "t1-resumed", "source_id": "s1"}
+
+    def test_a_marker_whose_task_row_is_gone_is_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        self._mark(repo, "u:never-claimed", "t1")
+        repo.claim_task("u:k2", "ingest_remote", "t2")
+
+        assert self._mark(repo, "u:k2", "t2", "s2") is not None
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") == {"task_id": "t2", "source_id": "s2"}
+
+    def test_markers_are_never_swept_as_stuck_tasks(self, pg_conn):
+        from docsgpt.storage.db.repositories.reconciliation import ReconciliationRepository
+
+        repo = _repo(pg_conn)
+        repo.claim_task("u:k1", "ingest_remote", "t1")
+        self._mark(repo, "u:k1", "t1")
+
+        stuck = ReconciliationRepository(pg_conn).find_stuck_idempotency_pending(max_attempts=0)
+        assert "u:ingest-in-flight:x" not in {row["idempotency_key"] for row in stuck}

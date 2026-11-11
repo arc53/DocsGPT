@@ -1,7 +1,7 @@
 ---
 title: Customizing Prompts
 description: Write the prompts your chats and agents use - the Prompts page in Settings, picking the prompt for chats without an agent, the Jinja2 template variables (system, source, passthrough, tools, artifacts, attachments), how a prompt is assembled, and the built-in presets.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-01
 ---
 
 import Image from 'next/image'
@@ -299,6 +299,11 @@ sent twice. Existing prompts keep working unchanged.
 
 If your prompt does not mention documents at all, they still reach the model
 through the user turn. You do not need to add anything to get grounding.
+
+Each document names the knowledge it came from (`<knowledge>`) as well as its
+file (`<source>`), and so does each search-tool result. A question that names a
+source, such as "Summarize Carrier Contracts 2026", reaches that source's
+passages even though their files are named differently.
 
 ## Citations
 

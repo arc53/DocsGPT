@@ -19,6 +19,8 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { FileUpload } from '../../../components/FileUpload';
 import { analyticsOf, isDefaultAnalytics } from '../../analyticsConfig';
+import StartersFields from '../../components/StartersFields';
+import { cleanStarters } from '../../starters';
 import {
   type ModelWindow,
   isContextLimitInvalid,
@@ -34,6 +36,8 @@ import NodeRetryControl from './NodeRetryControl';
 export interface WorkflowDetailsValues {
   name: string;
   description: string;
+  /** The agent's starters, as typed: an empty one is none. */
+  starters: string[];
   allowPromptOverride: boolean;
   /** `config.analytics`; unset reads as the defaults. */
   analytics?: AnalyticsConfig;
@@ -80,7 +84,7 @@ interface WorkflowDetailsSheetProps {
 }
 
 /**
- * The workflow's name, description, avatar, prompt-override and context-limit
+ * The workflow's name, description, avatar, starters, prompt-override and context-limit
  * settings, retry defaults and insights settings, in a modal side panel laid out like the classic agent's
  * Basics on a phone. The Insights card hides while the server has insights
  * off, unless the workflow already has settings of its own (as on Overview).
@@ -132,6 +136,8 @@ export default function WorkflowDetailsSheet({
     imageFile !== null ||
     draft.name !== details.name ||
     draft.description !== details.description ||
+    JSON.stringify(cleanStarters(draft.starters)) !==
+      JSON.stringify(cleanStarters(details.starters)) ||
     draft.allowPromptOverride !== details.allowPromptOverride ||
     JSON.stringify(draft.analytics) !==
       JSON.stringify(analyticsOf(details.analytics)) ||
@@ -213,6 +219,18 @@ export default function WorkflowDetailsSheet({
               />
             </FormField>
           </div>
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('agents.form.sections.starters')}
+            description={t('agents.form.starters.description')}
+          />
+          <StartersFields
+            starters={draft.starters}
+            onChange={(starters) => setDraft((prev) => ({ ...prev, starters }))}
+          />
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
           <SectionHeader

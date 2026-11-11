@@ -82,7 +82,7 @@ backgroundListenerMiddleware.startListening({
         listenerApi.dispatch(markConversationUnread(conversationId));
       }
       if (!isPageAttended() && isFreshEvent(event)) {
-        const text = notificationText(payload, (key) => i18n.t(key) ?? key);
+        const text = notificationText(payload, (key) => i18n.t(key) || key);
         try {
           await showLocalNotification({
             title: text.title,
