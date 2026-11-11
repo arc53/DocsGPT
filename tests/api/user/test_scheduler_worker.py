@@ -60,6 +60,7 @@ def patched_engine(pg_engine, monkeypatch):
         type("S", (), {
             "POSTGRES_URI": str(pg_engine.url),
             "SCHEDULE_AUTOPAUSE_FAILURES": 2,
+            "SCHEDULE_NOTIFY_RECURRING_FAILURES": False,
         })(),
     )
     yield pg_engine
@@ -839,6 +840,230 @@ class TestCannotComplete:
         assert row["error"] == "Check site: no browser tool"
 
 
+class TestPauseNotifies:
+    """A recurring schedule that pauses itself tells its owner once, with why."""
+
+    @pytest.fixture
+    def notified(self, monkeypatch):
+        from docsgpt.api.user import scheduler_worker
+
+        sent: list[dict] = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: sent.append(kw))
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_AUTOPAUSE_FAILURES", 3)
+        return sent
+
+    def _recurring(self, conn, *, name=None, instruction="Post the nightly CRM digest"):
+        agent_id = _make_agent(conn)
+        schedule = SchedulesRepository(conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring", name=name,
+            instruction=instruction, cron="0 2 * * *", next_run_at=_now() + timedelta(hours=1),
+        )
+        return schedule, agent_id
+
+    def _runs(self, conn, schedule, agent_id, count, *, start=0, trigger_source="cron"):
+        return [
+            ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now() + timedelta(minutes=start + i),
+                trigger_source=trigger_source,
+            )
+            for i in range(count)
+        ]
+
+    def _resume(self, conn, schedule):
+        SchedulesRepository(conn).update_internal(
+            str(schedule["id"]), {"status": "active", "next_run_at": _now() + timedelta(hours=1)},
+        )
+        SchedulesRepository(conn).reset_failure_count(str(schedule["id"]))
+
+    def test_the_failure_that_pauses_it_notifies_once_with_the_reason(
+        self, pg_engine, patched_engine, stub_events, notified,
+    ):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn, name="Nightly CRM digest")
+            runs = self._runs(conn, schedule, agent_id, 3)
+
+        for index, run in enumerate(runs):
+            _execute_with(run, _outcome(EXPLANATION, cannot_complete=f"No CRM tool on run {index + 1}."))
+            assert len(notified) == (1 if index == 2 else 0)
+
+        schedule_id = str(schedule["id"])
+        assert notified[0] == {
+            "user_id": "u1",
+            "conversation_id": None,
+            "kind": "schedule_paused",
+            "title": "Nightly CRM digest",
+            "body": "No CRM tool on run 3.",
+            "url": f"/activity/schedules?schedule={schedule_id}",
+            "schedule_id": schedule_id,
+        }
+
+    def test_failures_below_the_threshold_notify_nobody(self, pg_engine, patched_engine, stub_events, notified):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn)
+            runs = self._runs(conn, schedule, agent_id, 2)
+
+        for run in runs:
+            with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", side_effect=RuntimeError("boom")):
+                execute_scheduled_run_body(str(run["id"]), "celery-p")
+
+        assert notified == []
+
+    def test_a_resumed_schedule_that_pauses_again_notifies_again(
+        self, pg_engine, patched_engine, stub_events, notified,
+    ):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn, name="Digest")
+            first = self._runs(conn, schedule, agent_id, 3)
+        for run in first:
+            _execute_with(run, _outcome("", cannot_complete="No CRM tool."))
+        with pg_engine.begin() as conn:
+            self._resume(conn, schedule)
+            second = self._runs(conn, schedule, agent_id, 3, start=10)
+        for run in second:
+            _execute_with(run, _outcome("", cannot_complete="Still no CRM tool."))
+
+        assert [(n["kind"], n["body"]) for n in notified] == [
+            ("schedule_paused", "No CRM tool."),
+            ("schedule_paused", "Still no CRM tool."),
+        ]
+
+    def test_a_run_on_a_paused_schedule_does_not_notify_again(
+        self, pg_engine, patched_engine, stub_events, notified,
+    ):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn)
+            runs = self._runs(conn, schedule, agent_id, 3)
+            manual = self._runs(conn, schedule, agent_id, 1, start=10, trigger_source="manual")
+        for run in [*runs, *manual]:
+            _execute_with(run, _outcome("", cannot_complete="No CRM tool."))
+
+        assert len(notified) == 1
+
+    def test_an_unnamed_schedule_is_titled_by_its_instruction(
+        self, pg_engine, patched_engine, stub_events, notified,
+    ):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn, instruction="Check **every** open ticket\nand ping owners")
+            runs = self._runs(conn, schedule, agent_id, 3)
+        for run in runs:
+            _execute_with(run, _outcome("", cannot_complete="No ticket tool."))
+
+        assert notified[0]["title"] == "Check every open ticket and ping owners"
+
+    def test_a_refused_tool_is_named_in_the_body(self, pg_engine, patched_engine, stub_events, notified):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn)
+            runs = self._runs(conn, schedule, agent_id, 3)
+        refused = _outcome(
+            "", error_type="tool_not_allowed", error="headless allowlist blocked required tool: crm_update",
+        )
+        for run in runs:
+            _execute_with(run, refused)
+
+        assert notified[0]["body"] == "headless allowlist blocked required tool: crm_update"
+
+    def test_a_timeout_says_so(self, pg_engine, patched_engine, stub_events, notified):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn)
+            runs = self._runs(conn, schedule, agent_id, 3)
+        for run in runs:
+            with patch(
+                "docsgpt.api.user.scheduler_worker.run_agent_headless", side_effect=SoftTimeLimitExceeded(),
+            ):
+                execute_scheduled_run_body(str(run["id"]), "celery-t")
+
+        assert notified[0]["kind"] == "schedule_paused"
+        assert notified[0]["body"] == "run exceeded soft time limit"
+
+    def test_the_body_is_the_errors_first_line(self, pg_engine, patched_engine, stub_events, notified):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._recurring(conn)
+            runs = self._runs(conn, schedule, agent_id, 3)
+        long_error = "Upstream refused the token\n  File \"x.py\", line 3\n" + "detail " * 200
+        for run in runs:
+            with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", side_effect=RuntimeError(long_error)):
+                execute_scheduled_run_body(str(run["id"]), "celery-l")
+
+        assert notified[0]["body"] == "Upstream refused the token"
+
+    def test_a_one_time_task_is_never_paused_or_notified_as_paused(
+        self, pg_engine, patched_engine, stub_events, notified,
+    ):
+        with pg_engine.begin() as conn:
+            agent_id = _make_agent(conn)
+            schedule = SchedulesRepository(conn).create(
+                user_id="u1", agent_id=agent_id, trigger_type="once", instruction="once",
+                run_at=_now() + timedelta(seconds=5), next_run_at=_now(),
+            )
+            for _ in range(3):
+                SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+            run = ScheduleRunsRepository(conn).record_pending(str(schedule["id"]), "u1", agent_id, _now())
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", side_effect=RuntimeError("boom")):
+            execute_scheduled_run_body(str(run["id"]), "celery-o")
+
+        assert notified == []
+
+
+class TestFirstFailureNotifies:
+    """With ``SCHEDULE_NOTIFY_RECURRING_FAILURES`` on, the first failure after a success is notified too."""
+
+    @pytest.fixture
+    def notified(self, monkeypatch):
+        from docsgpt.api.user import scheduler_worker
+
+        sent: list[dict] = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: sent.append(kw))
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_AUTOPAUSE_FAILURES", 3)
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_NOTIFY_RECURRING_FAILURES", True)
+        return sent
+
+    def _execute_all(self, pg_engine, outcomes, *, trigger_source="cron"):
+        helper = TestPauseNotifies()
+        with pg_engine.begin() as conn:
+            schedule, agent_id = helper._recurring(conn, name="Digest")
+            runs = helper._runs(conn, schedule, agent_id, len(outcomes), trigger_source=trigger_source)
+        for run, outcome in zip(runs, outcomes):
+            _execute_with(run, outcome)
+        return schedule
+
+    def test_the_first_failure_after_a_success_is_notified_once(
+        self, pg_engine, patched_engine, stub_events, notified,
+    ):
+        fail = _outcome("", cannot_complete="No CRM tool.")
+        schedule = self._execute_all(pg_engine, [_outcome("done"), fail, fail, _outcome("done"), fail])
+
+        url = f"/activity/schedules?schedule={schedule['id']}"
+        assert [(n["kind"], n["title"], n["body"], n["url"]) for n in notified] == [
+            ("schedule_failed", "Digest", "No CRM tool.", url),
+            ("schedule_failed", "Digest", "No CRM tool.", url),
+        ]
+
+    def test_the_pause_still_notifies_as_a_pause(self, pg_engine, patched_engine, stub_events, notified):
+        fail = _outcome("", cannot_complete="No CRM tool.")
+        self._execute_all(pg_engine, [fail, fail, fail])
+
+        assert [n["kind"] for n in notified] == ["schedule_failed", "schedule_paused"]
+
+    def test_a_run_started_by_hand_is_not_notified_as_failed(
+        self, pg_engine, patched_engine, stub_events, notified,
+    ):
+        self._execute_all(pg_engine, [_outcome("", cannot_complete="No CRM tool.")], trigger_source="manual")
+
+        assert notified == []
+
+    def test_off_by_default(self, pg_engine, patched_engine, stub_events, notified, monkeypatch):
+        from docsgpt.api.user import scheduler_worker
+        from docsgpt.core.settings.scheduler import SchedulerSettings
+
+        assert SchedulerSettings.model_fields["SCHEDULE_NOTIFY_RECURRING_FAILURES"].default is False
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_NOTIFY_RECURRING_FAILURES", False)
+        self._execute_all(pg_engine, [_outcome("", cannot_complete="No CRM tool.")])
+
+        assert notified == []
+
+
 class TestRunAsOwnerAccessRecheck:
     """A schedule someone set on another user's agent re-checks their access
     on every run; the run itself always executes as the agent's owner."""
@@ -885,6 +1110,32 @@ class TestRunAsOwnerAccessRecheck:
             row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
         assert row["status"] == "failed"
         assert row["error"] == "agent access revoked"
+
+    def test_revoked_access_pauses_the_schedule_and_tells_its_user(
+        self, pg_engine, patched_engine, stub_events, monkeypatch,
+    ):
+        from docsgpt.api.user import scheduler_worker
+
+        notified: list[dict] = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_NOTIFY_RECURRING_FAILURES", True)
+        with pg_engine.begin() as conn:
+            first = self._member_run(conn, grant=False)
+            second = ScheduleRunsRepository(conn).record_pending(
+                str(first["schedule_id"]), "member-y", str(first["agent_id"]), _now() + timedelta(minutes=1),
+            )
+
+        for run in (first, second):
+            execute_scheduled_run_body(str(run["id"]), "celery-r")
+
+        with pg_engine.connect() as conn:
+            sched = SchedulesRepository(conn).get_internal(str(first["schedule_id"]))
+        assert sched["status"] == "paused"
+        assert "schedule.autopaused" in {e[0] for e in stub_events}
+        assert [(n["kind"], n["user_id"], n["body"]) for n in notified] == [
+            ("schedule_failed", "member-y", "agent access revoked"),
+            ("schedule_paused", "member-y", "agent access revoked"),
+        ]
 
     def test_member_with_grant_runs(self, pg_engine, patched_engine, stub_events):
         with pg_engine.begin() as conn:

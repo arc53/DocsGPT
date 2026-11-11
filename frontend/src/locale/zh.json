@@ -74,7 +74,9 @@
         "monitor_expired": "监控已过期",
         "schedule": "计划任务已完成",
         "default": "新回复",
-        "docs_gaps": "每周文档缺口摘要"
+        "docs_gaps": "每周文档缺口摘要",
+        "schedule_paused": "计划任务已暂停",
+        "schedule_failed": "计划任务失败"
       },
       "open": "打开",
       "fallbackTitle": "你的助手有新消息"
