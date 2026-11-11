@@ -15,7 +15,6 @@ import {
 } from '../components/ui/tooltip';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import {
   Card,
@@ -28,7 +27,6 @@ import { EmptyState } from '../components/ui/empty-state';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { SectionHeader } from '../components/ui/section-header';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import SectionShell from '../navigation/SectionShell';
 import { promptDrafterMode } from '../drafter/promptDraft';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
@@ -48,6 +46,13 @@ import {
 import type { MenuOption } from '../components/ui/dropdown-menu';
 import { PromptDraftPanel } from '../prompts/PromptDraftPanel';
 import { PromptView } from '../prompts/PromptView';
+import {
+  PromptConflictNotice,
+  PromptLeaveDialog,
+  PromptSaveButton,
+  promptSaveDisabled,
+  savePrompt,
+} from '../prompts/PromptViewChrome';
 import { type PromptDetail, usePromptDetail } from '../prompts/usePromptDetail';
 import type { AppDispatch } from '../store';
 import { agentChatPath, agentEditPath } from '../agents/paths';
@@ -70,17 +75,6 @@ const KINDS = ['all', ...SECTIONS.map((section) => section.key)] as const;
 type KindFilter = (typeof KINDS)[number];
 
 const PRESETS = ['default', 'creative', 'strict'];
-
-/** What Save and leave says when it can't save, by the reason it rejected. */
-const LEAVE_ERRORS: Record<string, string> = {
-  // Another try saves a copy: a save at the same version fails the same.
-  conflict: 'settings.prompts.editConflictLeave',
-  review: 'settings.prompts.saveBlocked.review',
-  name: 'settings.prompts.saveBlocked.name',
-  nameExists: 'modals.prompts.nameExists',
-  content: 'settings.prompts.saveBlocked.content',
-  template: 'modals.prompts.templateBroken',
-};
 
 /**
  * Arrow keys move the checked radio card by card; the save waits this long
@@ -498,6 +492,10 @@ function PromptDetailPage({
     setContent: detail.setContent,
   });
   const streaming = drafter.session.streaming;
+  const saveDisabled = promptSaveDisabled(
+    detail,
+    streaming || drafter.review !== null,
+  );
   // A copy made by Improve opens with the drawer.
   const [drawerOpen, setDrawerOpen] = React.useState(
     target?.kind === 'new' && target.draft,
@@ -601,26 +599,7 @@ function PromptDetailPage({
                   />
                 )}
                 {!readOnly && (
-                  <Button
-                    type="button"
-                    size="field"
-                    shape="pill"
-                    // After a conflict a save at the same version fails the
-                    // same: Save keeps the changes as a new prompt instead.
-                    onClick={() =>
-                      void detail.save({ asCopy: detail.conflict })
-                    }
-                    // Mid-review the text holds only the changes chosen so
-                    // far: the drawer's Accept all or Discard ends it first.
-                    disabled={
-                      !detail.canSave || streaming || drafter.review !== null
-                    }
-                    loading={detail.saving}
-                  >
-                    {detail.conflict
-                      ? t('settings.prompts.saveAsCopy')
-                      : t('modals.prompts.save')}
-                  </Button>
+                  <PromptSaveButton detail={detail} disabled={saveDisabled} />
                 )}
               </>
             }
@@ -640,32 +619,7 @@ function PromptDetailPage({
             loading={detail.status === 'loading'}
             onRetry={detail.status === 'error' ? detail.retry : undefined}
             notice={
-              detail.conflict && !readOnly ? (
-                <Alert variant="warning" data-slot="prompt-conflict">
-                  <AlertTitle>
-                    {t('settings.prompts.conflict.title')}
-                  </AlertTitle>
-                  <AlertDescription>
-                    <p>
-                      {t('settings.prompts.conflict.description')}{' '}
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="text"
-                        tone="current"
-                        onClick={() => void detail.save({ asCopy: true })}
-                        disabled={
-                          !detail.canSave ||
-                          streaming ||
-                          drafter.review !== null
-                        }
-                      >
-                        {t('settings.prompts.saveAsCopy')}
-                      </Button>
-                    </p>
-                  </AlertDescription>
-                </Alert>
-              ) : undefined
+              <PromptConflictNotice detail={detail} disabled={saveDisabled} />
             }
             idPrefix={saved ? 'edit' : 'new'}
             name={detail.name}
@@ -694,41 +648,11 @@ function PromptDetailPage({
           {dialogs}
           {leaveGuard.dialog}
           {leaving && (
-            <ConfirmationModal
-              message={t('settings.prompts.unsavedChanges')}
-              modalState="ACTIVE"
-              setModalState={(state) => setLeaving(state === 'ACTIVE')}
-              submitLabel={
-                detail.conflict
-                  ? t('settings.prompts.saveCopyAndLeave')
-                  : t('settings.prompts.saveAndLeave')
-              }
-              // Pending while the save runs; a refused save rejects, so its
-              // error stays in this dialog and the page stays put. A prompt
-              // that can't be saved yet (no name, an open review) rejects
-              // with what stops it, which the dialog says.
-              handleSubmit={async () => {
-                if (drafter.review !== null) throw new Error('review');
-                if (!detail.canSave)
-                  throw new Error(detail.saveBlocker ?? 'failed');
-                const result = await detail.save({
-                  quiet: true,
-                  asCopy: detail.conflict,
-                });
-                if (result !== 'saved') throw new Error(result);
-              }}
-              error={(reason) =>
-                t(
-                  LEAVE_ERRORS[
-                    reason instanceof Error ? reason.message : 'failed'
-                  ] ?? 'settings.prompts.saveFailed',
-                )
-              }
-              cancelLabel={t('settings.prompts.leaveWithoutSaving')}
-              handleCancel={() => {
-                setLeaving(false);
-                detail.close();
-              }}
+            <PromptLeaveDialog
+              detail={detail}
+              reviewing={drafter.review !== null}
+              onClose={() => setLeaving(false)}
+              onLeave={detail.close}
             />
           )}
         </SectionShell>
@@ -749,9 +673,9 @@ function PromptDetailPage({
           onOpenAgent={openAgent}
           save={{
             // Like the page's Save: a copy after a conflict.
-            onSave: () => void detail.save({ asCopy: detail.conflict }),
+            onSave: () => void savePrompt(detail),
             // The header's Save, under the written draft.
-            disabled: !detail.canSave || streaming || drafter.review !== null,
+            disabled: saveDisabled,
             saving: detail.saving,
             dirty: detail.dirty,
           }}

@@ -35,7 +35,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MetaLine } from '@/components/ui/meta-line';
@@ -71,7 +71,6 @@ import connectorsService from '../api/services/connectorsService';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
   selectAgentFolders,
@@ -85,6 +84,12 @@ import {
 } from '../preferences/preferenceSlice';
 import { canEditPrompt } from '../prompts/promptAccess';
 import { PromptView } from '../prompts/PromptView';
+import {
+  PromptConflictNotice,
+  PromptLeaveDialog,
+  PromptSaveButton,
+  promptSaveDisabled,
+} from '../prompts/PromptViewChrome';
 import { usePromptDetail } from '../prompts/usePromptDetail';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
@@ -219,17 +224,6 @@ const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
   starters: MessageSquare,
   shorter: PencilLine,
   tightenPrompt: Scissors,
-};
-
-/** What the prompt view's Save and leave says when it can't save, by reason. */
-const LEAVE_ERRORS: Record<string, string> = {
-  // Another try saves a copy: a save at the same version fails the same.
-  conflict: 'settings.prompts.editConflictLeave',
-  review: 'settings.prompts.saveBlocked.review',
-  name: 'settings.prompts.saveBlocked.name',
-  nameExists: 'modals.prompts.nameExists',
-  content: 'settings.prompts.saveBlocked.content',
-  template: 'modals.prompts.templateBroken',
 };
 
 /** A field a proposal changed: what it held before and what the draft set. */
@@ -2970,6 +2964,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             })
           : null
       : null;
+  const promptSaveOff = promptSaveDisabled(
+    promptDetail,
+    drafterSession.streaming || promptReview.review !== null,
+  );
   const promptView = viewTarget ? (
     <PromptView
       parent={{
@@ -3000,30 +2998,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             />
           )}
           {!promptDetail.readOnly && (
-            <Button
-              type="button"
-              size="field"
-              shape="pill"
-              // After a conflict a save at the same version fails the same:
-              // Save keeps the changes as a new prompt instead.
-              onClick={() =>
-                void promptDetail.save({ asCopy: promptDetail.conflict })
-              }
-              // Mid-review the text holds only the changes chosen so far:
-              // the drawer's Accept all or Discard ends it first.
-              disabled={
-                !promptDetail.canSave ||
-                drafterSession.streaming ||
-                promptReview.review !== null
-              }
-              loading={promptDetail.saving}
-            >
-              {promptDetail.conflict
-                ? t('settings.prompts.saveAsCopy')
-                : promptOrigin === 'drafter'
+            <PromptSaveButton
+              detail={promptDetail}
+              disabled={promptSaveOff}
+              label={
+                promptOrigin === 'drafter'
                   ? t('drafter.agent.prompt.use')
-                  : t('modals.prompts.save')}
-            </Button>
+                  : undefined
+              }
+            />
           )}
         </>
       }
@@ -3031,30 +3014,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       loading={promptDetail.status === 'loading'}
       onRetry={promptDetail.status === 'error' ? promptDetail.retry : undefined}
       notice={
-        promptDetail.conflict && !promptDetail.readOnly ? (
-          <Alert variant="warning" data-slot="prompt-conflict">
-            <AlertTitle>{t('settings.prompts.conflict.title')}</AlertTitle>
-            <AlertDescription>
-              <p>
-                {t('settings.prompts.conflict.description')}{' '}
-                <Button
-                  type="button"
-                  variant="link"
-                  size="text"
-                  tone="current"
-                  onClick={() => void promptDetail.save({ asCopy: true })}
-                  disabled={
-                    !promptDetail.canSave ||
-                    drafterSession.streaming ||
-                    promptReview.review !== null
-                  }
-                >
-                  {t('settings.prompts.saveAsCopy')}
-                </Button>
-              </p>
-            </AlertDescription>
-          </Alert>
-        ) : undefined
+        <PromptConflictNotice detail={promptDetail} disabled={promptSaveOff} />
       }
       idPrefix="agent-prompt"
       name={promptDetail.name}
@@ -3886,43 +3846,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             )}
           </div>
           {leavingPrompt && (
-            <ConfirmationModal
-              message={t('settings.prompts.unsavedChanges')}
-              modalState="ACTIVE"
-              setModalState={(state) => setLeavingPrompt(state === 'ACTIVE')}
-              submitLabel={
-                promptDetail.conflict
-                  ? t('settings.prompts.saveCopyAndLeave')
-                  : t('settings.prompts.saveAndLeave')
-              }
-              // Pending while the save runs; a refused save rejects, so its
-              // error stays in this dialog and the view stays. A prompt that
-              // can't be saved yet (no name) just stays.
-              handleSubmit={async () => {
-                // What stops the save (a review, a missing name or text)
-                // stays in the dialog, as a refused save does.
-                const blocker =
-                  promptReview.review !== null
-                    ? 'review'
-                    : promptDetail.saveBlocker;
-                if (blocker) throw new Error(blocker);
-                const result = await promptDetail.save({
-                  quiet: true,
-                  asCopy: promptDetail.conflict,
-                });
-                if (result !== 'saved') throw new Error(result);
-                setLeavingPrompt(false);
-              }}
-              error={(reason) =>
-                t(
-                  LEAVE_ERRORS[
-                    reason instanceof Error ? reason.message : 'failed'
-                  ] ?? 'settings.prompts.saveFailed',
-                )
-              }
-              cancelLabel={t('settings.prompts.leaveWithoutSaving')}
-              handleCancel={() => {
-                setLeavingPrompt(false);
+            <PromptLeaveDialog
+              detail={promptDetail}
+              reviewing={promptReview.review !== null}
+              onClose={() => setLeavingPrompt(false)}
+              onLeave={() => {
                 promptDrafted.clear();
                 closePromptView();
               }}
