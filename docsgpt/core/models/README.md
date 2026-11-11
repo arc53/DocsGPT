@@ -266,3 +266,11 @@ boundary, so a call in flight finishes and the round defers afterwards; in a
 continuation task both timers are capped by the time left before the task
 must save. A stalled provider hands off to the fallback; a run that reaches
 that cutoff stops and saves its partial answer.
+
+Reasoning chunks keep both timers fresh, so a model that thinks without ever
+answering would never trip them. `answer_timeout` (seconds) bounds the time
+from the start of the stream to the first chunk that is not reasoning; past
+it the call hands off to the fallback model, or fails when there is none. It
+overrides `LLM_ANSWER_TIMEOUT` (600 s, `0` turns the global default off),
+and the global default is never shorter than the model's first-token
+timeout. Once the answer has started only the stall timer applies.
