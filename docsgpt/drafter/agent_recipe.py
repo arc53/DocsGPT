@@ -231,25 +231,20 @@ def _ids(value: Any) -> list[str]:
     return out
 
 
-def _names(value: Any, limit: int, *, lower: bool = False) -> list[str]:
-    """Distinct non-empty strings of a list, cleaned and capped (lowercased when ``lower``)."""
+def _names(value: Any, limit: int) -> list[str]:
+    """Distinct non-empty strings of a list, cleaned and capped."""
     if not isinstance(value, list):
         return []
     out: list[str] = []
     for item in value[:_FORM_MAX_NAMES]:
         name = clean_text(item, limit)
-        name = name.lower() if lower else name
         if name and name not in out:
             out.append(name)
     return out
 
 
 def _guardrail_controls(guardrails: dict) -> list[dict]:
-    """The controls the form runs, ``{check, stage}`` each once, lowercased.
-
-    The form sends only the controls switched on. An older form sent ``checks``, the checks with any control on:
-    each is read as on at every stage the menu gives it.
-    """
+    """The controls the form runs, ``{check, stage}`` each once, lowercased (the form sends only those on)."""
     out: list[dict] = []
     raw = guardrails.get("controls")
     for item in raw[:_FORM_MAX_NAMES] if isinstance(raw, list) else []:
@@ -258,10 +253,6 @@ def _guardrail_controls(guardrails: dict) -> list[dict]:
         control = {"check": clean_text(item.get("check"), 40).lower(), "stage": clean_text(item.get("stage"), 40)}
         if control["check"] and control["stage"] and control not in out:
             out.append(control)
-    for check in _names(guardrails.get("checks"), 40, lower=True):
-        for stage, _ in GUARDRAIL_MENU.get(check, ()):
-            if {"check": check, "stage": stage} not in out:
-                out.append({"check": check, "stage": stage})
     return out
 
 

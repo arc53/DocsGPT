@@ -133,11 +133,6 @@ class TestContext:
         form = parse_context({"form": {"limits": {"mode": "forever", "value": True}}})["form"]
         assert form["limits"] == {"mode": "none", "value": None}
 
-    def test_an_older_clients_checks_count_as_on_at_every_menu_stage(self):
-        guardrails = parse_context({"form": {"guardrails": {"enabled": True, "checks": ["PII", 3]}}})["form"][
-            "guardrails"]
-        assert guardrails["controls"] == [_on("pii", "input"), _on("pii", "output")]
-
     def test_topics_may_say_whether_they_overlap_and_folders_may_be_hidden(self):
         analytics = parse_context({"form": {"analytics": {
             "topics": ["Billing", {"name": "Asks for a person", "overlap": True}, {"name": " "}, {"overlap": True}],
@@ -177,7 +172,7 @@ class TestContext:
                      "starters", "limits", "guardrails", "analytics")
         ctx = parse_context({**{key: bad for key in keys}, "step": "basics", "form": {key: bad for key in form_keys}})
         assert ctx["starter"] is None and ctx["agent_id"] is None
-        nested = {"limits": {"mode": bad, "value": bad}, "guardrails": {"mode": bad, "checks": bad},
+        nested = {"limits": {"mode": bad, "value": bad}, "guardrails": {"mode": bad, "controls": bad},
                   "analytics": {"topics": [bad], "hidden_folders": [bad]}}
         assert parse_context({"form": nested})["form"]["limits"] == {"mode": "none", "value": None}
 
