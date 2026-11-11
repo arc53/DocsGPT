@@ -39,8 +39,6 @@ TEMPLATE_INVALID = "template_invalid"
 TOOL_VARIABLES = "tool_variables"
 BOUNDARIES_MISSING = "boundaries_missing"
 CITATIONS_MISSING = "citations_missing"
-CODES = (PLACEHOLDER, REPEATS_BUILTIN, TEMPLATE_INVALID, TOOL_VARIABLES, BOUNDARIES_MISSING, CITATIONS_MISSING)
-
 
 
 @lru_cache(maxsize=1)
@@ -266,7 +264,7 @@ def prompt_checks(content: str) -> list[dict]:
         content: The prompt as the editor holds it.
 
     Returns:
-        At most :data:`MAX_CHECKS` checks, in :data:`CODES` order and then by line:
+        At most :data:`MAX_CHECKS` checks, in the order the codes are listed above, then by line:
 
         - ``{"code": "placeholder", "text": "[support email]", "line": 4}``: a blank left in
           (``[…]``, ``<…>``, ``{…}`` in a persona, ``TODO``/``TBD``/``XXX``);
