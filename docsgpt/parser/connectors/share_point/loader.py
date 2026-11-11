@@ -5,7 +5,8 @@ Loads documents from SharePoint/OneDrive using Microsoft Graph API.
 
 import logging
 import os
-from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Dict, Any, Literal, Optional, Tuple
 from urllib.parse import quote
 
 import requests
@@ -13,6 +14,33 @@ import requests
 from docsgpt.parser.connectors.base import BaseConnectorLoader, ConnectorAuthError
 from docsgpt.parser.connectors.share_point.auth import SharePointAuth
 from docsgpt.parser.schema.base import Document
+
+
+DownloadStatus = Literal['downloaded', 'skipped', 'failed']
+
+
+@dataclass
+class DownloadCounts:
+    """What a download walk got: files downloaded, skipped (unsupported type) or failed, and folders it could not list."""
+
+    downloaded: int = 0
+    skipped: int = 0
+    failed: int = 0
+    folders_failed: int = 0
+
+    def add(self, status: DownloadStatus) -> None:
+        if status == 'downloaded':
+            self.downloaded += 1
+        elif status == 'skipped':
+            self.skipped += 1
+        else:
+            self.failed += 1
+
+    def merge(self, other: 'DownloadCounts') -> None:
+        self.downloaded += other.downloaded
+        self.skipped += other.skipped
+        self.failed += other.failed
+        self.folders_failed += other.folders_failed
 
 
 class SharePointLoader(BaseConnectorLoader):
@@ -505,7 +533,7 @@ class SharePointLoader(BaseConnectorLoader):
             logging.error(f"Error downloading file {file_id}: {e}")
             return None
 
-    def _download_single_file(self, file_id: str, local_dir: str) -> bool:
+    def _download_single_file(self, file_id: str, local_dir: str) -> DownloadStatus:
         try:
             url = self._get_item_url(file_id)
             params = {'$select': 'id,name,file,webUrl'}
@@ -518,8 +546,8 @@ class SharePointLoader(BaseConnectorLoader):
             mime_type = file_data.get('mimeType', 'application/octet-stream')
 
             if mime_type not in self.SUPPORTED_MIME_TYPES:
-                logging.info(f"Skipping unsupported file type: {mime_type}")
-                return False
+                logging.info(f"Skipping unsupported file type: {mime_type} for file {file_name}")
+                return 'skipped'
 
             os.makedirs(local_dir, exist_ok=True)
             full_path = os.path.join(local_dir, file_name)
@@ -533,15 +561,15 @@ class SharePointLoader(BaseConnectorLoader):
 
             if metadata.get('webUrl'):
                 self._file_urls[full_path] = metadata['webUrl']
-            return True
+            return 'downloaded'
         except ConnectorAuthError:
             raise
         except Exception as e:
-            logging.error(f"Error in _download_single_file: {e}")
-            return False
+            logging.error(f"Error downloading file {file_id}: {e}")
+            return 'failed'
 
-    def _download_folder_recursive(self, folder_id: str, local_dir: str, recursive: bool = True) -> int:
-        files_downloaded = 0
+    def _download_folder_recursive(self, folder_id: str, local_dir: str, recursive: bool = True) -> DownloadCounts:
+        counts = DownloadCounts()
         try:
             os.makedirs(local_dir, exist_ok=True)
 
@@ -564,42 +592,29 @@ class SharePointLoader(BaseConnectorLoader):
                         if recursive:
                             subfolder_path = os.path.join(local_dir, item_name)
                             os.makedirs(subfolder_path, exist_ok=True)
-                            subfolder_files = self._download_folder_recursive(
-                                item_id,
-                                subfolder_path,
-                                recursive
-                            )
-                            files_downloaded += subfolder_files
-                            logging.info(f"Downloaded {subfolder_files} files from subfolder {item_name}")
+                            subfolder = self._download_folder_recursive(item_id, subfolder_path, recursive)
+                            counts.merge(subfolder)
+                            logging.info(f"Downloaded {subfolder.downloaded} files from subfolder {item_name}")
                     else:
-                        success = self._download_single_file(item_id, local_dir)
-                        if success:
-                            files_downloaded += 1
+                        status = self._download_single_file(item_id, local_dir)
+                        counts.add(status)
+                        if status == 'downloaded':
                             logging.info(f"Downloaded file: {item_name}")
-                        else:
+                        elif status == 'failed':
                             logging.warning(f"Failed to download file: {item_name}")
 
                 url = results.get('@odata.nextLink')
 
-            return files_downloaded
+            return counts
 
         except ConnectorAuthError:
             raise
         except Exception as e:
             logging.error(f"Error in _download_folder_recursive for folder {folder_id}: {e}", exc_info=True)
-            return files_downloaded
+            counts.folders_failed += 1
+            return counts
 
-    def _download_folder_contents(self, folder_id: str, local_dir: str, recursive: bool = True) -> int:
-        try:
-            self._ensure_valid_token()
-            return self._download_folder_recursive(folder_id, local_dir, recursive)
-        except ConnectorAuthError:
-            raise
-        except Exception as e:
-            logging.error(f"Error downloading folder {folder_id}: {e}", exc_info=True)
-            return 0
-
-    def _download_file_to_directory(self, file_id: str, local_dir: str) -> bool:
+    def _download_file_to_directory(self, file_id: str, local_dir: str) -> DownloadStatus:
         try:
             self._ensure_valid_token()
             return self._download_single_file(file_id, local_dir)
@@ -607,14 +622,26 @@ class SharePointLoader(BaseConnectorLoader):
             raise
         except Exception as e:
             logging.error(f"Error downloading file {file_id}: {e}", exc_info=True)
-            return False
+            return 'failed'
 
     def download_to_directory(self, local_dir: str, source_config: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Download the selected files and folders into ``local_dir``.
+
+        Returns:
+            ``files_downloaded``, ``files_failed``, ``folders_failed`` (folders that
+            could not be listed, so their files are missing), ``files_skipped``
+            (unsupported types), ``empty_result``, ``directory_path``,
+            ``source_type``, ``config_used`` and ``file_urls``, plus ``error`` when
+            the download could not run.
+
+        Raises:
+            ConnectorAuthError: Graph rejects the access token even after a refresh.
+        """
         if source_config is None:
             source_config = {}
 
         config = source_config if source_config else getattr(self, 'config', {})
-        files_downloaded = 0
+        counts = DownloadCounts()
         self._file_urls = {}
 
         try:
@@ -627,8 +654,7 @@ class SharePointLoader(BaseConnectorLoader):
                     file_ids = [file_ids]
 
                 for file_id in file_ids:
-                    if self._download_file_to_directory(file_id, local_dir):
-                        files_downloaded += 1
+                    counts.add(self._download_file_to_directory(file_id, local_dir))
 
             if folder_ids:
                 if isinstance(folder_ids, str):
@@ -646,42 +672,41 @@ class SharePointLoader(BaseConnectorLoader):
                         folder_path = os.path.join(local_dir, folder_name)
                         os.makedirs(folder_path, exist_ok=True)
 
-                        folder_files = self._download_folder_recursive(
-                            folder_id,
-                            folder_path,
-                            recursive
-                        )
-                        files_downloaded += folder_files
-                        logging.info(f"Downloaded {folder_files} files from folder {folder_name}")
+                        folder = self._download_folder_recursive(folder_id, folder_path, recursive)
+                        counts.merge(folder)
+                        logging.info(f"Downloaded {folder.downloaded} files from folder {folder_name}")
                     except ConnectorAuthError:
                         raise
                     except Exception as e:
                         logging.error(f"Error downloading folder {folder_id}: {e}", exc_info=True)
+                        counts.folders_failed += 1
 
             if not file_ids and not folder_ids:
                 raise ValueError("No folder_ids or file_ids provided for download")
 
-            return {
-                "files_downloaded": files_downloaded,
-                "directory_path": local_dir,
-                "empty_result": files_downloaded == 0,
-                "source_type": "share_point",
-                "config_used": config,
-                "file_urls": self._relative_file_urls(local_dir),
-            }
+            logging.info(
+                f"SharePoint/OneDrive download finished: downloaded={counts.downloaded} skipped={counts.skipped} "
+                f"failed={counts.failed} folders_failed={counts.folders_failed}"
+            )
+            return self._download_result(local_dir, config, counts)
 
         except ConnectorAuthError:
             raise
         except Exception as e:
-            return {
-                "files_downloaded": files_downloaded,
-                "directory_path": local_dir,
-                "empty_result": True,
-                "source_type": "share_point",
-                "config_used": config,
-                "file_urls": self._relative_file_urls(local_dir),
-                "error": str(e)
-            }
+            return {**self._download_result(local_dir, config, counts), "empty_result": True, "error": str(e)}
+
+    def _download_result(self, local_dir: str, config: Dict[str, Any], counts: DownloadCounts) -> Dict[str, Any]:
+        return {
+            "files_downloaded": counts.downloaded,
+            "files_failed": counts.failed,
+            "folders_failed": counts.folders_failed,
+            "files_skipped": counts.skipped,
+            "directory_path": local_dir,
+            "empty_result": counts.downloaded == 0,
+            "source_type": "share_point",
+            "config_used": config,
+            "file_urls": self._relative_file_urls(local_dir),
+        }
 
     def _relative_file_urls(self, local_dir: str) -> Dict[str, str]:
         """The downloaded files' links, keyed by their path under ``local_dir``."""
