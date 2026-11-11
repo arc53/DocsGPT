@@ -118,7 +118,14 @@ export default function AllSchedules() {
 
   // Once its tab shows and no search hides it: the row is not rendered before.
   useEffect(() => {
-    if (!focusId || tab !== focusTab || scrolledTo.current === focusId) return;
+    if (
+      !focusId ||
+      search ||
+      tab !== focusTab ||
+      scrolledTo.current === focusId
+    ) {
+      return;
+    }
     const row = Array.from(
       document.querySelectorAll<HTMLElement>('[data-schedule-id]'),
     ).find((element) => element.dataset.scheduleId === focusId);
