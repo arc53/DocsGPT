@@ -1969,6 +1969,7 @@
         "mcp_neon": "查看 Neon Postgres 项目、分支和架构，并运行 SQL。",
         "mcp_twelvedata": "查询股票、外汇、加密货币和 ETF 的行情、历史价格、技术指标和基本面数据。",
         "mcp_cloudflare": "通过 Cloudflare API 管理 Workers、DNS、R2 等。",
+        "mcp_excalidraw": "绘制图表并获取可在 Excalidraw 中编辑的链接。",
         "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
       },
       "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
@@ -2822,6 +2823,24 @@
       "notRun": "未运行",
       "notRunMovedOn": "未运行：在批准之前，对话已继续。",
       "notRunExpired": "未运行：批准请求已过期。"
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "正在加载应用…",
+        "ready": "可交互",
+        "failed": "失败"
+      },
+      "loading": "正在加载应用…",
+      "allow": "允许",
+      "allowForView": "在此应用中允许",
+      "deny": "拒绝",
+      "reload": "重新加载应用",
+      "approvalAsk": "应用想要运行 {{tool}}。是否允许？",
+      "failedTitle": "无法加载应用",
+      "failedDescription": "其 MCP 服务器没有响应，或视图未能启动。",
+      "frameTitle": "{{name}}（交互式应用）",
+      "callFailed": "工具调用失败",
+      "resultUnavailable": "结果已不可用"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
@@ -4229,7 +4248,8 @@
         "missed": "错过了运行时间",
         "overlap": "上一次运行仍在进行",
         "stream_error": "回答流中断",
-        "empty_output": "没有产生任何输出"
+        "empty_output": "没有产生任何输出",
+        "cannot_complete": "智能体无法完成此任务"
       },
       "viewRuns": "查看运行",
       "fromChat": "来自 {{name}}",

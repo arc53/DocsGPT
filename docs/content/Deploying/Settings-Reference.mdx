@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-02
+lastUpdated: 2026-11-03
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1650,6 +1650,18 @@ GitHub App URL name (github.com/apps/&lt;slug>), for the link where users choose
 Type `str`, default unset.
 
 Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE_URI.
+
+### `MCP_APPS_ENABLED`
+
+Type `bool`, default `true`.
+
+Render MCP Apps (interactive views an MCP server ships with its tools, such as Excalidraw's canvas) inline in chat. Needs a sandbox origin (MCP_APPS_SANDBOX_URL); without one the chat shows the ordinary tool step and app-only tools stay offered to the model, as with this off.
+
+### `MCP_APPS_SANDBOX_URL`
+
+Type `str`, default unset.
+
+Address of the MCP Apps sandbox page, &lt;origin>/api/mcp_apps/sandbox, on an origin other than the app's, e.g. a sandbox. subdomain pointed at this API. Unset on a loopback API_URL uses the other loopback name (localhost and 127.0.0.1 are different origins); unset elsewhere turns MCP Apps off.
 
 
 ## Server

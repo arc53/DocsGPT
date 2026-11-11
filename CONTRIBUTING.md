@@ -113,7 +113,7 @@ Personal preferences belong in your user settings; `.vscode/settings.json` and a
 
 ### Running the tests
 
-Install the test dependencies first. `uv sync` installs them with the `dev` group; with pip, run `pip install -r tests/requirements.txt` next to `docsgpt/requirements.txt`. `tests/requirements.txt` also installs the docling extra so its parser tests run; with uv, use `uv sync --extra docling` for the same coverage.
+Install the test dependencies first. `uv sync` installs them with the `dev` group; with pip, run `pip install -r tests/requirements.txt`. That file is exported from `uv.lock` with hashes by `scripts/export_requirements.sh` and holds the whole test environment: the core runtime, the docling extra so its parser tests run, and the `dev` group. With uv, use `uv sync --extra docling` for the same coverage.
 
 The database tests do not use your running Postgres. `pytest-postgresql` starts a throwaway cluster with `pg_ctl`, so the PostgreSQL server binaries must be on your `PATH` (or reachable through `pg_config --bindir`):
 

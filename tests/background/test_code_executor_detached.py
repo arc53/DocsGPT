@@ -177,6 +177,27 @@ class TestDetachedRun:
         assert len(manager.cancelled) == 1
 
 
+class TestScriptError:
+    def test_a_run_names_its_own_exception_until_the_next_call(self, tool, monkeypatch):
+        failed = ExecResult(status="error", stdout="Traceback...\nKeyError: 'total'\n", error_name="ExecutionError",
+                            error_value="Traceback...\nKeyError: 'total'\n", exit_code=1)
+        manager = _Manager(failed)
+        _use(monkeypatch, manager, call=None)
+        tool.execute_action("run_code", code="d['total']", capture_artifacts=False)
+        assert tool.job_script_error() == "KeyError"
+
+        # A call that fails before any code runs must not report the previous run's exception.
+        tool.execute_action("run_code", code="  ", capture_artifacts=False)
+        assert tool.job_script_error() is None
+
+    def test_a_sandbox_failure_is_not_the_scripts(self, tool, monkeypatch):
+        broken = ExecResult(status="error", error_name="ConnectionError", error_value="unreachable", exit_code=-1,
+                            sandbox_error=True)
+        _use(monkeypatch, _Manager(broken), call=None)
+        tool.execute_action("run_code", code="x=1", capture_artifacts=False)
+        assert tool.job_script_error() is None
+
+
 class TestPreparedRun:
     def test_round_trip(self):
         run = PreparedRun(

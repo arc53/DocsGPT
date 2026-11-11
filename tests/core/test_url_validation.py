@@ -215,6 +215,9 @@ class TestValidateUrlParserDifferential:
         "http://127.0.0.1:6666\\\\\\@1.1.1.1",
         "127.0.0.1\\@1.1.1.1/x",
         "http://127.0.0.1\t@1.1.1.1/",
+        # Percent-encoded hosts.
+        "http://127%2e0%2e0%2e1/",
+        "exa%6dple.com/x",
     ])
     def test_blocks_urls_parsers_disagree_on(self, url):
         with patch("docsgpt.core.url_validation.resolve_hostname", return_value="1.1.1.1"):

@@ -1969,6 +1969,7 @@
         "mcp_neon": "Neon の Postgres プロジェクト、ブランチ、スキーマを調べ、SQL を実行します。",
         "mcp_twelvedata": "株式、為替、暗号資産、ETF の相場、価格履歴、テクニカル指標、ファンダメンタルズを調べます。",
         "mcp_cloudflare": "Cloudflare API を通じて Workers、DNS、R2 などを管理します。",
+        "mcp_excalidraw": "図を描き、Excalidraw で編集できるリンクを取得します。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
       },
       "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
@@ -2824,6 +2825,24 @@
       "notRun": "未実行",
       "notRunMovedOn": "未実行：承認される前に会話が先に進みました。",
       "notRunExpired": "未実行：承認リクエストの有効期限が切れました。"
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "アプリを読み込み中…",
+        "ready": "操作可能",
+        "failed": "失敗"
+      },
+      "loading": "アプリを読み込み中…",
+      "allow": "許可",
+      "allowForView": "このアプリで許可",
+      "deny": "拒否",
+      "reload": "アプリを再読み込み",
+      "approvalAsk": "アプリが {{tool}} を実行しようとしています。許可しますか？",
+      "failedTitle": "アプリを読み込めませんでした",
+      "failedDescription": "MCP サーバーが応答しないか、ビューを開始できませんでした。",
+      "frameTitle": "{{name}}（インタラクティブアプリ）",
+      "callFailed": "ツールの呼び出しに失敗しました",
+      "resultUnavailable": "結果はもう利用できません"
     },
     "quotaExceeded": {
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
@@ -4231,7 +4250,8 @@
         "missed": "実行時刻を逃した",
         "overlap": "前回の実行が継続中",
         "stream_error": "回答のストリームが途切れた",
-        "empty_output": "出力がなかった"
+        "empty_output": "出力がなかった",
+        "cannot_complete": "エージェントがこのタスクを実行できない"
       },
       "viewRuns": "実行を表示",
       "fromChat": "{{name}} から",

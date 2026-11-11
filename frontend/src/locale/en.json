@@ -1973,6 +1973,7 @@
         "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
         "mcp_twelvedata": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
         "mcp_cloudflare": "Manage Workers, DNS, R2 and more through the Cloudflare API.",
+        "mcp_excalidraw": "Draw diagrams and get an editable Excalidraw link.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -2837,6 +2838,24 @@
       "notRun": "not run",
       "notRunMovedOn": "Not run: the conversation moved on before this was approved.",
       "notRunExpired": "Not run: the approval request expired."
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "Loading the app…",
+        "ready": "Interactive",
+        "failed": "Failed"
+      },
+      "loading": "Loading the app…",
+      "allow": "Allow",
+      "allowForView": "Allow for this app",
+      "deny": "Deny",
+      "reload": "Reload app",
+      "approvalAsk": "The app wants to run {{tool}}. Allow it?",
+      "failedTitle": "The app couldn't load",
+      "failedDescription": "Its MCP server didn't answer, or the view failed to start.",
+      "frameTitle": "{{name}} (interactive app)",
+      "callFailed": "The tool call failed",
+      "resultUnavailable": "The result is no longer available"
     },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",
@@ -4272,7 +4291,8 @@
         "missed": "missed its time",
         "overlap": "the previous run was still going",
         "stream_error": "the answer stream broke",
-        "empty_output": "it produced nothing"
+        "empty_output": "it produced nothing",
+        "cannot_complete": "the agent can't do this task"
       },
       "viewRuns": "View runs",
       "fromChat": "From {{name}}",
