@@ -2149,114 +2149,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     return count > 0 ? t('drafter.agent.draftedCount', { count }) : null;
   };
 
-  const handleSaveDraft = async () => {
+  /**
+   * Save the agent as a draft, or publish it (Save on a published agent).
+   * Edits made while the save is out stay unsaved; publishing also ends
+   * the drafting session and starts the preview's chat over.
+   */
+  const saveAgent = async (status: 'draft' | 'published') => {
     if (savingRef.current) return;
+    const publish = status === 'published';
     const saving = savePayload;
     // Drafted values that go with the save lose their marks; a draft that
     // lands while it is out keeps its.
     const savedValues = draftValues;
-    const formData = new FormData();
-    formData.append('name', agent.name);
-    formData.append('description', agent.description);
-    formData.append('starters', JSON.stringify(cleanStarters(agent.starters)));
-
-    appendSourceFields(formData);
-
-    formData.append('chunks', agent.chunks);
-    formData.append('retriever', agent.retriever);
-    formData.append('prompt_id', agent.prompt_id);
-    formData.append('agent_type', agent.agent_type);
-    formData.append('status', 'draft');
-    formData.append('config', JSON.stringify(configToSave(agent.config)));
-
-    if (agent.limited_token_mode && agent.token_limit) {
-      formData.append('limited_token_mode', 'True');
-      formData.append('token_limit', agent.token_limit.toString());
-    } else {
-      formData.append('limited_token_mode', 'False');
-      formData.append('token_limit', '0');
-    }
-
-    if (agent.limited_request_mode && agent.request_limit) {
-      formData.append('limited_request_mode', 'True');
-      formData.append('request_limit', agent.request_limit.toString());
-    } else {
-      formData.append('limited_request_mode', 'False');
-      formData.append('request_limit', '0');
-    }
-
-    formData.append(
-      'allow_system_prompt_override',
-      agent.allow_system_prompt_override ? 'True' : 'False',
-    );
-
-    if (imageFile) formData.append('image', imageFile);
-
-    if (agent.tools && agent.tools.length > 0)
-      formData.append('tools', JSON.stringify(agent.tools));
-    else formData.append('tools', '[]');
-
-    if (agent.json_schema) {
-      formData.append('json_schema', JSON.stringify(agent.json_schema));
-    }
-
-    if (agent.models && agent.models.length > 0) {
-      formData.append('models', JSON.stringify(agent.models));
-    }
-    if (agent.default_model_id) {
-      formData.append('default_model_id', agent.default_model_id);
-    }
-
-    if (effectiveMode === 'new' && validatedFolderId) {
-      formData.append('folder_id', validatedFolderId);
-    }
-
-    try {
-      savingRef.current = true;
-      setDraftLoading(true);
-      setSubmitError(null);
-      const result = await sendAgent(
-        formData,
-        t('agents.form.errors.saveDraftFailed'),
-      );
-      if (result.status === 'cancelled') return;
-      if (result.status === 'failed') {
-        setSubmitError(result.message);
-        return;
-      }
-      const data = await result.response.json();
-      // What is on the agent now is what the tool picker keeps rows for.
-      setAttachedTools(selectedTools);
-
-      const saved = {
-        id: data.id || agent.id,
-        image: data.image || agent.image,
-        // The stamp the next save sends.
-        updated_at: data.updated_at ?? agent.updated_at,
-      };
-      // Edits made while the save was out stay.
-      setAgent((prev) => ({ ...prev, ...saved }));
-      initialAgentRef.current = { ...agent, ...saved };
-      // What was sent is saved: the avatar went with it.
-      markSaved(saving);
-      setImageFile(null);
-      drafted.clear(savedValues);
-
-      if (effectiveMode === 'new') setEffectiveMode('draft');
-    } catch (error) {
-      console.error('Error saving draft:', error);
-      setSubmitError(t('agents.form.errors.saveDraftFailed'));
-    } finally {
-      savingRef.current = false;
-      setDraftLoading(false);
-    }
-  };
-
-  const handlePublish = async () => {
-    if (savingRef.current) return;
-    const saving = savePayload;
-    const savedValues = draftValues;
     const turnsAtSave = turnsRef.current;
+    const failedText = t(
+      publish
+        ? 'agents.form.errors.publishFailed'
+        : 'agents.form.errors.saveDraftFailed',
+    );
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -2268,17 +2178,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
-    formData.append('status', 'published');
+    formData.append('status', status);
     formData.append('config', JSON.stringify(configToSave(agent.config)));
-
-    if (imageFile) formData.append('image', imageFile);
-    if (agent.tools && agent.tools.length > 0)
-      formData.append('tools', JSON.stringify(agent.tools));
-    else formData.append('tools', '[]');
-
-    if (agent.json_schema) {
-      formData.append('json_schema', JSON.stringify(agent.json_schema));
-    }
 
     // Always send the limited mode fields
     if (agent.limited_token_mode && agent.token_limit) {
@@ -2302,6 +2203,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.allow_system_prompt_override ? 'True' : 'False',
     );
 
+    if (imageFile) formData.append('image', imageFile);
+
+    if (agent.tools && agent.tools.length > 0)
+      formData.append('tools', JSON.stringify(agent.tools));
+    else formData.append('tools', '[]');
+
+    if (agent.json_schema) {
+      formData.append('json_schema', JSON.stringify(agent.json_schema));
+    }
+
     if (agent.models && agent.models.length > 0) {
       formData.append('models', JSON.stringify(agent.models));
     }
@@ -2313,14 +2224,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('folder_id', validatedFolderId);
     }
 
+    const setLoading = publish ? setPublishLoading : setDraftLoading;
     try {
       savingRef.current = true;
-      setPublishLoading(true);
+      setLoading(true);
       setSubmitError(null);
-      const result = await sendAgent(
-        formData,
-        t('agents.form.errors.publishFailed'),
-      );
+      const result = await sendAgent(formData, failedText);
       if (result.status === 'cancelled') return;
       if (result.status === 'failed') {
         setSubmitError(result.message);
@@ -2330,16 +2239,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
       const saved = {
         id: data.id || agent.id,
-        key: data.key || agent.key,
-        status: 'published',
         image: data.image || agent.image,
+        // The stamp the next save sends.
         updated_at: data.updated_at ?? agent.updated_at,
+        ...(publish ? { key: data.key || agent.key, status } : {}),
       };
+      // Edits made while the save was out stay.
       setAgent((prev) => ({ ...prev, ...saved }));
-      const updatedAgent = { ...agent, ...saved };
-      initialAgentRef.current = updatedAgent;
+      initialAgentRef.current = { ...agent, ...saved };
+      // What was sent is saved: the avatar went with it.
       markSaved(saving);
+      setImageFile(null);
       drafted.clear(savedValues);
+      // What is on the agent now is what the tool picker keeps rows for.
+      setAttachedTools(selectedTools);
+
+      if (!publish) {
+        if (effectiveMode === 'new') setEffectiveMode('draft');
+        return;
+      }
       // Publishing ends a drafting session, unless a turn began while it
       // was out, or a prompt it wrote still waits (parked: Publish sent the
       // agent's own prompt, not that one): that conversation and what it
@@ -2361,7 +2279,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         usedPromptRef.current = null;
         promptDrafted.clear();
       }
-      setAttachedTools(selectedTools);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
 
@@ -2369,13 +2286,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         setEffectiveMode('edit');
         setAgentDetails('ACTIVE');
       }
-      setImageFile(null);
     } catch (error) {
-      console.error('Error publishing agent:', error);
-      setSubmitError(t('agents.form.errors.publishFailed'));
+      console.error(
+        publish ? 'Error publishing agent:' : 'Error saving draft:',
+        error,
+      );
+      setSubmitError(failedText);
     } finally {
       savingRef.current = false;
-      setPublishLoading(false);
+      setLoading(false);
     }
   };
 
@@ -2891,7 +2810,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               label: t('agents.form.buttons.saveDraft'),
               icon: Save,
               disabled: isDraftBlocked() || publishLoading || draftLoading,
-              onClick: () => void handleSaveDraft(),
+              onClick: () => void saveAgent('draft'),
             },
           ]
         : []),
@@ -3060,7 +2979,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             (effectiveMode === 'edit' && !hasChanges)
           }
           loading={publishLoading}
-          onClick={handlePublish}
+          onClick={() => void saveAgent('published')}
           // Stretched while the toolbar's row is stacked (by its width, so
           // also beside the docked drawer).
           className="flex-1 @2xl:flex-none"
@@ -3941,7 +3860,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         shape="pill"
                         disabled={!isPublishable()}
                         loading={publishLoading}
-                        onClick={handlePublish}
+                        onClick={() => void saveAgent('published')}
                       >
                         {t('agents.form.buttons.publish')}
                       </Button>
