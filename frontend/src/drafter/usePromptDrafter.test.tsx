@@ -233,9 +233,7 @@ describe('usePromptDrafter', () => {
     expect(stream.requests[1].context).toMatchObject({ skip_questions: true });
     // The next request may be asked about again.
     await act(async () => current.drafter!.session.send('Add the hours'));
-    expect(stream.requests[2].context).toMatchObject({
-      skip_questions: false,
-    });
+    expect(stream.requests[2].context).not.toHaveProperty('skip_questions');
   });
 
   const WRITE = {

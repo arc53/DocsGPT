@@ -71,6 +71,12 @@ export type DrafterSendOptions = {
    * in `userTexts`.
    */
   answers?: Record<string, string>;
+  /**
+   * The turn drafts with what it has, asking nothing (Skip and draft): its
+   * context goes with `skip_questions: true`, as does a Retry of it; the
+   * next message may be asked about again.
+   */
+  skipQuestions?: boolean;
 };
 
 /** What the panel shows while a turn runs. */
@@ -149,8 +155,13 @@ export function useDrafterSession({
   const waitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Answered turns only: each user message with the drafter's answer.
   const history = useRef<DrafterMessage[]>([]);
-  // The turn being answered: its message and the lines said so far.
-  const pending = useRef<{ user: DrafterMessage; said: string[] } | null>(null);
+  // The turn being answered: its message, the lines said so far, and whether
+  // it skips questions.
+  const pending = useRef<{
+    user: DrafterMessage;
+    said: string[];
+    skipQuestions?: boolean;
+  } | null>(null);
   const userWords = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
   // The running turn's id until it ends: the one the request sent, so a Stop
@@ -318,7 +329,10 @@ export function useDrafterSession({
       {
         recipe,
         messages: [...history.current, turn.user],
-        context: latest.current.getContext(),
+        context: {
+          ...latest.current.getContext(),
+          ...(turn.skipQuestions ? { skip_questions: true } : {}),
+        },
       },
       latest.current.token,
       (event) => {
@@ -365,7 +379,11 @@ export function useDrafterSession({
       const message = text.trim().slice(0, DRAFTER_USER_MESSAGE_CHARS);
       if (!message || history.current.length + 1 > DRAFTER_MAX_MESSAGES) return;
       // A turn still pending (failed, stopped or running) gives way.
-      pending.current = { user: { role: 'user', content: message }, said: [] };
+      pending.current = {
+        user: { role: 'user', content: message },
+        said: [],
+        skipQuestions: options?.skipQuestions,
+      };
       close(options?.answers ? 'answered' : 'passed', options?.answers);
       if (!options?.hidden) userWords.current.push(message);
       if (!options?.hidden && !options?.answers)

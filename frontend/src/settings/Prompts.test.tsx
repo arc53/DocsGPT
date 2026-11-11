@@ -1122,8 +1122,9 @@ describe('Prompts page', () => {
     );
     expect(drafter.requests[0]).toMatchObject({
       messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
-      context: { mode: 'write', starter: 'website', skip_questions: false },
+      context: { mode: 'write', starter: 'website' },
     });
+    expect(drafter.requests[0].context).not.toHaveProperty('skip_questions');
     const field = panel()!.querySelector<HTMLInputElement>(
       '[data-question="q1"] input',
     )!;
@@ -1606,10 +1607,8 @@ describe('Prompts page', () => {
     await click(
       panel()!.querySelector<HTMLButtonElement>('[data-suggestion="unsure"]')!,
     );
-    expect(drafter.requests[0].context).toMatchObject({
-      mode: 'improve',
-      skip_questions: false,
-    });
+    expect(drafter.requests[0].context).toMatchObject({ mode: 'improve' });
+    expect(drafter.requests[0].context).not.toHaveProperty('skip_questions');
     await click(button('drafter.skipQuestions', panel()!)!);
     expect(drafter.requests[1].messages.at(-1)).toEqual({
       role: 'user',

@@ -1409,9 +1409,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     topic: string | null;
     gap_type: string;
   } | null>(null);
-  // The next turn drafts with what it has, asking nothing: set by Skip and
-  // draft, cleared by any other message (a retry of that turn keeps it).
-  const skipQuestionsRef = useRef(false);
   const drafterSession = useDrafterSession({
     recipe: 'agent',
     getContext: () => {
@@ -1423,16 +1420,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           : 'drafter';
       turnsRef.current += 1;
       sentFormRef.current = draftFormRef.current;
-      return {
-        ...agentDraftContext(
-          agent.id || null,
-          draftFormRef.current,
-          buildRef.current.context(),
-          draftOfPrompt,
-          improveFocusRef.current,
-        ),
-        ...(skipQuestionsRef.current ? { skip_questions: true } : {}),
-      };
+      return agentDraftContext(
+        agent.id || null,
+        draftFormRef.current,
+        buildRef.current.context(),
+        draftOfPrompt,
+        improveFocusRef.current,
+      );
     },
     onProposal: applyDraft,
   });
@@ -1452,14 +1446,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const stepName = (step: AgentBuildStep) =>
     t(`drafter.agent.build.steps.${step}`);
   const build = useAgentBuild({
-    // Its hidden "Continue with …" is a message of its own: no skip.
-    session: {
-      ...drafterSession,
-      send: (text, options) => {
-        skipQuestionsRef.current = false;
-        drafterSession.send(text, options);
-      },
-    },
+    session: drafterSession,
     skipped: skippedSteps,
     continueText: (step) =>
       t('drafter.agent.build.continue', {
@@ -1490,7 +1477,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const panelSession = {
     ...drafterSession,
     send: (text: string, options?: DrafterSendOptions) => {
-      skipQuestionsRef.current = false;
       if (text === finishSetupText) build.focus('safety');
       else if (buildable && drafterSession.items.length === 0) build.start();
       setPromptUsed(false);
@@ -1502,7 +1488,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * folded steps forgotten; the form keeps its values and marks.
    */
   const startDrafterOver = () => {
-    skipQuestionsRef.current = false;
     drafterSession.reset();
     build.reset();
     improveFocusRef.current = {};
@@ -1518,8 +1503,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    */
   const skipQuestions = () => {
     setPromptUsed(false);
-    skipQuestionsRef.current = true;
-    drafterSession.send(t('drafter.prompt.skipMessage'), { hidden: true });
+    drafterSession.send(t('drafter.prompt.skipMessage'), {
+      hidden: true,
+      skipQuestions: true,
+    });
   };
 
   // Opened from Insights or Logs ("Improve the agent"): once the agent has
@@ -2368,7 +2355,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         // The gap or conversation it was improving went with it.
         improveFocusRef.current = {};
         setHandoffName(null);
-        skipQuestionsRef.current = false;
         buildRowsRef.current.clear();
         setPromptDraft(null);
         setPromptUsed(false);

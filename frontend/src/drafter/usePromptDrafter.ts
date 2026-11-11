@@ -85,11 +85,8 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   const sessionRef = useRef<DrafterSession | null>(null);
   // The text the running turn was sent with: a proposal's edits fit it.
   const sent = useRef('');
-  // The starting point picked holds for the session; a Skip on questions
-  // holds for its own turn (and a Retry of it), so a later request may be
-  // asked about again.
+  // The starting point picked holds for the session.
   const starter = useRef<DrafterStarter | null>(null);
-  const skipped = useRef(false);
   // The running turn is a review: a Retry runs it as one again, and the
   // next message goes back to the drawer's mode.
   const reviewing = useRef(false);
@@ -128,7 +125,6 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
       mode: reviewing.current ? 'review' : mode,
       prompt: { id: promptId, name, content },
       starter: starter.current,
-      skip_questions: skipped.current,
     };
   }, []);
 
@@ -170,7 +166,6 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   const send = useCallback<DrafterSession['send']>(
     (text, sendOptions) => {
       reviewing.current = false;
-      skipped.current = false;
       setReviewTurn(false);
       sessionSend(text, sendOptions);
     },
@@ -183,20 +178,16 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     },
     [send],
   );
+  // A Skip holds for its own turn (and a Retry of it), so a later request
+  // may be asked about again.
   const skipQuestions = useCallback(
-    (text: string) => {
-      reviewing.current = false;
-      setReviewTurn(false);
-      skipped.current = true;
-      sessionSend(text, { hidden: true });
-    },
-    [sessionSend],
+    (text: string) => send(text, { hidden: true, skipQuestions: true }),
+    [send],
   );
   const startReview = useCallback(
     (text: string) => {
       // Up before the send: the turn reads its context as it starts.
       reviewing.current = true;
-      skipped.current = false;
       setReviewTurn(true);
       sessionSend(text);
     },
@@ -208,7 +199,6 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   const resetSession = session.reset;
   const startOver = useCallback(() => {
     starter.current = null;
-    skipped.current = false;
     reviewing.current = false;
     setReviewTurn(false);
     resetSession();
@@ -216,7 +206,6 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   }, [resetSession]);
   const reset = useCallback(() => {
     starter.current = null;
-    skipped.current = false;
     reviewing.current = false;
     setReviewTurn(false);
     resetSession();
