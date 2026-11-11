@@ -77,17 +77,18 @@ class LinearLoader(BaseRemote):
         filters = [(("team", "teamId"), team["id"]) for team in selection["teams"]]
         filters += [(("project", "projectId"), project["id"]) for project in selection["projects"]]
         for names, value in filters:
-            remaining = linear.MAX_ISSUES - len(issues)
-            if remaining <= 0:
+            if len(issues) >= linear.MAX_ISSUES:
                 logger.info("Linear sync stopped at %d issues", linear.MAX_ISSUES)
                 break
             async for issue in linear.paged(
-                session, "list_issues", "issues", {names: value}, limit=remaining,
+                session, "list_issues", "issues", {names: value}, limit=None,
                 extra={"orderBy": "updatedAt", "includeArchived": False},
             ):
                 key = linear.issue_identifier(issue) or str(issue.get("id") or "")
                 if key:
                     issues.setdefault(key, issue)
+                    if len(issues) >= linear.MAX_ISSUES:
+                        break
         documents = []
         for key, issue in issues.items():
             # One issue Linear will not read (deleted since it was listed, or
