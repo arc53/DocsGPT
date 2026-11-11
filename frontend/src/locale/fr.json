@@ -2406,7 +2406,10 @@
         "clear": "Effacer",
         "ingestionFailed": "Échec de l’ingestion.",
         "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
-        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites."
+        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites.",
+        "partialDownload_one": "{{count}} élément n’a pas pu être téléchargé et a été ignoré. Synchronisez la source pour réessayer.",
+        "partialDownload_many": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer.",
+        "partialDownload_other": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer."
       },
       "ingestors": {
         "local_file": {
