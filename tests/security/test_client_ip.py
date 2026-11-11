@@ -136,6 +136,20 @@ class TestProxyChains:
         r = _client(PROXY).get("/flask/ip", headers={"X-Forwarded-For": "[2001:db8::5]:4431"})
         assert r.json()["ip"] == "2001:db8::5"
 
+    def test_unknown_entry_keeps_last_valid_hop(self):
+        client = _client(PROXY)
+        assert client.get("/flask/ip", headers={"X-Forwarded-For": "unknown"}).json()["ip"] == PROXY
+        r = client.get("/flask/ip", headers={"X-Forwarded-For": f"{CLIENT}, garbage, 10.0.0.2"})
+        assert r.json()["ip"] == "10.0.0.2"
+
+    def test_all_hops_trusted_takes_leftmost(self):
+        r = _client(PROXY).get("/flask/ip", headers={"X-Forwarded-For": "192.168.1.4, 10.0.0.2"})
+        assert r.json()["ip"] == "192.168.1.4"
+
+    def test_star_ignores_unparseable_leftmost(self):
+        r = _client(PROXY, trusted=("*",)).get("/flask/ip", headers={"X-Forwarded-For": "unknown, 1.2.3.4"})
+        assert r.json()["ip"] == PROXY
+
     def test_none_trusts_nobody(self):
         _assert_every_type(_client(PROXY, trusted=()), {"X-Forwarded-For": CLIENT}, PROXY)
 
@@ -186,6 +200,14 @@ class TestCloudflare:
         repeated = [("CF-Connecting-IP", CLIENT), ("CF-Connecting-IP", SPOOF)]
         assert client.get("/flask/ip", headers=repeated).json()["ip"] == CF_EDGE
 
+    def test_cf_header_wins_when_cloudflare_is_also_trusted(self):
+        """Both settings on and the headers disagree: the Cloudflare hop hands over to its header."""
+        headers = {"X-Forwarded-For": f"{SPOOF}, 198.51.100.44, {CF_EDGE}", "CF-Connecting-IP": CLIENT}
+        _assert_every_type(_client(PROXY, trusted=("private", "cloudflare"), cf=True), headers, CLIENT)
+
+    def test_cf_header_absent_keeps_edge(self):
+        _assert_every_type(_client(PROXY, cf=True), {"X-Forwarded-For": CF_EDGE}, CF_EDGE)
+
     def test_ipv6_cf_edge_and_client(self):
         r = _client("2606:4700::1", cf=True).get("/flask/ip", headers={"CF-Connecting-IP": "2001:db8::9"})
         assert r.json()["ip"] == "2001:db8::9"
@@ -218,6 +240,20 @@ class TestExpand:
         assert ServerSettings().TRUSTED_PROXIES == []
         monkeypatch.delenv("TRUSTED_PROXIES")
         assert ServerSettings().TRUSTED_PROXIES == ["private"]
+
+
+@pytest.mark.unit
+def test_settings_import_needs_no_asgi_packages():
+    """Settings import this module; the fuzz harness has no starlette or uvicorn."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.modules['starlette'] = None; sys.modules['uvicorn'] = None; "
+        "import docsgpt.security.client_ip as m; print(m.expand_trusted_proxies(['private'])[0])"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "127.0.0.0/8"
 
 
 @pytest.mark.unit

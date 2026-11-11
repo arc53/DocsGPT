@@ -69,7 +69,7 @@ The audit log, a token's last-used address and the access log record the client'
 | A proxy or ingress on a private network | Nothing: the default is `private`. |
 | Cloudflare, directly or through a private proxy | `TRUSTED_PROXIES=private,cloudflare`, or `TRUST_CF_CONNECTING_IP=true`. Without either, the audit log records a Cloudflare edge address. |
 | A load balancer on public addresses (Google Cloud's `35.191.0.0/16` and `130.211.0.0/22`, for example) | `TRUSTED_PROXIES=private,35.191.0.0/16,130.211.0.0/22` |
-| Nothing: clients connect to the API directly | `TRUSTED_PROXIES=none`, so no header is believed. |
+| Nothing: clients connect to the API directly, even from a private network | `TRUSTED_PROXIES=none`. Under the default, a client on a private network that reaches the API without a proxy can write its own `X-Forwarded-For`. |
 
 `cloudflare` expands to Cloudflare's published ranges. `TRUST_CF_CONNECTING_IP=true` takes the address from Cloudflare's `CF-Connecting-IP` header instead, but only when the request arrives from a Cloudflare address, directly or through a trusted proxy. A request that bypasses Cloudflare cannot set it. Avoid `TRUSTED_PROXIES=*`: it records the leftmost `X-Forwarded-For` entry, which any client can write, because Cloudflare and most proxies append to the header rather than replace it.
 

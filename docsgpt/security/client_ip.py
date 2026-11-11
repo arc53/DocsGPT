@@ -5,7 +5,8 @@ log) comes from the ASGI ``client``. Behind a proxy that is the proxy's own
 address, typically a 10.x container or ingress hop. :class:`ClientAddressMiddleware`
 rewrites it from ``X-Forwarded-For`` when the request arrives through a trusted
 proxy, walking the header right to left and stopping at the first address it does
-not trust, so a client cannot spoof the leftmost entries. With
+not trust, so a client cannot spoof the leftmost entries. It uses only the standard
+library, so settings can import it for validation. With
 ``TRUST_CF_CONNECTING_IP`` it also takes ``CF-Connecting-IP``, but only when that
 walk ends on a Cloudflare address, so a request that bypasses Cloudflare cannot
 set it.
@@ -14,11 +15,10 @@ set it.
 from __future__ import annotations
 
 import ipaddress
-from functools import lru_cache
-from typing import Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, Optional, Union
 
-from starlette.types import ASGIApp, Receive, Scope, Send
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+if TYPE_CHECKING:  # settings import this module; keep it free of ASGI dependencies at runtime
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
 PRIVATE_NETWORKS: tuple[str, ...] = (
     "127.0.0.0/8",
@@ -91,45 +91,45 @@ def expand_trusted_proxies(entries: Iterable[str]) -> list[str]:
     return networks
 
 
-@lru_cache(maxsize=4096)
-def _is_cloudflare(host: str) -> bool:
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    return any(address in network for network in _CLOUDFLARE)
+_Network = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
+_Address = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 
 
-def _cf_connecting_ip(scope: Scope) -> Optional[str]:
-    values = [value for name, value in scope.get("headers", ()) if name == b"cf-connecting-ip"]
-    if len(values) != 1:
-        return None
+def _parse_address(value: str) -> Optional[_Address]:
+    """An IP from a forwarded entry (``1.2.3.4``, ``1.2.3.4:80``, ``::1``, ``[::1]:443``), or None."""
+    value = value.strip()
+    if value.startswith("["):
+        value = value[1 : value.find("]")] if "]" in value else ""
+    elif value.count(":") == 1:
+        value = value.split(":", 1)[0]
     try:
-        return str(ipaddress.ip_address(values[0].decode("latin1").strip()))
+        return ipaddress.ip_address(value)
     except ValueError:
         return None
 
 
-class _CloudflareClientIP:
-    """Take ``CF-Connecting-IP`` as the client when the request came from Cloudflare."""
+def _in(address: _Address, networks: tuple[_Network, ...]) -> bool:
+    return any(address.version == net.version and address in net for net in networks)
 
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] in ("http", "websocket"):
-            client = scope.get("client")
-            if client and _is_cloudflare(client[0]):
-                real = _cf_connecting_ip(scope)
-                if real:
-                    scope["client"] = (real, 0)
-        await self.app(scope, receive, send)
+def _header_values(scope: Scope, name: bytes) -> list[str]:
+    return [value.decode("latin1") for key, value in scope.get("headers", ()) if key == name]
+
+
+def _cf_connecting_ip(scope: Scope) -> Optional[_Address]:
+    values = _header_values(scope, b"cf-connecting-ip")
+    return _parse_address(values[0]) if len(values) == 1 else None
 
 
 class ClientAddressMiddleware:
     """Resolve the ASGI ``client`` from forwarding headers set by trusted proxies.
 
-    Also applies ``X-Forwarded-Proto`` from a trusted proxy to the scope's scheme.
+    Starting at the peer, each hop that is a trusted proxy hands over to the
+    ``X-Forwarded-For`` entry it appended, right to left; the first untrusted
+    hop is the client. With ``trust_cf_connecting_ip``, reaching a Cloudflare
+    hop ends the walk at ``CF-Connecting-IP`` instead. An entry that is not an
+    IP (``unknown``) breaks the chain, and the last valid hop is kept. A
+    trusted peer's ``X-Forwarded-Proto`` sets the scheme.
     """
 
     def __init__(
@@ -138,7 +138,7 @@ class ClientAddressMiddleware:
         trusted_proxies: Optional[Iterable[str]] = None,
         trust_cf_connecting_ip: Optional[bool] = None,
     ) -> None:
-        """Build the chain from explicit values, or from settings when omitted.
+        """Read the trust rules from explicit values, or from settings when omitted.
 
         Args:
             app: The wrapped ASGI app.
@@ -153,11 +153,46 @@ class ClientAddressMiddleware:
             if trust_cf_connecting_ip is None:
                 trust_cf_connecting_ip = settings.TRUST_CF_CONNECTING_IP
         trusted = expand_trusted_proxies(trusted_proxies)
-        handler: ASGIApp = _CloudflareClientIP(app) if trust_cf_connecting_ip else app
-        if trusted:
-            handler = ProxyHeadersMiddleware(handler, trusted_hosts=trusted)
         self.app = app
-        self._handler = handler
+        self._trust_all = trusted == ["*"]
+        self._trusted: tuple[_Network, ...] = (
+            () if self._trust_all else tuple(ipaddress.ip_network(net) for net in trusted)
+        )
+        self._trust_cf = bool(trust_cf_connecting_ip)
+
+    def _is_trusted(self, address: _Address) -> bool:
+        return self._trust_all or _in(address, self._trusted)
+
+    def _resolve(self, peer: _Address, scope: Scope) -> _Address:
+        forwarded = [entry for value in _header_values(scope, b"x-forwarded-for") for entry in value.split(",")]
+        if self._trust_all:
+            first = _parse_address(forwarded[0]) if forwarded else None
+            return first or peer
+        current = peer
+        for entry in reversed(forwarded):
+            if self._trust_cf and _in(current, _CLOUDFLARE):
+                break
+            if not self._is_trusted(current):
+                return current
+            nxt = _parse_address(entry)
+            if nxt is None:
+                return current
+            current = nxt
+        if self._trust_cf and _in(current, _CLOUDFLARE):
+            return _cf_connecting_ip(scope) or current
+        return current
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        await self._handler(scope, receive, send)
+        """Rewrite ``client`` (and ``scheme``) in place, then call the app."""
+        client = scope.get("client") if scope["type"] in ("http", "websocket") else None
+        peer = _parse_address(client[0]) if client else None
+        if peer is not None:
+            resolved = self._resolve(peer, scope)
+            if resolved != peer:
+                scope["client"] = (str(resolved), 0)
+            if self._is_trusted(peer):
+                proto = _header_values(scope, b"x-forwarded-proto")
+                scheme = proto[-1].strip().lower() if proto else ""
+                if scheme in ("http", "https", "ws", "wss"):
+                    scope["scheme"] = scheme.replace("http", "ws") if scope["type"] == "websocket" else scheme
+        await self.app(scope, receive, send)
