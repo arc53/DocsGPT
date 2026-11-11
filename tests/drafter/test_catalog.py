@@ -376,6 +376,111 @@ class TestOverview:
 
 
 @pytest.mark.unit
+class TestBrowse:
+    """``list_workspace`` reaches the rows the overview leaves out, and only the caller's."""
+
+    @pytest.fixture
+    def crowded(self, pg_conn, monkeypatch):
+        """Four sources, tools and prompts under caps of two, the last made the newest; Bob's stay his."""
+        from docsgpt.drafter import catalog
+
+        for kind in ("MAX_SOURCES", "MAX_TOOLS", "MAX_PROMPTS"):
+            monkeypatch.setattr(catalog, kind, 2)
+        names = ("Carrier rates", "Returns policy", "Shipping guide", "Help Center")
+        rows = {"sources": [], "tools": [], "prompts": []}
+        for age, name in zip((3, 2, 1, 0), names):
+            rows["sources"].append(_source(pg_conn, name, ALICE, structure={f"{name}.md": {"token_count": 1}}))
+            rows["tools"].append(_tool(pg_conn, ALICE, display_name=f"{name} API", description=f"Looks up {name}",
+                                       actions=[{"name": "look_up", "description": "Looks up", "active": True}]))
+            rows["prompts"].append(PromptsRepository(pg_conn).create(ALICE, f"{name} voice", f"About {name}."))
+            _age(pg_conn, "sources", rows["sources"][-1], age)
+            _age(pg_conn, "user_tools", rows["tools"][-1], age)
+            _age(pg_conn, "prompts", rows["prompts"][-1], age)
+        _source(pg_conn, "Bob's carrier contracts", BOB)
+        _tool(pg_conn, BOB, display_name="Bob's carrier API")
+        PromptsRepository(pg_conn).create(BOB, "Bob's carrier voice", "secret plan")
+        return rows
+
+    def _list(self, pg_conn, ws, **args):
+        with _db(pg_conn):
+            return run_read_tool("list_workspace", ws, args)
+
+    def test_it_pages_through_every_row_of_a_kind_newest_first(self, pg_conn, crowded, monkeypatch):
+        from docsgpt.drafter import read_tools
+
+        monkeypatch.setattr(read_tools, "PAGE_ROWS", 3)
+        ws = _load(pg_conn)
+        assert [s["name"] for s in ws.sources] == ["Help Center", "Shipping guide"]
+        first = self._list(pg_conn, ws, kind="sources")
+        assert [r["name"] for r in first["rows"]] == ["Help Center", "Shipping guide", "Returns policy"]
+        assert first["total"] == 4 and first["next_offset"] == 3
+        rest = self._list(pg_conn, ws, kind="sources", offset=3)
+        assert [r["name"] for r in rest["rows"]] == ["Carrier rates"] and "next_offset" not in rest
+        assert set(rest["rows"][0]) == {"id", "name", "type"}
+
+    def test_a_query_finds_rows_by_name_and_description_best_match_first(self, pg_conn, crowded):
+        ws = _load(pg_conn)
+        found = self._list(pg_conn, ws, kind="sources", query="carrier RATES returns")
+        assert [r["name"] for r in found["rows"]] == ["Carrier rates", "Returns policy"] and found["total"] == 2
+        tools = self._list(pg_conn, ws, kind="tools", query="looks carrier")
+        assert tools["rows"][0]["name"] == "Carrier rates API" and tools["total"] == 4
+        prompts = self._list(pg_conn, ws, kind="prompts", query="carrier")
+        assert [r["name"] for r in prompts["rows"]] == ["Carrier rates voice"]
+        assert self._list(pg_conn, ws, kind="sources", query="nothing-like-it") == {
+            "kind": "sources", "total": 0, "rows": [],
+        }
+        assert "Bob" not in json.dumps([found, tools, prompts, self._list(pg_conn, ws, kind="tools")])
+
+    def test_builtin_tools_and_prompts_are_listed_and_found_too(self, pg_conn, crowded):
+        ws = _load(pg_conn)
+        builtin = next(t for t in ws.tools if t["kind"] == "built-in")
+        assert builtin in self._list(pg_conn, ws, kind="tools")["rows"]
+        assert builtin in self._list(pg_conn, ws, kind="tools", query=builtin["name"])["rows"]
+        assert [p["id"] for p in self._list(pg_conn, ws, kind="prompts")["rows"][:3]] == [
+            "default", "creative", "strict",
+        ]
+
+    def test_a_row_it_found_is_read_like_a_listed_one(self, pg_conn, crowded):
+        ws = _load(pg_conn)
+        source, tool, prompt = (str(crowded[kind][0]["id"]) for kind in ("sources", "tools", "prompts"))
+        assert source not in {s["id"] for s in ws.sources}
+        assert self._list(pg_conn, ws, kind="sources", query="carrier")["rows"][0]["id"] == source
+        with _db(pg_conn):
+            files = run_read_tool("get_source", ws, {"source_id": source})
+            actions = run_read_tool("get_tool", ws, {"tool_id": tool})
+            text = run_read_tool("get_prompt", ws, {"prompt_id": prompt})
+        assert files["name"] == "Carrier rates" and files["file_paths"] == ["Carrier rates.md"]
+        assert actions["name"] == "Carrier rates API" and actions["actions"][0]["name"] == "look_up"
+        assert text == {"id": prompt, "name": "Carrier rates voice", "content": "About Carrier rates."}
+
+    def test_the_rows_of_a_kind_are_read_once_a_turn(self, pg_conn, crowded):
+        ws = _load(pg_conn)
+        with patch.object(SourcesRepository, "list_brief", autospec=True,
+                          side_effect=SourcesRepository.list_brief) as brief:
+            self._list(pg_conn, ws, kind="sources")
+            self._list(pg_conn, ws, kind="sources", query="carrier")
+            self._list(pg_conn, ws, kind="sources", offset=2)
+        assert brief.call_count == 1
+
+    def test_a_workspace_listed_whole_is_browsed_without_the_database(self, pg_conn):
+        _source(pg_conn, "Help Center", ALICE)
+        ws = _load(pg_conn)
+        with patch("docsgpt.storage.db.session.db_readonly", side_effect=AssertionError("reads the database")):
+            listed = run_read_tool("list_workspace", ws, {"kind": "sources", "query": "help"})
+        assert [r["name"] for r in listed["rows"]] == ["Help Center"]
+
+    def test_bad_arguments_and_a_failed_read_are_errors_for_the_model(self, pg_conn, crowded):
+        ws = _load(pg_conn)
+        assert self._list(pg_conn, ws, kind="agents") == {"error": "kind is one of: sources, tools, prompts."}
+        assert self._list(pg_conn, ws) == {"error": "kind is one of: sources, tools, prompts."}
+        assert self._list(pg_conn, ws, kind="sources", offset=-5, query=7)["total"] == 4
+        again = _load(pg_conn)
+        with patch.object(SourcesRepository, "list_brief", side_effect=RuntimeError("db")):
+            failed = self._list(pg_conn, again, kind="sources")
+        assert "could not be read" in failed["error"] and "rows" not in failed
+
+
+@pytest.mark.unit
 def test_get_prompt_is_not_for_a_prompt_the_form_already_holds_whole():
     from docsgpt.drafter.read_tools import tool_definitions
 

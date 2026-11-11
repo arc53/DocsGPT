@@ -1,7 +1,7 @@
 ---
 title: Draft with DocsGPT
 description: Build an agent step by step with DocsGPT in a side panel, improve an agent from what its Insights found, review, improve or write a prompt, or get Insights topics suggested from an agent's conversations. You review every drafted field and save it yourself. Covers the steps, what it may change, the model it runs on, usage, privacy and the operator settings.
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-12
 ---
 
 import { Callout } from 'nextra/components'
@@ -124,7 +124,7 @@ It never changes the agent's models, allowed origins, API write permissions, JSO
 
 ### What it reads
 
-To pick knowledge, tools and prompts, DocsGPT reads your workspace as the form's pickers show it: your own sources, tools, prompts and agents, and those your teams share with you for use on your own agents. It can open a source's file list, a tool's actions and a prompt's full text. It never reads a tool's configuration or secrets. On a saved agent with Insights, it also reads the agent's gap summary, and when it acts on a gap, a few of the agent's users' questions (see [Privacy](#privacy)); the footer then says it can read **this agent's Insights**. The prompt panel reads none of this: it works from the prompt's own text, the names, types, knowledge counts and tool names of the agents using it, and what you tell it, and its footer says so (**reads this prompt and the 3 agents using it**, or **reads only this prompt** when no agent uses it). What it reads is treated as data: an instruction written in a document name or a prompt doesn't steer it, only your own messages do. Invisible characters that can make text read differently to the model than to you (bidirectional overrides, zero-width spaces, tag characters) are removed from what it reads, from your messages and from the text its edits put in a prompt.
+To pick knowledge, tools and prompts, DocsGPT reads your workspace as the form's pickers show it: your own sources, tools, prompts and agents, and those your teams share with you for use on your own agents. It starts from a short list: what the form already uses, then your newest sources, tools and prompts, by name with a line of detail. When you have more than the list holds, it searches the rest by name and description. It opens a source's file list, a tool's actions or a prompt's full text only when it needs to look closer, so a large workspace doesn't crowd what the model reads. It never reads a tool's configuration or secrets. On a saved agent with Insights, it also reads the agent's gap summary, and when it acts on a gap, a few of the agent's users' questions (see [Privacy](#privacy)); the footer then says it can read **this agent's Insights**. The prompt panel reads none of this: it works from the prompt's own text, the names, types, knowledge counts and tool names of the agents using it, and what you tell it, and its footer says so (**reads this prompt and the 3 agents using it**, or **reads only this prompt** when no agent uses it). What it reads is treated as data: an instruction written in a document name or a prompt doesn't steer it, only your own messages do. Invisible characters that can make text read differently to the model than to you (bidirectional overrides, zero-width spaces, tag characters) are removed from what it reads, from your messages and from the text its edits put in a prompt.
 
 ## Prompts
 

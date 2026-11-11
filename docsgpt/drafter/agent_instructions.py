@@ -55,6 +55,11 @@ schema or sharing: they are not part of this draft."""
 NEVER_GUIDED = NEVER_OTHER + """ Limits, guardrails and Insights topics are the safety step's: leave them out of \
 this step and don't mention them in a message or a note."""
 
+#: Added when the workspace overview leaves rows out (``Workspace.partial``).
+PARTIAL_WORKSPACE = """The workspace lists only part of what the user has: the sources, tools and prompts the form \
+already uses, then the newest. not_shown counts the ones it leaves out. Never tell the user that something doesn't \
+exist, or that nothing fits, only because it isn't listed."""
+
 DESIGN_RULES = f"""Designing it well:
 - Pick knowledge and tools only from what exists in the workspace, and only what the agent needs. Read a source's \
 files or a tool's actions when the name alone doesn't tell you what it covers. Skip a source whose status is \

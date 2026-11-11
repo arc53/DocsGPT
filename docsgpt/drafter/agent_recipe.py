@@ -72,6 +72,7 @@ from docsgpt.drafter.agent_instructions import (
     NEVER_OTHER,
     NEVER_POLICY,
     NEVER_POLICY_INSIGHTS,
+    PARTIAL_WORKSPACE,
     safety_guide,
     SKIPPED,
     STARTERS,
@@ -720,6 +721,8 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
     never = NEVER_OTHER if step == "safety" else NEVER_GUIDED if step else NEVER_POLICY_INSIGHTS if insights \
         else NEVER_POLICY
     parts = [AGENT_FIELDS, never, DESIGN_RULES]
+    if ws.partial():
+        parts.append(PARTIAL_WORKSPACE)
     if step:
         own = ", ".join(STEP_FIELDS[step])
         parts += [GUIDED, f"The current step is {step}. In this step set only: {own}.",
@@ -1396,6 +1399,7 @@ def _drop_unchanged(fields: dict, form: dict) -> None:
 
 #: The read tools every turn offers, and those only an improve turn with the agent's gap summary does.
 WORKSPACE_READS = ("get_prompt", "get_source", "get_tool")
+BROWSE_READS = ("list_workspace",)
 INSIGHTS_READS = ("get_gap_examples", "get_conversations")
 
 
@@ -1405,9 +1409,11 @@ def asks(req: DraftRequest) -> bool:
 
 
 def read_tools_for(req: DraftRequest, ws: Workspace) -> tuple[str, ...]:
-    """The read tools a turn offers: the Insights reads only in improve mode with the agent's gap summary."""
+    """The read tools a turn offers: the workspace listing only when the overview leaves rows out, the Insights
+    reads only in improve mode with the agent's gap summary."""
     reader = isinstance(ws, AgentWorkspace) and ws.reads_insights() and ws.insights_reader is not None
-    return WORKSPACE_READS + INSIGHTS_READS if reader and not req.context["step"] else WORKSPACE_READS
+    names = (BROWSE_READS if ws.partial() else ()) + WORKSPACE_READS
+    return names + INSIGHTS_READS if reader and not req.context["step"] else names
 
 
 AGENT_RECIPE = register(Recipe(
@@ -1418,7 +1424,7 @@ AGENT_RECIPE = register(Recipe(
     context_data=context_data,
     proposal_schema=PROPOSAL_SCHEMA,
     validate=validate,
-    read_tools=WORKSPACE_READS + INSIGHTS_READS,
+    read_tools=BROWSE_READS + WORKSPACE_READS + INSIGHTS_READS,
     tools_for=read_tools_for,
     proposal_description="Fill the agent form with your draft. Ends your turn.",
     questions=asks,

@@ -2,11 +2,13 @@
 
 Every tool answers for the :class:`~docsgpt.drafter.catalog.Workspace` read
 for the caller at the start of the turn, so it can only return what the caller
-may attach, and none has side effects. The overview holds names and a line of
-meta; the detail is read from the database while the turn runs, for the one
-row a tool is asked about, and kept for the rest of the turn: a prompt's text
-(``get_prompt``), a tool's actions (``get_tool``), a source's file tree
-(``get_source``). Built-in prompts and tools answer from memory. The Insights
+may attach, and none has side effects. The overview holds the names and a
+line of meta of a few rows; the rest is read from the database while the turn
+runs and kept for the rest of it: the rows the overview leaves out
+(``list_workspace``, which also searches them), and the detail of the one row
+a tool is asked about: a prompt's text (``get_prompt``), a tool's actions
+(``get_tool``), a source's file tree (``get_source``). Built-in prompts and
+tools answer from memory. The Insights
 reads (``get_gap_examples``, ``get_conversations``) go through the workspace's
 ``insights_reader``, built for the one agent the caller may edit, and return a
 few capped rows of its conversations.
@@ -19,7 +21,16 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional
 
-from docsgpt.drafter.catalog import is_template, prompt_text, row_of, source_files, tool_detail, Workspace
+from docsgpt.drafter.catalog import (
+    find_rows,
+    is_template,
+    KINDS,
+    prompt_text,
+    row_of,
+    source_files,
+    tool_detail,
+    Workspace,
+)
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.storage.db.repositories.conversation_labels import LOG_LABELS, SUMMARY_GAP_TYPES
 
@@ -27,11 +38,40 @@ logger = logging.getLogger(__name__)
 
 ReadTool = Callable[[Workspace, dict], dict]
 
+#: Rows one ``list_workspace`` page holds, and characters of its query.
+PAGE_ROWS = 30
+_QUERY_CHARS = 200
+
 
 def _id_arg(args: dict, key: str) -> str:
     """The id argument ``key``, stripped; ``""`` when missing or not a string."""
     value = args.get(key) if isinstance(args, dict) else None
     return value.strip() if isinstance(value, str) else ""
+
+
+def list_workspace(ws: Workspace, args: dict) -> dict:
+    """A page of the caller's sources, tools or prompts: all of them, or the ones a query matches.
+
+    The rows are the overview's (names and a line of meta), those it leaves out included, so the model finds
+    what a large workspace holds without it all sitting in the prompt. ``next_offset`` is where the next page
+    starts, when there is one.
+    """
+    kind = _id_arg(args, "kind")
+    if kind not in KINDS:
+        return {"error": f"kind is one of: {', '.join(KINDS)}."}
+    query, offset = args.get("query"), args.get("offset")
+    query = clean_text(query, _QUERY_CHARS) if isinstance(query, str) else ""
+    offset = offset if isinstance(offset, int) and not isinstance(offset, bool) and offset > 0 else 0
+    try:
+        rows = find_rows(ws, kind, query)
+    except Exception:
+        logger.warning("drafter: could not list the workspace", exc_info=True)
+        return {"error": "The workspace could not be read right now. Go by what it already lists."}
+    page = rows[offset:offset + PAGE_ROWS]
+    out: dict[str, Any] = {"kind": kind, "total": len(rows), "rows": page}
+    if offset + len(page) < len(rows):
+        out["next_offset"] = offset + len(page)
+    return out
 
 
 def get_prompt(ws: Workspace, args: dict) -> dict:
@@ -161,8 +201,34 @@ def _schema(name: str, description: str, param: str, param_description: str) -> 
     }
 
 
+_LIST_WORKSPACE = {
+    "type": "function",
+    "function": {
+        "name": "list_workspace",
+        "description": (
+            "List the user's sources, tools or prompts, including the ones the workspace leaves out (not_shown "
+            "counts them). Call it before deciding that nothing fits, and when the user names something that "
+            "isn't listed. With a query it returns the rows whose name or description holds one of its words, "
+            f"best match first; without one, all of them, newest first, {PAGE_ROWS} a page. A row it returns "
+            "can be attached and read like a listed one."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": list(KINDS), "description": "What to list."},
+                "query": {"type": "string",
+                          "description": "Optional: a few words to look for, such as a product or a topic."},
+                "offset": {"type": "integer",
+                           "description": "Optional: where the page starts (a result's next_offset)."},
+            },
+            "required": ["kind"],
+        },
+    },
+}
+
 #: name -> (tool definition, implementation)
 READ_TOOLS: dict[str, tuple[dict, ReadTool]] = {
+    "list_workspace": (_LIST_WORKSPACE, list_workspace),
     "get_prompt": (
         _schema("get_prompt", "Read a prompt's full text. Use it before reusing or changing a prompt, but not a "
                 "prompt whose whole text the form data already holds (its content is there).",

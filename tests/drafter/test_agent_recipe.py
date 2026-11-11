@@ -539,6 +539,20 @@ class TestInstructions:
         assert "{{ source.citation_rules }}" not in text
         assert "The current step" not in text
 
+    def test_a_partly_listed_workspace_is_said_to_be_partial(self):
+        assert "not_shown" not in instructions(_req(), _ws())
+        for req in (_req(), _req(step="basics")):
+            text = instructions(req, _ws(hidden={"sources": 40}))
+            assert "not_shown counts the ones it leaves out" in text
+            assert "only because it isn't listed" in text
+        # Models over the cap can't be listed, and the draft never sets one.
+        assert "not_shown" not in instructions(_req(), _ws(hidden={"models": 3}))
+
+    def test_ids_come_from_the_workspace_or_a_read(self):
+        from docsgpt.drafter.runner import COMMON_RULES
+
+        assert "only by an id the workspace or a read tool gave you; never invent an id" in COMMON_RULES
+
     def test_internal_looking_tools_are_asked_about_too(self):
         text = instructions(_req(), _ws())
         assert "If a source looks internal" in text

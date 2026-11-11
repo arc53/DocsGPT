@@ -402,6 +402,27 @@ class TestReadTools:
         [result] = self._results(fake)
         assert "faq.md" not in result and "Unknown tool" in result
 
+    def test_a_turn_browses_a_partly_listed_workspace_then_reads_what_it_found(self):
+        ws = Workspace(sources=[{"id": "s1", "name": "Help"}], source_files={"s1": ["faq.md"]},
+                       hidden={"sources": 40})
+        fake = FakeLLM(calls(tool_call("list_workspace", {"kind": "sources", "query": "help"})),
+                       calls(tool_call("get_source", {"source_id": "s1"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake, ws=ws)
+        assert events[-1]["type"] == "proposal" and len(fake.calls) == 3
+        assert [t["function"]["name"] for t in fake.calls[0]["tools"]][0] == "list_workspace"
+        listed, files = [m["content"] for m in fake.calls[2]["messages"] if m["role"] == "tool"]
+        assert '"total": 1' in listed and '"name": "Help"' in listed and DATA_GUARD in listed
+        assert "faq.md" in files
+
+    def test_a_workspace_listed_whole_offers_no_listing(self):
+        fake = FakeLLM(calls(tool_call("list_workspace", {"kind": "sources"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, ws=self._ws())
+        assert "list_workspace" not in [t["function"]["name"] for t in fake.calls[0]["tools"]]
+        [result] = self._results(fake)
+        assert "Unknown tool" in result
+
     def test_reads_in_one_answer_are_capped(self):
         many = [tool_call("get_prompt", {"prompt_id": "default"}, f"c{i}") for i in range(MAX_READ_CALLS + 3)]
         fake = FakeLLM(calls(*many), calls(tool_call("submit_proposal", PROPOSAL)))

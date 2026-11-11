@@ -8,14 +8,16 @@ tools are offered as the agent picker offers them. Nothing here writes: the
 list routes are not called because some of them have side effects (the agents
 listing upserts the user row).
 
-The workspace is read in two levels, so its size in the prompt does not grow
-with what the rows hold. The overview is read once per turn, at the start of
-its stream and before the first model call: every id the caller may attach,
-and the names and a line of meta of the rows it lists. The detail is read
-while the turn runs, one row at a time and only when a read tool asks for it
-(:class:`DetailReader`): a prompt's text, a tool's actions, a source's file
-tree; each is kept for the rest of the turn. Built-in prompts and tools are in
-memory, so theirs is there from the start. The agent recipe's Insights reads
+The workspace is read in levels, so its size in the prompt grows neither with
+how many rows the caller has nor with what they hold. The overview is read
+once per turn, at the start of its stream and before the first model call:
+every id the caller may attach, and the names and a line of meta of the few
+rows it lists (what the form uses, then the newest). The rest is read while
+the turn runs, only when a read tool asks for it (:class:`DetailReader`), and
+kept for the rest of the turn: the rows the overview leaves out
+(``list_workspace``: :func:`find_rows`), and one row's detail: a prompt's
+text, a tool's actions, a source's file tree. Built-in prompts and tools are
+in memory, so theirs is there from the start. The agent recipe's Insights reads
 go to the database during the turn too, through its ``insights_reader``. Tool
 configs and secrets are never read into it: a tool is its name, description
 and actions.
@@ -49,6 +51,9 @@ DESCRIPTION_CHARS = 300
 PROMPT_CHARS = 12000
 #: File paths a source lists for ``get_source``.
 MAX_SOURCE_FILES = 50
+#: The kinds ``list_workspace`` lists, and the words of a query it matches rows by.
+KINDS = ("sources", "tools", "prompts")
+QUERY_TERMS = 8
 
 #: Built-in prompts, by id, with what tells them apart.
 PRESET_PROMPTS: dict[str, str] = {
@@ -75,6 +80,8 @@ class Workspace:
         hidden: Kind -> rows the overview leaves out.
         own_prompts: Ids of all the caller's own prompts, those the overview leaves out too.
         found: Kind -> id -> the overview row of an id the overview leaves out, kept as each is looked up.
+        listings: Kind -> every overview row of it the caller may attach, for ``list_workspace``; filled on the
+            first ask.
         prompt_texts: Prompt id -> full text (capped), for ``get_prompt``; filled as each is read.
         tool_details: Tool id -> actions with full descriptions, for ``get_tool``; filled as each is read.
         source_files: Source id -> file paths (capped), for ``get_source``; filled as it reads each tree.
@@ -93,6 +100,7 @@ class Workspace:
     hidden: dict[str, int] = field(default_factory=dict)
     own_prompts: set[str] = field(default_factory=set)
     found: dict[str, dict[str, dict]] = field(default_factory=dict)
+    listings: dict[str, list[dict]] = field(default_factory=dict)
     prompt_texts: dict[str, str] = field(default_factory=dict)
     tool_details: dict[str, dict] = field(default_factory=dict)
     source_files: dict[str, list[str]] = field(default_factory=dict)
@@ -111,6 +119,11 @@ class Workspace:
     def ids(self, kind: str) -> set[str]:
         """The ids of one kind (``sources``, ``tools``, ``prompts``) the caller may attach, those not listed too."""
         return {str(row["id"]) for row in getattr(self, kind)} | set(self.attachable.get(kind, ()))
+
+    def partial(self) -> bool:
+        """Whether the overview leaves out sources, tools or prompts of the caller's (``list_workspace`` lists
+        them)."""
+        return any(self.hidden.get(kind) for kind in KINDS)
 
     def summary(self) -> dict[str, Any]:
         """The overview that goes into the prompt."""
@@ -359,6 +372,62 @@ def row_of(ws: Workspace, kind: str, item_id: str) -> Optional[dict]:
         except Exception:
             logger.warning("drafter: could not read a row of the workspace", exc_info=True)
     return found.get(item_id)
+
+
+def listing(ws: Workspace, kind: str) -> list[dict]:
+    """Every overview row of one kind the caller may attach, in the overview's order: read on the first ask,
+    then kept.
+
+    A kind the overview lists whole is answered from it; otherwise the saved rows are read once (names and
+    meta only) and the built-in ones, which the overview always lists, keep their place beside them.
+
+    Args:
+        ws: The turn's workspace.
+        kind: One of :data:`KINDS`.
+
+    Returns:
+        The rows.
+
+    Raises:
+        Exception: The rows could not be read; nothing is kept, so a later ask reads again.
+    """
+    if kind not in ws.listings:
+        rows = list(getattr(ws, kind))
+        if ws.reader is not None and ws.hidden.get(kind):
+            builtin = [row for row in rows if row.get("kind") == "built-in"]
+            in_memory = {row["id"] for row in builtin}
+            saved = ws.reader.rows(kind, [item for item in ws.attachable.get(kind, ()) if item not in in_memory])
+            ws.found.setdefault(kind, {}).update({row["id"]: row for row in saved})
+            rows = builtin + saved if kind == "prompts" else saved + builtin
+        ws.listings[kind] = rows
+    return ws.listings[kind]
+
+
+def find_rows(ws: Workspace, kind: str, query: str = "") -> list[dict]:
+    """The rows of :func:`listing` a query matches, best first; every row without a query.
+
+    A row matches when its name, description, type or kind holds one of the query's words, whatever the case.
+    Rows holding more of the words come first, then the listing's order.
+
+    Args:
+        ws: The turn's workspace.
+        kind: One of :data:`KINDS`.
+        query: Words to look for; only the first :data:`QUERY_TERMS` distinct ones count.
+
+    Returns:
+        The matching rows.
+    """
+    rows = listing(ws, kind)
+    terms = list(dict.fromkeys(query.casefold().split()))[:QUERY_TERMS]
+    if not terms:
+        return rows
+    scored = []
+    for index, row in enumerate(rows):
+        text = " ".join(str(row.get(key) or "") for key in ("name", "description", "type", "kind")).casefold()
+        score = sum(term in text for term in terms)
+        if score:
+            scored.append((-score, index))
+    return [rows[index] for _, index in sorted(scored)]
 
 
 def prompt_text(ws: Workspace, prompt_id: str, conn: Any = None) -> Optional[str]:

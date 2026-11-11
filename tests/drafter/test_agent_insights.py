@@ -13,6 +13,7 @@ from docsgpt.drafter import agent_recipe
 from docsgpt.drafter.agent_recipe import (
     AGENT_RECIPE,
     AgentWorkspace,
+    BROWSE_READS,
     context_data,
     INSIGHTS_READS,
     instructions,
@@ -147,6 +148,13 @@ class TestInstructionsAndTools:
         assert read_tools_for(_req(), _ws()) == WORKSPACE_READS + INSIGHTS_READS
         assert read_tools_for(_req(), _ws(gaps=None)) == WORKSPACE_READS
         assert AGENT_RECIPE.offered_tools(_req(), _ws(gaps=None)) == WORKSPACE_READS
+        # A workspace the overview lists only in part can be browsed, with or without Insights.
+        crowded = {"sources": 12}
+        assert read_tools_for(_req(), _ws(gaps=None, hidden=crowded)) == BROWSE_READS + WORKSPACE_READS
+        assert AGENT_RECIPE.offered_tools(_req(), _ws(hidden=crowded)) == (
+            BROWSE_READS + WORKSPACE_READS + INSIGHTS_READS
+        )
+        assert read_tools_for(_req(), _ws(gaps=None, hidden={"models": 3})) == WORKSPACE_READS
         stepped = DraftRequest("alice", "agent", [{"role": "user", "content": "x"}],
                                parse_context({"step": "basics"}), "t")
         assert read_tools_for(stepped, _ws()) == WORKSPACE_READS
