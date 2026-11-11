@@ -248,6 +248,17 @@ const BLOCKER_LABEL_KEYS: Record<PublishBlocker, string> = {
   origins: 'agents.form.advanced.origins.label',
   guardrails: 'agents.form.sections.guardrails',
 };
+/**
+ * Blockers a draft save stops on too: it posts the same `config` blob and
+ * hits the same server-side validation as publish, so an incomplete control
+ * would 400 the draft behind a message that names no field.
+ */
+const DRAFT_BLOCKERS: PublishBlocker[] = [
+  'jsonSchema',
+  'contextLimit',
+  'origins',
+  'guardrails',
+];
 /** Blockers inside the Advanced section, which opens to show them. */
 const ADVANCED_BLOCKERS: PublishBlocker[] = [
   'jsonSchema',
@@ -475,38 +486,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   /**
    * What keeps Publish off, in form order: the drafter's done line names
-   * them and goes to the first.
+   * them and goes to the first. Sources are optional: an agent without one
+   * answers from the model and its tools only.
    */
-  const publishBlockers = (): PublishBlocker[] => {
-    // Sources are optional: an agent without one answers from the model and
-    // its tools only.
-    const blockers: PublishBlocker[] = [];
-    if (!agent.name) blockers.push('name');
-    if (!agent.description) blockers.push('description');
-    if (!agent.prompt_id) blockers.push('prompt');
-    if (!agent.agent_type) blockers.push('agentType');
-    if (jsonSchemaText.trim() !== '' && !jsonSchemaValid)
-      blockers.push('jsonSchema');
-    if (contextLimitInvalid) blockers.push('contextLimit');
-    if (originsIncomplete(agent.config)) blockers.push('origins');
-    if (guardrailsIncomplete(agent.config?.guardrails))
-      blockers.push('guardrails');
-    return blockers;
-  };
-  const isPublishable = () => publishBlockers().length === 0;
-
-  const isJsonSchemaInvalid = () => {
-    return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
-  };
-
-  // Draft saves post the same `config` blob and hit the same server-side
-  // validation as publish, so they need the same gate — otherwise an
-  // incomplete control 400s the draft behind a message that names no field.
-  const isDraftBlocked = () =>
-    isJsonSchemaInvalid() ||
-    guardrailsIncomplete(agent.config?.guardrails) ||
-    originsIncomplete(agent.config) ||
-    contextLimitInvalid;
+  const publishBlockers = (
+    [
+      ['name', !agent.name],
+      ['description', !agent.description],
+      ['prompt', !agent.prompt_id],
+      ['agentType', !agent.agent_type],
+      ['jsonSchema', jsonSchemaText.trim() !== '' && !jsonSchemaValid],
+      ['contextLimit', contextLimitInvalid],
+      ['origins', originsIncomplete(agent.config)],
+      ['guardrails', guardrailsIncomplete(agent.config?.guardrails)],
+    ] as const
+  )
+    .filter(([, blocks]) => blocks)
+    .map(([blocker]): PublishBlocker => blocker);
+  const isPublishable = publishBlockers.length === 0;
+  const isDraftBlocked = publishBlockers.some((blocker) =>
+    DRAFT_BLOCKERS.includes(blocker),
+  );
 
   // Resolve a selected source id to its display name. Prefer the caller's own
   // source list; fall back to the owner-resolved name embedded in the agent
@@ -1645,14 +1645,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     </>
   );
   // Next waits while the prompt the drafter wrote is unused or its changes
-  // are undecided (under review, or waiting for the saved text), and moves
-  // to the end of the turn once Use this prompt saved it.
-  const nextOnProposal =
-    build.ready &&
-    !promptDraft &&
-    !promptUsed &&
-    !promptReview.review &&
-    !pendingEdits;
+  // are undecided (under review, or waiting for the saved text): Next would
+  // drop them.
+  const nextReady =
+    build.ready && !promptDraft && !promptReview.review && !pendingEdits;
+  // On a proposal it moves to the end of the turn once Use this prompt
+  // saved it.
+  const nextOnProposal = nextReady && !promptUsed;
 
   /**
    * A field the draft set that the form holds as before it again (its Undo,
@@ -2059,7 +2058,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   // The build's last line: done, or what Publish still needs. It reads the
   // form as it is now, so filling the field brings the done line back.
-  const blockers = build.done ? publishBlockers() : [];
+  const blockers = build.done ? publishBlockers : [];
   const doneLine = build.done ? (
     <div data-slot="build-done">
       {blockers.length > 0 ? (
@@ -2125,16 +2124,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     build.guided,
     build.ready,
   ]);
-  // Like the desktop Next, the strip waits while changes to the prompt are
-  // under review or on their way to it: Next would drop them.
+  // The strip waits as the desktop Next does.
   const showStepStrip =
-    isMobile &&
-    !drafterOpen &&
-    build.ready &&
-    !promptDraft &&
-    !promptReview.review &&
-    !pendingEdits &&
-    !drafterSession.streaming;
+    isMobile && !drafterOpen && nextReady && !drafterSession.streaming;
 
   /**
    * "Drafted 3 fields…" for a screen reader once a draft is applied; a field
@@ -2495,7 +2487,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }
         // Backfill required fields so older agents (created before
         // agent_type / prompt_id / models existed) don't fail
-        // ``isPublishable()`` and leave Save permanently disabled.
+        // ``isPublishable`` and leave Save permanently disabled.
         // Normalise exactly as the source and model effects below will, or the
         // form compares unequal to this snapshot and reports unsaved changes
         // before the user has touched anything.
@@ -2589,7 +2581,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     // Redux keeps that snapshot (the preview reads its model from it).
     const saved = effectiveMode === 'edit' ? initialAgentRef.current : null;
     if (saved) dispatch(setSelectedAgent(saved));
-    else if (isPublishable()) dispatch(setSelectedAgent(agent));
+    else if (isPublishable) dispatch(setSelectedAgent(agent));
   }, [agent, dispatch, effectiveMode, jsonSchemaText]);
 
   // The builder's own exits (a picker's Go to link, Upload's Browse
@@ -2809,7 +2801,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             {
               label: t('agents.form.buttons.saveDraft'),
               icon: Save,
-              disabled: isDraftBlocked() || publishLoading || draftLoading,
+              disabled: isDraftBlocked || publishLoading || draftLoading,
               onClick: () => void saveAgent('draft'),
             },
           ]
@@ -2974,7 +2966,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           // Save on a published agent needs a change; Publish on a draft
           // or a new agent doesn't.
           disabled={
-            !isPublishable() ||
+            !isPublishable ||
             draftLoading ||
             (effectiveMode === 'edit' && !hasChanges)
           }
@@ -3858,7 +3850,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         type="button"
                         size="sm"
                         shape="pill"
-                        disabled={!isPublishable()}
+                        disabled={!isPublishable}
                         loading={publishLoading}
                         onClick={() => void saveAgent('published')}
                       >
