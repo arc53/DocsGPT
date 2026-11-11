@@ -13,10 +13,10 @@ from jinja2 import (
     nodes,
     TemplateSyntaxError,
 )
-from jinja2.compiler import CodeGenerator, Frame, optimizeconst
+from jinja2.compiler import CodeGenerator, Frame, operators, optimizeconst
 from jinja2.exceptions import SecurityError, UndefinedError
 from jinja2.filters import make_attrgetter
-from jinja2.runtime import Context, Undefined
+from jinja2.runtime import Context, LoopContext, Undefined
 from jinja2.sandbox import SandboxedEnvironment, SandboxedEscapeFormatter, SandboxedFormatter
 from jinja2.utils import _PassArg, generate_lorem_ipsum, Namespace, pass_context
 from markupsafe import Markup
@@ -37,6 +37,19 @@ OUTPUT_PER_INPUT_CHAR = 4
 #: The largest integer, in bits, ``*`` or ``**`` may produce (about 4,900
 #: digits, past what Python will print as text anyway).
 MAX_TEMPLATE_INT_BITS = 16_384
+
+#: The most steps one render may take, on top of one per
+#: ``INPUT_CHARS_PER_STEP`` characters of text it was given (a loop over a
+#: long document's lines). A loop iteration or a call is a step; a filter,
+#: method, operator, comparison or slice also takes one step per
+#: ``STEP_UNIT`` characters or items of the sequence it reads, as it works
+#: through all of them. A million steps take at most a few seconds.
+MAX_TEMPLATE_STEPS = 1_000_000
+INPUT_CHARS_PER_STEP = 4
+STEP_UNIT = 100
+# A sort reads each item about this many times (log2 of a long list).
+_SORT_READS = 20
+_SORTING_FILTERS = frozenset({"dictsort", "groupby", "max", "min", "sort", "unique"})
 
 #: Sizing a render's context stops counting here; a larger context still renders.
 _INPUT_COUNT_LIMIT = 64_000_000
@@ -68,18 +81,26 @@ class _RenderBudget:
     Attributes:
         sequence: The longest string or list one step may build.
         output: The most characters the render may write.
+        steps: The most steps the render may take.
         written: Characters written so far.
+        taken: Steps taken so far.
     """
 
     sequence: int
     output: int
+    steps: int
     written: int = 0
+    taken: int = 0
 
     @classmethod
     def for_context(cls, context: Mapping[str, Any]) -> "_RenderBudget":
         """The budget for a render of ``context``."""
         given = _text_size(context, _INPUT_COUNT_LIMIT, objects=False)
-        return cls(sequence=MAX_TEMPLATE_SEQUENCE + given, output=MAX_TEMPLATE_OUTPUT + OUTPUT_PER_INPUT_CHAR * given)
+        return cls(
+            sequence=MAX_TEMPLATE_SEQUENCE + given,
+            output=MAX_TEMPLATE_OUTPUT + OUTPUT_PER_INPUT_CHAR * given,
+            steps=MAX_TEMPLATE_STEPS + given // INPUT_CHARS_PER_STEP,
+        )
 
 
 # The running render's budget. Outside a render (compiling, or a template
@@ -105,6 +126,51 @@ def _sequence_cap() -> int:
 
 def _refuse(message: str) -> None:
     raise SecurityError(message)
+
+
+# Exact types ``_size`` answers without an ``isinstance`` against ``Mapping``,
+# which is slow and runs for every operand of every comparison.
+_SIZED_TYPES = frozenset({str, bytes, list, tuple, dict, set, frozenset, range})
+_UNSIZED_TYPES = frozenset({int, float, bool, type(None)})
+
+
+def _size(value: Any) -> int:
+    """How many characters or items a step reads from ``value``; 0 for a value without a length."""
+    kind = type(value)
+    if kind in _SIZED_TYPES:
+        return len(value)
+    if kind in _UNSIZED_TYPES:
+        return 0
+    return len(value) if isinstance(value, (str, bytes, list, tuple, Mapping, set, frozenset, range)) else 0
+
+
+def _charge(size: int = 0, base: int = 1) -> None:
+    """Count ``base`` steps, and one more per ``STEP_UNIT`` of ``size``, against the running render's budget.
+
+    Raises:
+        SecurityError: When the render has taken more steps than its budget.
+    """
+    budget = _BUDGET.get()
+    if budget is None:
+        return
+    budget.taken += base + size // STEP_UNIT
+    if budget.taken > budget.steps:
+        _refuse("template took too many steps")
+
+
+def _counted_iter(items: Any) -> Iterator[Any]:
+    """Yield ``items``, a step each: every ``{% for %}`` loop iterates through this."""
+    for item in items:
+        _charge()
+        yield item
+
+
+def _counted_operand(value: Any) -> Any:
+    """``value``, after charging the steps a comparison such as ``in`` takes to read it."""
+    size = _size(value)
+    if size >= STEP_UNIT:
+        _charge(size, base=0)
+    return value
 
 
 def _text_size(value: Any, limit: int, objects: bool = True) -> int:
@@ -297,6 +363,9 @@ def _check_sum(environment: Any, items: Any, attribute: Any = None, start: Any =
         total += len(item) if isinstance(item, Sized) else 1
         if total > _sequence_cap():
             _refuse("sum too long")
+    # Each addition copies the running total, so the work grows with the
+    # square of the result.
+    _charge(len(items) * total // 2)
 
 
 def _check_replace(value: Any, old: Any = None, new: Any = None, count: Any = None, *_: Any) -> None:
@@ -417,12 +486,28 @@ class _BoundedEscapeFormatter(_BoundedFormatter, SandboxedEscapeFormatter):
 
 
 class _BoundedCodeGenerator(CodeGenerator):
-    """Compiles ``~`` to a join that refuses a result past the cap.
+    """Compiles ``~`` to a join that refuses a result past the cap, and comparisons to count their steps.
 
     ``~`` is not an operator the sandbox can intercept: Jinja writes it as a
     call to its own ``str_join``, so doubling a string in a loop reached a
-    gigabyte in about thirty steps.
+    gigabyte in about thirty steps. A comparison such as ``"y" in big`` reads
+    a whole sequence without a call the sandbox sees, so each side goes
+    through ``environment.counted_operand``.
     """
+
+    @optimizeconst
+    def visit_Compare(self, node: nodes.Compare, frame: Frame) -> None:
+        self.write("(environment.counted_operand(")
+        self.visit(node.expr, frame)
+        self.write(")")
+        for operand in node.ops:
+            self.visit(operand, frame)
+        self.write(")")
+
+    def visit_Operand(self, node: nodes.Operand, frame: Frame) -> None:
+        self.write(f" {operators[node.op]} environment.counted_operand(")
+        self.visit(node.expr, frame)
+        self.write(")")
 
     @optimizeconst
     def visit_Concat(self, node: nodes.Concat, frame: Frame) -> None:
@@ -533,6 +618,8 @@ def _runtime_filter(name: str, func: Callable[..., Any]) -> Callable[..., Any]:
     @pass_context
     @functools.wraps(func)
     def wrapper(context: Context, *args: Any, **kwargs: Any) -> Any:
+        size = _size(args[0]) if args else 0
+        _charge(size * _SORT_READS if name in _SORTING_FILTERS else size)
         args = _filter_guard(name, args, kwargs, context.environment)
         if pass_arg is _PassArg.context:
             return _check_size(func(context, *args, **kwargs))
@@ -575,6 +662,29 @@ class BoundedSandboxedEnvironment(SandboxedEnvironment):
 
     #: The join compiled templates call for ``~`` (``_BoundedCodeGenerator``).
     bounded_join = staticmethod(_bounded_join)
+    #: What every ``{% for %}`` loop iterates (``_parse``), and what reads each side of a comparison.
+    counted_iter = staticmethod(_counted_iter)
+    counted_operand = staticmethod(_counted_operand)
+
+    def _parse(self, source: str, name: Optional[str], filename: Optional[str]) -> nodes.Template:
+        """Parse ``source``, then route every loop's items through a step count.
+
+        A loop's body runs no call or filter the sandbox sees, so nested
+        empty loops held a worker for hours.
+        """
+        template = super()._parse(source, name, filename)
+        for loop in list(template.find_all(nodes.For)):
+            loop.iter = nodes.Call(
+                nodes.EnvironmentAttribute("counted_iter"), [loop.iter], [], None, None, lineno=loop.iter.lineno
+            )
+        template.set_environment(self)
+        return template
+
+    def getitem(self, obj: Any, argument: Any) -> Any:
+        """``obj[argument]``; a slice copies, so it takes steps for the sequence it reads."""
+        if isinstance(argument, slice):
+            _charge(_size(obj))
+        return super().getitem(obj, argument)
 
     def wrap_str_format(self, value: Any) -> Optional[Callable[..., str]]:
         """The sandbox's ``str.format`` / ``format_map``, refusing a field or a result past the cap."""
@@ -598,12 +708,21 @@ class BoundedSandboxedEnvironment(SandboxedEnvironment):
         return functools.update_wrapper(wrapper, value)
 
     def call(__self, __context: Context, __obj: Any, *args: Any, **kwargs: Any) -> Any:  # noqa: N805
-        """Call ``__obj`` from a template, refusing a call that would build an oversized string or list."""
+        """Call ``__obj`` from a template, refusing a call that would build an oversized string or list.
+
+        Every call is a step (a macro's too), and a method takes more for the
+        string or list it reads; a recursive loop's ``loop(items)`` counts its
+        items as a ``{% for %}`` does.
+        """
         owner = getattr(__obj, "__self__", None)
+        _charge(_size(owner))
+        if isinstance(__obj, LoopContext) and args:
+            args = (_counted_iter(args[0]), *args[1:])
         if isinstance(owner, str) and not isinstance(__obj, functools.partial):
             name = getattr(__obj, "__name__", "")
             if name == "join" and args:
                 parts = list(_bounded_items(args[0]))
+                _charge(len(parts))
                 _check_joined(parts, owner)
                 args = (parts, *args[1:])
             else:
@@ -629,6 +748,7 @@ class BoundedSandboxedEnvironment(SandboxedEnvironment):
         Raises:
             SecurityError: When the result would pass the size caps.
         """
+        _charge(_size(left) + _size(right))
         if operator == "+":
             sized = (str, bytes, list, tuple)
             if isinstance(left, sized) and isinstance(right, sized) and len(left) + len(right) > _sequence_cap():

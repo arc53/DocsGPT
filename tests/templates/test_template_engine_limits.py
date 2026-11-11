@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from docsgpt.templates import template_engine
 from docsgpt.templates.template_engine import TemplateEngine, TemplateRenderError
 
 # Each of these is a couple of dozen characters that, folded at compile time,
@@ -230,3 +231,51 @@ class TestRenderSizeCaps:
     def test_writes_within_the_budget_render(self, engine: TemplateEngine) -> None:
         template = '{% set s = "a" * 1000000 %}{% for i in range(3) %}{{ s }}{% endfor %}'
         assert len(engine.render(template, {})) == 3_000_000
+
+
+# Templates that build nothing large but would hold a worker for minutes or
+# hours: nested loops, exponential recursion, and whole-sequence work (a scan,
+# a sort, a copy, a quadratic sum) repeated in a loop.
+STEP_HOGS = [
+    "{% for i in range(1000) %}{% for j in range(1000) %}{% endfor %}{% endfor %}",
+    "{% macro d(n) %}{% if n %}{% set a = d(n - 1) %}{% set b = d(n - 1) %}{% endif %}{% endmacro %}{{ d(40) }}",
+    "{% for x in [1, 2] recursive %}{% if loop.depth < 40 %}{{ loop([1, 2]) }}{% endif %}{% endfor %}",
+    '{% set big = ["x"] * 1000000 %}{% for i in range(1000) %}{{ "y" in big }}{% endfor %}',
+    "{% set big = range(100000) | list %}{% for i in range(1000) %}{{ (big | sort)[0] }}{% endfor %}",
+    '{% set big = ["x"] * 1000000 %}{% for i in range(1000) %}{{ big[1:] | length }}{% endfor %}',
+    '{% set big = "x" * 1000000 %}{% for i in range(1000) %}{{ big.count("y") }}{% endfor %}',
+    "{{ ([[1] * 1000] * 1000) | sum(start=[]) | length }}",
+]
+
+
+@pytest.mark.unit
+class TestRenderStepBudget:
+    @pytest.mark.parametrize("template", STEP_HOGS)
+    def test_refused_cheaply(self, engine: TemplateEngine, template: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(template_engine, "MAX_TEMPLATE_STEPS", 20_000)
+        started = time.perf_counter()
+        with pytest.raises(TemplateRenderError, match="steps"):
+            engine.render(template, {})
+        assert time.perf_counter() - started < 0.5
+
+    def test_the_real_budget_stops_nested_loops(self, engine: TemplateEngine) -> None:
+        with pytest.raises(TemplateRenderError, match="steps"):
+            engine.render("{% for i in range(100000) %}{% for j in range(100000) %}{% endfor %}{% endfor %}", {})
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "{% for i in range(100000) %}{% endfor %}ok",
+            "{% for d in docs %}{% if d | length > 10 and 'z' not in d %}{{ d | trim | upper }}{% endif %}{% endfor %}",
+            "{{ doc | trim }}{{ doc | upper | length }}{{ doc.count('line') }}{{ doc.split('\\n') | length }}",
+            "{% for line in doc.splitlines() %}{% if loop.index < 3 %}{{ line }}{% endif %}{% endfor %}",
+        ],
+    )
+    def test_ordinary_work_fits(self, engine: TemplateEngine, template: str) -> None:
+        docs = ["line of text " * 40] * 1000
+        assert engine.render(template, {"doc": BIG_DOC, "docs": docs})
+
+    def test_each_render_gets_its_own_steps(self, engine: TemplateEngine, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(template_engine, "MAX_TEMPLATE_STEPS", 20_000)
+        for _ in range(5):
+            assert engine.render("{% for i in range(15000) %}{% endfor %}ok", {}) == "ok"
