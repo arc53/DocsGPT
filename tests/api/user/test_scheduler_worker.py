@@ -1212,3 +1212,135 @@ class TestCallerRules:
 
     def test_owners_own_schedule_runs_as_the_owner(self, pg_engine, patched_engine, stub_events):
         assert self._caller(pg_engine) == {"external_caller": False, "public_link_caller": False}
+
+
+def _cannot_start(monkeypatch, reason: str) -> None:
+    """Make the worker stop before running the agent, for ``reason``."""
+    from docsgpt.api.user import scheduler_worker
+
+    if reason == "agent missing":
+        monkeypatch.setattr(scheduler_worker, "_agent_config_for_schedule", lambda schedule: None)
+    else:
+        monkeypatch.setattr(scheduler_worker, "_scheduler_still_allowed", lambda schedule, agent: False)
+
+
+class TestRunStartedByHand:
+    """A failed Run now is watched by whoever started it, so it doesn't count toward auto-pause."""
+
+    def _schedule(self, conn, *, failures: int = 0):
+        agent_id = _make_agent(conn)
+        schedule = SchedulesRepository(conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="Post the nightly CRM digest", cron="0 2 * * *",
+            next_run_at=_now() + timedelta(hours=1),
+        )
+        for _ in range(failures):
+            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+        return schedule, agent_id
+
+    def _runs(self, conn, schedule, agent_id, count, trigger_source):
+        return [
+            ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now() + timedelta(minutes=i),
+                trigger_source=trigger_source,
+            )
+            for i in range(count)
+        ]
+
+    def _stored(self, pg_engine, schedule):
+        with pg_engine.connect() as conn:
+            return SchedulesRepository(conn).get_internal(str(schedule["id"]))
+
+    def test_failed_manual_runs_neither_count_nor_pause(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn)
+            runs = self._runs(conn, schedule, agent_id, 3, "manual")
+
+        for run in runs:
+            result = _execute_with(run, _outcome("", cannot_complete="No CRM tool."))
+            assert result["error_type"] == "cannot_complete"
+
+        stored = self._stored(pg_engine, schedule)
+        assert stored["consecutive_failure_count"] == 0
+        assert stored["status"] == "active"
+        assert stored["next_run_at"] == schedule["next_run_at"]
+        assert "schedule.autopaused" not in {e[0] for e in stub_events}
+
+    def test_failed_scheduled_runs_still_count_and_pause(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn)
+            runs = self._runs(conn, schedule, agent_id, 2, "cron")
+
+        for run in runs:
+            _execute_with(run, _outcome("", cannot_complete="No CRM tool."))
+
+        stored = self._stored(pg_engine, schedule)
+        assert stored["consecutive_failure_count"] == 2
+        assert stored["status"] == "paused"
+
+    def test_a_manual_run_that_errors_does_not_count(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn, failures=1)
+            (run,) = self._runs(conn, schedule, agent_id, 1, "manual")
+
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", side_effect=RuntimeError("boom")):
+            assert execute_scheduled_run_body(str(run["id"]), "celery-m")["status"] == "failed"
+
+        stored = self._stored(pg_engine, schedule)
+        assert stored["consecutive_failure_count"] == 1
+        assert stored["status"] == "active"
+
+    def test_a_manual_run_that_times_out_does_not_count(self, pg_engine, patched_engine, stub_events):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn, failures=1)
+            (run,) = self._runs(conn, schedule, agent_id, 1, "manual")
+
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless", side_effect=SoftTimeLimitExceeded(),
+        ):
+            assert execute_scheduled_run_body(str(run["id"]), "celery-t")["status"] == "timeout"
+
+        stored = self._stored(pg_engine, schedule)
+        assert stored["consecutive_failure_count"] == 1
+        assert stored["status"] == "active"
+
+    @pytest.mark.parametrize("reason", ["agent missing", "agent access revoked"])
+    def test_a_manual_run_that_cannot_start_does_not_count(
+        self, pg_engine, patched_engine, stub_events, monkeypatch, reason,
+    ):
+        _cannot_start(monkeypatch, reason)
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn, failures=1)
+            (run,) = self._runs(conn, schedule, agent_id, 1, "manual")
+
+        assert execute_scheduled_run_body(str(run["id"]), "celery-s") == {"status": "failed", "reason": reason}
+
+        stored = self._stored(pg_engine, schedule)
+        assert stored["consecutive_failure_count"] == 1
+        assert stored["status"] == "active"
+
+    @pytest.mark.parametrize("reason", ["agent missing", "agent access revoked"])
+    def test_a_scheduled_run_that_cannot_start_still_counts(
+        self, pg_engine, patched_engine, stub_events, monkeypatch, reason,
+    ):
+        _cannot_start(monkeypatch, reason)
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn, failures=1)
+            (run,) = self._runs(conn, schedule, agent_id, 1, "cron")
+
+        execute_scheduled_run_body(str(run["id"]), "celery-s")
+
+        stored = self._stored(pg_engine, schedule)
+        assert stored["consecutive_failure_count"] == 2
+        assert stored["status"] == "paused"
+
+    def test_a_successful_manual_run_still_resets_the_count(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn, failures=1)
+            (run,) = self._runs(conn, schedule, agent_id, 1, "manual")
+
+        assert _execute_with(run, _outcome("done"))["status"] == "success"
+
+        assert self._stored(pg_engine, schedule)["consecutive_failure_count"] == 0
