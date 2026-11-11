@@ -220,6 +220,31 @@ class TestListDue:
         assert future["id"] not in ids
         assert all(r["status"] == "active" for r in rows)
 
+    def test_a_one_time_task_waiting_for_its_run_now_does_not_hold_the_batch(self, pg_conn):
+        from docsgpt.storage.db.repositories.schedule_runs import ScheduleRunsRepository
+
+        repo = SchedulesRepository(pg_conn)
+        agent_id = _insert_agent(pg_conn)
+        # Due long ago, so it would head any batch if it weren't left out.
+        long_ago = _now() - timedelta(days=3650)
+        waiting = repo.create(
+            user_id="u1", agent_id=agent_id, trigger_type="once", instruction="i",
+            run_at=long_ago, next_run_at=long_ago,
+        )
+        ScheduleRunsRepository(pg_conn).record_pending(
+            str(waiting["id"]), "u1", agent_id, _now() - timedelta(minutes=3), trigger_source="manual",
+        )
+        later = repo.create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring", instruction="i",
+            cron="* * * * *", next_run_at=_now() - timedelta(seconds=10),
+        )
+
+        # The slot goes to a schedule that can run, not to nothing.
+        batch = [r["id"] for r in repo.list_due(limit=1)]
+        assert len(batch) == 1
+        assert waiting["id"] not in batch
+        assert later["id"] in [r["id"] for r in repo.list_due()]
+
 
 class TestUpdateCancelFailureCounters:
     def test_update_fields(self, pg_conn):

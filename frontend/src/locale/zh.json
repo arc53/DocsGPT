@@ -74,7 +74,9 @@
         "monitor_expired": "监控已过期",
         "schedule": "计划任务已完成",
         "default": "新回复",
-        "docs_gaps": "每周文档缺口摘要"
+        "docs_gaps": "每周文档缺口摘要",
+        "schedule_paused": "计划任务已暂停",
+        "schedule_failed": "计划任务失败"
       },
       "open": "打开",
       "fallbackTitle": "你的助手有新消息"
@@ -2311,7 +2313,9 @@
         "clear": "清除",
         "ingestionFailed": "导入失败。",
         "tooManyFiles": "此来源的文件数超过上限 {{limit}} 个。请选择更小的文件夹、路径或选择范围。",
-        "tooManyTokens": "此来源的文本超过 {{limit}} 个令牌的上限。请将其拆分为更小的来源。"
+        "tooManyTokens": "此来源的文本超过 {{limit}} 个令牌的上限。请将其拆分为更小的来源。",
+        "partialDownload_one": "有 {{count}} 个项目未能下载，已被跳过。请同步此来源以重试。",
+        "partialDownload_other": "有 {{count}} 个项目未能下载，已被跳过。请同步此来源以重试。"
       },
       "ingestors": {
         "local_file": {
@@ -2701,7 +2705,8 @@
       "serverError": "请稍后再试。给您带来不便，敬请谅解。",
       "clientDisconnect": "回复在生成任何内容之前就中断了。请重试。",
       "timeLimit": "已停止：达到时间限制。当前进度已保存。",
-      "stopped": "你在回复写出任何内容之前停止了它。请重试以获取回复。"
+      "stopped": "你在回复写出任何内容之前停止了它。请重试以获取回复。",
+      "noAnswer": "模型一直在推理却没有开始回答，因此已停止。请重试，或选择其他模型。"
     },
     "reasoning": "推理",
     "wikiWrite": {
@@ -4248,7 +4253,8 @@
         "missed": "错过了运行时间",
         "overlap": "上一次运行仍在进行",
         "stream_error": "回答流中断",
-        "empty_output": "没有产生任何输出"
+        "empty_output": "没有产生任何输出",
+        "cannot_complete": "智能体无法完成此任务"
       },
       "viewRuns": "查看运行",
       "fromChat": "来自 {{name}}",

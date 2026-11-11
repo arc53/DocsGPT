@@ -7,6 +7,7 @@ from sqlalchemy.exc import DataError
 from docsgpt.api.user.idempotency import with_idempotency
 from docsgpt.api.user.ingest_slots import with_ingest_slot
 from docsgpt.celery_init import celery
+from docsgpt.parser.connectors.base import ConnectorAuthError
 from docsgpt.parser.file.base_parser import DocumentParseError
 from docsgpt.parser.ingest_limits import IngestTooLarge
 from docsgpt.parser.remote.github_loader import GitHubRateLimited
@@ -282,7 +283,7 @@ def schedule_syncs(self, frequency):
 
 
 @celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
-             dont_autoretry_for=(IngestTooLarge, _connection_unavailable()))
+             dont_autoretry_for=(IngestTooLarge, _connection_unavailable(), ConnectorAuthError))
 def sync_connector_source(self, source_id):
     """Re-sync one connector source from its connection, with no browser involved."""
     from docsgpt.worker import sync_connector_source as run
@@ -548,7 +549,8 @@ except Exception:
 
 # A revoked or disconnected connection will not heal by retrying; the
 # service has already paused the source and told its owner to reconnect.
-@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, _connection_unavailable())))
+# Neither will a sign-in the provider rejects after a refresh.
+@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, _connection_unavailable(), ConnectorAuthError)))
 @with_ingest_slot
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,

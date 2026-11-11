@@ -217,6 +217,7 @@ def finish_detached(row: Dict[str, Any], backend: Any, state: Any) -> Optional[D
             status="completed" if status == "completed" else "error",
             artifacts=tool.get_artifacts("run_code"),
             artifact_id=tool.get_artifact_id("run_code"),
+            script_error=tool.job_script_error() if status == "failed" else None,
         ),
         output_tail=(state.output or None),
     )

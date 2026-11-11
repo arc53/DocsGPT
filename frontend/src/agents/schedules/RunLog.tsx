@@ -147,10 +147,23 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
                     <ScheduleStatusBadge status={run.status} />
                     {run.error_type && (
                       <span className="text-muted-foreground text-xs">
-                        ({run.error_type})
+                        (
+                        {t(`activity.now.errorType.${run.error_type}`, {
+                          defaultValue: run.error_type,
+                        })}
+                        )
                       </span>
                     )}
                   </div>
+                  {/* The agent's own one-line reason says what to fix. */}
+                  {run.error_type === 'cannot_complete' && run.error && (
+                    <p
+                      className="text-muted-foreground mt-0.5 max-w-64 truncate text-xs"
+                      title={run.error}
+                    >
+                      {run.error}
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell className="tabular-nums">
                   {runDuration(run)}

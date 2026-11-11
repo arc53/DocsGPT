@@ -280,3 +280,70 @@ def test_raw_gen_stream_records_length_finish_reason(monkeypatch):
 def test_raw_gen_stream_records_stop_finish_reason(monkeypatch):
     finish = types.SimpleNamespace(name="STOP")
     assert _stream_with_finish_reason(monkeypatch, finish)._last_finish_reason == "stop"
+
+
+def _capture_stream_config(monkeypatch, chunks=None):
+    captured = {}
+
+    def fake_stream(self, *args, **kwargs):
+        captured["config"] = kwargs.get("config")
+        return chunks or [types.SimpleNamespace(text="a", candidates=None)]
+
+    monkeypatch.setattr(FakeModels, "generate_content_stream", fake_stream)
+    return captured
+
+
+def test_model_cap_sets_max_output_tokens(monkeypatch):
+    from docsgpt.core.model_settings import ModelCapabilities
+
+    captured = _capture_stream_config(monkeypatch)
+    llm = GoogleLLM(api_key="key", capabilities=ModelCapabilities(max_output_tokens=32768))
+    list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}], max_tokens=2000))
+    assert captured["config"].max_output_tokens == 2000
+    list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]))
+    assert captured["config"].max_output_tokens == 32768
+
+
+def test_model_cap_on_the_non_streaming_path(monkeypatch):
+    from docsgpt.core.model_settings import ModelCapabilities
+
+    captured = {}
+    original = FakeModels.generate_content
+
+    def fake_gen(self, *args, **kwargs):
+        captured["config"] = kwargs.get("config")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(FakeModels, "generate_content", fake_gen)
+    llm = GoogleLLM(api_key="key", capabilities=ModelCapabilities(max_output_tokens=4096))
+    llm._raw_gen(llm, model="gemini", messages=[{"role": "user", "content": "hi"}])
+    assert captured["config"].max_output_tokens == 4096
+
+
+def test_no_model_cap_leaves_max_output_tokens_unset(monkeypatch):
+    captured = _capture_stream_config(monkeypatch)
+    llm = GoogleLLM(api_key="key")
+    list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}], max_tokens=2000))
+    assert getattr(captured["config"], "max_output_tokens", None) is None
+
+
+def test_stream_max_tokens_finish_reports_length(monkeypatch):
+    thought = _FakePart(text="planning", thought=True)
+    candidate = types.SimpleNamespace(
+        content=_FakeContent("model", [thought]), finish_reason=types.SimpleNamespace(name="MAX_TOKENS")
+    )
+    _capture_stream_config(monkeypatch, [types.SimpleNamespace(candidates=[candidate])])
+    llm = GoogleLLM(api_key="key")
+    chunks = list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]))
+    assert chunks == [{"type": "thought", "thought": "planning"}]
+    assert llm._last_finish_reason == "length"
+
+
+def test_stream_normal_finish_reports_stop(monkeypatch):
+    candidate = types.SimpleNamespace(
+        content=_FakeContent("model", [_FakePart(text="answer")]), finish_reason=types.SimpleNamespace(name="STOP")
+    )
+    _capture_stream_config(monkeypatch, [types.SimpleNamespace(candidates=[candidate])])
+    llm = GoogleLLM(api_key="key")
+    assert list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}])) == ["answer"]
+    assert llm._last_finish_reason == "stop"

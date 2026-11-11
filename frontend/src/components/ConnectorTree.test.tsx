@@ -4,7 +4,11 @@ import { createRoot, type Root } from 'react-dom/client';
 const { tree, dispatch, sync, waitForChange } = vi.hoisted(() => ({
   dispatch: vi.fn(),
   waitForChange: vi.fn(
-    async (): Promise<{ terminal: string; reason: string | null }> => ({
+    async (): Promise<{
+      terminal: string;
+      reason: string | null;
+      itemsNotDownloaded?: number;
+    }> => ({
       terminal: 'completed',
       reason: null,
     }),
@@ -234,6 +238,7 @@ describe('ConnectorTree and FileTree headers', () => {
     ['busy', 'warning', 'settings.sources.website.changeBusy'],
     ['wiki', 'destructive', 'settings.connectors.detail.syncRefusedWiki'],
     ['gone', 'destructive', 'settings.sources.website.sourceGone'],
+    ['reconnect', 'destructive', 'settings.connectors.detail.expired'],
   ])(
     'a sync the worker did not run says why (reason %s)',
     async (reason, variant, message) => {
@@ -251,6 +256,28 @@ describe('ConnectorTree and FileTree headers', () => {
       ]);
     },
   );
+
+  it('a sync that could not download every file says so', async () => {
+    dispatch.mockReset();
+    sync.connector.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: 't' }),
+    });
+    waitForChange.mockResolvedValueOnce({
+      terminal: 'completed',
+      reason: null,
+      itemsNotDownloaded: 3,
+    });
+    await renderConnector({ sourceType: 'connector:file' });
+    await confirmSync();
+    expect(toasts()).toEqual([
+      { variant: 'success', message: 'settings.sources.syncStarted' },
+      {
+        variant: 'warning',
+        message: 'modals.uploadDoc.progress.partialDownload',
+      },
+    ]);
+  });
 
   it('embedded ConnectorTree drops the badge and headerAction, keeps Sync', async () => {
     await renderConnector({ embedded: true, headerAction: retrieval });

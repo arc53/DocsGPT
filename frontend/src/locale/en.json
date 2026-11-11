@@ -75,7 +75,9 @@
         "monitor_expired": "Monitor expired",
         "schedule": "Scheduled task finished",
         "default": "New reply",
-        "docs_gaps": "Weekly docs-gap summary"
+        "docs_gaps": "Weekly docs-gap summary",
+        "schedule_paused": "Scheduled task paused",
+        "schedule_failed": "Scheduled task failed"
       },
       "open": "Open",
       "fallbackTitle": "Your assistant has an update"
@@ -2321,7 +2323,9 @@
         "clear": "Clear",
         "ingestionFailed": "Ingestion failed.",
         "tooManyFiles": "This source has more than {{limit}} files, the most one source can hold. Choose a smaller folder, path or selection.",
-        "tooManyTokens": "This source has more than {{limit}} tokens of text, the most one source can hold. Split it into smaller sources."
+        "tooManyTokens": "This source has more than {{limit}} tokens of text, the most one source can hold. Split it into smaller sources.",
+        "partialDownload_one": "{{count}} item couldn’t be downloaded, so it was left out. Sync the source to try it again.",
+        "partialDownload_other": "{{count}} items couldn’t be downloaded, so they were left out. Sync the source to try them again."
       },
       "ingestors": {
         "local_file": {
@@ -2716,7 +2720,8 @@
       "serverError": "Please try again later. We apologize for any inconvenience.",
       "clientDisconnect": "The response stopped before anything was produced. Try again.",
       "timeLimit": "Stopped: time limit. Progress so far is saved.",
-      "stopped": "You stopped this answer before it wrote anything. Try again to get one."
+      "stopped": "You stopped this answer before it wrote anything. Try again to get one.",
+      "noAnswer": "The model kept reasoning without starting an answer, so it was stopped. Try again, or choose a different model."
     },
     "reasoning": "Reasoning",
     "wikiWrite": {
@@ -4291,7 +4296,8 @@
         "missed": "missed its time",
         "overlap": "the previous run was still going",
         "stream_error": "the answer stream broke",
-        "empty_output": "it produced nothing"
+        "empty_output": "it produced nothing",
+        "cannot_complete": "the agent can't do this task"
       },
       "viewRuns": "View runs",
       "fromChat": "From {{name}}",
