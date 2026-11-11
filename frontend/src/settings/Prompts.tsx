@@ -748,7 +748,8 @@ function PromptDetailPage({
           onNavigate={leaveGuard.onNavigate()}
           onOpenAgent={openAgent}
           save={{
-            onSave: () => void detail.save(),
+            // Like the page's Save: a copy after a conflict.
+            onSave: () => void detail.save({ asCopy: detail.conflict }),
             // The header's Save, under the written draft.
             disabled: !detail.canSave || streaming || drafter.review !== null,
             saving: detail.saving,

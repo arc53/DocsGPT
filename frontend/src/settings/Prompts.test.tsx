@@ -1250,6 +1250,33 @@ describe('Prompts page', () => {
     expect(save().disabled).toBe(false);
   });
 
+  it("saves a copy from the drawer's Save prompt after a conflict", async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [proposal(IMPROVE)];
+    withText('You check vendors.');
+    service.updatePrompt.mockImplementation(() => response({}, false, 409));
+    service.createPrompt.mockImplementation(() => response({ id: 'p-copy' }));
+    await render();
+    await openCard('Vendor checks');
+    await click(button('drafter.improve', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
+    );
+    await click(button('drafter.prompt.acceptAll', panel()!)!);
+    await click(save());
+    expect(
+      view()!.querySelector('[data-slot="prompt-conflict"]'),
+    ).not.toBeNull();
+    // Like the page's Save, the drawer's keeps the changes as a new prompt
+    // rather than going over their version again.
+    await click(button('drafter.prompt.savePrompt', panel()!)!);
+    expect(service.updatePrompt).toHaveBeenCalledTimes(1);
+    expect(service.createPrompt).toHaveBeenCalledWith(
+      { name: 'Vendor checks copy', content: 'You check every vendor.' },
+      'tok',
+    );
+  });
+
   it('closes the sheet on a phone to step through the changes, and opens it when they are chosen', async () => {
     media.isMobile = true;
     drafter.config = { enabled: true };
