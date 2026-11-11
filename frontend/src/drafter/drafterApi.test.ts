@@ -132,7 +132,7 @@ describe('drafterApi', () => {
       }),
     );
     expect(await run()).toEqual([
-      { type: 'error', code: 'rate_limited', message: 'Slow down' },
+      { type: 'error', code: 'rate_limited' },
       { type: 'end' },
     ]);
     client.post.mockResolvedValueOnce(
@@ -191,7 +191,7 @@ describe('drafterApi', () => {
     );
     expect(await run()).toEqual([
       { type: 'message', text: 'Working' },
-      { type: 'error', code: 'model_error', message: undefined },
+      { type: 'error', code: 'model_error' },
       { type: 'end' },
     ]);
   });
@@ -283,7 +283,7 @@ describe('drafterApi', () => {
   it('reads an error code it does not know as a model error', () => {
     expect(
       parseDrafterEvent('{"type":"error","code":"quota","message":"Out"}'),
-    ).toEqual({ type: 'error', code: 'quota', message: 'Out' });
+    ).toEqual({ type: 'error', code: 'quota' });
     expect(parseDrafterEvent('{"type":"error","code":"overheated"}')).toEqual({
       type: 'error',
       code: 'model_error',
@@ -305,7 +305,6 @@ describe('drafterApi', () => {
     expect(read({ code: 'bad_request', message: 'Too many' })).toEqual({
       type: 'error',
       code: 'bad_request',
-      message: 'Too many',
     });
     expect(
       read({ code: 'bad_request', reason: 'too_long', limit: 100000 }),

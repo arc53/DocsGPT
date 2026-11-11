@@ -9,11 +9,6 @@ export type PromptDecision = 'accepted' | 'rejected';
 export type PromptReview = {
   proposal: { edits: PromptEdit[] };
   original: string;
-  /**
-   * The text as it stood, put back while no change is accepted; it can
-   * differ from `original` in its line ends. `original` when left out.
-   */
-  before?: string;
   decisions: Record<string, PromptDecision>;
   /** The change "Review one by one" is on; null before it starts. */
   current: string | null;
@@ -23,10 +18,9 @@ export type PromptReviewState = {
   review: PromptReview | null;
   /**
    * Open a review of the `edits` that fit `original` (the text now, as the
-   * drafter read it; `before` when that differs from the field's text).
-   * Returns how many changes are under review: 0 opens none.
+   * drafter read it). Returns how many changes are under review: 0 opens none.
    */
-  start: (edits: PromptEdit[], original: string, before?: string) => number;
+  start: (edits: PromptEdit[], original: string) => number;
   /** Accept or reject one change (null clears the choice). */
   decide: (id: string, decision: PromptDecision | null) => void;
   acceptAll: () => void;
@@ -75,11 +69,10 @@ export function usePromptReview(
   /** Write the review's text, and close it once every change is chosen. */
   const commit = useCallback((next: PromptReview) => {
     const { proposal, original, decisions } = next;
-    const before = next.before ?? original;
     const accepted = (id: string) => decisions[id] === 'accepted';
     const content = proposal.edits.some((edit) => accepted(edit.id))
       ? applyPromptEdits(original, proposal.edits, accepted)
-      : before;
+      : original;
     const { setContent, drafted } = latest.current;
     setContent(content);
     const done = proposal.edits.every((edit) => decisions[edit.id]);
@@ -87,25 +80,22 @@ export function usePromptReview(
     else setReview(next);
     // A text already Drafted keeps its mark through the review's steps, so
     // undo still goes back to before the first draft.
-    if (done && content !== before) drafted.mark('content', before, content);
+    if (done && content !== original)
+      drafted.mark('content', original, content);
     else drafted.follow('content', content);
   }, []);
 
-  const start = useCallback(
-    (edits: PromptEdit[], original: string, before?: string) => {
-      const fitting = fittingEdits(original, edits);
-      if (fitting.length > 0)
-        setReview({
-          proposal: { edits: fitting },
-          original,
-          ...(before !== undefined && before !== original && { before }),
-          decisions: {},
-          current: null,
-        });
-      return fitting.length;
-    },
-    [],
-  );
+  const start = useCallback((edits: PromptEdit[], original: string) => {
+    const fitting = fittingEdits(original, edits);
+    if (fitting.length > 0)
+      setReview({
+        proposal: { edits: fitting },
+        original,
+        decisions: {},
+        current: null,
+      });
+    return fitting.length;
+  }, []);
 
   const decide = useCallback(
     (id: string, decision: PromptDecision | null) => {
@@ -158,9 +148,8 @@ export function usePromptReview(
 
   const discard = useCallback(() => {
     if (!review) return;
-    const before = review.before ?? review.original;
-    latest.current.setContent(before);
-    latest.current.drafted.follow('content', before);
+    latest.current.setContent(review.original);
+    latest.current.drafted.follow('content', review.original);
     setReview(null);
   }, [review]);
 
@@ -168,9 +157,8 @@ export function usePromptReview(
     const open = reviewRef.current;
     if (!open) return;
     setReview(null);
-    const before = open.before ?? open.original;
-    if (content !== before)
-      latest.current.drafted.mark('content', before, content);
+    if (content !== open.original)
+      latest.current.drafted.mark('content', open.original, content);
   }, []);
 
   const clear = useCallback(() => setReview(null), []);

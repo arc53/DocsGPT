@@ -560,12 +560,7 @@ describe('DraftPanel', () => {
 
   // Decision 105: a refused key can't be fixed by trying again.
   it('names a task model whose key was refused and links to changing it', async () => {
-    stream.scripts = [
-      [
-        { type: 'error', code: 'model_auth', message: 'refused' },
-        { type: 'end' },
-      ],
-    ];
+    stream.scripts = [[{ type: 'error', code: 'model_auth' }, { type: 'end' }]];
     await ask('Draft it');
     const alert = container.querySelector('[data-item="error"]')!;
     expect(alert.textContent).toContain('drafter.errors.model_auth.title');

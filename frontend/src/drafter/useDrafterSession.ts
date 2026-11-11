@@ -40,7 +40,6 @@ export type DrafterItem =
       id: number;
       kind: 'error';
       code: DrafterErrorCode;
-      message?: string;
       /** A too-long prompt's limit in characters, when the refusal named it. */
       limit?: number;
     }
@@ -86,7 +85,6 @@ export type DrafterSessionOptions = {
 };
 
 export type DrafterSession = {
-  recipe: DrafterRecipe;
   items: DrafterItem[];
   /** The running turn's step; null while idle. */
   step: DrafterStep | null;
@@ -285,7 +283,6 @@ export function useDrafterSession({
           push({
             kind: 'error',
             code: event.code,
-            message: event.message,
             ...(event.limit !== undefined ? { limit: event.limit } : {}),
           });
           return;
@@ -414,7 +411,6 @@ export function useDrafterSession({
   useEffect(() => () => abort(), [abort]);
 
   return {
-    recipe,
     items,
     step,
     streaming: step !== null,

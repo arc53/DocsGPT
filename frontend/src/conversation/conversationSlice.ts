@@ -953,11 +953,11 @@ type SubmitToolActionsArgs = {
 
 /**
  * How a tool-actions request went: `ran` once the server took it (the resumed
- * run may still fail later), `refused` when it was turned away before
- * anything ran (an error frame first: a 400, a 429), `gone` when the pause
- * was already over and the turn reloads.
+ * run may still fail later) or the pause was already over (the turn reloads),
+ * `refused` when it was turned away before anything ran (an error frame
+ * first: a 400, a 429).
  */
-export type ToolActionsOutcome = 'ran' | 'refused' | 'gone';
+export type ToolActionsOutcome = 'ran' | 'refused';
 
 export const submitToolActions = createAsyncThunk<
   ToolActionsOutcome,
@@ -1061,11 +1061,9 @@ async function sendToolActions(
       // The first frame tells whether the server took the request.
       if (outcome === null)
         outcome =
-          data.type !== 'error'
+          data.type !== 'error' || data.code === NOT_PENDING_CODE
             ? 'ran'
-            : data.code === NOT_PENDING_CODE
-              ? 'gone'
-              : 'refused';
+            : 'refused';
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));

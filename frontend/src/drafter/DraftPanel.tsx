@@ -67,9 +67,6 @@ const FOOTER_KEYS = {
 // The order the "Looked at your workspace" line lists counts in.
 const COUNT_KEYS = ['sources', 'tools', 'prompts', 'models', 'agents'] as const;
 
-// Where the footer's model note links: the task model lives on General.
-export { RETRYABLE, TASK_MODEL_SETTINGS_PATH } from './DrafterErrorAlert';
-
 /**
  * A first-screen suggestion: a click sends its text, or runs `onSelect`
  * when the host sends it itself (a starter that adds to the context).

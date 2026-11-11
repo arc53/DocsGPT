@@ -1,7 +1,7 @@
 import apiClient from '../api/client';
 import endpoints from '../api/endpoints';
 import { isQuotaError } from '../conversation/quotaError';
-import type { Question, QuestionOption } from '../components/QuestionCards';
+import type { Question } from '../components/QuestionCards';
 import { readSSEStream } from '../events/eventStreamClient';
 
 /**
@@ -37,8 +37,6 @@ export type DrafterConfig = {
 export type DrafterMessage = { role: 'user' | 'assistant'; content: string };
 
 // The shape the chat's `ask_user` questions share (components/QuestionCards).
-export type DrafterOption = QuestionOption;
-
 export type DrafterQuestion = Question;
 
 export type DrafterErrorCode =
@@ -93,7 +91,7 @@ export type DrafterEvent =
   | { type: 'read'; kind: 'questions'; items: string[] }
   | { type: 'questions'; questions: DrafterQuestion[] }
   | { type: 'proposal'; proposal: unknown }
-  | { type: 'error'; code: DrafterErrorCode; message?: string; limit?: number }
+  | { type: 'error'; code: DrafterErrorCode; limit?: number }
   | { type: 'end' };
 
 export type DrafterRequest = {
@@ -338,11 +336,7 @@ export function parseDrafterEvent(data: string): DrafterEvent | null {
       case 'error': {
         // A code this client has no words for reads as a model error; a
         // refused request reads by its reason.
-        const { code, message, reason } = parsed as {
-          code?: unknown;
-          message?: unknown;
-          reason?: unknown;
-        };
+        const { code, reason } = parsed as { code?: unknown; reason?: unknown };
         const read =
           code === 'bad_request'
             ? badRequestCode(reason)
@@ -352,7 +346,6 @@ export function parseDrafterEvent(data: string): DrafterEvent | null {
         return {
           type: 'error',
           code: read,
-          ...(typeof message === 'string' ? { message } : {}),
           ...(read === 'prompt_too_long' ? limitOf(parsed) : {}),
         };
       }
@@ -435,12 +428,8 @@ export async function streamDrafter(
       answered = true;
     onEvent(event);
   };
-  const fail = (
-    code: DrafterErrorCode,
-    message?: string,
-    limit?: { limit?: number },
-  ) => {
-    emit({ type: 'error', code, message, ...limit });
+  const fail = (code: DrafterErrorCode, limit?: { limit?: number }) => {
+    emit({ type: 'error', code, ...limit });
     emit({ type: 'end' });
   };
 
@@ -468,13 +457,8 @@ export async function streamDrafter(
     } catch {
       // No JSON body: the status decides.
     }
-    const message = (body as { message?: unknown } | null)?.message;
     const code = codeForStatus(response.status, body);
-    fail(
-      code,
-      typeof message === 'string' ? message : undefined,
-      code === 'prompt_too_long' ? limitOf(body) : undefined,
-    );
+    fail(code, code === 'prompt_too_long' ? limitOf(body) : undefined);
     return;
   }
   if (!response.body) {
