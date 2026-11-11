@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
 
 def _repo(conn) -> PromptsRepository:
     return PromptsRepository(conn)
+
+
+def _age(conn, row: dict, days: int) -> None:
+    """Make ``row`` ``days`` older: rows created in one transaction share ``created_at``."""
+    conn.execute(text("UPDATE prompts SET created_at = now() - make_interval(days => :d) WHERE id = :id"),
+                 {"d": days, "id": row["id"]})
 
 
 class TestCreate:
@@ -203,3 +210,29 @@ class TestFindOrCreate:
         first = repo.find_or_create("sys", "template", "v1")
         second = repo.find_or_create("sys", "template", "v2")
         assert first["id"] != second["id"]
+
+
+class TestBriefListing:
+    def test_ids_cover_own_and_extra_rows_newest_first(self, pg_conn):
+        repo = _repo(pg_conn)
+        own = [repo.create("u", f"p{i}", "long text") for i in range(2)]
+        _age(pg_conn, own[0], 1)
+        shared = repo.create("other", "theirs", "c")
+        repo.create("other", "hidden", "c")
+        rows = repo.list_ids_for_user("u", extra_ids=[str(shared["id"]), "not-a-uuid"])
+        assert {r["id"] for r in rows} == {str(own[0]["id"]), str(own[1]["id"]), str(shared["id"])}
+        assert all(set(r) == {"id", "user_id"} for r in rows)
+        assert [r["id"] for r in rows if r["user_id"] == "u"] == [str(own[1]["id"]), str(own[0]["id"])]
+        assert [r["id"] for r in repo.list_ids_for_user("u")] == [str(own[1]["id"]), str(own[0]["id"])]
+
+    def test_brief_rows_carry_the_name_and_never_the_content(self, pg_conn):
+        repo = _repo(pg_conn)
+        first = repo.create("u", "first", "secret text")
+        second = repo.create("u", "second", "more text")
+        _age(pg_conn, first, 1)
+        rows = repo.list_brief([str(first["id"]), str(second["id"]), "nope"])
+        assert rows == [
+            {"id": str(second["id"]), "user_id": "u", "name": "second"},
+            {"id": str(first["id"]), "user_id": "u", "name": "first"},
+        ]
+        assert repo.list_brief([]) == []

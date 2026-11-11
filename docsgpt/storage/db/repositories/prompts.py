@@ -116,6 +116,54 @@ class PromptsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """The user's prompts and the ``extra_ids`` ones, as ``{id, user_id}`` only, newest first.
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any prompt's
+        text.
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' prompts (team-shared) to list too; ids that are not uuids are skipped.
+
+        Returns:
+            ``{"id", "user_id"}`` dicts with string ids.
+        """
+        extra = [str(p) for p in extra_ids or [] if looks_like_uuid(str(p))]
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id FROM prompts "
+                "WHERE user_id = :user_id OR id = ANY(CAST(:extra AS uuid[])) "
+                "ORDER BY created_at DESC, id DESC"
+            ),
+            {"user_id": user_id, "extra": extra},
+        )
+        return [{"id": str(row.id), "user_id": row.user_id} for row in result]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The names of the prompts ``ids`` names, never their text, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Prompt ids.
+
+        Returns:
+            ``{"id", "user_id", "name"}`` dicts with string ids.
+        """
+        uuids = [str(p) for p in ids if looks_like_uuid(str(p))]
+        if not uuids:
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id, name FROM prompts WHERE id = ANY(CAST(:ids AS uuid[])) "
+                "ORDER BY created_at DESC, id DESC"
+            ),
+            {"ids": uuids},
+        )
+        return [{"id": str(row.id), "user_id": row.user_id, "name": row.name} for row in result]
+
     def update_by_id(
         self, prompt_id: str, name: str, content: str, expected_updated_at: Optional[str] = None
     ) -> Optional[str | bool]:

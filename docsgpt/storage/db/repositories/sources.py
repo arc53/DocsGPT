@@ -481,7 +481,7 @@ class SourcesRepository:
             ids: Source ids.
 
         Returns:
-            ``{"id", "user_id", "name", "type", "ingest_status"}`` dicts with string ids.
+            ``{"id", "user_id", "name", "type", "tokens", "ingest_status"}`` dicts with string ids.
         """
         uuids = _coerce_uuid_ids(ids)
         if not uuids:
@@ -489,7 +489,7 @@ class SourcesRepository:
         stmt = (
             select(
                 sources_table.c.id, sources_table.c.user_id, sources_table.c.name, sources_table.c.type,
-                _ingest_status_case(),
+                sources_table.c.tokens, _ingest_status_case(),
             )
             .select_from(
                 sources_table.outerjoin(
@@ -501,7 +501,7 @@ class SourcesRepository:
         )
         return [
             {"id": str(row.id), "user_id": row.user_id, "name": row.name, "type": row.type,
-             "ingest_status": row.ingest_status}
+             "tokens": row.tokens, "ingest_status": row.ingest_status}
             for row in self._conn.execute(stmt)
         ]
 

@@ -245,7 +245,7 @@ class TestBriefListing:
         from sqlalchemy import text
 
         repo = _repo(pg_conn)
-        done = repo.create("done", user_id="u", type="local", directory_structure={"a.md": {}})
+        done = repo.create("done", user_id="u", type="local", tokens="1200", directory_structure={"a.md": {}})
         busy = repo.create("busy", user_id="u", type="url")
         pg_conn.execute(
             text(
@@ -257,10 +257,10 @@ class TestBriefListing:
         rows = repo.list_brief([str(done["id"]), str(busy["id"]), "nope"])
         assert [r["id"] for r in rows] == [r["id"] for r in repo.list_for_user("u")]
         by_id = {r["id"]: r for r in rows}
-        assert set(by_id[str(done["id"])]) == {"id", "user_id", "name", "type", "ingest_status"}
-        assert by_id[str(done["id"])]["ingest_status"] is None
+        assert set(by_id[str(done["id"])]) == {"id", "user_id", "name", "type", "tokens", "ingest_status"}
+        assert by_id[str(done["id"])]["ingest_status"] is None and by_id[str(done["id"])]["tokens"] == "1200"
         assert by_id[str(busy["id"])] == {"id": str(busy["id"]), "user_id": "u", "name": "busy", "type": "url",
-                                          "ingest_status": "processing"}
+                                          "tokens": None, "ingest_status": "processing"}
         assert repo.list_brief([]) == []
 
     def test_directory_structure_of_one_source(self, pg_conn):
