@@ -10,6 +10,29 @@ import requests as real_requests
 from docsgpt.parser.schema.base import Document
 
 
+_GRAPH_401_BODY = {
+    "error": {
+        "code": "InvalidAuthenticationToken",
+        "message": "Lifetime validation failed, the token is expired.",
+    },
+}
+_WWW_AUTHENTICATE = 'Bearer realm="", authorization_uri="https://login.microsoftonline.com/common/oauth2/authorize"'
+
+
+def _graph_response(status=200, data=None, content=b"", headers=None):
+    """A ``requests`` response as Graph would send it."""
+    resp = MagicMock()
+    resp.status_code = status
+    resp.json.return_value = data if data is not None else {}
+    resp.content = content
+    resp.headers = headers if headers is not None else (
+        {"WWW-Authenticate": _WWW_AUTHENTICATE} if status == 401 else {}
+    )
+    if status >= 400:
+        resp.raise_for_status.side_effect = real_requests.exceptions.HTTPError(f"{status} Error", response=resp)
+    return resp
+
+
 def _make_loader(access_token="at", refresh_token="rt", allows_shared=False):
     """Create a SharePointLoader with mocked dependencies."""
     with patch("docsgpt.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
@@ -293,29 +316,19 @@ class TestLoadFileById:
         assert doc is not None
 
     @pytest.mark.unit
-    def test_http_error_retries_with_refresh(self, loader):
-        mock_resp_401 = MagicMock()
-        mock_resp_401.status_code = 401
-
-        http_error = real_requests.exceptions.HTTPError(response=mock_resp_401)
-
-        mock_resp_ok = MagicMock()
-        mock_resp_ok.json.return_value = {"id": "f1", "name": "t.pdf", "file": {"mimeType": "application/pdf"}}
-        mock_resp_ok.raise_for_status = MagicMock()
-
-        call_count = [0]
-        def get_side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise http_error
-            return mock_resp_ok
-
+    def test_401_retries_with_refresh(self, loader):
+        responses = [
+            _graph_response(401, _GRAPH_401_BODY),
+            _graph_response(data={"id": "f1", "name": "t.pdf", "file": {"mimeType": "application/pdf"}}),
+        ]
         loader._process_file = MagicMock(return_value=Document(text="", doc_id="f1", extra_info={}))
         loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new_at"})
 
-        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=responses) as get:
             doc = loader._load_file_by_id("f1")
         assert doc is not None
+        loader._refresh_rejected_token.assert_called_once_with("at")
+        assert get.call_args_list[1].kwargs["headers"]["Authorization"] == "Bearer new_at"
 
     @pytest.mark.unit
     def test_general_exception_returns_none(self, loader):
@@ -472,26 +485,13 @@ class TestDownloadFileContent:
 
     @pytest.mark.unit
     def test_http_401_retries_with_refresh(self, loader):
-        mock_resp_401 = MagicMock()
-        mock_resp_401.status_code = 401
-        http_error = real_requests.exceptions.HTTPError(response=mock_resp_401)
-
-        mock_resp_ok = MagicMock()
-        mock_resp_ok.content = b"content after refresh"
-        mock_resp_ok.raise_for_status = MagicMock()
-
-        call_count = [0]
-        def get_side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise http_error
-            return mock_resp_ok
-
+        responses = [_graph_response(401, _GRAPH_401_BODY), _graph_response(content=b"content after refresh")]
         loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new_at"})
 
-        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=responses):
             content = loader._download_file_content("f1")
         assert content == "content after refresh"
+        assert loader.access_token == "new_at"
 
 
 class TestListSharedItems:
@@ -1026,53 +1026,221 @@ class TestDownloadFolderContents:
         assert count == 0
 
 
-class TestRetryOnAuthFailureDecorator:
+class _FakeGraph:
+    """Answers the Graph GETs of a folder download for a fixed tree, by the request's bearer token.
+
+    ``expire_after`` makes the first token ("at") stop working after that many requests,
+    as an access token does when its lifetime runs out part-way through a long download.
+    """
+
+    PDF = {"mimeType": "application/pdf"}
+
+    def __init__(self, base, expire_after=None, rejected=()):
+        self.base = f"{base}/me/drive/items/"
+        self.expire_after = expire_after
+        self.rejected = set(rejected)
+        self.calls = []
+        # Folder "d1" ("Docs"): two listing pages, the second holding subfolder "s1".
+        self.pages = {
+            "d1": [
+                [self._file("f1"), self._file("f2")],
+                [self._file("f3"), {"id": "s1", "name": "Sub", "folder": {"childCount": 2}}],
+            ],
+            "s1": [[self._file("f4"), self._file("f5")]],
+        }
+
+    def _file(self, item_id):
+        return {"id": item_id, "name": f"{item_id}.pdf", "file": self.PDF}
+
+    def get(self, url, headers=None, **kwargs):
+        token = headers["Authorization"].removeprefix("Bearer ")
+        self.calls.append((url, token))
+        if self.expire_after is not None and len(self.calls) > self.expire_after:
+            self.rejected.add("at")
+        if token in self.rejected:
+            return _graph_response(401, _GRAPH_401_BODY)
+        path = url.removeprefix(self.base)
+        if path.startswith("page/"):
+            _, folder, index = path.split("/")
+            return self._page(folder, int(index))
+        item_id, _, action = path.partition("/")
+        if action == "children":
+            return self._page(item_id, 0)
+        if action == "content":
+            return _graph_response(content=f"contents of {item_id}".encode())
+        if item_id in self.pages:
+            return _graph_response(data={"id": item_id, "name": "Docs" if item_id == "d1" else "Sub"})
+        return _graph_response(data=self._file(item_id))
+
+    def _page(self, folder, index):
+        pages = self.pages[folder]
+        data = {"value": pages[index]}
+        if index + 1 < len(pages):
+            data["@odata.nextLink"] = f"{self.base}page/{folder}/{index + 1}"
+        return _graph_response(data=data)
+
+
+def _downloaded(root):
+    return sorted(
+        os.path.relpath(os.path.join(d, f), root) for d, _, files in os.walk(root) for f in files
+    )
+
+
+_ALL_FILES = sorted(
+    os.path.join(*parts)
+    for parts in [("Docs", "f1.pdf"), ("Docs", "f2.pdf"), ("Docs", "f3.pdf"),
+                  ("Docs", "Sub", "f4.pdf"), ("Docs", "Sub", "f5.pdf")]
+)
+
+
+class TestTokenStaysFreshDuringDownload:
 
     @pytest.mark.unit
-    def test_retries_on_401(self, loader):
-        """The _retry_on_auth_failure decorator should retry after refreshing on 401."""
-        mock_resp_401 = MagicMock()
-        mock_resp_401.status_code = 401
-        http_error = real_requests.exceptions.HTTPError(response=mock_resp_401)
+    def test_token_expiring_mid_walk_is_refreshed_before_the_next_request(self, loader, tmp_path):
+        graph = _FakeGraph(loader.GRAPH_API_BASE, expire_after=4)
+        # The stored expiry passes after the fourth request.
+        loader.auth.is_token_expired.side_effect = (
+            lambda info: info["access_token"] == "at" and len(graph.calls) >= 4
+        )
 
-        mock_resp_ok = MagicMock()
-        mock_resp_ok.content = b"ok"
-        mock_resp_ok.raise_for_status = MagicMock()
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=graph.get), patch(
+            "docsgpt.connectors.service.get_valid_token_info", return_value={"access_token": "at2", "expiry": 1},
+        ) as tokens:
+            result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["d1"]})
 
-        call_count = [0]
-        def get_side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise http_error
-            return mock_resp_ok
-
-        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new_at"})
-
-        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
-            content = loader._download_file_content("f1")
-        assert content == "ok"
-        assert loader.access_token == "new_at"
+        tokens.assert_called_once_with("conn-1")
+        assert result["files_downloaded"] == 5
+        assert "error" not in result
+        assert _downloaded(tmp_path) == _ALL_FILES
+        assert all(token == "at2" for _, token in graph.calls[4:])
 
     @pytest.mark.unit
-    def test_refresh_failure_raises_valueerror(self, loader):
-        """If token refresh fails during retry, should raise ValueError."""
-        mock_resp_403 = MagicMock()
-        mock_resp_403.status_code = 403
-        http_error = real_requests.exceptions.HTTPError(response=mock_resp_403)
+    def test_401_on_a_listing_page_refreshes_once_and_retries(self, loader, tmp_path):
+        graph = _FakeGraph(loader.GRAPH_API_BASE)
+        listing_pages = []
 
-        loader._refresh_rejected_token = MagicMock(side_effect=Exception("refresh fail"))
+        def get(url, **kwargs):
+            if "/page/" in url:
+                listing_pages.append(url)
+                if len(listing_pages) == 1:
+                    graph.rejected.add("at")
+            return graph.get(url, **kwargs)
 
-        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=http_error):
-            with pytest.raises(ValueError, match="could not be refreshed"):
-                loader._download_file_content("f1")
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "at2", "expiry": 1})
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get):
+            result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["d1"]})
+
+        loader._refresh_rejected_token.assert_called_once_with("at")
+        assert listing_pages == [f"{graph.base}page/d1/1"] * 2
+        assert result["files_downloaded"] == 5
+        assert _downloaded(tmp_path) == _ALL_FILES
 
     @pytest.mark.unit
-    def test_non_auth_http_error_not_retried(self, loader):
-        """Non-401/403 HTTP errors should not trigger retry."""
-        mock_resp_500 = MagicMock()
-        mock_resp_500.status_code = 500
-        http_error = real_requests.exceptions.HTTPError(response=mock_resp_500)
+    def test_401_on_a_file_download_refreshes_and_keeps_every_file(self, loader, tmp_path):
+        graph = _FakeGraph(loader.GRAPH_API_BASE, expire_after=5)
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "at2", "expiry": 1})
 
-        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=http_error):
-            with pytest.raises(real_requests.exceptions.HTTPError):
-                loader._download_file_content("f1")
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=graph.get):
+            result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["d1"]})
+
+        loader._refresh_rejected_token.assert_called_once_with("at")
+        assert result["files_downloaded"] == 5
+        assert _downloaded(tmp_path) == _ALL_FILES
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("config", [{"folder_ids": ["d1"]}, {"file_ids": ["f1"]}])
+    def test_401_that_survives_the_refresh_raises(self, loader, tmp_path, config):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        graph = _FakeGraph(loader.GRAPH_API_BASE, expire_after=3 if "folder_ids" in config else 0, rejected={"at2"})
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "at2", "expiry": 1})
+
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=graph.get):
+            with pytest.raises(ConnectorAuthError, match="InvalidAuthenticationToken"):
+                loader.download_to_directory(str(tmp_path), config)
+        loader._refresh_rejected_token.assert_called_once_with("at")
+
+    @pytest.mark.unit
+    def test_failed_refresh_raises_with_the_cause(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        graph = _FakeGraph(loader.GRAPH_API_BASE, expire_after=3)
+        refresh_error = ValueError("The provider rejected the stored sign-in")
+        loader._refresh_rejected_token = MagicMock(side_effect=refresh_error)
+
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=graph.get):
+            with pytest.raises(ConnectorAuthError) as excinfo:
+                loader.download_to_directory(str(tmp_path), {"folder_ids": ["d1"]})
+        assert excinfo.value.__cause__ is refresh_error
+
+    @pytest.mark.unit
+    def test_expired_token_that_cannot_be_refreshed_stops_the_walk(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        graph = _FakeGraph(loader.GRAPH_API_BASE)
+        loader.auth.is_token_expired.side_effect = lambda info: len(graph.calls) >= 3
+
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=graph.get), patch(
+            "docsgpt.connectors.service.get_valid_token_info", side_effect=RuntimeError("token endpoint down"),
+        ):
+            with pytest.raises(ConnectorAuthError):
+                loader.download_to_directory(str(tmp_path), {"folder_ids": ["d1"]})
+        assert len(graph.calls) == 3
+
+    @pytest.mark.unit
+    def test_other_errors_still_skip_only_that_file(self, loader, tmp_path):
+        graph = _FakeGraph(loader.GRAPH_API_BASE)
+
+        def get(url, **kwargs):
+            if url.endswith("/f2/content"):
+                return _graph_response(404, {"error": {"code": "itemNotFound"}})
+            return graph.get(url, **kwargs)
+
+        loader._refresh_rejected_token = MagicMock()
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get):
+            result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["d1"]})
+
+        loader._refresh_rejected_token.assert_not_called()
+        assert result["files_downloaded"] == 4
+        assert os.path.join("Docs", "f2.pdf") not in _downloaded(tmp_path)
+
+    @pytest.mark.unit
+    def test_403_is_not_retried(self, loader):
+        loader._refresh_rejected_token = MagicMock()
+        with patch(
+            "docsgpt.parser.connectors.share_point.loader.requests.get",
+            return_value=_graph_response(403, {"error": {"code": "accessDenied"}}),
+        ) as get:
+            assert loader._download_file_content("f1") is None
+        assert get.call_count == 1
+        loader._refresh_rejected_token.assert_not_called()
+
+    @pytest.mark.unit
+    def test_401_logs_the_graph_error_and_challenge_without_the_token(self, loader, tmp_path, caplog):
+        graph = _FakeGraph(loader.GRAPH_API_BASE, expire_after=3)
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "at2", "expiry": 1})
+
+        with caplog.at_level("WARNING"), patch(
+            "docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=graph.get,
+        ):
+            loader.download_to_directory(str(tmp_path), {"folder_ids": ["d1"]})
+
+        assert "InvalidAuthenticationToken" in caplog.text
+        assert "authorization_uri=" in caplog.text
+        assert "Bearer at" not in caplog.text
+        assert "at2" not in caplog.text
+
+    @pytest.mark.unit
+    def test_shared_search_post_retries_with_the_refreshed_token(self, loader_shared):
+        drive = _graph_response(data={"webUrl": "https://contoso-my.sharepoint.com/personal/u"})
+        search = _graph_response(data={"value": [{"hitsContainers": [{"total": 0, "hits": []}]}]})
+        loader_shared._refresh_rejected_token = MagicMock(return_value={"access_token": "at2"})
+
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=drive), patch(
+            "docsgpt.parser.connectors.share_point.loader.requests.post",
+            side_effect=[_graph_response(401, _GRAPH_401_BODY), search],
+        ) as post:
+            assert loader_shared._list_shared_items() == []
+
+        assert post.call_args_list[1].kwargs["headers"]["Authorization"] == "Bearer at2"
+        assert post.call_args_list[1].kwargs["headers"]["Content-Type"] == "application/json"
