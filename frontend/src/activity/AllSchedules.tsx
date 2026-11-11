@@ -186,9 +186,11 @@ export default function AllSchedules() {
           updateSchedule({ id: editing.id, payload, token }),
         ).unwrap();
       } else if (newAgentId) {
-        await dispatch(
+        const created = await dispatch(
           createSchedule({ agentId: newAgentId, payload, token }),
         ).unwrap();
+        // The dialog stays open on the test run's result; Done closes it.
+        if (created.testRun) return created;
       }
       closeModal();
     } finally {

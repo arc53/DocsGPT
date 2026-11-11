@@ -158,7 +158,11 @@ export default function SchedulesView() {
           updateSchedule({ id: editing.id, payload, token }),
         ).unwrap();
       } else {
-        await dispatch(createSchedule({ agentId, payload, token })).unwrap();
+        const created = await dispatch(
+          createSchedule({ agentId, payload, token }),
+        ).unwrap();
+        // The dialog stays open on the test run's result; Done closes it.
+        if (created.testRun) return created;
       }
       setModalOpen(false);
       setEditing(null);

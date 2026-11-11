@@ -596,10 +596,14 @@ describe('schedulesSlice cross-agent list', () => {
     it('keeps a schedule created meanwhile, which its answer predates', () => {
       let state = reducer(
         loading(),
-        createSchedule.fulfilled(sampleSchedule({ id: 'sched-new' }), 'c', {
-          agentId: 'agent-1',
-          token: null,
-        } as never),
+        createSchedule.fulfilled(
+          { schedule: sampleSchedule({ id: 'sched-new' }), testRun: null },
+          'c',
+          {
+            agentId: 'agent-1',
+            token: null,
+          } as never,
+        ),
       );
       state = reducer(state, answer());
       expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
@@ -715,5 +719,64 @@ describe('schedulesSlice cross-agent list', () => {
       }),
     );
     expect(state.all?.map((s) => s.id)).toEqual(['sched-1']);
+  });
+});
+
+describe('createSchedule with a test run', () => {
+  const args = { agentId: 'agent-1', token: null } as never;
+
+  it('lists the test run, which its SSE result then completes', () => {
+    const testRun = sampleRun({ id: 'run-test', trigger_source: 'manual' });
+    let state = reducer(
+      seedState(),
+      createSchedule.fulfilled(
+        { schedule: sampleSchedule({ id: 'sched-new' }), testRun },
+        'c',
+        args,
+      ),
+    );
+    expect(
+      selectSchedulesForAgent({ schedules: state }, 'agent-1').map((s) => s.id),
+    ).toEqual(['sched-new']);
+    expect(selectRunsForSchedule({ schedules: state }, 'sched-new')).toEqual([
+      testRun,
+    ]);
+
+    state = reducer(
+      state,
+      sseEventReceived({
+        id: 'evt-1',
+        type: 'schedule.run.failed',
+        ts: '2026-05-19T12:01:00Z',
+        payload: {
+          schedule_id: 'sched-new',
+          run_id: 'run-test',
+          error_type: 'cannot_complete',
+          error: 'No CRM tool.',
+        },
+      } as SSEEvent),
+    );
+    const [run] = selectRunsForSchedule({ schedules: state }, 'sched-new');
+    expect(run).toMatchObject({
+      id: 'run-test',
+      status: 'failed',
+      trigger_source: 'manual',
+      error_type: 'cannot_complete',
+      error: 'No CRM tool.',
+    });
+  });
+
+  it('leaves the run log alone without one', () => {
+    const state = reducer(
+      seedState(),
+      createSchedule.fulfilled(
+        { schedule: sampleSchedule({ id: 'sched-new' }), testRun: null },
+        'c',
+        args,
+      ),
+    );
+    expect(selectRunsForSchedule({ schedules: state }, 'sched-new')).toEqual(
+      [],
+    );
   });
 });

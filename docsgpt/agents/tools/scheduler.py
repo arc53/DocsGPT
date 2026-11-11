@@ -68,6 +68,7 @@ class SchedulerTool(Tool):
                 delay=kwargs.get("delay"),
                 run_at=kwargs.get("run_at"),
                 tz=kwargs.get("timezone"),
+                test_run=kwargs.get("test_run") is True,
             )
         if action_name == "list_scheduled_tasks":
             return self._list_scheduled_tasks()
@@ -87,7 +88,9 @@ class SchedulerTool(Tool):
                     "naive run_at values. The instruction is the task that will "
                     "execute at fire time (including delivery, e.g. 'send to my "
                     "Telegram'). For recurring schedules in an agent chat, point "
-                    "the user to the agent's Schedules tab."
+                    "the user to the agent's Schedules tab. Set `test_run` to also "
+                    "run the task once right now, so the user sees whether it works "
+                    "before it is due; the result's `test_run_id` names that run."
                 ),
                 "parameters": {
                     "type": "object",
@@ -108,6 +111,13 @@ class SchedulerTool(Tool):
                             "type": "string",
                             "description": (
                                 "IANA timezone (e.g. Europe/Warsaw) for naive run_at."
+                            ),
+                        },
+                        "test_run": {
+                            "type": "boolean",
+                            "description": (
+                                "Also run the task once now as a test. Its scheduled "
+                                "time doesn't change."
                             ),
                         },
                     },
@@ -148,7 +158,15 @@ class SchedulerTool(Tool):
         delay: Optional[str],
         run_at: Optional[str],
         tz: Optional[str],
+        test_run: bool = False,
     ) -> str:
+        # Imported here: the API package imports this tool module.
+        from docsgpt.api.user.scheduler_dispatcher import (
+            can_test_run,
+            enqueue_test_run,
+            record_test_run,
+        )
+
         if not instruction or not isinstance(instruction, str):
             return "Error: instruction is required."
         if not delay and not run_at:
@@ -206,18 +224,25 @@ class SchedulerTool(Tool):
                     origin_conversation_id=self.conversation_id,
                     created_via=self.created_via,
                 )
+                run = record_test_run(conn, created) if test_run and can_test_run(created) else None
         except Exception as exc:
             logger.exception("schedule_task create failed: %s", exc)
             return "Error: failed to create scheduled task."
-        return json.dumps(
-            {
-                "task_id": str(created["id"]),
-                "resolved_run_at": _iso_utc(fire),
-                "timezone": tz or "UTC",
-                "instruction": instruction.strip(),
-                "name": auto_name,
-            }
-        )
+        result: Dict[str, Any] = {
+            "task_id": str(created["id"]),
+            "resolved_run_at": _iso_utc(fire),
+            "timezone": tz or "UTC",
+            "instruction": instruction.strip(),
+            "name": auto_name,
+        }
+        if run is not None:
+            run = enqueue_test_run(run, db_session)
+            result["test_run_id"] = str(run["id"])
+            if run.get("status") == "failed":
+                result["test_run_error"] = run.get("error") or "the test run could not be started"
+        elif test_run:
+            result["test_run_error"] = "not tested: the task is due before a test run could finish"
+        return json.dumps(result)
 
     def _list_scheduled_tasks(self) -> str:
         """Pending one-time tasks for this user, oldest fire first.

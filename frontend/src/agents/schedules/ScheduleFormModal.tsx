@@ -28,6 +28,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Modal } from '../../components/ui/modal';
 import { formatDateOnly } from '../../utils/dateTimeUtils';
 import type { Schedule, ScheduleCreatePayload } from '../types/schedule';
+import type { CreatedSchedule } from './schedulesSlice';
+import TestRunResult from './TestRunResult';
 import {
   browserTimezone,
   buildCron,
@@ -53,7 +55,13 @@ export type ScheduleFormModalProps = {
   /** The agent's tools with an action that needs approval (see toolApproval). */
   approvalTools: ApprovalTool[];
   onClose: () => void;
-  onSubmit: (payload: ScheduleCreatePayload) => Promise<void> | void;
+  /**
+   * Saves the schedule. A create that started a test run resolves with it,
+   * and the dialog stays open to show the run's result.
+   */
+  onSubmit: (
+    payload: ScheduleCreatePayload,
+  ) => Promise<CreatedSchedule | void> | void;
   submitting?: boolean;
   /** A field above the frequency (the agent picker on Activity › Schedules). */
   agentField?: ReactNode;
@@ -206,6 +214,12 @@ export default function ScheduleFormModal({
     changeTiming({ ...values, frequency });
 
   const isEdit = Boolean(initial?.id);
+  // A test run is the default for a recurring schedule, whose first run may
+  // be days away; a one-time task runs soon enough on its own. The user's
+  // own choice sticks across frequency changes.
+  const [testRunChoice, setTestRunChoice] = useState<boolean | null>(null);
+  const testRun = testRunChoice ?? values.frequency !== 'once';
+  const [startedTest, setStartedTest] = useState<CreatedSchedule | null>(null);
   const editsRecurring = isEdit && initial?.trigger_type === 'recurring';
   // A saved timing the form can't show (an API cron such as weekdays at 9)
   // loads as the form's fallback; it is kept until a timing field changes.
@@ -272,11 +286,13 @@ export default function ScheduleFormModal({
       // the form can't show every cron, and would replace it with its own.
       if (!(editsRecurring && timingUnchanged)) payload.cron = cron;
     }
+    if (!isEdit && testRun) payload.test_run = true;
     setInstructionError(null);
     setRunAtError(null);
     setSaveError(null);
     try {
-      await onSubmit(payload);
+      const created = await onSubmit(payload);
+      if (created?.testRun) setStartedTest(created);
     } catch (err) {
       // A thunk's unwrap() rejects with a serialized error: a plain object
       // with the message, not an Error instance.
@@ -284,6 +300,29 @@ export default function ScheduleFormModal({
       setSaveError(typeof message === 'string' ? message : '');
     }
   };
+
+  if (startedTest?.testRun) {
+    const { schedule } = startedTest;
+    return (
+      <Modal
+        open={open}
+        onOpenChange={(o) => !o && onClose()}
+        title={t('agents.schedules.testRun.title')}
+        description={schedule.name || undefined}
+        footer={
+          <Button type="button" size="lg" shape="pill" onClick={onClose}>
+            {t('agents.schedules.testRun.done')}
+          </Button>
+        }
+      >
+        <TestRunResult
+          scheduleId={schedule.id}
+          runId={startedTest.testRun.id}
+          agentId={schedule.agent_id}
+        />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -417,6 +456,28 @@ export default function ScheduleFormModal({
               warning: t('agents.schedules.modal.approvalTools.warning'),
             }}
           />
+        )}
+
+        {!isEdit && (
+          <label
+            htmlFor="schedule-test-run"
+            className="flex cursor-pointer items-start gap-3"
+          >
+            <Checkbox
+              id="schedule-test-run"
+              className="mt-0.5"
+              checked={testRun}
+              onCheckedChange={(checked) => setTestRunChoice(checked === true)}
+            />
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-foreground text-sm font-medium">
+                {t('agents.schedules.modal.testRun.label')}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {t('agents.schedules.modal.testRun.hint')}
+              </span>
+            </span>
+          </label>
         )}
 
         {runAtError && (

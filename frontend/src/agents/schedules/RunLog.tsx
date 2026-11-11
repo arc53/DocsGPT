@@ -112,82 +112,7 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
   return (
     <>
       <div className="scrollbar-overlay max-h-[45svh] overflow-y-auto">
-        <Table minWidth="min-w-0">
-          <TableHead>
-            <TableRow>
-              <TableHeader>{t('agents.schedules.runLog.when')}</TableHeader>
-              <TableHeader>
-                {t('agents.schedules.runDetails.status')}
-              </TableHeader>
-              <TableHeader>{t('agents.schedules.runLog.duration')}</TableHeader>
-              <TableHeader>
-                {t('agents.schedules.runDetails.tokens')}
-              </TableHeader>
-              <TableHeader>
-                {t('agents.schedules.runDetails.trigger')}
-              </TableHeader>
-              {onSelect && (
-                <TableHeader width="40px" align="center">
-                  <span className="sr-only">
-                    {t('agents.schedules.runLog.details')}
-                  </span>
-                </TableHeader>
-              )}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {runs.map((run) => (
-              <TableRow
-                key={run.id}
-                onClick={onSelect ? () => onSelect(run) : undefined}
-              >
-                <TableCell>{formatTimestamp(run.scheduled_for)}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <ScheduleStatusBadge status={run.status} />
-                    {run.error_type && (
-                      <span className="text-muted-foreground text-xs">
-                        (
-                        {t(`activity.now.errorType.${run.error_type}`, {
-                          defaultValue: run.error_type,
-                        })}
-                        )
-                      </span>
-                    )}
-                  </div>
-                  {/* The agent's own one-line reason says what to fix. */}
-                  {run.error_type === 'cannot_complete' && run.error && (
-                    <p
-                      className="text-muted-foreground mt-0.5 max-w-64 truncate text-xs"
-                      title={run.error}
-                    >
-                      {run.error}
-                    </p>
-                  )}
-                </TableCell>
-                <TableCell className="tabular-nums">
-                  {runDuration(run)}
-                </TableCell>
-                <TableCell className="tabular-nums">
-                  {formatTokens(run.prompt_tokens + run.generated_tokens)}
-                </TableCell>
-                <TableCell>
-                  {t(`agents.schedules.trigger.${run.trigger_source}`, {
-                    defaultValue: run.trigger_source,
-                  })}
-                </TableCell>
-                {onSelect && (
-                  <TableCell align="center">
-                    <ChevronRight
-                      aria-hidden
-                      className="text-muted-foreground size-4"
-                    />
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <RunTable runs={runs} onSelect={onSelect} />
         <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       </div>
       {/* Only a log long enough to scroll gets the strip; it also keeps the
@@ -202,5 +127,85 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
         />
       ) : null}
     </>
+  );
+}
+
+export type RunTableProps = {
+  runs: ScheduleRun[];
+  onSelect?: (run: ScheduleRun) => void;
+};
+
+/** Run-history rows: when, status (with a cannot_complete reason), duration, tokens and trigger. */
+export function RunTable({ runs, onSelect }: RunTableProps) {
+  const { t } = useTranslation();
+  return (
+    <Table minWidth="min-w-0">
+      <TableHead>
+        <TableRow>
+          <TableHeader>{t('agents.schedules.runLog.when')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runDetails.status')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runLog.duration')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runDetails.tokens')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runDetails.trigger')}</TableHeader>
+          {onSelect && (
+            <TableHeader width="40px" align="center">
+              <span className="sr-only">
+                {t('agents.schedules.runLog.details')}
+              </span>
+            </TableHeader>
+          )}
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {runs.map((run) => (
+          <TableRow
+            key={run.id}
+            onClick={onSelect ? () => onSelect(run) : undefined}
+          >
+            <TableCell>{formatTimestamp(run.scheduled_for)}</TableCell>
+            <TableCell>
+              <div className="flex items-center gap-1.5">
+                <ScheduleStatusBadge status={run.status} />
+                {run.error_type && (
+                  <span className="text-muted-foreground text-xs">
+                    (
+                    {t(`activity.now.errorType.${run.error_type}`, {
+                      defaultValue: run.error_type,
+                    })}
+                    )
+                  </span>
+                )}
+              </div>
+              {/* The agent's own one-line reason says what to fix. */}
+              {run.error_type === 'cannot_complete' && run.error && (
+                <p
+                  className="text-muted-foreground mt-0.5 max-w-64 truncate text-xs"
+                  title={run.error}
+                >
+                  {run.error}
+                </p>
+              )}
+            </TableCell>
+            <TableCell className="tabular-nums">{runDuration(run)}</TableCell>
+            <TableCell className="tabular-nums">
+              {formatTokens(run.prompt_tokens + run.generated_tokens)}
+            </TableCell>
+            <TableCell>
+              {t(`agents.schedules.trigger.${run.trigger_source}`, {
+                defaultValue: run.trigger_source,
+              })}
+            </TableCell>
+            {onSelect && (
+              <TableCell align="center">
+                <ChevronRight
+                  aria-hidden
+                  className="text-muted-foreground size-4"
+                />
+              </TableCell>
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

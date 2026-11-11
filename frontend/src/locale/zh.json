@@ -3456,7 +3456,11 @@
         },
         "frequencyLabel": "频率",
         "customTiming": "此计划使用自定义时间：{{pattern}}。更改下方的时间即可替换它。",
-        "dayOfWeek": "星期"
+        "dayOfWeek": "星期",
+        "testRun": {
+          "label": "立即运行以测试",
+          "hint": "保存后立即运行一次任务，并在此显示结果。计划时间不会改变。"
+        }
       },
       "status": {
         "active": "活跃",
@@ -3569,7 +3573,18 @@
       },
       "deleteFailed": "无法删除此计划。",
       "deleteConsequence": "其运行历史也会一并删除。此操作无法撤销。",
-      "allSchedules": "所有计划"
+      "allSchedules": "所有计划",
+      "testRun": {
+        "title": "已创建计划",
+        "running": "正在运行测试。完成后结果会显示在这里。",
+        "succeeded": "测试运行成功。",
+        "failed": "测试运行失败。计划仍会在设定的时间运行。",
+        "cannotComplete": "代理表示无法完成此任务：{{reason}}",
+        "cannotCompleteNoReason": "代理表示无法完成此任务。",
+        "editAgent": "编辑代理",
+        "editTools": "管理工具",
+        "done": "完成"
+      }
     },
     "shared": {
       "notFound": "未找到智能体。请确保智能体已共享。",

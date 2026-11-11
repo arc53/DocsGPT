@@ -3477,7 +3477,11 @@
         },
         "frequencyLabel": "Frequency",
         "customTiming": "This schedule runs on a custom timing: {{pattern}}. Change the timing below to replace it.",
-        "dayOfWeek": "Day of the week"
+        "dayOfWeek": "Day of the week",
+        "testRun": {
+          "label": "Run now to test",
+          "hint": "Runs the task once right after saving and shows the result here. The schedule's timing doesn't change."
+        }
       },
       "status": {
         "active": "Active",
@@ -3590,7 +3594,18 @@
       },
       "deleteFailed": "Couldn't delete this schedule.",
       "deleteConsequence": "Its run history is deleted too. This can't be undone.",
-      "allSchedules": "All schedules"
+      "allSchedules": "All schedules",
+      "testRun": {
+        "title": "Schedule created",
+        "running": "Running a test now. The result appears here when it finishes.",
+        "succeeded": "The test run worked.",
+        "failed": "The test run failed. The schedule still runs at its set times.",
+        "cannotComplete": "The agent says it can't do this task: {{reason}}",
+        "cannotCompleteNoReason": "The agent says it can't do this task.",
+        "editAgent": "Edit agent",
+        "editTools": "Manage tools",
+        "done": "Done"
+      }
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared.",

@@ -3458,7 +3458,11 @@
         },
         "frequencyLabel": "頻率",
         "customTiming": "此排程使用自訂時間：{{pattern}}。變更下方的時間即可取代它。",
-        "dayOfWeek": "星期"
+        "dayOfWeek": "星期",
+        "testRun": {
+          "label": "立即執行以測試",
+          "hint": "儲存後立即執行一次任務，並在此顯示結果。排程時間不會改變。"
+        }
       },
       "status": {
         "active": "啟用中",
@@ -3571,7 +3575,18 @@
       },
       "deleteFailed": "無法刪除此排程。",
       "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。",
-      "allSchedules": "所有排程"
+      "allSchedules": "所有排程",
+      "testRun": {
+        "title": "已建立排程",
+        "running": "正在執行測試。完成後結果會顯示在這裡。",
+        "succeeded": "測試執行成功。",
+        "failed": "測試執行失敗。排程仍會在設定的時間執行。",
+        "cannotComplete": "代理表示無法完成此任務：{{reason}}",
+        "cannotCompleteNoReason": "代理表示無法完成此任務。",
+        "editAgent": "編輯代理",
+        "editTools": "管理工具",
+        "done": "完成"
+      }
     },
     "shared": {
       "notFound": "未找到代理。請確保代理已共享。",

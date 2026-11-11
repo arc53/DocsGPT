@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, ContextManager, Dict, List, Optional
 
 from docsgpt.agents.scheduler_utils import next_cron_run
 from docsgpt.core.settings import settings
@@ -184,3 +184,57 @@ def dispatch_due_runs() -> Dict[str, int]:
                 run_id,
             )
     return counts
+
+
+def can_test_run(schedule: Dict[str, Any], *, now: Optional[datetime] = None) -> bool:
+    """Whether a just-created schedule may run once now as a test.
+
+    A one-time task due within a run's timeout is refused: its real run could
+    find the test still going, be skipped as an overlap, and never happen.
+    """
+    if schedule.get("trigger_type") == "recurring":
+        return True
+    due = _normalize_dt(schedule.get("next_run_at"))
+    if due is None:
+        return False
+    lead = timedelta(seconds=max(0, int(settings.SCHEDULE_RUN_TIMEOUT)))
+    return due - (now or datetime.now(timezone.utc)) >= lead
+
+
+def record_test_run(conn, schedule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Record a pending manual run of a schedule; its cadence is left as it is."""
+    agent_id = schedule.get("agent_id")
+    return ScheduleRunsRepository(conn).record_pending(
+        str(schedule["id"]),
+        schedule["user_id"],
+        str(agent_id) if agent_id else None,
+        datetime.now(timezone.utc),
+        trigger_source="manual",
+    )
+
+
+def enqueue_test_run(run: Dict[str, Any], session: Callable[[], ContextManager[Any]]) -> Dict[str, Any]:
+    """Hand a recorded test run to the worker once its row is committed.
+
+    A refused enqueue fails the run at once, so a pending row nobody picks up
+    doesn't hold off the schedule's first real run as an overlap.
+    """
+    from docsgpt.api.user.tasks import execute_scheduled_run
+
+    run_id = str(run["id"])
+    try:
+        execute_scheduled_run.apply_async(args=[run_id], queue="docsgpt")
+        return run
+    except Exception:
+        logger.exception("schedules: failed to enqueue test run %s", run_id)
+    with session() as conn:
+        failed = ScheduleRunsRepository(conn).update(
+            run_id,
+            {
+                "status": "failed",
+                "finished_at": datetime.now(timezone.utc),
+                "error_type": "internal",
+                "error": "the test run could not be started",
+            },
+        )
+    return failed or {**run, "status": "failed"}

@@ -16,6 +16,7 @@ import {
   selectScheduleById,
 } from './schedulesSlice';
 import ScheduleStatusBadge from './StatusBadge';
+import TestRunResult from './TestRunResult';
 
 export type SchedulerToolCallCardProps = {
   /** Outcome JSON the scheduler tool returned (action result). */
@@ -76,6 +77,15 @@ export default function SchedulerToolCallCard({
       : null;
   const error =
     parsed && typeof parsed.error === 'string' ? parsed.error : null;
+  // The test run the model asked for with the task, if any.
+  const testRunId =
+    parsed && typeof parsed.test_run_id === 'string'
+      ? parsed.test_run_id
+      : null;
+  const testRunError =
+    parsed && typeof parsed.test_run_error === 'string'
+      ? parsed.test_run_error
+      : null;
   const runAtMs = runAt ? Date.parse(runAt) : NaN;
   const [due, setDue] = useState<boolean>(() => runAtMs <= Date.now());
 
@@ -240,6 +250,19 @@ export default function SchedulerToolCallCard({
       </div>
       {instruction && (
         <p className="text-muted-foreground pl-7">{instruction}</p>
+      )}
+      {taskId && testRunId ? (
+        <div className="pl-7">
+          <TestRunResult
+            scheduleId={taskId}
+            runId={testRunId}
+            agentId={agentId}
+          />
+        </div>
+      ) : (
+        testRunError && (
+          <p className="text-muted-foreground pl-7 text-xs">{testRunError}</p>
+        )
       )}
     </Card>
   );

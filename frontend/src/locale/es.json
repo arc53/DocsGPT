@@ -3579,7 +3579,11 @@
         },
         "frequencyLabel": "Frecuencia",
         "customTiming": "Esta programación usa un horario personalizado: {{pattern}}. Cambia el horario de abajo para reemplazarlo.",
-        "dayOfWeek": "Día de la semana"
+        "dayOfWeek": "Día de la semana",
+        "testRun": {
+          "label": "Ejecutar ahora para probar",
+          "hint": "Ejecuta la tarea una vez justo después de guardarla y muestra el resultado aquí. La programación no cambia."
+        }
       },
       "status": {
         "active": "Activa",
@@ -3697,7 +3701,18 @@
       },
       "deleteFailed": "No se pudo eliminar esta programación.",
       "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer.",
-      "allSchedules": "Todas las programaciones"
+      "allSchedules": "Todas las programaciones",
+      "testRun": {
+        "title": "Programación creada",
+        "running": "Ejecutando una prueba. El resultado aparecerá aquí cuando termine.",
+        "succeeded": "La ejecución de prueba funcionó.",
+        "failed": "La ejecución de prueba falló. La programación seguirá ejecutándose a sus horas.",
+        "cannotComplete": "El agente indica que no puede hacer esta tarea: {{reason}}",
+        "cannotCompleteNoReason": "El agente indica que no puede hacer esta tarea.",
+        "editAgent": "Editar agente",
+        "editTools": "Gestionar herramientas",
+        "done": "Listo"
+      }
     },
     "shared": {
       "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido.",

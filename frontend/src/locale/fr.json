@@ -3579,7 +3579,11 @@
         },
         "frequencyLabel": "Fréquence",
         "customTiming": "Cette planification utilise un horaire personnalisé : {{pattern}}. Modifiez l’horaire ci-dessous pour le remplacer.",
-        "dayOfWeek": "Jour de la semaine"
+        "dayOfWeek": "Jour de la semaine",
+        "testRun": {
+          "label": "Exécuter maintenant pour tester",
+          "hint": "Exécute la tâche une fois juste après l'enregistrement et affiche le résultat ici. La planification ne change pas."
+        }
       },
       "status": {
         "active": "Active",
@@ -3697,7 +3701,18 @@
       },
       "deleteFailed": "Impossible de supprimer cette planification.",
       "deleteConsequence": "Son historique d’exécutions est également supprimé. Cette action est irréversible.",
-      "allSchedules": "Toutes les planifications"
+      "allSchedules": "Toutes les planifications",
+      "testRun": {
+        "title": "Planification créée",
+        "running": "Test en cours. Le résultat s'affichera ici à la fin.",
+        "succeeded": "L'exécution de test a réussi.",
+        "failed": "L'exécution de test a échoué. La planification s'exécute quand même aux heures prévues.",
+        "cannotComplete": "L'agent indique qu'il ne peut pas faire cette tâche : {{reason}}",
+        "cannotCompleteNoReason": "L'agent indique qu'il ne peut pas faire cette tâche.",
+        "editAgent": "Modifier l'agent",
+        "editTools": "Gérer les outils",
+        "done": "Terminé"
+      }
     },
     "shared": {
       "notFound": "Aucun agent trouvé. Vérifiez que l’agent est bien partagé.",

@@ -94,6 +94,14 @@ export type ScheduleStats = {
   } | null;
 };
 export type ScheduleResponse = { schedule: Schedule };
+/**
+ * A create's answer. `test_run` is there only when one was asked for: the
+ * manual run started with the schedule, or null when a one-time task is due
+ * too soon to test.
+ */
+export type ScheduleCreateResponse = ScheduleResponse & {
+  test_run?: ScheduleRun | null;
+};
 export type ScheduleRunListResponse = {
   runs: ScheduleRun[];
   limit: number;
@@ -112,6 +120,8 @@ export type ScheduleCreatePayload = {
   tool_allowlist?: string[];
   model_id?: string;
   token_budget?: number;
+  /** Create only: also run it once now as a test; the cadence is unchanged. */
+  test_run?: boolean;
 };
 
 export type ScheduleUpdatePayload = Partial<ScheduleCreatePayload>;

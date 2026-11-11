@@ -325,7 +325,8 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                     "error": "agent missing",
                 },
             )
-            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+            if run.get("trigger_source") != "manual":
+                SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
         _publish_run_event("schedule.run.failed", updated or run, schedule,
                            error="agent missing")
         return {"status": "failed", "reason": "agent missing"}
@@ -341,7 +342,8 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                     "error": "agent access revoked",
                 },
             )
-            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+            if run.get("trigger_source") != "manual":
+                SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
         _publish_run_event("schedule.run.failed", updated or run, schedule,
                            error="agent access revoked")
         return {"status": "failed", "reason": "agent access revoked"}
@@ -470,7 +472,9 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         autopaused = False
         if new_status == "success":
             schedules_repo.reset_failure_count(str(schedule["id"]))
-        elif new_status in ("failed", "timeout"):
+        # A run started by hand (Run now, a test run) is watched, so its
+        # failure doesn't count toward auto-pause.
+        elif new_status in ("failed", "timeout") and run.get("trigger_source") != "manual":
             count = schedules_repo.bump_failure_count(str(schedule["id"]))
             if (
                 settings.SCHEDULE_AUTOPAUSE_FAILURES > 0

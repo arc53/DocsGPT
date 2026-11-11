@@ -2,6 +2,7 @@ import apiClient from '../client';
 import endpoints from '../endpoints';
 import type {
   ScheduleCreatePayload,
+  ScheduleCreateResponse,
   ScheduleListResponse,
   ScheduleResponse,
   ScheduleRunListResponse,
@@ -84,13 +85,13 @@ const schedulesService = {
     agentId: string,
     payload: ScheduleCreatePayload,
     token: string | null,
-  ): Promise<ScheduleResponse> => {
+  ): Promise<ScheduleCreateResponse> => {
     const r = await apiClient.post(
       endpoints.USER.AGENT_SCHEDULES(agentId),
       payload,
       token,
     );
-    return (await bodyOrThrow(r)) as ScheduleResponse;
+    return (await bodyOrThrow(r)) as ScheduleCreateResponse;
   },
 
   get: async (id: string, token: string | null): Promise<ScheduleResponse> => {

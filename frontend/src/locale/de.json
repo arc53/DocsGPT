@@ -3477,7 +3477,11 @@
         },
         "frequencyLabel": "Häufigkeit",
         "customTiming": "Dieser Zeitplan läuft nach einem eigenen Takt: {{pattern}}. Ändere die Zeit unten, um ihn zu ersetzen.",
-        "dayOfWeek": "Wochentag"
+        "dayOfWeek": "Wochentag",
+        "testRun": {
+          "label": "Jetzt testweise ausführen",
+          "hint": "Führt die Aufgabe direkt nach dem Speichern einmal aus und zeigt das Ergebnis hier. Der Zeitplan bleibt unverändert."
+        }
       },
       "status": {
         "active": "Aktiv",
@@ -3590,7 +3594,18 @@
       },
       "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden.",
       "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
-      "allSchedules": "Alle Zeitpläne"
+      "allSchedules": "Alle Zeitpläne",
+      "testRun": {
+        "title": "Zeitplan erstellt",
+        "running": "Der Testlauf läuft. Das Ergebnis erscheint hier, sobald er fertig ist.",
+        "succeeded": "Der Testlauf hat funktioniert.",
+        "failed": "Der Testlauf ist fehlgeschlagen. Der Zeitplan läuft trotzdem zu den festgelegten Zeiten.",
+        "cannotComplete": "Der Agent meldet, dass er diese Aufgabe nicht erledigen kann: {{reason}}",
+        "cannotCompleteNoReason": "Der Agent meldet, dass er diese Aufgabe nicht erledigen kann.",
+        "editAgent": "Agent bearbeiten",
+        "editTools": "Tools verwalten",
+        "done": "Fertig"
+      }
     },
     "shared": {
       "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist.",

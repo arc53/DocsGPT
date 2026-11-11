@@ -76,8 +76,14 @@ export const loadAllSchedules = createAsyncThunk<
   return r.schedules;
 });
 
+/** A new schedule, with the test run started with it (null when none was). */
+export type CreatedSchedule = {
+  schedule: Schedule;
+  testRun: ScheduleRun | null;
+};
+
 export const createSchedule = createAsyncThunk<
-  Schedule,
+  CreatedSchedule,
   {
     agentId: string;
     payload: ScheduleCreatePayload;
@@ -85,7 +91,7 @@ export const createSchedule = createAsyncThunk<
   }
 >('schedules/create', async ({ agentId, payload, token }) => {
   const r = await schedulesService.create(agentId, payload, token);
-  return r.schedule;
+  return { schedule: r.schedule, testRun: r.test_run ?? null };
 });
 
 export const updateSchedule = createAsyncThunk<
@@ -345,7 +351,9 @@ const schedulesSlice = createSlice({
       // Agentless schedules (``agent_id === null``) have no byAgent home:
       // they are listed only in the cross-agent list.
       .addCase(createSchedule.fulfilled, (state, action) => {
-        applyToLists(state, action.payload);
+        const { schedule, testRun } = action.payload;
+        applyToLists(state, schedule);
+        if (testRun) state.runsBySchedule[schedule.id] = [testRun];
       })
       .addCase(updateSchedule.fulfilled, (state, action) => {
         applyToLists(state, action.payload);

@@ -34,6 +34,11 @@ from docsgpt.api.user.resource_access import (
     require,
     settings_many,
 )
+from docsgpt.api.user.scheduler_dispatcher import (
+    can_test_run,
+    enqueue_test_run,
+    record_test_run,
+)
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -214,6 +219,25 @@ def _refuse_unfinished_agent_graph(conn, agent_id) -> Any:
         return None
     agent = AgentsRepository(conn).get_by_id(str(agent_id))
     return refuse_unfinished_graph(conn, agent) if agent else None
+
+
+def _record_test_run(conn, created: Dict[str, Any], wanted: bool) -> Optional[Dict[str, Any]]:
+    """Record the test run asked for with a new schedule, in its transaction."""
+    if not wanted or not can_test_run(created):
+        return None
+    return record_test_run(conn, created)
+
+
+def _created(
+    created: Dict[str, Any], test_run: Optional[Dict[str, Any]], wanted: bool, caller: str,
+):
+    """The 201 for a new schedule; a test run asked for is enqueued now that both rows are committed."""
+    body: Dict[str, Any] = {"schedule": _format_schedule(created)}
+    if wanted:
+        body["test_run"] = (
+            _format_run(enqueue_test_run(test_run, db_session), caller) if test_run else None
+        )
+    return _ok(body, status=201)
 
 
 def _user_id() -> Optional[str]:
@@ -400,6 +424,14 @@ class AgentSchedules(Resource):
             "tool_allowlist": fields.List(fields.String, required=False),
             "model_id": fields.String(required=False),
             "token_budget": fields.Integer(required=False),
+            "test_run": fields.Boolean(
+                required=False,
+                description=(
+                    "Also run it once now as a test (trigger_source 'manual'); its "
+                    "cadence is unchanged. The response's test_run is the run, or "
+                    "null for a one-time task due too soon to test."
+                ),
+            ),
         },
     )
 
@@ -434,6 +466,7 @@ class AgentSchedules(Resource):
                     raise ValueError
             except (TypeError, ValueError):
                 return _err("token_budget must be a non-negative integer")
+        wants_test = data.get("test_run") is True
         with db_readonly() as conn:
             # A schedule runs the agent's graph headless: a workflow agent's
             # must be a finished one.
@@ -474,12 +507,13 @@ class AgentSchedules(Resource):
                         token_budget=token_budget,
                         created_via="ui",
                     )
+                    test_run = _record_test_run(conn, created, wants_test)
             except Exception as exc:
                 current_app.logger.error(
                     "create one-time schedule failed: %s", exc, exc_info=True,
                 )
                 return _err("internal error", 500)
-            return _ok({"schedule": _format_schedule(created)}, status=201)
+            return _created(created, test_run, wants_test, user_id)
 
         cron = (data.get("cron") or "").strip()
         if not cron:
@@ -530,12 +564,13 @@ class AgentSchedules(Resource):
                     token_budget=token_budget,
                     created_via="ui",
                 )
+                test_run = _record_test_run(conn, created, wants_test)
         except Exception as exc:
             current_app.logger.error(
                 "create schedule failed: %s", exc, exc_info=True,
             )
             return _err("internal error", 500)
-        return _ok({"schedule": _format_schedule(created)}, status=201)
+        return _created(created, test_run, wants_test, user_id)
 
 
 @schedules_ns.route("/agents/<string:agent_id>/schedules/stats")
