@@ -459,6 +459,9 @@ class _Turn:
         )
         self.corrections = 0
         self.read_tools = recipe.offered_tools(req, ws)
+        # Set by :meth:`run`: asked while a call runs (True abandons it), and when the turn must end.
+        self.should_stop: Callable[[], bool] = lambda: False
+        self.turn_deadline: Optional[float] = None
 
     def finish(self, name: str, arguments: Any, lead_in: str = "") -> list[dict]:
         """Validate a terminal answer and return its events.
@@ -514,8 +517,7 @@ class _Turn:
         proposal = self.recipe.validate(args, self.req, self.ws)
         return [{"type": "proposal", "proposal": proposal}]
 
-    def gen(self, final: bool, should_stop: Callable[[], bool] = lambda: False,
-            turn_deadline: Optional[float] = None) -> Any:
+    def gen(self, final: bool) -> Any:
         """Call the model once and return its parsed answer.
 
         The call streams, though the turn uses only the whole answer: a
@@ -527,11 +529,12 @@ class _Turn:
         :func:`_retry_wait` allows; one that failed partway never is, since
         its retry would bill the answer again.
 
+        The turn's ``should_stop`` is asked while the call runs (True abandons
+        it: :class:`_Stopped`), and the call ends by the turn's deadline or its
+        own, whichever comes first (:class:`_TimedOut`).
+
         Args:
             final: The last call of the turn: only the terminal tools are offered.
-            should_stop: Asked while the call runs; True abandons it (:class:`_Stopped`).
-            turn_deadline: When the turn must end; the call ends by then or by its own deadline, whichever
-                comes first (:class:`_TimedOut`).
 
         Returns:
             The handler's ``LLMResponse``.
@@ -543,13 +546,13 @@ class _Turn:
             tools = _terminal_definitions(self.recipe, self.allow_questions)
             if not final:
                 tools = tool_definitions(self.read_tools) + tools
-        deadlines = [d for d in (_deadline_after(settings.DRAFTER_CALL_TIMEOUT_SECONDS), turn_deadline) if d]
+        deadlines = [d for d in (_deadline_after(settings.DRAFTER_CALL_TIMEOUT_SECONDS), self.turn_deadline) if d]
         deadline = min(deadlines) if deadlines else None
         attempt = 0
         while True:
             answered: list[bool] = []
             try:
-                return self._stream(tools, should_stop, deadline, answered)
+                return self._stream(tools, deadline, answered)
             except Exception as exc:
                 wait = None if answered else _retry_wait(exc, attempt, deadline)
                 if wait is None:
@@ -557,10 +560,9 @@ class _Turn:
                 logger.warning("drafter: a model call failed before it answered (%s); retrying in %g s",
                                type(exc).__name__, wait)
             attempt += 1
-            _pause(wait, should_stop)
+            _pause(wait, self.should_stop)
 
-    def _stream(self, tools: list[dict], should_stop: Callable[[], bool], deadline: Optional[float],
-                answered: list[bool]) -> Any:
+    def _stream(self, tools: list[dict], deadline: Optional[float], answered: list[bool]) -> Any:
         """Stream one model call and read it whole; ``answered`` gets an entry once the first chunk arrives."""
         from docsgpt.llm.deadlines import interruptible
         from docsgpt.llm.handlers.base import collect_stream
@@ -581,7 +583,7 @@ class _Turn:
                 llm._stream_reached_finish = False
         stream = self.llm.gen_stream(model=model, messages=list(self.messages), tools=tools)
         return collect_stream(
-            noted(interruptible(stream, _interrupter(should_stop, deadline))),
+            noted(interruptible(stream, _interrupter(self.should_stop, deadline))),
             lambda chunk: _parse_response(self.llm, chunk),
             finished=lambda: _reached_finish(self.llm),
         )
@@ -668,11 +670,12 @@ class _Turn:
             ``read`` events as the model reads, then ``message``, ``questions``, ``proposal`` or ``error`` events.
         """
         problems: list[str] = []
-        turn_deadline = _deadline_after(settings.DRAFTER_TURN_TIMEOUT_SECONDS)
+        self.should_stop = should_stop
+        self.turn_deadline = _deadline_after(settings.DRAFTER_TURN_TIMEOUT_SECONDS)
         for step in range(MAX_LLM_CALLS):
             if should_stop():
                 return
-            if turn_deadline is not None and _now() >= turn_deadline:
+            if self.turn_deadline is not None and _now() >= self.turn_deadline:
                 logger.warning("drafter: the turn ran past its deadline after %d model call(s)", step)
                 yield _error("model_error", TIMED_OUT)
                 return
@@ -681,7 +684,7 @@ class _Turn:
                 self.messages.append({"role": "user", "content": "Stop reading now and finish with "
                                       f"{_finish_hint(self.allow_questions)}."})
             try:
-                parsed = self.gen(final, should_stop, turn_deadline)
+                parsed = self.gen(final)
             except _Stopped:
                 return
             except _TimedOut:
@@ -698,40 +701,36 @@ class _Turn:
             text = parsed.content if isinstance(getattr(parsed, "content", None), str) else ""
             reasoning = getattr(parsed, "reasoning_content", None) or ""
             terminal = next((c for c in calls if c.name in TERMINAL_TOOLS), None)
-            if terminal is not None:
-                assistant = self._assistant_for(calls, reasoning)
-                try:
-                    yield from self.finish(terminal.name, terminal.arguments, text)
-                    return
-                except ProposalInvalid as invalid:
-                    problems = invalid.problems
-                    if self.corrections >= MAX_CORRECTIONS:
-                        break
-                    self.corrections += 1
-                    self._correct_calls(assistant, invalid.problems)
-                    continue
-            if calls:
+            if terminal is None and calls:
                 yield from self._read(calls, reasoning)
                 continue
-            payload = parse_json_object(text)
-            if payload is not None:
-                name = ASK_USER if isinstance(payload.get("questions"), list) and payload.get("type") != "proposal" \
-                    else SUBMIT_PROPOSAL
+            # What to finish with: the terminal call, or the JSON object a text answer holds (None without one).
+            assistant: Optional[dict] = None
+            answer: Optional[tuple[str, Any, str]] = None
+            if terminal is not None:
+                assistant = self._assistant_for(calls, reasoning)
+                answer = (terminal.name, terminal.arguments, text)
+            elif (payload := parse_json_object(text)) is not None:
+                asks = isinstance(payload.get("questions"), list) and payload.get("type") != "proposal"
+                answer = (ASK_USER if asks else SUBMIT_PROPOSAL, payload, "")
+            problems = ["Your answer had no draft and no questions."]
+            if answer is not None:
                 try:
-                    yield from self.finish(name, payload)
+                    yield from self.finish(*answer)
                     return
                 except ProposalInvalid as invalid:
                     problems = invalid.problems
-            else:
-                problems = ["Your answer had no draft and no questions."]
             if self.corrections >= MAX_CORRECTIONS:
-                if text.strip() and payload is None:
+                if answer is None and text.strip():
                     # A plain reply (a refusal, an explanation) still reaches the user.
                     yield {"type": "message", "text": clean_text(text, 2000)}
                     return
                 break
             self.corrections += 1
-            self._correct_text(text, problems, reasoning)
+            if assistant is not None:
+                self._correct_calls(assistant, problems)
+            else:
+                self._correct_text(text, problems, reasoning)
         logger.warning("drafter: %s output rejected after %d correction(s): %s", self.recipe.id, self.corrections,
                        " ".join(problems)[:1000] or "no answer")
         yield _error("invalid_output", "The draft didn't come out right. Try again, or rephrase your request.")

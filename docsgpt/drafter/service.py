@@ -69,6 +69,15 @@ class Refusal:
         return event
 
 
+@dataclass
+class PreparedDraft:
+    """A draft request that passed every check: what its stream needs."""
+
+    request: DraftRequest
+    recipe: Recipe
+    model: dict
+
+
 def bad_request(err: BadDraftRequest) -> Refusal:
     """A ``bad_request`` refusal for ``err``, with the reason (and limit) it carries; ``invalid`` by default."""
     reason = getattr(err, "reason", None)
@@ -134,8 +143,7 @@ def parse_messages(raw: Any) -> list[dict]:
     return out
 
 
-def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftRequest], Optional[Recipe],
-                                              Optional[dict]]:
+def prepare(user_id: str, body: Any) -> Refusal | PreparedDraft:
     """Every check a draft passes before it streams, in order: enabled, request shape, model, quota, rate.
 
     The quota comes before the rate limit so a refused request doesn't use up the minute's budget.
@@ -145,13 +153,12 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
         body: The parsed JSON body.
 
     Returns:
-        ``(refusal, request, recipe, model)``: a refusal and Nones, or no
-        refusal and what the stream needs.
+        The first refusal, or the checked request with what its stream needs.
     """
     if not settings.DRAFTER_ENABLED:
-        return Refusal("disabled", "Drafting is turned off on this instance."), None, None, None
+        return Refusal("disabled", "Drafting is turned off on this instance.")
     if not isinstance(body, dict):
-        return Refusal("bad_request", "The request body must be a JSON object.", "invalid"), None, None, None
+        return Refusal("bad_request", "The request body must be a JSON object.", "invalid")
     recipe = get_recipe(body.get("recipe"))
     try:
         if recipe is None:
@@ -162,22 +169,21 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
             raise BadDraftRequest("context must be an object")
         context = recipe.parse_context(context)
     except BadDraftRequest as err:
-        return bad_request(err), None, None, None
+        return bad_request(err)
     model = drafter_model(user_id)
     if model is None:
-        return Refusal("no_model", "No model is set up to draft with."), None, None, None
+        return Refusal("no_model", "No model is set up to draft with.")
     from docsgpt.quotas.service import QuotaService
 
     exceeded = QuotaService.check(user_id, "direct")
     if exceeded is not None:
-        return Refusal("quota", exceeded.to_payload().get("message") or "Usage quota reached."), None, None, None
+        return Refusal("quota", exceeded.to_payload().get("message") or "Usage quota reached.")
     limit = int(settings.DRAFTER_RATE_LIMIT_PER_MINUTE or 0)
     if limit > 0:
         from docsgpt.monitors.triggers import rate_limited
 
         if rate_limited(RATE_SCOPE, user_id, limit):
-            return Refusal("rate_limited", "Too many drafts in a minute. Wait a moment and try again."), \
-                None, None, None
+            return Refusal("rate_limited", "Too many drafts in a minute. Wait a moment and try again.")
     request = DraftRequest(
         user_id=user_id,
         recipe=recipe.id,
@@ -185,7 +191,7 @@ def prepare(user_id: str, body: Any) -> tuple[Optional[Refusal], Optional[DraftR
         context=context,
         request_id=f"drafter:{uuid.uuid4()}",
     )
-    return None, request, recipe, model
+    return PreparedDraft(request, recipe, model)
 
 
 def _turn_store() -> Any:

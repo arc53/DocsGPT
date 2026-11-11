@@ -12,7 +12,7 @@ from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.prompt_recipe import CONTENT_MAX, MAX_EDITS, parse_context, validate
 from docsgpt.drafter.recipe import DraftRequest
-from docsgpt.drafter.service import parse_messages, prepare
+from docsgpt.drafter.service import parse_messages, prepare, PreparedDraft
 
 
 def _echo(event: dict) -> str:
@@ -65,16 +65,26 @@ class TestRateAndQuota:
         exceeded = SimpleNamespace(to_payload=lambda: {"message": "Usage quota reached."})
         with patch("docsgpt.quotas.service.QuotaService.check", return_value=exceeded), \
                 patch("docsgpt.monitors.triggers.rate_limited") as limiter:
-            refusal, *_ = prepare("alice", _body())
+            refusal = prepare("alice", _body())
         assert refusal.code == "quota"
         limiter.assert_not_called()
 
     def test_a_request_within_quota_is_counted(self):
         with patch("docsgpt.quotas.service.QuotaService.check", return_value=None), \
                 patch("docsgpt.monitors.triggers.rate_limited", return_value=True) as limiter:
-            refusal, *_ = prepare("alice", _body())
+            refusal = prepare("alice", _body())
         assert refusal.code == "rate_limited"
         limiter.assert_called_once_with("drafter", "alice", 10)
+
+    def test_a_request_that_passes_carries_what_the_stream_needs(self):
+        with patch("docsgpt.quotas.service.QuotaService.check", return_value=None), \
+                patch("docsgpt.monitors.triggers.rate_limited", return_value=False):
+            prepared = prepare("alice", _body())
+        assert isinstance(prepared, PreparedDraft)
+        assert prepared.recipe.id == "agent" and prepared.model == {"id": "m"}
+        assert prepared.request.user_id == "alice" and prepared.request.recipe == "agent"
+        assert prepared.request.messages == [{"role": "user", "content": "x"}]
+        assert prepared.request.request_id.startswith("drafter:")
 
 
 @pytest.fixture
@@ -148,7 +158,7 @@ class TestBadRequestReason:
 
     def _refusal(self, body):
         with patch.object(settings, "DRAFTER_ENABLED", True):
-            refusal, *_ = prepare("alice", body)
+            refusal = prepare("alice", body)
         return refusal.event()
 
     @pytest.mark.parametrize("messages", [
@@ -188,5 +198,5 @@ class TestBadRequestReason:
 
     def test_other_refusals_carry_no_reason(self):
         with patch.object(settings, "DRAFTER_ENABLED", False):
-            refusal, *_ = prepare("alice", {})
+            refusal = prepare("alice", {})
         assert "reason" not in refusal.event()

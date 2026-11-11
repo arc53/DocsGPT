@@ -28,7 +28,7 @@ from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import (
     bad_request, CANCEL_RATE_PER_MINUTE, cancel_turn, claim_running, clear_model_failure, drafter_config, end_turn, prepare,
-    record_model_failure, start_turn, TURN_ID, turn_cancelled,
+    record_model_failure, Refusal, start_turn, TURN_ID, turn_cancelled,
 )
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
@@ -127,9 +127,9 @@ class DrafterStream(Resource):
         if not user_id:
             return make_response(jsonify({"success": False}), 401)
         body = request.get_json(silent=True)
-        refusal, draft, recipe, model = prepare(user_id, body)
-        if refusal is not None:
-            return Response(_closed(refusal.event()), mimetype="text/event-stream", headers=_SSE_HEADERS)
+        prepared = prepare(user_id, body)
+        if isinstance(prepared, Refusal):
+            return Response(_closed(prepared.event()), mimetype="text/event-stream", headers=_SSE_HEADERS)
         # The panel names its turn, so a Stop sent before the ``turn`` event arrives still reaches it.
         turn_id = start_turn(user_id, body.get("turn_id"))
         if not claim_running(user_id, turn_id):
@@ -144,7 +144,8 @@ class DrafterStream(Resource):
         # it first, so the panel stops a turn it gives up on through the turn id instead.
         stopped = threading.Event()
         return Response(
-            with_sse_keepalive(_stream(draft, recipe, model, stopped, turn_id), on_disconnect=stopped.set),
+            with_sse_keepalive(_stream(prepared.request, prepared.recipe, prepared.model, stopped, turn_id),
+                               on_disconnect=stopped.set),
             mimetype="text/event-stream",
             headers=_SSE_HEADERS,
         )

@@ -164,6 +164,35 @@ class TestLoop:
         assert fake.calls[1]["messages"][-1]["role"] == "user"
         assert "not accepted" in fake.calls[1]["messages"][-1]["content"]
 
+    def test_a_rejected_call_is_answered_with_its_problems_then_corrected(self):
+        bad = {"message": "x", "fields": {"agent_type": "workflow"}}
+        fake = FakeLLM(calls(tool_call("submit_proposal", bad, "c1"), tool_call("get_prompt", {}, "c2")),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        events = _run(fake)
+        assert events[-1]["type"] == "proposal"
+        sent = fake.calls[1]["messages"]
+        assert [m["tool_call_id"] for m in sent[-2:]] == ["c1", "c2"]
+        assert all(m["content"].startswith("Not accepted: ") for m in sent[-2:])
+        assert sent[-3]["role"] == "assistant" and len(sent[-3]["tool_calls"]) == 2
+
+    def test_a_second_plain_reply_reaches_the_user(self):
+        fake = FakeLLM(text("I can't help with that."), text("Really, I can't."))
+        events = _run(fake)
+        assert events[2:] == [{"type": "message", "text": "Really, I can't."}]
+
+    def test_a_plain_reply_after_a_rejected_call_reaches_the_user(self):
+        bad = calls(tool_call("submit_proposal", {"message": "x", "fields": {"agent_type": "workflow"}}))
+        events = _run(FakeLLM(bad, text("I give up.")))
+        assert events[2:] == [{"type": "message", "text": "I give up."}]
+
+    def test_a_second_rejected_json_answer_is_invalid_output_not_a_message(self):
+        bad = text(json.dumps({"type": "proposal", "message": "x", "fields": {"agent_type": "workflow"}}))
+        fake = FakeLLM(bad, bad)
+        events = _run(fake)
+        assert [e["type"] for e in events][2:] == ["error"] and events[-1]["code"] == "invalid_output"
+        assert "Answer again with one JSON object only." not in fake.calls[0]["messages"][-1]["content"]
+        assert fake.calls[1]["messages"][-1]["content"].startswith("Your answer was not accepted: ")
+
     @pytest.mark.parametrize("answer", [
         text(json.dumps({"type": "proposal", "proposal": PROPOSAL})),
         calls(tool_call("submit_proposal", {"type": "proposal", "proposal": PROPOSAL})),
