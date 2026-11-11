@@ -188,6 +188,10 @@ class TestBoilerplatePruningRules:
         assert "API latency > database latency" in prune_chunk_text(
             "API latency > database latency", query="unrelated query"
         )
+        assert "Index size > cache size" in prune_chunk_text("Index size > cache size", query="unrelated query")
+        assert "Reference latency > database latency" in prune_chunk_text(
+            "Reference latency > database latency", query="unrelated query"
+        )
 
     def test_preserves_code_blocks_and_inline_code(self):
         raw = (
@@ -462,6 +466,14 @@ class TestBoilerplatePruningRules:
         cleaned3 = prune_chunk_text(raw3, query="unrelated query")
         assert "API latency > database latency" in cleaned3
         assert "Home > API" not in cleaned3
+
+        # Exact navigation root check must not match root word prefixes in factual comparisons
+        raw4 = "Home > API\nIndex size > cache size\nReference latency > database latency\nNext page: Settings"
+        cleaned4 = prune_chunk_text(raw4, query="unrelated query")
+        assert "Index size > cache size" in cleaned4
+        assert "Reference latency > database latency" in cleaned4
+        assert "Home > API" not in cleaned4
+        assert "Next page" not in cleaned4
 
     def test_preserves_repeated_factual_license_statements_across_chunks(self):
         docs = [

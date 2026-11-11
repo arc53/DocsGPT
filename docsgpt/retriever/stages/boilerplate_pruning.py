@@ -41,7 +41,7 @@ _PROTECTED_QUALIFIERS = {
 }
 
 _NAV_ROOTS = (
-    r"home|docs|documentation|guides?|reference|manual|tutorials?|"
+    r"home|docs|documentation|guides?|user\s+guide|reference|api\s+reference|manual|tutorials?|"
     r"overview|index|help|settings|dashboard|root"
 )
 
@@ -49,9 +49,9 @@ _NAV_ROOTS = (
 # Requires identifiable navigation evidence:
 # 1. Navigational symbols (›, », →): e.g. 'Docs » Reference', 'Home › API'
 # 2. Markdown links as segments: e.g. '[Home](/) > API'
-# 3. Known navigation root anchor as the first segment: e.g. 'Home > API', 'Home / Guides / Setup'
-# Segment-count alone (e.g. 3+ segments separated by '>') is NOT sufficient —
-# 'Cache size > memory budget > disk capacity' is a factual comparison chain.
+# 3. Exact navigation root anchor as the first segment: e.g. 'Home > API', 'Home / Guides / Setup'
+# An open-ended root-word prefix is not accepted — factual comparisons such as
+# 'Index size > cache size' and 'Reference latency > database latency' must never match.
 _BREADCRUMB_SEP = r"(?:\s*[›»→]\s*|\s*>\s*|\s*/(?!\S)\s*)"
 
 _BREADCRUMB_RE = re.compile(
@@ -60,7 +60,7 @@ _BREADCRUMB_RE = re.compile(
     r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})|"
     r"(?:\*?\s*\[[^\]]+\]\([^\)]+\)" + _BREADCRUMB_SEP + r")+"
     r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})|"
-    r"(?:\*?\s*(?i:" + _NAV_ROOTS + r")(?:\s+[\w\-&]+){0,2}" + _BREADCRUMB_SEP + r")"
+    r"(?:\*?\s*(?i:" + _NAV_ROOTS + r")\s*" + _BREADCRUMB_SEP + r")"
     r"(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})" + _BREADCRUMB_SEP + r")*"
     r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})"
     r")\s*$",
