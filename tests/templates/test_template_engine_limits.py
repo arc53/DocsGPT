@@ -279,3 +279,40 @@ class TestRenderStepBudget:
         monkeypatch.setattr(template_engine, "MAX_TEMPLATE_STEPS", 20_000)
         for _ in range(5):
             assert engine.render("{% for i in range(15000) %}{% endfor %}ok", {}) == "ok"
+
+
+# Guards whose refusal nothing later stands in for, or only once the result is
+# built: with the cap at about a thousand, each is refused by its own message.
+ARGUMENT_GUARDS = [
+    ("{{ ([[1]] * 100) | tojson(indent=10) }}", "indented JSON too long"),
+    ("{{ ([[1]] * 100) | tojson(10) }}", "indented JSON too long"),
+    ('{{ [1] | batch(5000, "x") | list | length }}', "width too large"),
+    ("{{ [1] | slice(5000) | list | length }}", "width too large"),
+    ('{{ ("x" * 100).translate({120: "y" * 100}) }}', "translated text too long"),
+    ('{% set a = [] %}{% for i in range(2000) %}{{ a.append(i) or "" }}{% endfor %}', "list too long"),
+    ('{% set a = [] %}{% for i in range(2000) %}{{ a.insert(0, i) or "" }}{% endfor %}', "list too long"),
+]
+
+
+@pytest.mark.unit
+class TestArgumentGuards:
+    @pytest.mark.parametrize(("template", "message"), ARGUMENT_GUARDS)
+    def test_refused_before_building(
+        self, engine: TemplateEngine, template: str, message: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(template_engine, "MAX_TEMPLATE_SEQUENCE", 1000)
+        with pytest.raises(TemplateRenderError, match=message):
+            engine.render(template, {})
+
+    @pytest.mark.parametrize(
+        ("template", "expected"),
+        [
+            ('{{ {"a": [1]} | tojson(indent=2) }}', '{\n  "a": [\n    1\n  ]\n}'),
+            ("{{ [1, 2, 3] | batch(2) | list }}", "[[1, 2], [3]]"),
+            ("{{ [1, 2, 3] | slice(2) | list }}", "[[1, 2], [3]]"),
+            ('{{ "abc".translate({98: "BB"}) }}', "aBBc"),
+            ('{% set a = [2] %}{{ a.append(3) or "" }}{{ a.insert(0, 1) or "" }}{{ a }}', "[1, 2, 3]"),
+        ],
+    )
+    def test_ordinary_calls_render(self, engine: TemplateEngine, template: str, expected: str) -> None:
+        assert engine.render(template, {}) == expected
