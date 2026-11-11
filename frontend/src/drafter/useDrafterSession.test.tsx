@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-import type { DrafterEvent, DrafterRequest } from './drafterApi';
+import type { DrafterEvent } from './drafterApi';
 
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
@@ -10,37 +10,13 @@ vi.mock('react-redux', () => ({
 
 // A script is the turn's events, or 'hold': the turn stays open and the
 // test sends its events through `held` (an abort ends it, as a Stop does).
-const stream = vi.hoisted(() => ({
-  scripts: [] as (DrafterEvent[] | 'hold')[],
-  requests: [] as DrafterRequest[],
-  turnIds: [] as (string | undefined)[],
-  held: [] as { emit: (event: DrafterEvent) => void; done: () => void }[],
-  cancelled: [] as [string, string | null][],
-}));
+const stream = await vi.hoisted(async () =>
+  (await import('./testing/fakeDrafterStream')).fakeDrafterStream(),
+);
 vi.mock('./drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./drafterApi')>()),
-  cancelDrafterTurn: async (turnId: string, token: string | null) => {
-    stream.cancelled.push([turnId, token]);
-  },
-  streamDrafter: async (
-    request: DrafterRequest,
-    _token: string | null,
-    onEvent: (event: DrafterEvent) => void,
-    signal: AbortSignal,
-    turnId?: string,
-  ) => {
-    stream.requests.push(JSON.parse(JSON.stringify(request)));
-    stream.turnIds.push(turnId);
-    const script = stream.scripts.shift() ?? [{ type: 'end' }];
-    if (script !== 'hold') {
-      script.forEach(onEvent);
-      return;
-    }
-    await new Promise<void>((done) => {
-      stream.held.push({ emit: onEvent, done });
-      signal.addEventListener('abort', () => done());
-    });
-  },
+  cancelDrafterTurn: stream.cancelDrafterTurn,
+  streamDrafter: stream.streamDrafter,
 }));
 
 import {
@@ -75,11 +51,7 @@ describe('useDrafterSession', () => {
   });
   afterEach(async () => {
     await act(async () => root.unmount());
-    stream.scripts = [];
-    stream.requests = [];
-    stream.turnIds = [];
-    stream.held = [];
-    stream.cancelled = [];
+    stream.reset();
   });
 
   const QUESTIONS: DrafterEvent = {

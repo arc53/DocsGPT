@@ -1,8 +1,6 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-import type { DrafterEvent, DrafterRequest } from './drafterApi';
-
 vi.mock('react-redux', () => ({
   useSelector: () => 'token',
 }));
@@ -10,21 +8,13 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const stream = vi.hoisted(() => ({
-  scripts: [] as DrafterEvent[][],
-  requests: [] as DrafterRequest[],
-}));
+const stream = await vi.hoisted(async () =>
+  (await import('./testing/fakeDrafterStream')).fakeDrafterStream(),
+);
 vi.mock('./drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./drafterApi')>()),
-  cancelDrafterTurn: async () => undefined,
-  streamDrafter: async (
-    request: DrafterRequest,
-    _token: string | null,
-    onEvent: (event: DrafterEvent) => void,
-  ) => {
-    stream.requests.push(JSON.parse(JSON.stringify(request)));
-    (stream.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
-  },
+  cancelDrafterTurn: stream.cancelDrafterTurn,
+  streamDrafter: stream.streamDrafter,
 }));
 
 import { type PromptDrafter, usePromptDrafter } from './usePromptDrafter';
@@ -74,8 +64,7 @@ describe('usePromptDrafter', () => {
   let root: Root;
 
   beforeEach(async () => {
-    stream.scripts = [];
-    stream.requests = [];
+    stream.reset();
     container = document.createElement('div');
     root = createRoot(container);
     await act(async () => root.render(<Host />));

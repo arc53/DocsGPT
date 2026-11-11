@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 
-import type { DrafterEvent, DrafterRequest } from './drafterApi';
+import type { DrafterEvent } from './drafterApi';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -31,25 +31,12 @@ vi.mock('../hooks', async (importOriginal) => ({
 }));
 
 // Each turn plays the next script of events; `hold` keeps a turn open.
-const stream = vi.hoisted(() => ({
-  scripts: [] as DrafterEvent[][],
-  requests: [] as DrafterRequest[],
-  hold: false,
-  signals: [] as AbortSignal[],
-}));
+const stream = await vi.hoisted(async () =>
+  (await import('./testing/fakeDrafterStream')).fakeDrafterStream(),
+);
 vi.mock('./drafterApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./drafterApi')>()),
-  streamDrafter: async (
-    request: DrafterRequest,
-    _token: string | null,
-    onEvent: (event: DrafterEvent) => void,
-    signal: AbortSignal,
-  ) => {
-    stream.requests.push(JSON.parse(JSON.stringify(request)));
-    stream.signals.push(signal);
-    if (stream.hold) return new Promise<void>(() => undefined);
-    (stream.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
-  },
+  streamDrafter: stream.streamDrafter,
 }));
 
 import { DraftPanel, type DraftPanelProps } from './DraftPanel';
@@ -158,10 +145,7 @@ describe('DraftPanel', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
-    stream.scripts = [];
-    stream.requests = [];
-    stream.signals = [];
-    stream.hold = false;
+    stream.reset();
     onProposal.mockReset();
     onNext.mockReset();
     media.isMobile = false;

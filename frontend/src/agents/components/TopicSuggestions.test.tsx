@@ -1,7 +1,7 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-import type { DrafterEvent, DrafterRequest } from '../../drafter/drafterApi';
+import type { DrafterEvent } from '../../drafter/drafterApi';
 import type { TopicsProposal, TopicsStatus } from '../../drafter/topicsDraft';
 import type { AnalyticsConfig } from '../types';
 
@@ -50,11 +50,11 @@ const mocks = vi.hoisted(() => ({
   status: null as TopicsStatus | null,
   statusFails: false,
   statusCalls: [] as string[],
-  scripts: [] as DrafterEvent[][],
-  requests: [] as DrafterRequest[],
-  // The turn stays open after its events, as while the model works.
-  hang: false,
 }));
+// `hang` keeps each turn open after its events, as while the model works.
+const stream = await vi.hoisted(async () =>
+  (await import('../../drafter/testing/fakeDrafterStream')).fakeDrafterStream(),
+);
 vi.mock('../../drafter/topicsDraft', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../drafter/topicsDraft')>()),
   getTopicsStatus: (agentId: string) => {
@@ -72,15 +72,7 @@ vi.mock('../../drafter/drafterApi', async (importOriginal) => ({
       model: null,
       reason: mocks.drafterEnabled ? null : 'disabled',
     }),
-  streamDrafter: async (
-    request: DrafterRequest,
-    _token: string | null,
-    onEvent: (event: DrafterEvent) => void,
-  ) => {
-    mocks.requests.push(JSON.parse(JSON.stringify(request)));
-    (mocks.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
-    if (mocks.hang) await new Promise(() => undefined);
-  },
+  streamDrafter: stream.streamDrafter,
 }));
 
 import { resetDrafterConfigCache } from '../../drafter/useDrafterConfig';
@@ -189,9 +181,7 @@ describe('topic suggestions in the Insights settings', () => {
     };
     mocks.statusFails = false;
     mocks.statusCalls = [];
-    mocks.scripts = [];
-    mocks.requests = [];
-    mocks.hang = false;
+    stream.reset();
     getTopicFolders.mockReset();
     getTopicFolders.mockResolvedValue({
       ok: true,
@@ -219,7 +209,7 @@ describe('topic suggestions in the Insights settings', () => {
   const suggestion = (id: string) =>
     card()!.querySelector<HTMLElement>(`[data-suggestion="${id}"]`)!;
   const run = async (events: DrafterEvent[]) => {
-    mocks.scripts.push(events);
+    stream.scripts.push(events);
     await act(async () => button(`${T}.suggest`)!.click());
   };
   const proposal = (value: TopicsProposal = PROPOSAL): DrafterEvent[] => [
@@ -321,10 +311,10 @@ describe('topic suggestions in the Insights settings', () => {
   it('runs one topics turn and adds the picked suggestions as new topics', async () => {
     await render();
     await run(proposal());
-    expect(mocks.requests).toHaveLength(1);
-    expect(mocks.requests[0].recipe).toBe('topics');
-    expect(mocks.requests[0].context).toEqual({ agent_id: 'a1' });
-    expect(mocks.requests[0].messages).toEqual([
+    expect(stream.requests).toHaveLength(1);
+    expect(stream.requests[0].recipe).toBe('topics');
+    expect(stream.requests[0].context).toEqual({ agent_id: 'a1' });
+    expect(stream.requests[0].messages).toEqual([
       { role: 'user', content: `${T}.request` },
     ]);
 
@@ -407,7 +397,7 @@ describe('topic suggestions in the Insights settings', () => {
     await render({ disabled: true });
     await render();
     expect(card()).toBeNull();
-    expect(mocks.requests).toHaveLength(1);
+    expect(stream.requests).toHaveLength(1);
     expect(button(`${T}.suggest`)).toBeTruthy();
   });
 
@@ -484,9 +474,9 @@ describe('topic suggestions in the Insights settings', () => {
     await run([{ type: 'error', code: 'model_error' }, { type: 'end' }]);
     const alert = card()!.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('drafter.errors.model_error.title');
-    mocks.scripts.push(proposal());
+    stream.scripts.push(proposal());
     await act(async () => button('drafter.retry')!.click());
-    expect(mocks.requests).toHaveLength(2);
+    expect(stream.requests).toHaveLength(2);
     expect(card()!.querySelector('[data-suggestion="t1"]')).not.toBeNull();
   });
 
@@ -539,8 +529,8 @@ describe('topic suggestions in the Insights settings', () => {
 
   it('shows the reading line without a status inside a paragraph', async () => {
     await render();
-    mocks.hang = true;
-    mocks.scripts.push([{ type: 'status', step: 'reading' }]);
+    stream.hang = true;
+    stream.scripts.push([{ type: 'status', step: 'reading' }]);
     await act(async () => button(`${T}.suggest`)!.click());
     const spinner = card()!.querySelector('[data-slot="spinner"]')!;
     expect(spinner.closest('p')).toBeNull();
