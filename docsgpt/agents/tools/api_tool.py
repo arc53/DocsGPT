@@ -144,8 +144,11 @@ class APITool(Tool):
                 logger.error(f"HTTP redirect {response.status_code}")
                 # Resolve relative location against request_url
                 if location and not location.startswith(("http://", "https://")):
-                    from urllib.parse import urljoin
-                    location = urljoin(request_url, location)
+                    from urllib.parse import urljoin, urlparse
+                    # Strip query params and fragment from base URL to avoid leaking credentials
+                    parsed_base = urlparse(request_url)
+                    clean_base = f"{parsed_base.scheme}://{parsed_base.netloc}{parsed_base.path}"
+                    location = urljoin(clean_base, location)
                 return {
                     "status_code": response.status_code,
                     "status": "error",
