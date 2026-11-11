@@ -28,8 +28,9 @@ import {
   setErrorDetail,
 } from '../conversation/curatedError';
 import {
-  answeredCall,
+  findQuestionCall,
   type QuestionAction,
+  resumeQuestionCall,
 } from '../conversation/questionCall';
 import { NOT_PENDING_CODE } from '../conversation/conversationSlice';
 import store from '../store';
@@ -244,13 +245,7 @@ export const resumePreviewQuestion = createAsyncThunk<
   async ({ callId, action }, { dispatch, getState }) => {
     const state = getState() as RootState;
     const { queries } = state.agentPreview;
-    // The latest turn: a provider may reuse a call id across turns.
-    const index = queries.findLastIndex((query) =>
-      query.tool_calls?.some((call) => call.call_id === callId),
-    );
-    const call = queries[index]?.tool_calls?.find(
-      (candidate) => candidate.call_id === callId,
-    );
+    const { index, call } = findQuestionCall(queries, callId);
     const conversationId = queries[index]?.conversationId;
     if (!call || !conversationId) return;
 
@@ -258,46 +253,46 @@ export const resumePreviewQuestion = createAsyncThunk<
     abortController = new AbortController();
     const { signal } = abortController;
 
-    // A refused try left its error on the turn; this answer is the retry.
-    if (queries[index].error)
-      dispatch(
-        updateQuery({
-          index,
-          query: {
-            error: undefined,
-            errorCode: undefined,
-            errorParams: undefined,
-          },
-        }),
-      );
-    dispatch(updateToolCall({ index, tool_call: answeredCall(call, action) }));
-    dispatch(agentPreviewSlice.actions.setStatus('loading'));
-    // The first frame tells whether the server took the answers; a refusal
-    // (or a request that never got there) left the turn waiting, so the
-    // cards come back as they were for another try.
-    let taken: boolean | null = null;
-    const onEvent = previewEventHandler(dispatch, index);
-    const restore = () =>
-      dispatch(updateToolCall({ index, tool_call: { ...call } }));
-    try {
-      await handleSubmitToolActions(
-        conversationId,
-        [{ call_id: callId, ...action }],
-        state.preference.token,
-        signal,
-        (event) => {
-          if (taken === null) {
-            const data = JSON.parse(event.data);
-            taken = data.type !== 'error' || data.code === NOT_PENDING_CODE;
-          }
-          onEvent(event);
-        },
-      );
-    } catch (error) {
-      if (taken !== true && !signal.aborted) restore();
-      throw error;
-    }
-    if (taken === false) restore();
+    // A request that broke off before the server took the answers is
+    // thrown once the cards are back.
+    let failed = false;
+    let failure: unknown;
+    await resumeQuestionCall({
+      turn: queries[index],
+      call,
+      action,
+      updateQuery: (query) => dispatch(updateQuery({ index, query })),
+      updateToolCall: (toolCall) =>
+        dispatch(updateToolCall({ index, tool_call: toolCall })),
+      send: async () => {
+        dispatch(agentPreviewSlice.actions.setStatus('loading'));
+        // The first frame tells whether the server took the answers.
+        let taken: boolean | null = null;
+        const onEvent = previewEventHandler(dispatch, index);
+        try {
+          await handleSubmitToolActions(
+            conversationId,
+            [{ call_id: callId, ...action }],
+            state.preference.token,
+            signal,
+            (event) => {
+              if (taken === null) {
+                const data = JSON.parse(event.data);
+                taken = data.type !== 'error' || data.code === NOT_PENDING_CODE;
+              }
+              onEvent(event);
+            },
+          );
+        } catch (error) {
+          if (taken === true || signal.aborted) throw error;
+          failed = true;
+          failure = error;
+          return true;
+        }
+        return taken === false;
+      },
+    });
+    if (failed) throw failure;
   },
 );
 

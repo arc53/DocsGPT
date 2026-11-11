@@ -56,7 +56,11 @@ import {
   ResearchStep,
   Status,
 } from './conversationModels';
-import { answeredCall, type QuestionAction } from './questionCall';
+import {
+  findQuestionCall,
+  type QuestionAction,
+  resumeQuestionCall,
+} from './questionCall';
 import { ToolCallsType } from './types';
 import { readJobArtifacts } from './artifactChips';
 import {
@@ -974,49 +978,29 @@ export const resumeQuestion = createAsyncThunk<
   { callId: string; action: QuestionAction }
 >('resumeQuestion', async ({ callId, action }, { dispatch, getState }) => {
   const { queries } = (getState() as RootState).conversation;
-  // The latest turn: a provider may reuse a call id across turns.
-  const index = queries.findLastIndex((query) =>
-    query.tool_calls?.some((call) => call.call_id === callId),
-  );
-  const call = queries[index]?.tool_calls?.find(
-    (candidate) => candidate.call_id === callId,
-  );
-  if (call) {
-    // A refused try left its error on the turn, which would hide the cards
-    // again; this answer is the retry.
-    if (queries[index].error)
+  const { index, call } = findQuestionCall(queries, callId);
+  await resumeQuestionCall({
+    turn: queries[index],
+    call,
+    action,
+    updateQuery: (query) =>
+      dispatch(conversationSlice.actions.updateQuery({ index, query })),
+    updateToolCall: (toolCall) =>
       dispatch(
-        conversationSlice.actions.updateQuery({
+        conversationSlice.actions.updateToolCall({
           index,
-          query: {
-            error: undefined,
-            errorCode: undefined,
-            errorParams: undefined,
-          },
+          tool_call: toolCall,
         }),
+      ),
+    send: async () => {
+      const sent = await dispatch(
+        submitToolActions({ toolActions: [{ call_id: callId, ...action }] }),
       );
-    dispatch(
-      conversationSlice.actions.updateToolCall({
-        index,
-        tool_call: answeredCall(call, action),
-      }),
-    );
-  }
-  const sent = await dispatch(
-    submitToolActions({ toolActions: [{ call_id: callId, ...action }] }),
-  );
-  const refused = submitToolActions.rejected.match(sent)
-    ? !sent.meta.aborted
-    : sent.payload === 'refused';
-  // Nothing ran and the server still waits: the cards come back as they
-  // were, for another try, and the composer answers them again.
-  if (refused && call)
-    dispatch(
-      conversationSlice.actions.updateToolCall({
-        index,
-        tool_call: { ...call, result: call.result },
-      }),
-    );
+      return submitToolActions.rejected.match(sent)
+        ? !sent.meta.aborted
+        : sent.payload === 'refused';
+    },
+  });
 });
 
 async function sendToolActions(

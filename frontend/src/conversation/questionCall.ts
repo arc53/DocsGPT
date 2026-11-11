@@ -221,3 +221,72 @@ export function answeredCall(
       : { status: 'skipped' }),
   };
 }
+
+/**
+ * The latest turn holding the call `callId` (a provider may reuse a call id
+ * across turns), and the call.
+ *
+ * Args:
+ *   queries: The conversation's turns.
+ *   callId: The call's id.
+ *
+ * Returns:
+ *   The turn's index (-1 when none holds it) and the call, if found.
+ */
+export function findQuestionCall(
+  queries: Query[],
+  callId: string,
+): { index: number; call: ToolCallsType | undefined } {
+  const index = queries.findLastIndex((query) =>
+    query.tool_calls?.some((call) => call.call_id === callId),
+  );
+  const call = queries[index]?.tool_calls?.find(
+    (candidate) => candidate.call_id === callId,
+  );
+  return { index, call };
+}
+
+/**
+ * Answer a paused question call and resume its turn, the chat's and the
+ * agent preview's way alike. A refused try's error leaves the turn (this
+ * answer is the retry), the cards fold into their record at once
+ * (`answeredCall`), then the answer goes; when the server refused it,
+ * nothing ran and it still waits, so the cards come back as they were for
+ * another try. Without the call only the answer goes.
+ *
+ * Args:
+ *   turn: The turn holding the call, and the call (`findQuestionCall`).
+ *   action: The answers, or Just answer.
+ *   updateQuery: Writes to the turn (the slice's `updateQuery`).
+ *   updateToolCall: Writes the call (the slice's `updateToolCall`).
+ *   send: Sends the answer; resolves true when the server refused it.
+ */
+export async function resumeQuestionCall({
+  turn,
+  call,
+  action,
+  updateQuery,
+  updateToolCall,
+  send,
+}: {
+  turn: Query | undefined;
+  call: ToolCallsType | undefined;
+  action: QuestionAction;
+  updateQuery: (query: Partial<Query>) => void;
+  updateToolCall: (call: Partial<ToolCallsType> & { call_id: string }) => void;
+  send: () => Promise<boolean>;
+}): Promise<void> {
+  if (call) {
+    if (turn?.error)
+      updateQuery({
+        error: undefined,
+        errorCode: undefined,
+        errorParams: undefined,
+      });
+    updateToolCall(answeredCall(call, action));
+  }
+  const refused = await send();
+  // `result` is written even when the waiting call had none, so the merge
+  // drops the answer the record put there.
+  if (refused && call) updateToolCall({ ...call, result: call.result });
+}
