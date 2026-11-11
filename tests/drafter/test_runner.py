@@ -140,6 +140,17 @@ class TestLoop:
         assert events[-1]["code"] == "invalid_output"
         assert "agent output rejected after 1 correction(s)" in caplog.text
 
+    def test_a_turn_logs_how_much_context_it_sent(self, caplog):
+        ws = Workspace(sources=[{"id": "s1", "name": "Help"}], prompt_texts={"default": "Be kind."})
+        fake = FakeLLM(calls(tool_call("get_prompt", {"prompt_id": "default"})),
+                       calls(tool_call("submit_proposal", PROPOSAL)))
+        with caplog.at_level("INFO", logger="docsgpt.drafter.runner"):
+            _run(fake, ws=ws)
+        workspace = len(fence("Workspace", ws.summary()))
+        last = sum(len(m.get("content") or "") + sum(len(c["function"]["arguments"]) for c in m.get("tool_calls", []))
+                   for m in fake.calls[-1]["messages"])
+        assert f"agent turn: 2 model call(s), workspace {workspace} chars, last call {last} chars" in caplog.text
+
     def test_after_two_question_rounds_it_must_propose(self):
         asked = json.dumps({"questions": [{"id": "q1"}]})
         history = [

@@ -293,6 +293,15 @@ def build_messages(
     return messages
 
 
+def _sent_chars(messages: list[dict]) -> int:
+    """Characters one model call sends: its messages' text and their tool calls' arguments."""
+    return sum(
+        len(message.get("content") or "")
+        + sum(len(call["function"]["arguments"]) for call in message.get("tool_calls") or [])
+        for message in messages
+    )
+
+
 def _failure_event(error: BaseException, fallback: str) -> dict:
     """The ``error`` event for a failed model call: ``model_auth`` for a key problem, else ``model_error``."""
     if is_auth_failure(error):
@@ -458,6 +467,9 @@ class _Turn:
             req, recipe, ws, tool_mode=tool_mode, allow_questions=self.allow_questions
         )
         self.corrections = 0
+        # For the turn's log line: the model calls made, and the characters the latest one sent.
+        self.calls = 0
+        self.sent_chars = 0
         self.read_tools = recipe.offered_tools(req, ws)
         # Set by :meth:`run`: asked while a call runs (True abandons it), and when the turn must end.
         self.should_stop: Callable[[], bool] = lambda: False
@@ -546,6 +558,8 @@ class _Turn:
             tools = _terminal_definitions(self.recipe, self.allow_questions)
             if not final:
                 tools = tool_definitions(self.read_tools) + tools
+        self.calls += 1
+        self.sent_chars = _sent_chars(self.messages)
         deadlines = [d for d in (_deadline_after(settings.DRAFTER_CALL_TIMEOUT_SECONDS), self.turn_deadline) if d]
         deadline = min(deadlines) if deadlines else None
         attempt = 0
@@ -826,4 +840,9 @@ def run_draft(
         yield _failure_event(exc, "The drafting model is not available.")
         return
     turn = _Turn(req, recipe, ws, llm, model["id"], tool_mode=bool(model.get("supports_tools")))
-    yield from turn.run(stop)
+    try:
+        yield from turn.run(stop)
+    finally:
+        # How much context the turn cost: the workspace is resent with every model call.
+        logger.info("drafter: %s turn: %d model call(s), workspace %d chars, last call %d chars", recipe.id,
+                    turn.calls, len(fence("Workspace", ws.summary())), turn.sent_chars)
