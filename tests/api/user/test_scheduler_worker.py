@@ -1345,6 +1345,27 @@ class TestRunStartedByHand:
 
         assert self._stored(pg_engine, schedule)["consecutive_failure_count"] == 0
 
+    def test_the_first_scheduled_failure_after_a_failed_manual_run_is_still_notified(
+        self, pg_engine, patched_engine, stub_events, monkeypatch,
+    ):
+        from docsgpt.api.user import scheduler_worker
+
+        notified: list[dict] = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_NOTIFY_RECURRING_FAILURES", True)
+        with pg_engine.begin() as conn:
+            schedule, agent_id = self._schedule(conn)
+            (manual,) = self._runs(conn, schedule, agent_id, 1, "manual")
+            cron = ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now() + timedelta(hours=1),
+            )
+
+        _execute_with(manual, _outcome("", cannot_complete="No CRM tool."))
+        assert notified == []
+        _execute_with(cron, _outcome("", cannot_complete="No CRM tool."))
+
+        assert [n["kind"] for n in notified] == ["schedule_failed"]
+
 
 # What the fake provider reports for each agent node's one call.
 _NODE_CALLS = {"Fetch prices": (1200, 300), "Write summary": (900, 250)}
