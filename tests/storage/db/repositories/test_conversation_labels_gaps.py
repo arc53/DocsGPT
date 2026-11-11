@@ -88,15 +88,21 @@ class TestGapTypeGroups:
         start, end, previous_start = _window()
         repo = ConversationLabelsRepository(pg_conn)
         # The summary as it was: every turn expanded to every gap type, then grouped.
-        params = {"start": start, "end": end, "prev_start": previous_start, "limit": 50, "min_expected": 0.0}
-        cte = repo._gaps_cte("topic" if by_topic else "all", scope, schema.SCHEMA_HASH, params, SUMMARY_GAP_TYPES)
+        params = {"start": start, "end": end, "prev_start": previous_start, "limit": 50, "min_expected": 0.0,
+                  "gap_types": list(SUMMARY_GAP_TYPES)}
+        cte = repo._gaps_cte("topic" if by_topic else "all", scope, schema.SCHEMA_HASH, params)
         expanded = [dict(r._mapping) for r in pg_conn.execute(text(f"""
-            WITH g AS ({cte})
-            SELECT key AS topic, gap_type, COALESCE(SUM(p) FILTER (WHERE current), 0) AS expected,
+            WITH g AS ({cte}),
+            x AS (
+                SELECT g.*, gt.gap_type,
+                       COALESCE((g.probabilities->>gt.gap_type)::float8, 0) * g.weight AS typed
+                FROM g CROSS JOIN unnest(CAST(:gap_types AS text[])) AS gt(gap_type)
+            )
+            SELECT key AS topic, gap_type, COALESCE(SUM(typed) FILTER (WHERE current), 0) AS expected,
                    COALESCE(SUM(weight) FILTER (WHERE current), 0) AS turns,
-                   COALESCE(SUM(p) FILTER (WHERE NOT current), 0) AS previous,
+                   COALESCE(SUM(typed) FILTER (WHERE NOT current), 0) AS previous,
                    array_agg(DISTINCT model_version) FILTER (WHERE current) AS versions
-            FROM g GROUP BY key, gap_type
+            FROM x GROUP BY key, gap_type
             HAVING COALESCE(SUM(p) FILTER (WHERE current), 0) >= :min_expected
             ORDER BY expected DESC, key NULLS LAST, gap_type LIMIT :limit
         """), params).fetchall()]

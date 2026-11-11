@@ -1072,32 +1072,29 @@ class ConversationLabelsRepository:
         return [dict(row._mapping) for row in result.fetchall()]
 
     def _gaps_cte(self, group_by: str, scope: Scope, schema_hash: str, params: Dict[str, Any],
-                  gap_types: Optional[Iterable[str]] = None) -> str:
+                  gap_type: str = "docs missing") -> str:
         """SQL: one row per gap turn and group in ``[:prev_start, :end]``, with its share of the group.
 
         Columns: ``key``, ``name``, ``source_id`` (the turn's first stored source; ``NULL`` by topic),
-        ``message_id``, ``conversation_id``, ``occurred_at``, ``model_version``, ``current`` (in
-        ``[:start, :end]``), ``gap_type``, ``gap`` (the turn's probability of that gap type), ``weight`` (its share
-        of the group: its effective-topic probability, else 1), ``p`` (``gap * weight``) and ``usual`` (the group
-        is the turn's most likely one).
+        ``message_id``, ``conversation_id``, ``occurred_at``, ``model_version``, ``probabilities`` (every gap
+        type's), ``current`` (in ``[:start, :end]``), ``gap`` (the turn's probability of ``gap_type``), ``weight``
+        (its share of the group: its effective-topic probability, else 1), ``p`` (``gap * weight``) and ``usual``
+        (the group is the turn's most likely one).
 
         Args:
             group_by: ``topic``, ``source``, ``page``, or ``all`` (one group, key ``NULL``, of every turn).
             scope: Whose labels.
             schema_hash: The running label schema.
             params: The query's parameters, extended in place.
-            gap_types: One row per turn, group and each of these gap types; None reads ``docs missing`` only.
+            gap_type: The gap type ``gap`` and ``p`` read.
         """
         params["schema_hash"] = schema_hash
+        params["gap_type"] = gap_type
         where = (f"{scope.labels('g', params)} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash"
                  " AND g.occurred_at >= :prev_start AND g.occurred_at <= :end")
-        types, gap, gap_type = "", "(g.probabilities->>'docs missing')::float8", "'docs missing'::text"
-        if gap_types is not None:
-            params["gap_types"] = list(gap_types)
-            types = "CROSS JOIN unnest(CAST(:gap_types AS text[])) AS gt(gap_type)"
-            gap, gap_type = "COALESCE((g.probabilities->>gt.gap_type)::float8, 0)", "gt.gap_type"
-        common = ("g.message_id, g.conversation_id, g.occurred_at, g.model_version, g.occurred_at >= :start AS current,"
-                  f" {gap_type} AS gap_type, {gap} AS gap")
+        gap = "COALESCE((g.probabilities->>:gap_type)::float8, 0)"
+        common = ("g.message_id, g.conversation_id, g.occurred_at, g.model_version, g.probabilities,"
+                  f" g.occurred_at >= :start AS current, {gap} AS gap")
         if group_by == "topic":
             return f"""
                 SELECT t.key, t.key AS name, NULL::text AS source_id, {common}, t.value::float8 AS weight,
@@ -1107,7 +1104,6 @@ class ConversationLabelsRepository:
                     ON te.message_id = g.message_id AND te.label = 'topic_effective'
                    AND te.schema_hash = :schema_hash
                 CROSS JOIN LATERAL jsonb_each_text(te.probabilities) AS t(key, value)
-                {types}
                 WHERE {where}
             """
         if group_by == "all":
@@ -1115,7 +1111,6 @@ class ConversationLabelsRepository:
                 SELECT NULL::text AS key, NULL::text AS name, NULL::text AS source_id, {common},
                        1.0::float8 AS weight, {gap} AS p, true AS usual
                 FROM conversation_labels g
-                {types}
                 WHERE {where}
             """
         key, name = _GAP_KEYS[group_by]
@@ -1125,7 +1120,6 @@ class ConversationLabelsRepository:
                    {gap} AS p, true AS usual
             FROM conversation_labels g
             LEFT JOIN conversation_messages m ON m.id = g.message_id
-            {types}
             WHERE {where}
         """
 
@@ -1195,9 +1189,8 @@ class ConversationLabelsRepository:
             weights, or every labelled turn), ``previous`` and ``versions`` (the models of its rows).
         """
         params: Dict[str, Any] = {"start": start, "end": end, "prev_start": previous_start, "limit": int(limit),
-                                  "min_expected": float(min_expected), "schema_hash": schema_hash}
-        where = (f"{scope.labels('g', params)} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash"
-                 " AND g.occurred_at >= :prev_start AND g.occurred_at <= :end")
+                                  "min_expected": float(min_expected)}
+        turns = self._gaps_cte("topic" if by_topic else "all", scope, schema_hash, params)
         # One pass over the turns, each gap type summed in its own column; only the per-topic sums are then
         # turned into one row per gap type, so a pair's summed weights are its topic's.
         for i, gap_type in enumerate(SUMMARY_GAP_TYPES):
@@ -1209,24 +1202,6 @@ class ConversationLabelsRepository:
             for i in range(len(SUMMARY_GAP_TYPES))
         )
         pairs = ", ".join(f"(CAST(:gt{i} AS text), s.e{i}, s.p{i})" for i in range(len(SUMMARY_GAP_TYPES)))
-        if by_topic:
-            turns = f"""
-                SELECT t.key, t.value::float8 AS weight, g.occurred_at >= :start AS current, g.model_version,
-                       g.probabilities
-                FROM conversation_labels g
-                JOIN conversation_labels te
-                    ON te.message_id = g.message_id AND te.label = 'topic_effective'
-                   AND te.schema_hash = :schema_hash
-                CROSS JOIN LATERAL jsonb_each_text(te.probabilities) AS t(key, value)
-                WHERE {where}
-            """
-        else:
-            turns = f"""
-                SELECT NULL::text AS key, 1.0::float8 AS weight, g.occurred_at >= :start AS current,
-                       g.model_version, g.probabilities
-                FROM conversation_labels g
-                WHERE {where}
-            """
         result = self._conn.execute(
             text(
                 f"""
@@ -1251,6 +1226,34 @@ class ConversationLabelsRepository:
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
+    def _count_gap_rows(self, count: str, scope: Scope, schema_hash: str, start: datetime.datetime,
+                        end: datetime.datetime, end_op: str) -> int:
+        """SQL ``count`` over the scope's ``gap_type`` rows from ``start`` to ``end``.
+
+        Args:
+            count: The aggregate, such as ``COUNT(*)``.
+            scope: Whose labels.
+            schema_hash: The running label schema.
+            start: The window's start.
+            end: The window's end.
+            end_op: ``<=`` to count rows at ``end``, ``<`` to leave them out.
+
+        Returns:
+            The count.
+        """
+        params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end}
+        where = scope.labels("g", params)
+        return int(self._conn.execute(
+            text(
+                f"""
+                SELECT {count} FROM conversation_labels g
+                WHERE {where} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash
+                  AND g.occurred_at >= :start AND g.occurred_at {end_op} :end
+                """
+            ),
+            params,
+        ).scalar() or 0)
+
     def gap_conversations(self, scope: Scope, schema_hash: str, start: datetime.datetime,
                           end: datetime.datetime) -> int:
         """Conversations with a labelled turn (a ``gap_type`` row) in ``[start, end]``: those Insights analysed.
@@ -1264,18 +1267,7 @@ class ConversationLabelsRepository:
         Returns:
             The count of distinct conversations.
         """
-        params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end}
-        where = scope.labels("g", params)
-        return int(self._conn.execute(
-            text(
-                f"""
-                SELECT COUNT(DISTINCT g.conversation_id) FROM conversation_labels g
-                WHERE {where} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash
-                  AND g.occurred_at >= :start AND g.occurred_at <= :end
-                """
-            ),
-            params,
-        ).scalar() or 0)
+        return self._count_gap_rows("COUNT(DISTINCT g.conversation_id)", scope, schema_hash, start, end, "<=")
 
     def gap_labelled(self, scope: Scope, schema_hash: str, start: datetime.datetime,
                      end: datetime.datetime) -> int:
@@ -1293,18 +1285,7 @@ class ConversationLabelsRepository:
         Returns:
             The count of the window's ``gap_type`` rows.
         """
-        params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end}
-        where = scope.labels("g", params)
-        return int(self._conn.execute(
-            text(
-                f"""
-                SELECT COUNT(*) FROM conversation_labels g
-                WHERE {where} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash
-                  AND g.occurred_at >= :start AND g.occurred_at < :end
-                """
-            ),
-            params,
-        ).scalar() or 0)
+        return self._count_gap_rows("COUNT(*)", scope, schema_hash, start, end, "<")
 
     def gap_examples(
         self, group_by: str, scope: Scope, schema_hash: str, start, end, keys: Iterable[Optional[str]],
@@ -1326,8 +1307,7 @@ class ConversationLabelsRepository:
         params: Dict[str, Any] = {"start": start, "end": end, "prev_start": start, "keys": named,
                                   "with_null": None in keys, "min_p": float(min_probability),
                                   "per_group": int(per_group)}
-        cte = self._gaps_cte(group_by, scope, schema_hash, params,
-                             None if gap_type == "docs missing" else (gap_type,))
+        cte = self._gaps_cte(group_by, scope, schema_hash, params, gap_type)
         result = self._conn.execute(
             text(
                 f"""
