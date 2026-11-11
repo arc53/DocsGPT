@@ -1,0 +1,12 @@
+key: mcp:atlassian
+rank: 30
+name: Jira & Confluence
+description: Search and update Jira issues and Confluence pages.
+icon: atlassian
+category: projects
+# Shown on the Confluence card, next to syncing pages into Knowledge.
+part_of: confluence
+mcp_url: https://mcp.atlassian.com/v1/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/

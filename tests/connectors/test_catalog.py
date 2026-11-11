@@ -202,17 +202,16 @@ class TestPresets:
         assert definition.docs_url == "https://resend.com/docs/knowledge-base/mcp-server"
 
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
-        presets = tmp_path / "mcp.yaml"
-        presets.write_text(
-            "- key: mcp:example\n"
-            "  name: Example\n"
-            "  description: Example records.\n"
-            "  icon: example\n"
-            "  category: knowledge\n"
-            "  mcp_url: https://mcp.example.com/mcp\n"
-            "  auth_kind: mcp_oauth\n"
+        (tmp_path / "example.yaml").write_text(
+            "key: mcp:example\n"
+            "name: Example\n"
+            "description: Example records.\n"
+            "icon: example\n"
+            "category: knowledge\n"
+            "mcp_url: https://mcp.example.com/mcp\n"
+            "auth_kind: mcp_oauth\n"
         )
-        monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
+        monkeypatch.setattr(catalog, "_PRESETS_DIR", tmp_path)
         definition = catalog.get_definition("mcp:example")
         assert definition.publisher == "preset"
         assert definition.mcp_base_url == "https://mcp.example.com"
@@ -352,15 +351,14 @@ def test_presets_without_default_actions_turn_every_action_on():
 
 
 def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
-    presets = tmp_path / "mcp.yaml"
-    presets.write_text(
-        "- key: mcp:example\n"
-        "  name: Example\n"
-        "  description: Example records.\n"
-        "  mcp_url: https://mcp.example.com/mcp\n"
-        "  default_actions: [search, fetch]\n"
+    (tmp_path / "example.yaml").write_text(
+        "key: mcp:example\n"
+        "name: Example\n"
+        "description: Example records.\n"
+        "mcp_url: https://mcp.example.com/mcp\n"
+        "default_actions: [search, fetch]\n"
     )
-    monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
+    monkeypatch.setattr(catalog, "_PRESETS_DIR", tmp_path)
 
     assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")
 def test_neon_preset_uses_remote_oauth_catalog_contract():
@@ -403,7 +401,7 @@ def test_twelvedata_preset_uses_remote_oauth_catalog_contract():
 
 def test_presets_have_unique_keys_and_servers():
     """A repeated key overwrites a preset and a repeated host makes preset_for_url pick one."""
-    entries = yaml.safe_load(catalog._PRESETS_FILE.read_text(encoding="utf-8"))
+    entries = catalog._read_preset_files()
     keys = [entry["key"] for entry in entries]
     hosts = [catalog.base_url(entry["mcp_url"]) for entry in entries]
 
@@ -418,3 +416,64 @@ def test_cloudflare_preset_signs_in_with_mcp_oauth():
     assert cloudflare.auth_kind == "mcp_oauth"
     assert cloudflare.capabilities == ("read",)
     assert catalog.preset_for_url("https://mcp.cloudflare.com/mcp").key == "mcp:cloudflare"
+
+
+
+# One file per preset under docsgpt/connectors/presets/mcp/. The tests below
+# hold for every preset, so adding a server needs a file there and no test here.
+
+
+def _preset_yaml(name: str, **fields: object) -> str:
+    entry = {"key": f"mcp:{name}", "name": name.title(), "description": "d", "mcp_url": f"https://{name}.example.com/mcp"}
+    return yaml.safe_dump({**entry, **fields})
+
+
+def test_each_preset_is_one_file_named_after_its_key():
+    files = sorted(catalog._PRESETS_DIR.glob("*.yaml"))
+
+    assert files, "no preset files found"
+    assert [f"mcp:{file.stem}" for file in files] == sorted(entry["key"] for entry in catalog._read_preset_files())
+
+
+def test_ranked_presets_come_first_then_the_rest_by_name(tmp_path):
+    (tmp_path / "zeta.yaml").write_text(_preset_yaml("zeta"))
+    (tmp_path / "alpha.yaml").write_text(_preset_yaml("alpha"))
+    (tmp_path / "second.yaml").write_text(_preset_yaml("second", rank=20))
+    (tmp_path / "first.yaml").write_text(_preset_yaml("first", rank=10))
+
+    assert [preset.key for preset in catalog._load_presets(tmp_path)] == [
+        "mcp:first",
+        "mcp:second",
+        "mcp:alpha",
+        "mcp:zeta",
+    ]
+
+
+def test_a_preset_file_named_differently_from_its_key_is_refused(tmp_path):
+    (tmp_path / "other.yaml").write_text(_preset_yaml("example"))
+
+    with pytest.raises(ValueError, match="must have key mcp:other"):
+        catalog._load_presets(tmp_path)
+
+
+def test_a_preset_file_holding_a_list_is_refused(tmp_path):
+    (tmp_path / "example.yaml").write_text("- key: mcp:example\n")
+
+    with pytest.raises(ValueError, match="one preset as a mapping"):
+        catalog._load_presets(tmp_path)
+
+
+def test_a_missing_presets_folder_gives_no_presets(tmp_path):
+    assert catalog._load_presets(tmp_path / "absent") == ()
+
+
+@pytest.mark.parametrize("preset", [d for d in catalog.all_definitions() if d.publisher == "preset"], ids=lambda d: d.key)
+def test_every_preset_meets_the_catalog_contract(preset):
+    assert preset.key.startswith("mcp:")
+    assert preset.name and preset.description
+    assert preset.mcp_url.startswith("https://")
+    assert preset.category in catalog.CATEGORIES
+    assert preset.auth_kind in ("mcp_oauth", "mcp")
+    assert set(preset.capabilities) <= {"sync", "read", "write"}
+    assert preset.tool_templates == ("mcp_tool",)
+    assert catalog.preset_for_url(preset.mcp_url).key == preset.key

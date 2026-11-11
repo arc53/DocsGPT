@@ -1,0 +1,10 @@
+key: mcp:calcom
+rank: 120
+name: Cal.com
+description: Read and manage your Cal.com bookings, event types, availability and schedules.
+icon: calcom
+category: business
+mcp_url: https://mcp.cal.com/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://cal.com/docs/mcp-server
