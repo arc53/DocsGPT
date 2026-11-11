@@ -1893,7 +1893,8 @@
         "done": "Fertig",
         "createTool": "Tool für Agenten erstellen",
         "toolCreated": "Tool erstellt. Du findest es unter Einstellungen › Tools und kannst es einem Agenten hinzufügen.",
-        "toolFailed": "Das Tool konnte nicht erstellt werden."
+        "toolFailed": "Das Tool konnte nicht erstellt werden.",
+        "toolSomeOff": "Löschen und das Befragen eines anderen Agenten sind zunächst ausgeschaltet. Schalte diese Aktionen bei Bedarf im Tool ein."
       },
       "regenerate": {
         "action": "Neu generieren",
