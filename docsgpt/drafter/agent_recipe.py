@@ -439,6 +439,14 @@ def saved_prompt_text(conn, user_id: str, prompt_id: str) -> Optional[str]:
     return clean_text(content, len(content)) if isinstance(content, str) and content else None
 
 
+def _form_refs(form: dict) -> dict[str, list[str]]:
+    """What the form already uses, by kind: the overview lists these whatever its caps, since the form names
+    them by id only."""
+    draft = form.get("prompt_draft") or {}
+    prompts = [pid for pid in (form.get("prompt_id"), draft.get("id")) if pid]
+    return {"sources": list(form.get("sources") or []), "tools": list(form.get("tools") or []), "prompts": prompts}
+
+
 def _load(user_id: str, context: dict) -> AgentWorkspace:
     """The caller's workspace plus what this request's step needs, read in one read-only transaction.
 
@@ -453,7 +461,7 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
     # The instance's switches first: the decision model's status needn't hold a connection.
     menu, insights = guardrail_menu(), topics_recipe.insights_on_here()
     with db_readonly() as conn:
-        ws = read_workspace(conn, user_id, context.get("agent_id"))
+        ws = read_workspace(conn, user_id, context.get("agent_id"), pinned=_form_refs(form))
         out = AgentWorkspace(**vars(ws), guardrail_menu=menu, insights=insights,
                              max_topics=int(settings.ANALYTICS_MAX_TOPICS))
         editable = _editable_prompt(form, ws)

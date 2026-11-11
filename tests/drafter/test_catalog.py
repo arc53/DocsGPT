@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import text
 
 from docsgpt.api.user.resource_access import set_settings
 from docsgpt.drafter.catalog import load_models, read_workspace
@@ -50,10 +51,16 @@ def _tool(conn, owner, name="api_tool", **kwargs):
     return UserToolsRepository(conn).create(owner, name, **{**defaults, **kwargs})
 
 
-def _load(conn, user=ALICE, agent_id=None):
-    ws = read_workspace(conn, user, agent_id)
+def _load(conn, user=ALICE, agent_id=None, pinned=None):
+    ws = read_workspace(conn, user, agent_id, pinned=pinned)
     load_models(user, ws)
     return ws
+
+
+def _age(conn, table, row, days):
+    """Make ``row`` ``days`` older: rows created in one transaction share ``created_at``."""
+    conn.execute(text(f"UPDATE {table} SET created_at = now() - make_interval(days => :d) WHERE id = :id"),
+                 {"d": days, "id": row["id"]})
 
 
 @pytest.mark.unit
@@ -242,6 +249,52 @@ class TestOverview:
         assert "SECRET-TEXT" not in dumped and "search_docs" not in dumped
         assert all(set(t) <= {"id", "name", "kind", "description", "shared"} for t in ws.tools)
 
+    def test_the_overview_lists_the_newest_rows_up_to_its_caps(self, pg_conn, monkeypatch):
+        from docsgpt.drafter import catalog
+
+        assert (catalog.MAX_SOURCES, catalog.MAX_TOOLS, catalog.MAX_PROMPTS) == (25, 20, 15)
+        for kind in ("MAX_SOURCES", "MAX_TOOLS", "MAX_PROMPTS"):
+            monkeypatch.setattr(catalog, kind, 2)
+        for age in (2, 1, 0):
+            _age(pg_conn, "sources", _source(pg_conn, f"S{age}", ALICE), age)
+            _age(pg_conn, "user_tools", _tool(pg_conn, ALICE, display_name=f"T{age}"), age)
+            _age(pg_conn, "prompts", PromptsRepository(pg_conn).create(ALICE, f"P{age}", "Be kind."), age)
+        ws = _load(pg_conn)
+        assert [s["name"] for s in ws.sources] == ["S0", "S1"]
+        assert [t["name"] for t in ws.tools if t["kind"] != "built-in"] == ["T0", "T1"]
+        assert [p["name"] for p in ws.prompts if p["kind"] != "built-in"] == ["P0", "P1"]
+        assert ws.hidden == {"sources": 1, "tools": 1, "prompts": 1} == ws.summary()["not_shown"]
+        assert all(len(ws.ids(kind)) >= 3 for kind in ("sources", "tools", "prompts"))
+        # Built-in tools and prompts are in memory: each is listed beside the capped rows.
+        assert [p["id"] for p in ws.prompts[:3]] == ["default", "creative", "strict"]
+        assert any(t["kind"] == "built-in" for t in ws.tools)
+
+    def test_what_the_form_uses_is_always_listed(self, pg_conn, monkeypatch):
+        from docsgpt.drafter import catalog
+
+        for kind in ("MAX_SOURCES", "MAX_TOOLS", "MAX_PROMPTS"):
+            monkeypatch.setattr(catalog, kind, 2)
+        sources, tools, prompts = [], [], []
+        for age in (3, 2, 1, 0):
+            sources.append(_source(pg_conn, f"S{age}", ALICE))
+            tools.append(_tool(pg_conn, ALICE, display_name=f"T{age}"))
+            prompts.append(PromptsRepository(pg_conn).create(ALICE, f"P{age}", "Be kind."))
+            _age(pg_conn, "sources", sources[-1], age)
+            _age(pg_conn, "user_tools", tools[-1], age)
+            _age(pg_conn, "prompts", prompts[-1], age)
+        private = _source(pg_conn, "Bob's contracts", BOB)
+        ws = _load(pg_conn, pinned={
+            "sources": [str(sources[0]["id"]), str(private["id"]), "not-an-id"],
+            "tools": [str(tools[0]["id"]), str(tools[1]["id"]), str(tools[2]["id"])],
+            "prompts": [str(prompts[0]["id"]), "strict"],
+        })
+        # The form's rows first count toward the cap; the newest fill what is left of it.
+        assert [s["name"] for s in ws.sources] == ["S0", "S3"]
+        assert [t["name"] for t in ws.tools if t["kind"] != "built-in"] == ["T1", "T2", "T3"]
+        assert [p["name"] for p in ws.prompts if p["kind"] != "built-in"] == ["P0", "P3"]
+        assert ws.hidden == {"sources": 2, "tools": 1, "prompts": 2}
+        assert "Bob" not in json.dumps(ws.summary())
+
     def test_the_catalog_reads_no_prompt_text_and_get_prompt_reads_one_once(self, pg_conn):
         prompt = PromptsRepository(pg_conn).create(ALICE, "Support voice", "You help {{ company }}.")
         PromptsRepository(pg_conn).create(ALICE, "Other", "Unread.")
@@ -305,6 +358,7 @@ class TestOverview:
         context = agent_recipe.parse_context({"form": {"prompt_id": str(used["id"])}})
         with _db(pg_conn), patch.object(agent_recipe, "load_models"):
             ws = agent_recipe.AGENT_RECIPE.load_workspace(ALICE, context)
+        assert str(used["id"]) in {p["id"] for p in ws.prompts}
         assert set(ws.prompt_texts) == {"default", "creative", "strict", str(used["id"])}
         with patch("docsgpt.storage.db.session.db_readonly", side_effect=AssertionError("reads again")):
             data = agent_recipe.context_data(DraftRequest(ALICE, "agent", [], context, "drafter:t"), ws)

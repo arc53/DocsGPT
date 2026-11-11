@@ -337,7 +337,9 @@ class TestAvailability:
         ) as folders, patch.object(agent_recipe, "saved_prompt_text", return_value="Whole.") as prompt:
             ws = AGENT_RECIPE.load_workspace("alice", context)
         assert one_conn.opened == 1
-        read_ws.assert_called_once_with(one_conn.conn, "alice", "a1")
+        # What the form uses is handed over, so the overview lists it whatever its caps.
+        read_ws.assert_called_once_with(one_conn.conn, "alice", "a1",
+                                        pinned={"sources": [SOURCE_ID], "tools": [], "prompts": [PROMPT_ID]})
         prompt.assert_called_once_with(one_conn.conn, "alice", PROMPT_ID)
         # The agent row is read once, and the saved sources and the conversations count reuse it.
         agent.assert_called_once_with(one_conn.conn, "alice", "a1")

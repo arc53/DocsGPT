@@ -26,17 +26,18 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from docsgpt.drafter.fencing import clean_text
 
 logger = logging.getLogger(__name__)
 
-#: Most rows of each kind the overview lists; the rest are counted, not shown. Built-in prompts and tools are
+#: Most rows of each kind the overview lists: what the form already uses, then the newest. The rest are counted,
+#: not shown, so the overview stays the same size however large the workspace is. Built-in prompts and tools are
 #: listed beside them.
-MAX_SOURCES = 100
-MAX_TOOLS = 60
-MAX_PROMPTS = 50
+MAX_SOURCES = 25
+MAX_TOOLS = 20
+MAX_PROMPTS = 15
 MAX_MODELS = 30
 #: Most actions listed per tool, and characters of one action description.
 MAX_ACTIONS = 30
@@ -438,14 +439,23 @@ def source_files(ws: Workspace, source_id: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _overview(conn, ws: Workspace, kind: str, ids: list[str], limit: int) -> list[dict]:
-    """The overview rows of the first ``limit`` of ``ids``; every id counts as the caller's (``ws.attachable``)."""
+def _overview(conn, user_id: str, ws: Workspace, kind: str, ids: list[str], limit: int,
+              pinned: Iterable[str]) -> list[dict]:
+    """The overview rows of ``ids``: the ``pinned`` ones, then the first of the rest until ``limit`` rows are
+    listed, newest first. Every id counts as the caller's (``ws.attachable``), listed or not, and the workspace
+    gets the reader that reads the rest for ``user_id``."""
+    ws.reader = ws.reader or DetailReader(user_id)
     ws.attachable[kind] = ids
-    shown = _cap(ids, limit, kind, ws)
+    known = set(ids)
+    first = {item: None for item in pinned if item in known}
+    rest = [item for item in ids if item not in first]
+    shown = list(first) + rest[:max(0, limit - len(first))]
+    if len(shown) < len(ids):
+        ws.hidden[kind] = len(ids) - len(shown)
     return ws.reader.rows(kind, shown, conn) if shown else []
 
 
-def load_sources(conn, user_id: str, ws: Workspace) -> None:
+def load_sources(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) -> None:
     """Fill ``ws.sources``: the caller's own sources and the team-shared ones they may use.
 
     Every source's id is read to decide which the caller may attach; only the listed ones' names, types and
@@ -454,10 +464,10 @@ def load_sources(conn, user_id: str, ws: Workspace) -> None:
     from docsgpt.storage.db.repositories.sources import SourcesRepository
 
     rows = _attachable_rows(conn, SourcesRepository(conn), "source", user_id)
-    ws.sources = _overview(conn, ws, "sources", [row["id"] for row in rows], MAX_SOURCES)
+    ws.sources = _overview(conn, user_id, ws, "sources", [row["id"] for row in rows], MAX_SOURCES, pinned)
 
 
-def load_tools(conn, user_id: str, ws: Workspace) -> None:
+def load_tools(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) -> None:
     """Fill ``ws.tools`` the way the classic agent picker lists them, without configs, secrets or actions.
 
     The caller's own and team tools are listed by name and description; ``get_tool`` reads the actions of the
@@ -480,7 +490,7 @@ def load_tools(conn, user_id: str, ws: Workspace) -> None:
     for row in builtin_agent_tools_for_management():
         if row.get("name") not in WORKFLOW_ONLY_BUILTINS:
             builtin.setdefault(str(row["id"]), row)
-    listed = _overview(conn, ws, "tools", saved, MAX_TOOLS)
+    listed = _overview(conn, user_id, ws, "tools", saved, MAX_TOOLS, pinned)
     for tool_id, row in builtin.items():
         if is_server_attached_tool(row.get("name")):
             continue
@@ -491,7 +501,7 @@ def load_tools(conn, user_id: str, ws: Workspace) -> None:
     ws.tools = listed
 
 
-def load_prompts(conn, user_id: str, ws: Workspace) -> None:
+def load_prompts(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) -> None:
     """Fill ``ws.prompts``: the built-in prompts, the caller's own, and the team-shared ones they may use.
 
     Saved prompts are listed by name; ``get_prompt`` reads the text of the one it is asked about. The built-in
@@ -506,7 +516,7 @@ def load_prompts(conn, user_id: str, ws: Workspace) -> None:
         ws.prompt_texts[preset] = clean_text(compose_preset(preset), PROMPT_CHARS)
     rows = _attachable_rows(conn, PromptsRepository(conn), "prompt", user_id)
     ws.own_prompts = {row["id"] for row in rows if str(row["user_id"]) == str(user_id)}
-    ws.prompts = presets + _overview(conn, ws, "prompts", [row["id"] for row in rows], MAX_PROMPTS)
+    ws.prompts = presets + _overview(conn, user_id, ws, "prompts", [row["id"] for row in rows], MAX_PROMPTS, pinned)
     ws.attachable["prompts"] = list(PRESET_PROMPTS) + ws.attachable["prompts"]
 
 
@@ -549,7 +559,8 @@ def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> No
     }
 
 
-def read_workspace(conn, user_id: str, agent_id: Optional[str] = None) -> Workspace:
+def read_workspace(conn, user_id: str, agent_id: Optional[str] = None, *,
+                   pinned: Optional[dict[str, list[str]]] = None) -> Workspace:
     """Read the overview of the caller's sources, tools and prompts and the agent being edited through ``conn``;
     models are left out.
 
@@ -557,13 +568,16 @@ def read_workspace(conn, user_id: str, agent_id: Optional[str] = None) -> Worksp
         conn: A read-only connection, for a recipe that reads more in the same transaction.
         user_id: The caller (``decoded_token["sub"]``).
         agent_id: The agent being edited, if any.
+        pinned: Kind -> ids the overview lists whatever its caps (what the form already uses, which the model
+            is given by id only); an id the caller may not attach is still left out.
 
     Returns:
         The workspace, without ``models`` (:func:`load_models` fills them).
     """
-    ws = Workspace(reader=DetailReader(user_id))
-    load_sources(conn, user_id, ws)
-    load_tools(conn, user_id, ws)
-    load_prompts(conn, user_id, ws)
+    pinned = pinned or {}
+    ws = Workspace()
+    load_sources(conn, user_id, ws, pinned.get("sources", ()))
+    load_tools(conn, user_id, ws, pinned.get("tools", ()))
+    load_prompts(conn, user_id, ws, pinned.get("prompts", ()))
     load_agent(conn, user_id, agent_id, ws)
     return ws
