@@ -2406,7 +2406,10 @@
         "clear": "Limpiar",
         "ingestionFailed": "La ingesta falló.",
         "tooManyFiles": "Esta fuente tiene más de {{limit}} archivos, el máximo que admite una fuente. Elige una carpeta, ruta o selección más pequeña.",
-        "tooManyTokens": "Esta fuente tiene más de {{limit}} tokens de texto, el máximo que admite una fuente. Divídela en fuentes más pequeñas."
+        "tooManyTokens": "Esta fuente tiene más de {{limit}} tokens de texto, el máximo que admite una fuente. Divídela en fuentes más pequeñas.",
+        "partialDownload_one": "No se pudo descargar {{count}} elemento, así que se omitió. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_many": "No se pudieron descargar {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_other": "No se pudieron descargar {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo."
       },
       "ingestors": {
         "local_file": {

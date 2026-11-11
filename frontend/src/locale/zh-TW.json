@@ -2312,7 +2312,9 @@
         "clear": "清除",
         "ingestionFailed": "匯入失敗。",
         "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
-        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。"
+        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。",
+        "partialDownload_one": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。",
+        "partialDownload_other": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。"
       },
       "ingestors": {
         "local_file": {

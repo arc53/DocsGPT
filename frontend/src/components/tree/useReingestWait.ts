@@ -3,6 +3,7 @@ import { useStore } from 'react-redux';
 
 import type { SSEEvent } from '../../notifications/notificationsSlice';
 import type { RootState } from '../../store';
+import { itemsNotDownloaded } from '../../upload/uploadSlice';
 
 const MAX_WAIT_MS = 5 * 60_000;
 /**
@@ -21,13 +22,16 @@ export type ReingestTerminal = 'completed' | 'failed' | 'timeout' | 'unmounted';
  * `failedPages` (their addresses; empty when every page came in). A
  * finished Website page change (add, refresh, remove) lists the tree paths
  * it wrote or removed in `paths`; null when the event doesn't say (a sync, a
- * rebuild, an upload), so any file may have changed.
+ * rebuild, an upload), so any file may have changed. A connector sync that
+ * finished without some of its files or folders (they failed to download)
+ * counts them in `itemsNotDownloaded`; 0 otherwise.
  */
 export interface ReingestOutcome {
   terminal: ReingestTerminal;
   reason: string | null;
   failedPages: string[];
   paths: string[] | null;
+  itemsNotDownloaded: number;
 }
 
 /** An outcome that carries no event: an unmount or a timeout. */
@@ -36,6 +40,7 @@ const bare = (terminal: ReingestTerminal): ReingestOutcome => ({
   reason: null,
   failedPages: [],
   paths: null,
+  itemsNotDownloaded: 0,
 });
 
 /** The non-empty strings in a list, or null when it isn't one. */
@@ -181,6 +186,7 @@ export function useReingestSseWaiter() {
               reason: typeof reason === 'string' ? reason : null,
               failedPages: stringsOf(event.payload?.failed_pages) ?? [],
               paths: stringsOf(event.payload?.paths),
+              itemsNotDownloaded: itemsNotDownloaded(event.payload ?? {}),
             };
           }
           return null;
