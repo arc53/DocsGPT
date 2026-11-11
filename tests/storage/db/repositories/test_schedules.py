@@ -239,7 +239,10 @@ class TestListDue:
             cron="* * * * *", next_run_at=_now() - timedelta(seconds=10),
         )
 
-        assert waiting["id"] not in [r["id"] for r in repo.list_due(limit=1)]
+        # The slot goes to a schedule that can run, not to nothing.
+        batch = [r["id"] for r in repo.list_due(limit=1)]
+        assert len(batch) == 1
+        assert waiting["id"] not in batch
         assert later["id"] in [r["id"] for r in repo.list_due()]
 
 
