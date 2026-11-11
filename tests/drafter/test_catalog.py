@@ -181,9 +181,33 @@ class TestToolDetail:
         structure = {"guides": {"returns.md": {"token_count": 10}}, "faq.md": {"token_count": 5}}
         source = _source(pg_conn, "Help Center", ALICE, structure=structure)
         ws = _load(pg_conn)
-        detail = run_read_tool("get_source", ws, {"source_id": str(source["id"])})
+        with _db(pg_conn):
+            detail = run_read_tool("get_source", ws, {"source_id": str(source["id"])})
         assert detail["files"] == 2
         assert sorted(detail["file_paths"]) == ["faq.md", "guides/returns.md"]
+
+    def test_the_catalog_reads_no_source_tree_and_get_source_reads_one_once(self, pg_conn):
+        source = _source(pg_conn, "Help Center", ALICE, structure={"faq.md": {"token_count": 5}})
+        _source(pg_conn, "Other", ALICE, structure={"b.md": {"token_count": 5}})
+        repo = SourcesRepository
+        with patch.object(repo, "list_for_user", side_effect=AssertionError("reads every column")), patch.object(
+            repo, "get_directory_structure", autospec=True, side_effect=repo.get_directory_structure
+        ) as tree:
+            ws = _load(pg_conn)
+            assert tree.call_count == 0
+            assert all("files" not in row for row in ws.summary()["sources"])
+            with _db(pg_conn):
+                first = run_read_tool("get_source", ws, {"source_id": str(source["id"])})
+                again = run_read_tool("get_source", ws, {"source_id": str(source["id"])})
+        assert first == again and first["file_paths"] == ["faq.md"] and first["files"] == 1
+        assert tree.call_count == 1
+
+    def test_a_source_tree_that_cant_be_read_is_an_error_for_the_model(self, pg_conn):
+        source = _source(pg_conn, "Help Center", ALICE, structure={"faq.md": {}})
+        ws = _load(pg_conn)
+        with patch.object(SourcesRepository, "get_directory_structure", side_effect=RuntimeError("db")), _db(pg_conn):
+            detail = run_read_tool("get_source", ws, {"source_id": str(source["id"])})
+        assert "error" in detail and "file_paths" not in detail
 
 
 @pytest.mark.unit

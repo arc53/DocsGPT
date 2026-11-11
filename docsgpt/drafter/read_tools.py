@@ -3,7 +3,8 @@
 Most are lookups in the :class:`~docsgpt.drafter.catalog.Workspace` loaded for
 the caller before the draft started, so a tool can only return what the
 caller may open, and never touches the database or anything with side
-effects. The Insights reads (``get_gap_examples``, ``get_conversations``) are
+effects. ``get_source`` reads the one source's file tree it is asked about
+(the catalog leaves trees out), only for a source the workspace shows. The Insights reads (``get_gap_examples``, ``get_conversations``) are
 live but go through the workspace's ``insights_reader``, built for the one
 agent the caller may edit, and return a few capped rows of its conversations.
 Results go back to the model fenced as data; a result's ``shown`` is what the
@@ -15,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional
 
-from docsgpt.drafter.catalog import Workspace
+from docsgpt.drafter.catalog import source_files, Workspace
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.storage.db.repositories.conversation_labels import LOG_LABELS, SUMMARY_GAP_TYPES
 
@@ -41,7 +42,7 @@ def get_prompt(ws: Workspace, args: dict) -> dict:
 
 
 def get_source(ws: Workspace, args: dict) -> dict:
-    """A source's details: its catalog row and up to 50 of its file paths.
+    """A source's details: its catalog row, how many files it lists and up to 50 of their paths.
 
     A workspace that caps the turn's source reads (``source_reads_left``, the agent recipe's improve mode) counts
     each read down and refuses the ones past it.
@@ -55,7 +56,10 @@ def get_source(ws: Workspace, args: dict) -> dict:
         if left <= 0:
             return {"error": "You have read enough sources for this turn: draft from what you read."}
         ws.source_reads_left = left - 1
-    return {**row, "file_paths": ws.source_files.get(source_id, [])}
+    files = source_files(ws, source_id)
+    if files is None:
+        return {"error": "This source's files could not be read right now. Go by its name."}
+    return {**row, **files}
 
 
 def get_tool(ws: Workspace, args: dict) -> dict:

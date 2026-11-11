@@ -451,6 +451,75 @@ class SourcesRepository:
         result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """Every source ``list_for_user`` lists, as ``{id, user_id}`` only, in its default order (newest first).
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any source's
+        JSONB columns.
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+
+        Returns:
+            ``{"id", "user_id"}`` dicts with string ids.
+        """
+        stmt = (
+            select(sources_table.c.id, sources_table.c.user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [{"id": str(row.id), "user_id": row.user_id} for row in self._conn.execute(stmt)]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The scalar fields of the sources ``ids`` names, with their ingest status, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Source ids.
+
+        Returns:
+            ``{"id", "user_id", "name", "type", "ingest_status"}`` dicts with string ids.
+        """
+        uuids = _coerce_uuid_ids(ids)
+        if not uuids:
+            return []
+        stmt = (
+            select(
+                sources_table.c.id, sources_table.c.user_id, sources_table.c.name, sources_table.c.type,
+                _ingest_status_case(),
+            )
+            .select_from(
+                sources_table.outerjoin(
+                    ingest_chunk_progress_table, ingest_chunk_progress_table.c.source_id == sources_table.c.id
+                )
+            )
+            .where(sources_table.c.id.in_(uuids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [
+            {"id": str(row.id), "user_id": row.user_id, "name": row.name, "type": row.type,
+             "ingest_status": row.ingest_status}
+            for row in self._conn.execute(stmt)
+        ]
+
+    def get_directory_structure(self, source_id: str) -> Optional[dict]:
+        """One source's ``directory_structure``, with no access check: the caller has already made one.
+
+        Args:
+            source_id: The source's id.
+
+        Returns:
+            The stored tree, or None when it has none or there is no such source.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        return self._conn.execute(
+            text("SELECT directory_structure FROM sources WHERE id = CAST(:id AS uuid)"), {"id": str(source_id)}
+        ).scalar()
+
     def count_for_user(
         self,
         user_id: str,

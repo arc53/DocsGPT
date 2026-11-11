@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from docsgpt.drafter.fencing import clean_text
 
@@ -52,7 +52,7 @@ class Workspace:
     """The caller's workspace as the drafter sees it.
 
     Attributes:
-        sources: Compact source rows ``{id, name, type, files?, shared?, status?}``.
+        sources: Compact source rows ``{id, name, type, shared?, status?}``.
         tools: Compact tool rows ``{id, name, kind, description?, actions: [{name, description?}]}``.
         prompts: Compact prompt rows ``{id, name, kind, preview?, template?}``.
         models: ``{id, name}`` rows of the models the caller can pick.
@@ -60,7 +60,10 @@ class Workspace:
         policy_editable: Whether the caller may change the agent's guardrails and limits (``edit_policy``, the
             rule the agent update route applies); True for a new agent, which the caller will own.
         prompt_texts: Prompt id -> full text (capped), for ``get_prompt``.
-        source_files: Source id -> file paths (capped), for ``get_source``.
+        source_files: Source id -> file paths (capped), for ``get_source``; filled as it reads each tree.
+        source_file_counts: Source id -> how many files its tree lists, beside ``source_files``.
+        source_reader: Reads a shown source's ``directory_structure`` by id for ``get_source``; the catalog
+            reads no tree itself. None for a workspace built in memory.
         tool_details: Tool id -> actions with full descriptions, for ``get_tool``.
         hidden: Kind -> rows left out over the caps.
         over_cap: Kind -> ids of the rows left out over the caps: not shown to the model, still the caller's.
@@ -75,6 +78,8 @@ class Workspace:
     policy_editable: bool = True
     prompt_texts: dict[str, str] = field(default_factory=dict)
     source_files: dict[str, list[str]] = field(default_factory=dict)
+    source_file_counts: dict[str, int] = field(default_factory=dict)
+    source_reader: Optional[Callable[[str], Any]] = None
     tool_details: dict[str, dict] = field(default_factory=dict)
     hidden: dict[str, int] = field(default_factory=dict)
     over_cap: dict[str, set[str]] = field(default_factory=dict)
@@ -137,35 +142,84 @@ def _file_paths(structure: Any) -> list[str]:
 
 
 def load_sources(conn, user_id: str, ws: Workspace) -> None:
-    """Fill ``ws.sources``: the caller's own sources and the team-shared ones they may use."""
+    """Fill ``ws.sources``: the caller's own sources and the team-shared ones they may use.
+
+    Every source's id is read to decide which the caller may attach (all of them count for ``ws.ids``); only
+    the shown ones' names, types and statuses are read, and no source's file tree: ``get_source`` reads the
+    one it is asked about (``ws.source_reader``).
+    """
     from docsgpt.api.user.resource_access import settings_many
     from docsgpt.api.user.team_sharing import visible_with_access
-    from docsgpt.parser.remote.website_tree import count_pages
     from docsgpt.storage.db.repositories.sources import SourcesRepository
 
     team = visible_with_access(conn, user_id, "source")
-    rows = SourcesRepository(conn).list_for_user(user_id, extra_ids=list(team))
-    shared_ids = [str(r["id"]) for r in rows if str(r.get("user_id")) != str(user_id)]
+    repo = SourcesRepository(conn)
+    rows = repo.list_ids_for_user(user_id, extra_ids=list(team))
+    shared_ids = [r["id"] for r in rows if str(r["user_id"]) != str(user_id)]
     switches = settings_many(conn, "source", shared_ids)
+    attachable = [
+        row for row in rows
+        if str(row["user_id"]) == str(user_id) or _attachable("source", team.get(row["id"]), switches.get(row["id"]))
+    ]
+    shown = _cap(attachable, MAX_SOURCES, "sources", ws)
     out: list[dict] = []
-    for row in rows:
-        sid = str(row["id"])
-        shared = str(row.get("user_id")) != str(user_id)
-        if shared and not _attachable("source", team.get(sid), switches.get(sid)):
-            continue
-        entry: dict[str, Any] = {"id": sid, "name": clean_text(row.get("name"), NAME_CHARS)}
+    for row in repo.list_brief([r["id"] for r in shown]):
+        entry: dict[str, Any] = {"id": row["id"], "name": clean_text(row.get("name"), NAME_CHARS)}
         if row.get("type"):
             entry["type"] = clean_text(str(row.get("type")), 40)
-        structure = row.get("directory_structure")
-        if isinstance(structure, dict) and structure:
-            entry["files"] = count_pages(structure)
-            ws.source_files[sid] = _file_paths(structure)
-        if shared:
+        if str(row.get("user_id")) != str(user_id):
             entry["shared"] = True
         if row.get("ingest_status"):
             entry["status"] = str(row.get("ingest_status"))
         out.append(entry)
-    ws.sources = _cap(out, MAX_SOURCES, "sources", ws)
+    ws.sources = out
+    ws.source_reader = _source_tree_reader(frozenset(row["id"] for row in out))
+
+
+def _source_tree_reader(shown: frozenset[str]) -> Callable[[str], Any]:
+    """Reads the ``directory_structure`` of one of the ``shown`` sources (the caller's access was checked when
+    they were listed); any other id reads nothing."""
+
+    def read(source_id: str) -> Any:
+        if source_id not in shown:
+            return None
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.session import db_readonly
+
+        with db_readonly() as conn:
+            return SourcesRepository(conn).get_directory_structure(source_id)
+
+    return read
+
+
+def source_files(ws: Workspace, source_id: str) -> Optional[dict]:
+    """``{files?, file_paths}`` of a shown source for ``get_source``: its tree is read on the first ask, then kept.
+
+    Args:
+        ws: The turn's workspace.
+        source_id: A source in ``ws.sources``.
+
+    Returns:
+        The file count (when the source has a tree) and up to ``MAX_SOURCE_FILES`` paths; None when the tree
+        could not be read.
+    """
+    from docsgpt.parser.remote.website_tree import count_pages
+
+    if source_id not in ws.source_files and ws.source_reader is not None:
+        try:
+            structure = ws.source_reader(source_id)
+        except Exception:
+            logger.warning("drafter: could not read a source's files", exc_info=True)
+            return None
+        ws.source_files[source_id] = []
+        if isinstance(structure, dict) and structure:
+            ws.source_file_counts[source_id] = count_pages(structure)
+            ws.source_files[source_id] = _file_paths(structure)
+    out: dict[str, Any] = {}
+    if source_id in ws.source_file_counts:
+        out["files"] = ws.source_file_counts[source_id]
+    out["file_paths"] = ws.source_files.get(source_id, [])
+    return out
 
 
 def _injection_flagged(action: dict) -> bool:
