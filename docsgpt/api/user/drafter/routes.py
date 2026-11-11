@@ -17,14 +17,13 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 from flask import jsonify, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
 from docsgpt.core.settings import settings
-from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import (
@@ -141,30 +140,11 @@ class DrafterStream(Resource):
                 mimetype="text/event-stream",
                 headers=_SSE_HEADERS,
             )
-        try:
-            # Read now, in the request: the stream runs on a thread with no request context.
-            workspace = recipe.load_workspace(user_id, draft.context)
-        except BadDraftRequest as err:
-            end_turn(user_id, turn_id)
-            return Response(
-                _closed(bad_request(err).event()),
-                mimetype="text/event-stream",
-                headers=_SSE_HEADERS,
-            )
-        except Exception:
-            logger.exception("drafter: could not read the workspace")
-            end_turn(user_id, turn_id)
-            return Response(
-                _closed({"type": "error", "code": "model_error",
-                         "message": "Your workspace could not be read. Try again in a moment."}),
-                mimetype="text/event-stream",
-                headers=_SSE_HEADERS,
-            )
         # Under Werkzeug a disconnect closes the stream early (``stopped``); the production ASGI adapter drains
         # it first, so the panel stops a turn it gives up on through the turn id instead.
         stopped = threading.Event()
         return Response(
-            with_sse_keepalive(_stream(draft, recipe, workspace, model, stopped, turn_id), on_disconnect=stopped.set),
+            with_sse_keepalive(_stream(draft, recipe, model, stopped, turn_id), on_disconnect=stopped.set),
             mimetype="text/event-stream",
             headers=_SSE_HEADERS,
         )
@@ -307,14 +287,37 @@ def _note_model_outcome(user_id: str, model_id: str, event: dict) -> None:
         clear_model_failure(user_id, model_id)
 
 
-def _stream(draft: DraftRequest, recipe: Recipe, workspace: Workspace, model: dict,
+def _turn_frames(draft: DraftRequest, recipe: Recipe, model: dict,
+                 should_stop: Callable[[], bool]) -> Iterator[str]:
+    """Read the caller's workspace, then run the turn; a refused or failed read ends it with an ``error`` event.
+
+    The read runs here, on the stream, so the panel hears ``reading`` before it starts instead of waiting on it
+    for the first byte. Nothing it reads needs the Flask request.
+    """
+    if recipe.reads_workspace:
+        yield _frame({"type": "status", "step": "reading"})
+    try:
+        workspace = recipe.load_workspace(draft.user_id, draft.context)
+    except BadDraftRequest as err:
+        yield _frame(bad_request(err).event())
+        return
+    except Exception:
+        logger.exception("drafter: could not read the workspace")
+        yield _frame({"type": "error", "code": "model_error",
+                      "message": "Your workspace could not be read. Try again in a moment."})
+        return
+    for event in run_draft(draft, recipe, workspace, model, should_stop=should_stop):
+        _note_model_outcome(draft.user_id, model["id"], event)
+        yield _frame(event)
+
+
+def _stream(draft: DraftRequest, recipe: Recipe, model: dict,
             stopped: threading.Event, turn_id: Optional[str] = None) -> Iterator[str]:
     """The turn's frames, always closed by ``end``; an unexpected failure becomes a ``model_error`` event.
 
     Args:
         draft: The checked request.
         recipe: Its recipe.
-        workspace: The caller's workspace, read in the request.
         model: The drafter model.
         stopped: Set when the server closes the stream early (the client went away).
         turn_id: The turn's id for a stop from another request; its ``turn`` event comes first. None when
@@ -329,9 +332,9 @@ def _stream(draft: DraftRequest, recipe: Recipe, workspace: Workspace, model: di
     try:
         if turn_id:
             yield _frame({"type": "turn", "id": turn_id})
-        for event in run_draft(draft, recipe, workspace, model, should_stop=should_stop):
-            _note_model_outcome(draft.user_id, model["id"], event)
-            yield _frame(event)
+        # A turn stopped before it started reads nothing.
+        if not should_stop():
+            yield from _turn_frames(draft, recipe, model, should_stop)
     except Exception:
         logger.exception("drafter: the draft failed")
         yield _frame({"type": "error", "code": "model_error", "message": "The draft failed. Try again."})

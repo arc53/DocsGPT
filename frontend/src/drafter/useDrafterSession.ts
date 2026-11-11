@@ -251,7 +251,8 @@ export function useDrafterSession({
         case 'status':
           if (event.step === 'reading') {
             setStep('reading');
-            push({ kind: 'status', counts: event.counts ?? {} });
+            // Without counts the read has only started; the line comes with them.
+            if (event.counts) push({ kind: 'status', counts: event.counts });
           } else setStep('drafting');
           return;
         case 'read':

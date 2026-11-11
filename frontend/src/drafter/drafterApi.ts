@@ -81,7 +81,8 @@ export type DrafterCounts = Partial<
 /**
  * One SSE frame of `POST /api/drafter/stream`. `turn` comes first, with the id
  * `cancelDrafterTurn` stops (the request's `turn_id` when the server took it);
- * a server that can't stop turns sends none.
+ * a server that can't stop turns sends none. A `reading` status without
+ * `counts` says the workspace read has started; the one with them follows it.
  */
 export type DrafterEvent =
   | { type: 'turn'; id: string }

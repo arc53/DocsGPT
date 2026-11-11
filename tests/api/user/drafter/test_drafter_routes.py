@@ -74,7 +74,8 @@ def _stream(client, body, fake=None, model=MODEL, user="alice"):
     with _session(user), patch("docsgpt.drafter.service.drafter_model", return_value=model), patch(
         "docsgpt.drafter.runner.build_llm", fake.factory if fake else None
     ):
-        return client.post("/api/drafter/stream", json=body)
+        # Buffered: the stream runs on a pump thread, so the patches must outlive the whole turn.
+        return client.post("/api/drafter/stream", json=body, buffered=True)
 
 
 def _types(events):
@@ -199,11 +200,11 @@ class TestStream:
         first = FakeLLM(calls(tool_call("ask_user", QUESTIONS)))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), first))
-        assert _types(events) == ["status:reading", "status:drafting", "message", "questions", "end"]
-        assert events[0]["counts"] == {"sources": 0, "tools": events[0]["counts"]["tools"], "prompts": 3,
-                                       "models": events[0]["counts"]["models"]}
-        assert events[2] == {"type": "message", "text": "Two questions before I draft:"}
-        questions = events[3]["questions"]
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "message", "questions", "end"]
+        assert events[1]["counts"] == {"sources": 0, "tools": events[1]["counts"]["tools"], "prompts": 3,
+                                       "models": events[1]["counts"]["models"]}
+        assert events[3] == {"type": "message", "text": "Two questions before I draft:"}
+        questions = events[4]["questions"]
         assert [q["id"] for q in questions] == ["q1", "q2"]
         assert questions[0]["options"] == [
             {"id": "a", "label": "Email support", "input": None, "exclusive": False},
@@ -221,8 +222,8 @@ class TestStream:
         )
         with _db(pg_conn):
             events = _events(_stream(client, history, second))
-        assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
-        proposal = events[2]["proposal"]
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "proposal", "end"]
+        proposal = events[3]["proposal"]
         assert proposal["fields"] == {
             "name": "Shipping help", "description": "Answers shipping questions.",
             "starters": ["Where is my parcel?"],
@@ -243,8 +244,8 @@ class TestStream:
         )
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
-        assert events[2]["proposal"]["fields"] == {"prompt": {"kind": "existing", "id": str(prompt["id"])}}
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "proposal", "end"]
+        assert events[3]["proposal"]["fields"] == {"prompt": {"kind": "existing", "id": str(prompt["id"])}}
         tool_message = fake.calls[1]["messages"][-1]
         assert tool_message["role"] == "tool" and tool_message["tool_call_id"] == "c1"
         assert "You help customers of Meridian." in tool_message["content"]
@@ -260,8 +261,8 @@ class TestStream:
         )
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
-        assert events[2]["proposal"]["fields"] == {"agent_type": "research"}
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "proposal", "end"]
+        assert events[3]["proposal"]["fields"] == {"agent_type": "research"}
         correction = fake.calls[1]["messages"][-1]
         assert correction["role"] == "tool" and correction["content"].startswith("Not accepted:")
 
@@ -270,22 +271,22 @@ class TestStream:
         fake = FakeLLM(calls(tool_call("submit_proposal", bad)), calls(tool_call("submit_proposal", bad)))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["status:reading", "status:drafting", "error", "end"]
-        assert events[2]["code"] == "invalid_output"
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "error", "end"]
+        assert events[3]["code"] == "invalid_output"
         assert len(fake.calls) == 2
 
     def test_model_failure(self, client, pg_conn):
         fake = FakeLLM(RuntimeError("upstream 500"))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["status:reading", "status:drafting", "error", "end"]
-        assert events[2]["code"] == "model_error" and "500" not in events[2]["message"]
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "error", "end"]
+        assert events[3]["code"] == "model_error" and "500" not in events[3]["message"]
 
     def test_a_model_without_tools_answers_json(self, client, pg_conn):
         fake = FakeLLM(plain("```json\n" + json.dumps({"type": "proposal", **PROPOSAL}) + "\n```"))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake, model={**MODEL, "supports_tools": False}))
-        assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "proposal", "end"]
         assert not fake.calls[0]["tools"]
         assert "Answer with exactly one JSON object" in fake.calls[0]["messages"][0]["content"]
 
@@ -293,8 +294,8 @@ class TestStream:
         fake = FakeLLM(plain("I can only draft agents."), plain("I can only draft agents."))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["status:reading", "status:drafting", "message", "end"]
-        assert events[2]["text"] == "I can only draft agents."
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "message", "end"]
+        assert events[3]["text"] == "I can only draft agents."
 
     def test_the_turn_writes_no_logs_or_conversations(self, client, pg_conn):
         def counts():
@@ -307,6 +308,32 @@ class TestStream:
             _events(_stream(client, _body(), fake))
         writer.assert_not_called()
         assert counts() == before
+
+    def test_the_workspace_is_read_on_the_stream_after_the_reading_status(self, client, pg_conn):
+        order = []
+
+        def read(*args, **kwargs):
+            order.append("read")
+            from docsgpt.drafter.catalog import read_workspace
+
+            return read_workspace(*args, **kwargs)
+
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn), patch("docsgpt.drafter.agent_recipe.read_workspace", side_effect=read), patch(
+            "docsgpt.api.user.drafter.routes._frame", side_effect=lambda event: order.append(event["type"]) or (
+                f"data: {json.dumps(event)}\n\n")
+        ):
+            events = _events(_stream(client, _body(), fake))
+        assert events[0] == {"type": "status", "step": "reading"}
+        assert order[:3] == ["status", "read", "status"]
+
+    def test_a_workspace_that_cant_be_read_ends_the_turn_with_an_error(self, client, pg_conn):
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn), patch("docsgpt.drafter.agent_recipe.read_workspace", side_effect=RuntimeError("db")):
+            events = _events(_stream(client, _body(), fake))
+        assert _types(events) == ["status:reading", "error", "end"]
+        assert events[1]["code"] == "model_error" and "workspace could not be read" in events[1]["message"]
+        assert fake.calls == []
 
 
 class _Redis(FakeRedis):
@@ -378,7 +405,7 @@ class TestCancel:
         fake = Recording(calls(tool_call("submit_proposal", PROPOSAL)))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+        assert _types(events) == ["turn", "status:reading", "status:reading", "status:drafting", "proposal", "end"]
         assert seen == [events[0]["id"]] and redis.kv == {}
 
     def test_a_cancelled_turn_makes_no_further_model_calls(self, client, pg_conn, redis):
@@ -394,7 +421,7 @@ class TestCancel:
                           calls(tool_call("submit_proposal", PROPOSAL)))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["turn", "status:reading", "status:drafting", "end"]
+        assert _types(events) == ["turn", "status:reading", "status:reading", "status:drafting", "end"]
         assert len(fake.calls) == 1
 
     def test_the_owner_cancels_their_turn(self, client, redis):
@@ -420,7 +447,7 @@ class TestCancel:
         with _db(pg_conn):
             events = _events(_stream(client, {**_body(), "turn_id": "d" * 32}, fake))
         assert events[0] == {"type": "turn", "id": "d" * 32}
-        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+        assert _types(events) == ["turn", "status:reading", "status:reading", "status:drafting", "proposal", "end"]
 
     @pytest.mark.parametrize("turn_id", ["nope", "D" * 32, 7, None])
     def test_a_malformed_turn_id_gets_one_of_the_servers(self, client, pg_conn, redis, turn_id):
@@ -436,15 +463,25 @@ class TestCancel:
         fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
         with _db(pg_conn):
             events = _events(_stream(client, {**_body(), "turn_id": "e" * 32}, fake))
-        assert _types(events) == ["turn", "status:reading", "status:drafting", "end"]
+        # Stopped before it started: nothing is read and no model is called.
+        assert _types(events) == ["turn", "end"]
         assert fake.calls == [] and redis.kv == {}
+
+    def test_a_refused_read_still_frees_the_turns_place(self, client, pg_conn, redis):
+        from docsgpt.drafter.recipe import BadDraftRequest
+
+        with _db(pg_conn), patch("docsgpt.drafter.agent_recipe.read_workspace",
+                                 side_effect=BadDraftRequest("Agent not found")):
+            events = _events(_stream(client, _body(), FakeLLM()))
+        assert _types(events) == ["turn", "status:reading", "error", "end"]
+        assert events[2]["code"] == "bad_request" and redis.kv == {} and redis.zsets == {}
 
     def test_another_users_early_stop_does_not_reach_the_turn(self, client, pg_conn, redis):
         assert self._cancel(client, "f" * 32, user="bob").status_code == 202
         fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
         with _db(pg_conn):
             events = _events(_stream(client, {**_body(), "turn_id": "f" * 32}, fake))
-        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+        assert _types(events) == ["turn", "status:reading", "status:reading", "status:drafting", "proposal", "end"]
 
     def test_two_running_turns_never_share_an_id(self, redis):
         from docsgpt.drafter.service import cancel_turn, start_turn, turn_cancelled
@@ -459,7 +496,7 @@ class TestCancel:
         fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
         with _db(pg_conn):
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
+        assert _types(events) == ["status:reading", "status:reading", "status:drafting", "proposal", "end"]
         assert self._cancel(client, "c" * 32).status_code == 503
 
     def test_a_cancel_store_that_fails_never_fails_the_turn(self, client, pg_conn, redis, monkeypatch):
@@ -471,7 +508,7 @@ class TestCancel:
             monkeypatch.setattr(redis, "exists", broken)
             monkeypatch.setattr(redis, "delete", broken)
             events = _events(_stream(client, _body(), fake))
-        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+        assert _types(events) == ["turn", "status:reading", "status:reading", "status:drafting", "proposal", "end"]
 
 
 class _Status(Exception):

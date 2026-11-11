@@ -239,6 +239,24 @@ describe('useDrafterSession', () => {
     expect(stream.cancelled).toEqual([['t1', 'tok']]);
   });
 
+  it('shows reading while the workspace is read, and its line once counted', async () => {
+    stream.scripts = ['hold'];
+    await act(async () => session.send('Draft it'));
+    await act(async () =>
+      stream.held[0].emit({ type: 'status', step: 'reading' }),
+    );
+    expect(session.step).toBe('reading');
+    expect(session.items.map((item) => item.kind)).toEqual(['user']);
+    await act(async () =>
+      stream.held[0].emit({
+        type: 'status',
+        step: 'reading',
+        counts: { sources: 2 },
+      }),
+    );
+    expect(session.items.map((item) => item.kind)).toEqual(['user', 'status']);
+  });
+
   it('stops a turn, keeping what arrived, and leaves it out of the history', async () => {
     stream.scripts = ['hold'];
     await act(async () => session.send('Draft it'));

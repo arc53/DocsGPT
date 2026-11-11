@@ -385,7 +385,13 @@ describe('DraftPanel', () => {
   });
 
   it('says only that it looked when the server counted nothing', async () => {
-    stream.scripts = [[{ type: 'status', step: 'reading' }, { type: 'end' }]];
+    stream.scripts = [
+      [
+        { type: 'status', step: 'reading' },
+        { type: 'status', step: 'reading', counts: {} },
+        { type: 'end' },
+      ],
+    ];
     await ask('Draft it');
     expect(container.querySelector('[data-item="status"]')!.textContent).toBe(
       'drafter.lookedAtWorkspace',

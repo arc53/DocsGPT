@@ -307,9 +307,10 @@ class TestStream:
             "left_out": [],
         })))
         events = _stream(client, pg_conn, _body(str(agent["id"])), fake)
-        assert [e["type"] for e in events] == ["status", "status", "proposal", "end"]
-        assert events[0]["counts"] == {"questions": MIN_CONVERSATIONS, "conversations": MIN_CONVERSATIONS}
-        proposal = events[2]["proposal"]
+        assert [e["type"] for e in events] == ["status", "status", "status", "proposal", "end"]
+        assert events[0] == {"type": "status", "step": "reading"}
+        assert events[1]["counts"] == {"questions": MIN_CONVERSATIONS, "conversations": MIN_CONVERSATIONS}
+        proposal = events[3]["proposal"]
         assert proposal["topics"][0]["id"] == "t1" and proposal["topics"][0]["share_kind"] == "estimate"
         assert proposal["sample"] == {"questions": MIN_CONVERSATIONS, "conversations": MIN_CONVERSATIONS,
                                       "days": DAYS}
@@ -319,17 +320,18 @@ class TestStream:
     def test_too_few_conversations_is_a_bad_request(self, client, pg_conn):
         agent = _busy_agent(pg_conn, n=2)
         events = _stream(client, pg_conn, _body(str(agent["id"])))
-        assert events[0]["type"] == "error" and events[0]["code"] == "bad_request"
-        assert "Suggestions need" in events[0]["message"] and events[-1] == {"type": "end"}
+        # The read runs on the stream: the refusal follows the reading status.
+        assert [e["type"] for e in events] == ["status", "error", "end"]
+        assert events[1]["code"] == "bad_request" and "Suggestions need" in events[1]["message"]
 
     def test_insights_off_for_the_agent_is_a_bad_request(self, client, pg_conn):
         agent = _busy_agent(pg_conn, enabled=False)
         events = _stream(client, pg_conn, _body(str(agent["id"])))
-        assert events[0]["code"] == "bad_request" and "Insights are off" in events[0]["message"]
+        assert events[1]["code"] == "bad_request" and "Insights are off" in events[1]["message"]
         assert "parcel" not in json.dumps(events)
 
     def test_someone_who_cant_edit_the_agent_reads_nothing(self, client, pg_conn):
         agent = _busy_agent(pg_conn)
         events = _stream(client, pg_conn, _body(str(agent["id"])), user="stranger")
-        assert events[0]["code"] == "bad_request" and events[-1] == {"type": "end"}
+        assert events[1]["code"] == "bad_request" and events[-1] == {"type": "end"}
         assert "parcel" not in json.dumps(events)
