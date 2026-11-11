@@ -225,9 +225,11 @@ class TestListDue:
 
         repo = SchedulesRepository(pg_conn)
         agent_id = _insert_agent(pg_conn)
+        # Due long ago, so it would head any batch if it weren't left out.
+        long_ago = _now() - timedelta(days=3650)
         waiting = repo.create(
             user_id="u1", agent_id=agent_id, trigger_type="once", instruction="i",
-            run_at=_now() - timedelta(minutes=2), next_run_at=_now() - timedelta(minutes=2),
+            run_at=long_ago, next_run_at=long_ago,
         )
         ScheduleRunsRepository(pg_conn).record_pending(
             str(waiting["id"]), "u1", agent_id, _now() - timedelta(minutes=3), trigger_source="manual",
@@ -237,10 +239,8 @@ class TestListDue:
             cron="* * * * *", next_run_at=_now() - timedelta(seconds=10),
         )
 
-        # Left out in SQL, before the limit, so it can't fill the batch.
-        ids = [r["id"] for r in repo.list_due()]
-        assert waiting["id"] not in ids
-        assert later["id"] in ids
+        assert waiting["id"] not in [r["id"] for r in repo.list_due(limit=1)]
+        assert later["id"] in [r["id"] for r in repo.list_due()]
 
 
 class TestUpdateCancelFailureCounters:
