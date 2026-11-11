@@ -80,6 +80,7 @@ import {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { canEditPrompt, PRESET_PROMPT_IDS } from '../prompts/promptAccess';
+import { PromptReviewActions } from '../prompts/PromptViewChrome';
 
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
@@ -1280,34 +1281,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         actions={
           reviewing ? (
             <>
-              <Button
-                type="button"
-                size="sm"
-                shape="pill"
-                onClick={() => keepFocus(promptReview.acceptAll)}
-              >
-                {t('drafter.prompt.acceptAll')}
-              </Button>
-              {review.current === null && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  shape="pill"
-                  onClick={promptReview.reviewOneByOne}
-                >
-                  {t('drafter.prompt.reviewOneByOne')}
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                shape="pill"
-                onClick={() => keepFocus(promptReview.discard)}
-              >
-                {t('drafter.prompt.discard')}
-              </Button>
+              <PromptReviewActions
+                review={review}
+                actions={promptReview}
+                keepFocus={keepFocus}
+              />
               {showInAgent}
             </>
           ) : latest && nextOnProposal ? (

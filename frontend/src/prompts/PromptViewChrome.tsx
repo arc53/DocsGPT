@@ -7,6 +7,11 @@ import {
   AlertTitle,
 } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import type { DraftPanelHelpers } from '../drafter/DraftPanel';
+import type {
+  PromptReview,
+  PromptReviewState,
+} from '../drafter/usePromptReview';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import type { PromptDetail } from './usePromptDetail';
 
@@ -156,5 +161,59 @@ export function PromptLeaveDialog({
         onLeave();
       }}
     />
+  );
+}
+
+/**
+ * A prompt review's actions in the drafter drawer: Accept all, Review one
+ * by one (until it starts) and Discard. Accept all and Discard close the
+ * review, so focus moves on to the drawer's next control (`keepFocus`).
+ *
+ * Args:
+ *   review: The open review.
+ *   actions: The review's Accept all, Review one by one and Discard.
+ *   keepFocus: The drawer's focus keeper (DraftPanelHelpers).
+ */
+export function PromptReviewActions({
+  review,
+  actions,
+  keepFocus,
+}: {
+  review: PromptReview;
+  actions: Pick<PromptReviewState, 'acceptAll' | 'reviewOneByOne' | 'discard'>;
+  keepFocus: DraftPanelHelpers['keepFocus'];
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        shape="pill"
+        onClick={() => keepFocus(actions.acceptAll)}
+      >
+        {t('drafter.prompt.acceptAll')}
+      </Button>
+      {review.current === null && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          shape="pill"
+          onClick={actions.reviewOneByOne}
+        >
+          {t('drafter.prompt.reviewOneByOne')}
+        </Button>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        shape="pill"
+        onClick={() => keepFocus(actions.discard)}
+      >
+        {t('drafter.prompt.discard')}
+      </Button>
+    </>
   );
 }

@@ -18,6 +18,7 @@ import type { PromptDrafter } from '../drafter/usePromptDrafter';
 import SuggestionRows, { suggestionIconClass } from '../hero/SuggestionRows';
 import { formatCount } from '../utils/dateTimeUtils';
 import { PromptReviewFindings } from './PromptReviewFindings';
+import { PromptReviewActions } from './PromptViewChrome';
 
 // The first screen's rows. Improve's send their text; Review it sends its
 // text as a review (the checklist), with a second line saying what it
@@ -203,36 +204,11 @@ export function PromptDraftPanel({
               </Button>
             </>
           ) : reviewing ? (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                shape="pill"
-                onClick={() => keepFocus(drafter.acceptAll)}
-              >
-                {t('drafter.prompt.acceptAll')}
-              </Button>
-              {review.current === null && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  shape="pill"
-                  onClick={drafter.reviewOneByOne}
-                >
-                  {t('drafter.prompt.reviewOneByOne')}
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                shape="pill"
-                onClick={() => keepFocus(drafter.discard)}
-              >
-                {t('drafter.prompt.discard')}
-              </Button>
-            </>
+            <PromptReviewActions
+              review={review}
+              actions={drafter}
+              keepFocus={keepFocus}
+            />
           ) : undefined
         }
       />
