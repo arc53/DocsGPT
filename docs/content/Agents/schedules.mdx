@@ -100,6 +100,10 @@ This relies on the model reporting it: it catches a missing tool or account, not
 
 After `SCHEDULE_AUTOPAUSE_FAILURES` (default 3) failed or timed-out runs in a row, a recurring schedule pauses itself. The schedule shows **Paused** and how many runs failed in a row. Fix the cause, then select **Resume**. Resuming resets the failure count and computes the next run from now. One-time tasks are never auto-paused.
 
+When a schedule pauses itself, its owner is notified once, as for a [background job](/Tools/background-jobs#notifications): a toast in an open tab, or Web Push when no tab is open. The notification names the schedule and gives the last run's error on one line (the agent's `cannot_complete` reason, a timeout, the tool that wasn't allowed). **Open** goes to the schedule in **Activity → Schedules** with its run log open. A toast still on screen goes away once the schedule is resumed, runs successfully or is deleted. A schedule that is resumed and pauses again notifies again. The paused schedule also stays under **Needs you** in [Activity → Now](/Using/activity#now) until it is resumed.
+
+To also be notified of the first failed run in a row, before the schedule pauses, the operator sets `SCHEDULE_NOTIFY_RECURRING_FAILURES=true`. Runs started with **Run now** don't send this notice.
+
 ## Schedule from a chat
 
 The **Scheduling** tool lets the model set a one-time task while you chat: "remind me tomorrow at 8 to check the deploy" or "in 2 hours, summarise the new tickets". It can also list and cancel the pending tasks it set.
@@ -180,6 +184,7 @@ Operators set these in `.env`. See the [settings reference](/Deploying/Settings-
 | `SCHEDULE_RUN_TIMEOUT` | `600` | Seconds one run may take before it stops with **Timeout**. |
 | `SCHEDULE_MISFIRE_GRACE` | `60` | Seconds past its due time that a recurring run may still start, for example after the scheduler was down. Later ones are skipped as `missed`. |
 | `SCHEDULE_AUTOPAUSE_FAILURES` | `3` | Failures in a row that pause a recurring schedule. `0` turns auto-pause off. |
+| `SCHEDULE_NOTIFY_RECURRING_FAILURES` | `false` | Also notify the owner of a recurring schedule on its first failed run in a row, not only when it pauses itself. |
 | `SCHEDULE_ONCE_MAX_HORIZON` | `31536000` | How far ahead a one-time task can be set, in seconds (one year). |
 | `SCHEDULE_DISPATCHER_INTERVAL` | `30` | Seconds between checks for due schedules (at least 15). |
 | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` | `90` | Run log entries older than this are deleted, except the latest 50 of each schedule. |

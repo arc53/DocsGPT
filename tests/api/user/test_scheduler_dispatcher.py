@@ -281,6 +281,7 @@ class TestAgentlessRoundTrip:
             type("S", (), {
                 "POSTGRES_URI": str(pg_engine.url),
                 "SCHEDULE_AUTOPAUSE_FAILURES": 3,
+                "SCHEDULE_NOTIFY_RECURRING_FAILURES": False,
             })(),
         )
         monkeypatch.setattr(
@@ -362,6 +363,7 @@ class TestOnceRoundTrip:
             type("S", (), {
                 "POSTGRES_URI": str(pg_engine.url),
                 "SCHEDULE_AUTOPAUSE_FAILURES": 3,
+                "SCHEDULE_NOTIFY_RECURRING_FAILURES": False,
             })(),
         )
         monkeypatch.setattr(

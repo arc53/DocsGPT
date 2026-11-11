@@ -75,7 +75,9 @@
         "monitor_expired": "Monitor abgelaufen",
         "schedule": "Geplante Aufgabe fertig",
         "default": "Neue Antwort",
-        "docs_gaps": "Wöchentliche Übersicht der Doku-Lücken"
+        "docs_gaps": "Wöchentliche Übersicht der Doku-Lücken",
+        "schedule_paused": "Geplante Aufgabe pausiert",
+        "schedule_failed": "Geplante Aufgabe fehlgeschlagen"
       },
       "open": "Öffnen",
       "fallbackTitle": "Dein Assistent hat Neuigkeiten"
