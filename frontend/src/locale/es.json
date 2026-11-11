@@ -1965,7 +1965,8 @@
         "done": "Listo",
         "createTool": "Crear herramienta para agentes",
         "toolCreated": "Herramienta creada. Está en Ajustes › Herramientas; añádela a un agente.",
-        "toolFailed": "No se pudo crear la herramienta."
+        "toolFailed": "No se pudo crear la herramienta.",
+        "toolSomeOff": "Eliminar y preguntar a otro agente empiezan desactivados. Activa esas acciones en la herramienta si las necesitas."
       },
       "regenerate": {
         "action": "Regenerar",
