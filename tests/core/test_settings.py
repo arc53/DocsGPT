@@ -280,6 +280,22 @@ class TestReference:
 
 
 @pytest.mark.unit
+class TestReferencePath:
+    def test_the_page_lives_in_the_docs_tree(self, tmp_path):
+        from docsgpt.core.settings.reference import reference_path
+
+        assert reference_path(tmp_path) == tmp_path / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
+
+    def test_the_default_root_is_the_checkout(self):
+        from pathlib import Path
+
+        from docsgpt.core.settings.reference import reference_path
+
+        root = Path(__file__).resolve().parents[2]
+        assert reference_path() == root / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
+
+
+@pytest.mark.unit
 class TestCrossFieldRules:
     OIDC = {"OIDC_ISSUER": "https://idp.example/", "OIDC_CLIENT_ID": "docsgpt", "OIDC_FRONTEND_URL": "http://app"}
 

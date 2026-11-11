@@ -30,8 +30,10 @@ on:
 permissions: {}
 
 # The branch is rebuilt from main each time, so only the newest run matters.
+# The ref is in the group so a manual run on another branch (which the job
+# skips) cannot cancel a run on main.
 concurrency:
-  group: generated-docs
+  group: generated-docs-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -85,7 +87,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           paths=(docs/data docs/public/llms.txt docs/content)
-          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          # This repository's own branch only: a fork can name a branch generated-docs too.
+          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')
           if [ -z "$(git status --porcelain -- "${paths[@]}")" ]; then
             echo "The generated files and the page dates are current."
             # A pull request left from an earlier run now holds files older than main.

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from docsgpt.api.reference import build_spec, main, render_spec
+from docsgpt.api.reference import build_spec, main, reference_page_path, render_spec, snapshot_path
 from docsgpt.core.docs_pages import read_last_updated
 
 METHODS = ("get", "put", "post", "delete", "patch", "head", "options")
@@ -100,3 +101,15 @@ class TestCli:
         assert main(["--write"]) == 0
         assert main(["--check"]) == 0
         assert target.read_text(encoding="utf-8") == render_spec()
+
+
+@pytest.mark.unit
+class TestPaths:
+    def test_snapshot_and_page_live_in_the_docs_tree(self, tmp_path):
+        assert snapshot_path(tmp_path) == tmp_path / "docs" / "data" / "swagger.json"
+        assert reference_page_path(tmp_path) == tmp_path / "docs" / "content" / "API" / "reference.mdx"
+
+    def test_the_default_root_is_the_checkout(self):
+        root = Path(__file__).resolve().parents[2]
+        assert snapshot_path() == root / "docs" / "data" / "swagger.json"
+        assert reference_page_path() == root / "docs" / "content" / "API" / "reference.mdx"
