@@ -353,7 +353,22 @@ const schedulesSlice = createSlice({
       .addCase(createSchedule.fulfilled, (state, action) => {
         const { schedule, testRun } = action.payload;
         applyToLists(state, schedule);
-        if (testRun) state.runsBySchedule[schedule.id] = [testRun];
+        if (!testRun) return;
+        // The run's SSE result can land before this answer: keep it.
+        const early = state.runsBySchedule[schedule.id]?.find(
+          (run) => run.id === testRun.id,
+        );
+        state.runsBySchedule[schedule.id] = [
+          early
+            ? {
+                ...testRun,
+                status: early.status,
+                error_type: early.error_type,
+                error: early.error,
+                finished_at: early.finished_at,
+              }
+            : testRun,
+        ];
       })
       .addCase(updateSchedule.fulfilled, (state, action) => {
         applyToLists(state, action.payload);

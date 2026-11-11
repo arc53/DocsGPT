@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -12,7 +13,7 @@ from flask import Flask
 from sqlalchemy import text
 
 # Pre-import to stabilise the tool-loading import order (see tests/agents/tools/test_scheduler.py).
-import docsgpt.api.user.tools.mcp  # noqa: F401
+importlib.import_module("docsgpt.api.user.tools.mcp")
 
 from docsgpt.agents.tools.scheduler import SchedulerTool  # noqa: E402
 from docsgpt.api.user.scheduler_worker import execute_scheduled_run_body  # noqa: E402
@@ -321,3 +322,52 @@ class TestManualRunsAndAutoPause:
             stored = SchedulesRepository(conn).get_internal(str(schedule["id"]))
         assert stored["consecutive_failure_count"] == 1
         assert stored["status"] == "paused"
+
+
+@pytest.mark.fresh_db
+class TestStuckTestRunOfAOneTimeTask:
+    """The reconciler fails a stuck test run but leaves its one-time task to run at its time."""
+
+    @pytest.fixture
+    def reconcile_engine(self, pg_engine, monkeypatch):
+        monkeypatch.setattr("docsgpt.api.user.reconciliation.get_engine", lambda: pg_engine)
+        monkeypatch.setattr(
+            "docsgpt.api.user.reconciliation.settings",
+            type("S", (), {"POSTGRES_URI": str(pg_engine.url), "SCHEDULE_RUN_TIMEOUT": 60})(),
+        )
+        return pg_engine
+
+    def _stuck(self, engine, *, running: bool):
+        with engine.begin() as conn:
+            agent_id = _make_agent(conn)
+            fire = _now() + timedelta(days=1)
+            schedule = SchedulesRepository(conn).create(
+                user_id="u1", agent_id=agent_id, trigger_type="once",
+                instruction="check the deploy", run_at=fire, next_run_at=fire,
+            )
+            run = ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now(), trigger_source="manual",
+            )
+            if running:
+                ScheduleRunsRepository(conn).mark_running(str(run["id"]), "t1")
+                aged = "UPDATE schedule_runs SET started_at = now() - interval '120 minutes' WHERE id = CAST(:i AS uuid)"
+            else:
+                aged = "UPDATE schedule_runs SET created_at = now() - interval '120 minutes' WHERE id = CAST(:i AS uuid)"
+            conn.execute(text(aged), {"i": str(run["id"])})
+        return schedule, run
+
+    @pytest.mark.parametrize("running", [False, True])
+    def test_the_task_stays_active_with_its_next_run(self, reconcile_engine, running):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        schedule, run = self._stuck(reconcile_engine, running=running)
+
+        run_reconciliation()
+
+        with reconcile_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            stored = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert row["status"] == ("timeout" if running else "failed")
+        assert stored["status"] == "active"
+        assert stored["next_run_at"] == schedule["next_run_at"]
+        assert stored["consecutive_failure_count"] == 0

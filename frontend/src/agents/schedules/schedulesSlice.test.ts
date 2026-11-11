@@ -766,6 +766,40 @@ describe('createSchedule with a test run', () => {
     });
   });
 
+  it('keeps a result that arrived before the create answer', () => {
+    let state = reducer(
+      seedState(),
+      sseEventReceived({
+        id: 'evt-early',
+        type: 'schedule.run.completed',
+        ts: '2026-05-19T12:00:05Z',
+        payload: { schedule_id: 'sched-new', run_id: 'run-test' },
+      } as SSEEvent),
+    );
+    state = reducer(
+      state,
+      createSchedule.fulfilled(
+        {
+          schedule: sampleSchedule({ id: 'sched-new' }),
+          testRun: sampleRun({
+            id: 'run-test',
+            schedule_id: 'sched-new',
+            trigger_source: 'manual',
+          }),
+        },
+        'c',
+        args,
+      ),
+    );
+    const [run] = selectRunsForSchedule({ schedules: state }, 'sched-new');
+    expect(run).toMatchObject({
+      id: 'run-test',
+      status: 'success',
+      trigger_source: 'manual',
+      finished_at: '2026-05-19T12:00:05Z',
+    });
+  });
+
   it('leaves the run log alone without one', () => {
     const state = reducer(
       seedState(),
