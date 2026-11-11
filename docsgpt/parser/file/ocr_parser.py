@@ -24,8 +24,10 @@ the docling extra gets working OCR from the tesseract binary alone, and one
 that does install it keeps today's behaviour unchanged.
 """
 import base64
+import copy
 import functools
 import io
+import json
 import logging
 import random
 import re
@@ -34,9 +36,9 @@ import subprocess
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Hashable, Iterable, List, Optional, Protocol, Tuple, TypeVar, Union
+from typing import Any, Dict, Hashable, Iterable, List, Optional, Protocol, Tuple, TypeVar, Union
 
 from docsgpt.parser.file.base_parser import (
     BaseParser,
@@ -423,7 +425,11 @@ class DeepseekEndpoint:
         max_retries: Retries per page after a 429, a 5xx or a refused connection.
         hosted: Whether the preset is a third-party API.
         prompt: Instruction sent with every page (``OCR_DEEPSEEK_PROMPT``).
+        extra_body: Request-body fields merged into every page request
+            (``OCR_DEEPSEEK_EXTRA_BODY``), for servers that need more than the
+            OpenAI chat-completions fields.
         problem: Why the endpoint cannot be used as configured, or None.
+        extra_body_problem: Why ``OCR_DEEPSEEK_EXTRA_BODY`` cannot be parsed, or None.
     """
 
     provider: str
@@ -435,7 +441,9 @@ class DeepseekEndpoint:
     max_retries: int
     hosted: bool
     prompt: str = DEEPSEEK_PROMPT
+    extra_body: Dict[str, Any] = field(default_factory=dict)
     problem: Optional[str] = None
+    extra_body_problem: Optional[str] = None
 
     def headers(self) -> Dict[str, str]:
         """Request headers: the bearer token when one is configured."""
@@ -444,9 +452,11 @@ class DeepseekEndpoint:
     def describe(self) -> str:
         """One line for logs and ``docsgpt ocr-check``; never includes the key."""
         key = "set" if self.api_key else "none"
+        extra = f" extra_body={','.join(sorted(self.extra_body))}" if self.extra_body else ""
         return (
             f"provider={self.provider} url={self.url or '(unset)'} model={self.model or '(unset)'} "
             f"api_key={key} concurrency={self.concurrency} timeout={self.timeout:.0f}s retries={self.max_retries}"
+            f"{extra}"
         )
 
 
@@ -481,6 +491,22 @@ def resolve_deepseek_endpoint() -> DeepseekEndpoint:
     elif hosted and not api_key:
         extra = " (or NOVITA_API_KEY)" if provider == "novita" else ""
         problem = f"OCR_DEEPSEEK_PROVIDER={provider} needs an API key: set OCR_DEEPSEEK_API_KEY{extra}"
+    extra_body: Dict[str, Any] = {}
+    extra_body_problem = None
+    raw_extra_body = str(settings.OCR_DEEPSEEK_EXTRA_BODY or "").strip()
+    if raw_extra_body and raw_extra_body.lower() != "none":
+        try:
+            parsed_extra_body = json.loads(raw_extra_body)
+        except ValueError as exc:
+            extra_body_problem = f"OCR_DEEPSEEK_EXTRA_BODY is not valid JSON ({exc})"
+        else:
+            if isinstance(parsed_extra_body, dict):
+                extra_body = parsed_extra_body
+            else:
+                extra_body_problem = (
+                    "OCR_DEEPSEEK_EXTRA_BODY must be a JSON object, for example "
+                    '{"mm_processor_kwargs": {"max_slice_nums": 9, "downsample_mode": "4x"}}'
+                )
     return DeepseekEndpoint(
         provider=provider,
         url=url,
@@ -491,7 +517,9 @@ def resolve_deepseek_endpoint() -> DeepseekEndpoint:
         max_retries=max(0, int(settings.OCR_DEEPSEEK_MAX_RETRIES)),
         hosted=hosted,
         prompt=str(settings.OCR_DEEPSEEK_PROMPT or "").strip() or DEEPSEEK_PROMPT,
+        extra_body=extra_body,
         problem=problem,
+        extra_body_problem=extra_body_problem,
     )
 
 
@@ -553,6 +581,7 @@ class DeepseekOcrEngine:
         prompt: Optional[str] = None,
         max_tokens: int = _DEEPSEEK_MAX_TOKENS,
         endpoint: Optional[DeepseekEndpoint] = None,
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> None:
         resolved = endpoint or resolve_deepseek_endpoint()
         self.endpoint = resolved
@@ -563,28 +592,44 @@ class DeepseekOcrEngine:
         self.max_retries = resolved.max_retries
         self.prompt = prompt or resolved.prompt
         self.max_tokens = max_tokens
-        # An explicit URL and model mean the caller configured the endpoint itself.
-        self._problem = None if (url and model) else resolved.problem
+        # An explicit extra body is the caller's own, so a malformed setting no
+        # longer applies; an explicit URL and model likewise mean the caller
+        # configured the endpoint itself. Every other problem is reported, and
+        # both are named when both are set.
+        extra_body_problem = None if extra_body is not None else resolved.extra_body_problem
+        endpoint_problem = None if (url and model) else resolved.problem
+        self._problem = " ".join(p for p in (extra_body_problem, endpoint_problem) if p) or None
+        self.extra_body: Dict[str, Any] = copy.deepcopy(extra_body if extra_body is not None else resolved.extra_body)
         self._usage_lock = threading.Lock()
         self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
     def payload(self, image) -> Dict:
-        """The chat-completions request body for one page image."""
+        """The chat-completions request body for one page image.
+
+        ``OCR_DEEPSEEK_EXTRA_BODY`` fields land first, so the core fields
+        (model, messages, max_tokens, temperature) always win: a stray
+        ``messages`` key cannot replace the page image and a stray ``model``
+        cannot redirect the request.
+        """
         data_url = "data:image/png;base64," + base64.b64encode(_png_bytes(image)).decode("ascii")
-        return {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                        {"type": "text", "text": self.prompt},
-                    ],
-                }
-            ],
-            "max_tokens": self.max_tokens,
-            "temperature": 0,
-        }
+        body: Dict[str, Any] = copy.deepcopy(self.extra_body)
+        body.update(
+            {
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                            {"type": "text", "text": self.prompt},
+                        ],
+                    }
+                ],
+                "max_tokens": self.max_tokens,
+                "temperature": 0,
+            }
+        )
+        return body
 
     def usage(self) -> Dict[str, int]:
         """Requests and tokens since the last ``reset_usage``."""
