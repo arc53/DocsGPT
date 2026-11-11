@@ -25,7 +25,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import isEqual from 'lodash/isEqual';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import {
@@ -102,16 +101,9 @@ import {
 } from '../drafter/DraftPanel';
 import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField } from '../drafter/DraftedBadge';
-import {
-  DrafterStepRow,
-  FilledRow,
-  type UndoneKind,
-} from '../drafter/DrafterStepRow';
+import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
 import { DRAFTER_STARTERS } from '../drafter/starters';
-import {
-  ProposalSummary,
-  type ProposalReasonRow,
-} from '../drafter/ProposalSummary';
+import { ProposalSummary } from '../drafter/ProposalSummary';
 import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import {
@@ -173,19 +165,16 @@ import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import {
   AGENT_BUILD_STEPS,
   AGENT_FIELD_LABEL_KEYS,
-  AGENT_STEP_FIELDS,
   type AgentBuildStep,
   type AgentDraftField,
   type AgentDraftForm,
   type AgentImproveFocus,
   type AgentLimitsValue,
-  type AgentProposal,
   type PromptDraft,
   agentDraftContext,
   agentDraftValues,
   agentProposalSummary,
   agentStepResult,
-  draftValueOf,
   gapLine,
   gapName,
   gapRequest,
@@ -195,11 +184,10 @@ import {
   improveSuggestions,
   type ImproveSuggestion,
   isSafetyUnset,
-  parseAgentProposal,
-  planAgentPatch,
   topicName,
 } from './agentDraft';
 import { useAgentBuild } from './useAgentBuild';
+import { useAgentProposals } from './useAgentProposals';
 import { useAgentGaps } from './useAgentGaps';
 import { IMPROVE_PARAMS, readImproveHandoff } from './improveLink';
 import AgentGapCards from './AgentGapCards';
@@ -226,7 +214,6 @@ const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
   tightenPrompt: Scissors,
 };
 
-/** A field a proposal changed: what it held before and what the draft set. */
 /** A part of the form that keeps Publish off. */
 type PublishBlocker =
   | 'name'
@@ -270,12 +257,6 @@ const SHEET_CLOSE_MS = 350;
 /** What "Go to" focuses inside a blocker's part of the form. */
 const FOCUSABLE =
   'input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-type AppliedChange = {
-  field: AgentDraftField;
-  previous: unknown;
-  applied: unknown;
-};
 
 /**
  * What a save sends, in a shape two copies compare by: the unsaved-changes
@@ -1268,30 +1249,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [rawUserTools, attachedTools],
   );
 
-  // Each proposal read once: the drawer draws every one on each render.
-  const parsedRef = useRef(new WeakMap<object, AgentProposal | null>());
-  const proposalOf = (raw: unknown): AgentProposal | null => {
-    if (!raw || typeof raw !== 'object') return null;
-    const cached = parsedRef.current.get(raw);
-    if (cached !== undefined) return cached;
-    const parsed = parseAgentProposal(raw);
-    parsedRef.current.set(raw, parsed);
-    return parsed;
-  };
-  // The fields each proposal changed when it was applied, so its summary
-  // gives reasons only for those and notes a later edit by hand (keyed by
-  // the session's proposal object).
-  const appliedRef = useRef(new WeakMap<object, AppliedChange[]>());
-  const appliedFields = (raw: unknown): AgentDraftField[] | undefined =>
-    raw && typeof raw === 'object'
-      ? appliedRef.current.get(raw)?.map((change) => change.field)
-      : undefined;
-  // The latest reason for each field a build drafted, with what it changed:
-  // a finished step's folded line opens them.
-  const buildRowsRef = useRef(
-    new Map<AgentDraftField, ProposalReasonRow & { change?: AppliedChange }>(),
-  );
-
   /** Bring the first drafted field into view, after the form has drawn it. */
   const scrollToDrafted = () =>
     requestAnimationFrame(() =>
@@ -1300,99 +1257,35 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }),
     );
 
-  // The form as the latest turn was sent with, so a proposal leaves alone a
-  // field the user changed while the turn ran.
-  const sentFormRef = useRef<AgentDraftForm | null>(null);
-  // The fields each proposal left as the user had changed them meanwhile,
-  // with the value it would have set, for "You changed … in the form".
-  const keptRef = useRef(new WeakMap<object, AppliedChange[]>());
-
-  /**
-   * Fill the form from a proposal, marking every field it changed. A field
-   * the user changed while the turn ran keeps their value.
-   */
-  const applyDraft = (raw: unknown) => {
-    const proposal = proposalOf(raw);
-    if (!proposal) return;
-    const form = draftFormRef.current;
-    const sent = sentFormRef.current ?? form;
-    const planned = planAgentPatch(proposal.fields, form, draftToolOptions);
-    const movedSinceSent = (field: AgentDraftField) =>
-      !isEqual(
-        draftValueOf(field, form[field] as never),
-        draftValueOf(field, sent[field] as never),
-      );
-    const changes = planned.filter((change) => !movedSinceSent(change.field));
-    keptRef.current.set(
-      raw as object,
-      planned
-        .filter((change) => movedSinceSent(change.field))
-        .map((change) => ({
-          field: change.field,
-          previous: draftValueOf(change.field, sent[change.field] as never),
-          applied: draftValueOf(change.field, change.next),
-        })),
-    );
-    // A later proposal in the same turn takes this one's values as sent.
-    sentFormRef.current = {
-      ...sent,
-      ...Object.fromEntries(
-        changes.map((change) => [change.field, change.next]),
-      ),
-    };
-    const changed = changes.map((change) => change.field);
-    // A field drafted again still holding the last draft goes back, on its
-    // Undo, to before the first: its record says so, so that Undo reads as
-    // undone rather than as an edit by hand.
-    const applied = changes.map((change) => {
-      const marked = drafted.undoValue(change.field);
-      return {
-        field: change.field,
-        previous: draftValueOf(
-          change.field,
-          (marked ? marked.previous : change.previous) as never,
-        ),
-        applied: draftValueOf(change.field, change.next),
-      };
-    });
-    appliedRef.current.set(raw as object, applied);
-    changes.forEach((change) => {
-      writeDraftField(change.field, change.next);
-      drafted.mark(
-        change.field,
-        change.previous,
-        draftValueOf(change.field, change.next),
-      );
-    });
-    proposal.reasons.forEach((reason) => {
-      const field = reason.field as AgentDraftField;
-      if (changed.includes(field))
-        buildRowsRef.current.set(field, {
-          key: field,
-          label: t(AGENT_FIELD_LABEL_KEYS[field]),
-          summary: reason.summary,
-          change: applied.find((change) => change.field === field),
-        });
-    });
-    // A prompt it wrote opens in the prompt view; one of the caller's picked
-    // instead turns a written one down. A drafted limit shows in Advanced.
-    const prompt = proposal.fields.prompt;
-    if (prompt?.kind === 'new')
-      showWrittenPrompt({ name: prompt.name, content: prompt.content });
-    else if (prompt?.kind === 'edit')
-      showPromptEdits(raw as object, prompt.id, prompt.edits);
-    else if (prompt?.kind === 'existing') dropPromptDraft();
-    if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
-    if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
-    // An approval while the prompt it wrote is unused isn't the step's
-    // Next: the prompt waits for Use this prompt or Keep. (One with parts
-    // the server dropped is no approval.)
-    const approval =
-      Object.keys(proposal.fields).length === 0 &&
-      proposal.dropped.length === 0;
-    if (approval && promptDraft) return;
-    buildRef.current.onProposal(proposal);
-  };
+  // Each proposal fills the form as unsaved edits; a prompt it wrote opens
+  // in the prompt view, and one of the caller's picked instead turns a
+  // written one down. A drafted limit shows in Advanced.
+  const proposals = useAgentProposals({
+    form: draftForm,
+    values: draftValues,
+    toolOptions: draftToolOptions,
+    drafted,
+    writeField: writeDraftField,
+    onApplied: (proposal, raw, changed) => {
+      const prompt = proposal.fields.prompt;
+      if (prompt?.kind === 'new')
+        showWrittenPrompt({ name: prompt.name, content: prompt.content });
+      else if (prompt?.kind === 'edit')
+        showPromptEdits(raw, prompt.id, prompt.edits);
+      else if (prompt?.kind === 'existing') dropPromptDraft();
+      if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
+      if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
+      // An approval while the prompt it wrote is unused isn't the step's
+      // Next: the prompt waits for Use this prompt or Keep. (One with parts
+      // the server dropped is no approval.)
+      const approval =
+        Object.keys(proposal.fields).length === 0 &&
+        proposal.dropped.length === 0;
+      if (approval && promptDraft) return;
+      buildRef.current.onProposal(proposal);
+    },
+  });
+  const { proposalOf, appliedFields, undoneKind } = proposals;
 
   // Turns run so far (each send and retry), so a save can tell one began
   // while it was out, even after a Start over emptied the drawer.
@@ -1419,7 +1312,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ? promptViewIdentity()
           : 'drafter';
       turnsRef.current += 1;
-      sentFormRef.current = draftFormRef.current;
+      proposals.markSent(draftFormRef.current);
       return agentDraftContext(
         agent.id || null,
         draftFormRef.current,
@@ -1428,7 +1321,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         improveFocusRef.current,
       );
     },
-    onProposal: applyDraft,
+    onProposal: proposals.apply,
   });
   // The session as it is now, for a save that ends after a turn began.
   const drafterSessionRef = useRef(drafterSession);
@@ -1493,7 +1386,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     improveFocusRef.current = {};
     setHandoffName(null);
     setPendingGap(null);
-    buildRowsRef.current.clear();
+    proposals.clearRows();
     setPromptUsed(false);
   };
 
@@ -1653,67 +1546,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // saved it.
   const nextOnProposal = nextReady && !promptUsed;
 
-  /**
-   * A field the draft set that the form holds as before it again (its Undo,
-   * or typed back): empty again or back to its previous value. Null while
-   * it holds the draft or the user's own edit.
-   */
-  const undoneKind = (change?: AppliedChange): UndoneKind | null => {
-    if (!change) return null;
-    const now = draftValues[change.field];
-    if (isEqual(now, change.applied) || !isEqual(now, change.previous))
-      return null;
-    const { previous } = change;
-    return previous === null ||
-      previous === undefined ||
-      previous === '' ||
-      (Array.isArray(previous) && previous.length === 0)
-      ? 'empty'
-      : 'previous';
-  };
-  /** A proposal's rows (by key) whose field the user undid since. */
-  const undoneRows = (raw: unknown, rows: ProposalReasonRow[]) => {
-    const undone = new Map<string, UndoneKind>();
-    const changes =
-      raw && typeof raw === 'object' ? appliedRef.current.get(raw) : undefined;
-    (changes ?? []).forEach((change) => {
-      const kind = undoneKind(change);
-      if (!kind) return;
-      rows
-        .filter((row) => row.key.startsWith(`${change.field}-`))
-        .forEach((row) => undone.set(row.key, kind));
-    });
-    return undone;
-  };
-
-  /**
-   * "You changed Name in the form.": fields the proposal set, edited since,
-   * and those it left as the user changed them while the turn ran.
-   */
-  const editedSince = (raw: unknown) => {
-    const key = raw && typeof raw === 'object' ? raw : null;
-    const changes = key ? appliedRef.current.get(key) : undefined;
-    const kept = key ? keptRef.current.get(key) : undefined;
-    const edited = [
-      ...(changes ?? []).filter(
-        ({ field, previous, applied }) =>
-          !isEqual(draftValues[field], applied) &&
-          !isEqual(draftValues[field], previous),
-      ),
-      ...(kept ?? []).filter(
-        ({ field, applied }) => !isEqual(draftValues[field], applied),
-      ),
-    ];
-    return edited.length > 0
-      ? t('drafter.agent.formEdited', {
-          fields: joinList(
-            edited.map(({ field }) => t(AGENT_FIELD_LABEL_KEYS[field])),
-          ),
-          interpolation: { escapeValue: false },
-        })
-      : undefined;
-  };
-
   const renderAgentProposal = (
     raw: unknown,
     latest: boolean,
@@ -1789,11 +1621,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         message={proposal.message}
         cards={gapCards}
         rows={gapCards ? rows.filter((row) => !cardFields.has(row.key)) : rows}
-        undone={undoneRows(raw, rows)}
+        undone={proposals.undoneRows(raw, rows)}
         notes={notes}
         dropped={dropped}
         footnote={
-          latest && !drafterSession.streaming ? editedSince(raw) : undefined
+          latest && !drafterSession.streaming
+            ? proposals.editedSince(raw)
+            : undefined
         }
         actions={
           reviewing ? (
@@ -1948,12 +1782,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       }
     : null;
 
-  /** A finished step's folded line opens the reasons for its fields. */
-  const stepRows = (step: AgentBuildStep) =>
-    AGENT_STEP_FIELDS[step].flatMap((field) => {
-      const row = buildRowsRef.current.get(field);
-      return row ? [row] : [];
-    });
   const stepResult = (step: AgentBuildStep) =>
     agentStepResult(step, draftForm, t, pickedPromptLabel);
   // Skipped steps the build has passed, each one line.
@@ -1983,7 +1811,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </DrafterStepRow>
         ) : (
           build.finished.map((step) => {
-            const rows = stepRows(step);
+            const rows = proposals.stepRows(step);
             const undone = rows.filter((row) => undoneKind(row.change));
             return (
               <DrafterStepRow
@@ -2129,19 +1957,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     isMobile && !drafterOpen && nextReady && !drafterSession.streaming;
 
   /**
-   * "Drafted 3 fields…" for a screen reader once a draft is applied; a field
-   * undone since doesn't count.
-   */
-  const announceAgentProposal = (raw: unknown) => {
-    const changes =
-      raw && typeof raw === 'object' ? appliedRef.current.get(raw) : undefined;
-    const count = (changes ?? []).filter(
-      (change) => !undoneKind(change),
-    ).length;
-    return count > 0 ? t('drafter.agent.draftedCount', { count }) : null;
-  };
-
-  /**
    * Save the agent as a draft, or publish it (Save on a published agent).
    * Edits made while the save is out stay unsaved; publishing also ends
    * the drafting session and starts the preview's chat over.
@@ -2265,7 +2080,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         // The gap or conversation it was improving went with it.
         improveFocusRef.current = {};
         setHandoffName(null);
-        buildRowsRef.current.clear();
+        proposals.clearRows();
         setPromptDraft(null);
         setPromptUsed(false);
         usedPromptRef.current = null;
@@ -3872,7 +3687,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           onStartOver={startDrafterOver}
           onSkipQuestions={skipQuestions}
           modelName={drafterConfig?.model?.display_name ?? null}
-          announceProposal={announceAgentProposal}
+          announceProposal={proposals.announce}
           intro={doneOnly ? '' : drafterIntro}
           placeholder={
             buildable

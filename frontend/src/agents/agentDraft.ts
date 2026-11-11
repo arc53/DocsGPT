@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next';
+import isEqual from 'lodash/isEqual';
 
 import {
   type PromptCheck,
@@ -7,6 +8,7 @@ import {
   readPromptEdits,
 } from '../drafter/promptDraft';
 import type { AgentGapRow } from '../drafter/drafterApi';
+import type { UndoneKind } from '../drafter/DrafterStepRow';
 import type { ProposalReasonRow } from '../drafter/ProposalSummary';
 import type { DrafterStarter } from '../drafter/starters';
 import {
@@ -552,6 +554,146 @@ export function planAgentPatch(
     changes.push({ field, next: value, previous: form[field] } as never);
   });
   return changes;
+}
+
+/**
+ * A field a proposal changed, in its comparable shape (draftValueOf): what
+ * it held before and what the draft set.
+ */
+export type AppliedChange = {
+  field: AgentDraftField;
+  previous: unknown;
+  applied: unknown;
+};
+
+/** How a proposal fills the form (planAgentProposal). */
+export type AgentProposalPlan = {
+  /** The changes to write: the fields the user left alone while it ran. */
+  changes: AgentDraftChange[];
+  /** What each change did, for its summary rows and their undone state. */
+  applied: AppliedChange[];
+  /**
+   * The fields it left as the user changed them while the turn ran, with
+   * the value it would have set, for "You changed … in the form".
+   */
+  kept: AppliedChange[];
+  /** The form a later proposal in the same turn takes as sent. */
+  sent: AgentDraftForm;
+};
+
+/**
+ * Work out how a proposal fills the form: its changes (planAgentPatch),
+ * less any field the user changed while the turn ran, which keeps their
+ * value.
+ *
+ * Args:
+ *   fields: The proposal's fields.
+ *   form: The form now.
+ *   sent: The form as the turn was sent with (with any earlier proposal of
+ *     the same turn applied).
+ *   toolOptions: Tools the form can name.
+ *   undoValue: A drafted field's mark: a field drafted again still holding
+ *     the last draft goes back, on its Undo, to before the first, and its
+ *     record says so, so that Undo reads as undone rather than as an edit
+ *     by hand.
+ *
+ * Returns:
+ *   The changes to write with their records, the fields kept, and the
+ *   form as sent for the next proposal.
+ */
+export function planAgentProposal(
+  fields: AgentProposalFields,
+  form: AgentDraftForm,
+  sent: AgentDraftForm,
+  toolOptions: ToolSummary[],
+  undoValue: (field: AgentDraftField) => { previous: unknown } | null,
+): AgentProposalPlan {
+  const planned = planAgentPatch(fields, form, toolOptions);
+  const movedSinceSent = (field: AgentDraftField) =>
+    !isEqual(
+      draftValueOf(field, form[field] as never),
+      draftValueOf(field, sent[field] as never),
+    );
+  const changes = planned.filter((change) => !movedSinceSent(change.field));
+  return {
+    changes,
+    applied: changes.map((change) => {
+      const marked = undoValue(change.field);
+      return {
+        field: change.field,
+        previous: draftValueOf(
+          change.field,
+          (marked ? marked.previous : change.previous) as never,
+        ),
+        applied: draftValueOf(change.field, change.next),
+      };
+    }),
+    kept: planned
+      .filter((change) => movedSinceSent(change.field))
+      .map((change) => ({
+        field: change.field,
+        previous: draftValueOf(change.field, sent[change.field] as never),
+        applied: draftValueOf(change.field, change.next),
+      })),
+    sent: {
+      ...sent,
+      ...Object.fromEntries(
+        changes.map((change) => [change.field, change.next]),
+      ),
+    },
+  };
+}
+
+/**
+ * A field the draft set that the form holds as before it again (its Undo,
+ * or typed back): empty again or back to its previous value. Null while
+ * it holds the draft or the user's own edit.
+ *
+ * Args:
+ *   change: What the draft did to the field.
+ *   values: The form's comparable values now (agentDraftValues).
+ */
+export function undoneKindOf(
+  change: AppliedChange | undefined,
+  values: Record<AgentDraftField, unknown>,
+): UndoneKind | null {
+  if (!change) return null;
+  const now = values[change.field];
+  if (isEqual(now, change.applied) || !isEqual(now, change.previous))
+    return null;
+  const { previous } = change;
+  return previous === null ||
+    previous === undefined ||
+    previous === '' ||
+    (Array.isArray(previous) && previous.length === 0)
+    ? 'empty'
+    : 'previous';
+}
+
+/**
+ * The fields a proposal set that were edited since, then those it left as
+ * the user changed them while the turn ran and that still differ from what
+ * it would have set.
+ *
+ * Args:
+ *   applied: What the proposal changed.
+ *   kept: The fields it left as the user had them.
+ *   values: The form's comparable values now.
+ */
+export function editedSinceFields(
+  applied: AppliedChange[],
+  kept: AppliedChange[],
+  values: Record<AgentDraftField, unknown>,
+): AgentDraftField[] {
+  return [
+    ...applied.filter(
+      ({ field, previous, applied: value }) =>
+        !isEqual(values[field], value) && !isEqual(values[field], previous),
+    ),
+    ...kept.filter(
+      ({ field, applied: value }) => !isEqual(values[field], value),
+    ),
+  ].map(({ field }) => field);
 }
 
 /** Whether the form holds nothing a user typed or picked: "Draft", not "Improve". */

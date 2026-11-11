@@ -8,6 +8,7 @@ import {
   agentDraftValues,
   agentProposalSummary,
   agentStepResult,
+  editedSinceFields,
   gapLine,
   gapRequest,
   gapTitle,
@@ -16,6 +17,8 @@ import {
   isSafetyUnset,
   parseAgentProposal,
   planAgentPatch,
+  planAgentProposal,
+  undoneKindOf,
 } from './agentDraft';
 import { DEFAULT_GUARDRAILS } from './components/GuardrailsSection';
 import type { GuardrailsConfig } from './types';
@@ -946,5 +949,48 @@ describe('agentDraft', () => {
     expect(
       agentDraftContext('a1', form(), { step: null, earlier: [] }, null),
     ).not.toHaveProperty('gap');
+  });
+  it('leaves a field the user changed while the turn ran, and records the rest', () => {
+    const sent = form({ name: 'Old', description: 'Was' });
+    const now = form({ name: 'Typed', description: 'Was' });
+    const plan = planAgentProposal(
+      { name: 'Drafted', description: 'New' },
+      now,
+      sent,
+      [],
+      // Drafted before: its Undo goes back to before the first draft.
+      (field) => (field === 'description' ? { previous: 'First' } : null),
+    );
+    expect(plan.changes.map((change) => change.field)).toEqual(['description']);
+    expect(plan.applied).toEqual([
+      { field: 'description', previous: 'First', applied: 'New' },
+    ]);
+    expect(plan.kept).toEqual([
+      { field: 'name', previous: 'Old', applied: 'Drafted' },
+    ]);
+    // A later proposal of the same turn takes this one's values as sent.
+    expect(plan.sent).toMatchObject({ name: 'Old', description: 'New' });
+  });
+
+  it('tells an undone field from an edited one', () => {
+    const change = { field: 'name' as const, previous: '', applied: 'Bot' };
+    const values = (name: string) => agentDraftValues(form({ name }));
+    expect(undoneKindOf(change, values(''))).toBe('empty');
+    expect(undoneKindOf({ ...change, previous: 'Old' }, values('Old'))).toBe(
+      'previous',
+    );
+    expect(undoneKindOf(change, values('Bot'))).toBeNull();
+    expect(undoneKindOf(change, values('Typed'))).toBeNull();
+    expect(undoneKindOf(undefined, values(''))).toBeNull();
+    // Typed over since, applied or kept, it counts as edited.
+    expect(editedSinceFields([change], [], values('Typed'))).toEqual(['name']);
+    expect(editedSinceFields([change], [], values(''))).toEqual([]);
+    expect(
+      editedSinceFields(
+        [],
+        [{ field: 'name', previous: 'Old', applied: 'Bot' }],
+        values('Typed'),
+      ),
+    ).toEqual(['name']);
   });
 });
