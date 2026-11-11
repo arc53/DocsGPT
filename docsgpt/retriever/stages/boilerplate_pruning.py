@@ -40,11 +40,31 @@ _PROTECTED_QUALIFIERS = {
     "always",
 }
 
+_NAV_ROOTS = (
+    r"home|docs|documentation|guides?|reference|api|manual|tutorials?|"
+    r"overview|index|help|settings|dashboard|root"
+)
+
 # Regex for clearly identifiable breadcrumb patterns:
-# Supports 'Home > API', 'Home / Guides / Setup', 'Docs » Reference', markdown link breadcrumbs
+# Requires identifiable navigation:
+# 1. Navigational symbols (›, », →): e.g. 'Docs » Reference', 'Home › API'
+# 2. Markdown links: e.g. '[Home](/) > API'
+# 3. Known navigation root anchors: e.g. 'Home > API', 'Home / Guides / Setup'
+# 4. Multi-level trails with 2+ separators (3+ segments): e.g. 'Topic > Subtopic > Details'
+_BREADCRUMB_SEP = r"(?:\s*[›»→]\s*|\s*>\s*|\s*/(?!\S)\s*)"
+
 _BREADCRUMB_RE = re.compile(
-    r"^(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*|[\w\-&]+(?:\s+[\w\-&]+){0,2}\s*)(?:[›»>]|/(?!\S))\s*)+"
-    r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})?\s*$",
+    r"^(?:"
+    r"(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})\s*[›»→]\s*)+"
+    r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})|"
+    r"(?:\*?\s*\[[^\]]+\]\([^\)]+\)" + _BREADCRUMB_SEP + r")+"
+    r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})|"
+    r"(?:\*?\s*(?i:" + _NAV_ROOTS + r")(?:\s+[\w\-&]+){0,2}" + _BREADCRUMB_SEP + r")"
+    r"(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})" + _BREADCRUMB_SEP + r")*"
+    r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})|"
+    r"(?:[\w\-&]+(?:\s+[\w\-&]+){0,2}\s*(?:>|/(?!\S))\s*){2,}"
+    r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})"
+    r")\s*$",
     re.IGNORECASE,
 )
 
@@ -149,6 +169,15 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
     if re.search(r"(?:<=?|>=?|≤|≥|!=)\s*[-+]?\d", stripped):
         return True
 
+    # 4c. Factual comparison expressions (e.g. "Cache size > memory budget")
+    if re.search(r"\b[\w.-]+(?:\s+[\w.-]+)?\s*(?:<=?|>=?|≤|≥|!=|==)\s*[\w.-]+", stripped):
+        if not _is_navigation_boilerplate(line):
+            return True
+
+    # 4d. Factual license statements (e.g. "This library is licensed under MIT.")
+    if re.search(r"\blicens(?:ed|ing)?\s+under\b", stripped, re.IGNORECASE):
+        return True
+
     # 5. URLs (unless a pagination link or recognized navigation control)
     if "http://" in stripped or "https://" in stripped:
         if not _PAGINATION_LINK_RE.match(stripped) and not _NAV_CONTROL_RE.match(stripped):
@@ -199,8 +228,13 @@ def _is_boilerplate_candidate(line: str) -> bool:
     if _is_navigation_boilerplate(line):
         return True
 
-    # Copyright, license, or legal notices
-    if re.search(r"(?:©|\bcopyright\b|\(c\)\b|\ball rights reserved\b|\blicensed under\b)", stripped, re.IGNORECASE):
+    # Copyright or legal notices (standalone boilerplate banners like '© 2024 ...' or 'All rights reserved.')
+    # Factual prose sentences (such as 'This library is licensed under MIT.') must NEVER be treated as boilerplate candidates.
+    if re.search(r"(?:©|\(c\)\b|\ball rights reserved\b)", stripped, re.IGNORECASE):
+        return True
+    if re.match(r"^copyright\b", stripped, re.IGNORECASE) and not re.search(
+        r"\b(?:is|are|was|were)\b", stripped, re.IGNORECASE
+    ):
         return True
 
     # Document titles, product headers, or version lines (e.g. "DocsGPT Documentation v2.4")

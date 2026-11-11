@@ -157,10 +157,13 @@ class TestBoilerplatePruningRules:
         assert prune_chunk_text("Home / Guides / Setup", query="database configuration") == ""
         assert prune_chunk_text("Docs » Reference", query="database configuration") == ""
 
-        # Non-breadcrumbs (HTTP methods and tables) must be preserved
+        # Non-breadcrumbs (HTTP methods, tables, and factual comparisons) must be preserved
         assert "GET /api/v1/users" in prune_chunk_text("GET /api/v1/users", query="users")
         assert "POST /v1/chat/completions" in prune_chunk_text("POST /v1/chat/completions", query="chat")
         assert "| col1 | col2 |" in prune_chunk_text("| col1 | col2 |", query="col1")
+        assert "Cache size > memory budget" in prune_chunk_text(
+            "Cache size > memory budget", query="unrelated search keywords"
+        )
 
     def test_preserves_code_blocks_and_inline_code(self):
         raw = (
@@ -416,3 +419,27 @@ class TestBoilerplatePruningRules:
         prune_boilerplate([doc], query="Factual")
         assert "_raw_text" not in doc
         assert doc["text"] == "Factual chunk."
+
+    def test_preserves_factual_comparison_without_numeric_operand(self):
+        raw = "Home > API\nCache size > memory budget\nNext page: Settings"
+        cleaned = prune_chunk_text(raw, query="unrelated query")
+        assert "Cache size > memory budget" in cleaned
+        assert "Home > API" not in cleaned
+        assert "Next page" not in cleaned
+
+    def test_preserves_repeated_factual_license_statements_across_chunks(self):
+        docs = [
+            {
+                "id": "doc1",
+                "text": "Home > Reference\nThis library is licensed under MIT.\nCore module details.",
+            },
+            {
+                "id": "doc2",
+                "text": "Home > Reference\nThis library is licensed under MIT.\nPlugin module details.",
+            },
+        ]
+        pruned = prune_boilerplate(docs, query="unrelated query terms")
+        assert "This library is licensed under MIT." in pruned[0]["text"]
+        assert "This library is licensed under MIT." in pruned[1]["text"]
+        assert "Home > Reference" not in pruned[0]["text"]
+        assert "Home > Reference" not in pruned[1]["text"]

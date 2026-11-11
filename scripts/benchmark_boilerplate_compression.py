@@ -1,11 +1,15 @@
 # ruff: noqa: E402
 """Benchmark prototype for DocsGPT Issue #2578: Extractive Boilerplate Pruning.
 
-Evaluates context token savings, execution latency, and structural fidelity
-(complete code blocks, full markdown table rows, warnings, navigation removal,
-and duplicate header deduplication) against exact document source IDs.
-Compares Baseline (OFF) and In-Tree Boilerplate Pruning (Zero Dependencies)
-over representative queries with observed percentage calculations.
+Evaluates standalone chunk-level context token savings, execution latency, and
+structural fidelity (complete code blocks, full markdown table rows, warnings,
+navigation removal, and duplicate header deduplication) against exact document
+source IDs. Compares unpruned baseline chunks and in-tree boilerplate pruning
+(zero dependencies) over representative queries with observed percentage calculations.
+
+Note: This benchmark evaluates standalone retrieved chunk tokens and structural
+preservation. It does not evaluate full-prompt token costs, LLM generated-answer
+accuracy, or downstream citation support.
 """
 
 from __future__ import annotations
@@ -354,7 +358,7 @@ def run_benchmark() -> None:
 
     # Markdown Results Table with observed percentages
     table = [
-        "| Metric | CHUNK_COMPRESSION_ENABLED=False | In-Tree Pruning (Zero Dependencies) |",
+        "| Metric | Baseline (Unpruned Chunks) | In-Tree Pruning (Zero Dependencies) |",
         "| :--- | :--- | :--- |",
         f"| **Context Tokens / Query** | {avg_base_tokens} | {avg_intree_tokens} (-{intree_savings_pct:.1f}%) |",
         f"| **Processing Latency** | Baseline (0.0 ms) | +{avg_intree_latency_ms:.2f} ms |",
@@ -367,6 +371,10 @@ def run_benchmark() -> None:
         "| **External Dependencies Required** | None | None (Standard Library Only) |",
     ]
     print("\n".join(table))
+    print(
+        "\n*Note: Standalone prototype evaluating retrieved chunk tokens and syntax integrity. "
+        "Does not measure full-prompt cost, generated-answer accuracy, or citation support.*"
+    )
 
 
 if __name__ == "__main__":
