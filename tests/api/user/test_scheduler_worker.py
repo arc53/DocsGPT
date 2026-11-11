@@ -1111,6 +1111,32 @@ class TestRunAsOwnerAccessRecheck:
         assert row["status"] == "failed"
         assert row["error"] == "agent access revoked"
 
+    def test_revoked_access_pauses_the_schedule_and_tells_its_user(
+        self, pg_engine, patched_engine, stub_events, monkeypatch,
+    ):
+        from docsgpt.api.user import scheduler_worker
+
+        notified: list[dict] = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        monkeypatch.setattr(scheduler_worker.settings, "SCHEDULE_NOTIFY_RECURRING_FAILURES", True)
+        with pg_engine.begin() as conn:
+            first = self._member_run(conn, grant=False)
+            second = ScheduleRunsRepository(conn).record_pending(
+                str(first["schedule_id"]), "member-y", str(first["agent_id"]), _now() + timedelta(minutes=1),
+            )
+
+        for run in (first, second):
+            execute_scheduled_run_body(str(run["id"]), "celery-r")
+
+        with pg_engine.connect() as conn:
+            sched = SchedulesRepository(conn).get_internal(str(first["schedule_id"]))
+        assert sched["status"] == "paused"
+        assert "schedule.autopaused" in {e[0] for e in stub_events}
+        assert [(n["kind"], n["user_id"], n["body"]) for n in notified] == [
+            ("schedule_failed", "member-y", "agent access revoked"),
+            ("schedule_paused", "member-y", "agent access revoked"),
+        ]
+
     def test_member_with_grant_runs(self, pg_engine, patched_engine, stub_events):
         with pg_engine.begin() as conn:
             run = self._member_run(conn, grant=True)
