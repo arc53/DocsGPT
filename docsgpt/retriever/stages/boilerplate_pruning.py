@@ -41,16 +41,17 @@ _PROTECTED_QUALIFIERS = {
 }
 
 _NAV_ROOTS = (
-    r"home|docs|documentation|guides?|reference|api|manual|tutorials?|"
+    r"home|docs|documentation|guides?|reference|manual|tutorials?|"
     r"overview|index|help|settings|dashboard|root"
 )
 
 # Regex for clearly identifiable breadcrumb patterns:
-# Requires identifiable navigation:
+# Requires identifiable navigation evidence:
 # 1. Navigational symbols (›, », →): e.g. 'Docs » Reference', 'Home › API'
-# 2. Markdown links: e.g. '[Home](/) > API'
-# 3. Known navigation root anchors: e.g. 'Home > API', 'Home / Guides / Setup'
-# 4. Multi-level trails with 2+ separators (3+ segments): e.g. 'Topic > Subtopic > Details'
+# 2. Markdown links as segments: e.g. '[Home](/) > API'
+# 3. Known navigation root anchor as the first segment: e.g. 'Home > API', 'Home / Guides / Setup'
+# Segment-count alone (e.g. 3+ segments separated by '>') is NOT sufficient —
+# 'Cache size > memory budget > disk capacity' is a factual comparison chain.
 _BREADCRUMB_SEP = r"(?:\s*[›»→]\s*|\s*>\s*|\s*/(?!\S)\s*)"
 
 _BREADCRUMB_RE = re.compile(
@@ -61,8 +62,6 @@ _BREADCRUMB_RE = re.compile(
     r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})|"
     r"(?:\*?\s*(?i:" + _NAV_ROOTS + r")(?:\s+[\w\-&]+){0,2}" + _BREADCRUMB_SEP + r")"
     r"(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})" + _BREADCRUMB_SEP + r")*"
-    r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})|"
-    r"(?:[\w\-&]+(?:\s+[\w\-&]+){0,2}\s*(?:>|/(?!\S))\s*){2,}"
     r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})"
     r")\s*$",
     re.IGNORECASE,

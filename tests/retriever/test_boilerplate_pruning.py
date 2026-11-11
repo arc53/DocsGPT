@@ -157,12 +157,36 @@ class TestBoilerplatePruningRules:
         assert prune_chunk_text("Home / Guides / Setup", query="database configuration") == ""
         assert prune_chunk_text("Docs » Reference", query="database configuration") == ""
 
+        # Multi-level breadcrumbs anchored by a navigation root must be pruned
+        assert (
+            prune_chunk_text(
+                "Home > Documentation > API Reference > Endpoints",
+                query="unrelated query",
+            )
+            == ""
+        )
+        assert (
+            prune_chunk_text(
+                "Reference > Authentication > OAuth",
+                query="unrelated query",
+            )
+            == ""
+        )
+
         # Non-breadcrumbs (HTTP methods, tables, and factual comparisons) must be preserved
         assert "GET /api/v1/users" in prune_chunk_text("GET /api/v1/users", query="users")
         assert "POST /v1/chat/completions" in prune_chunk_text("POST /v1/chat/completions", query="chat")
         assert "| col1 | col2 |" in prune_chunk_text("| col1 | col2 |", query="col1")
         assert "Cache size > memory budget" in prune_chunk_text(
             "Cache size > memory budget", query="unrelated search keywords"
+        )
+
+        # Factual comparison chains with 2+ '>' must NOT be pruned as breadcrumbs
+        assert "Cache size > memory budget > disk capacity" in prune_chunk_text(
+            "Cache size > memory budget > disk capacity", query="unrelated query"
+        )
+        assert "API latency > database latency" in prune_chunk_text(
+            "API latency > database latency", query="unrelated query"
         )
 
     def test_preserves_code_blocks_and_inline_code(self):
@@ -426,6 +450,18 @@ class TestBoilerplatePruningRules:
         assert "Cache size > memory budget" in cleaned
         assert "Home > API" not in cleaned
         assert "Next page" not in cleaned
+
+        # Multi-level comparison chain must also be preserved
+        raw2 = "Home > API\nCache size > memory budget > disk capacity\nNext page: Settings"
+        cleaned2 = prune_chunk_text(raw2, query="unrelated query")
+        assert "Cache size > memory budget > disk capacity" in cleaned2
+        assert "Home > API" not in cleaned2
+
+        # 'API latency > database latency' must be preserved (API is not a nav root)
+        raw3 = "Home > API\nAPI latency > database latency\nNext page: Settings"
+        cleaned3 = prune_chunk_text(raw3, query="unrelated query")
+        assert "API latency > database latency" in cleaned3
+        assert "Home > API" not in cleaned3
 
     def test_preserves_repeated_factual_license_statements_across_chunks(self):
         docs = [
