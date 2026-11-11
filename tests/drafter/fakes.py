@@ -83,6 +83,9 @@ class FakeLLM:
         return self
 
 
+#: The task model a test hands ``run_draft``: one that calls tools.
+MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
+
 PROPOSAL = {
     "message": "Drafted a shipping help agent.",
     "fields": {

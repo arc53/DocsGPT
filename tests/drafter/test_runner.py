@@ -14,9 +14,7 @@ from docsgpt.drafter.fencing import clean_text, DATA_GUARD, fence
 from docsgpt.drafter.output import EVENT_CHARS, normalize_questions, parse_json_object
 from docsgpt.drafter.recipe import DraftRequest, get_recipe, ProposalInvalid
 from docsgpt.drafter.runner import MAX_LLM_CALLS, MAX_READ_CALLS, question_rounds, run_draft
-from tests.drafter.fakes import calls, FakeLLM, PROPOSAL, QUESTIONS, text, tool_call
-
-MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
+from tests.drafter.fakes import calls, FakeLLM, MODEL, PROPOSAL, QUESTIONS, text, tool_call
 
 
 def _request(*messages, form=None):

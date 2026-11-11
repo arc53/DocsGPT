@@ -16,9 +16,8 @@ from docsgpt.drafter.topics_recipe import DAYS, load_workspace, MIN_CONVERSATION
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversation_labels import ConversationLabelsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from tests.api.user.drafter.test_drafter_routes import MODEL
 from tests.drafter.fakes import calls, FakeLLM, tool_call
-
-MODEL = {"id": "task-model", "display_name": "Task Model", "supports_tools": True}
 
 
 @pytest.fixture(scope="module")

@@ -17,9 +17,7 @@ from docsgpt.drafter.topics_recipe import (
     UNMATCHED_P,
     validate,
 )
-from tests.drafter.fakes import calls, FakeLLM, tool_call
-
-MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
+from tests.drafter.fakes import calls, FakeLLM, MODEL, tool_call
 
 FOLDERS = [
     {"name": "shipping", "description": "Pages such as: Rates; Zones"},

@@ -26,7 +26,7 @@ from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
-from tests.drafter.fakes import calls, FakeLLM, tool_call
+from tests.drafter.fakes import calls, FakeLLM, MODEL, tool_call
 
 PERSONA = (
     "You are the support assistant for Meridian Freight Group.\n"
@@ -37,7 +37,6 @@ PERSONA = (
 )
 FLEET = {"id": "a1", "name": "Fleet Desk", "agent_type": "classic", "sources": 0, "tools": []}
 QUOTES = {"id": "a2", "name": "Quote Bot", "agent_type": "agentic", "sources": 2, "tools": ["Memory"]}
-MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
 
 
 def _req(content=PERSONA, prompt_id="p1", message="Review it") -> DraftRequest:

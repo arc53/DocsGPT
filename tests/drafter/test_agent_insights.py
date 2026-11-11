@@ -26,10 +26,9 @@ from docsgpt.drafter.read_tools import run_read_tool
 from docsgpt.drafter.recipe import DraftRequest, ProposalInvalid
 from docsgpt.drafter.runner import run_draft
 from tests.drafter import insights_seed as seed
-from tests.drafter.fakes import calls, FakeLLM, tool_call
+from tests.drafter.fakes import calls, FakeLLM, MODEL, tool_call
 
 SOURCE_ID = "22222222-2222-2222-2222-222222222222"
-MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
 ROWS = [
     {"topic": "Order status", "gap_type": "needs account data", "expected": 31, "turns": 96, "previous": None},
     {"topic": "Returns & claims", "gap_type": "docs missing", "expected": 23, "turns": 160, "previous": 19},

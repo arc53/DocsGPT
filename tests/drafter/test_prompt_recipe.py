@@ -22,14 +22,13 @@ from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, get_recipe, Pr
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import parse_messages
 from docsgpt.prompts.composer import compose_preset
-from tests.drafter.fakes import calls, FakeLLM, tool_call
+from tests.drafter.fakes import calls, FakeLLM, MODEL, tool_call
 
 PERSONA = (
     "You answer customer questions for Meridian Freight Group.\n"
     "Use the context below to answer. Today is a good day.\n"
     "Be polite and concise."
 )
-MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
 
 
 def _req(mode="improve", content=PERSONA, *user_messages, name="Support reply", **extra) -> DraftRequest:
