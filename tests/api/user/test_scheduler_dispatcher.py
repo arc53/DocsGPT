@@ -14,6 +14,9 @@ from docsgpt.storage.db.repositories.schedule_runs import (
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -221,6 +224,77 @@ class TestOverlap:
         assert row["next_run_at"] is None
 
 
+class TestOneTimeTaskDueDuringManualRun:
+    """A one-time task that comes due while a Run now of it is going waits for it instead of being skipped."""
+
+    @pytest.mark.parametrize("running", [False, True])
+    def test_it_runs_once_the_manual_run_ends(
+        self, pg_engine, patched_engine, stub_enqueue, monkeypatch, running,
+    ):
+        _set_postgres_uri(monkeypatch, pg_engine)
+        with pg_engine.begin() as conn:
+            agent_id = _make_agent(conn)
+        due = _now() - timedelta(seconds=5)
+        schedule = _create_schedule(
+            pg_engine,
+            user_id="u1", agent_id=agent_id, trigger_type="once",
+            instruction="check the deploy", run_at=due, next_run_at=due,
+        )
+        with pg_engine.begin() as conn:
+            manual = ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now() - timedelta(minutes=1),
+                trigger_source="manual",
+            )
+            if running:
+                ScheduleRunsRepository(conn).mark_running(manual["id"], "t-manual")
+
+        dispatch_due_runs()
+
+        with pg_engine.connect() as conn:
+            runs = ScheduleRunsRepository(conn).list_runs(str(schedule["id"]), "u1")
+            stored = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert [r["trigger_source"] for r in runs] == ["manual"]
+        assert stored["status"] == "active"
+        assert stored["next_run_at"] == schedule["next_run_at"]
+        assert stub_enqueue == []
+
+        with pg_engine.begin() as conn:
+            ScheduleRunsRepository(conn).update(str(manual["id"]), {"status": "success"})
+        dispatch_due_runs()
+
+        with pg_engine.connect() as conn:
+            runs = ScheduleRunsRepository(conn).list_runs(str(schedule["id"]), "u1")
+        cron = [r for r in runs if r["trigger_source"] == "cron"]
+        assert [r["status"] for r in cron] == ["pending"]
+        assert stub_enqueue == [str(cron[0]["id"])]
+
+    def test_a_recurring_schedule_still_skips_the_tick(
+        self, pg_engine, patched_engine, stub_enqueue, monkeypatch,
+    ):
+        _set_postgres_uri(monkeypatch, pg_engine)
+        with pg_engine.begin() as conn:
+            agent_id = _make_agent(conn)
+        schedule = _create_schedule(
+            pg_engine,
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="i", cron="*/5 * * * *", next_run_at=_now() - timedelta(seconds=2),
+        )
+        with pg_engine.begin() as conn:
+            ScheduleRunsRepository(conn).record_pending(
+                str(schedule["id"]), "u1", agent_id, _now() - timedelta(minutes=1),
+                trigger_source="manual",
+            )
+
+        dispatch_due_runs()
+
+        with pg_engine.connect() as conn:
+            runs = ScheduleRunsRepository(conn).list_runs(str(schedule["id"]), "u1")
+        assert sorted((r["trigger_source"], r["status"]) for r in runs) == [
+            ("cron", "skipped"), ("manual", "pending"),
+        ]
+        assert stub_enqueue == []
+
+
 class TestAgentlessSchedules:
     def test_dispatcher_claims_and_enqueues_agentless_once(
         self, pg_engine, patched_engine, stub_enqueue, monkeypatch,
@@ -278,6 +352,7 @@ class TestAgentlessRoundTrip:
             type("S", (), {
                 "POSTGRES_URI": str(pg_engine.url),
                 "SCHEDULE_AUTOPAUSE_FAILURES": 3,
+                "SCHEDULE_NOTIFY_RECURRING_FAILURES": False,
             })(),
         )
         monkeypatch.setattr(
@@ -359,6 +434,7 @@ class TestOnceRoundTrip:
             type("S", (), {
                 "POSTGRES_URI": str(pg_engine.url),
                 "SCHEDULE_AUTOPAUSE_FAILURES": 3,
+                "SCHEDULE_NOTIFY_RECURRING_FAILURES": False,
             })(),
         )
         monkeypatch.setattr(

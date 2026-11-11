@@ -14,8 +14,15 @@ type ChartPanelProps = {
    * pushed to the end takes `ml-auto`.
    */
   actions?: ReactNode;
+  /** In flow under the title row: the panel's headline figure. */
+  summary?: ReactNode;
   /** The chart, given the id of the legend container it draws into. */
   chart?: (legendId: string) => ReactNode;
+  /**
+   * In flow, in place of a chart: a body that sizes itself, such as share
+   * bars when there is too little to draw over time.
+   */
+  children?: ReactNode;
   /** A skeleton in place of the chart while its data loads; the title stays. */
   loading?: boolean;
   /** The fetch failed: what to say, with Retry, in place of the chart. */
@@ -38,7 +45,9 @@ type ChartPanelProps = {
 export default function ChartPanel({
   title,
   actions,
+  summary,
   chart,
+  children,
   loading = false,
   error,
   onRetry,
@@ -68,6 +77,8 @@ export default function ChartPanel({
     );
   else if (empty)
     body = <EmptyState size="sm" illustration="none" title={empty} />;
+  else if (children)
+    body = <div className="flex flex-col gap-3">{children}</div>;
   else
     body = (
       <div className="absolute inset-0 flex flex-col">
@@ -93,6 +104,7 @@ export default function ChartPanel({
       ) : (
         heading
       )}
+      {!loading && !error && !empty && summary}
       <div className="relative min-h-[245px] w-full flex-1">{body}</div>
     </Card>
   );

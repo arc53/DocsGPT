@@ -23,6 +23,10 @@ from docsgpt.storage.db.base_repository import row_to_dict
 logger = logging.getLogger(__name__)
 
 
+# ``produced_by.source`` of a document attached to a workflow run: the run's input, not something it produced.
+RUN_INPUT_SOURCE = "workflow_input"
+
+
 def _artifact_to_dict(row: Any) -> dict:
     """row_to_dict for an ``artifacts`` row (``metadata`` key preserved)."""
     return row_to_dict(row)
@@ -232,12 +236,14 @@ class ArtifactsRepository:
         conversation_id: Optional[str] = None,
         workflow_run_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        include_run_inputs: bool = True,
     ) -> list[dict]:
         """List artifacts filtered by parent / owner (newest first); at least one filter is required.
 
         Each row also carries its current version's ``current_filename`` and
         ``current_mime_type``, so a list can say what kind of file each is
-        without a request per artifact.
+        without a request per artifact. ``include_run_inputs=False`` leaves out
+        the documents attached to a workflow run, keeping only what it produced.
         """
         if conversation_id is None and workflow_run_id is None and user_id is None:
             raise ValueError("list_artifacts requires at least one of conversation_id, workflow_run_id, user_id")
@@ -252,6 +258,9 @@ class ArtifactsRepository:
         if user_id is not None:
             clauses.append("a.user_id = :user_id")
             params["user_id"] = user_id
+        if not include_run_inputs:
+            clauses.append("COALESCE(v.produced_by ->> 'source', '') <> :run_input_source")
+            params["run_input_source"] = RUN_INPUT_SOURCE
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         result = self._conn.execute(
             text(

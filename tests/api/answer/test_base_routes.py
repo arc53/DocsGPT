@@ -75,6 +75,16 @@ class TestPrepareToolCallsForLogging:
             assert prepared[0]["result"] == "short text"
             assert prepared[0]["tool_name"] == "search"
 
+    def test_never_logs_an_mcp_app_views_result(self, mock_mongo_db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            ui = {"resource_uri": "ui://app/view.html", "tool_id": "t1", "result": {"structuredContent": {"k": 1}}}
+            tool_calls = [{"tool_name": "mcp_tool", "ui": ui}]
+            prepared = BaseAnswerResource()._prepare_tool_calls_for_logging(tool_calls)
+            assert prepared[0]["ui"] == {"resource_uri": "ui://app/view.html", "tool_id": "t1"}
+            assert "result" in tool_calls[0]["ui"]
+
 
 @pytest.mark.unit
 class TestCompleteStreamToolCalls:
@@ -1244,7 +1254,7 @@ class TestCompleteStreamWalAcceptance:
             assert save_state.call_args.kwargs["messages"] == [read]
 
     def test_sources_found_before_the_pause_are_saved_with_it(
-        self, pg_conn, flask_app,
+        self, pg_conn, flask_app, mock_llm_creator,
     ):
         """The resumed turn continues the paused one's ``[n]`` numbering, so
         it needs the sources in full: the stream's 100-character excerpts
@@ -1256,6 +1266,8 @@ class TestCompleteStreamWalAcceptance:
 
         doc = {"title": "a.pdf", "source": "a.pdf", "text": "x" * 1500, "chunk_key": "k"}
         expected = dict(doc)
+        # The pause creates the conversation and names it with the title model.
+        mock_llm_creator.gen.return_value = "Run my tool"
         with flask_app.app_context():
             resource = BaseAnswerResource()
             mock_agent = MagicMock()

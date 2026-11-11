@@ -978,7 +978,11 @@ class GetConversationInsights(Resource):
             "(from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' "
             "(still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill). "
             "For an agent, 'one_pick' lists the options of its topic question (empty when it asks none) "
-            "and 'overlapping' its topics that can overlap; each one's totals are under 'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list."
+            "and 'overlapping' its topics that can overlap; each one's totals are under 'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list. "
+            "'series' is in 'bucket_unit': the filter's own unit while its buckets average 10 analyzed answers, "
+            "else the next coarser one (minute to hour, hour to day, day to week). A week is named by its first day "
+            "in the window and carries its last as 'bucket_end'. 'previous' holds answer_status, reaction and "
+            "sentiment totals over the period of the same length just before the window."
         )
     )
     def post(self):
@@ -995,7 +999,7 @@ class GetConversationInsights(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Invalid option"}), 400
             )
-        start_date, end_date, _bucket_unit, pg_fmt = window
+        start_date, end_date, filter_unit, pg_fmt = window
         available = _analytics_available()
         backfill_days = settings.ANALYTICS_BACKFILL_DAYS
         labelling_from = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=backfill_days)
@@ -1011,6 +1015,8 @@ class GetConversationInsights(Resource):
             "one_pick": [],
             "overlapping": [],
             "totals": {},
+            "previous": {},
+            "bucket_unit": filter_unit,
             "series": [],
         }
 
@@ -1049,17 +1055,33 @@ class GetConversationInsights(Resource):
                 bucket_sums = repo.label_sums(
                     scope, schema_hash, start_date, end_date, series_labels, bucket_format=pg_fmt
                 )
+                # The period of the same length just before the window, for the headline figures' change.
+                previous_end = start_date - datetime.timedelta(microseconds=1)
+                previous_start = previous_end - (end_date - start_date)
+                previous_labels = list(insights.PREVIOUS_LABELS)
+                previous_counts = repo.label_counts(
+                    scope, schema_hash, previous_start, previous_end, previous_labels
+                )
+                previous_sums = repo.label_sums(scope, schema_hash, previous_start, previous_end, previous_labels)
 
+            buckets = list(_intervals_for_filter(filter_option, start_date, end_date))
+            unit = insights.bucket_unit(filter_unit, buckets, int((counts.get("answer_status") or {}).get("n") or 0))
+            ends: dict = {}
+            if unit != filter_unit:
+                buckets, ends, bucket_counts, bucket_sums = insights.rebucket(buckets, bucket_counts, bucket_sums, unit)
+            result["bucket_unit"] = unit
+            result["previous"] = insights.totals(previous_labels, previous_counts, previous_sums)
             totals = insights.totals(labels, counts, sums)
             result["totals"] = totals
             result["languages"] = insights.languages(counts)
             result["language_warnings"] = insights.language_warnings(counts)
             result["series"] = insights.series(
-                _intervals_for_filter(filter_option, start_date, end_date),
+                buckets,
                 series_labels,
                 bucket_counts,
                 bucket_sums,
                 {label: list(totals[label]["options"]) for label in series_labels if label in totals},
+                ends,
             )
         except AccessDenied as denied:
             return _denied(denied)

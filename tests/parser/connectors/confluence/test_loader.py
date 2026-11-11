@@ -535,6 +535,7 @@ class TestDownloadToDirectory:
     def test_string_file_ids_converted_to_list(self, loader):
         loader._download_page = MagicMock(return_value=True)
         loader._download_page_attachments = MagicMock(return_value=0)
+        loader._download_space = MagicMock(return_value=0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, "out")
@@ -543,6 +544,7 @@ class TestDownloadToDirectory:
             )
 
         loader._download_page.assert_called_once_with("p1", target)
+        loader._download_space.assert_called_once_with("sp1", target)
         assert result["files_downloaded"] == 1
 
     @pytest.mark.unit

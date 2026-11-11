@@ -45,6 +45,15 @@ class TestLiveHeadlessRun:
         assert seen == events
         assert outcome["answer"] == "ab" and outcome["stopped"] is False
 
+    def test_sources_reach_the_observer_and_outcome_without_the_knowledge_name(self, monkeypatch):
+        # The name is for the model; the live stream and the stored turn go to clients.
+        docs = [{"text": "t", "title": "a.md", "source_name": "test-1", "connector_name": "Google Drive"}]
+        seen = []
+        outcome, _ = _run(monkeypatch, [{"sources": docs}, {"answer": "a"}], on_event=seen.append)
+        assert seen[0] == {"sources": [{"text": "t", "title": "a.md", "connector_name": "Google Drive"}]}
+        assert outcome["sources"] == [{"text": "t", "title": "a.md", "connector_name": "Google Drive"}]
+        assert docs[0]["source_name"] == "test-1"
+
     def test_a_failing_observer_does_not_end_the_run(self, monkeypatch):
         def _boom(event):
             raise RuntimeError("journal down")
@@ -68,4 +77,53 @@ class TestLiveHeadlessRun:
         outcome, closed = _run(monkeypatch, events, should_stop=lambda: True)
         assert outcome["stopped"] is True
         assert outcome["answer"] == ""
+        assert closed == [True]
+
+    def test_a_stop_that_ends_the_agent_mid_read_is_reported_as_stopped(self, monkeypatch):
+        stop = []
+
+        def events():
+            yield {"answer": "a"}
+            stop.append(True)  # the Stop ends the provider read; the agent returns quietly
+
+        outcome, _ = _run(monkeypatch, events(), should_stop=lambda: bool(stop))
+        assert outcome["answer"] == "a"
+        assert outcome["stopped"] is True
+
+    def test_worker_time_limit_keeps_partial_answer(self, monkeypatch):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        def events():
+            yield {"answer": "Saved progress"}
+            raise SoftTimeLimitExceeded()
+
+        outcome, closed = _run(monkeypatch, events(), endpoint="continuation")
+        assert closed == [True]
+        assert outcome["answer"] == "Saved progress"
+        assert outcome["error_type"] == "TimeLimit"
+        assert outcome["tool_calls"] == [{"call_id": "c1", "job_id": "j1"}]
+
+    def test_scheduled_time_limit_reaches_its_existing_outer_handler(self, monkeypatch):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        def events():
+            yield {"answer": "Partial"}
+            raise SoftTimeLimitExceeded()
+
+        with pytest.raises(SoftTimeLimitExceeded):
+            _run(monkeypatch, events(), endpoint="scheduled")
+
+    def test_time_limit_in_observer_keeps_current_chunk_and_closes_the_agent(self, monkeypatch):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        def observer(event):
+            if event == {"answer": "b"}:
+                raise SoftTimeLimitExceeded()
+
+        outcome, closed = _run(
+            monkeypatch, [{"answer": "a"}, {"answer": "b"}, {"answer": "unread"}],
+            endpoint="continuation", on_event=observer,
+        )
+        assert outcome["answer"] == "ab"
+        assert outcome["error_type"] == "TimeLimit"
         assert closed == [True]

@@ -29,6 +29,8 @@ Coercion rules:
 
 from __future__ import annotations
 
+import math
+
 import base64
 import binascii
 import json
@@ -97,3 +99,41 @@ class PGNativeJSONEncoder(json.JSONEncoder):
         if coerced is obj:
             return super().default(obj)
         return coerced
+
+
+def _wire_text(text: str) -> str:
+    """``text`` with lone surrogates replaced by U+FFFD and NUL removed (as ``strip_null_bytes`` does)."""
+    cleaned = text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return cleaned.replace("\x00", "")
+
+
+def wire_safe(value: Any) -> Any:
+    """``value`` as JSON both a browser and a Postgres ``jsonb`` cast accept.
+
+    Used for streamed events, which go out as SSE frames and into the replay
+    journal, so a live frame and its replay always carry the same values:
+
+    * non-finite floats → ``"NaN"``, ``"Infinity"``, ``"-Infinity"`` (not JSON
+      tokens; ``JSON.parse`` and ``jsonb`` reject them);
+    * strings and keys → lone surrogates replaced by U+FFFD and NUL removed
+      (neither UTF-8 nor ``jsonb`` can hold them; the journal's own
+      ``strip_null_bytes`` also removes NUL, so both agree);
+    * values JSON has no type for → their text.
+
+    Args:
+        value: The event, or any part of one.
+
+    Returns:
+        A JSON-safe copy.
+    """
+    if isinstance(value, str):
+        return _wire_text(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return "NaN" if math.isnan(value) else ("Infinity" if value > 0 else "-Infinity")
+    if isinstance(value, dict):
+        return {_wire_text(str(key)): wire_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [wire_safe(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _wire_text(str(value))

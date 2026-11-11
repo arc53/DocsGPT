@@ -303,8 +303,22 @@ class SchedulesRepository:
         ).scalar()
         return int(scalar or 0)
 
+    def any_live_for_agent(self, agent_id: str) -> bool:
+        """Whether any user's active or paused schedule (a monitor included) runs the agent."""
+        return self._conn.execute(
+            text(
+                "SELECT 1 FROM schedules WHERE agent_id = CAST(:agent_id AS uuid) "
+                "AND status IN ('active', 'paused') LIMIT 1"
+            ),
+            {"agent_id": str(agent_id)},
+        ).first() is not None
+
     def list_due(self, *, limit: int = 100) -> list[dict]:
-        """Lock and return schedules with ``next_run_at <= now()`` (monitors tick through their own dispatch)."""
+        """Lock and return schedules with ``next_run_at <= now()`` (monitors tick through their own dispatch).
+
+        A one-time task waiting for a Run now of it to end is left out, so a
+        batch of them can't hold back other due schedules.
+        """
         rows = self._conn.execute(
             text(
                 """
@@ -314,6 +328,15 @@ class SchedulesRepository:
                   AND next_run_at IS NOT NULL
                   AND next_run_at <= now()
                   AND (end_at IS NULL OR next_run_at <= end_at)
+                  AND NOT (
+                    trigger_type = 'once'
+                    AND EXISTS (
+                      SELECT 1 FROM schedule_runs r
+                      WHERE r.schedule_id = schedules.id
+                        AND r.status IN ('pending', 'running')
+                        AND r.trigger_source = 'manual'
+                    )
+                  )
                 ORDER BY next_run_at ASC
                 LIMIT :limit
                 FOR UPDATE SKIP LOCKED

@@ -1397,9 +1397,11 @@ def _gaps(app, pg_conn, user, body):
 
 
 class TestConversationInsights:
-    def test_totals_series_coverage_and_shape(self, app, pg_conn, analytics_on):
-        from docsgpt.analytics import calibration, derive
+    def test_totals_series_coverage_and_shape(self, app, pg_conn, analytics_on, monkeypatch):
+        from docsgpt.analytics import calibration, derive, insights
 
+        # Days stay days however few answers fill them; merging them into weeks has its own test.
+        monkeypatch.setattr(insights, "MIN_SAMPLE", 0)
         agent = _analytics_agent(pg_conn)
         agent_id = str(agent["id"])
         _labelled_conversation(pg_conn, "owner", agent_id=agent_id)
@@ -1447,6 +1449,7 @@ class TestConversationInsights:
 
         # Two buckets with one conversation each; the series sum to the totals.
         series = {entry["bucket"]: entry["labels"] for entry in data["series"]}
+        assert data["bucket_unit"] == "day"
         assert len(data["series"]) == 7
         filled = [labels for labels in series.values() if labels["answer_status"]["n"]]
         assert len(filled) == 2
@@ -1457,6 +1460,42 @@ class TestConversationInsights:
         assert sum(labels["sentiment"]["options"]["negative"] for labels in series.values()) == pytest.approx(1.4)
         empty = next(labels for labels in series.values() if not labels["answer_status"]["n"])
         assert empty["answer_status"]["options"]["fully answered"] == 0
+
+    def test_sparse_days_merge_into_weeks(self, app, pg_conn, analytics_on):
+        """Four answers in 30 days: a day holds too few to read as a mix, so the series is weekly."""
+        from docsgpt.analytics import insights
+
+        _labelled_conversation(pg_conn, "u-weeks")
+        _labelled_conversation(pg_conn, "u-weeks", ago_minutes=60 * 24 * 12)
+        data = _insights(app, pg_conn, "u-weeks", {"filter_option": "last_30_days"}).json
+        assert data["bucket_unit"] == "week"
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        days = [today - datetime.timedelta(days=ago) for ago in range(29, -1, -1)]
+        mondays = list(dict.fromkeys(insights.coarse_key(day.isoformat(), "week") for day in days))
+        assert len(data["series"]) == len(mondays)
+        # Each week is named by its first day in the window and ends on its last.
+        assert data["series"][0]["bucket"] == days[0].isoformat()
+        assert data["series"][-1]["bucket_end"] == days[-1].isoformat()
+        assert all(entry["bucket"] <= entry["bucket_end"] for entry in data["series"])
+        assert sum(entry["labels"]["answer_status"]["n"] for entry in data["series"]) == 4
+        assert sum(entry["labels"]["sentiment"]["options"]["negative"] for entry in data["series"]) == (
+            pytest.approx(1.4))
+
+    def test_previous_period_totals(self, app, pg_conn, analytics_on):
+        """The headline labels' totals over the period of the same length just before the window."""
+        from docsgpt.analytics import insights
+
+        _labelled_conversation(pg_conn, "u-prev")
+        _labelled_conversation(pg_conn, "u-prev", ago_minutes=60 * 24 * 9)
+        _labelled_conversation(pg_conn, "u-prev", ago_minutes=60 * 24 * 20)
+        data = _insights(app, pg_conn, "u-prev", {"filter_option": "last_7_days"}).json
+        previous = data["previous"]
+        assert set(previous) == set(insights.PREVIOUS_LABELS)
+        # The conversation 9 days back only: 20 days back is before the previous period too.
+        assert previous["answer_status"]["n_turns"] == 2
+        assert previous["reaction"]["n"] == previous["sentiment"]["n"] == 1
+        assert previous["sentiment"]["options"]["negative"]["expected"] == pytest.approx(0.7)
+        assert data["totals"]["answer_status"]["n_turns"] == 2
 
     def test_answer_status_rates_are_over_requests(self, app, pg_conn, analytics_on):
         from docsgpt.analytics import calibration
@@ -1499,7 +1538,7 @@ class TestConversationInsights:
         data = _insights(app, pg_conn, "u-unknown", {"api_key_id": str(_uuid.uuid4())}).json
         assert data["success"] is True
         assert data["enabled"] is False
-        assert data["totals"] == {} and data["series"] == []
+        assert data["totals"] == {} and data["series"] == [] and data["previous"] == {}
         assert data["coverage"]["turns"] == 0
 
     def test_other_schema_hash_is_ignored(self, app, pg_conn, analytics_on):

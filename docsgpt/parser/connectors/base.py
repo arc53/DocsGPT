@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from docsgpt.parser.schema.base import Document
 
 
+class ConnectorAuthError(ValueError):
+    """The provider still rejects the access token after a refresh, or the token cannot be refreshed.
+
+    A download raises it instead of skipping the item, since every request after it would fail
+    the same way. A refresh failure is chained as ``__cause__``.
+    """
+
+
 class BaseConnectorAuth(ABC):
     """
     Abstract base class for connector authentication.
@@ -70,6 +78,14 @@ class BaseConnectorAuth(ABC):
             True if token is expired, False otherwise
         """
         pass
+
+    def picker_options(self, token_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Settings a browser-side picker needs for this sign-in, sent with its access token.
+
+        Args:
+            token_info: The connection's stored token info.
+        """
+        return {}
 
     def sanitize_token_info(self, token_info: Dict[str, Any], **extra_fields) -> Dict[str, Any]:
         """Extract the fields safe to persist in the session store.
@@ -168,6 +184,10 @@ class BaseConnectorLoader(ABC):
         Returns:
             Dictionary containing download results:
                 - files_downloaded: Number of files downloaded
+                - files_failed: Files that could not be downloaded (optional; the ingest
+                  finishes as partial when this or folders_failed is set)
+                - folders_failed: Folders that could not be listed, so their files are missing (optional)
+                - files_skipped: Files left out on purpose, such as unsupported types (optional)
                 - directory_path: Path where files were downloaded
                 - empty_result: Whether no files were downloaded
                 - source_type: Type of connector

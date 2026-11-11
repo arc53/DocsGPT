@@ -78,7 +78,11 @@ export default function RunDetailDrawer({
               title={
                 run.error_type
                   ? t('agents.schedules.runDetails.errorWithType', {
-                      type: run.error_type,
+                      // A label with an apostrophe; React escapes on render.
+                      interpolation: { escapeValue: false },
+                      type: t(`activity.now.errorType.${run.error_type}`, {
+                        defaultValue: run.error_type,
+                      }),
                     })
                   : t('agents.schedules.runDetails.error')
               }

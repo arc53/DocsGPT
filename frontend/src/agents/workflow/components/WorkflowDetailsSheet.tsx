@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { SectionHeader } from '@/components/ui/section-header';
-import { SettingRow } from '@/components/ui/setting-row';
+import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import {
   PanelBody,
   PanelFooter,
@@ -19,15 +19,34 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { FileUpload } from '../../../components/FileUpload';
 import { analyticsOf, isDefaultAnalytics } from '../../analyticsConfig';
+import StartersFields from '../../components/StartersFields';
+import { cleanStarters } from '../../starters';
+import {
+  type ModelWindow,
+  isContextLimitInvalid,
+  isHistoryLimitInvalid,
+} from '../../contextLimit';
+import ContextLimitRows from '../../components/ContextLimitRows';
 import InsightsSettingsBody from '../../components/InsightsSettingsBody';
 import type { AnalyticsConfig } from '../../types';
+import type { RetryConfig } from '../../types/workflow';
+import { DEFAULT_RETRY, normalizeRetryConfig } from '../retryConfig';
+import NodeRetryControl from './NodeRetryControl';
 
 export interface WorkflowDetailsValues {
   name: string;
   description: string;
+  /** The agent's starters, as typed: an empty one is none. */
+  starters: string[];
   allowPromptOverride: boolean;
   /** `config.analytics`; unset reads as the defaults. */
   analytics?: AnalyticsConfig;
+  /** `config.context_window_limit`; null uses the model's whole window. */
+  contextWindowLimit: number | null;
+  /** `config.history_token_limit`; null summarizes only near the window. */
+  historyTokenLimit: number | null;
+  /** The workflow's `retry_defaults`; null leaves nodes on the built-in ones. */
+  retryDefaults: RetryConfig | null;
 }
 
 /** What the Insights card needs from the builder. */
@@ -57,12 +76,16 @@ interface WorkflowDetailsSheetProps {
   errors: string[];
   /** The Insights card's server switch and limits; left out, no card. */
   insights?: WorkflowInsightsOptions;
+  /** The caller may change policy (`edit_policy`): the context and history limits. */
+  policyEditable?: boolean;
+  /** The largest window of the workflow's models; a limit past it is noted. */
+  modelWindow?: ModelWindow | null;
   onSave: (values: WorkflowDetailsSave) => void;
 }
 
 /**
- * The workflow's name, description, avatar, prompt-override setting and
- * insights settings, in a modal side panel laid out like the classic agent's
+ * The workflow's name, description, avatar, starters, prompt-override and context-limit
+ * settings, retry defaults and insights settings, in a modal side panel laid out like the classic agent's
  * Basics on a phone. The Insights card hides while the server has insights
  * off, unless the workflow already has settings of its own (as on Overview).
  *
@@ -77,6 +100,8 @@ interface WorkflowDetailsSheetProps {
  *   saving: Whether a save started here is running.
  *   errors: Errors from that save.
  *   insights: The Insights card's server switch and limits.
+ *   policyEditable: Whether the context and history limits can be changed.
+ *   modelWindow: The largest window of the workflow's models.
  *   onSave: Receives the edited values.
  */
 export default function WorkflowDetailsSheet({
@@ -87,6 +112,8 @@ export default function WorkflowDetailsSheet({
   saving,
   errors,
   insights,
+  policyEditable = true,
+  modelWindow = null,
   onSave,
 }: WorkflowDetailsSheetProps) {
   const { t } = useTranslation();
@@ -109,9 +136,18 @@ export default function WorkflowDetailsSheet({
     imageFile !== null ||
     draft.name !== details.name ||
     draft.description !== details.description ||
+    JSON.stringify(cleanStarters(draft.starters)) !==
+      JSON.stringify(cleanStarters(details.starters)) ||
     draft.allowPromptOverride !== details.allowPromptOverride ||
     JSON.stringify(draft.analytics) !==
-      JSON.stringify(analyticsOf(details.analytics));
+      JSON.stringify(analyticsOf(details.analytics)) ||
+    !Object.is(draft.contextWindowLimit, details.contextWindowLimit) ||
+    !Object.is(draft.historyTokenLimit, details.historyTokenLimit) ||
+    JSON.stringify(normalizeRetryConfig(draft.retryDefaults) ?? null) !==
+      JSON.stringify(normalizeRetryConfig(details.retryDefaults) ?? null);
+  const contextLimitInvalid =
+    isContextLimitInvalid(draft.contextWindowLimit) ||
+    isHistoryLimitInvalid(draft.historyTokenLimit, draft.contextWindowLimit);
   const showInsights =
     insights !== undefined &&
     (insights.available || !isDefaultAnalytics(details.analytics));
@@ -188,23 +224,49 @@ export default function WorkflowDetailsSheet({
           <SectionHeader
             as="h3"
             size="xs"
+            title={t('agents.form.sections.starters')}
+            description={t('agents.form.starters.description')}
+          />
+          <StartersFields
+            starters={draft.starters}
+            onChange={(starters) => setDraft((prev) => ({ ...prev, starters }))}
+          />
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader
+            as="h3"
+            size="xs"
             title={t('agents.form.sections.advanced')}
           />
-          <SettingRow
-            label={t('agents.form.advanced.systemPromptOverride')}
-            description={t(
-              'agents.form.advanced.systemPromptOverrideDescription',
-            )}
-            htmlFor="workflow-system-prompt-override"
-          >
-            <Switch
-              id="workflow-system-prompt-override"
-              checked={draft.allowPromptOverride}
-              onCheckedChange={(checked) =>
-                setDraft({ ...draft, allowPromptOverride: checked })
+          <SettingRows>
+            <ContextLimitRows
+              contextLimit={draft.contextWindowLimit}
+              historyLimit={draft.historyTokenLimit}
+              window={modelWindow ?? null}
+              disabled={!policyEditable}
+              onContextLimitChange={(limit) =>
+                setDraft((prev) => ({ ...prev, contextWindowLimit: limit }))
+              }
+              onHistoryLimitChange={(limit) =>
+                setDraft((prev) => ({ ...prev, historyTokenLimit: limit }))
               }
             />
-          </SettingRow>
+            <SettingRow
+              label={t('agents.form.advanced.systemPromptOverride')}
+              description={t(
+                'agents.form.advanced.systemPromptOverrideDescription',
+              )}
+              htmlFor="workflow-system-prompt-override"
+            >
+              <Switch
+                id="workflow-system-prompt-override"
+                checked={draft.allowPromptOverride}
+                onCheckedChange={(checked) =>
+                  setDraft({ ...draft, allowPromptOverride: checked })
+                }
+              />
+            </SettingRow>
+          </SettingRows>
         </Card>
         {showInsights && (
           <Card variant="subtle" padding="lg" className="gap-5">
@@ -233,6 +295,23 @@ export default function WorkflowDetailsSheet({
             />
           </Card>
         )}
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('agents.workflow.retry.title')}
+            description={t('agents.workflow.retry.defaultsDescription')}
+          />
+          <NodeRetryControl
+            key={String(open)}
+            value={draft.retryDefaults ?? undefined}
+            onChange={(retry) =>
+              setDraft((prev) => ({ ...prev, retryDefaults: retry ?? null }))
+            }
+            inherited={DEFAULT_RETRY}
+            showOn
+          />
+        </Card>
       </PanelBody>
       <PanelFooter>
         <Button
@@ -248,7 +327,7 @@ export default function WorkflowDetailsSheet({
           type="button"
           size="lg"
           shape="pill"
-          disabled={!dirty}
+          disabled={!dirty || contextLimitInvalid}
           loading={saving}
           onClick={() => onSave({ ...draft, imageFile })}
         >

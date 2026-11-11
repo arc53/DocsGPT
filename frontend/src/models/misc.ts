@@ -1,3 +1,6 @@
+import type { SourceKindFilter } from '../settings/sourceKinds';
+import type { ResourceUsage } from '../settings/types';
+
 export type ActiveState = 'ACTIVE' | 'INACTIVE';
 
 export type User = {
@@ -98,11 +101,25 @@ export type Doc = {
   team_access?: 'viewer' | 'editor' | null;
   // The connection a synced source comes from (Google Drive account, S3 keys).
   connectionId?: string | null;
+  // A Website source's hosts and page count (also older link, crawler and
+  // sitemap sources); null for every other kind.
+  website?: { hosts: string[]; pages: number } | null;
+  // How many files the source's tree holds; null for a flat source.
+  files?: number | null;
   // The caller's role and what it allows (sources API); gate UI with
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;
   allowed_actions?: string[];
+  // The agents that use it (both lists; absent from an older backend).
+  used_by?: ResourceUsage;
 };
+
+/**
+ * A source as the app-wide knowledge list (`/api/sources`, `getDocs`) gives
+ * it: the paginated listing's fields, `website` and `files` included, but
+ * the folder flag named `is_nested` (see `asListedDoc`).
+ */
+export type KnowledgeDoc = Doc & { is_nested?: boolean };
 
 export type GetDocsResponse = {
   docs: Doc[];
@@ -111,7 +128,14 @@ export type GetDocsResponse = {
   /** The page served: the one asked for, clamped to the last. */
   currentPage: number;
   nextCursor: string;
+  /** Sources per kind, the search and usage filters applied (paginated list). */
+  kindCounts?: Record<SourceKindFilter, number>;
+  /** Sources per usage, the search and kind filters applied (paginated list). */
+  usageCounts?: Record<UsageFilter, number>;
 };
+
+/** The Knowledge page's usage filter, as `/api/sources/paginated` takes it. */
+export type UsageFilter = 'all' | 'in_use' | 'unused';
 
 export type Prompt = {
   name: string;
@@ -123,13 +147,10 @@ export type Prompt = {
   allowed_actions?: string[];
   team_access?: 'viewer' | 'editor' | null;
   updated_at?: string | null;
-};
-
-export type PromptProps = {
-  prompts: Prompt[];
-  selectedPrompt: { name: string; id: string; type: string };
-  onSelectPrompt: (name: string, id: string, type: string) => void;
-  setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;
+  /** The start of its text, whitespace collapsed; none on a preset. */
+  preview?: string;
+  /** The agents that use it (`/api/get_prompts`). */
+  used_by?: ResourceUsage | null;
 };
 
 export type DocumentsProps = {

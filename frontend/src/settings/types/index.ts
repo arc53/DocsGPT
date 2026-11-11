@@ -181,6 +181,30 @@ export type ParameterGroupType = {
   };
 };
 
+/**
+ * Which agents use a tool, prompt or source (`used_by` on the Workspace
+ * lists). An agent uses it when running the agent would reach it.
+ */
+export type ResourceUsage = {
+  /**
+   * The agents the caller can open. `can_edit`: they may open its editor
+   * (the agent action `view`); otherwise they can only use it. `status`:
+   * `draft` or `published` (missing from an older server).
+   */
+  agents: {
+    id: string;
+    name: string;
+    agent_type?: string;
+    can_edit?: boolean;
+    status?: string;
+  }[];
+  /**
+   * Agents the caller can't open that use it (a teammate's), counted only
+   * for the caller's own resources; 0 otherwise.
+   */
+  others: number;
+};
+
 export type UserToolType = {
   id: string;
   name: string;
@@ -219,6 +243,9 @@ export type UserToolType = {
   shared_via?: string | null;
   // The owner's email or name, when the server can resolve it.
   owner_label?: string | null;
+  // The agents that use it. An older server leaves it out: unknown, read
+  // as used by none.
+  used_by?: ResourceUsage;
   config: {
     [key: string]: any;
   };
@@ -314,9 +341,15 @@ export type InsightLabelTotals = {
 
 /** One time bucket of the insights series: expected counts per option. */
 export type InsightSeriesBucket = {
+  /** The bucket's key in `bucket_unit`; a week's first day in the window. */
   bucket: string;
+  /** A week's last day in the window. */
+  bucket_end?: string;
   labels: Record<string, { n: number; options: Record<string, number> }>;
 };
+
+/** The series' unit: the filter's own, or one step coarser while its buckets hold few answers. */
+export type InsightBucketUnit = 'minute' | 'hour' | 'day' | 'week';
 
 /** POST /api/get_conversation_insights. */
 export type ConversationInsights = {
@@ -356,6 +389,13 @@ export type ConversationInsights = {
   /** On an agent's page: its topics that can overlap; totals under `tag:<id>`. */
   overlapping: { id: string; name: string }[];
   totals: Record<string, InsightLabelTotals>;
+  /**
+   * Answer status, reaction and sentiment over the period of the same length
+   * before the window. Absent from an older server.
+   */
+  previous?: Record<string, InsightLabelTotals>;
+  /** Absent from an older server, whose series is in the filter's own unit. */
+  bucket_unit?: InsightBucketUnit;
   series: InsightSeriesBucket[];
 };
 

@@ -1,7 +1,7 @@
 ---
 title: Setting Up a Development Environment
-description: Guide to setting up a development environment for DocsGPT, including backend and frontend setup.
-lastUpdated: 2026-10-21
+description: "Set up a DocsGPT development environment: Postgres and Redis, the backend API and Celery worker, the Vite frontend, the docsgpt dev loop and troubleshooting."
+lastUpdated: 2026-11-10
 ---
 
 import { Callout } from 'nextra/components'
@@ -105,6 +105,11 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
     Without the last line, run the commands in this guide as `python -m docsgpt …` (for example
     `python -m docsgpt dev`).
+
+    The requirements files carry a hash for every package, so pip checks each download against the hash
+    recorded in `uv.lock`.
+    Install each file in a `pip install` command of its own: pip refuses a command that mixes a hashed file
+    with packages that have no hash.
 
     Optional extras are not installed by default. Add them when you need the
     feature (each file is the core set plus the extra):
@@ -213,7 +218,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
       Chat retrieval needs a running worker. The API sends each query embedding to it
       (`EMBEDDINGS_DELEGATE_TO_WORKER`, on by default). Without a worker, the first search waits up to
       `EMBEDDINGS_DELEGATE_TIMEOUT` (60 seconds), searches in the next 30 seconds fail at once, and every
-      answer comes back with no retrieved context, without an error. To run the API alone, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` to load the model in the API
+      answer says the attached sources could not be searched right now. To run the API alone, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` to load the model in the API
       process, or point `EMBEDDINGS_BASE_URL` at an embeddings service.
     </Callout>
 
@@ -317,6 +322,7 @@ A few routes hold a response open for a long time, so they are native-async rout
 | `GET /api/messages/<id>/events` | Resuming a chat answer after the connection drops |
 | `GET /api/devices/sessions/<id>/events` | The command stream of a paired [remote device](/Tools/remote-device) |
 | `GET /api/artifacts/<id>/download` | [Artifact](/Tools/artifacts-and-code-execution#artifacts) downloads |
+| `GET /api/workflow_runs/<run_id>/artifacts/<artifact_id>/download` | Downloads of a [workflow run's](/API/personal-access-tokens#reading-workflow-runs) files |
 
 `docsgpt api`, `docsgpt dev`, `uvicorn docsgpt.asgi:asgi_app`, gunicorn with a uvicorn worker and the Docker
 images all serve the ASGI app. `flask --app docsgpt/app.py run` serves only the Flask app, so these routes

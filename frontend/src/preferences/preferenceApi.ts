@@ -28,9 +28,12 @@ export async function getDocsWithPagination(
   rowsPerPage = 10,
   searchTerm = '',
   token: string | null,
+  { kind = 'all', usage = 'all' }: { kind?: string; usage?: string } = {},
 ): Promise<GetDocsResponse | null> {
   try {
-    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
+    // The kind and usage filters are sent only when set.
+    const filters = `${kind !== 'all' ? `&kind=${kind}` : ''}${usage !== 'all' ? `&usage=${usage}` : ''}`;
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}${filters}`;
     const response = await userService.getDocsWithPagination(query, token);
     if (!response.ok)
       throw new Error(`Failed to load sources (${response.status})`);
@@ -46,6 +49,8 @@ export async function getDocsWithPagination(
       totalPages: data.totalPages,
       currentPage: data.currentPage ?? pageNumber,
       nextCursor: data.nextCursor,
+      kindCounts: data.kind_counts,
+      usageCounts: data.usage_counts,
     };
   } catch (error) {
     console.log(error);
@@ -206,40 +211,8 @@ export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
   return validDocs.length > 0 ? validDocs : null;
 }
 
-export function getLocalPrompt(
-  availablePrompts?: Prompt[] | null,
-): Prompt | null {
-  const promptString = localStorage.getItem('DocsGPTPrompt');
-  const selectedPrompt = promptString
-    ? (JSON.parse(promptString) as Prompt)
-    : null;
-
-  if (!availablePrompts || !selectedPrompt) {
-    return selectedPrompt;
-  }
-
-  const isPromptAvailable = (selected: Prompt) => {
-    return availablePrompts.some((available) => {
-      return available.id === selected.id;
-    });
-  };
-
-  const isValid = isPromptAvailable(selectedPrompt);
-
-  if (!isValid) {
-    localStorage.removeItem('DocsGPTPrompt');
-    return null;
-  }
-
-  return selectedPrompt;
-}
-
 export function setLocalApiKey(key: string): void {
   localStorage.setItem('DocsGPTApiKey', key);
-}
-
-export function setLocalPrompt(prompt: Prompt): void {
-  localStorage.setItem('DocsGPTPrompt', JSON.stringify(prompt));
 }
 
 export function setLocalRecentDocs(docs: Doc[] | null): void {

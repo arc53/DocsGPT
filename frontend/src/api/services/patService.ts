@@ -50,15 +50,11 @@ export interface CreateAccessTokenPayload {
 export interface CreateAgentToolResponse {
   /** The new API tool's id. */
   id: string;
-  /** Its actions: the read endpoints the token may call. */
+  /** Its actions: the endpoints the token may call. */
   actions: string[];
+  /** The actions that start switched off (deletes, asking another agent). */
+  inactive: string[];
 }
-
-/** Families whose read endpoints the agent tool uses; a token needs one of them. */
-export const AGENT_TOOL_FAMILIES = ['agents', 'analytics', 'conversations'];
-
-export const canMakeAgentTool = (scopes: string[]): boolean =>
-  scopes.some((scope) => AGENT_TOOL_FAMILIES.includes(scope.split(':')[0]));
 
 export interface CreateAccessTokenResponse {
   /** Plaintext secret. The server returns it exactly once. */
@@ -81,7 +77,7 @@ export class AccessTokenApiError extends Error {
 // here and turn `{success:false, message}` / non-2xx into a thrown error so
 // callers can show the server's message inline.
 const parse = async <T>(response: Response): Promise<T> => {
-  let body: { success?: boolean; message?: unknown } | null = null;
+  let body: { success?: boolean; message?: unknown } | null;
   try {
     body = await response.json();
   } catch {

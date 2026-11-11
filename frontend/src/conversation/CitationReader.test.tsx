@@ -236,6 +236,13 @@ describe('CitationReader', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
     const rows = [...body().querySelectorAll('dt')].map((dt) => dt.textContent);
     expect(rows).toContain('conversation.sources.reader.link');
+    // The address in the details is a link to the page too.
+    const rowLink =
+      body().querySelector<HTMLAnchorElement>('dd a[href^="http"]');
+    expect(rowLink?.getAttribute('href')).toBe('https://example.com/pricing');
+    expect(rowLink?.textContent).toContain('https://example.com/pricing');
+    expect(rowLink?.getAttribute('target')).toBe('_blank');
+    expect(rowLink?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it('labels a wiki chunk with its page', async () => {

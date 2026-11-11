@@ -36,7 +36,6 @@ const charts = vi.hoisted(() => ({
     data: {
       datasets: { label: string; data: number[]; backgroundColor: string }[];
     };
-    share?: boolean;
     tooltipCallbacks: {
       label: (item: unknown) => string;
       footer?: (items: unknown[]) => string;
@@ -407,8 +406,7 @@ describe('ConversationInsights', () => {
       Array.from(section()!.querySelectorAll('h2')).map((h) => h.textContent);
     const always = [
       'settings.analytics.insights.panels.answerStatus',
-      'settings.analytics.insights.panels.sentiment',
-      'settings.analytics.insights.panels.implicitFeedback',
+      'settings.analytics.insights.panels.replies',
       'settings.analytics.insights.panels.requestType',
       'settings.analytics.insights.panels.whyNot',
     ];
@@ -518,15 +516,10 @@ describe('ConversationInsights', () => {
     render(data());
     // Every figure is an estimate, said once in the intro.
     expect(section()!.querySelector('[data-slot="badge"]')).toBeNull();
-    const lists = section()!.querySelectorAll('[role="list"]');
-    // Request type sits beside the third chart, then why not fully answered.
-    expect(lists[0].getAttribute('aria-label')).toBe(
+    const requestType = listNamed(
       'settings.analytics.insights.panels.requestType',
-    );
-    const whyNot = lists[1];
-    expect(whyNot.getAttribute('aria-label')).toBe(
-      'settings.analytics.insights.panels.whyNot',
-    );
+    )!;
+    const whyNot = listNamed('settings.analytics.insights.panels.whyNot')!;
     // "none" and zero-mass deferred types are not drawn.
     expect(
       Array.from(whyNot.querySelectorAll('li .sr-only')).map(
@@ -536,9 +529,9 @@ describe('ConversationInsights', () => {
       'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.docsMissing|10%)',
       'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.outOfScope|5%)',
     ]);
-    const requests = Array.from(lists[0].querySelectorAll('li .sr-only')).map(
-      (text) => text.textContent,
-    );
+    const requests = Array.from(
+      requestType.querySelectorAll('li .sr-only'),
+    ).map((text) => text.textContent);
     expect(requests[0]).toContain('requestType.howTo');
     expect(requests[2]).toContain('requestType.other');
     expect(
@@ -555,7 +548,7 @@ describe('ConversationInsights', () => {
       0.07,
     );
     render(response);
-    const whyNot = section()!.querySelectorAll('[role="list"]')[1];
+    const whyNot = listNamed('settings.analytics.insights.panels.whyNot')!;
     expect(
       Array.from(whyNot.querySelectorAll('li .sr-only')).map(
         (text) => text.textContent,
@@ -567,41 +560,22 @@ describe('ConversationInsights', () => {
     ]);
   });
 
-  it('charts answer status, sentiment and implicit feedback first, in that order', () => {
-    const response = data();
-    response.totals.sentiment = {
-      tier: 'dashboard',
-      n: 40,
-      options: {
-        negative: option(6, 0.15, 0.08, 0.24),
-        neutral: option(26, 0.65, 0.55, 0.74),
-        positive: option(8, 0.2, 0.12, 0.3),
-      },
-    };
-    render(response);
+  it('puts answer status and how users replied first, in that order', () => {
+    render(data());
     const grid = tile('answer-status').parentElement!;
     expect(
       Array.from(grid.children)
-        .slice(0, 3)
+        .slice(0, 2)
         .map((panel) => panel.getAttribute('data-testid')),
-    ).toEqual([
-      'insight-answer-status',
-      'insight-sentiment',
-      'implicit-feedback',
-    ]);
-    expect(tile('sentiment').textContent).toContain(
-      [
-        'settings.analytics.insights.options.sentiment.positive',
-        'settings.analytics.insights.options.sentiment.neutral',
-        'settings.analytics.insights.options.sentiment.negative',
-      ].join(','),
-    );
+    ).toEqual(['insight-answer-status', 'insight-replies']);
   });
 
-  it('waits for enough replies before charting sentiment', () => {
-    render(data());
-    expect(tile('sentiment').querySelector('[data-testid="chart"]')).toBeNull();
-    expect(tile('sentiment').textContent).toContain(
+  it('waits for enough replies before showing how users replied', () => {
+    const response = data();
+    response.totals.reaction.n = 4;
+    render(response);
+    expect(tile('replies').querySelector('[data-testid="chart"]')).toBeNull();
+    expect(tile('replies').textContent).toContain(
       'settings.analytics.insights.notEnoughReplies',
     );
   });
@@ -631,68 +605,8 @@ describe('ConversationInsights', () => {
       'settings.analytics.insights.description',
     );
     expect(
-      section()!.querySelector('[data-testid="implicit-feedback"]'),
+      section()!.querySelector('[data-testid="insight-replies"]'),
     ).not.toBeNull();
-  });
-
-  it("draws answer status as each day's share of four outcomes, greetings left out", () => {
-    render(
-      data({
-        series: [
-          {
-            bucket: '2026-10-18',
-            labels: {
-              answer_status: {
-                n: 5,
-                options: {
-                  'fully answered': 2,
-                  'partially answered': 1,
-                  'declined, no information': 0.5,
-                  'asked a clarifying question': 0.5,
-                  'not a request': 1,
-                },
-              },
-            },
-          },
-          // A day with no questions stays an empty column.
-          { bucket: '2026-10-19', labels: {} },
-        ],
-      }),
-    );
-    expect(
-      container
-        .querySelector('[data-testid="insight-answer-status"]')!
-        .querySelector('[data-testid="chart"]')!.textContent,
-    ).toBe(
-      [
-        'settings.analytics.insights.options.answerStatus.fullyAnswered',
-        'settings.analytics.insights.options.answerStatus.partiallyAnswered',
-        'settings.analytics.insights.options.answerStatus.declined',
-        'settings.analytics.insights.options.answerStatus.clarifying',
-      ].join(','),
-    );
-    const chart = charts.props[0];
-    expect(chart.share).toBe(true);
-    expect(chart.data.datasets.map((dataset) => dataset.data)).toEqual([
-      [0.5, 0],
-      [0.25, 0],
-      [0.125, 0],
-      [0.125, 0],
-    ]);
-    // "Said it didn't know" is the neutral grey, not a failure's red.
-    expect(
-      chart.data.datasets.map((dataset) => dataset.backgroundColor),
-    ).toEqual(['#079455', '#ca8a04', '#6b6b6b', '#2563eb']);
-    const { label, footer } = chart.tooltipCallbacks;
-    expect(
-      label({ dataset: { label: 'Fully answered' }, raw: 0.5, dataIndex: 0 }),
-    ).toBe(
-      'settings.analytics.insights.panels.tooltipShare(Fully answered|50%)',
-    );
-    // Of the four outcomes the bars share out: the greeting isn't one.
-    expect(footer!([{ dataIndex: 0 }])).toBe(
-      'settings.analytics.insights.panels.ofQuestions(4)',
-    );
   });
 
   const lists = () => Array.from(section()!.querySelectorAll('[role="list"]'));
@@ -789,7 +703,7 @@ describe('ConversationInsights', () => {
     expect(section()!.textContent).not.toContain(`${P}.topics`);
   });
 
-  it('pairs the short lists, why not alone across the row, then Topics', () => {
+  it('pairs request type beside why not, then Topics across the row', () => {
     const response = data({
       overlapping: [{ id: 'a1b2c3d4', name: 'Pricing' }],
     });
@@ -805,7 +719,7 @@ describe('ConversationInsights', () => {
       'overlap',
     ]);
     const whyNot = listNamed(`${P}.whyNot`)!;
-    expect(whyNot.closest('.xl\\:col-span-2')).not.toBeNull();
+    expect(whyNot.closest('.xl\\:col-span-2')).toBeNull();
     expect(
       listNamed(`${P}.requestType`)!.closest('.xl\\:col-span-2'),
     ).toBeNull();

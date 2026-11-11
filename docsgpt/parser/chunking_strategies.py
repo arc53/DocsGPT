@@ -213,6 +213,21 @@ class RecursiveChunker(_BaseStrategyChunker):
         """
         return self._merge_fragments(fragments)
 
+    def _within_budget(self, chunks: List[str]) -> List[str]:
+        """Re-split any merged chunk whose own token count exceeds ``max_tokens``.
+
+        Merging adds up fragment counts, but tokens can merge differently across
+        a seam (cl100k counts ``" . \\r\\n"`` + ``"\\n\\n\\n"`` as 4, not 3), so a
+        joined chunk can land a token or two over budget.
+        """
+        bounded: List[str] = []
+        for text in chunks:
+            if self._token_count(text) > self.max_tokens:
+                bounded.extend(p for p in split_to_token_limit(self.counter, text, self.max_tokens) if p.strip())
+            else:
+                bounded.append(text)
+        return bounded
+
     def chunk(self, documents: List[Document]) -> List[Document]:
         """Split documents into chunks using recursive splitting with token overlap.
 
@@ -230,7 +245,7 @@ class RecursiveChunker(_BaseStrategyChunker):
                 processed.append(self._emit(doc, 0, doc.text))
                 continue
             fragments = self._recursive_split(doc.text, 0)
-            for idx, text in enumerate(self._merge(fragments)):
+            for idx, text in enumerate(self._within_budget(self._merge(fragments))):
                 processed.append(self._emit(doc, idx, text))
         return processed
 

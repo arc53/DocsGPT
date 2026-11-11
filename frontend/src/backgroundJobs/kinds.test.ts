@@ -43,13 +43,22 @@ describe('notification kinds', () => {
       'monitor',
       'trigger',
       'approval',
+      'continuation',
       'monitor_paused',
       'monitor_expired',
       'schedule',
+      'schedule_paused',
+      'schedule_failed',
       'docs_gaps',
     ]);
     expect(notificationHeadingKey('schedule')).toBe(
       'backgroundJobs.notify.title.schedule',
+    );
+    expect(notificationHeadingKey('schedule_paused')).toBe(
+      'backgroundJobs.notify.title.schedule_paused',
+    );
+    expect(notificationHeadingKey('schedule_failed')).toBe(
+      'backgroundJobs.notify.title.schedule_failed',
     );
     expect(notificationHeadingKey('docs_gaps')).toBe(
       'backgroundJobs.notify.title.docs_gaps',
@@ -65,6 +74,22 @@ describe('notification kinds', () => {
     ).toEqual({
       title: 't:backgroundJobs.notify.title.docs_gaps',
       body: 'Fintech bot: Webhooks 4, SSO 2',
+    });
+  });
+
+  it('reads a paused schedule as its heading over the schedule and its last error', () => {
+    expect(
+      notificationText(
+        {
+          kind: 'schedule_paused',
+          title: 'Nightly digest',
+          body: 'No CRM tool.',
+        },
+        t,
+      ),
+    ).toEqual({
+      title: 't:backgroundJobs.notify.title.schedule_paused',
+      body: 'Nightly digest: No CRM tool.',
     });
   });
 

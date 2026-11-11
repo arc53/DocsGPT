@@ -1,7 +1,7 @@
-# Re-exports docsgpt/requirements*.txt on Dependabot's uv pull requests. Dependabot
-# updates uv.lock and pyproject.toml but can't run scripts/export_requirements.sh,
-# so without this the "requirements-in-sync" check fails and pytest installs the
-# old pins.
+# Re-exports docsgpt/requirements*.txt and tests/requirements.txt on Dependabot's uv
+# pull requests. Dependabot updates uv.lock and pyproject.toml but can't run
+# scripts/export_requirements.sh, so without this the "requirements-in-sync" check
+# fails and pytest installs the old pins.
 #
 # A push made with GITHUB_TOKEN starts no workflows, so after pushing the export
 # this dispatches the lint and test workflows on the branch; their results land on
@@ -35,12 +35,12 @@ jobs:
       actions: write
       contents: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Re-export the requirements files
         run: bash scripts/export_requirements.sh
@@ -50,13 +50,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          if [ -z "$(git status --porcelain -- docsgpt/requirements*.txt)" ]; then
+          if [ -z "$(git status --porcelain -- docsgpt/requirements*.txt tests/requirements.txt)" ]; then
             echo "The requirements files are current."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docsgpt/requirements*.txt
+          git add docsgpt/requirements*.txt tests/requirements.txt
           git commit -q -m "Re-export the requirements files"
           git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
           gh workflow run lint.yml --ref "$HEAD_REF"

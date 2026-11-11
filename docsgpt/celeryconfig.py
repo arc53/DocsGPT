@@ -60,6 +60,8 @@ INGEST_TASKS = (
     "docsgpt.api.user.tasks.sync_connector_source",
     "docsgpt.api.user.tasks.extract_graph",
     "docsgpt.api.user.tasks.convert_source_to_wiki",
+    # Adding Website pages fetches up to WEB_MAX_PAGES of them, 30 seconds each.
+    "docsgpt.api.user.tasks.website_pages",
 )
 task_routes.update({name: {"queue": settings.INGEST_QUEUE} for name in INGEST_TASKS})
 
@@ -81,7 +83,8 @@ task_queues = tuple(
     )
 )
 
-beat_scheduler = "redbeat.RedBeatScheduler"
+# RedBeat, made to survive losing its lock (a sleeping Mac) or Redis; see docsgpt/beat_scheduler.py.
+beat_scheduler = "docsgpt.beat_scheduler:DocsGPTScheduler"
 redbeat_redis_url = broker_url
 redbeat_key_prefix = "redbeat:docsgpt:"
 redbeat_lock_timeout = 90

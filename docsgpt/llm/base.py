@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, NamedTuple, Optional, Tuple
 
 import httpx
 import httpx2
@@ -9,10 +9,27 @@ import openai
 from docsgpt.cache import gen_cache, stream_cache
 
 from docsgpt.core.settings import settings
+from docsgpt.core.run_budget import check_round, is_budget_exhausted
+from docsgpt.llm.deadlines import (
+    StreamLengthNoAnswerError,
+    StreamNoAnswerError,
+    StreamStalledError,
+    carries_answer,
+    is_thought,
+    timed_stream,
+)
 from docsgpt.error import bounded_error_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
 logger = logging.getLogger(__name__)
+
+
+class StreamDeadlines(NamedTuple):
+    """A model's stream limits in seconds; ``answer`` is None when time-to-answer is unlimited."""
+
+    first_token: float
+    stall: float
+    answer: Optional[float]
 
 
 # Errors safe to retry the primary once on: the request either never
@@ -64,6 +81,20 @@ def fallback_reason(error: BaseException) -> str:
     return f"{name}/{status}" if isinstance(status, int) else name
 
 
+def _after_primary_reasoning(stream: Iterable[Any]) -> Iterator[Any]:
+    """Pass a fallback's stream through, starting its reasoning on a new paragraph.
+
+    The primary's reasoning already reached the user; without the break the
+    two run together in one block of text.
+    """
+    separated = False
+    for chunk in stream:
+        if not separated and is_thought(chunk):
+            separated = True
+            chunk = {**chunk, "thought": "\n\n" + str(chunk.get("thought") or "")}
+        yield chunk
+
+
 def optional_int(value) -> Optional[int]:
     """Coerce a provider-reported count to int, keeping "unreported" as None.
 
@@ -97,6 +128,11 @@ class BaseLLM(ABC):
     # Google, "output_format" for Anthropic); None = the provider has no
     # structured-output kwarg.
     structured_output_kwarg: ClassVar[Optional[str]] = None
+
+    # One-shot callers (graph extraction, titles, compression) reuse an
+    # instance across unrelated calls: a stateless one never chains them on
+    # the provider nor keeps them there (``LLMCreator.create_llm(stateless=)``).
+    stateless: bool = False
 
     # (json_schema, strict) last passed to ``prepare_structured_output_format``;
     # lets a cross-provider fallback re-prepare the schema in the backup's own
@@ -189,6 +225,7 @@ class BaseLLM(ABC):
                     model_id=backup_model_id,
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
+                    stateless=self.stateless,
                 )
                 # Tag the fallback LLM so its rows land as
                 # ``source='fallback'`` in cost-attribution dashboards.
@@ -204,6 +241,8 @@ class BaseLLM(ABC):
                 )
                 return self._fallback_llm
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.warning(
                     f"Failed to initialize backup model {backup_model_id}: {str(e)}"
                 )
@@ -227,6 +266,7 @@ class BaseLLM(ABC):
                     model_id=settings.FALLBACK_LLM_NAME,
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
+                    stateless=self.stateless,
                 )
                 # Same rationale as the agent-backup branch.
                 self._fallback_llm._token_usage_source = "fallback"
@@ -238,6 +278,8 @@ class BaseLLM(ABC):
                     f"{settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}"
                 )
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.error(
                     f"Failed to initialize fallback LLM: {str(e)}", exc_info=True
                 )
@@ -315,7 +357,7 @@ class BaseLLM(ABC):
                 # Native parts the token counter cannot see (file ids, images).
                 estimated += int(dispatch.usage_tokens(messages) or 0)
             limit = get_token_limit(
-                fallback.model_id,
+                getattr(fallback, "_canonical_model_id", None) or fallback.model_id,
                 user_id=getattr(fallback, "model_user_id", None),
             )
             # 10% slack: the tiktoken estimate over-counts vs provider
@@ -455,11 +497,16 @@ class BaseLLM(ABC):
         return prepared
 
     def _model_window(self, llm) -> Optional[int]:
-        """The context window of ``llm``'s model, or None when unknown."""
+        """The context window of ``llm``'s model, or None when unknown.
+
+        Looked up by the registry id: ``model_id`` is the upstream name, and
+        the registry knows a BYOM model only by its UUID.
+        """
         try:
             from docsgpt.core.model_utils import get_token_limit
 
-            return int(get_token_limit(llm.model_id, user_id=getattr(llm, "model_user_id", None)))
+            model_id = getattr(llm, "_canonical_model_id", None) or llm.model_id
+            return int(get_token_limit(model_id, user_id=getattr(llm, "model_user_id", None)))
         except Exception:
             return None
 
@@ -675,6 +722,8 @@ class BaseLLM(ABC):
             **kwargs: Keyword arguments
         """
 
+        check_round()
+
         def decorated_method():
             method = getattr(self, method_name)
             for decorator in decorators:
@@ -694,6 +743,8 @@ class BaseLLM(ABC):
             self._note_answer(self, kwargs.get("model"))
             return result
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             if not self.fallback_llm:
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
@@ -733,6 +784,99 @@ class BaseLLM(ABC):
             self._note_answer(fallback, fallback.model_id, fallback=True, reason=fallback_reason(e))
             return result
 
+    def _max_output_tokens(self) -> Optional[int]:
+        """The model's ``max_output_tokens`` from its YAML, or None when it sets none."""
+        cap = getattr(self.capabilities, "max_output_tokens", None)
+        if isinstance(cap, bool) or not isinstance(cap, int) or cap <= 0:
+            return None
+        return cap
+
+    def _capped_output_tokens(self, requested: Any) -> Any:
+        """The output-token limit to send: ``requested`` lowered to the model's cap, or the cap when unset."""
+        cap = self._max_output_tokens()
+        if cap is None:
+            return requested
+        if isinstance(requested, (int, float)) and not isinstance(requested, bool) and 0 < requested < cap:
+            return requested
+        return cap
+
+    def _stream_deadlines(self) -> StreamDeadlines:
+        """This model's first-token, inter-chunk and time-to-answer deadlines.
+
+        The global time-to-answer default never undercuts the model's own
+        first-token allowance; a model's ``answer_timeout`` is used as set.
+        """
+        caps = self.capabilities
+        first_token = getattr(caps, "first_token_timeout", None) or settings.LLM_FIRST_TOKEN_TIMEOUT
+        answer = getattr(caps, "answer_timeout", None)
+        if not answer:
+            answer = max(settings.LLM_ANSWER_TIMEOUT, first_token) if settings.LLM_ANSWER_TIMEOUT else None
+        return StreamDeadlines(
+            first_token=first_token,
+            stall=getattr(caps, "stall_timeout", None) or settings.LLM_STREAM_STALL_TIMEOUT,
+            answer=answer,
+        )
+
+    def _stream_transport_timeout(self) -> httpx2.Timeout:
+        """A socket timeout matching the stream deadlines.
+
+        Bounds a read abandoned on a silent connection, which no provider
+        event can stop, and keeps the SDK default (600 s) from cutting a
+        model whose first-token deadline is longer. The time-to-answer limit
+        is left out: it is enforced by the consumer and a busy reasoning
+        stream sends bytes the whole time.
+        """
+        deadlines = self._stream_deadlines()
+        return httpx2.Timeout(max(deadlines.first_token, deadlines.stall), connect=5.0)
+
+    def _timed_stream(self, factory: Callable[[], Iterator[Any]]) -> Iterator[Any]:
+        """Apply this model's deadlines to each provider attempt.
+
+        A stream that ends on the output-token limit before any answer text
+        or tool call raises ``StreamLengthNoAnswerError``, so it hands off to
+        the fallback like a model that never starts its answer in time.
+        """
+        deadlines = self._stream_deadlines()
+        answered = False
+        try:
+            for chunk in timed_stream(
+                factory,
+                first_token=deadlines.first_token,
+                stall=deadlines.stall,
+                answer_deadline=deadlines.answer,
+            ):
+                answered = answered or carries_answer(chunk)
+                yield chunk
+        except StreamNoAnswerError:
+            logger.warning(
+                "llm_stream_no_answer: reason=no_answer model=%s answer_timeout=%gs",
+                self.model_id,
+                deadlines.answer,
+                extra={
+                    "reason": "no_answer",
+                    "model": self.model_id,
+                    "provider": self.provider_name,
+                    "answer_timeout": deadlines.answer,
+                },
+            )
+            raise
+        if not answered and getattr(self, "_last_finish_reason", None) == "length":
+            # The finish signal ended an empty answer, so the error is no trailing-frame failure.
+            self._stream_reached_finish = False
+            max_output_tokens = self._max_output_tokens()
+            logger.warning(
+                "llm_stream_no_answer: reason=length_no_answer model=%s max_output_tokens=%s",
+                self.model_id,
+                max_output_tokens,
+                extra={
+                    "reason": "length_no_answer",
+                    "model": self.model_id,
+                    "provider": self.provider_name,
+                    "max_output_tokens": max_output_tokens,
+                },
+            )
+            raise StreamLengthNoAnswerError("The output-token limit was reached before the answer started.")
+
     def _stream_with_fallback(
         self, decorated_method, method_name, decorators, *args, **kwargs
     ):
@@ -754,15 +898,21 @@ class BaseLLM(ABC):
         """
         self._responding_provider = self.provider_name
         chunks_yielded = 0
+        # Reasoning alone is not the answer: a fallback after it repeats nothing.
+        answer_yielded = reasoned = False
         primary_model = kwargs.get("model")
         try:
-            for chunk in decorated_method():
+            for chunk in self._timed_stream(decorated_method):
                 if not chunks_yielded:
                     self._note_answer(self, primary_model)
                 chunks_yielded += 1
+                reasoned = reasoned or is_thought(chunk)
+                answer_yielded = answer_yielded or carries_answer(chunk)
                 yield chunk
             return
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             if getattr(self, "_stream_reached_finish", False):
                 # The primary already delivered a finish signal — only
                 # trailing frames (usage chunk, [DONE]) failed. Restreaming
@@ -802,13 +952,17 @@ class BaseLLM(ABC):
                     ),
                 )
                 try:
-                    for chunk in decorated_method():
+                    for chunk in self._timed_stream(decorated_method):
                         if not chunks_yielded:
                             self._note_answer(self, primary_model)
                         chunks_yielded += 1
+                        reasoned = reasoned or is_thought(chunk)
+                        answer_yielded = answer_yielded or carries_answer(chunk)
                         yield chunk
                     return
                 except Exception as retry_e:
+                    if is_budget_exhausted(retry_e):
+                        raise
                     # Retry delivered a full stream but died on a trailing
                     # frame (usage chunk, [DONE]) — same guard the outer
                     # except uses. Without this, the fallback would run
@@ -826,6 +980,10 @@ class BaseLLM(ABC):
                         f"Error: {str(retry_e)}"
                     )
                     e = retry_e
+            if isinstance(e, StreamStalledError) and answer_yielded:
+                # Output already reached the user; a fallback would repeat it.
+                logger.warning(f"Primary LLM stalled after delivering output; not engaging fallback. Error: {str(e)}")
+                raise e
             if not self.fallback_llm:
                 logger.error(
                     f"Primary LLM failed and no fallback configured: {str(e)}"
@@ -857,9 +1015,12 @@ class BaseLLM(ABC):
             fallback_method = getattr(fallback, method_name)
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
+            fallback_stream = fallback._timed_stream(lambda: fallback_method(fallback, *args, **fallback_kwargs))
+            if reasoned:
+                fallback_stream = _after_primary_reasoning(fallback_stream)
             try:
                 yield from self._noting_answer(
-                    fallback_method(fallback, *args, **fallback_kwargs),
+                    fallback_stream,
                     fallback,
                     fallback.model_id,
                     fallback=True,

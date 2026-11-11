@@ -23,6 +23,7 @@ from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -32,6 +33,7 @@ from docsgpt.core.model_utils import (
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
 from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
+from docsgpt.llm.deadlines import interruptible
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -45,7 +47,7 @@ from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.activity.flags import clear_stop, stop_requested
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.streaming.event_replay import format_sse_event
+from docsgpt.streaming.event_replay import format_sse_event, sse_json
 from docsgpt.streaming.message_journal import (
     BatchedJournalWriter,
     record_event,
@@ -469,6 +471,10 @@ class BaseAnswerResource:
                 value = item.get(key)
                 if isinstance(value, str) and len(value) > max_chars:
                     item[key] = value[:max_chars]
+            ui = item.get("ui")
+            if isinstance(ui, dict) and "result" in ui:
+                # An MCP App view's result is the view's alone, never logged.
+                item["ui"] = {key: value for key, value in ui.items() if key != "result"}
             prepared.append(item)
         return prepared
 
@@ -1065,7 +1071,7 @@ class BaseAnswerResource:
                 if turn_files:
                     payload = {**payload, "attachments": turn_files}
             if not reserved_message_id or journal_writer is None:
-                return f"data: {json.dumps(payload)}\n\n"
+                return f"data: {sse_json(payload)}\n\n"
             sequence_no += 1
             seq = sequence_no
             event_type = (
@@ -1114,6 +1120,19 @@ class BaseAnswerResource:
                     if folded:
                         query_metadata["folded_background"] = folded
                 gen_iter = agent.gen(query=model_question)
+
+            if background_turn is not None and background_turn.auto_resume():
+                from docsgpt.agents.workflow_agent import WorkflowAgent
+                from docsgpt.core.run_budget import bounded_round
+
+                # Workflow nodes can't defer mid-graph, so a workflow runs unbounded.
+                if not isinstance(agent, WorkflowAgent):
+                    gen_iter = bounded_round(gen_iter)
+
+            # A Stop the ticker saw ends an in-flight provider read, not just the
+            # next chunk. ``StreamStopped`` reaches the abort handler below from
+            # any depth; a supersede still waits for the next chunk or boundary.
+            gen_iter = interruptible(gen_iter, lambda: StreamStopped() if stop_asked.is_set() else None)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
@@ -1190,8 +1209,10 @@ class BaseAnswerResource:
                 elif "sources" in line:
                     _mark_streaming_once()
                     truncated_sources = []
-                    source_log_docs = line["sources"]
-                    for source in line["sources"]:
+                    # Copies without the prompt-only keys: these go to the
+                    # client and the stored turn; the agent keeps its own.
+                    source_log_docs = client_sources(line["sources"])
+                    for source in source_log_docs:
                         truncated_source = source.copy()
                         if "text" in truncated_source:
                             truncated_source["text"] = (
@@ -1406,6 +1427,7 @@ class BaseAnswerResource:
                                 model_id=model_id,
                                 agent_id=agent_id,
                                 model_user_id=model_user_id,
+                                stateless=True,
                             )
                             conversation_id = (
                                 self.conversation_service.save_conversation(
@@ -1544,6 +1566,7 @@ class BaseAnswerResource:
                     model_id=title_model_id,
                     agent_id=agent_id,
                     model_user_id=model_user_id,
+                    stateless=True,
                 )
                 llm._token_usage_source = "title"
 
@@ -1592,6 +1615,18 @@ class BaseAnswerResource:
                         if stop_requested(reserved_message_id):
                             _stop_background_jobs(background_turn)
                         else:
+                            if query_metadata.get("budget_deferred") and background_turn is not None:
+                                from docsgpt.background.continuation import defer_round
+
+                                # Guarded: the answer is already saved, and a raise
+                                # would reach the generic ``except`` below.
+                                try:
+                                    defer_round(
+                                        {"id": conversation_id, "user_id": background_turn.user_id},
+                                        reserved_message_id,
+                                    )
+                                except Exception:
+                                    logger.exception("deferring the next round of %s failed", reserved_message_id)
                             _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was
@@ -1816,6 +1851,7 @@ class BaseAnswerResource:
                             model_id=title_model_id,
                             agent_id=agent_id,
                             model_user_id=model_user_id,
+                            stateless=True,
                         )
                         llm._token_usage_source = "title"
                     if reserved_message_id is not None:
@@ -2506,7 +2542,7 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": err_response}
         if code:
             payload["code"] = code
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"
 
     def curated_error_stream_generate(self, error: BaseException):
         """One SSE ``error`` event with the curated message, code and params.
@@ -2521,4 +2557,4 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": public.message, "code": public.code}
         if public.params:
             payload["params"] = public.params
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"

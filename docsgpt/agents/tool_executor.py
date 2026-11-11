@@ -8,16 +8,16 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
 
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
-    is_server_attached_tool,
-    is_server_attached_tool_id,
     is_synthesized_tool_id,
     resolve_tool_by_id,
     synthesized_default_tools,
 )
 from docsgpt import tracing
+from docsgpt.agents import mcp_apps
 from docsgpt.agents.tool_pins import (
     PARAM_SECTIONS,
     iter_parameters,
@@ -25,6 +25,7 @@ from docsgpt.agents.tool_pins import (
     resolve_arguments,
     sent_arguments,
 )
+from docsgpt.agents.tools.report_cannot_complete import REPORT_CANNOT_COMPLETE
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -41,6 +42,9 @@ from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
 
+# Stored for a call that ran but whose result a time limit stopped before the guardrail checked it.
+_RESULT_WITHHELD = "[Output withheld: the time limit stopped its guardrail check.]"
+
 #: ``user_tools.config`` key holding an api_tool's encrypted header /
 #: query-param values: ``{action: {section: {param: value}}}``, keyed by the
 #: tool owner's id. The plaintext ``value`` of those entries is kept empty.
@@ -48,6 +52,10 @@ API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
 API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
 # Tools that label their hits ``[n]`` from the answer's citation registry.
 CITING_TOOLS = frozenset({"internal_search", "graph_search"})
+# The actions whose result is made of hits the agent's ``retrieval_screen``
+# already scored one by one; any other action of those tools (file listings,
+# graph entities) never passed it.
+SCREENED_SEARCH_ACTIONS = frozenset({("internal_search", "search"), ("graph_search", "read_entity_pages")})
 
 
 def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_owner: Optional[str] = None) -> Dict:
@@ -267,6 +275,50 @@ def sanitize_tool_result(value: Any) -> Any:
     return value
 
 
+def _scan_lines(value: Any, path: str, lines: List[str]) -> None:
+    """Append ``value``'s leaves to ``lines`` as ``path = value`` text.
+
+    A string leaf goes on the line after its ``path =``, verbatim: its
+    newlines and quotes stay real, so a pattern anchored on a line start or
+    stopped by a quote reads it as it reads plain text. ``=`` rather than
+    ``:`` keeps a key named ``system`` from reading as a fake turn. An empty
+    leaf (``None``, ``""``, ``{}``, ``[]``) still gets its ``path =`` line,
+    since its key is persisted with the result.
+    """
+    if value is None or (isinstance(value, (str, dict, list, tuple)) and not value):
+        if path:
+            lines.append(f"{path} =")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _scan_lines(item, f"{path}.{key}" if path else str(key), lines)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _scan_lines(item, path, lines)
+    elif isinstance(value, str):
+        lines.extend([f"{path} =", value] if path else [value])
+    else:
+        lines.append(f"{path} = {value}" if path else str(value))
+
+
+def _scan_text(result: Any) -> str:
+    """The text the ``tool_result`` guardrails read for ``result``.
+
+    Args:
+        result: A tool result, already sanitized.
+
+    Returns:
+        The string itself, a dict, list or tuple as one ``path = value`` line
+        per leaf (see ``_scan_lines``), or ``""`` for anything else.
+    """
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, (dict, list, tuple)) or not result:
+        return ""
+    lines: List[str] = []
+    _scan_lines(result, "", lines)
+    return "\n".join(lines)
+
+
 def bound_result_full(text: str) -> str:
     """Cap the persisted full-result copy at ``RESULT_FULL_MAX_CHARS``."""
     if len(text) <= RESULT_FULL_MAX_CHARS:
@@ -432,6 +484,8 @@ def _record_proposed(
             )
         return inserted
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc):
             logger.warning(
                 "tool_call_attempts: parent message row %s is gone "
@@ -467,12 +521,15 @@ def _mark_executed(
     tool_id: Optional[str] = None,
     user_id: Optional[str] = None,
     agent_id: Optional[str] = None,
+    app_result: Optional[Dict] = None,
 ) -> None:
     """Flip the row to ``executed``. If ``proposed_ok`` is False (the
     proposed write failed earlier), upsert a fresh row in ``executed`` so
     the reconciler can still see the attempt — without this, the side
     effect would be invisible to the journal. Both paths are scoped to
     the owning ``user_id`` so a reused ``call_id`` can't cross tenants.
+    ``app_result`` is the MCP App view's screened result, kept for
+    ``/api/mcp_apps/result`` when the conversation is reopened.
     """
     key = _journal_key(call_id, message_id)
     try:
@@ -485,6 +542,7 @@ def _mark_executed(
                     message_id=_parent_column(message_id),
                     artifact_id=artifact_id,
                     user_id=user_id,
+                    app_result=app_result,
                 )
                 if updated:
                     return
@@ -500,8 +558,11 @@ def _mark_executed(
                 artifact_id=artifact_id,
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
+                app_result=app_result,
             )
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc) or _is_missing_parent(message_id):
             logger.debug(
                 "tool_call_attempts executed write skipped for %s "
@@ -527,7 +588,9 @@ def _mark_failed(
             ToolCallAttemptsRepository(conn).mark_failed(
                 _journal_key(call_id, message_id), error, user_id=user_id
             )
-    except Exception:
+    except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
 
@@ -673,11 +736,8 @@ class ToolExecutor:
         # Who an explicit tool-id scope resolves as: the workflow owner for a
         # node, so whoever runs it gets the owner's tools. None = ``user``.
         self.tool_owner: Optional[str] = None
-        # Tool id -> the user to resolve it as, for a workflow node's tools
-        # sponsored by an editor (see resource_access.active_sponsor).
-        self.tool_principals: Dict[str, str] = {}
-        # The workflow row a node's tools belong to, so a dropped one is
-        # logged with why it doesn't run.
+        # The workflow row a node's tools belong to: its sponsors are checked
+        # live, and a dropped tool is logged with why it doesn't run.
         self.tool_holder: Optional[Dict] = None
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
@@ -701,6 +761,11 @@ class ToolExecutor:
         # handed to the search tools so each hit is screened as a retrieved
         # document before it is formatted into their result.
         self.retrieval_screen: Optional[Callable[[List[Dict]], List[Dict]]] = None
+        # The agent's per-name screen (``BaseAgent._screen_names_one_by_one``)
+        # for the source names a search tool's result lists that are not hits
+        # ("Could not be searched"); the tool-result stage skips its item-level
+        # controls for those tools, so nothing else would score them.
+        self.source_name_screen: Optional[Callable[[Dict[str, str]], Dict[str, str]]] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -725,6 +790,8 @@ class ToolExecutor:
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
         self.headless_denials: List[Dict] = []
+        # The reason a scheduled run's ``report_cannot_complete`` call gave, if it made one.
+        self.cannot_complete: Optional[str] = None
         # Per-turn connection resolution for connection-backed tools, keyed
         # by tool row id, so check_pause and execute share one lookup.
         self._connections: Dict[str, Any] = {}
@@ -794,44 +861,21 @@ class ToolExecutor:
         """Resolve an explicit tool-id scope — exactly these ids, no defaults.
 
         Used by workflow agent nodes: the node's configured tools (builtin
-        synthetic ids like Artifact/Code Executor/Read Document, or the
-        ``user_tools`` rows of ``tool_owner``) are the node's WHOLE toolset.
-        Rows resolve as the workflow owner, then as the editor who attached
-        them, never as whoever runs the workflow — the same rule as an agent's
-        own tools. An unresolvable id is dropped with a warning rather than
-        failing the node.
+        synthetic ids like Artifact/Code Executor/Read Document, or
+        ``user_tools`` rows) are the node's WHOLE toolset. They resolve as the
+        workflow owner (``tool_owner``), then as the editor who attached them,
+        never as whoever runs the workflow — the same resolver an agent's own
+        tools use (``resource_access.resolve_holder_tools``). A tool that
+        doesn't run is dropped and logged rather than failing the node.
         """
         if not tool_ids:
             return {}
-        principal = self.tool_owner or self.user
-        with db_readonly() as conn:
-            tools_repo = UserToolsRepository(conn)
-            tools: List[Dict] = []
-            for tid in tool_ids:
-                row = resolve_tool_by_id(tid, principal, user_tools_repo=tools_repo)
-                if row is None and str(tid) in self.tool_principals:
-                    row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
-                if row is None:
-                    self._log_dropped_scoped_tool(conn, tid, principal)
-                    continue
-                if self.headless and is_headless_excluded_tool(row.get("name")):
-                    continue
-                tools.append(row)
-        return {str(tool["id"]): tool for tool in tools}
-
-    def _log_dropped_scoped_tool(self, conn, tool_id: str, principal: Optional[str]) -> None:
-        """Log a node tool the scoped toolset leaves out, with why when the workflow is known."""
         # Lazy: docsgpt.api's package import pulls in every route module.
-        from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+        from docsgpt.api.user.resource_access import resolve_holder_tools
 
-        holder = {**(self.tool_holder or {}), "user_id": principal}
-        reason = None
-        try:
-            _row, access = resolve_holder_tool(conn, "workflow", holder, tool_id)
-            reason = access.reason
-        except Exception:
-            logger.exception("Could not tell why tool %s does not resolve", tool_id)
-        log_stopped("workflow", holder, "tool", tool_id, reason)
+        holder = {**(self.tool_holder or {}), "user_id": self.tool_owner or self.user}
+        with db_readonly() as conn:
+            return resolve_holder_tools(conn, "workflow", holder, tool_ids, headless=self.headless)
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         """Resolve an agent's toolset — exactly ``agents.tools``, no defaults."""
@@ -853,38 +897,18 @@ class ToolExecutor:
             return self._agent_tools(conn, agent_data)
 
     def _agent_tools(self, conn, agent_data: Optional[Dict]) -> Dict[str, Dict]:
-        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner."""
-        tool_ids = (agent_data.get("tools") or []) if agent_data else []
-        tools_repo = UserToolsRepository(conn)
-        owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
-        tools: List[Dict] = []
-        for tid in tool_ids:
-            # check_job, once pickable, is attached by the server now; a saved id is not a choice.
-            if is_server_attached_tool_id(tid):
-                continue
-            row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
-            if row is None:
-                # A tool the owner can't use runs as the editor who
-                # attached it, while they still qualify: the same check
-                # the agent page's run state uses.
-                # Lazy: docsgpt.api's package import pulls in every route module.
-                from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner, else a live sponsor."""
+        if not agent_data:
+            return {}
+        # Lazy: docsgpt.api's package import pulls in every route module.
+        from docsgpt.api.user.resource_access import resolve_holder_tools
 
-                row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
-                if row is None:
-                    log_stopped("agent", agent_data, "tool", tid, access.reason)
-            if row is None or is_server_attached_tool(row.get("name")):
-                continue
-            # Workflow-only builtins (read_document) never resolve for a
-            # chat/scheduled agent — nodes get them via the scoped-id path.
-            if row.get("workflow_only"):
-                continue
-            # Headless runs (scheduled / webhook) drop chat-only tools
-            # like ``scheduler`` so a fire-time LLM can't chain schedules.
-            if self.headless and is_headless_excluded_tool(row.get("name")):
-                continue
-            tools.append(row)
-        return {str(tool["id"]): tool for tool in tools}
+        holder = dict(agent_data)
+        holder["user_id"] = agent_data.get("user_id") or agent_data.get("user")
+        return resolve_holder_tools(
+            conn, "agent", holder, agent_data.get("tools") or [], headless=self.headless,
+            tools_repo=UserToolsRepository(conn),
+        )
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
         """Resolve an agentless chat's toolset: explicit user tools plus defaults."""
@@ -1010,6 +1034,8 @@ class ToolExecutor:
 
         # Stable sort: preserves the caller's order within each group.
         ordered_tools = sorted(tools_dict.items(), key=lambda kv: is_synthesized_tool_id(kv[0]))
+        # An MCP App's app-only tools (``visibility: ["app"]``) are its view's, never the model's.
+        apps_on = mcp_apps.enabled()
 
         for tool_id, tool in ordered_tools:
             is_api = tool["name"] == "api_tool"
@@ -1024,6 +1050,8 @@ class ToolExecutor:
 
             for action in actions:
                 if not action.get("active", True):
+                    continue
+                if apps_on and not mcp_apps.visible_to_model(action):
                     continue
                 tool_name = tool.get("name", "")
                 if tool_name in dedupable:
@@ -1183,17 +1211,23 @@ class ToolExecutor:
         A tool result is untrusted third-party text on the same footing as a
         retrieved document, and it is a common exfiltration path for secrets
         that the calling API happened to echo back.
+
+        A structured result (``api_tool``, MCP, search tools) is scanned as
+        one ``path = value`` line per leaf (``_scan_text``). A clean one keeps
+        its shape; a redacted one becomes the masked text, so no half-masked
+        value survives inside it.
         """
         engine = getattr(self, "guardrail_engine", None)
         if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
             return result
-        if not isinstance(result, str) or not result:
+        text = _scan_text(result)
+        if not text:
             return result
-        # A search tool's hits were screened one by one as retrieved documents
+        # A search action's hits were screened one by one as retrieved documents
         # (``retrieval_screen``); its result, which joins them, then gets only
         # the whole-text controls, so the model check never scores them twice.
         screened = (
-            tool_name in CITING_TOOLS
+            (tool_name, action_name) in SCREENED_SEARCH_ACTIONS
             and self.retrieval_screen is not None
             and bool(engine.config.controls_for(GuardrailStage.RETRIEVAL, item_level=True))
         )
@@ -1201,9 +1235,11 @@ class ToolExecutor:
             engine.context.tool_name = tool_name
             engine.context.action_name = action_name
             decision = engine.evaluate(
-                result, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
+                text, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
             )
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
         return resolve_tool_result(result, decision)
@@ -1218,7 +1254,9 @@ class ToolExecutor:
 
             try:
                 self._connections[key] = resolve_connection(tool_data, self.user)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 logger.exception("connection resolution failed for tool %s", key)
                 self._connections[key] = None
         return self._connections[key]
@@ -1246,7 +1284,9 @@ class ToolExecutor:
 
                 try:
                     params = connection_parameters(resolved.row)
-                except Exception:
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     logger.exception("connection parameters failed for tool %s", key)
             self._connection_params[key] = params
         return self._connection_params[key]
@@ -1296,7 +1336,9 @@ class ToolExecutor:
         try:
             with db_readonly() as conn:
                 return UsersRepository(conn).emails_for([user_id]).get(user_id)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("owner name lookup failed")
             return None
 
@@ -1629,7 +1671,9 @@ class ToolExecutor:
                 user_id=self.user,
             )
             return tool.preview_decision(action_name, arguments)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "remote_device preview_decision failed; defaulting to a forced prompt",
             )
@@ -1656,7 +1700,9 @@ class ToolExecutor:
             )
             requires_approval, _forced = tool.preview_decision(action_name, arguments)
             return requires_approval
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "code_executor preview_decision failed; defaulting to a prompt",
             )
@@ -1673,6 +1719,7 @@ class ToolExecutor:
         correctable error exists to break.
         """
         names = set()
+        apps_on = mcp_apps.enabled()
         for tool in (tools_dict or {}).values():
             tool = tool or {}
             if tool.get("name") == "api_tool":
@@ -1682,6 +1729,8 @@ class ToolExecutor:
                 actions = tool.get("actions") or []
             for action in actions:
                 if not isinstance(action, dict) or not action.get("active", True):
+                    continue
+                if apps_on and not mcp_apps.visible_to_model(action):
                     continue
                 if action.get("name"):
                     names.add(str(action["name"]))
@@ -1732,6 +1781,9 @@ class ToolExecutor:
         is read from the ``tool_calls`` entry each branch of :meth:`_execute`
         appends, so the span matches what the conversation stores.
         """
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(self, "message_id", None))
         span = record_tool_span_start(call)
         recorded = len(self.tool_calls)
         try:
@@ -1748,7 +1800,20 @@ class ToolExecutor:
             raise
         data = self.tool_calls[-1] if len(self.tool_calls) > recorded else {}
         finish_tool_span(span, data)
+        self._note_cannot_complete(data)
         return outcome
+
+    def _note_cannot_complete(self, data: Dict) -> None:
+        """Keep the reason of the first ``report_cannot_complete`` call that ran."""
+        if data.get("tool_name") != REPORT_CANNOT_COMPLETE or data.get("status") == "error":
+            return
+        # Read with a default: some callers build an executor without ``__init__``.
+        if getattr(self, "cannot_complete", None):
+            return
+        arguments = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
+        reason = " ".join(str(arguments.get("reason") or "").split())
+        if reason:
+            self.cannot_complete = reason[:500]
 
     def _execute(self, tools_dict: Dict, call, llm_class_name: str):
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
@@ -1918,6 +1983,25 @@ class ToolExecutor:
             "arguments": call_args,
         }
         tool_data = tools_dict[tool_id]
+        if self._app_only(tool_data, action_name):
+            refused = f"'{llm_name}' is called only by its app's view in the chat, not by the model. Nothing ran."
+            tool_call_data["result"] = refused
+            tool_call_data["status"] = "error"
+            # Journaled like the other refused calls, so tool analytics count it.
+            if _record_proposed(
+                call_id,
+                tool_data["name"],
+                action_name,
+                call_args if isinstance(call_args, dict) else {},
+                tool_id=tool_data.get("id"),
+                message_id=self.message_id,
+                user_id=self.user,
+                agent_id=self.agent_id,
+            ):
+                _mark_failed(call_id, refused, message_id=self.message_id, user_id=self.user)
+            yield {"type": "tool_call", "data": {**tool_call_data}}
+            self.tool_calls.append(tool_call_data)
+            return refused, call_id
         # Name the service a connection-backed tool used, so the chip can show
         # its logo ("Searched Notion"). Never the account behind it.
         resolved = self._resolve_connection(tool_data)
@@ -2095,6 +2179,8 @@ class ToolExecutor:
                 try:
                     value = tool.execute_action(action_name, **call_kwargs)
                 except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     if not known_secrets:
                         raise
                     message = secret_refs.redact(str(exc) or type(exc).__name__, known_secrets)
@@ -2131,12 +2217,11 @@ class ToolExecutor:
                 result = None if outcome.handed_off else outcome.value
             else:
                 result = _invoke()
-            if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
-                result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
+                # A time limit too: the call may have had side effects, so it must not read as never run.
                 _mark_failed(
-                    call_id, str(exc), message_id=self.message_id, user_id=self.user
+                    call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
                 )
             raise
 
@@ -2145,11 +2230,73 @@ class ToolExecutor:
                 yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
             )
 
+        def journal_executed(
+            artifact_id: Optional[str] = None, stored: Optional[str] = None, app_result: Optional[Dict] = None
+        ) -> str:
+            # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
+            exposed = self.exposed_secrets()
+            if stored is not None:
+                result_full = stored
+            else:
+                result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+            # Tool side effect has run; flip the journal row so the
+            # message-finalize path can later confirm it. If the proposed
+            # write failed (DB outage), upsert a fresh row in ``executed`` so
+            # the reconciler still sees the side effect.
+            _mark_executed(
+                call_id,
+                result_full,
+                message_id=self.message_id,
+                artifact_id=artifact_id,
+                proposed_ok=proposed_ok,
+                tool_name=tool_data["name"],
+                action_name=action_name,
+                arguments=call_args,
+                tool_id=tool_data.get("id"),
+                user_id=self.user,
+                agent_id=self.agent_id,
+                app_result=app_result,
+            )
+            return result_full
+
+        def keep_interrupted(
+            artifact_id: Optional[str] = None, stored: Optional[str] = None, call_status: Optional[str] = None
+        ) -> None:
+            """Journal a call a time limit cut after it ran as executed, and keep it in the turn's saved calls."""
+            result_full = journal_executed(artifact_id, stored)
+            tool_call_data["resolved_arguments"] = resolved_arguments
+            tool_call_data["result_full"] = result_full
+            tool_call_data["result"] = truncate_tool_result(result_full)
+            tool_call_data["status"] = call_status or status
+            self.tool_calls.append(tool_call_data)
+
+        if tool_data["name"] != "api_tool":
+            try:
+                result = self._collect_native_parts(tool, result, tool_call_data)
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    # Not screened yet, so unscreened output is never stored.
+                    keep_interrupted(stored=_RESULT_WITHHELD, call_status=result_status(result))
+                elif proposed_ok:
+                    _mark_failed(
+                        call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
+                    )
+                raise
+
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
-        result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        # Read before the scan: a redacted dict comes back as text.
+        status = result_status(result)
+        unscreened = result
+        try:
+            result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                # Unscreened output is never stored.
+                keep_interrupted(stored=_RESULT_WITHHELD)
+            raise
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
 
@@ -2157,7 +2304,10 @@ class ToolExecutor:
         if callable(get_artifact_id):
             try:
                 artifact_id = get_artifact_id(action_name, **parameters)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted()
+                    raise
                 logger.exception(
                     "Failed to extract artifact_id from tool %s for action %s",
                     tool_data["name"],
@@ -2195,7 +2345,10 @@ class ToolExecutor:
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
                 ]
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted(artifact_id or None)
+                    raise
                 logger.exception(
                     "Failed to extract artifacts from tool %s for action %s",
                     tool_data["name"],
@@ -2203,37 +2356,36 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
-        # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
-        exposed = self.exposed_secrets()
-        result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+        app_result = None
+        if tool_data["name"] != "api_tool":
+            # A clean verdict hands the result back as it was; a masked or blocked
+            # one never reaches the view, which would get the raw result.
+            try:
+                view = self._app_view(
+                    tool, tool_data, action_data, known_secrets, withheld=result is not unscreened
+                )
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted(artifact_id or None)
+                raise
+            if view:
+                # The saved call keeps only where the view is; its result goes to the
+                # live event and the journal, which ``/api/mcp_apps/result`` reads.
+                app_result = view.pop("result", None)
+                tool_call_data["ui"] = view
+        result_full = journal_executed(artifact_id or None, app_result=app_result)
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = truncate_tool_result(result_full)
         # A tool that ran but reported failure in-band persists as ``error``,
         # not ``completed`` -- the model saw an error and will likely retry.
-        tool_call_data["status"] = result_status(result)
-
-        # Tool side effect has run; flip the journal row so the
-        # message-finalize path can later confirm it. If the proposed
-        # write failed (DB outage), upsert a fresh row in ``executed`` so
-        # the reconciler still sees the side effect.
-        _mark_executed(
-            call_id,
-            result_full,
-            message_id=self.message_id,
-            artifact_id=artifact_id or None,
-            proposed_ok=proposed_ok,
-            tool_name=tool_data["name"],
-            action_name=action_name,
-            arguments=call_args,
-            tool_id=tool_data.get("id"),
-            user_id=self.user,
-            agent_id=self.agent_id,
-        )
+        tool_call_data["status"] = status
 
         stream_tool_call_data = {
             key: value for key, value in tool_call_data.items() if key not in {"result_full", "resolved_arguments"}
         }
+        if app_result is not None:
+            stream_tool_call_data["ui"] = {**tool_call_data["ui"], "result": app_result}
         yield {"type": "tool_call", "data": {**stream_tool_call_data}}
         self.tool_calls.append(tool_call_data)
 
@@ -2289,6 +2441,7 @@ class ToolExecutor:
             if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
                 cached_config["citation_registry"] = self.citation_registry
                 cached_config["retrieval_screen"] = self.retrieval_screen
+                cached_config["source_name_screen"] = self.source_name_screen
             return cached
 
         tm = ToolManager(config={})
@@ -2377,6 +2530,7 @@ class ToolExecutor:
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
                 tool_config["retrieval_screen"] = self.retrieval_screen
+                tool_config["source_name_screen"] = self.source_name_screen
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's
@@ -2493,6 +2647,85 @@ class ToolExecutor:
         "job_id", "error", "error_type",
     )
 
+    @staticmethod
+    def _app_only(tool_data: Dict, action_name: Optional[str]) -> bool:
+        """Whether ``action_name`` is an MCP App's app-only tool, which the model may not call."""
+        if not mcp_apps.enabled():
+            return False
+        return any(
+            isinstance(action, dict) and action.get("name") == action_name and not mcp_apps.visible_to_model(action)
+            for action in tool_data.get("actions") or []
+        )
+
+    def _app_view(
+        self, tool: Any, tool_data: Dict, action: Dict, secrets: Dict[str, str], withheld: bool = False
+    ) -> Optional[Dict]:
+        """The MCP App view a call renders in the chat: its ``ui://`` resource, its tool row and full result.
+
+        The chat reads the view's HTML from ``/api/mcp_apps/resource`` by
+        ``tool_id``, and hands it ``result`` as ``ui/notifications/tool-result``.
+        Only the live call event carries ``result``; the saved call keeps
+        ``resource_uri`` and ``tool_id``, and a reopened chat reads the result
+        back from the journal through ``/api/mcp_apps/result``.
+
+        The result is the full ``CallToolResult``, ``structuredContent``
+        included, which the model's copy drops when there is content. So it
+        gets the journal's treatment of its own: exposed secrets put back to
+        their references, and the tool-result guardrail on the structured
+        part (the content was screened as the model's copy); a verdict that
+        would change it withholds the view.
+
+        Args:
+            tool: The tool that ran; its ``take_app_result`` is drained either way.
+            tool_data: Its row.
+            action: The action that ran.
+            secrets: ``{secret: reference}`` filled into this turn's calls, kept out of the result.
+            withheld: The tool-result guardrail masked or blocked the model's copy; no view then.
+
+        Returns:
+            ``{"resource_uri", "tool_id", "result"}``, or None when the action has no view.
+
+        Raises:
+            Whatever the guardrail raises when the turn's budget runs out.
+        """
+        take = getattr(tool, "take_app_result", None)
+        result = take() if callable(take) else None
+        uri = mcp_apps.resource_uri(action or {})
+        if withheld or not uri or not tool_data.get("id") or not mcp_apps.enabled():
+            return None
+        view: Dict[str, Any] = {"resource_uri": uri, "tool_id": str(tool_data["id"])}
+        if isinstance(result, dict):
+            result = self.redact_app_result(result, secrets)
+            # The content is the model's copy, screened already; only the structured part is the view's alone.
+            structured = result.get("structuredContent")
+            if structured is not None:
+                extra = {"structuredContent": structured}
+                screened = self._guardrail_tool_result(extra, tool_data.get("name", ""), str(action.get("name") or ""))
+                if screened is not extra:
+                    return None
+            view["result"] = result
+        return view
+
+    def redact_app_result(self, result: Dict, secrets: Optional[Dict[str, str]] = None) -> Dict:
+        """A ``CallToolResult`` as it may leave the server for an MCP App view.
+
+        Control characters are stripped, as from any tool result, and raw
+        secrets are put back to their references: the ones filled into this
+        turn's calls (``secrets``) and the ones the user exposed to the model,
+        which the journal does too. Shared with ``/api/mcp_apps/call``, whose
+        results go to the view alone.
+
+        Args:
+            result: The result, ``structuredContent`` included.
+            secrets: ``{secret: reference}`` filled into this turn's calls, if any.
+
+        Returns:
+            A clean copy, or ``result`` itself when nothing had to change.
+        """
+        result = sanitize_tool_result(result)
+        secrets = {**(secrets or {}), **self.exposed_secrets()}
+        return secret_refs.redact(result, secrets) if secrets else result
+
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:
         """Take the images a tool queued for the model, up to the turn's limit.
 
@@ -2510,7 +2743,9 @@ class ToolExecutor:
             return result
         try:
             parts = [p for p in drain() or [] if isinstance(p, dict)]
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Failed to collect images from tool %s", type(tool).__name__)
             return result
         from docsgpt.core.settings import settings
@@ -2554,5 +2789,9 @@ class ToolExecutor:
                 value = tool_call.get(key)
                 if value:
                     entry[key] = value
+            ui = tool_call.get("ui")
+            if isinstance(ui, dict) and ui.get("resource_uri") and ui.get("tool_id"):
+                # Where the view is, never its result: that stays in the journal.
+                entry["ui"] = {"resource_uri": ui["resource_uri"], "tool_id": ui["tool_id"]}
             projected.append(entry)
         return projected

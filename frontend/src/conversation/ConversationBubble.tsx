@@ -61,14 +61,20 @@ import {
   orderArtifactCards,
   type OpenArtifactRequest,
 } from './artifactCards';
-import { deriveArtifactChips } from './artifactChips';
+import { deriveArtifactChips, type JobArtifact } from './artifactChips';
 import {
   type AnswerSource,
   sourceHref,
   useChatCompanion,
 } from './chatCompanion';
-import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import {
+  FEEDBACK,
+  MESSAGE_TYPE,
+  ResearchState,
+  WorkflowProgress,
+} from './conversationModels';
 import ResearchProgress from './ResearchProgress';
+import WorkflowRunProgress from './WorkflowRunProgress';
 import SourcesPanel from './SourcesPanel';
 import ToolCallCard from './ToolCallCard';
 import { shownArguments, ToolCallsType } from './types';
@@ -93,6 +99,8 @@ const ConversationBubble = forwardRef<
     /** Set when this answer came from a workflow agent run; renders the
      * run's produced artifacts as click-through chips/previews. */
     workflowRunId?: string;
+    /** A workflow agent's steps; shown above the answer while they run. */
+    workflow?: WorkflowProgress;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
     /**
@@ -116,6 +124,8 @@ const ConversationBubble = forwardRef<
      * The chip RAIL still uses this turn's artifacts only.
      */
     conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
+    /** Files of the background jobs this answer reports; shown in its rail. */
+    jobArtifacts?: JobArtifact[];
     onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
     onToolAction?: (
       callId: string,
@@ -124,6 +134,8 @@ const ConversationBubble = forwardRef<
     ) => void;
     /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
     agentId?: string;
+    /** The saved message behind this answer, for an MCP App view to read its result back. */
+    messageId?: string;
   }
 >(function ConversationBubble(
   {
@@ -137,6 +149,7 @@ const ConversationBubble = forwardRef<
     toolCalls,
     segments,
     workflowRunId,
+    workflow,
     research,
     retryBtn,
     errorCode,
@@ -146,9 +159,11 @@ const ConversationBubble = forwardRef<
     handleUpdatedQuestionSubmission,
     filesAttached,
     conversationArtifacts,
+    jobArtifacts,
     onOpenArtifact,
     onToolAction,
     agentId,
+    messageId,
   },
   ref,
 ) {
@@ -182,7 +197,7 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const completedArtifacts = deriveArtifactChips(toolCalls);
+  const completedArtifacts = deriveArtifactChips(toolCalls, jobArtifacts);
   // Only a view that can open an artifact lists the run's (a shared chat
   // can't, and its reader may not own the run).
   const runArtifacts = useRunArtifacts(
@@ -193,10 +208,10 @@ const ConversationBubble = forwardRef<
   const artifactCards = useMemo(
     () =>
       orderArtifactCards([
-        ...cardsFromToolCalls(toolCalls),
+        ...cardsFromToolCalls(toolCalls, jobArtifacts),
         ...runArtifacts.items,
       ]),
-    [toolCalls, runArtifacts.items],
+    [toolCalls, jobArtifacts, runArtifacts.items],
   );
   // Names this answer's artifact list in the side panel.
   const artifactListKey = useId();
@@ -229,6 +244,7 @@ const ConversationBubble = forwardRef<
     !message &&
     !thought &&
     !research &&
+    !workflow?.steps.length &&
     !toolCalls?.length &&
     !segments?.length &&
     !sources?.length &&
@@ -521,6 +537,13 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
+        {workflow && (
+          <WorkflowRunProgress
+            workflow={workflow}
+            isStreaming={isStreaming}
+            hasAnswerText={Boolean(message)}
+          />
+        )}
         {type === 'ERROR' ? (
           message && (
             // On the answer's ml-6 text column. Without a code the backend's
@@ -564,9 +587,17 @@ const ConversationBubble = forwardRef<
             sourceCount={showSources ? (sources?.length ?? 0) : 0}
             onOpenSource={openSources}
             agentId={agentId}
+            messageId={messageId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
-            suppressStatusLine={Boolean(research)}
+            suppressStatusLine={
+              Boolean(research) ||
+              // The step progress above says what is happening until the
+              // answer starts.
+              (Boolean(isStreaming) &&
+                !message &&
+                Boolean(workflow?.steps.length))
+            }
             artifacts={conversationArtifacts ?? completedArtifacts}
             // The chip rail below renders from this turn's artifacts alone, so
             // a bare-filename link has to resolve against the same set or the
@@ -629,7 +660,9 @@ const ConversationBubble = forwardRef<
             className="mr-5 ml-6"
           />
         )}
-        {message && (
+        {/* Not drawn while streaming: an empty row's margins made the end of
+            the stream shrink the turn, which jolts the chat scroll. */}
+        {message && (type === 'ERROR' || !isStreaming) && (
           // ml-4 plus each button's own p-2 puts the first glyph on the answer's
           // ml-6 text column.
           <div className="my-2 ml-4 flex flex-wrap justify-start gap-2">

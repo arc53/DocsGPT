@@ -77,6 +77,7 @@ export default function ShareBars({
             >
               <Progress
                 value={rate !== undefined ? rate * 100 : 0}
+                variant={row.tone ?? 'default'}
                 className="min-w-0 flex-1"
               />
               <span className="w-10 shrink-0 text-right text-xs tabular-nums">

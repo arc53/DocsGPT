@@ -11,7 +11,7 @@ from sqlalchemy import text as _sql_text
 from docsgpt.api import api
 from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.shared_conversations import (
@@ -109,7 +109,7 @@ def _authorized_source(conn, row, user):
 
 
 def _find_reusable_share_agent(
-    conn, user_id, *, prompt_pg_id, chunks, source_pg_id, retriever,
+    conn, user_id, *, prompt_pg_id, chunks, source_pg_id, retriever, prompt_preset=None,
 ):
     """Find an existing share-as-agent key row matching these parameters.
 
@@ -121,6 +121,12 @@ def _find_reusable_share_agent(
     params: dict = {"uid": user_id}
     if prompt_pg_id is None:
         clauses.append("prompt_id IS NULL")
+        # ``creative`` / ``strict`` live in ``prompt_preset`` (no prompts row).
+        if prompt_preset is None:
+            clauses.append("prompt_preset IS NULL")
+        else:
+            clauses.append("prompt_preset = :preset")
+            params["preset"] = prompt_preset
     else:
         clauses.append("prompt_id = CAST(:pid AS uuid)")
         params["pid"] = prompt_pg_id
@@ -214,6 +220,9 @@ class ShareConversation(Resource):
                         chunks_int = None
 
                     prompt_pg_id = _resolve_prompt_pg_id(conn, prompt_id_raw, user)
+                    prompt_preset = (
+                        str(prompt_id_raw) if str(prompt_id_raw) in STORED_PROMPT_PRESETS else None
+                    )
                     source_pg_id = _resolve_source_pg_id(
                         conn, data.get("source"), user
                     )
@@ -225,6 +234,7 @@ class ShareConversation(Resource):
                         chunks=chunks_int,
                         source_pg_id=source_pg_id,
                         retriever=retriever,
+                        prompt_preset=prompt_preset,
                     )
                     if reusable:
                         api_uuid = reusable.get("key")
@@ -239,7 +249,7 @@ class ShareConversation(Resource):
                             agent_type="classic",
                             retriever=retriever,
                             chunks=chunks_int,
-                            prompt_id=prompt_pg_id,
+                            prompt_id=prompt_pg_id or prompt_preset,
                             source_id=source_pg_id,
                             # The share's agent starts from the admin's default guardrails.
                             config=agent_defaults.seed(conn, None),
@@ -286,6 +296,16 @@ class ShareConversation(Resource):
                 f"Error sharing conversation: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+
+
+def _shared_tool_calls(tool_calls: Any) -> list:
+    """A message's tool calls as a share shows them: without MCP App views, which a viewer can't open."""
+    if not isinstance(tool_calls, list):
+        return []
+    return [
+        {key: value for key, value in call.items() if key != "ui"} if isinstance(call, dict) else call
+        for call in tool_calls
+    ]
 
 
 def _shared_wake(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -379,7 +399,7 @@ class GetPubliclySharedConversations(Resource):
                         "response": msg.get("response"),
                         "thought": msg.get("thought"),
                         "sources": msg.get("sources") or [],
-                        "tool_calls": msg.get("tool_calls") or [],
+                        "tool_calls": _shared_tool_calls(msg.get("tool_calls")),
                         # Only the order, not the rest of the private metadata.
                         "segments": (msg.get("metadata") or {}).get("segments"),
                         # What woke the agent, so the prompt reads as an event row.

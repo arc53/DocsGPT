@@ -57,6 +57,39 @@ describe('AgentPageToolbar', () => {
     );
   });
 
+  it('puts the menu last, after the actions', () => {
+    const html = renderToStaticMarkup(
+      <AgentPageToolbar
+        name="FAQ"
+        actions={<button type="button">Save</button>}
+        menu={<button type="button">menu</button>}
+      />,
+    );
+    // The buttons stretch across a phone's stacked row, the ⋯ at its end.
+    expect(html).toContain(
+      '<div class="flex items-center gap-2"><div class="min-w-0 flex-1 sm:flex-none"><button type="button">Save</button></div><button type="button">menu</button></div>',
+    );
+    expect(html).toContain('sm:flex-row');
+  });
+
+  // A tab with no buttons keeps its ⋯ beside the byline on a phone rather
+  // than on a row of its own.
+  it('keeps a lone menu beside the byline', () => {
+    const html = renderToStaticMarkup(
+      <AgentPageToolbar
+        name="FAQ"
+        menu={<button type="button">menu</button>}
+      />,
+    );
+    expect(html).toContain(
+      'class="mb-6 flex min-h-9.5 items-center justify-between gap-3"',
+    );
+    expect(html).toContain(
+      '<div class="shrink-0"><button type="button">menu</button></div>',
+    );
+    expect(html).not.toContain('h-9.5 sm:block');
+  });
+
   it('renders notices between the row and the rule', () => {
     const html = renderToStaticMarkup(
       <AgentPageToolbar name="FAQ">

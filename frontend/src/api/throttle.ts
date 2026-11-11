@@ -25,7 +25,7 @@ type QueueItem = {
 };
 
 function routeKey(method: string, url: string): string {
-  let pathname = url;
+  let pathname: string;
   try {
     pathname = new URL(url, 'http://_').pathname;
   } catch {

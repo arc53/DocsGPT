@@ -165,6 +165,23 @@ class TestPersonalAccessTokens:
         assert error.status_code == 403
         assert json.loads(error.body)["error"] == "resource_not_allowed"
 
+    async def test_a_route_may_take_a_token_restricted_on_families_it_enforces(self):
+        claims = dict(_PAT_CLAIMS, resource_filter={"agents": ["a1"]})
+        with patch.object(asgi_auth, "handle_auth", return_value=claims):
+            decoded, error = await asgi_auth.authenticate(
+                _request(), pat_scope="chat:run", restrictable=("agents",)
+            )
+        assert error is None and decoded["resource_filter"] == {"agents": ["a1"]}
+
+    async def test_a_restriction_outside_what_the_route_enforces_is_refused(self):
+        claims = dict(_PAT_CLAIMS, resource_filter={"agents": ["a1"], "sources": ["s1"]})
+        with patch.object(asgi_auth, "handle_auth", return_value=claims):
+            decoded, error = await asgi_auth.authenticate(
+                _request(), pat_scope="chat:run", restrictable=("agents",)
+            )
+        assert decoded is None
+        assert json.loads(error.body)["error"] == "resource_not_allowed"
+
     async def test_any_of_several_scopes_admits_the_token(self):
         claims = dict(_PAT_CLAIMS, scopes=["conversations:read"])
         with patch.object(asgi_auth, "handle_auth", return_value=claims):

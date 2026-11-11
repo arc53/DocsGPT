@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   LayoutTemplate,
   Lightbulb,
+  MessageSquareText,
   Plug,
   Radar,
   ScrollText,
@@ -149,6 +150,12 @@ export const SETTINGS_SECTION: Section = {
           path: '/settings/tools',
           labelKey: 'settings.tools.label',
           icon: Wrench,
+        },
+        {
+          key: 'prompts',
+          path: '/settings/prompts',
+          labelKey: 'settings.prompts.label',
+          icon: MessageSquareText,
         },
         {
           key: 'customModels',
@@ -382,8 +389,8 @@ export const AGENTS_SECTION: Section = {
 const TAB_ACTIONS: Record<string, string> = {
   overview: 'view',
   schedules: 'manage_schedules',
-  analytics: 'view_logs',
-  insights: 'view_logs',
+  analytics: 'view_analytics',
+  insights: 'view_analytics',
   logs: 'view_logs',
 };
 
@@ -398,18 +405,27 @@ const TAB_ACTIONS: Record<string, string> = {
  *
  * `access` is the agent's record once loaded: each tab shows only when the
  * caller's role allows its page (Overview `view`, Schedules
- * `manage_schedules`, the Monitoring pages `view_logs`); a group left
+ * `manage_schedules`, the Monitoring pages `view_logs`) and its state
+ * suits it (a draft keeps Overview and Logs, see `canAgent`); a group left
  * empty is dropped. Insights also only shows while the server labels
  * conversations (`feature`, applied by `getVisibleGroups`). Until the
  * record arrives every tab shows, and the route guard sends a caller who
  * may not open a page back to the list.
+ *
+ * `workflow` is what the path says; only the builder's path says it, so the
+ * record's `agent_type` decides on the agent's other pages once loaded.
  */
 export function buildAgentSection(
   agentId: string,
   agentName: string | undefined,
   workflow: boolean,
-  access?: (AccessFields & { status?: string }) | null,
+  access?: (AccessFields & { status?: string; agent_type?: string }) | null,
 ): Section {
+  const isWorkflow = workflow || access?.agent_type === 'workflow';
+  // The classic edit path opens a workflow in its editor once the agent
+  // loads (an old link, or one built before the type was known); until
+  // then it is still this agent's Overview.
+  const overviewAliases = isWorkflow ? [agentEditPath(agentId, false)] : [];
   const allows = (item: SectionItem) =>
     !access || canAgent(access, TAB_ACTIONS[item.key]);
   const groups: SectionGroup[] = [
@@ -418,7 +434,8 @@ export function buildAgentSection(
       items: [
         {
           key: 'overview',
-          path: agentEditPath(agentId, workflow),
+          path: agentEditPath(agentId, isWorkflow),
+          aliases: overviewAliases,
           labelKey: 'agents.pageHeader.tabs.overview',
           icon: SquarePen,
         },
@@ -461,11 +478,12 @@ export function buildAgentSection(
     .filter((group) => group.items.length > 0);
   return {
     key: `agent:${agentId}`,
-    rootPath: visible[0]?.items[0]?.path ?? agentEditPath(agentId, workflow),
+    rootPath: visible[0]?.items[0]?.path ?? agentEditPath(agentId, isWorkflow),
     titleKey: 'agents.pageHeader.fallbackName',
     title: agentName?.trim() || undefined,
     matches: [
-      agentEditPath(agentId, workflow),
+      agentEditPath(agentId, isWorkflow),
+      ...overviewAliases,
       agentSchedulesPath(agentId),
       agentAnalyticsPath(agentId),
       agentInsightsPath(agentId),

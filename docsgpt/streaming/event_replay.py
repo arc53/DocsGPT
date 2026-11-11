@@ -16,13 +16,14 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import text as sql_text
 
 from docsgpt.storage.db.repositories.message_events import (
     MessageEventsRepository,
 )
+from docsgpt.storage.db.serialization import wire_safe
 from docsgpt.storage.db.session import db_readonly
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,24 @@ def _payload_is_terminal(
     return event_type in _TERMINAL_EVENT_TYPES
 
 
+def sse_json(payload: Any) -> str:
+    """Serialize an SSE payload: UTF-8 text as is, not as ``\\uXXXX`` escapes.
+
+    The default ASCII escaping makes every non-Latin character six bytes,
+    tripling a Cyrillic or CJK answer on the wire and in the journal. The
+    payload is first made :func:`wire_safe` (no NaN, lone surrogates or NUL),
+    the same normalization the journal applies, so a live frame and its
+    replay match.
+
+    Args:
+        payload: The event.
+
+    Returns:
+        One line of JSON.
+    """
+    return json.dumps(wire_safe(payload), ensure_ascii=False)
+
+
 def format_sse_event(payload: dict, sequence_no: int) -> str:
     """Encode a journal event as one ``id:``/``data:`` SSE record.
 
@@ -75,7 +94,7 @@ def format_sse_event(payload: dict, sequence_no: int) -> str:
     single ``data:`` line is sufficient — but we still split on any
     line terminator in case a future caller passes a multi-line string.
     """
-    body = json.dumps(payload)
+    body = sse_json(payload)
     lines = [f"id: {sequence_no}"]
     for line in _SSE_LINE_SPLIT_PATTERN.split(body):
         lines.append(f"data: {line}")

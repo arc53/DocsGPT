@@ -1,6 +1,11 @@
 import type { AnswerSource } from './chatCompanion';
 import { AnswerSegment } from './answerSegments';
+import type { JobArtifact } from './artifactChips';
 import { ToolCallsType } from './types';
+
+// Backend placeholder for a producer that ended before writing an answer.
+export const TERMINATED_RESPONSE_PLACEHOLDER =
+  'Response was terminated prior to completion, try regenerating.';
 
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
@@ -55,6 +60,34 @@ export interface Answer {
   schema?: object;
 }
 
+export interface WorkflowStep {
+  nodeId: string;
+  nodeType: string;
+  title: string;
+  status: 'running' | 'completed' | 'failed';
+  /** Client clock, in ms, for the elapsed and duration labels. */
+  startedAt?: number;
+  endedAt?: number;
+  /** One line about what the step did: its output, or the values it set. */
+  detail?: string;
+  error?: string;
+  /** A loop's items: how many there are, how many ended and failed. */
+  items?: { total: number; done: number; failed: number };
+  /** While a retry runs: its attempt (from 2), out of how many. */
+  attempt?: number;
+  maxAttempts?: number;
+  /** Why the previous attempt failed. */
+  retryError?: string;
+  /** How many attempts a step that ran more than once took. */
+  attempts?: number;
+}
+
+export interface WorkflowProgress {
+  steps: WorkflowStep[];
+  /** How many steps the run takes; absent when a branch decides it. */
+  total?: number;
+}
+
 export interface Query {
   prompt: string;
   response?: string;
@@ -64,6 +97,9 @@ export interface Query {
   thought?: string;
   sources?: AnswerSource[];
   tool_calls?: ToolCallsType[];
+  // Files of the background jobs this answer reports (a continuation turn's
+  // ``metadata.job_artifacts``); the turn that started each job lists them too.
+  job_artifacts?: JobArtifact[];
   // Arrival-ordered layout of the fields above, so answer text, reasoning and
   // tool calls render where they happened. Recorded live, and rebuilt on load
   // from the order the backend saved (``hydrateSegments``); when that is absent
@@ -89,6 +125,9 @@ export interface Query {
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
+  // A workflow agent's steps as they run, so the chat can show which one is
+  // working; see ``workflowProgress``.
+  workflow?: WorkflowProgress;
   // WAL placeholder id; lets the client tail an in-flight stream.
   messageId?: string;
   messageStatus?: MessageStatus;
