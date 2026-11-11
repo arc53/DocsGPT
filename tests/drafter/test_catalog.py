@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from docsgpt.api.user.resource_access import set_settings
-from docsgpt.drafter.catalog import load_workspace
+from docsgpt.drafter.catalog import load_models, read_workspace
 from docsgpt.drafter.read_tools import run_read_tool
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -51,8 +51,9 @@ def _tool(conn, owner, name="api_tool", **kwargs):
 
 
 def _load(conn, user=ALICE, agent_id=None):
-    with _db(conn):
-        return load_workspace(user, agent_id=agent_id)
+    ws = read_workspace(conn, user, agent_id)
+    load_models(user, ws)
+    return ws
 
 
 @pytest.mark.unit

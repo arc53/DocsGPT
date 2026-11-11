@@ -427,21 +427,3 @@ def read_workspace(conn, user_id: str, agent_id: Optional[str] = None) -> Worksp
     load_prompts(conn, user_id, ws)
     load_agent(conn, user_id, agent_id, ws)
     return ws
-
-
-def load_workspace(user_id: str, *, agent_id: Optional[str] = None) -> Workspace:
-    """Read the caller's workspace in one read-only transaction.
-
-    Args:
-        user_id: The caller (``decoded_token["sub"]``).
-        agent_id: The agent being edited, if any.
-
-    Returns:
-        The workspace.
-    """
-    from docsgpt.storage.db.session import db_readonly
-
-    with db_readonly() as conn:
-        ws = read_workspace(conn, user_id, agent_id)
-    load_models(user_id, ws)
-    return ws

@@ -5,15 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from docsgpt.agents.questions import (  # noqa: F401 - re-exported for the drafter's runner
-    MAX_OPTIONS,
+from docsgpt.agents.questions import (  # noqa: F401 - MAX_QUESTIONS, MESSAGE_CHARS, schema_problems: for the runner
     MAX_QUESTIONS,
     MESSAGE_CHARS,
-    MIN_OPTIONS,
-    NOTE_CHARS,
-    OPTION_CHARS,
-    PLACEHOLDER_CHARS,
-    QUESTION_CHARS,
     QuestionsInvalid,
     normalize_questions as _normalize_questions,
     questions_schema,
