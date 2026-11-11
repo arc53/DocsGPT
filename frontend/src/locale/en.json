@@ -2718,7 +2718,8 @@
       "serverError": "Please try again later. We apologize for any inconvenience.",
       "clientDisconnect": "The response stopped before anything was produced. Try again.",
       "timeLimit": "Stopped: time limit. Progress so far is saved.",
-      "stopped": "You stopped this answer before it wrote anything. Try again to get one."
+      "stopped": "You stopped this answer before it wrote anything. Try again to get one.",
+      "noAnswer": "The model kept reasoning without starting an answer, so it was stopped. Try again, or choose a different model."
     },
     "reasoning": "Reasoning",
     "wikiWrite": {

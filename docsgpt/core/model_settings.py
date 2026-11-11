@@ -46,6 +46,7 @@ class ModelCapabilities:
     # Responses path; ignored by providers that don't accept it.
     first_token_timeout: Optional[float] = None
     stall_timeout: Optional[float] = None
+    answer_timeout: Optional[float] = None
     reasoning_effort: Optional[str] = None
     # Which OpenAI wire protocol the model speaks: "chat_completions"
     # (the default) or "responses" (the /v1/responses endpoint). Set per
