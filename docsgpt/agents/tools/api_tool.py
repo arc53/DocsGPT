@@ -138,13 +138,18 @@ class APITool(Tool):
             )
 
             # Handle 3xx redirects (pinned_request does not follow them)
-            if 300 <= response.status_code < 400:
+            # 304 Not Modified is not an error - it means the resource hasn't changed
+            if 300 <= response.status_code < 400 and response.status_code != 304:
                 location = response.headers.get("Location", "")
-                logger.error(f"HTTP redirect {response.status_code} to '{location}'")
+                logger.error(f"HTTP redirect {response.status_code}")
+                # Resolve relative location against request_url
+                if location and not location.startswith(("http://", "https://")):
+                    from urllib.parse import urljoin
+                    location = urljoin(request_url, location)
                 return {
                     "status_code": response.status_code,
                     "status": "error",
-                    "message": f"HTTP redirect {response.status_code} to '{location}'. Fetch that URL directly instead.",
+                    "message": f"HTTP redirect {response.status_code}. Fetch {location} directly instead.",
                     "data": None,
                 }
 
