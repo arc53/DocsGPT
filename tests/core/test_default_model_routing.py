@@ -85,6 +85,7 @@ class TestDefaultModelMatrix:
             ("groq", "GROQ_API_KEY", "openai/gpt-oss-120b"),
             ("openrouter", "OPEN_ROUTER_API_KEY", "qwen/qwen3-coder:free"),
             ("novita", "NOVITA_API_KEY", "deepseek/deepseek-v4-pro"),
+            ("nvidia", "NVIDIA_API_KEY", "nvidia/nemotron-3.5-super-vl-120b-a12b"),
         ],
     )
     def test_only_a_provider_specific_key(self, monkeypatch, provider, key, expected):
@@ -136,6 +137,7 @@ class TestDefaultModelMatrix:
             ("groq", "llama-3.1-8b-instant"),
             ("openrouter", "deepseek/deepseek-v3.2"),
             ("novita", "moonshotai/kimi-k2.6"),
+            ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
             ("openai", "gpt-5.4-mini"),
         ],
     )

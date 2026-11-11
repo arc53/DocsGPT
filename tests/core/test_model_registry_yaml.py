@@ -57,6 +57,11 @@ EXPECTED_IDS = {
         "moonshotai/kimi-k2.6",
         "zai-org/glm-5",
     },
+    "nvidia": {
+        "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+    },
     "openai_compatible": {
         "deepseek-v4-flash",
         "deepseek-v4-pro",
@@ -88,6 +93,7 @@ def _make_settings(**overrides):
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
+    s.NVIDIA_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -286,6 +292,13 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["novita"] | EXPECTED_IDS["docsgpt"]
 
+    def test_nvidia_only(self):
+        s = _make_settings(NVIDIA_API_KEY="nv-test")
+        with patch("docsgpt.core.settings.settings", s):
+            reg = ModelRegistry()
+        ids = {m.id for m in reg.get_all_models()}
+        assert ids == EXPECTED_IDS["nvidia"] | EXPECTED_IDS["docsgpt"]
+
     def test_no_credentials_only_docsgpt(self):
         s = _make_settings()
         with patch("docsgpt.core.settings.settings", s):
@@ -306,6 +319,7 @@ class TestRegistryPermutations:
             GROQ_API_KEY="x",
             OPEN_ROUTER_API_KEY="x",
             NOVITA_API_KEY="x",
+            NVIDIA_API_KEY="x",
             OPENAI_API_BASE="x",
         )
         with patch("docsgpt.core.settings.settings", s):

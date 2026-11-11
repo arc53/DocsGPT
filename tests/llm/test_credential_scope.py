@@ -40,6 +40,7 @@ from docsgpt.llm.google_ai import GoogleLLM
 from docsgpt.llm.groq import GroqLLM
 from docsgpt.llm.llm_creator import LLMCreator, ModelNotAvailableError
 from docsgpt.llm.novita import NovitaLLM
+from docsgpt.llm.nvidia import NvidiaLLM
 from docsgpt.llm.open_router import OpenRouterLLM
 from docsgpt.llm.openai import NO_API_KEY, OpenAILLM
 
@@ -57,6 +58,7 @@ _LLM_SETTINGS = (
     "GROQ_API_KEY",
     "OPEN_ROUTER_API_KEY",
     "NOVITA_API_KEY",
+    "NVIDIA_API_KEY",
     "OPENAI_BASE_URL",
     "MODELS_CONFIG_DIR",
     "FALLBACK_LLM_PROVIDER",
@@ -191,6 +193,7 @@ class TestOwnKeysOnly:
         assert GroqLLM(api_key=None).api_key == NO_API_KEY
         assert OpenRouterLLM(api_key=None).api_key == NO_API_KEY
         assert NovitaLLM(api_key=None).api_key == NO_API_KEY
+        assert NvidiaLLM(api_key=None).api_key == NO_API_KEY
         assert AnthropicLLM(api_key=None).api_key is None
         # The Gemini client refuses to start without a key rather than
         # being handed the OpenAI one.
@@ -495,6 +498,7 @@ class TestSupportedConfigurations:
             ("groq", GroqLLM, "https://api.groq.com/openai/v1"),
             ("openrouter", OpenRouterLLM, "https://openrouter.ai/api/v1"),
             ("novita", NovitaLLM, "https://api.novita.ai/openai"),
+            ("nvidia", NvidiaLLM, "https://integrate.api.nvidia.com/v1"),
         ],
     )
     def test_openai_wire_providers_with_the_generic_api_key(self, monkeypatch, provider, cls, url):

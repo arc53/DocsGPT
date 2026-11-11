@@ -402,6 +402,7 @@ class TestProviderNameRegistry:
         from docsgpt.llm.google_ai import GoogleLLM
         from docsgpt.llm.groq import GroqLLM
         from docsgpt.llm.novita import NovitaLLM
+        from docsgpt.llm.nvidia import NvidiaLLM
         from docsgpt.llm.open_router import OpenRouterLLM
         from docsgpt.llm.openai import OpenAILLM
 
@@ -410,6 +411,7 @@ class TestProviderNameRegistry:
         assert AnthropicLLM.provider_name == "anthropic"
         assert GroqLLM.provider_name == "groq"
         assert NovitaLLM.provider_name == "novita"
+        assert NvidiaLLM.provider_name == "nvidia"
         assert OpenRouterLLM.provider_name == "openrouter"
         assert DocsGPTAPILLM.provider_name == "docsgpt"
 

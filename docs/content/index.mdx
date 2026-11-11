@@ -1,7 +1,7 @@
 ---
 title: DocsGPT
 description: Documentation for DocsGPT, the open-source platform for building AI agents and assistants with document retrieval, tools and multi-model support.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-30
 ---
 
 import { Cards } from 'nextra/components'
@@ -66,7 +66,7 @@ DocsGPT is an open-source platform for building AI agents and assistants that an
 - **Connectors:** Sync [Google Drive, SharePoint and OneDrive, Confluence, GitHub, Amazon S3, Linear and Reddit](/Sources/Connectors) into knowledge. One connection can both sync content and give agents that service's tools.
 - **Grounded answers:** Answers cite the sources they came from, and a [strict prompt](/Agents/prompts) keeps the model to your documents.
 - **Tools:** Built-in tools, any REST API through the [API tool](/Tools/api-tool), [MCP servers](/Tools/mcp-tools), [artifacts and sandboxed code execution](/Tools/artifacts-and-code-execution), and shell commands on a [paired remote device](/Tools/remote-device), with per-action approval.
-- **Models:** OpenAI, Anthropic, Google, Groq, OpenRouter, Novita and any OpenAI-compatible server such as Ollama or vLLM ([cloud](/Models/cloud-providers), [local](/Models/local-inference)), plus per-user [custom models](/Models/custom-models) and [fallback models](/Models/fallback). Vectors go to FAISS, pgvector, Qdrant, Elasticsearch, Milvus or MongoDB Atlas.
+- **Models:** OpenAI, Anthropic, Google, Groq, OpenRouter, Novita, NVIDIA NIM and any OpenAI-compatible server such as Ollama or vLLM ([cloud](/Models/cloud-providers), [local](/Models/local-inference)), plus per-user [custom models](/Models/custom-models) and [fallback models](/Models/fallback). Vectors go to FAISS, pgvector, Qdrant, Elasticsearch, Milvus or MongoDB Atlas.
 - **APIs and integrations:** The [agent API](/API/agent-api) with streaming, an [OpenAI-compatible `/v1` API](/API/openai-compatible), [webhooks](/API/webhooks), an [MCP server](/API/mcp-server), a [REST API](/API/reference) with [personal access tokens](/API/personal-access-tokens), HTML and React [chat](/Extensions/chat-widget) and [search](/Extensions/search-widget) widgets, a [Chatwoot bridge](/Extensions/Chatwoot-extension), and [community bots](/Extensions/community) for Discord, Slack and Telegram.
 - **Teams and administration:** [SSO with OIDC](/Deploying/OIDC-SSO) and SCIM provisioning, [roles and teams](/Deploying/Access-Control), [usage quotas](/Deploying/Usage-Quotas), [analytics and logs](/Using/analytics-and-logs), and [OpenTelemetry observability](/Deploying/Observability).
 - **Deployment:** A one-command installer, [Docker Compose](/Deploying/Docker-Deploying), [pip](/Deploying/Pip-Install), [Kubernetes](/Deploying/Kubernetes-Deploying) and [air-gapped](/Deploying/Air-Gapped) installs.

@@ -9,6 +9,7 @@ from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
 from docsgpt.llm.google_ai import GoogleLLM
 from docsgpt.llm.groq import GroqLLM
 from docsgpt.llm.novita import NovitaLLM
+from docsgpt.llm.nvidia import NvidiaLLM
 from docsgpt.llm.open_router import OpenRouterLLM
 from docsgpt.llm.openai import OpenAILLM
 
@@ -1869,6 +1870,7 @@ class TestLLMGenStructuredOutputProviderGating:
             ),
             ("groq", lambda: GroqLLM(api_key="gsk-test", user_api_key=None)),
             ("novita", lambda: NovitaLLM(api_key="nv-test", user_api_key=None)),
+            ("nvidia", lambda: NvidiaLLM(api_key="nvapi-test", user_api_key=None)),
             (
                 "openrouter",
                 lambda: OpenRouterLLM(api_key="or-test", user_api_key=None),
@@ -1897,7 +1899,7 @@ class TestLLMGenStructuredOutputProviderGating:
 
     @pytest.mark.parametrize(
         "llm_name",
-        ["openai", "openai_compatible", "groq", "novita", "openrouter", "docsgpt"],
+        ["openai", "openai_compatible", "groq", "novita", "nvidia", "openrouter", "docsgpt"],
     )
     def test_openai_wire_providers_get_json_object_mode(
         self, agent_base_params, mock_llm_handler_creator, log_context, llm_name
