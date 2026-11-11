@@ -125,3 +125,41 @@ def test_the_fallback_of_a_stateless_llm_is_stateless(monkeypatch):
 
     assert llm.fallback_llm is not None
     assert built["stateless"] is True
+
+
+@pytest.mark.unit
+class TestCreateStatelessLLM:
+    """``create_stateless_llm`` builds the one-shot LLM of the drafter, the monitor judge and graph extraction."""
+
+    def _capture(self, monkeypatch, provider):
+        from docsgpt.llm.llm_creator import LLMCreator
+
+        captured = {}
+
+        def create_llm(type_, **kwargs):
+            captured.update(provider=type_, **kwargs)
+            return types.SimpleNamespace()
+
+        monkeypatch.setattr(LLMCreator, "create_llm", staticmethod(create_llm))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_provider_from_model_id", lambda m, user_id=None: provider)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda p: f"key-{p}")
+        return captured
+
+    def test_runs_under_the_user_and_tags_its_usage(self, monkeypatch):
+        from docsgpt.llm.llm_creator import create_stateless_llm
+
+        captured = self._capture(monkeypatch, "anthropic")
+        llm, provider = create_stateless_llm("claude-x", "alice", source="drafter", request_id="drafter:1")
+        assert provider == "anthropic" and captured["api_key"] == "key-anthropic"
+        assert captured["decoded_token"] == {"sub": "alice"} and captured["model_user_id"] == "alice"
+        assert captured["stateless"] is True and captured["user_api_key"] is None
+        assert (llm._token_usage_source, llm._request_id) == ("drafter", "drafter:1")
+
+    def test_without_a_user_or_a_known_model_uses_the_default_provider(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.llm.llm_creator import create_stateless_llm
+
+        monkeypatch.setattr(settings, "LLM_PROVIDER", "docsgpt")
+        captured = self._capture(monkeypatch, None)
+        _, provider = create_stateless_llm("mystery", None, source="graph_extraction", request_id=None)
+        assert provider == "docsgpt" and captured["decoded_token"] is None

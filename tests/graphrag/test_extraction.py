@@ -14,7 +14,9 @@ import uuid
 import pytest
 
 import docsgpt.graphrag.extraction as extraction_module
+from docsgpt.core import model_utils
 from docsgpt.graphrag.store import GraphStore
+from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.vectorstore import pgconn
 
@@ -162,7 +164,7 @@ def _install_stub_llm(monkeypatch, llm):
         return llm
 
     monkeypatch.setattr(
-        extraction_module.LLMCreator, "create_llm", staticmethod(_create)
+        LLMCreator, "create_llm", staticmethod(_create)
     )
     return captured
 
@@ -646,7 +648,7 @@ class TestExtractionTokenUsage:
             built.append(llm)
             return llm
 
-        monkeypatch.setattr(extraction_module.LLMCreator, "create_llm", staticmethod(_create))
+        monkeypatch.setattr(LLMCreator, "create_llm", staticmethod(_create))
         monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 4)
         store = MagicMock(name="GraphStore")
         store.pending_chunks.return_value = [f"c{i}" for i in range(8)]
@@ -711,7 +713,7 @@ class TestExtractionTokenUsage:
             built.append(llm)
             return llm
 
-        monkeypatch.setattr(extraction_module.LLMCreator, "create_llm", staticmethod(_create))
+        monkeypatch.setattr(LLMCreator, "create_llm", staticmethod(_create))
         store = MagicMock(name="GraphStore")
         store.pending_chunks.return_value = ["c1", "c2", "c3"]
         store.apply_chunk.return_value = (1, 0)
@@ -855,17 +857,17 @@ class TestExtractionProviderResolution:
             return llm or _StubLLM([])
 
         monkeypatch.setattr(
-            extraction_module.LLMCreator, "create_llm", staticmethod(_create)
+            LLMCreator, "create_llm", staticmethod(_create)
         )
         return captured
 
     def test_provider_comes_from_the_model_registry(self, monkeypatch):
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", lambda *a, **k: "openai"
+            model_utils, "get_provider_from_model_id", lambda *a, **k: "openai"
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "sk-openai"
+            model_utils, "get_api_key_for_provider", lambda provider: "sk-openai"
         )
         captured = self._capture_create_llm(monkeypatch)
 
@@ -885,10 +887,10 @@ class TestExtractionProviderResolution:
             return "anthropic"
 
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", _resolve
+            model_utils, "get_provider_from_model_id", _resolve
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "k"
+            model_utils, "get_api_key_for_provider", lambda provider: "k"
         )
         self._capture_create_llm(monkeypatch)
 
@@ -899,10 +901,10 @@ class TestExtractionProviderResolution:
     def test_unknown_model_falls_back_to_the_configured_provider(self, monkeypatch):
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", lambda *a, **k: None
+            model_utils, "get_provider_from_model_id", lambda *a, **k: None
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "fallback-key"
+            model_utils, "get_api_key_for_provider", lambda provider: "fallback-key"
         )
         captured = self._capture_create_llm(monkeypatch)
 
@@ -915,12 +917,12 @@ class TestExtractionProviderResolution:
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "openai")
         calls = []
         monkeypatch.setattr(
-            extraction_module,
+            model_utils,
             "get_provider_from_model_id",
             lambda *a, **k: calls.append(a) or "anthropic",
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "k"
+            model_utils, "get_api_key_for_provider", lambda provider: "k"
         )
         captured = self._capture_create_llm(monkeypatch)
 
@@ -934,7 +936,7 @@ class TestExtractionProviderResolution:
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
         monkeypatch.setattr(extraction_module.settings, "API_KEY", "generic-key")
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", lambda *a, **k: "anthropic"
+            model_utils, "get_provider_from_model_id", lambda *a, **k: "anthropic"
         )
         keyed_for = {}
 
@@ -942,7 +944,7 @@ class TestExtractionProviderResolution:
             keyed_for["provider"] = provider
             return "sk-anthropic"
 
-        monkeypatch.setattr(extraction_module, "get_api_key_for_provider", _key)
+        monkeypatch.setattr(model_utils, "get_api_key_for_provider", _key)
         captured = self._capture_create_llm(monkeypatch)
 
         extraction_module._build_extraction_llm("claude-x", "owner-1", "req-1")

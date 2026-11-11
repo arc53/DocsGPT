@@ -10,7 +10,7 @@ Cost controls: gleanings off (exactly one ``.gen()`` per chunk), a hard
 chunk cap, a resumable ``graph_ingest_progress`` checkpoint (an idempotent retry
 never re-bills), and concat-merge of entity descriptions (no LLM summary pass).
 
-The extraction LLM is built through ``LLMCreator`` and tagged
+The extraction LLM is built through ``create_stateless_llm`` and tagged
 ``_token_usage_source="graph_extraction"`` + ``_request_id`` so ``gen_token_usage``
 writes a ``token_usage`` row per call attributed to the source owner, identical
 to every other LLM call in the app.
@@ -26,14 +26,10 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional
 
 from docsgpt import tracing
-from docsgpt.core.model_utils import (
-    get_api_key_for_provider,
-    get_provider_from_model_id,
-    get_task_model_id,
-)
+from docsgpt.core.model_utils import get_task_model_id
 from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
-from docsgpt.llm.llm_creator import LLMCreator, ModelNotAvailableError
+from docsgpt.llm.llm_creator import create_stateless_llm, ModelNotAvailableError
 from docsgpt.storage.db.source_config import SourceConfig
 # ``EmbeddingsSingleton`` is re-exported here so callers and tests can reach the
 # shared instance cache from this module.
@@ -62,7 +58,7 @@ def _disabled_in_registry(model_id: str, user: Optional[str]) -> bool:
     """Whether the registry holds ``model_id`` (for ``user``) and it is disabled.
 
     A model the registry doesn't know is not disabled: it still goes to
-    ``LLM_PROVIDER`` (see :func:`_resolve_extraction_provider`).
+    ``LLM_PROVIDER`` (see :func:`~docsgpt.llm.llm_creator.create_stateless_llm`).
     """
     from docsgpt.core.model_registry import ModelRegistry
 
@@ -143,44 +139,19 @@ def _resolve_max_chunks(config: SourceConfig) -> int:
     return config.graph.max_chunks or settings.GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
 
 
-def _resolve_extraction_provider(
-    model_id: Optional[str], user: Optional[str]
-) -> str:
-    """The provider that serves ``model_id``, else the deployment default.
-
-    ``settings.LLM_PROVIDER`` is only a default (``docsgpt``, the hosted public
-    endpoint, out of the box). Dispatching the resolved extraction model
-    through it sends the request to a provider that does not serve that model:
-    the call is rejected, the shared fallback answers instead, and the graph is
-    built by a different model than the one configured — with nothing in the
-    summary to say so. ``user`` scopes the lookup so a per-user (BYOM) model id
-    resolves as well.
-    """
-    provider = (
-        get_provider_from_model_id(model_id, user_id=user) if model_id else None
-    )
-    return provider or settings.LLM_PROVIDER
-
-
 def _build_extraction_llm(
     model_id: Optional[str], user: Optional[str], request_id: Optional[str]
 ):
-    """Build the extraction LLM tagged for token-usage attribution to the owner."""
-    decoded_token = {"sub": user} if user else None
-    provider = _resolve_extraction_provider(model_id, user)
+    """Build the extraction LLM tagged for token-usage attribution to the owner.
+
+    Its provider is the one that serves ``model_id`` (see
+    :func:`~docsgpt.llm.llm_creator.create_stateless_llm`), so the graph is
+    built by the model configured, not by the shared fallback.
+    """
+    llm, provider = create_stateless_llm(model_id, user, source="graph_extraction", request_id=request_id)
     logger.info(
         "Graph extraction dispatching model=%s via provider=%s", model_id, provider
     )
-    llm = LLMCreator.create_llm(
-        provider,
-        api_key=get_api_key_for_provider(provider),
-        user_api_key=None,
-        decoded_token=decoded_token,
-        model_id=model_id,
-        stateless=True,
-    )
-    llm._token_usage_source = "graph_extraction"
-    llm._request_id = request_id
     return llm
 
 

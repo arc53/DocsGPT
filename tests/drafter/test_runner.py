@@ -695,6 +695,32 @@ class TestModelAuth:
         assert _run(FakeLLM(_Status(500), _Status(500)))[-1]["code"] == "model_error"
         assert _run(FakeLLM(RuntimeError("boom")))[-1]["code"] == "model_error"
 
+    @pytest.mark.parametrize("attrs", [
+        {"response": SimpleNamespace(status_code=401)},
+        {"code": 403},
+    ], ids=["the response's status", "google-genai's code"])
+    def test_a_refused_key_reported_another_way_is_model_auth(self, attrs):
+        error = RuntimeError("refused")
+        for name, value in attrs.items():
+            setattr(error, name, value)
+        assert _run(FakeLLM(error))[-1]["code"] == "model_auth"
+
+    def test_only_the_error_itself_decides_model_auth(self):
+        """A failure raised from a refused key is classed by its own status, not its cause's."""
+        try:
+            try:
+                raise _Status(401)
+            except _Status as cause:
+                raise RuntimeError("wrapped") from cause
+        except RuntimeError as wrapped:
+            error = wrapped
+        assert _run(FakeLLM(error))[-1]["code"] == "model_error"
+
+    def test_a_boolean_status_is_no_status(self):
+        error = RuntimeError("odd")
+        error.status_code = True
+        assert _run(FakeLLM(error))[-1]["code"] == "model_error"
+
 
 @pytest.mark.unit
 class TestRetries:

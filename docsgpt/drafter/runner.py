@@ -327,21 +327,9 @@ def build_llm(user_id: str, model_id: str, request_id: str) -> Any:
     retry for minutes, which a draft can't wait out. The turn retries
     itself, within its deadline (:func:`_retry_wait`).
     """
-    from docsgpt.core.model_utils import get_api_key_for_provider, get_provider_from_model_id
-    from docsgpt.llm.llm_creator import LLMCreator
+    from docsgpt.llm.llm_creator import create_stateless_llm
 
-    provider = get_provider_from_model_id(model_id, user_id=user_id) or settings.LLM_PROVIDER
-    llm = LLMCreator.create_llm(
-        provider,
-        api_key=get_api_key_for_provider(provider),
-        user_api_key=None,
-        decoded_token={"sub": user_id},
-        model_id=model_id,
-        model_user_id=user_id,
-        stateless=True,
-    )
-    llm._token_usage_source = TOKEN_USAGE_SOURCE
-    llm._request_id = request_id
+    llm, provider = create_stateless_llm(model_id, user_id, source=TOKEN_USAGE_SOURCE, request_id=request_id)
     llm._drafter_provider = provider
     _limit_retries(llm, 0)
     return llm

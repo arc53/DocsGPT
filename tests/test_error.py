@@ -201,6 +201,45 @@ class _StatusError(Exception):
 
 
 @pytest.mark.unit
+class TestHttpStatus:
+    def test_reads_each_place_a_provider_sdk_puts_the_status(self):
+        from types import SimpleNamespace
+
+        from docsgpt.error import http_status
+
+        google = RuntimeError("google")
+        google.code = 429
+        response = RuntimeError("httpx")
+        response.response = SimpleNamespace(status_code=502)
+        boto = RuntimeError("boto")
+        boto.response = {"ResponseMetadata": {"HTTPStatusCode": 403}}
+        assert http_status(_StatusError("openai", 401)) == 401
+        assert (http_status(google), http_status(response), http_status(boto)) == (429, 502, 403)
+
+    def test_ignores_what_is_no_http_status(self):
+        from docsgpt.error import http_status
+
+        flagged = RuntimeError("flag")
+        flagged.status_code = True
+        coded = RuntimeError("errno-like")
+        coded.code = 2
+        assert http_status(flagged) is None and http_status(coded) is None
+        assert http_status(RuntimeError("plain")) is None
+
+    def test_follows_the_cause_unless_told_not_to(self):
+        from docsgpt.error import http_status
+
+        try:
+            try:
+                raise _StatusError("inner", 503)
+            except _StatusError as inner:
+                raise RuntimeError("outer") from inner
+        except RuntimeError as outer:
+            assert http_status(outer) == 503
+            assert http_status(outer, follow_causes=False) is None
+
+
+@pytest.mark.unit
 class TestProviderFailureText:
     def test_a_refused_key_is_an_auth_failure(self):
         from docsgpt.error import is_auth_failure
