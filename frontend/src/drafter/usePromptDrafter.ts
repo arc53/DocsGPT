@@ -54,8 +54,6 @@ export type PromptDrafter = {
    * the choices so far, and the text and its Drafted marks stay.
    */
   startOver: () => void;
-  /** Forget the conversation, the review and the marks. */
-  reset: () => void;
 };
 
 /**
@@ -204,14 +202,6 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     resetSession();
     reviewsRef.current.finish(latest.current.content);
   }, [resetSession]);
-  const reset = useCallback(() => {
-    starter.current = null;
-    reviewing.current = false;
-    setReviewTurn(false);
-    resetSession();
-    reviewsRef.current.clear();
-    draftedRef.current.clear();
-  }, [resetSession]);
 
   return {
     session: drawerSession,
@@ -227,6 +217,5 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     goTo: reviews.goTo,
     discard: reviews.discard,
     startOver,
-    reset,
   };
 }
