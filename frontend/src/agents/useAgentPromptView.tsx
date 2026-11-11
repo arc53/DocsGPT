@@ -68,12 +68,12 @@ type PromptViewRender = {
 };
 
 /**
- * The agent form's prompt view (decision 64): a prompt shown in place of
- * the form, the form kept as it is under it. The drafter opens a prompt it
- * wrote there (`drafter`: Use this prompt saves it and sets it on the
- * agent), and its changes to a saved prompt as a review; the picker's Add
- * prompt and each row's Edit or View open one too (`picker`: Save). A
- * history entry makes browser Back return to the form.
+ * The agent form's prompt view: a prompt shown in place of the form, the
+ * form kept as it is under it. The drafter opens a prompt it wrote there
+ * (`drafter`: Use this prompt saves it and sets it on the agent), and its
+ * changes to a saved prompt as a review; the picker's Add prompt and each
+ * row's Edit or View open one too (`picker`: Save). A history entry makes
+ * browser Back return to the form.
  *
  * Args:
  *   options: The listed prompts, the form's picker, and what the view

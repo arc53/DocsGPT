@@ -332,8 +332,6 @@ describe('QuestionCards, as the chat draws them', () => {
     );
     expect(card('q1')).toBe('1. Where should refunds go?');
   });
-
-  // Decision 95: an option that takes a value, and one that rules out the rest.
 });
 
 describe('QuestionCards, options that take a value or rule out the others', () => {

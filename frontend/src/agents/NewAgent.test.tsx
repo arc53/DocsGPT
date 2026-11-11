@@ -551,7 +551,7 @@ describe('NewAgent form', () => {
     );
   });
 
-  // Decision 63 (3): every field, picker and button in the form is 42px.
+  // Every field, picker and button in the form is 42px.
   it('renders the name field as a default-size square Input', async () => {
     await render();
     const name = nameInput(container);
@@ -2098,8 +2098,7 @@ describe('NewAgent form', () => {
     expect(alert.className).toContain('border-destructive/50');
     expect(alert.className).toContain('bg-destructive/10');
     expect(alert.querySelector('svg.lucide-circle-alert')).not.toBeNull();
-    // Decision 69 (b): the notice sits above the form panel, not in the
-    // header's button row.
+    // The notice sits above the form panel, not in the header's button row.
     const publish = buttonByText('agents.form.buttons.publish');
     expect(publish.parentElement?.contains(alert)).toBe(false);
   });
@@ -3195,8 +3194,8 @@ describe('NewAgent drafter', () => {
     expect(drafted()).toEqual([]);
   });
 
-  // Decision 64: a prompt it writes opens in the prompt view beside the
-  // drawer; Use this prompt saves it and sets it on the agent.
+  // A prompt it writes opens in the prompt view beside the drawer; Use this
+  // prompt saves it and sets it on the agent.
   describe('the prompt step', () => {
     const WRITTEN = {
       kind: 'new',
