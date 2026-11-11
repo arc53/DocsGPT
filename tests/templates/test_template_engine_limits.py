@@ -142,3 +142,91 @@ class TestOrdinaryTemplatesStillWork:
         with pytest.raises(TemplateRenderError):
             engine.render(template, {})
         assert time.perf_counter() - started < 0.2
+
+
+# A loop or a recursion that doubles a string (or a list) every step: each
+# step stays small, but 24 of them reached 16.7 million characters.
+SELF_DOUBLING = [
+    "{% set ns = namespace(x='a') %}{% for i in range(24) %}{% set ns.x = '%s%s' % (ns.x, ns.x) %}{% endfor %}",
+    "{% set ns = namespace(x='a') %}{% for i in range(24) %}{% set ns.x = '{0}{0}'.format(ns.x) %}{% endfor %}",
+    "{% set ns = namespace(x='a') %}{% for i in range(24) %}{% set ns.x = '%s%s'|format(ns.x, ns.x) %}{% endfor %}",
+    "{% set ns = namespace(x='a') %}{% for i in range(24) %}{% set y %}{{ ns.x }}{{ ns.x }}{% endset %}"
+    "{% set ns.x = y %}{% endfor %}",
+    "{% macro d(n) %}{% if n %}{% set y = d(n - 1) %}{{ y }}{{ y }}{% else %}a{% endif %}{% endmacro %}{{ d(24) }}",
+    "{% set a = ['x'] %}{% for i in range(40) %}{{ a.extend(a) or '' }}{% endfor %}{{ a | length }}",
+]
+
+# One step that builds a giant result from inputs under the cap: many copies
+# of one value, a width applied per line, or a container written out as text.
+ONE_STEP_BUILDERS = [
+    '{% set a = "x" * 1000000 %}{{ ("{0}" * 1000).format(a) }}',
+    '{% set a = "x" * 1000000 %}{{ ("%(a)s" * 1000) % {"a": a} }}',
+    '{% set a = "x" * 1000000 %}{{ ("%s" * 1000) % ((a,) * 1000) }}',
+    '{% set a = "x" * 1000000 %}{{ ("%s" * 1000) | format(*((a,) * 1000)) }}',
+    '{{ ("a\\n" * 1000) | indent(1000000) }}',
+    '{{ ("a\\n" * 1000) | indent("x" * 1000000) }}',
+    '{{ ("a " * 400000) | wordwrap(1, wrapstring="x" * 1000) }}',
+    '{% set a = "x" * 1000000 %}{{ [a] * 1000 }}',
+    '{% set a = "x" * 1000000 %}{{ ([a] * 1000) | string }}',
+    '{% set a = "x" * 1000000 %}{{ ([a] * 1000) | tojson }}',
+    '{% set a = "x" * 1000000 %}{{ ([a] * 1000) | pprint }}',
+    '{% set a = "x" * 1000000 %}{{ "" ~ ([a] * 1000) }}',
+    '{% set a = "x" * 1000000 %}{{ "%s" % (([a] * 1000),) }}',
+    '{% set a = "x" * 1000000 %}{{ "{}".format([a] * 1000) }}',
+    '{% set a = "x" * 1000000 %}{{ [[a] * 1000] | join }}',
+    "{{ lipsum(100000000) }}",
+]
+
+# Writing more than a render may: a loop of large writes, at the top or into
+# a ``{% set %}`` block or a macro, and template text repeated by a loop.
+OUTPUT_FLOODS = [
+    '{% set s = "a" * 1000000 %}{% for i in range(30) %}{{ s }}{% endfor %}',
+    '{% for i in range(100) %}{{ "a" * 1000000 }}{% endfor %}',
+    '{% set y %}{% for i in range(100) %}{{ "a" * 1000000 }}{% endfor %}{% endset %}',
+    "{% set y %}{% for i in range(100000) %}" + "x" * 100 + "{% endfor %}{% endset %}",
+    "{% macro m() %}{% for i in range(100000) %}" + "x" * 100 + "{% endfor %}{% endmacro %}{{ m() | length }}",
+]
+
+# A context as large as a long document a workflow passes in.
+BIG_DOC = "line of text\n" * 250_000
+
+
+@pytest.mark.unit
+class TestRenderSizeCaps:
+    @pytest.mark.parametrize("template", SELF_DOUBLING + ONE_STEP_BUILDERS + OUTPUT_FLOODS)
+    def test_refused_cheaply(self, engine: TemplateEngine, template: str) -> None:
+        started = time.perf_counter()
+        with pytest.raises(TemplateRenderError):
+            engine.render(template, {})
+        assert time.perf_counter() - started < 0.5
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "{{ doc }}",
+            "{{ doc | trim }}",
+            "{{ doc | indent(2) }}",
+            "{{ doc | upper }}",
+            '{{ "%s\\n%s" % (doc, "end") }}',
+            "{{ '{}!'.format(doc) }}",
+            '{{ doc ~ "!" }}',
+            "{{ doc + '!' }}",
+            "{% for d in docs %}{{ d }}{% endfor %}",
+            "{% set s %}{{ doc }}{% endset %}{{ s }}",
+            "{% macro m() %}{{ doc }}{% endmacro %}{{ m() }}",
+            "{{ docs | join('\\n') }}",
+            "{{ docs }}",
+        ],
+    )
+    def test_large_context_still_renders(self, engine: TemplateEngine, template: str) -> None:
+        docs = [BIG_DOC[:1_000_000], BIG_DOC[1_000_000:2_000_000], BIG_DOC[2_000_000:]]
+        assert len(engine.render(template, {"doc": BIG_DOC, "docs": docs})) >= len(BIG_DOC) - 1
+
+    def test_a_refused_render_leaves_the_next_one_alone(self, engine: TemplateEngine) -> None:
+        with pytest.raises(TemplateRenderError):
+            engine.render(OUTPUT_FLOODS[0], {})
+        assert engine.render("{% for i in range(3) %}{{ s }}{% endfor %}", {"s": "x" * 900_000}) == "x" * 2_700_000
+
+    def test_writes_within_the_budget_render(self, engine: TemplateEngine) -> None:
+        template = '{% set s = "a" * 1000000 %}{% for i in range(3) %}{{ s }}{% endfor %}'
+        assert len(engine.render(template, {})) == 3_000_000
