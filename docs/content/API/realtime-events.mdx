@@ -1,7 +1,7 @@
 ---
 title: Realtime Events & Notifications
 description: Subscribe to DocsGPT's server-sent events channel for live notifications — ingestion progress, tool approvals, MCP OAuth completion — and reconnect to an in-flight chat answer.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-11-02
 ---
 
 import { Callout } from 'nextra/components'
@@ -56,7 +56,7 @@ Event types:
 | `source.ingest.queued` | source | An upload, remote ingest or re-ingest was queued. | `source_id`, `filename` or `job_name`, `operation` |
 | `source.ingest.progress` | source | Parsing or embedding progressed. | `current`, `total`, `stage` (`parsing` or `embedding`) |
 | `source.ingest.completed` | source | The source is ready. | `source_id`, `tokens`, `operation`, and `filename` (uploads and re-ingests) or `job_name` and `loader` (remote and connector sources); for a website page change, `paths`, the tree paths it wrote or removed (left out when it ran a sync instead) |
-| `source.ingest.failed` | source | Ingestion failed, or a sync or page change you started didn't run. | `source_id`, `operation`, `error`; `reason` when it didn't run or was undone: `busy`, `wiki` or `gone` for a sync; `busy` for a page change; `out_of_scope` for a refreshed page that now leads outside the source and was removed; `no_files`, `busy`, `wiki` or `gone` for a re-ingest |
+| `source.ingest.failed` | source | Ingestion failed, or a sync or page change you started didn't run. | `source_id`, `operation`, `error`; `reason` when it didn't run or was undone: `busy`, `wiki` or `gone` for a sync; `busy` for a page change; `out_of_scope` for a refreshed page that now leads outside the source and was removed; `no_files`, `busy`, `wiki` or `gone` for a re-ingest; `too_many_files` or `too_many_tokens`, with the cap as `limit`, for a source over [a size cap](/Deploying/Background-Jobs#large-sources) |
 | `graph.extract.progress`, `graph.extract.completed`, `graph.extract.failed` | source | [GraphRAG](/Sources/GraphRAG) extraction progressed, finished or failed. | `source_id`; `progress`: `current`, `total`, `nodes`, `edges`; `completed`: `nodes`, `edges`, `chunks_processed`, `skipped_over_cap`, `failed_chunks`; `failed`: `error` |
 | `attachment.queued`, `attachment.progress`, `attachment.completed`, `attachment.failed` | attachment | A chat attachment is being processed. | `attachment_id`, `filename` |
 | `tool.approval.required` | conversation | A turn paused on tools that need approval. | `conversation_id`, `message_id`, `pending_tool_calls` |
@@ -67,7 +67,7 @@ Event types:
 | `job.updated` | conversation (`job` without a conversation) | A [background job](/Tools/background-jobs) changed status or progress. | `job_id`, `conversation_id`, `status`, `progress`, `tool_name`, `action_name`, `status_message`, `notices` |
 | `conversation.renamed` | conversation | A chat listed in your sidebar got its generated title, a few seconds after its first answer ended. | `conversation_id`, `name`, and `previous`, the name it replaced (a client that shows another name by then, one the user gave it, keeps that one) |
 | `conversation.continued` | conversation | A finished background job, a monitor, a trigger link or an approval link added a turn to a conversation. | `conversation_id`, `message_id`, `source` |
-| `notification.created` | conversation (`user` without a conversation) | Something happened in a conversation you aren't looking at; the web app shows it as a toast. | `kind`, `title`, `body`, `url`, `conversation_id` |
+| `notification.created` | conversation (`user` without a conversation) | Something happened in a conversation you aren't looking at, or a recurring schedule paused itself; the web app shows it as a toast. | `kind`, `title`, `body`, `url`, `conversation_id`, and `schedule_id` for a notice about a schedule |
 | `monitor.updated` | monitor | A [monitor](/Tools/monitors) was checked, woke the agent, paused or ended. | `monitor_id`, `status`, `wakes_left`, `last_checked_at`, `conversation_id`, `check_count`, `last_error`, `paused_reason` |
 | `schedule.run.started` | schedule | A scheduled run started. | `run_id`, `schedule_id`, `agent_id`, `trigger_type`, `status` (`running`) |
 | `schedule.run.completed`, `schedule.run.failed` | schedule | A scheduled run finished. | `run_id`, `schedule_id`, `agent_id`, `status`, and `error_type`/`error` on failure |

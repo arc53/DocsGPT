@@ -84,3 +84,19 @@ class ConnectorSettings(SettingsGroup):
     MCP_OAUTH_REDIRECT_URI: Optional[str] = Field(
         default=None, description="Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE_URI."
     )
+    MCP_APPS_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Render MCP Apps (interactive views an MCP server ships with its tools, such as Excalidraw's canvas) "
+            "inline in chat. Needs a sandbox origin (MCP_APPS_SANDBOX_URL); without one the chat shows the "
+            "ordinary tool step and app-only tools stay offered to the model, as with this off."
+        ),
+    )
+    MCP_APPS_SANDBOX_URL: Optional[str] = Field(
+        default=None,
+        description=(
+            "Address of the MCP Apps sandbox page, <origin>/api/mcp_apps/sandbox, on an origin other than the app's, "
+            "e.g. a sandbox. subdomain pointed at this API. Unset on a loopback API_URL uses the other loopback "
+            "name (localhost and 127.0.0.1 are different origins); unset elsewhere turns MCP Apps off."
+        ),
+    )

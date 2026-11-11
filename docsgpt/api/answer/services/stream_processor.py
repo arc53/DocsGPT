@@ -57,6 +57,7 @@ from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.api.user.team_sharing import can_access
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.utils import (
@@ -562,6 +563,9 @@ class StreamProcessor:
         self.earlier_attachments: List[Dict[str, Any]] = []
         self.history = []
         self.retrieved_docs = []
+        # Which sources the pre-fetch searched and which failed to (see
+        # ``pre_fetch_docs``); None when no pre-fetch ran.
+        self.search_outcome: Optional[SearchOutcome] = None
         self.agent_config = {}
         self.retriever_config = {}
         self.is_shared_usage = False
@@ -1934,12 +1938,21 @@ class StreamProcessor:
         ):
             logger.info("Pre-fetch skipped: no %s sources", exposure)
             return None, None
+        if exposure is not None:
+            source_ids = [entry["id"] for entry in self._build_per_source_list(exposure=exposure)]
+        else:
+            active_docs = self.source.get("active_docs")
+            source_ids = [active_docs] if isinstance(active_docs, str) else list(active_docs)
+        # A retrieval that raises searched nothing; record every source failed
+        # unless the search returned and recorded its own outcome.
+        self.search_outcome = SearchOutcome.of(source_ids, source_ids)
         try:
             retriever = self.create_retriever(exposure=exposure)
             logger.info(
                 f"Pre-fetching docs with chunks={retriever.chunks}, doc_token_limit={retriever.doc_token_limit}"
             )
             docs = retriever.search(question)
+            self.search_outcome = search_outcome_of(retriever, source_ids)
             logger.info(f"Pre-fetch retrieved {len(docs) if docs else 0} documents")
 
             if not docs:
@@ -2814,6 +2827,7 @@ class StreamProcessor:
                 False if override_used else prompt_requests_citations(raw_prompt)
             ),
             "sources_were_searched": self._has_active_docs(),
+            "search_outcome": getattr(self, "search_outcome", None),
             "decoded_token": self.decoded_token,
             "attachments": self.attachments,
             "json_schema": self.agent_config.get("json_schema"),

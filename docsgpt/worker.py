@@ -29,6 +29,7 @@ from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.guardrails import injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.connectors.base import ConnectorAuthError
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
@@ -38,6 +39,7 @@ from docsgpt.parser.embedding_pipeline import (
 from docsgpt.parser.file.base_parser import DocumentParseError, NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS, is_attachment_archive
+from docsgpt.parser.ingest_limits import check_file_count, check_token_count, failure_fields
 from docsgpt.parser.file.image_parser import (
     VISION_CONVERTIBLE_MIME_TYPES,
     convert_image_to_png,
@@ -956,6 +958,7 @@ def ingest_worker(
                 exclude_hidden=exclude,
                 file_metadata=metadata_from_filename,
             )
+            check_file_count(len(getattr(reader, "input_files", None) or []))
             # Parsing/OCR owns 1-50% of the bar; embedding takes 50-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
@@ -994,6 +997,8 @@ def ingest_worker(
             raw_docs = chunker.chunk(documents=raw_docs)
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
+            tokens = count_tokens_docs(docs)
+            check_token_count(tokens)
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
@@ -1012,8 +1017,6 @@ def ingest_worker(
             # record of how many chunks landed; mismatch raises so the
             # task fails loud rather than caching a partial index.
             assert_index_complete(source_uuid)
-
-            tokens = count_tokens_docs(docs)
 
             self.update_state(state="PROGRESS", meta={"current": 100})
 
@@ -1065,6 +1068,7 @@ def ingest_worker(
                 "filename": filename,
                 "operation": "upload",
                 "error": str(e)[:1024],
+                **failure_fields(e),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
@@ -1586,6 +1590,27 @@ def _publish_source_event(
         publish_user_event(str(actor_id), event_type, payload, **kwargs)
 
 
+def _loaded_file_count(docs: Iterable[Any]) -> int:
+    """How many files a remote loader returned, keyed as the source's file tree keys them.
+
+    Args:
+        docs: The loader's documents.
+
+    Returns:
+        The number of distinct file paths (a document without one counts once).
+    """
+    paths = set()
+    unnamed = 0
+    for doc in docs:
+        info = getattr(doc, "extra_info", None) or {}
+        path = info.get("file_path") or info.get("key") or info.get("title") or getattr(doc, "doc_id", None)
+        if path:
+            paths.add(path)
+        else:
+            unnamed += 1
+    return len(paths) + unnamed
+
+
 def remote_worker(
     self,
     source_data,
@@ -1686,6 +1711,7 @@ def remote_worker(
             raise connection_service.ConnectionUnavailable(
                 str(exc), connection_id=str(connection_id),
             ) from exc
+        check_file_count(_loaded_file_count(raw_docs))
 
         cfg = SourceConfig.parse(config)
         chunker = ChunkerCreator.create_chunker(
@@ -1700,6 +1726,7 @@ def remote_worker(
         docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
+        check_token_count(tokens)
 
         # Build directory structure from loaded documents
         # Format matches local file uploads: nested structure with type, size_bytes, token_count
@@ -1882,6 +1909,7 @@ def remote_worker(
                 "loader": loader,
                 "operation": operation_mode,
                 "error": str(e)[:1024],
+                **failure_fields(e),
                 **_task_id_field(self),
             },
             scope={"kind": "source", "id": source_id_for_events},
@@ -2147,6 +2175,71 @@ def sync(
 _CONNECTION_ONLY_LOADERS = frozenset({"linear"})
 
 
+def _scheduled_sync_key(task: Any, doc_id: str) -> str:
+    """The idempotency key of one source's sync in this beat tick.
+
+    A redelivered ``schedule_syncs`` keeps its task id, so it maps each source
+    to the key it was already queued under.
+    """
+    request = getattr(task, "request", None)
+    tick = getattr(request, "id", None) if request is not None else None
+    if not isinstance(tick, str) or not tick:
+        tick = str(uuid.uuid4())
+    return f"scheduled-sync:{tick}:{doc_id}"
+
+
+def _dispatch_scheduled_sync(key: str, **sync_kwargs: Any) -> str:
+    """Queue one scheduled ``sync_source`` on the ingest queue, once per ``key``.
+
+    A source busy with another change is skipped without a notice
+    (``lock_wait_seconds=0``) and left to the next schedule.
+
+    Returns:
+        ``"dispatched"``; ``"already_queued"`` when ``key`` was already
+        claimed; or ``"failed"`` when the task could not be queued, whose
+        claim is then dropped so the same tick can queue it again.
+    """
+    from docsgpt.api.user.tasks import sync_source
+    from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+    task_id = str(uuid.uuid4())
+    try:
+        with db_session() as conn:
+            claimed = IdempotencyRepository(conn).claim_task(key=key, task_name="sync_source", task_id=task_id)
+        if claimed is None:
+            logging.info("Scheduled sync %s is already queued; not queuing it again", key)
+            return "already_queued"
+    except Exception:  # noqa: BLE001 - the task's own lease still keeps one run per key
+        logging.exception("Could not claim scheduled sync %s; queuing it anyway", key)
+    try:
+        sync_source.apply_async(
+            kwargs={**sync_kwargs, "idempotency_key": key, "lock_wait_seconds": 0, "notify_skip": False},
+            task_id=task_id,
+        )
+    except Exception:  # noqa: BLE001 - one source the broker refused must not stop the rest
+        logging.exception("Could not queue scheduled sync %s", key)
+        _release_scheduled_sync_claim(key, task_id)
+        return "failed"
+    return "dispatched"
+
+
+def _release_scheduled_sync_claim(key: str, task_id: str) -> None:
+    """Best-effort delete of a scheduled sync's pending claim that never got queued."""
+    from sqlalchemy import text as sql_text
+
+    try:
+        with db_session() as conn:
+            conn.execute(
+                sql_text(
+                    "DELETE FROM task_dedup WHERE idempotency_key = :key "
+                    "AND task_id = :task_id AND status = 'pending'"
+                ),
+                {"key": key, "task_id": task_id},
+            )
+    except Exception:  # noqa: BLE001 - the row expires with the TTL
+        logging.exception("Could not release the claim of scheduled sync %s", key)
+
+
 def sync_worker(self, frequency):
     from sqlalchemy import text as sql_text
 
@@ -2218,16 +2311,20 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
-        # A source busy with another change is left to the next schedule
-        # rather than holding up every sync after it.
-        resp = sync(
-            self, source_data, name, user, source_type, frequency, retriever, doc_id,
+        outcome = _dispatch_scheduled_sync(
+            _scheduled_sync_key(self, doc_id),
+            source_data=source_data,
+            job_name=name,
+            user=user,
+            loader=source_type,
+            sync_frequency=frequency,
+            retriever=retriever,
+            doc_id=doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
-            lock_wait_seconds=0,
-            notify_skip=False,
         )
-        outcome = {"success": "sync_success", "skipped": "sync_skipped"}.get(resp["status"], "sync_failure")
-        sync_counts[outcome] += 1
+        sync_counts[
+            {"dispatched": "sync_dispatched", "already_queued": "sync_skipped"}.get(outcome, "sync_failure")
+        ] += 1
     return {
         key: sync_counts[key]
         for key in [
@@ -4329,6 +4426,22 @@ def _link_source_to_connection(source_id: str, connection_id: str) -> None:
 # sources ingested before it re-ingest once. 2: each file's web link.
 _CONNECTOR_INGEST_VERSION = 2
 
+#: The ``reason`` on ``source.ingest.failed`` when the provider rejected the connection's sign-in.
+CONNECTOR_RECONNECT_REASON = "reconnect"
+_CONNECTOR_RECONNECT_MESSAGE = (
+    "The connected account's sign-in was rejected, so its files could not be downloaded. "
+    "Reconnect the account, then try again."
+)
+
+
+class ConnectorDownloadError(RuntimeError):
+    """A connector download got no files because they failed, not because there was nothing to download."""
+
+
+def _connector_download_losses(download_info: Dict[str, Any]) -> Tuple[int, int]:
+    """The ``(files_failed, folders_failed)`` a connector's download summary reports."""
+    return int(download_info.get("files_failed") or 0), int(download_info.get("folders_failed") or 0)
+
 
 def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
     """Combine a connector's selection fingerprint with the source's processing settings.
@@ -4706,10 +4819,31 @@ def _ingest_connector(
             download_info = remote_loader.download_to_directory(
                 temp_dir, api_source_config
             )
+            files_downloaded = int(download_info.get("files_downloaded") or 0)
+            files_failed, folders_failed = _connector_download_losses(download_info)
+            counts = (
+                f"downloaded={files_downloaded} failed={files_failed} folders_failed={folders_failed} "
+                f"skipped={int(download_info.get('files_skipped') or 0)}"
+            )
+            if download_info.get("error"):
+                raise ConnectorDownloadError(f"Could not download from {source_type}: {download_info['error']}")
+            if (files_failed or folders_failed) and not files_downloaded:
+                raise ConnectorDownloadError(
+                    f"None of the selected files could be downloaded from {source_type} "
+                    f"({files_failed} files and {folders_failed} folders failed). Try again later."
+                )
+            # What failed is left out of this index; the next sync downloads the whole selection again.
+            partial = (
+                {"partial": True, "files_failed": files_failed, "folders_failed": folders_failed}
+                if files_failed or folders_failed
+                else {}
+            )
+            if partial:
+                logging.error(f"Partial download from {source_type} for source {source_id_for_events}: {counts}")
+            else:
+                logging.info(f"Downloaded from {source_type} for source {source_id_for_events}: {counts}")
 
-            if download_info.get("empty_result", False) or not download_info.get(
-                "files_downloaded", 0
-            ):
+            if download_info.get("empty_result", False) or not files_downloaded:
                 logging.warning(f"No files were downloaded from {source_type}")
                 # Connector returned no files — surface as a benign
                 # ``completed`` event with zero tokens so the toast
@@ -4749,6 +4883,7 @@ def _ingest_connector(
                 exclude_hidden=True,
                 file_metadata=metadata_from_filename,
             )
+            check_file_count(len(getattr(reader, "input_files", None) or []))
             # Parsing/OCR fills 40-60% of the bar; embedding takes 60-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
@@ -4788,6 +4923,8 @@ def _ingest_connector(
                         doc.extra_info["url"] = url
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
+            tokens = count_tokens_docs(docs)
+            check_token_count(tokens)
 
             # Validate operation_mode here too (the source_uuid path
             # at the top of the function only branches on the
@@ -4816,12 +4953,10 @@ def _ingest_connector(
             )
             assert_index_complete(source_uuid)
 
-            tokens = count_tokens_docs(docs)
-
             # The fingerprint lets the next sync skip an unchanged selection.
             # It is left out when a file failed, so that sync tries again.
             remote_data = {"provider": source_type, **api_source_config}
-            sync_fingerprint = _connector_sync_fingerprint(
+            sync_fingerprint = None if partial else _connector_sync_fingerprint(
                 download_info.get("sync_fingerprint"), config
             )
             if sync_fingerprint:
@@ -4890,6 +5025,7 @@ def _ingest_connector(
                     "operation": operation_mode,
                     **_task_id_field(self),
                     "tokens": tokens,
+                    **partial,
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
@@ -4905,10 +5041,12 @@ def _ingest_connector(
                 "type": source_type,
                 "id": source_id_for_events,
                 "status": "complete",
+                **partial,
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
+        auth_rejected = isinstance(e, ConnectorAuthError)
         _publish_source_event(
             user, actor_id,
             "source.ingest.failed",
@@ -4918,10 +5056,13 @@ def _ingest_connector(
                 "loader": source_type,
                 "operation": operation_mode,
                 **_task_id_field(self),
-                "error": str(e)[:1024],
+                "error": _CONNECTOR_RECONNECT_MESSAGE if auth_rejected else str(e)[:1024],
+                **({"reason": CONNECTOR_RECONNECT_REASON} if auth_rejected else failure_fields(e)),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
+        if auth_rejected:
+            raise ConnectorAuthError(_CONNECTOR_RECONNECT_MESSAGE) from e
         raise
 
 

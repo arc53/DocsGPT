@@ -74,7 +74,9 @@
         "monitor_expired": "モニターの期限が切れました",
         "schedule": "予定したタスクが完了しました",
         "default": "新しい返信",
-        "docs_gaps": "ドキュメントの不足の週次サマリー"
+        "docs_gaps": "ドキュメントの不足の週次サマリー",
+        "schedule_paused": "予定したタスクが一時停止されました",
+        "schedule_failed": "予定したタスクが失敗しました"
       },
       "open": "開く",
       "fallbackTitle": "アシスタントからのお知らせ"
@@ -101,24 +103,28 @@
       "cancelled": "バックグラウンドジョブをキャンセルしました"
     }
   },
-  "demo": [
-    {
-      "header": "DocsGPTについて学ぶ",
-      "query": "DocsGPTとは何ですか?"
-    },
-    {
-      "header": "ドキュメントを要約する",
-      "query": "現在のコンテキストを要約してください"
-    },
-    {
-      "header": "コードを書く",
-      "query": "APIリクエストのコードを/api/answerに書いてください。"
-    },
-    {
-      "header": "学習支援",
-      "query": "このコンテンツに対する可能な質問を書いてください"
+  "hero": {
+    "suggestions": {
+      "label": "おすすめ",
+      "summarize": "「{{name}}」を要約",
+      "compare": "「{{first}}」と「{{second}}」を比較",
+      "service": {
+        "files": "{{name}}の最近のファイルを検索",
+        "knowledge": "今週の{{name}}の変更点は？",
+        "projects": "今週{{name}}で進行中の作業は？",
+        "dev": "今週の{{name}}の変更点は？",
+        "business": "今週の{{name}}の新着情報は？",
+        "messaging": "今週の{{name}}のメッセージを要約",
+        "database": "{{name}}にはどんなデータがありますか？",
+        "other": "{{name}}で何が見つかりますか？"
+      },
+      "continue": "「{{name}}」の続き",
+      "addKnowledge": "ナレッジを追加して自分のドキュメントについて質問する",
+      "connect": "{{names}}を接続",
+      "more": "その他",
+      "createAgent": "特定の作業用のエージェントを作成"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "続行するにはDocsGPTにサインインしてください",
     "signInWithSSO": "SSOでサインイン",
@@ -1965,6 +1971,7 @@
         "mcp_neon": "Neon の Postgres プロジェクト、ブランチ、スキーマを調べ、SQL を実行します。",
         "mcp_twelvedata": "株式、為替、暗号資産、ETF の相場、価格履歴、テクニカル指標、ファンダメンタルズを調べます。",
         "mcp_cloudflare": "Cloudflare API を通じて Workers、DNS、R2 などを管理します。",
+        "mcp_excalidraw": "図を描き、Excalidraw で編集できるリンクを取得します。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
       },
       "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
@@ -2305,7 +2312,11 @@
         "dismiss": "アップロード通知を閉じる",
         "uploadProgress": "アップロード進行状況 {{progress}}%",
         "clear": "クリア",
-        "ingestionFailed": "取り込みに失敗しました。"
+        "ingestionFailed": "取り込みに失敗しました。",
+        "tooManyFiles": "このソースのファイル数が上限の {{limit}} 件を超えています。より小さいフォルダ、パス、または選択範囲を選んでください。",
+        "tooManyTokens": "このソースのテキストが上限の {{limit}} トークンを超えています。より小さいソースに分割してください。",
+        "partialDownload_one": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。",
+        "partialDownload_other": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。"
       },
       "ingestors": {
         "local_file": {
@@ -2696,7 +2707,8 @@
       "serverError": "しばらくしてからもう一度お試しください。ご不便をおかけして申し訳ありません。",
       "clientDisconnect": "応答が生成される前に中断されました。もう一度お試しください。",
       "timeLimit": "制限時間に達したため停止しました。ここまでの進行状況は保存されています。",
-      "stopped": "何も書かれる前にこの応答を停止しました。もう一度お試しください。"
+      "stopped": "何も書かれる前にこの応答を停止しました。もう一度お試しください。",
+      "noAnswer": "モデルが回答を始めないまま推論を続けたため、停止しました。もう一度試すか、別のモデルを選んでください。"
     },
     "reasoning": "推論",
     "wikiWrite": {
@@ -2818,6 +2830,24 @@
       "notRun": "未実行",
       "notRunMovedOn": "未実行：承認される前に会話が先に進みました。",
       "notRunExpired": "未実行：承認リクエストの有効期限が切れました。"
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "アプリを読み込み中…",
+        "ready": "操作可能",
+        "failed": "失敗"
+      },
+      "loading": "アプリを読み込み中…",
+      "allow": "許可",
+      "allowForView": "このアプリで許可",
+      "deny": "拒否",
+      "reload": "アプリを再読み込み",
+      "approvalAsk": "アプリが {{tool}} を実行しようとしています。許可しますか？",
+      "failedTitle": "アプリを読み込めませんでした",
+      "failedDescription": "MCP サーバーが応答しないか、ビューを開始できませんでした。",
+      "frameTitle": "{{name}}（インタラクティブアプリ）",
+      "callFailed": "ツールの呼び出しに失敗しました",
+      "resultUnavailable": "結果はもう利用できません"
     },
     "quotaExceeded": {
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
@@ -3027,7 +3057,8 @@
         "basics": "基本情報",
         "knowledge": "ナレッジと動作",
         "model": "モデル",
-        "analytics": "インサイト"
+        "analytics": "インサイト",
+        "starters": "最初の質問"
       },
       "placeholders": {
         "agentName": "エージェント名",
@@ -3344,6 +3375,12 @@
         "title": "保存せずに離れますか?",
         "description": "ここで行った変更は失われます。",
         "submit": "離れる"
+      },
+      "starters": {
+        "description": "任意です。このエージェントと新しいチャットを始めたときに、カードの下に表示される質問です（例：「何を手伝ってもらえますか？」）。最大4つまで。",
+        "label": "質問 {{number}}",
+        "add": "質問を追加",
+        "remove": "質問 {{number}} を削除"
       }
     },
     "logs": {
@@ -3704,7 +3741,7 @@
         "deleteNode": "ノードを削除",
         "deleteConfirmUnnamed": "このワークフローエージェントを削除しますか？",
         "detailsTitle": "ワークフローの詳細",
-        "detailsDescription": "エージェントカードに表示される名前、説明、画像です。",
+        "detailsDescription": "エージェントのカードとチャットの設定です。",
         "unsavedChanges": "未保存の変更",
         "editDetailsMenu": "詳細を編集",
         "loopHint": "リストの各項目に対してノードを実行",
@@ -4022,11 +4059,6 @@
   "prompts": {
     "textAriaLabel": "プロンプトテキスト"
   },
-  "connectHero": {
-    "title": "データを接続",
-    "body": "{{names}}とチャットできます。",
-    "more": "その他"
-  },
   "common": {
     "close": "閉じる",
     "viewOnlyNotice": "表示はできますが、あなたのロールでは変更できません。",
@@ -4223,7 +4255,8 @@
         "missed": "実行時刻を逃した",
         "overlap": "前回の実行が継続中",
         "stream_error": "回答のストリームが途切れた",
-        "empty_output": "出力がなかった"
+        "empty_output": "出力がなかった",
+        "cannot_complete": "エージェントがこのタスクを実行できない"
       },
       "viewRuns": "実行を表示",
       "fromChat": "{{name}} から",

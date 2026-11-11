@@ -89,6 +89,8 @@ export function curatedErrorText(
       return t('conversation.errors.timeLimit');
     case 'stopped':
       return t('conversation.errors.stopped');
+    case 'no_answer':
+      return t('conversation.errors.noAnswer');
     default:
       return message;
   }

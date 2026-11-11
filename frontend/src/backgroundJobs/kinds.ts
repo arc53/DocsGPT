@@ -23,14 +23,18 @@ export const WAKE_SOURCES = [
 /**
  * `notify_user` kinds with their own heading: every wake source (a
  * continuation notifies with the source of the event that woke it),
- * `schedule` (a one-time scheduled run that answered in its conversation)
- * and `docs_gaps` (an agent's weekly docs-gap digest: the agent's name as
- * the title, the top gaps as the body). Others read generically. Mirrors
+ * `schedule` (a one-time scheduled run that answered in its conversation),
+ * `schedule_paused` / `schedule_failed` (a recurring schedule that paused
+ * itself, or started failing: its name as the title, the last error as the
+ * body) and `docs_gaps` (an agent's weekly docs-gap digest: the agent's name
+ * as the title, the top gaps as the body). Others read generically. Mirrors
  * `docsgpt/notifications/kinds.py`.
  */
 export const NOTIFICATION_KINDS = [
   ...WAKE_SOURCES,
   'schedule',
+  'schedule_paused',
+  'schedule_failed',
   'docs_gaps',
 ] as const;
 

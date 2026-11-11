@@ -682,6 +682,13 @@ class GoogleLLM(BaseLLM):
         self._last_usage = result
         self._last_usage_claimed = False
 
+    def _apply_output_token_cap(self, config, kwargs) -> None:
+        """Send ``max_output_tokens`` when the model sets one, lowered to a smaller requested limit."""
+        if self._max_output_tokens() is None:
+            return
+        requested = kwargs.get("max_tokens") or kwargs.get("max_completion_tokens")
+        config.max_output_tokens = self._capped_output_tokens(requested)
+
     def _raw_gen(
         self,
         baseself,
@@ -703,6 +710,7 @@ class GoogleLLM(BaseLLM):
         )
         if system_instruction:
             config.system_instruction = system_instruction
+        self._apply_output_token_cap(config, kwargs)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -753,6 +761,7 @@ class GoogleLLM(BaseLLM):
         )
         if system_instruction:
             config.system_instruction = system_instruction
+        self._apply_output_token_cap(config, kwargs)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -779,6 +788,7 @@ class GoogleLLM(BaseLLM):
             has_attachments,
         )
 
+        self._last_finish_reason = None
         response = self.client.models.generate_content_stream(
             model=model,
             contents=messages,
@@ -791,6 +801,7 @@ class GoogleLLM(BaseLLM):
                 self._record_usage(getattr(chunk, "usage_metadata", None))
                 if hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:
+                        self._note_finish_reason(candidate)
                         if candidate.content and candidate.content.parts:
                             for part in candidate.content.parts:
                                 if part.function_call:
@@ -818,6 +829,13 @@ class GoogleLLM(BaseLLM):
         finally:
             if hasattr(response, "close"):
                 response.close()
+
+    def _note_finish_reason(self, candidate) -> None:
+        """Record a candidate's finish reason in the OpenAI vocabulary the rest of the code reads."""
+        finish = getattr(candidate, "finish_reason", None)
+        name = str(getattr(finish, "name", finish) or "")
+        if name:
+            self._last_finish_reason = "length" if name == "MAX_TOKENS" else "stop"
 
     def _supports_tools(self):
         """Return whether this LLM supports function calling."""

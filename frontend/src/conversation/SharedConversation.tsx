@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -13,6 +13,7 @@ import ConversationMessages from './ConversationMessages';
 import {
   addQuery,
   fetchSharedAnswer,
+  resetSharedConversation,
   selectClientAPIKey,
   selectDate,
   selectQueries,
@@ -42,10 +43,10 @@ export const SharedConversation = () => {
   const dispatch = useDispatch<AppDispatch>();
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
-
-  useEffect(() => {
-    identifier && dispatch(setIdentifier(identifier));
-  }, []);
+  // The share whose chat has loaded. Until then the page draws a loading
+  // chat: the empty chat's hero (and its clickable suggestions) is not this
+  // page's.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
   useEffect(() => {
     if (queries.length) {
@@ -54,29 +55,52 @@ export const SharedConversation = () => {
     }
   }, [queries[queries.length - 1]]);
 
-  const fetchQueries = () => {
-    identifier &&
-      conversationService
-        .getSharedConversation(identifier || '', token)
-        .then((res) => {
-          if (res.status === 404 || res.status === 400)
-            navigate('/pagenotfound');
-          return res.json();
-        })
-        .then((data) => {
-          if (data.success) {
-            dispatch(
-              setFetchedData({
-                queries: data.queries,
-                title: data.title,
-                date: formatDateTime(data.timestamp),
-                identifier,
-              }),
-            );
-            data.api_key && dispatch(setClientApiKey(data.api_key));
-          }
-        });
-  };
+  // Before the paint: coming back to a share whose read had finished must
+  // not draw its emptied slice as a loaded chat.
+  useLayoutEffect(() => {
+    setLoadedFor(null);
+  }, [identifier]);
+
+  useEffect(() => {
+    if (!identifier) return;
+    let cancelled = false;
+    // The page stays mounted from one share to the next: drop the last
+    // share's chat rather than show it until this one arrives.
+    dispatch(resetSharedConversation());
+    dispatch(setIdentifier(identifier));
+    conversationService
+      .getSharedConversation(identifier, token)
+      .then((res) => {
+        // A read for a share the reader has left must not redirect them.
+        if (cancelled) return null;
+        if (res.status === 404 || res.status === 400) {
+          navigate('/pagenotfound');
+          return null;
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!data || cancelled) return;
+        if (data.success) {
+          dispatch(
+            setFetchedData({
+              queries: data.queries,
+              title: data.title,
+              date: formatDateTime(data.timestamp),
+              identifier,
+            }),
+          );
+          data.api_key && dispatch(setClientApiKey(data.api_key));
+        }
+      })
+      .catch((error) => console.error('Failed to load the share:', error))
+      .finally(() => {
+        if (!cancelled) setLoadedFor(identifier);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identifier]);
 
   const handleQuestionSubmission = (question?: string) => {
     if (question && status !== 'loading') {
@@ -122,9 +146,6 @@ export const SharedConversation = () => {
 
     dispatch(fetchSharedAnswer({ question }));
   };
-  useEffect(() => {
-    fetchQueries();
-  }, []);
 
   return (
     <>
@@ -139,20 +160,27 @@ export const SharedConversation = () => {
       />
       <div className="bg-background flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
         <div className="border-b-border w-full max-w-325 border-b p-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12">
-          <h1 className="text-foreground text-4xl font-semibold">{title}</h1>
+          {/* Each line keeps its height while the share loads, so the chat
+              below doesn't move down when the title and date arrive. */}
+          <h1 className="text-foreground min-h-10 text-4xl font-semibold">
+            {title}
+          </h1>
           <p className="text-muted-foreground text-sm">
             {t('sharedConv.subtitle')}{' '}
             <Button variant="link" size="text" asChild>
               <a href="/">DocsGPT</a>
             </Button>
           </p>
-          <p className="text-muted-foreground text-sm">{date}</p>
+          <p className="text-muted-foreground min-h-5 text-sm">{date}</p>
         </div>
         <ConversationMessages
           handleQuestion={handleQuestion}
           handleQuestionSubmission={handleQuestionSubmission}
-          queries={queries}
+          // Not the last share's chat while this one loads.
+          queries={loadedFor === identifier ? queries : []}
           status={status}
+          showHeroOnEmpty={false}
+          isLoading={loadedFor !== identifier}
         />
         <div className="flex w-full max-w-290 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12">
           {apiKey ? (

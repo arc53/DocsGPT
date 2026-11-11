@@ -76,7 +76,9 @@
         "monitor_expired": "Moniteur expiré",
         "schedule": "Tâche planifiée terminée",
         "default": "Nouvelle réponse",
-        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc"
+        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc",
+        "schedule_paused": "Tâche planifiée en pause",
+        "schedule_failed": "Échec de la tâche planifiée"
       },
       "open": "Ouvrir",
       "fallbackTitle": "Votre assistant a du nouveau"
@@ -103,24 +105,28 @@
       "cancelled": "Tâche en arrière-plan annulée"
     }
   },
-  "demo": [
-    {
-      "header": "Découvrir DocsGPT",
-      "query": "Qu’est-ce que DocsGPT ?"
-    },
-    {
-      "header": "Résumer la documentation",
-      "query": "Résume le contexte actuel"
-    },
-    {
-      "header": "Écrire du code",
-      "query": "Écris le code d’une requête API vers /api/answer"
-    },
-    {
-      "header": "Aide à l’apprentissage",
-      "query": "Rédige des questions possibles sur le contexte"
+  "hero": {
+    "suggestions": {
+      "label": "Suggestions",
+      "summarize": "Résumer « {{name}} »",
+      "compare": "Comparer « {{first}} » avec « {{second}} »",
+      "service": {
+        "files": "Trouver mes fichiers les plus récents dans {{name}}",
+        "knowledge": "Qu’est-ce qui a changé dans {{name}} cette semaine ?",
+        "projects": "Qu’est-ce qui est en cours dans {{name}} cette semaine ?",
+        "dev": "Qu’est-ce qui a changé dans {{name}} cette semaine ?",
+        "business": "Quoi de neuf dans {{name}} cette semaine ?",
+        "messaging": "Résumer les messages de la semaine dans {{name}}",
+        "database": "Quelles données contient {{name}} ?",
+        "other": "Que pouvez-vous trouver dans {{name}} ?"
+      },
+      "continue": "Reprendre « {{name}} »",
+      "addKnowledge": "Ajouter des connaissances pour interroger vos propres documents",
+      "connect": "Connecter {{names}}",
+      "more": "autres",
+      "createAgent": "Créer un agent pour une tâche précise"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Connectez-vous pour accéder à DocsGPT",
     "signInWithSSO": "Se connecter avec SSO",
@@ -1522,7 +1528,7 @@
       "settingsIconAlt": "Icône des paramètres",
       "toolActions": "Actions de l’outil",
       "configureToolAria": "Configurer {{toolName}}",
-      "manageTools": "Accéder aux outils",
+      "manageTools": "Aller aux outils",
       "edit": "Modifier",
       "delete": "Supprimer",
       "reconnect": "Reconnecter",
@@ -1680,7 +1686,7 @@
       "subtitle": "Les prompts système indiquent au modèle comment répondre. Celui que vous choisissez sert aux conversations sans agent ; les agents choisissent le leur.",
       "searchPlaceholder": "Rechercher des prompts…",
       "addPrompt": "Ajouter un prompt",
-      "manage": "Accéder aux prompts",
+      "manage": "Aller aux prompts",
       "select": "Sélectionner un prompt",
       "filters": {
         "all": "Tous"
@@ -2029,6 +2035,7 @@
         "mcp_stripe": "Consultez les clients, paiements et abonnements dans Stripe.",
         "mcp_drawio": "Créez des organigrammes modifiables et d’autres diagrammes avec draw.io.",
         "mcp_coingecko": "Consultez en direct les cours des cryptos, capitalisations, volumes, tendances et historiques de prix.",
+        "mcp_excalidraw": "Dessinez des diagrammes et obtenez un lien Excalidraw modifiable.",
         "mcp_clickup": "Recherchez, lisez et modifiez les tâches, documents et listes ClickUp, et ajoutez des commentaires.",
         "mcp_zapier": "Utilisez les actions activées dans votre compte Zapier MCP pour lire ou modifier les applications connectées.",
         "mcp_trello": "Trouvez des tableaux et cartes Trello, et créez ou modifiez des cartes.",
@@ -2399,7 +2406,12 @@
         "dismiss": "Fermer la notification d’import",
         "uploadProgress": "Progression de l’import {{progress}} %",
         "clear": "Effacer",
-        "ingestionFailed": "Échec de l’ingestion."
+        "ingestionFailed": "Échec de l’ingestion.",
+        "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
+        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites.",
+        "partialDownload_one": "{{count}} élément n’a pas pu être téléchargé et a été ignoré. Synchronisez la source pour réessayer.",
+        "partialDownload_many": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer.",
+        "partialDownload_other": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer."
       },
       "ingestors": {
         "local_file": {
@@ -2801,7 +2813,8 @@
       "serverError": "Veuillez réessayer plus tard. Nous vous prions de nous excuser pour la gêne occasionnée.",
       "clientDisconnect": "La réponse s’est arrêtée avant de produire quoi que ce soit. Réessayez.",
       "timeLimit": "Arrêté : limite de temps atteinte. La progression a été enregistrée.",
-      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une."
+      "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une.",
+      "noAnswer": "Le modèle a continué à réfléchir sans commencer de réponse, il a donc été arrêté. Réessayez ou choisissez un autre modèle."
     },
     "reasoning": "Raisonnement",
     "wikiWrite": {
@@ -2923,6 +2936,24 @@
       "notRun": "non exécuté",
       "notRunMovedOn": "Non exécuté : la conversation a continué avant l’approbation.",
       "notRunExpired": "Non exécuté : la demande d’approbation a expiré."
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "Chargement de l’app…",
+        "ready": "Interactive",
+        "failed": "Échec"
+      },
+      "loading": "Chargement de l’app…",
+      "allow": "Autoriser",
+      "allowForView": "Autoriser pour cette app",
+      "deny": "Refuser",
+      "reload": "Recharger l’app",
+      "approvalAsk": "L’app veut exécuter {{tool}}. L’autoriser ?",
+      "failedTitle": "Impossible de charger l’app",
+      "failedDescription": "Son serveur MCP n’a pas répondu, ou la vue n’a pas pu démarrer.",
+      "frameTitle": "{{name}} (app interactive)",
+      "callFailed": "L’appel de l’outil a échoué",
+      "resultUnavailable": "Le résultat n’est plus disponible"
     },
     "quotaExceeded": {
       "tokens": "Vous avez utilisé {{used}} sur votre quota de {{limit}} jetons. Il sera réinitialisé le {{resetsAt}}.",
@@ -3142,7 +3173,8 @@
         "basics": "Informations de base",
         "knowledge": "Connaissances et comportement",
         "model": "Modèle",
-        "analytics": "Analyses"
+        "analytics": "Analyses",
+        "starters": "Questions de départ"
       },
       "placeholders": {
         "agentName": "Nom de l’agent",
@@ -3465,6 +3497,12 @@
         "title": "Quitter sans enregistrer ?",
         "description": "Les modifications apportées ici seront perdues.",
         "submit": "Quitter"
+      },
+      "starters": {
+        "description": "Facultatif. Questions affichées sous la carte de l’agent quand quelqu’un démarre une nouvelle discussion avec lui, comme « En quoi pouvez-vous m’aider ? ». Jusqu’à quatre.",
+        "label": "Question {{number}}",
+        "add": "Ajouter une question",
+        "remove": "Retirer la question {{number}}"
       }
     },
     "logs": {
@@ -3835,7 +3873,7 @@
         "deleteNode": "Supprimer le nœud",
         "deleteConfirmUnnamed": "Supprimer cet agent de workflow ?",
         "detailsTitle": "Détails du workflow",
-        "detailsDescription": "Nom, description et image affichés sur la carte de l’agent.",
+        "detailsDescription": "La carte de l’agent et ses paramètres de discussion.",
         "unsavedChanges": "Modifications non enregistrées",
         "editDetailsMenu": "Modifier les détails",
         "loopHint": "Exécuter des nœuds pour chaque élément d’une liste",
@@ -4157,11 +4195,6 @@
   "prompts": {
     "textAriaLabel": "Texte du prompt"
   },
-  "connectHero": {
-    "title": "Connectez vos données",
-    "body": "Discutez avec {{names}}.",
-    "more": "autres"
-  },
   "common": {
     "close": "Fermer",
     "viewOnlyNotice": "Vous pouvez consulter cet élément, mais votre rôle ne permet pas de le modifier.",
@@ -4361,7 +4394,8 @@
         "missed": "horaire manqué",
         "overlap": "l’exécution précédente était encore en cours",
         "stream_error": "le flux de la réponse s’est interrompu",
-        "empty_output": "aucun résultat produit"
+        "empty_output": "aucun résultat produit",
+        "cannot_complete": "l’agent ne peut pas faire cette tâche"
       },
       "viewRuns": "Voir les exécutions",
       "fromChat": "Depuis {{name}}",

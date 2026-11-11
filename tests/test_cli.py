@@ -129,8 +129,16 @@ class TestApi:
         assert cli.main(["api", "--reload", "--host", "127.0.0.1"]) == 0
         uvicorn.run.assert_called_once_with(
             "docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True,
-            reload_dirs=[str(package_dir())],
+            reload_dirs=[str(package_dir())], timeout_graceful_shutdown=cli.RELOAD_SHUTDOWN_TIMEOUT,
         )
+
+    def test_reload_does_not_wait_out_open_streams(self, monkeypatch):
+        """An open tab holds /api/events for minutes; without a limit uvicorn waits for it to close,
+        so a reload never finishes and the API stops answering."""
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        assert cli.main(["api", "--reload"]) == 0
+        assert 0 < uvicorn.run.call_args.kwargs["timeout_graceful_shutdown"] <= 5
 
     def test_reload_watches_the_package_not_the_working_directory(self, monkeypatch, tmp_path):
         """A checkout also holds .venv, node_modules and the indexes and inputs the app writes to,
@@ -622,3 +630,20 @@ class TestGrantAdmin:
             cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
         )
         assert "docsgpt grant-admin" in result.stdout
+
+
+class TestIngestOrphans:
+    def test_prints_the_report(self, monkeypatch, capsys):
+        rows = [{"source_id": "s-1", "vectors": 30, "status": "stalled", "last_updated": "2026-10-01", "swept": True}]
+        monkeypatch.setattr("docsgpt.api.user.ingest_orphans.orphan_report_now", lambda: rows)
+
+        assert cli.main(["ingest", "orphans"]) == 0
+
+        out = capsys.readouterr().out
+        assert "s-1" in out and "30" in out and "stalled" in out
+
+    def test_nothing_orphaned(self, monkeypatch, capsys):
+        monkeypatch.setattr("docsgpt.api.user.ingest_orphans.orphan_report_now", lambda: [])
+
+        assert cli.main(["ingest", "orphans"]) == 0
+        assert "no orphaned" in capsys.readouterr().err

@@ -92,7 +92,7 @@ export const processMarkdownString = (
       continue;
     }
 
-    let parsedElement: ParsedElement | null = null;
+    let parsedElement: ParsedElement;
 
     const headingMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
     const bulletMatch = trimmedLine.match(/^[-*]\s+(.+)$/);

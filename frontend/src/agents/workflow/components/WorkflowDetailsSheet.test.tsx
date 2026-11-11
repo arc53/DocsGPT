@@ -20,6 +20,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const details = {
   name: 'Helpdesk Triage',
   description: 'Routes internal requests',
+  starters: ['How do I reset my VPN?'],
   allowPromptOverride: false,
   contextWindowLimit: null,
   historyTokenLimit: null,
@@ -52,6 +53,7 @@ describe('WorkflowDetailsSheet', () => {
       historyTokenLimit?: number | null;
       policyEditable?: boolean;
       retryDefaults?: RetryConfig | null;
+      starters?: string[];
     } = {},
   ) => {
     const handlers = { onOpenChange: vi.fn(), onSave: vi.fn() };
@@ -65,6 +67,7 @@ describe('WorkflowDetailsSheet', () => {
             contextWindowLimit: props.contextWindowLimit ?? null,
             historyTokenLimit: props.historyTokenLimit ?? null,
             retryDefaults: props.retryDefaults ?? null,
+            starters: props.starters ?? details.starters,
           }}
           modelWindow={{ tokens: 128_000, name: 'Model One' }}
           policyEditable={props.policyEditable}
@@ -140,6 +143,7 @@ describe('WorkflowDetailsSheet', () => {
     expect(onSave).toHaveBeenCalledWith({
       name: 'Helpdesk Router',
       description: 'Routes internal requests',
+      starters: ['How do I reset my VPN?'],
       allowPromptOverride: false,
       analytics: DEFAULT_ANALYTICS,
       contextWindowLimit: null,
@@ -147,6 +151,52 @@ describe('WorkflowDetailsSheet', () => {
       retryDefaults: null,
       imageFile: null,
     });
+  });
+
+  const starterInputs = () =>
+    Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[maxlength="200"]'),
+    );
+
+  it('shows the saved starters, with a link to add more, as in the classic agent form', () => {
+    render({ starters: ['How do I reset my VPN?', 'Who approves leave?'] });
+    const card = Array.from(document.querySelectorAll('[data-slot="card"]'))[1];
+    expect(card.querySelector('h3')?.textContent).toBe(
+      'agents.form.sections.starters',
+    );
+    expect(card.textContent).toContain('agents.form.starters.description');
+    const inputs = starterInputs();
+    expect(inputs.every((input) => card.contains(input))).toBe(true);
+    expect(inputs.map((input) => input.value)).toEqual([
+      'How do I reset my VPN?',
+      'Who approves leave?',
+    ]);
+    expect(card.textContent).toContain('agents.form.starters.add');
+  });
+
+  it('counts a starter edit as a change, but not a blank or a repeat', () => {
+    const { onSave } = render();
+    const save = button('agents.form.buttons.save');
+    act(() => button('agents.form.starters.add').click());
+    expect(save.disabled).toBe(true);
+    type(starterInputs()[1], '   ');
+    expect(save.disabled).toBe(true);
+    type(starterInputs()[1], 'how do i reset my vpn?');
+    expect(save.disabled).toBe(true);
+    type(starterInputs()[1], 'Who approves leave?');
+    expect(save.disabled).toBe(false);
+
+    act(() => save.click());
+    expect(onSave.mock.calls[0][0].starters).toEqual([
+      'How do I reset my VPN?',
+      'Who approves leave?',
+    ]);
+  });
+
+  it('counts clearing every starter as a change', () => {
+    render();
+    type(starterInputs()[0], '');
+    expect(button('agents.form.buttons.save').disabled).toBe(false);
   });
 
   const limitInput = (key: 'contextLimitTokens' | 'historyLimitTokens') =>
@@ -309,12 +359,12 @@ describe('WorkflowDetailsSheet', () => {
         'agents.form.sections.analytics',
     );
 
-  // IN-21: a workflow's insights, in a third card after Basics and Advanced.
+  // IN-21: a workflow's insights, in a card after Basics, Starters and Advanced.
   it('holds an Insights card after Advanced, its sub-headings one level down', () => {
     render();
     const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
     const card = insightsCard()!;
-    expect(cards.indexOf(card)).toBe(2);
+    expect(cards.indexOf(card)).toBe(3);
     expect(
       card.querySelector('[data-testid="analytics-topics"] h4'),
     ).not.toBeNull();

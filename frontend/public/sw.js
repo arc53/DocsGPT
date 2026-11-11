@@ -50,7 +50,9 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const target = appUrl(event.notification.data && event.notification.data.url);
-  const path = new URL(target).pathname;
+  // The query too: a schedule notice opens `/activity/schedules?schedule=<id>`.
+  const { pathname, search, hash } = new URL(target);
+  const path = pathname + search + hash;
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

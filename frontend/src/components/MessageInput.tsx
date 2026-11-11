@@ -55,6 +55,13 @@ import {
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
+import {
+  loadChatTools,
+  selectChatTools,
+  selectChatToolsLoading,
+  setChatToolInChat,
+  settleChatToolToggle,
+} from '../conversation/chatToolsSlice';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -87,7 +94,6 @@ import {
   getFileExtension,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
-import { UserToolType } from '../settings/types';
 import { useSourceKindFilter } from '../settings/SourceKindFilter';
 import { useDeviceOnline } from '../hooks/useDeviceOnline';
 import { useToolKindFilter } from '../settings/useToolKindFilter';
@@ -96,7 +102,7 @@ import { toSourcePickerItems } from './sourcePickerItems';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
-import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
+import { toolInChat } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -352,6 +358,9 @@ type MessageInputProps = {
   // input and arms the send so the standard waiting banner takes over.
   queuedQuestion?: string | null;
   onQueuedQuestionConsumed?: () => void;
+  // Typing stays open but nothing sends: the chat it would go to is still
+  // loading. Unlike ``loading`` it shows no stop control.
+  sendBlocked?: boolean;
 };
 
 export default function MessageInput({
@@ -363,6 +372,7 @@ export default function MessageInput({
   allowSendWithoutText = false,
   queuedQuestion = null,
   onQueuedQuestionConsumed,
+  sendBlocked = false,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -373,10 +383,10 @@ export default function MessageInput({
   const voiceFileInputRef = useRef<HTMLInputElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
-  const [userTools, setUserTools] = useState<UserToolType[]>([]);
+  const userTools = useSelector(selectChatTools);
   const connections = useSelector(selectConnections);
   const catalog = useSelector(selectConnectorCatalog);
-  const [toolsLoading, setToolsLoading] = useState(false);
+  const toolsLoading = useSelector(selectChatToolsLoading);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [addToolModalState, setAddToolModalState] =
@@ -1192,7 +1202,7 @@ export default function MessageInput({
       return;
     }
 
-    let stream: MediaStream | null = null;
+    let stream: MediaStream;
     try {
       setVoiceError(null);
       stream = await getUserMediaStream({ audio: true });
@@ -1401,28 +1411,12 @@ export default function MessageInput({
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
 
-  // The list loads on mount and on each open; only the latest request's
-  // answer applies, so a slow older one can't undo a toggle.
-  const toolsRequestRef = useRef(0);
+  // The list loads on mount and on each open; the slice applies only the
+  // newest request's answer, from this composer or one a chat switch
+  // unmounted, so a slow older one can't undo a toggle.
   const fetchUserTools = useCallback(() => {
-    const request = ++toolsRequestRef.current;
-    const isLatest = () => request === toolsRequestRef.current;
-    setToolsLoading(true);
-    userService
-      .getUserTools(token)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isLatest()) return;
-        const filtered = (data.tools || []).filter(isChatPickerToolVisible);
-        setUserTools(filtered);
-      })
-      .catch((error) => {
-        console.error('Error fetching tools:', error);
-      })
-      .finally(() => {
-        if (isLatest()) setToolsLoading(false);
-      });
-  }, [token]);
+    (dispatch as AppDispatch)(loadChatTools({ token }));
+  }, [token, dispatch]);
 
   // Launched from the Tools picker; the modals live here because the picker
   // closes when a sign-in opens.
@@ -1474,25 +1468,19 @@ export default function MessageInput({
     .filter((tool) => toolInChat(tool))
     .map((tool) => tool.id);
 
-  // Ticks at once and unticks again when the server refuses it.
-  const setToolInChat = (id: string, value: boolean) =>
-    setUserTools((prev) =>
-      prev.map((tool) =>
-        tool.id !== id
-          ? tool
-          : isOwner(tool)
-            ? { ...tool, status: value, in_chat: value }
-            : { ...tool, in_chat: value },
-      ),
-    );
-
+  // Ticks at once and unticks again when the server refuses it; the slice
+  // holds the tick over any reload until the update answers.
   const handleToggleTool = (id: string) => {
     const tool = userTools.find((t) => t.id === id);
     if (!tool) return;
     const newStatus = !toolInChat(tool);
-    setToolInChat(id, newStatus);
+    const owner = isOwner(tool);
+    dispatch(setChatToolInChat({ id, value: newStatus, owner }));
+    const settle = () => dispatch(settleChatToolToggle({ id }));
     const fail = () => {
-      setToolInChat(id, !newStatus);
+      dispatch(
+        settleChatToolToggle({ id, rollback: { value: !newStatus, owner } }),
+      );
       dispatch(
         showActionToast({
           variant: 'destructive',
@@ -1503,7 +1491,8 @@ export default function MessageInput({
     userService
       .updateToolStatus({ id, status: newStatus }, token)
       .then((response: Response) => {
-        if (!response.ok) fail();
+        if (response.ok) settle();
+        else fail();
       })
       .catch((error: unknown) => {
         console.error('Failed to update tool status:', error);
@@ -1525,6 +1514,7 @@ export default function MessageInput({
     (allowSendWithoutText && attachments.some((a) => a.status !== 'failed'));
   const composerIdle =
     !loading &&
+    !sendBlocked &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
   const canSubmit = hasSubmittableContent && composerIdle;

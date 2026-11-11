@@ -81,7 +81,7 @@ export class AccessTokenApiError extends Error {
 // here and turn `{success:false, message}` / non-2xx into a thrown error so
 // callers can show the server's message inline.
 const parse = async <T>(response: Response): Promise<T> => {
-  let body: { success?: boolean; message?: unknown } | null = null;
+  let body: { success?: boolean; message?: unknown } | null;
   try {
     body = await response.json();
   } catch {

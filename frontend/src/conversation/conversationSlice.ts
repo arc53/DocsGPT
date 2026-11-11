@@ -56,6 +56,7 @@ import {
   Status,
 } from './conversationModels';
 import { ToolCallsType } from './types';
+import { readJobArtifacts } from './artifactChips';
 import {
   applyLoopItem,
   applyWorkflowStep,
@@ -128,6 +129,8 @@ export function mapServerQueryToClient(raw: any): Query {
 
   const wake = wakeFromMetadata(metadata);
   if (wake) query.wake = wake;
+  const jobArtifacts = readJobArtifacts(metadata.job_artifacts);
+  if (jobArtifacts) query.job_artifacts = jobArtifacts;
 
   if (
     isTerminalComplete ||
@@ -778,17 +781,18 @@ async function answerQuestion(
         idempotencyKey,
       );
       if (answer) {
-        let sourcesPrepped = [];
-        sourcesPrepped = answer.sources.map((source: { title: string }) => {
-          if (source && source.title) {
-            const titleParts = source.title.split('/');
-            return {
-              ...source,
-              title: titleParts[titleParts.length - 1],
-            };
-          }
-          return source;
-        });
+        const sourcesPrepped = answer.sources.map(
+          (source: { title: string }) => {
+            if (source && source.title) {
+              const titleParts = source.title.split('/');
+              return {
+                ...source,
+                title: titleParts[titleParts.length - 1],
+              };
+            }
+            return source;
+          },
+        );
 
         const targetIndex = indx ?? state.conversation.queries.length - 1;
 

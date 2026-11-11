@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
 
 from docsgpt import tracing
+from docsgpt.agents.cannot_complete import cannot_complete_reason
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from docsgpt.agents.workflows.retry import (
@@ -205,6 +206,15 @@ def _shorten_free_text(event: Dict[str, Any], limit: int) -> None:
             event[field] = text[: max(0, len(text) - over - 3)] + "…"
 
 
+def add_token_usage(total: Dict[str, int], usage: Any) -> None:
+    """Add an LLM's ``token_usage`` tally into ``total``, key by key."""
+    if not isinstance(usage, dict):
+        return
+    for key, value in usage.items():
+        if isinstance(value, int) and not isinstance(value, bool):
+            total[key] = total.get(key, 0) + value
+
+
 def _fit_text(event: Dict[str, Any]) -> Dict[str, Any]:
     """An event with only text to cut, held to WORKFLOW_STREAM_MAX_EVENT_BYTES."""
     from docsgpt.core.settings import settings
@@ -273,9 +283,16 @@ class WorkflowEngine:
         # A loop item's own retrieved documents. Items run side by side, so
         # they keep these here rather than on the shared ``self.agent``.
         self._item_docs: Optional[List[Dict[str, Any]]] = None
+        # What the current agent node's retrieval searched and which sources
+        # failed (see ``_retrieve_node_sources``); None when it searched nothing.
+        self._node_search_outcome = None
         # Serializes code nodes on the run's one sandbox session: concurrent loop
         # items would otherwise overwrite each other's state.json and captures.
         self._sandbox_lock = threading.Lock()
+        # Tokens the run's agent nodes used, loop items included: each node
+        # agent owns its LLM, so the run's agent never sees them on its own.
+        self.node_token_usage: Dict[str, int] = {"prompt_tokens": 0, "generated_tokens": 0}
+        self._token_usage_lock = threading.Lock()
         self._condition_result: Optional[str] = None
         self._template_engine = TemplateEngine()
         self._namespace_manager = NamespaceManager()
@@ -856,6 +873,7 @@ class WorkflowEngine:
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
+        self._node_search_outcome = None
         node_docs = (
             self._retrieve_node_sources(node_config) if node_config.sources else []
         )
@@ -944,6 +962,7 @@ class WorkflowEngine:
                 node_config.prompt_template
             ),
             "sources_were_searched": bool(node_config.sources),
+            "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
             "context_window_limit": getattr(self.agent, "context_window_limit", None),
@@ -1012,30 +1031,40 @@ class WorkflowEngine:
         structured_response_parts: List[str] = []
         has_structured_response = False
         first_chunk = True
-        for event in node_agent.gen(formatted_prompt):
-            # A tool that pauses for approval makes the LLM handler yield
-            # ``tool_calls_pending`` and end. An ephemeral node agent has no resume path,
-            # so silently continuing would leave the node with empty output (or a confusing
-            # "Structured output was expected" when it has a json_schema). Fail visibly.
-            if event.get("type") == "tool_calls_pending":
-                raise ValueError(
-                    f'Node "{node.title}" uses a tool that requires approval, which is not '
-                    "supported inside a workflow. Disable require_approval for tools used in "
-                    "workflow nodes."
-                )
-            if "answer" in event:
-                chunk = str(event["answer"])
-                full_response_parts.append(chunk)
-                if event.get("structured"):
-                    has_structured_response = True
-                    structured_response_parts.append(chunk)
-                if hold_stream:
-                    held_events.append(event)
-                elif streams_to_user:
-                    if first_chunk and hasattr(self, "_has_streamed"):
-                        yield {"answer": "\n\n"}
-                        first_chunk = False
-                    yield event
+        # The text after the node's last tool call: its model's final round.
+        last_round_parts: List[str] = []
+        node_events = node_agent.gen(formatted_prompt)
+        try:
+            for event in node_events:
+                # A tool that pauses for approval makes the LLM handler yield
+                # ``tool_calls_pending`` and end. An ephemeral node agent has no resume path,
+                # so silently continuing would leave the node with empty output (or a confusing
+                # "Structured output was expected" when it has a json_schema). Fail visibly.
+                if event.get("type") == "tool_calls_pending":
+                    raise ValueError(
+                        f'Node "{node.title}" uses a tool that requires approval, which is not '
+                        "supported inside a workflow. Disable require_approval for tools used in "
+                        "workflow nodes."
+                    )
+                if event.get("type") == "tool_call":
+                    last_round_parts = []
+                if "answer" in event:
+                    chunk = str(event["answer"])
+                    full_response_parts.append(chunk)
+                    last_round_parts.append(chunk)
+                    if event.get("structured"):
+                        has_structured_response = True
+                        structured_response_parts.append(chunk)
+                    if hold_stream:
+                        held_events.append(event)
+                    elif streams_to_user:
+                        if first_chunk and hasattr(self, "_has_streamed"):
+                            yield {"answer": "\n\n"}
+                            first_chunk = False
+                        yield event
+        finally:
+            # Counted however the node ends: a failed or retried attempt spent its tokens too.
+            self._add_node_token_usage(node_agent, node_events)
 
         self._last_node_tool_calls = self._summarize_tool_calls(node_agent)
         full_response = "".join(full_response_parts).strip()
@@ -1065,6 +1094,11 @@ class WorkflowEngine:
             output_value = parsed_structured
             self._validate_structured_output(node_json_schema, output_value)
 
+        if getattr(self.agent, "endpoint", None) == "schedule" and self._loop_item is None:
+            # A JSON answer carries no marker: only the tool reports for it.
+            structured = has_structured_response or node_json_schema is not None
+            self._note_cannot_complete(node, node_agent, "" if structured else "".join(last_round_parts))
+
         if streams_to_user:
             for event in held_events:
                 if first_chunk and hasattr(self, "_has_streamed"):
@@ -1078,6 +1112,38 @@ class WorkflowEngine:
 
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
+
+    def _add_node_token_usage(self, node_agent: Any, node_events: Any) -> None:
+        """Add an agent node's LLM tokens to the run's tally, once its stream is closed."""
+        # A stream left suspended (the node failed mid-read, the run was
+        # stopped) records its last call's usage only when it is closed.
+        close = getattr(node_events, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("Closing a node agent's stream failed", exc_info=True)
+        node_llm = getattr(node_agent, "llm", None)
+        if node_llm is None or node_llm is getattr(self.agent, "llm", None):
+            return
+        # A fallback model bills its own LLM; read the cached one, never build it here.
+        fallback_llm = getattr(node_llm, "_fallback_llm", None)
+        with self._token_usage_lock:
+            add_token_usage(self.node_token_usage, getattr(node_llm, "token_usage", None))
+            if fallback_llm is not None:
+                add_token_usage(self.node_token_usage, getattr(fallback_llm, "token_usage", None))
+
+    def _note_cannot_complete(self, node: WorkflowNode, node_agent: Any, last_round: str) -> None:
+        """Note on the run's agent whether this agent node reported it cannot do its step.
+
+        The last agent node to run outside a loop decides, so a later agent
+        node (a branch that handles the failure, a fallback) clears an earlier
+        report, and one loop item's report never fails the whole run. Loop
+        items run side by side and never get here, so nothing races.
+        """
+        reported = getattr(getattr(node_agent, "tool_executor", None), "cannot_complete", None)
+        reason = reported if isinstance(reported, str) and reported else cannot_complete_reason(last_round)
+        self.agent.cannot_complete = f"{node.title}: {reason}" if reason else None
 
     def _execute_code_node(
         self, node: WorkflowNode
@@ -2052,6 +2118,8 @@ class WorkflowEngine:
         child.run_persisted = self.run_persisted
         child.preextracted_text = self.preextracted_text
         child._sandbox_lock = self._sandbox_lock
+        child.node_token_usage = self.node_token_usage
+        child._token_usage_lock = self._token_usage_lock
         child._loop_item = {"parent_node_id": node.id, "item_index": index, "item_count": count}
         child._loop_cancel = cancel
         # Deep: a template can mutate a nested value in place (``append``),
@@ -2377,13 +2445,16 @@ class WorkflowEngine:
         Returns:
             list: Retrieved documents, empty when there was nothing to fetch.
         """
+        from docsgpt.retriever.base import SearchOutcome, search_outcome_of
         from docsgpt.retriever.retriever_creator import RetrieverCreator
         from docsgpt.retriever.stages.relevance import apply_relevance
 
+        self._node_search_outcome = None
         query = self.state.get("query", "")
         if not query:
             return []
 
+        sources: list = []
         try:
             sources = self._authorized_node_sources(node_config.sources)
             retriever = RetrieverCreator.create_retriever(
@@ -2395,6 +2466,7 @@ class WorkflowEngine:
                 decoded_token=self.agent.decoded_token,
             )
             docs = retriever.search(query)
+            self._node_search_outcome = search_outcome_of(retriever, sources)
             if docs:
                 try:
                     rerankers = self._node_rerankers(sources)
@@ -2419,6 +2491,12 @@ class WorkflowEngine:
             return docs or []
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
+            if self._node_search_outcome is None:
+                # The search itself raised, which is not "nothing matched":
+                # the node agent is told the sources could not be searched.
+                # Only the authorized ones: the raw configured ids may name
+                # another user's source, whose name would reach the model.
+                self._node_search_outcome = SearchOutcome.of(sources, sources)
             return []
 
     @staticmethod
