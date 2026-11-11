@@ -81,7 +81,7 @@ export function questionMessageOf(call: ToolCallsType): string | null {
 /**
  * How an `ask_user` call shows in the answer column, or null when it draws
  * no question block: questions that were never asked (invalid, a second
- * round), or ones the server already wrote into the answer as text.
+ * round).
  *
  * Args:
  *   call: A tool call of the turn.
@@ -112,12 +112,11 @@ export function questionState(call: ToolCallsType): QuestionState | null {
 /**
  * Whether the chat shows an `ask_user` call nowhere: the server refusing the
  * round (a second round, invalid questions, or asked beside other tools),
- * which is internal to the model, or questions shown as answer text to a
- * caller without question cards, which the answer already holds.
+ * which is internal to the model.
  */
 export const isHiddenCall = (call: ToolCallsType): boolean =>
   (call.tool_name === ASK_USER || call.action_name === ASK_USER) &&
-  (call.error_type === 'questions_not_asked' || call.shown_as === 'text');
+  call.error_type === 'questions_not_asked';
 
 /** Whether the call draws as a question block rather than a step row. */
 export const isQuestionCall = (call: ToolCallsType): boolean =>

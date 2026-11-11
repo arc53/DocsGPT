@@ -93,14 +93,15 @@ class StreamResource(Resource, BaseAnswerResource):
                 required=False,
                 description="Dynamic parameters to inject into prompt template",
             ),
-            "questions": fields.String(
+            "capabilities": fields.List(
+                fields.String,
                 required=False,
                 description=(
-                    "How the assistant's clarifying questions (ask_user) reach this client. "
-                    "'cards' pauses the turn on an awaiting_answer tool call carrying `message` and "
+                    "What this client can render. 'forms': the assistant may ask clarifying questions "
+                    "(ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and "
                     "`questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. "
-                    "Any other value (or omitting it) writes the questions as the answer's text and ends "
-                    "the turn: the user's next message is the answer."
+                    "Optional and not enforced: unknown values are ignored, and without 'forms' the assistant "
+                    "never asks and answers as usual."
                 ),
             ),
         },

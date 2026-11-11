@@ -77,17 +77,7 @@ describe('questionState', () => {
     expect(questionState(refused)).toBeNull();
     expect(isHiddenCall(refused)).toBe(true);
     expect(isHiddenCall(askUser())).toBe(false);
-    // Shown as answer text by a caller without cards: the server marks it,
-    // whatever its result says.
-    const asText = askUser({
-      status: 'success',
-      shown_as: 'text',
-      result: 'Reworded later.' as never,
-    });
-    expect(questionState(asText)).toBeNull();
-    // The answer holds those questions: no step row repeats them.
-    expect(isHiddenCall(asText)).toBe(true);
-    // An answered call whose answer happens to start like that is still one.
+    // An answered call is one, whatever its answer says.
     const answered = askUser({
       status: 'success',
       result: 'Shown to the user as text, please → Yes' as never,

@@ -219,18 +219,4 @@ describe('layoutAnswer, clarifying questions', () => {
       ),
     ).toEqual(['group(call,call,call)', 'text']);
   });
-
-  // A caller without cards got the questions as the answer's text: a step
-  // row for them would only repeat it, as the widget's Tools used would.
-  it('hides questions shown as answer text', () => {
-    const asText = ask({ shown_as: 'text' });
-    expect(
-      shape(
-        layout(
-          [tool('a'), tool('b'), tool('ask'), text('Which quarter?')],
-          [...steps, asText],
-        ),
-      ),
-    ).toEqual(['call', 'call', 'text']);
-  });
 });

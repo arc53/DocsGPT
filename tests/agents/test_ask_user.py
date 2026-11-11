@@ -1,7 +1,7 @@
 """Clarifying questions in chat (``ask_user``).
 
-Covers when the tool is attached, how a call pauses (question cards) or ends
-the turn with markdown (text), the one-round limit, and the resume with an
+Covers when the tool is attached (only for a client that renders forms), how
+a call pauses on question cards, the one-round limit, and the resume with an
 answer or a skip.
 """
 
@@ -16,17 +16,15 @@ import pytest
 from docsgpt.agents.questions import (
     QuestionsInvalid,
     normalize_questions,
-    render_questions_text,
 )
 from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.agents.tools.ask_user import (
     ASK_USER,
     NOT_ALONE_TEXT,
     ONE_ROUND_TEXT,
-    SHOWN_AS_TEXT,
     SKIPPED_TEXT,
+    UNAVAILABLE_TEXT,
     add_ask_user_tool,
-    questions_mode,
 )
 from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
@@ -145,16 +143,6 @@ class TestQuestionsShape:
         _, questions = normalize_questions({"questions": [{"text": "Your city?", "options": ["Input for city"]}]})
         assert questions[0]["options"] == [] and questions[0]["placeholder"] == "city"
 
-    def test_renders_markdown_without_placeholders(self):
-        text = render_questions_text(*normalize_questions(ARGS))
-
-        assert text == (
-            "Two things first:\n\n"
-            "**1. Team size?**  \n*Plans differ by seats.*  \na) 1-10  \nb) 11-50\n\n"
-            "**2. Company name?**"
-        )
-        assert "Acme" not in text
-
     def test_an_option_can_open_a_field_to_type_in(self):
         _, questions = normalize_questions({"questions": [{"text": "Where to?", "options": [
             "Lisbon", {"label": "Another city", "input": "City name"},
@@ -188,13 +176,6 @@ class TestQuestionsShape:
             {"label": "A", "input": "  "}, {"label": "B", "input": None}, {"text": "C"},
         ]}]})
         assert [o["input"] for o in questions[0]["options"]] == [None, None, None]
-
-    def test_the_text_shows_an_input_option_with_its_placeholder(self):
-        text = render_questions_text(*normalize_questions({"questions": [{"text": "Where?", "multi": True,
-                                                                          "options": [
-            {"label": "None", "exclusive": True}, "Lisbon", {"label": "Elsewhere", "input": "City"},
-        ]}]}))
-        assert text == "**1. Where?**  \na) Lisbon  \nb) Elsewhere: _City_  \nc) None"
 
     def test_the_schema_offers_input_and_exclusive(self):
         from docsgpt.agents.questions import CHAT_QUESTIONS_SCHEMA
@@ -232,11 +213,6 @@ class TestQuestionsShape:
         # Clear requests are still answered without asking.
         assert "Never ask for small talk or about something already clear" in description
 
-    def test_only_cards_asks_for_cards(self):
-        assert questions_mode("cards") == "cards"
-        assert questions_mode(None) == "text"
-        assert questions_mode("CARDS") == "text"
-
 
 # ---------------------------------------------------------------------------
 # Attachment
@@ -253,7 +229,7 @@ SEARCH_TOOL = {
 
 @pytest.mark.unit
 class TestAttachment:
-    def _agent(self, *, mode="text", headless=False, scope=None, json_schema=None, tools=True):
+    def _agent(self, *, mode="cards", headless=False, scope=None, json_schema=None, tools=True):
         from docsgpt.agents.classic_agent import ClassicAgent
 
         llm = Mock()
@@ -283,9 +259,8 @@ class TestAttachment:
         add_ask_user_tool(tools_dict, enabled=True)
         assert not self._attached(self._agent(mode="cards"), tools_dict)
 
-    @pytest.mark.parametrize("mode", ["cards", "text"])
-    def test_an_interactive_chat_turn_gets_it(self, mode):
-        agent = self._agent(mode=mode)
+    def test_an_interactive_chat_turn_gets_it(self):
+        agent = self._agent(mode="cards")
         assert self._attached(agent)
         assert ASK_USER in {t["function"]["name"] for t in agent.tools}
 
@@ -293,12 +268,13 @@ class TestAttachment:
         "kwargs",
         [
             {"mode": None},
+            {"mode": "text"},
             {"headless": True},
             {"scope": []},
             {"json_schema": {"type": "object", "properties": {"a": {"type": "string"}}}},
             {"tools": False},
         ],
-        ids=["no-mode", "headless", "workflow-node", "structured-output", "no-tool-support"],
+        ids=["no-mode", "retired-text-mode", "headless", "workflow-node", "structured-output", "no-tool-support"],
     )
     def test_other_turns_do_not(self, kwargs):
         assert not self._attached(self._agent(**kwargs))
@@ -338,9 +314,14 @@ class TestCheckPause:
         assert pause["arguments"] == {"message": pause["message"], "questions": pause["questions"]}
         assert executor.questions_asked is True
 
-    def test_text_runs_the_call(self):
-        executor, tools = _executor("text")
-        assert executor.check_pause(tools, _call(), "MockLLM") is None
+    @pytest.mark.parametrize("mode", [None, "text"])
+    def test_without_cards_the_call_is_refused(self, mode):
+        executor, tools = _executor(mode)
+        pause = executor.check_pause(tools, _call(), "MockLLM")
+
+        assert pause["pause_type"] == "headless_denied"
+        assert pause["model_text"] == UNAVAILABLE_TEXT
+        assert executor.questions_asked is False
 
     def test_a_second_round_is_refused(self):
         executor, tools = _executor("cards")
@@ -408,45 +389,15 @@ class TestHandler:
         assert messages[-1] == {"role": "tool", "content": ONE_ROUND_TEXT, "tool_call_id": "c1"}
         assert executor.tool_calls[-1]["status"] == "error"
 
-    def test_text_streaming_ends_the_turn_with_the_questions(self):
-        executor, tools = _executor("text")
-        agent = _agent(executor)
-        events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
+    def test_a_call_that_reaches_execution_without_cards_is_refused(self):
+        executor, tools = _executor(None)
+        events, (result, _call_id) = _drain(executor.execute(tools, _call(), "MockLLM"))
 
-        answer = render_questions_text(*normalize_questions(ARGS))
-        assert events[-1] == answer
-        agent.llm.gen_stream.assert_not_called()
-        (record,) = executor.tool_calls
-        assert record["status"] == "success"
-        assert record["result"] == SHOWN_AS_TEXT
-        assert record["shown_as"] == "text"
-        assert record["arguments"]["questions"][0]["id"] == "q1"
-        assert executor.questions_shown_as_text is True
-        # The marker survives the projection the chat reloads.
-        (saved,) = executor.get_truncated_tool_calls()
-        assert saved["shown_as"] == "text"
-
-    def test_text_non_streaming_ends_the_turn_with_the_questions(self):
-        executor, tools = _executor("text")
-        agent = _agent(executor)
-        first = LLMResponse(content="", tool_calls=[_call()], finish_reason="tool_calls", raw_response={})
-        _events, final = _drain(Handler().handle_non_streaming(agent, first, tools, []))
-
-        assert final == render_questions_text(*normalize_questions(ARGS))
-        agent.llm.gen.assert_not_called()
-
-    def test_a_second_text_round_in_the_turn_lets_the_model_answer(self):
-        executor, tools = _executor("text")
-        executor.questions_asked = True
-        agent = _agent(executor)
-        agent.llm.gen_stream = Mock(
-            return_value=[LLMResponse(content="Assuming a small team.", tool_calls=[], finish_reason="stop",
-                                      raw_response={})]
-        )
-        events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
-
-        assert "Assuming a small team." in events
-        agent.llm.gen_stream.assert_called_once()
+        assert result == UNAVAILABLE_TEXT
+        (event,) = events
+        assert event["data"]["status"] == "error"
+        assert event["data"]["arguments"] == {}
+        assert executor.tool_calls[-1]["error_type"] == "questions_not_asked"
 
 
 # ---------------------------------------------------------------------------
@@ -692,29 +643,6 @@ class TestPausedTurnState:
         assert state["questions"] == "cards"
         assert state["questions_asked"] is True
 
-    def test_a_turn_that_ended_on_text_questions_is_not_chained_onto(self, monkeypatch):
-        from docsgpt.agents.classic_agent import ClassicAgent
-        from docsgpt.core.settings import settings
-
-        monkeypatch.setattr(settings, "OPENAI_RESPONSES_STORE", True)
-        llm = Mock()
-        llm._uses_responses_api = Mock(return_value=True)
-        llm._last_response_id = "resp_1"
-        llm.responses_chain_key = Mock(return_value="key")
-        llm.export_responses_state = Mock(return_value={"chain_key": "key"})
-        llm._last_usage = None
-        executor = ToolExecutor()
-        agent = ClassicAgent(
-            endpoint="stream", llm_name="openai", model_id="m", api_key="k",
-            llm=llm, llm_handler=Mock(), tool_executor=executor,
-        )
-        assert next(agent._emit_responses_metadata())["metadata"]["response_id"] == "resp_1"
-
-        executor.questions_shown_as_text = True
-        metadata = next(agent._emit_responses_metadata())["metadata"]
-        assert "response_id" not in metadata
-        assert metadata["responses_state"] == {"chain_key": "key"}
-
 
 BLOCK_OUTPUT = {
     "enabled": True,
@@ -818,48 +746,6 @@ class TestQuestionOutputGuardrails(_ResumeHarness):
             assert set(shown["arguments"]) == {"message", "questions"}
             assert len(shown["arguments"]["questions"]) == 3
 
-    def _text(self, guardrails: Dict) -> tuple[ToolExecutor, Dict, Mock]:
-        screening_agent, _ = self._agent(guardrails)
-        executor, tools = _executor("text")
-        executor.question_screen = screening_agent._screen_questions
-        return executor, tools, _agent(executor)
-
-    def test_redacted_text_questions_show_and_keep_the_redacted_text(self):
-        args = {**ARGS, "message": "Mail ada@example.com or answer:", "questions": [
-            {"text": "Team size?", "options": ["1-10", "bob@example.com"]},
-        ]}
-        executor, tools, agent = self._text(REDACT_OUTPUT)
-        events = list(Handler().handle_streaming(agent, _tool_round(_call(args=args)), tools, []))
-
-        assert "@example.com" not in json.dumps([e for e in events if isinstance(e, dict)])
-        assert "@example.com" not in events[-1]
-        assert "Mail [EMAIL] or answer:" in events[-1]
-        (record,) = executor.tool_calls
-        assert "@example.com" not in json.dumps(record)
-        assert record["arguments"]["message"] == "Mail [EMAIL] or answer:"
-
-    def test_blocked_text_questions_end_the_turn_like_a_blocked_answer(self):
-        executor, tools, agent = self._text(BLOCK_OUTPUT)
-        events = list(Handler().handle_streaming(agent, _tool_round(_call()), tools, []))
-
-        assert events[-1]["type"] == "error"
-        assert events[-1]["guardrail"]["stage"] == "output"
-        assert not [e for e in events if isinstance(e, dict) and e.get("type") == "tool_call"]
-        assert "seats" not in json.dumps([e for e in events if isinstance(e, dict)])
-        assert not [e for e in events if isinstance(e, str)]
-        assert executor.tool_calls == []
-        agent.llm.gen_stream.assert_not_called()
-
-    def test_blocked_text_questions_end_the_non_streamed_turn(self):
-        executor, tools, agent = self._text(BLOCK_OUTPUT)
-        first = LLMResponse(content="", tool_calls=[_call()], finish_reason="tool_calls", raw_response={})
-        events, final = _drain(Handler().handle_non_streaming(agent, first, tools, []))
-
-        assert [e for e in events if e.get("type") == "error"][0]["guardrail"]["stage"] == "output"
-        assert not [e for e in events if e.get("type") == "tool_call"]
-        assert not final
-        agent.llm.gen.assert_not_called()
-
 
 @pytest.mark.unit
 class TestRefusedCallsKeepNoArguments:
@@ -891,9 +777,8 @@ class TestRefusedCallsKeepNoArguments:
         # The record still tells the chat it was a refused question round.
         assert executor.tool_calls[-1]["status"] == "error"
 
-    @pytest.mark.parametrize("mode", ["cards", "text"])
-    def test_a_second_round(self, mode):
-        executor, tools = _executor(mode)
+    def test_a_second_round(self):
+        executor, tools = _executor("cards")
         executor.questions_asked = True
         shown, messages = self._run(executor, tools, self.LEAKY)
 
@@ -908,13 +793,12 @@ class TestRefusedCallsKeepNoArguments:
         assert pause["pause_type"] == "headless_denied"
         assert pause["arguments"] == {}
 
-    @pytest.mark.parametrize("mode", ["cards", "text"])
-    def test_invalid_questions(self, mode):
-        executor, tools = _executor(mode)
+    def test_invalid_questions(self):
+        executor, tools = _executor("cards")
         shown, _messages = self._run(executor, tools, {"message": "seats secret", "questions": []})
 
         self._assert_no_raw_text(executor, shown)
-        assert executor.tool_calls[-1]["error_type" if mode == "cards" else "status"]
+        assert executor.tool_calls[-1]["error_type"]
 
     def test_where_questions_cant_be_shown(self):
         executor, tools = _executor(None)

@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-11
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -81,7 +81,7 @@ Common request body fields:
 | `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. Clamped to `0`-`500`; `0` skips retrieval. Ignored when `api_key` or `agent_id` selects an agent (the agent's value is used), and when a source has its own chunk count configured (the source's value wins). |
 | `isNoneDoc` | `boolean` | No | `/api/answer`, `/stream` | Skip document retrieval. |
 | `agent_id` | `string` | No | `/api/answer`, `/stream` | Alternative to `api_key` when using authenticated user context. |
-| `questions` | `string` | No | `/api/answer`, `/stream` | `"cards"` pauses the turn when the assistant asks clarifying questions, so your client can show them; any other value (or omitting it) writes them as the answer's text. See [Clarifying questions](#clarifying-questions). |
+| `capabilities` | `string[]` | No | `/api/answer`, `/stream` | What your client can render. `["forms"]` lets the assistant ask clarifying questions, which pause the turn so your client can show them. Optional: unknown values are ignored, and without `"forms"` the assistant never asks. See [Clarifying questions](#clarifying-questions). |
 
 Streaming-only fields:
 
@@ -367,12 +367,11 @@ Write actions on the owner's accounts or credentials never reach this pause for 
 
 ## Clarifying questions
 
-When an answer depends on something neither the conversation nor the sources settle, the assistant can ask the user up to three short questions, once per user message. An agent with no tools and no sources never asks. How they reach your client depends on the `questions` field:
+When an answer depends on something neither the conversation nor the sources settle, the assistant can ask the user up to three short questions, once per user message. It does so only for a client that says it can show them, with `"capabilities": ["forms"]` on the request (and on the request that resumes the turn). Without it, which is the default, the assistant never asks and answers as usual, so an existing integration sees no change. An agent with no tools and no sources never asks either.
 
-- **Without it** (the default), the questions are the turn's answer, written as text: the assistant's lead-in line, then each question in bold with its options as `a)`, `b)` and so on. The turn ends, and the user's next message is the answer. The turn's `ask_user` tool call carries `"shown_as": "text"`.
-- **With `"questions": "cards"`**, the turn pauses as in [Tools that need approval](#tools-that-need-approval). The `tool_call` event has `"status": "awaiting_answer"`, a `message` (the lead-in, or `null`) and a `questions` list; the pending call's `pause_type` is `awaiting_answer`.
+With `"forms"`, the turn pauses as in [Tools that need approval](#tools-that-need-approval). The `tool_call` event has `"status": "awaiting_answer"`, a `message` (the lead-in, or `null`) and a `questions` list; the pending call's `pause_type` is `awaiting_answer`.
 
-Each entry in `questions` has an `id` (`q1`, `q2`, `q3`), its `text`, an optional `note`, `multi` (whether several options may be picked) and `options`, each with an `id` (`a`, `b`, ...), a `label`, `input` and `exclusive`. `input` is the placeholder of a field that picking the option opens for the rest (send the answer as `<label>: <typed text>`), or `null`. `exclusive` is `true` for at most one option of a `multi` question, listed last: picking it rules out the others ("None of these"). A question with no options takes a typed answer and may carry a `placeholder`. Written as text, an option with an `input` is followed by its placeholder in italics.
+Each entry in `questions` has an `id` (`q1`, `q2`, `q3`), its `text`, an optional `note`, `multi` (whether several options may be picked) and `options`, each with an `id` (`a`, `b`, ...), a `label`, `input` and `exclusive`. `input` is the placeholder of a field that picking the option opens for the rest (send the answer as `<label>: <typed text>`), or `null`. `exclusive` is `true` for at most one option of a `multi` question, listed last: picking it rules out the others ("None of these"). A question with no options takes a typed answer and may carry a `placeholder`.
 
 Resume with `tool_actions`, one action for the call:
 

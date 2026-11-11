@@ -1909,23 +1909,6 @@ class LLMHandler(ABC):
         executor.questions_blocked = None
         return event
 
-    @staticmethod
-    def _take_questions_text(agent: Any) -> Optional[str]:
-        """The questions a text-path ``ask_user`` call rendered this round, taken so they are emitted once.
-
-        Args:
-            agent: The agent running the turn.
-
-        Returns:
-            The markdown, or None when no questions were shown this round.
-        """
-        executor = getattr(agent, "tool_executor", None)
-        text = getattr(executor, "questions_text", None)
-        if not isinstance(text, str) or not text:
-            return None
-        executor.questions_text = None
-        return text
-
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
     ) -> Generator:
@@ -1981,11 +1964,6 @@ class LLMHandler(ABC):
                     "data": {"pending_tool_calls": pending_actions},
                 }
                 return ""
-
-            # The questions were shown as the answer: the turn ends on them.
-            questions_text = self._take_questions_text(agent)
-            if questions_text is not None:
-                return questions_text
 
             # Cap reached: force one final tool-less call so the stream
             # always ends with content rather than cutting off. The
@@ -2243,13 +2221,6 @@ class LLMHandler(ABC):
                 "type": "tool_calls_pending",
                 "data": {"pending_tool_calls": pending_actions},
             }
-            return
-
-        # The questions were shown as the answer: the turn ends on them,
-        # without another model call.
-        questions_text = self._take_questions_text(agent)
-        if questions_text is not None:
-            yield questions_text
             return
 
         next_iteration = _iteration + 1

@@ -581,15 +581,12 @@ class BaseAgent(ABC):
         chain_key = chain_key_factory() if callable(chain_key_factory) else None
         exporter = getattr(self.llm, "export_responses_state", None)
         state = exporter() if callable(exporter) else None
-        # A turn that ended on questions shown as text never sent its last
-        # call's output to the provider; chaining onto it would be rejected.
-        ended_on_questions = getattr(getattr(self, "tool_executor", None), "questions_shown_as_text", False) is True
         stored_metadata = (
             {
                 "response_id": response_id,
                 "response_chain_key": chain_key,
             }
-            if settings.OPENAI_RESPONSES_STORE and not ended_on_questions
+            if settings.OPENAI_RESPONSES_STORE
             else {}
         )
         metadata = {

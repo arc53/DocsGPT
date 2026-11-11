@@ -86,8 +86,7 @@ export function layoutAnswer(
   steps.forEach((step, index) => {
     if (step.kind === 'tool') {
       const call = callById.get(step.call_id);
-      // A refused question round is the model's business, not the user's;
-      // questions shown as answer text are in the answer already.
+      // A refused question round is the model's business, not the user's.
       if (!call || isHiddenCall(call)) return;
       if (!isGroupable(call)) {
         flush();

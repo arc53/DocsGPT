@@ -2,18 +2,13 @@
 
 A synthetic tool (no ``user_tools`` row) the server attaches to an interactive
 chat turn by itself (``add_ask_user_tool`` from ``BaseAgent._prepare_tools``);
-it is never listed, picked or toggled. Headless runs, workflow nodes and
-research steps never get it.
+it is never listed, picked or toggled. Only a client that draws question forms
+gets it (the request's ``capabilities``, :mod:`docsgpt.agents.client_capabilities`);
+headless runs, workflow nodes, research steps and every other caller never do.
 
-The request decides how the questions show (``ToolExecutor.questions``):
-
-* ``cards``: the turn pauses (``awaiting_answer``) and resumes with the answer
-  the client sends back (``ToolExecutor.check_pause``).
-* ``text``: the questions become the turn's answer as markdown and the turn
-  ends; the user's next message is the answer (``ToolExecutor._ask_user_as_text``).
-
-The executor runs both, so this module only holds the tool's description and
-the texts the model reads.
+The turn pauses (``awaiting_answer``) and resumes with the answer the client
+sends back (``ToolExecutor.check_pause``). The executor runs it, so this module
+only holds the tool's description and the texts the model reads.
 """
 
 from __future__ import annotations
@@ -27,11 +22,10 @@ from docsgpt.agents.tools.base import Tool
 ASK_USER_TOOL_ID = "ask_user"
 ASK_USER = "ask_user"
 
-#: The request's ``questions`` value that asks for question cards.
+#: How a turn shows questions (``ToolExecutor.questions``): as cards the client draws.
 CARDS = "cards"
-#: Every other interactive caller gets the questions as text.
-TEXT = "text"
-QUESTION_MODES = frozenset({CARDS, TEXT})
+#: The modes a turn (or its paused state) may hold; anything else offers no questions.
+QUESTION_MODES = frozenset({CARDS})
 
 #: The pause type of a turn waiting for the user to answer its questions.
 AWAITING_ANSWER = "awaiting_answer"
@@ -39,9 +33,6 @@ AWAITING_ANSWER = "awaiting_answer"
 #: What ``check_pause`` returns for question cards an output control blocked:
 #: nothing is shown or kept, and the turn ends on the block.
 QUESTIONS_BLOCKED = "questions_blocked"
-
-#: The tool result when the questions were shown as the turn's answer.
-SHOWN_AS_TEXT = "Shown to the user as text; their next message is the answer."
 
 #: The tool result when the user chose to skip the questions.
 SKIPPED_TEXT = (
@@ -62,18 +53,6 @@ NOT_ALONE_TEXT = (
 
 #: The tool result where the caller can't be asked (should not happen: the tool is not attached there).
 UNAVAILABLE_TEXT = "Not asked: questions can't be shown here. Answer with your best assumptions."
-
-
-def questions_mode(value: Any) -> str:
-    """How an interactive request shows questions: ``cards`` only when it asks for them.
-
-    Args:
-        value: The request's ``questions`` field.
-
-    Returns:
-        :data:`CARDS` or :data:`TEXT`.
-    """
-    return CARDS if value == CARDS else TEXT
 
 
 def add_ask_user_tool(tools_dict: Dict[str, Any], enabled: bool) -> bool:

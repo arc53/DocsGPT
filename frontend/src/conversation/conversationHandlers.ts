@@ -3,7 +3,12 @@ import i18n from 'i18next';
 import { baseURL } from '../api/client';
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../models/misc';
-import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
+import {
+  Answer,
+  ClientCapability,
+  FEEDBACK,
+  RetrievalPayload,
+} from './conversationModels';
 import { isQuotaError, quotaErrorMessage } from './quotaError';
 import { ToolCallsType } from './types';
 
@@ -156,11 +161,11 @@ async function _drainSseBody(
 }
 
 /**
- * The web app draws clarifying questions as cards and resumes the turn with
- * the answer, so every ``/stream`` request it makes asks for them; without
- * this the server writes the questions into the answer as text.
+ * What the web app can render, sent with every ``/stream`` request. ``forms``:
+ * it draws clarifying questions as cards and resumes the turn with the
+ * answer; without it the server never offers the model questions.
  */
-export const QUESTIONS_AS_CARDS = 'cards';
+export const CLIENT_CAPABILITIES: ClientCapability[] = ['forms'];
 
 export function handleFetchAnswer(
   question: string,
@@ -285,7 +290,7 @@ export function handleFetchAnswerSteaming(
     // explicitly opts into the sidebar; save_conversation alone no longer
     // lists it.
     visibility: save_conversation ? 'listed' : 'hidden',
-    questions: QUESTIONS_AS_CARDS,
+    capabilities: CLIENT_CAPABILITIES,
   };
 
   if (modelId) {
@@ -485,7 +490,7 @@ export function handleSubmitToolActions(
   const payload = {
     conversation_id: conversationId,
     tool_actions: toolActions,
-    questions: QUESTIONS_AS_CARDS,
+    capabilities: CLIENT_CAPABILITIES,
   };
 
   const headers: Record<string, string> = {};

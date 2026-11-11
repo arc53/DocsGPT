@@ -1,7 +1,7 @@
 ---
 title: Using the Web App
 description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language, and the clarifying questions an assistant can ask in a chat.
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-11
 ---
 
 import { Callout } from 'nextra/components'
@@ -106,7 +106,7 @@ When your answer depends on something neither the chat nor your sources settle (
 
 Once answered, the questions fold into a short record of what you picked, which stays in the chat. A reply you typed instead shows as your own message under the questions. Questions waiting for you show in [Activity](/Using/activity#now) under **Needs you**; they expire like a tool approval, after which they're kept as not answered.
 
-There's nothing to turn on: every chat and every agent with tools or sources can ask. An agent with neither answers straight away. Where an agent can't show the questions as cards, such as the [chat widget](/Extensions/chat-widget#clarifying-questions), a chat bot or an API call, they arrive as a short numbered list and the user replies in a message; see [Clarifying questions](/API/agent-api#clarifying-questions) in the Agent API.
+There's nothing to turn on: every chat and every agent with tools or sources can ask in the web app. An agent with neither answers straight away. The [chat widget](/Extensions/chat-widget), chat bots and API calls don't ask: there the agent answers as before. An API client that can show the questions opts in; see [Clarifying questions](/API/agent-api#clarifying-questions) in the Agent API.
 
 ## Default tools in chats without an agent
 

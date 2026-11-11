@@ -71,6 +71,13 @@
           "description": "API key",
           "type": "string"
         },
+        "capabilities": {
+          "description": "What this client can render. 'forms': the assistant may ask clarifying questions (ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Optional and not enforced: unknown values are ignored, and without 'forms' the assistant never asks and answers as usual.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "chunks": {
           "default": 6,
           "description": "Number of chunks",
@@ -106,10 +113,6 @@
         },
         "question": {
           "description": "Question to be asked",
-          "type": "string"
-        },
-        "questions": {
-          "description": "How the assistant's clarifying questions (ask_user) reach this client. 'cards' pauses the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Any other value (or omitting it) writes the questions as the answer's text and ends the turn: the user's next message is the answer.",
           "type": "string"
         },
         "retriever": {
@@ -1429,6 +1432,13 @@
           },
           "type": "array"
         },
+        "capabilities": {
+          "description": "What this client can render. 'forms': the assistant may ask clarifying questions (ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Optional and not enforced: unknown values are ignored, and without 'forms' the assistant never asks and answers as usual.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "chunks": {
           "default": 6,
           "description": "Number of chunks",
@@ -1468,10 +1478,6 @@
         },
         "question": {
           "description": "Question to be asked",
-          "type": "string"
-        },
-        "questions": {
-          "description": "How the assistant's clarifying questions (ask_user) reach this client. 'cards' pauses the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Any other value (or omitting it) writes the questions as the answer's text and ends the turn: the user's next message is the answer.",
           "type": "string"
         },
         "retriever": {

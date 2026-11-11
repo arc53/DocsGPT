@@ -1,4 +1,4 @@
-"""Clarifying questions a model asks the user: their shape, checked and normalized, and how they read as text.
+"""Clarifying questions a model asks the user: their shape, checked and normalized.
 
 Shared by the chat's ``ask_user`` tool (:mod:`docsgpt.agents.tools.ask_user`) and the
 drafter (:mod:`docsgpt.drafter.output`). Each describes the arguments in its own
@@ -310,32 +310,3 @@ def normalize_questions(
     if not out:
         raise QuestionsInvalid([empty_problem])
     return message, out
-
-
-def render_questions_text(message: Optional[str], questions: List[Dict[str, Any]]) -> str:
-    """Normalized questions as markdown, for a client that can't draw question cards.
-
-    The model's ``message`` is the lead-in; nothing else is added, since the
-    server can't word anything in the user's language. A typed question shows
-    no placeholder; a ``note`` is an italic line under its question; an option
-    that opens a field shows its placeholder in italics after it, and an
-    exclusive option comes last (as normalized).
-
-    Args:
-        message: The lead-in line, or None.
-        questions: What :func:`normalize_questions` returned.
-
-    Returns:
-        The text, e.g. ``"Which plan?\\n\\n**1. Team size?**\\na) 1-10\\nb) 11-50"``.
-    """
-    blocks: List[str] = [message] if message else []
-    for number, question in enumerate(questions, start=1):
-        lines = [f"**{number}. {question.get('text') or ''}**"]
-        if question.get("note"):
-            lines.append(f"*{question['note']}*")
-        for option in question.get("options") or []:
-            typed_input = f": _{option['input']}_" if option.get("input") else ""
-            lines.append(f"{option.get('id')}) {option.get('label')}{typed_input}")
-        # Markdown joins lines into one paragraph unless they end in a hard break.
-        blocks.append("  \n".join(lines))
-    return "\n\n".join(blocks)

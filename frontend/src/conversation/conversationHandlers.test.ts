@@ -14,7 +14,7 @@ const ended = () =>
     headers: { 'Content-Type': 'text/event-stream' },
   });
 
-describe('stream requests ask for question cards', () => {
+describe('stream requests say the app renders question forms', () => {
   beforeEach(() => {
     service.answerStream.mockReset().mockImplementation(async () => ended());
   });
@@ -32,7 +32,7 @@ describe('stream requests ask for question cards', () => {
     );
     expect(service.answerStream.mock.calls[0][0]).toMatchObject({
       question: 'write the deck',
-      questions: 'cards',
+      capabilities: ['forms'],
     });
   });
 
@@ -47,7 +47,7 @@ describe('stream requests ask for question cards', () => {
     expect(service.answerStream.mock.calls[0][0]).toEqual({
       conversation_id: 'conv-1',
       tool_actions: [{ call_id: 'ask-1', answer: 'Which quarter? → Q3' }],
-      questions: 'cards',
+      capabilities: ['forms'],
     });
   });
 });

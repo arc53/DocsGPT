@@ -25,7 +25,7 @@ from docsgpt.agents.tool_pins import (
     resolve_arguments,
     sent_arguments,
 )
-from docsgpt.agents.questions import QuestionsInvalid, normalize_questions, render_questions_text
+from docsgpt.agents.questions import QuestionsInvalid, normalize_questions
 from docsgpt.agents.tools import ask_user
 from docsgpt.agents.tools.report_cannot_complete import REPORT_CANNOT_COMPLETE
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
@@ -820,19 +820,13 @@ class ToolExecutor:
         # looked up once per turn: a raw one in a call is taken as its reference.
         self._exposed_secrets: Optional[Dict[str, str]] = None
         # How this turn shows the model's clarifying questions (``ask_user``):
-        # ``cards`` pauses the turn for the client to draw them, ``text`` makes
-        # them the turn's answer. None (headless runs, workflow nodes, research
-        # steps, every caller that doesn't set it) offers no questions at all.
+        # ``cards`` pauses the turn for the client to draw them. None (headless
+        # runs, workflow nodes, research steps, every client that doesn't draw
+        # forms) offers no questions at all.
         self.questions: Optional[str] = None
         # A question round was asked in this user message (survives a resume
         # through the paused state): a second one is refused.
         self.questions_asked = False
-        # The questions as markdown when the text path ran this round; the LLM
-        # handler takes it, emits it as the answer and ends the turn.
-        self.questions_text: Optional[str] = None
-        # The turn ended on questions shown as text: its last response holds a
-        # call whose output the provider never got, so it can't be chained onto.
-        self.questions_shown_as_text = False
         # Questions the model sent that could not be shown, this turn.
         self._invalid_questions = 0
         # Tool calls in the round being run (set by the LLM handler): ask_user
@@ -1702,9 +1696,8 @@ class ToolExecutor:
         """What ``check_pause`` returns for an ``ask_user`` call.
 
         A call that may not ask is refused (the ``headless_denied`` shape the
-        LLM handler answers with ``model_text``). With question cards the turn
-        pauses on ``awaiting_answer``, carrying the normalized questions; with
-        text the call runs (:meth:`_ask_user_as_text`).
+        LLM handler answers with ``model_text``); otherwise the turn pauses on
+        ``awaiting_answer``, carrying the normalized questions.
 
         Args:
             call: The model's tool call.
@@ -1716,7 +1709,7 @@ class ToolExecutor:
             arguments: The call's arguments.
 
         Returns:
-            The pause or refusal, or None to run the call.
+            The pause or the refusal.
         """
         base = {
             "call_id": call_id,
@@ -1741,8 +1734,6 @@ class ToolExecutor:
                 "model_text": model_text,
                 "error_type": "questions_not_asked",
             }
-        if self.questions != ask_user.CARDS:
-            return None
         self.questions_asked = True
         screened = self._screened_questions(message, questions)
         if screened is None:
@@ -1778,17 +1769,15 @@ class ToolExecutor:
             return None
         return screened_message, screened
 
-    def _ask_user_as_text(self, call_id: str, llm_name: str, call_args: Any):
-        """Run an ``ask_user`` call for a client without question cards: the questions become the answer.
+    def _ask_user_unavailable(self, call_id: str, llm_name: str):
+        """Refuse an ``ask_user`` call that reached execution: questions are only ever asked by pausing.
 
-        The rendered questions are left in :attr:`questions_text`; the LLM
-        handler emits them as the turn's answer and ends the turn without
-        calling the model again.
+        ``check_pause`` pauses or refuses every ``ask_user`` call, so this runs
+        only for a caller that skipped it. Nothing of the call is kept.
 
         Args:
             call_id: The call's id.
             llm_name: The name the model called it by.
-            call_args: The call's arguments.
 
         Yields:
             The call's ``tool_call`` event.
@@ -1796,46 +1785,16 @@ class ToolExecutor:
         Returns:
             ``(tool result, call id)``.
         """
-        arguments = call_args if isinstance(call_args, dict) else {}
         record: Dict[str, Any] = {
             "tool_name": ask_user.ASK_USER,
             "call_id": call_id,
             "action_name": llm_name,
-            "arguments": arguments,
+            "arguments": {},
+            "result": ask_user.UNAVAILABLE_TEXT,
+            "error": "Questions not asked: questions can't be shown here.",
+            "error_type": "questions_not_asked",
+            "status": "error",
         }
-        model_text, reason, message, questions = self._ask_user_check(arguments, count_invalid=False)
-        if model_text is not None:
-            # Nothing of a refused round is shown, so none of its text is kept.
-            record.update(
-                {
-                    "arguments": {},
-                    "result": model_text,
-                    "error": f"Questions not asked: {reason}.",
-                    "error_type": "questions_not_asked",
-                    "status": "error",
-                }
-            )
-        else:
-            self.questions_asked = True
-            # The questions are shown as the answer, so they get its output
-            # controls before the call's event and record carry them; a block
-            # shows and keeps nothing of the call (``questions_blocked``).
-            screened = self._screened_questions(message, questions)
-            if screened is None:
-                return ask_user.SHOWN_AS_TEXT, call_id
-            message, questions = screened
-            self.questions_text = render_questions_text(message, questions)
-            self.questions_shown_as_text = True
-            record.update(
-                {
-                    "arguments": {"message": message, "questions": questions},
-                    "result": ask_user.SHOWN_AS_TEXT,
-                    "status": "success",
-                    # The chat tells this record from an answered one by
-                    # this, never by the result's wording.
-                    "shown_as": "text",
-                }
-            )
         yield {"type": "tool_call", "data": dict(record)}
         self.tool_calls.append(record)
         return record["result"], call_id
@@ -2204,7 +2163,7 @@ class ToolExecutor:
         }
         tool_data = tools_dict[tool_id]
         if self._is_ask_user(tool_data):
-            return (yield from self._ask_user_as_text(call_id, llm_name, call_args))
+            return (yield from self._ask_user_unavailable(call_id, llm_name))
         if self._app_only(tool_data, action_name):
             refused = f"'{llm_name}' is called only by its app's view in the chat, not by the model. Nothing ran."
             tool_call_data["result"] = refused
@@ -2866,7 +2825,7 @@ class ToolExecutor:
     # after a reload as it did live.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
-        "job_id", "error", "error_type", "shown_as",
+        "job_id", "error", "error_type",
     )
 
     @staticmethod

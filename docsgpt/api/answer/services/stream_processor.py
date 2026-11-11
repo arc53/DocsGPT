@@ -43,7 +43,8 @@ from docsgpt.core.model_utils import (
     get_token_limit,
     validate_model_id,
 )
-from docsgpt.agents.tools.ask_user import QUESTION_MODES, questions_mode
+from docsgpt.agents.client_capabilities import FORMS, parse_capabilities
+from docsgpt.agents.tools.ask_user import CARDS, QUESTION_MODES
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
@@ -620,6 +621,19 @@ class StreamProcessor:
         (``agent.decision_record``), and a resume continues the paused turn's.
         """
         return DecisionRecord()
+
+    @property
+    def client_capabilities(self) -> frozenset:
+        """What the requesting client says it can render (its ``capabilities``).
+
+        Not enforced: a client that sends none (API agents, the widget, bots)
+        gets the turn as before any capability existed. ``/v1`` maps none.
+        """
+        return parse_capabilities(self.data.get("capabilities"))
+
+    def _questions_for_client(self) -> Optional[str]:
+        """``cards`` when the client draws question forms, else None: no ``ask_user`` this turn."""
+        return CARDS if FORMS in self.client_capabilities else None
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -2474,10 +2488,10 @@ class StreamProcessor:
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
-        # A turn that offered questions still does after its resume, shown the
-        # way the resuming request asks; one that asked already can't again.
+        # A turn that offered questions still does after its resume when the
+        # resuming client draws forms too; one that asked already can't again.
         if agent_config.get("questions") in QUESTION_MODES:
-            tool_executor.questions = questions_mode(self.data.get("questions"))
+            tool_executor.questions = self._questions_for_client()
         tool_executor.questions_asked = bool(agent_config.get("questions_asked")) or any(
             isinstance(call, dict) and call.get("pause_type") == AWAITING_ANSWER
             for call in pending_tool_calls or []
@@ -2818,10 +2832,11 @@ class StreamProcessor:
             api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
-        # A chat agent can ask the user clarifying questions, as cards when the
-        # request asks for them (the web app), else as its answer's text.
+        # A chat agent can ask the user clarifying questions only when the
+        # client draws them as forms (the web app); every other caller gets
+        # the turn without ``ask_user``, as before questions existed.
         if str(agent_type or "").strip().lower() in QUESTION_AGENT_TYPES:
-            tool_executor.questions = questions_mode(self.data.get("questions"))
+            tool_executor.questions = self._questions_for_client()
         # Pass client-side tools so they get merged in get_tools()
         client_tools = self.data.get("client_tools")
         if client_tools:
