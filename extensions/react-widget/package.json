@@ -63,7 +63,6 @@
     "@parcel/transformer-typescript-tsc": "^2.16.4",
     "@parcel/transformer-typescript-types": "^2.16.4",
     "@parcel/validator-typescript": "^2.16.4",
-    "@types/dompurify": "^3.0.5",
     "@types/markdown-it": "^14.2.0",
     "@types/prismjs": "^1.26.6",
     "@types/react": "^19.3.0",
