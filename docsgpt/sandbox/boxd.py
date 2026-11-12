@@ -453,7 +453,9 @@ class BoxdSandbox(CodeSandbox):
     def _shell(self, handle: _Handle, command: str, timeout: float) -> Tuple[str, int]:
         """Run ``command`` in the machine and return its merged output and exit code.
 
-        A machine that is stopped is started and the command retried once.
+        A machine that is stopped is started and the command retried once. The
+        delete-after timer is pushed forward before the command and again after
+        it, so a session stays its full idle TTL after a long run.
 
         Raises:
             Exception: The SDK error of the last attempt.
@@ -469,6 +471,7 @@ class BoxdSandbox(CodeSandbox):
             if not self._ensure_running(handle):
                 raise
             result = self._client.machines.exec(handle.machine_id, command, timeout=timeout)
+        self._keep(handle)
         return (result.stdout or "") + (result.stderr or ""), int(result.exit_code)
 
     @staticmethod
@@ -521,6 +524,7 @@ class BoxdSandbox(CodeSandbox):
             return self._error_result(exc, session_id, handle)
         except Exception as exc:  # noqa: BLE001 - any SDK/cloud error -> error result, never raise
             if time.monotonic() - started >= wall and not self._machine_gone(handle):
+                self._keep(handle)
                 return detached.finished_result("", detached.TIMEOUT_EXIT_CODE, elapsed=wall, wall=wall)
             return self._error_result(exc, session_id, handle)
         return detached.finished_result(
