@@ -81,8 +81,15 @@ def test_the_machine_is_isolated(box):
 
 @pytest.mark.skipif(not _DELETE_AFTER, reason="BOXD_DELETE_AFTER=0 turns the timer off")
 def test_the_machine_carries_its_delete_after_timer(box):
-    machine = box._client.machines.get(box._get_handle(SESSION).machine_id)
-    assert machine.delete_at is not None
+    handle = box._get_handle(SESSION)
+    first = box._client.machines.get(handle.machine_id).delete_at
+    print(f"delete_at after create: {first}")
+    assert first is not None
+    time.sleep(2)
+    box._keep(handle, force=True)
+    refreshed = box._client.machines.get(handle.machine_id).delete_at
+    print(f"delete_at after a refresh: {refreshed}")
+    assert refreshed is not None and refreshed > first
 
 
 def test_an_exception_is_an_error_with_its_traceback(box):
@@ -133,6 +140,12 @@ def test_a_5_mib_file_round_trips(box):
     assert seen.stdout.strip() == hashlib.sha256(data).hexdigest()
     assert hashlib.sha256(box.get_file(SESSION, "inputs/blob.bin")).digest() == hashlib.sha256(data).digest()
     assert "inputs/blob.bin" in box.list_files(SESSION)
+
+
+def test_an_empty_file_is_written(box):
+    box.put_file(SESSION, "scratch/empty/.keep", b"")
+    assert "scratch/empty/.keep" in box.list_files(SESSION)
+    assert box.get_file(SESSION, "scratch/empty/.keep") == b""
 
 
 def test_a_file_over_the_cap_is_not_read(box):

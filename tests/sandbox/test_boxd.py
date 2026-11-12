@@ -1,6 +1,7 @@
 """Unit tests for BoxdSandbox with the boxd SDK fully mocked (no cloud calls)."""
 
 import base64
+import logging
 import re
 import sys
 import types
@@ -49,6 +50,8 @@ class _FakeFiles:
 
     def _upload(self, machine_id, path, data):
         self._machines._check(machine_id)
+        if not data:
+            raise ValueError("an upload needs at least one byte")
         self.store[path] = data
         return len(data)
 
@@ -441,6 +444,16 @@ def test_exec_starts_a_stopped_machine_and_retries(sandbox):
     _machines(sandbox).start.assert_called_once_with("m-1")
 
 
+def test_exec_does_not_retry_a_failure_on_a_running_machine(sandbox):
+    sandbox.open("conv-1")
+    machines = _machines(sandbox)
+    calls = len(machines.exec.call_args_list)
+    machines.exec.side_effect = RuntimeError("stream closed")
+    result = sandbox.exec("conv-1", "print('once')")
+    assert not result.ok
+    assert len(machines.exec.call_args_list) == calls + 1
+
+
 def test_exec_uploads_a_script_too_long_for_one_command_line(sandbox):
     sandbox.open("conv-1")
     sandbox.exec("conv-1", "x = 1\n" * 20_000)
@@ -494,6 +507,21 @@ def test_put_file_uploads_under_workspace(sandbox):
     sandbox.open("conv-1")
     sandbox.put_file("conv-1", "inputs/a.csv", b"1,2")
     assert _machines(sandbox).files.store[f"{_WS}/inputs/a.csv"] == b"1,2"
+
+
+def test_put_file_creates_an_empty_file_with_a_shell_command(sandbox):
+    sandbox.open("conv-1")
+    sandbox.put_file("conv-1", "scratch/.keep", b"")
+    _machines(sandbox).files.upload.assert_not_called()
+    command = _machines(sandbox).commands[-1][1]
+    assert f"mkdir -p {_WS}/scratch && : > {_WS}/scratch/.keep" in command
+
+
+def test_put_file_raises_when_an_empty_file_cannot_be_created(sandbox):
+    sandbox.open("conv-1")
+    _machines(sandbox).handler = lambda c: _FakeExecResult(stderr="denied", exit_code=1) if ": >" in c else None
+    with pytest.raises(IOError):
+        sandbox.put_file("conv-1", "scratch/.keep", b"")
 
 
 @pytest.mark.parametrize("path", ["/etc/passwd", "../x", "a/../../x", "a\x00b"])
@@ -608,6 +636,25 @@ def test_remove_path_never_raises(sandbox):
     _machines(sandbox).files.delete.side_effect = RuntimeError("boom")
     sandbox.remove_path("conv-1", "x")
     sandbox.remove_path("unknown", "x")
+
+
+def test_remove_path_logs_a_failed_delete_as_a_warning(sandbox, caplog):
+    sandbox.open("conv-1")
+    _machines(sandbox).files.delete.side_effect = RuntimeError("boom")
+    with caplog.at_level(logging.DEBUG, logger="docsgpt.sandbox.boxd"):
+        sandbox.remove_path("conv-1", "artifacts/tok")
+    recs = [r for r in caplog.records if "artifacts/tok" in r.getMessage()]
+    assert [r.levelno for r in recs] == [logging.WARNING]
+
+
+def test_remove_path_logs_a_missing_path_or_session_at_debug(sandbox, caplog):
+    sandbox.open("conv-1")
+    _machines(sandbox).files.delete.side_effect = _NotFoundError("gone")
+    with caplog.at_level(logging.DEBUG, logger="docsgpt.sandbox.boxd"):
+        sandbox.remove_path("conv-1", "artifacts/tok")
+        sandbox.remove_path("unknown", "artifacts/tok")
+    recs = [r for r in caplog.records if "artifacts/tok" in r.getMessage()]
+    assert len(recs) == 2 and all(r.levelno == logging.DEBUG for r in recs)
 
 
 # --- Detached runs -------------------------------------------------------
