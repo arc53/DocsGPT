@@ -1153,8 +1153,11 @@ class TestApplyInferenceSettings:
             events.append("options")
             return real_options(*args, **kwargs)
 
-        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
+        # Patching DocumentConverter first imports docling.document_converter,
+        # which binds PdfPipelineOptions at import; doing it after the swap
+        # leaves the tracker there for every later test in the worker.
         monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
+        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
 
         DoclingParser(ocr_enabled=False)._create_converter()
 
@@ -1579,8 +1582,11 @@ class TestForceFullPageOCRWiring:
             built.append(options)
             return options
 
-        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
+        # Patching DocumentConverter first imports docling.document_converter,
+        # which binds PdfPipelineOptions at import; doing it after the swap
+        # leaves the tracker there for every later test in the worker.
         monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
+        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
         DoclingParser(**kwargs)._create_converter()
         return built[0]
 
