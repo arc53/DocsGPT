@@ -47,7 +47,7 @@ and scheduled and webhook runs. A tool that needs approval starts its clock only
 
 | Runner | When | Survives an API restart |
 | --- | --- | --- |
-| Sandbox | Every `code_executor` run on Daytona; a `background=true` run on the Jupyter runner | Yes |
+| Sandbox | Every `code_executor` run on Daytona or boxd; a `background=true` run on the Jupyter runner | Yes |
 | Device | A `remote_device` command: it runs on the paired machine | Yes |
 | Worker | `background=true` on other tools: the whole call runs in a Celery worker | Until the worker dies |
 | In-process | Any other call that outlived the window (and Jupyter runs, which keep their kernel variables) | No |
