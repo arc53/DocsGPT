@@ -261,6 +261,10 @@ botocore==1.43.126 \
     # via
     #   boto3
     #   s3transfer
+boxd==0.3.1 \
+    --hash=sha256:723c15e6e611e4a9399f859d45b683efe52e0493ab52a6adcc8e476cb42ca4c0 \
+    --hash=sha256:9185d3e5196b5c1a788b96bf3a5f2e56df4be55033a4a2e0ef35d54f2577d99e
+    # via docsgpt
 cachetools==8.0.0 \
     --hash=sha256:5af562e5078f0086771a1e3832a9c3dbf5d336b6e2794a2c12a64680a4c9087d \
     --hash=sha256:5ed01bd676800d51f0025605e4fd8ad0891550513e7b0a4c3da478463764e5c3
@@ -997,6 +1001,7 @@ grpcio==1.85.1 \
     --hash=sha256:eaad7e6aa9ac3aded4f6bc86a18bf2cff3de356f972bf32a5558df9788085b85 \
     --hash=sha256:f0ebfbd8ba42497e0ff7229c8c5e166e07c2b348462c1481dbd90faa978ad8af
     # via
+    #   boxd
     #   opentelemetry-exporter-otlp-proto-grpc
     #   qdrant-client
 gunicorn==26.2.0 \
@@ -1144,6 +1149,7 @@ httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
+    #   boxd
     #   daytona
     #   elevenlabs
     #   google-genai
@@ -2578,6 +2584,7 @@ protobuf==7.36.2 \
     --hash=sha256:e11e1f0180583a2af89db6a2ecd9e8dc40aa6d2988ca175bfd0e6d12ea72d74e \
     --hash=sha256:f4fee11ec330d238b34a05c9b675f693c20415d1c5bd7d5320cc2f8a798eb9cf
     # via
+    #   boxd
     #   google-api-core
     #   googleapis-common-protos
     #   onnxruntime
@@ -2699,6 +2706,7 @@ pydantic==2.14.3 \
     --hash=sha256:3f7b347782ab7e4cf4c798496ae3a82787d9f21ec12676a9c564355eeef8daa8
     # via
     #   anthropic
+    #   boxd
     #   daytona
     #   daytona-analytics-api-client
     #   daytona-analytics-api-client-async
@@ -3544,6 +3552,7 @@ typing-extensions==4.16.0 \
     #   anthropic
     #   anyio
     #   beautifulsoup4
+    #   boxd
     #   click-repl
     #   daytona
     #   daytona-analytics-api-client

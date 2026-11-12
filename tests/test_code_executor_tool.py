@@ -8,6 +8,7 @@ run in the fast unit suite. The end-to-end persistence path is covered by
 from __future__ import annotations
 
 import uuid
+from unittest import mock
 
 import pytest
 
@@ -761,7 +762,9 @@ def test_inputs_metadata_names_the_staging_path():
     assert "inputs_loaded" in props["inputs"]["description"]
 
 
-@pytest.mark.parametrize("backend, snapshot", [("jupyter", None), ("daytona", _SNAPSHOT), ("daytona", None)])
+@pytest.mark.parametrize(
+    "backend, snapshot", [("jupyter", None), ("daytona", _SNAPSHOT), ("daytona", None), ("boxd", None)]
+)
 def test_description_stays_short(monkeypatch, backend, snapshot):
     """About 250 words: the long lists moved to the new-session environment summary."""
     words = len(_description(monkeypatch, backend, snapshot=snapshot).split())
@@ -835,6 +838,21 @@ def test_bare_daytona_description_advertises_nothing_it_lacks(monkeypatch):
     assert "Only the Python stdlib is preinstalled" in desc
     for absent in ("office-convert", "tesseract", "pdfplumber", "never pip-install", "Python 3.12"):
         assert absent not in desc
+
+
+def test_boxd_description_says_fresh_interpreter_and_stdlib_only(monkeypatch):
+    desc = _description(monkeypatch, "boxd")
+    assert "fresh interpreter" in desc and "re-import" in desc
+    assert "Only the Python stdlib is preinstalled" in desc
+    for absent in ("office-convert", "tesseract", "never pip-install", "Python 3.12"):
+        assert absent not in desc
+
+
+def test_boxd_runs_detached_like_daytona(monkeypatch):
+    _configure(monkeypatch, "boxd")
+    manager = mock.Mock()
+    manager.supports_detached.return_value = True
+    assert _tool()._can_detach(manager, mock.Mock(explicit=False)) is True
 
 
 def test_description_no_longer_asks_for_persist_to_keep_state(monkeypatch):

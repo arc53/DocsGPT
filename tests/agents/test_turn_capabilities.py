@@ -129,6 +129,15 @@ class TestSandboxConfigured:
         monkeypatch.setattr("docsgpt.core.settings.settings.DAYTONA_API_KEY", "secret")
         assert sandbox_configured() is True
 
+    def test_boxd_needs_an_api_key(self, monkeypatch):
+        from docsgpt.sandbox import sandbox_configured
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.SANDBOX_BACKEND", "boxd")
+        monkeypatch.setattr("docsgpt.core.settings.settings.BOXD_API_KEY", None)
+        assert sandbox_configured() is False
+        monkeypatch.setattr("docsgpt.core.settings.settings.BOXD_API_KEY", "secret")
+        assert sandbox_configured() is True
+
     def test_jupyter_needs_a_gateway_url(self, monkeypatch):
         from docsgpt.sandbox import sandbox_configured
 
@@ -169,7 +178,7 @@ def _fresh_settings(monkeypatch, **env):
     """A Settings instance built only from ``env`` (no .env file, no ambient sandbox vars)."""
     from docsgpt.core.settings import Settings
 
-    for name in ("SANDBOX_BACKEND", "SANDBOX_GATEWAY_URL", "DAYTONA_API_KEY"):
+    for name in ("SANDBOX_BACKEND", "SANDBOX_GATEWAY_URL", "DAYTONA_API_KEY", "BOXD_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
         monkeypatch.setenv(name, value)

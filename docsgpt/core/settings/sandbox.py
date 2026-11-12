@@ -1,4 +1,4 @@
-"""Code-execution sandbox: the Jupyter gateway runner or Daytona Cloud."""
+"""Code-execution sandbox: the Jupyter gateway runner, Daytona Cloud or boxd."""
 
 from __future__ import annotations
 
@@ -12,8 +12,9 @@ from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 class SandboxSettings(SettingsGroup):
     """The app is a CLIENT of an always-on runner; defaults are safe so app import never fails unconfigured."""
 
-    SANDBOX_BACKEND: Literal["jupyter", "daytona"] = Field(
-        default="jupyter", description="Sandbox backend: jupyter (self-host) or daytona (Daytona Cloud)."
+    SANDBOX_BACKEND: Literal["jupyter", "daytona", "boxd"] = Field(
+        default="jupyter",
+        description="Sandbox backend: jupyter (self-host), daytona (Daytona Cloud) or boxd (boxd machines).",
     )
     SANDBOX_GATEWAY_URL: str = Field(
         default="http://localhost:8888",
@@ -116,6 +117,32 @@ class SandboxSettings(SettingsGroup):
     )
     DAYTONA_MAX_SANDBOXES: int = Field(
         default=50, description="Cap on concurrent live Daytona sandboxes (cost-DoS guard)."
+    )
+
+    # boxd backend (SANDBOX_BACKEND=boxd). All knobs are optional so app import never fails when the backend
+    # is unused.
+    BOXD_API_KEY: Optional[str] = Field(default=None, description="boxd API key (secret).")
+    BOXD_ORG: Optional[str] = Field(
+        default=None, description="boxd organization the sandbox machines are created in; the key's own when unset."
+    )
+    BOXD_REGION: Optional[str] = Field(
+        default=None,
+        description='boxd region for new sandbox machines, e.g. "fra" or "nyc"; the account default when unset.',
+    )
+    BOXD_NAME_PREFIX: str = Field(
+        default="docsgpt", description="Prefix of the sandbox machines' names; a random suffix follows it."
+    )
+    BOXD_MAX_MACHINES: int = Field(
+        default=50, description="Cap on concurrent boxd sandbox machines per process (cost-DoS guard)."
+    )
+    BOXD_DELETE_AFTER: int = Field(
+        default=60,
+        ge=0,
+        description=(
+            "Minutes after its last use that boxd deletes a sandbox machine, the backstop for machines no process "
+            "closes (each use pushes the timer forward). Raised to outlast SANDBOX_MAX_TTL and "
+            "SANDBOX_EXEC_MAX_TIMEOUT; 0 disables it."
+        ),
     )
 
     @field_validator("SANDBOX_BACKEND", mode="before")

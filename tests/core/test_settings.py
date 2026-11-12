@@ -42,6 +42,7 @@ SECRET_FIELDS = (
     "S3_SECRET_ACCESS_KEY",
     "SANDBOX_GATEWAY_AUTH_TOKEN",
     "DAYTONA_API_KEY",
+    "BOXD_API_KEY",
 )
 
 
@@ -370,6 +371,7 @@ class TestClosedChoices:
             ("OCR_BACKEND", "Native", "native"),
             ("OCR_ENGINE", "Tesseract ", "tesseract"),
             ("SANDBOX_BACKEND", "Daytona", "daytona"),
+            ("SANDBOX_BACKEND", "BOXD", "boxd"),
             ("DOC_PARSER_ENGINE", "Docling", "docling"),
             ("TTS_PROVIDER", "ElevenLabs", "elevenlabs"),
             ("STT_PROVIDER", "", "none"),
