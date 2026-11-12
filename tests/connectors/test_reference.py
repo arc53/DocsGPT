@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from docsgpt.connectors import catalog
-from docsgpt.connectors.reference import build_presets, main, render_presets
+from docsgpt.connectors.reference import build_presets, connectors_page_path, data_path, main, render_presets
+from docsgpt.core.docs_pages import read_last_updated
+
+_PAGE = "---\ntitle: Connectors\nlastUpdated: 2026-01-01\n---\n\n<McpPresetTable />\n"
 
 
 @pytest.mark.unit
@@ -48,6 +52,7 @@ class TestCli:
     def test_write_then_check_passes(self, tmp_path, monkeypatch):
         target = tmp_path / "data" / "mcp-presets.json"
         monkeypatch.setattr("docsgpt.connectors.reference.data_path", lambda: target)
+        monkeypatch.setattr("docsgpt.connectors.reference.connectors_page_path", lambda: tmp_path / "missing.mdx")
 
         assert main(["--write"]) == 0
         assert main(["--check"]) == 0
@@ -64,3 +69,69 @@ class TestCli:
     def test_prints_without_an_action(self, capsys):
         assert main([]) == 0
         assert capsys.readouterr().out == render_presets()
+
+    def test_write_dates_the_connectors_page_when_the_data_changes(self, tmp_path, monkeypatch):
+        target = tmp_path / "mcp-presets.json"
+        target.write_text("[]\n", encoding="utf-8")
+        page = tmp_path / "index.mdx"
+        page.write_text(_PAGE, encoding="utf-8")
+        monkeypatch.setattr("docsgpt.connectors.reference.data_path", lambda: target)
+        monkeypatch.setattr("docsgpt.connectors.reference.connectors_page_path", lambda: page)
+        monkeypatch.setattr("docsgpt.connectors.reference.today", lambda: "2026-12-31")
+
+        assert main(["--write"]) == 0
+        assert target.read_text(encoding="utf-8") == render_presets()
+        assert read_last_updated(page.read_text(encoding="utf-8")) == "2026-12-31"
+        assert page.read_text(encoding="utf-8") == _PAGE.replace("2026-01-01", "2026-12-31")
+
+    def test_write_dates_the_connectors_page_when_the_data_file_is_new(self, tmp_path, monkeypatch):
+        target = tmp_path / "data" / "mcp-presets.json"
+        page = tmp_path / "index.mdx"
+        page.write_text(_PAGE, encoding="utf-8")
+        monkeypatch.setattr("docsgpt.connectors.reference.data_path", lambda: target)
+        monkeypatch.setattr("docsgpt.connectors.reference.connectors_page_path", lambda: page)
+        monkeypatch.setattr("docsgpt.connectors.reference.today", lambda: "2026-12-31")
+
+        assert main(["--write"]) == 0
+        assert target.read_text(encoding="utf-8") == render_presets()
+        assert read_last_updated(page.read_text(encoding="utf-8")) == "2026-12-31"
+
+    def test_write_leaves_the_file_and_the_page_alone_when_the_data_is_unchanged(self, tmp_path, monkeypatch):
+        target = tmp_path / "mcp-presets.json"
+        target.write_text(render_presets(), encoding="utf-8")
+        page = tmp_path / "index.mdx"
+        page.write_text(_PAGE, encoding="utf-8")
+        monkeypatch.setattr("docsgpt.connectors.reference.data_path", lambda: target)
+        monkeypatch.setattr("docsgpt.connectors.reference.connectors_page_path", lambda: page)
+        monkeypatch.setattr("docsgpt.connectors.reference.today", lambda: "2026-12-31")
+        written = []
+        real_write_text = Path.write_text
+        monkeypatch.setattr(
+            Path, "write_text", lambda self, *a, **k: written.append(self) or real_write_text(self, *a, **k)
+        )
+
+        assert main(["--write"]) == 0
+        assert written == []
+        assert page.read_text(encoding="utf-8") == _PAGE
+
+    def test_write_without_the_page_still_writes_the_data(self, tmp_path, monkeypatch):
+        target = tmp_path / "mcp-presets.json"
+        monkeypatch.setattr("docsgpt.connectors.reference.data_path", lambda: target)
+        monkeypatch.setattr("docsgpt.connectors.reference.connectors_page_path", lambda: tmp_path / "missing.mdx")
+
+        assert main(["--write"]) == 0
+        assert target.read_text(encoding="utf-8") == render_presets()
+        assert not (tmp_path / "missing.mdx").exists()
+
+
+@pytest.mark.unit
+class TestPaths:
+    def test_data_and_page_live_in_the_docs_tree(self, tmp_path):
+        assert data_path(tmp_path) == tmp_path / "docs" / "data" / "mcp-presets.json"
+        assert connectors_page_path(tmp_path) == tmp_path / "docs" / "content" / "Sources" / "Connectors" / "index.mdx"
+
+    def test_the_default_root_is_the_checkout(self):
+        root = Path(__file__).resolve().parents[2]
+        assert data_path() == root / "docs" / "data" / "mcp-presets.json"
+        assert connectors_page_path() == root / "docs" / "content" / "Sources" / "Connectors" / "index.mdx"
+        assert connectors_page_path().exists()

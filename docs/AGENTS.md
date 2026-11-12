@@ -52,7 +52,8 @@ Don't change these in a pull request; CI fails if you do (`npm run generated:che
 request, which is the only place they change:
 
 - `data/swagger.json` (`python -m docsgpt.api.reference --write`)
-- `data/mcp-presets.json` (`python -m docsgpt.connectors.reference --write`)
+- `data/mcp-presets.json` (`python -m docsgpt.connectors.reference --write`, which also moves
+  `content/Sources/Connectors/index.mdx`'s `lastUpdated` to today when the list changes)
 - `content/Deploying/Settings-Reference.mdx` (`python -m docsgpt.core.settings.reference --write`)
 - `public/llms.txt` (`npm run llms`)
 

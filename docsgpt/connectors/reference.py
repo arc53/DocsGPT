@@ -9,7 +9,11 @@ there and no edit to a docs page::
 
 ``--check`` exits non-zero when the checked-in file is stale. The "Generated
 docs" workflow runs ``--write`` on ``main`` after a merge, so a pull request
-never carries the file.
+never carries the file. When ``--write`` changes the file it also moves the
+Connectors page's (``docs/content/Sources/Connectors/index.mdx``)
+``lastUpdated`` frontmatter date to today; the page's own text never changes
+with a preset, so nothing else would re-date it. An unchanged file leaves both
+untouched.
 """
 
 from __future__ import annotations
@@ -20,7 +24,10 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from docsgpt.core.docs_pages import set_last_updated, today
+
 DATA_PATH = Path("docs") / "data" / "mcp-presets.json"
+CONNECTORS_PAGE_PATH = Path("docs") / "content" / "Sources" / "Connectors" / "index.mdx"
 
 
 def build_presets() -> list[dict[str, Any]]:
@@ -59,6 +66,13 @@ def data_path(root: Optional[Path] = None) -> Path:
     return root / DATA_PATH
 
 
+def connectors_page_path(root: Optional[Path] = None) -> Path:
+    """Where the page that renders the data file lives; ``root`` defaults to the repository root."""
+    if root is None:
+        root = Path(__file__).resolve().parents[2]
+    return root / CONNECTORS_PAGE_PATH
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     """Write, check or print the data file.
 
@@ -76,13 +90,20 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     rendered = render_presets()
     path = data_path()
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
     if args.write:
+        if current == rendered:
+            print(f"{path} is up to date")
+            return 0
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(rendered, encoding="utf-8")
         print(f"wrote {path}")
+        page = connectors_page_path()
+        if page.exists():
+            page.write_text(set_last_updated(page.read_text(encoding="utf-8"), today()), encoding="utf-8")
+            print(f"dated {page} {today()}")
         return 0
     if args.check:
-        current = path.read_text(encoding="utf-8") if path.exists() else ""
         if current != rendered:
             print(f"{path} is stale; run: python -m docsgpt.connectors.reference --write", file=sys.stderr)
             return 1

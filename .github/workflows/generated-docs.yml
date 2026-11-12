@@ -78,7 +78,8 @@ jobs:
           uv run --no-sync python -m docsgpt.connectors.reference --write
           node docs/scripts/generate-llms.mjs
 
-      # After the generators: the two generated pages date themselves.
+      # After the generators: the pages they feed (Settings-Reference, the API reference
+      # and the Connectors page) date themselves.
       - name: Re-date the pages whose content changed
         run: |
           # Without pipefail, tee's exit status would hide a failed sync.
