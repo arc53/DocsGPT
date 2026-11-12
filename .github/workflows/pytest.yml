@@ -1,16 +1,52 @@
 name: Run python tests with pytest
-on: [push, pull_request, workflow_dispatch]
+
+# Runs once per change: on a pull request, and on main after the merge. A push
+# to a branch with an open pull request used to run the suite twice.
+#
+# The paths leave out what no backend test reads: the docs site, the web UI
+# (bar the one file tests/parser/file/test_constants.py parses) and the widget.
+# Later patterns win, so each "!" line carves out of the "**" above it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!frontend/**'
+      - 'frontend/src/constants/fileUpload.ts'
+      - '!extensions/react-widget/**'
+  pull_request:
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!frontend/**'
+      - 'frontend/src/constants/fileUpload.ts'
+      - '!extensions/react-widget/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# A new push to a pull request replaces the run for the push before it. Runs on
+# main are left to finish, so every merge has a result.
+concurrency:
+  group: pytest-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   pytest_and_coverage:
     name: Run tests and count coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.12"]
+        # tests/sharding.py deals the test files out by test count; each job
+        # runs one share. Change the count here and after_n_builds in
+        # codecov.yml together.
+        shard: [1, 2, 3]
+        shards: [3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -19,17 +55,25 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
-      # tests/requirements.txt is exported from uv.lock with hashes: the core
-      # runtime, the docling extra and the test tools.
+      # uv keeps the downloaded wheels between runs, keyed on uv.lock.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      # The locked environment (uv.lock carries the hashes): the core runtime,
+      # the docling extra so its parser tests run, and the dev group.
       - name: Install dependencies
-        run: pip install --require-hashes -r tests/requirements.txt
-      - name: Check the REST API reference snapshot is current
-        run: python -m docsgpt.api.reference --check
+        run: uv sync --frozen --extra docling
       - name: Test with pytest and generate coverage report
+        env:
+          SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
         run: |
-          python -m pytest -n auto --cov=docsgpt --cov-report=xml --cov-report=term-missing --durations=25
+          uv run --no-sync python -m pytest -n auto --shard "$SHARD" \
+            --cov=docsgpt --cov-report=xml --cov-report=term-missing --durations=25
       - name: Upload coverage reports to Codecov
         if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          flags: shard-${{ matrix.shard }}
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
