@@ -341,9 +341,9 @@ test.describe('tier-a · chat turn save', () => {
       ]);
 
       // Invariant 1: neither stream returned 500. (Flask emits
-      // `status=400` with a sanitized "Unknown error occurred" body on
+      // `status=500` with a sanitized "Unknown error occurred" body on
       // unhandled exceptions — we guard against THAT shape too, since a
-      // lost message hides behind either status.)
+      // lost message hides behind it either way.)
       expect(a.status).toBe(200);
       expect(b.status).toBe(200);
       expect(a.text).not.toMatch(/Unknown error occurred/);
