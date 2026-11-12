@@ -221,10 +221,10 @@ async def paged(
     key: str,
     filters: dict,
     *,
-    limit: int,
+    limit: Optional[int],
     extra: Optional[dict] = None,
 ) -> AsyncIterator[dict]:
-    """Every record a list tool returns for ``filters``, page by page, up to ``limit``.
+    """Yield records for ``filters`` one page at a time.
 
     Args:
         session: The open MCP session.
@@ -233,7 +233,7 @@ async def paged(
         filters: Filters the sync depends on, as ``{(name, alias...): value}``.
             A filter the tool does not take is an error, never dropped: a
             team's sync must not read the whole workspace.
-        limit: Most records to yield.
+        limit: Most records to yield, or None when the caller decides when to stop.
         extra: Optional arguments, sent only when the tool takes them.
 
     Raises:
@@ -262,7 +262,7 @@ async def paged(
         for record in items_of(payload, key):
             yield record
             yielded += 1
-            if yielded >= limit:
+            if limit is not None and yielded >= limit:
                 return
         cursor = next_cursor(payload)
         if not cursor or not cursor_name or cursor in seen:
