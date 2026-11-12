@@ -440,7 +440,13 @@ class BoxdSandbox(CodeSandbox):
                 return  # refuse to delete the workspace root itself
             self._client.machines.files.delete(handle.machine_id, remote)
         except Exception as exc:  # noqa: BLE001 - cleanup is best-effort, never raise
-            logger.debug("remove_path best-effort delete returned for %r: %s", path, exc)
+            from boxd.errors import NotFoundError
+
+            if isinstance(exc, (KeyError, NotFoundError)):
+                # No live handle, or the path is already gone: nothing was left behind.
+                logger.debug("remove_path found nothing to delete for %r: %s", path, exc)
+            else:
+                logger.warning("remove_path could not delete %r in session %s: %s", path, session_id, exc)
 
     # -- Execution -------------------------------------------------------
 
@@ -457,6 +463,9 @@ class BoxdSandbox(CodeSandbox):
         try:
             result = self._client.machines.exec(handle.machine_id, command, timeout=timeout)
         except Exception:
+            # Retrying is safe: _ensure_running returns True only when the machine was
+            # not running and had to be started, so the first attempt never ran the
+            # command. A failure on a running machine is raised as is, not retried.
             if not self._ensure_running(handle):
                 raise
             result = self._client.machines.exec(handle.machine_id, command, timeout=timeout)
@@ -726,15 +735,25 @@ class BoxdSandbox(CodeSandbox):
         remote = self._remote_path(handle.workspace, dest_path)
         self._keep(handle)
         try:
-            self._client.machines.files.upload(handle.machine_id, remote, data)
+            self._upload(handle, remote, data)
         except Exception as exc:  # noqa: BLE001 - classified below
             if self._ensure_running(handle):
                 try:
-                    self._client.machines.files.upload(handle.machine_id, remote, data)
+                    self._upload(handle, remote, data)
                     return
                 except Exception:  # noqa: BLE001 - second failure -> classified below
                     pass
             self._raise_file_error("put_file", dest_path, session_id, handle, exc)
+
+    def _upload(self, handle: _Handle, remote: str, data: bytes) -> None:
+        """Write ``data`` to the absolute path ``remote``; an empty file is created with a shell command."""
+        if data:
+            self._client.machines.files.upload(handle.machine_id, remote, data)
+            return
+        parent = shlex.quote(posixpath.dirname(remote))
+        output, exit_code = self._shell(handle, f"mkdir -p {parent} && : > {shlex.quote(remote)}", self._default_timeout)
+        if exit_code != 0:
+            raise IOError(f"creating an empty file exited with {exit_code}: {output.strip()[:200]}")
 
     def get_file(self, session_id: str, path: str) -> bytes:
         """Download ``path`` from the session workspace as bytes, capped at ``max_file_bytes``."""
