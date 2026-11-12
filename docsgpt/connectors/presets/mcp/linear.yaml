@@ -1,0 +1,11 @@
+key: mcp:linear
+rank: 20
+name: Linear
+description: Sync issues and documents into Knowledge, and let agents find, create and update issues.
+icon: linear
+category: projects
+mcp_url: https://mcp.linear.app/mcp
+auth_kind: mcp_oauth
+capabilities: [sync, read, write]
+sync_ingestor: linear
+docs_url: https://linear.app/docs/mcp

@@ -4,24 +4,33 @@
 // structured data's dateModified, so it must be present, real, and not in the
 // future. It fails on any of those.
 //
-// With --base <git ref> it also compares each page against that ref and warns
-// about pages whose content changed while lastUpdated did not. That is only a
-// warning: a typo fix or a link rename shouldn't move the date; a change a
-// reader would care about should.
+// With --base <git ref> it also compares each page against that ref and fails
+// when a page that already existed there has a different lastUpdated. A pull
+// request leaves the date of an existing page alone: the "Generated docs"
+// workflow dates pages on main after the merge (scripts/sync-dates.mjs), so
+// two pull requests that change the same page no longer conflict on that line.
+// A new page still arrives with its own date.
+//
+// On an existing page whose date is unchanged but whose text a reader sees
+// changed (readerText), it prints a notice and does not fail: the page will be
+// dated with the day of the merge, unless [keep-date] is in the pull request
+// title (read from PR_TITLE) or in the subject of every commit since --base
+// that changes the page (sync-dates.mjs keepsDate makes the same decision on
+// main). A rebase merge brings no pull request title to main, so there only the
+// commit subjects count.
 //
 //   node scripts/check-dates.mjs                 check every page
-//   node scripts/check-dates.mjs --base HEAD^1   also warn about changed, undated pages
+//   node scripts/check-dates.mjs --base HEAD^1   also compare each existing page with HEAD^1
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { KEEP_MARKER, keepsDate, PAGE_RE, readerText, readLastUpdated } from './sync-dates.mjs';
+
 const DOCS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONTENT_DIR = join(DOCS_ROOT, 'content');
-const PAGE_RE = /\.mdx?$/;
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?\r?\n)?---/;
-const FIELD_RE = /^lastUpdated:[ \t]*(['"]?)(\S*?)\1[ \t]*$/m;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const IN_CI = Boolean(process.env.GITHUB_ACTIONS);
 
@@ -37,17 +46,6 @@ function listPages(dir) {
     if (statSync(path).isDirectory()) return listPages(path);
     return PAGE_RE.test(name) ? [path] : [];
   });
-}
-
-/**
- * Reads a page's lastUpdated value as written.
- *
- * @param {string} text The page source.
- * @returns {string | undefined} The raw value, or undefined when the field is missing.
- */
-function readLastUpdated(text) {
-  const block = text.match(FRONTMATTER_RE)?.[1];
-  return block?.match(FIELD_RE)?.[2];
 }
 
 /**
@@ -73,7 +71,7 @@ function problemWith(value, latest) {
 /**
  * Prints a message, as a GitHub annotation on the file when running in Actions.
  *
- * @param {'error' | 'warning'} level The annotation level.
+ * @param {'error' | 'warning' | 'notice'} level The annotation level.
  * @param {string} file The page path, relative to the repository root.
  * @param {string} message What to say.
  */
@@ -97,6 +95,22 @@ function readAtRef(ref, file) {
   }
 }
 
+/**
+ * Lists the subject line of every commit since a ref that changed a file, merges left out.
+ *
+ * @param {string} ref The git ref the pull request is compared against.
+ * @param {string} file The path, relative to the repository root.
+ * @returns {string[]} The subjects, newest first.
+ */
+function subjectsSince(ref, file) {
+  const out = execFileSync('git', ['log', '--no-merges', '--format=%s', `${ref}..HEAD`, '--', file], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  return out.split('\n').filter(Boolean);
+}
+
 const baseIndex = process.argv.indexOf('--base');
 const base = baseIndex === -1 ? undefined : process.argv[baseIndex + 1];
 if (baseIndex !== -1 && !base) {
@@ -104,12 +118,22 @@ if (baseIndex !== -1 && !base) {
   process.exit(2);
 }
 
+if (base) {
+  // An unreadable ref would make every page look new, and so pass.
+  try {
+    execFileSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd: DOCS_ROOT, stdio: 'pipe' });
+  } catch {
+    console.error(`--base ${base} is not a commit in this clone`);
+    process.exit(2);
+  }
+}
+
 // A day of slack, so an author ahead of UTC can date a page with their own today.
 const latest = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: DOCS_ROOT, encoding: 'utf8' }).trim();
 
 let errors = 0;
-let warnings = 0;
+let redated = 0;
 for (const path of listPages(CONTENT_DIR).sort()) {
   const file = relative(repoRoot, path);
   const text = readFileSync(path, 'utf8');
@@ -122,17 +146,34 @@ for (const path of listPages(CONTENT_DIR).sort()) {
   }
   if (!base) continue;
   const before = readAtRef(base, file);
-  if (before === undefined || before === text) continue;
-  const undated = (source) => source.replace(FIELD_RE, '');
-  if (readLastUpdated(before) === value && undated(before) !== undated(text)) {
-    report('warning', file, `changed without moving lastUpdated (still ${value}); bump it if readers would care`);
-    warnings += 1;
+  if (before === undefined) continue;
+  const previous = readLastUpdated(before);
+  if (previous !== undefined && previous !== value) {
+    report(
+      'error',
+      file,
+      `has lastUpdated ${value}, changed from ${previous}. Put ${previous} back: pages are dated on main after ` +
+        'the merge, so pull requests leave the date of an existing page alone (see docs/AGENTS.md).',
+    );
+    redated += 1;
+  } else if (readerText(before) !== readerText(text)) {
+    const kept = keepsDate({ mergeMessage: process.env.PR_TITLE, subjects: subjectsSince(base, file) });
+    if (!kept) {
+      report(
+        'notice',
+        file,
+        'changed for readers, so after the merge it will be dated with the day of the merge. If a reader ' +
+          `would not notice the change, put ${KEEP_MARKER} in the pull request title or in the subject line of ` +
+          'each commit that changes the page.',
+      );
+    }
   }
 }
 
 const pages = listPages(CONTENT_DIR).length;
-if (errors) {
-  console.error(`${errors} of ${pages} pages have a missing or invalid lastUpdated date.`);
+if (errors || redated) {
+  if (errors) console.error(`${errors} of ${pages} pages have a missing or invalid lastUpdated date.`);
+  if (redated) console.error(`${redated} existing page(s) had their lastUpdated date changed.`);
   process.exit(1);
 }
-console.log(`lastUpdated is valid on all ${pages} pages${warnings ? `; ${warnings} changed page(s) kept their date` : ''}.`);
+console.log(`lastUpdated is valid on all ${pages} pages.`);

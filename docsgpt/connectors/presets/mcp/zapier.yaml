@@ -1,0 +1,10 @@
+key: mcp:zapier
+rank: 80
+name: Zapier
+description: Use the actions enabled in your Zapier MCP account to read or update connected apps.
+icon: zapier
+category: business
+mcp_url: https://mcp.zapier.com/api/v1/connect
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://docs.zapier.com/mcp/get-started/connect
