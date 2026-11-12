@@ -11,19 +11,26 @@
 // two pull requests that change the same page no longer conflict on that line.
 // A new page still arrives with its own date.
 //
+// On an existing page whose date is unchanged but whose text a reader sees
+// changed (readerText), it prints a notice and does not fail: the page will be
+// dated with the day of the merge, unless [keep-date] is in the pull request
+// title (read from PR_TITLE) or in the subject of every commit since --base
+// that changes the page (sync-dates.mjs keepsDate makes the same decision on
+// main). A rebase merge brings no pull request title to main, so there only the
+// commit subjects count.
+//
 //   node scripts/check-dates.mjs                 check every page
-//   node scripts/check-dates.mjs --base HEAD^1   also fail on a re-dated existing page
+//   node scripts/check-dates.mjs --base HEAD^1   also compare each existing page with HEAD^1
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { KEEP_MARKER, keepsDate, PAGE_RE, readerText, readLastUpdated } from './sync-dates.mjs';
+
 const DOCS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONTENT_DIR = join(DOCS_ROOT, 'content');
-const PAGE_RE = /\.mdx?$/;
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?\r?\n)?---/;
-const FIELD_RE = /^lastUpdated:[ \t]*(['"]?)(\S*?)\1[ \t]*$/m;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const IN_CI = Boolean(process.env.GITHUB_ACTIONS);
 
@@ -39,17 +46,6 @@ function listPages(dir) {
     if (statSync(path).isDirectory()) return listPages(path);
     return PAGE_RE.test(name) ? [path] : [];
   });
-}
-
-/**
- * Reads a page's lastUpdated value as written.
- *
- * @param {string} text The page source.
- * @returns {string | undefined} The raw value, or undefined when the field is missing.
- */
-function readLastUpdated(text) {
-  const block = text.match(FRONTMATTER_RE)?.[1];
-  return block?.match(FIELD_RE)?.[2];
 }
 
 /**
@@ -75,7 +71,7 @@ function problemWith(value, latest) {
 /**
  * Prints a message, as a GitHub annotation on the file when running in Actions.
  *
- * @param {'error' | 'warning'} level The annotation level.
+ * @param {'error' | 'warning' | 'notice'} level The annotation level.
  * @param {string} file The page path, relative to the repository root.
  * @param {string} message What to say.
  */
@@ -97,6 +93,22 @@ function readAtRef(ref, file) {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Lists the subject line of every commit since a ref that changed a file, merges left out.
+ *
+ * @param {string} ref The git ref the pull request is compared against.
+ * @param {string} file The path, relative to the repository root.
+ * @returns {string[]} The subjects, newest first.
+ */
+function subjectsSince(ref, file) {
+  const out = execFileSync('git', ['log', '--no-merges', '--format=%s', `${ref}..HEAD`, '--', file], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  return out.split('\n').filter(Boolean);
 }
 
 const baseIndex = process.argv.indexOf('--base');
@@ -144,6 +156,17 @@ for (const path of listPages(CONTENT_DIR).sort()) {
         'the merge, so pull requests leave the date of an existing page alone (see docs/AGENTS.md).',
     );
     redated += 1;
+  } else if (readerText(before) !== readerText(text)) {
+    const kept = keepsDate({ mergeMessage: process.env.PR_TITLE, subjects: subjectsSince(base, file) });
+    if (!kept) {
+      report(
+        'notice',
+        file,
+        'changed for readers, so after the merge it will be dated with the day of the merge. If a reader ' +
+          `would not notice the change, put ${KEEP_MARKER} in the pull request title or in the subject line of ` +
+          'each commit that changes the page.',
+      );
+    }
   }
 }
 

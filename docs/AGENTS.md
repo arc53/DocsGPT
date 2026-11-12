@@ -39,7 +39,11 @@ freshness signal.
   leaves no pull request title on `main`, so there only the commit subjects count.
 
 `npm run dates:check` fails on a missing, malformed or future date, and in CI on a pull
-request on an existing page whose date changed.
+request on an existing page whose date changed. On a pull request it also lists, as a notice
+that never fails, each existing page whose body changed without the marker: the page will be
+dated with the day of the merge. `npm run dates:check -- --base "$(git merge-base HEAD origin/main)"`
+shows the same notices locally (it reads the commit subjects; set `PR_TITLE` to include the
+title).
 
 ## Generated files
 

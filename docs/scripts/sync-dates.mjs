@@ -50,7 +50,7 @@ export const BASELINE = 'b5ae12715de289804884c2dc50b3f3b15252f037';
 export const KEEP_MARKER = '[keep-date]';
 
 const CONTENT = 'docs/content';
-const PAGE_RE = /\.mdx?$/;
+export const PAGE_RE = /\.mdx?$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?\r?\n)?---/;
 const FIELD_RE = /^lastUpdated:[ \t]*(['"]?)(\S*?)\1[ \t]*$/m;
 
