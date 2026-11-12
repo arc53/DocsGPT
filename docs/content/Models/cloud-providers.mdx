@@ -65,6 +65,7 @@ Each provider's models are registered when its key is set. `API_KEY` counts as t
 | `DEEPSEEK_API_KEY`    | DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`)  |
 | `DASHSCOPE_API_KEY`   | Alibaba Qwen (`qwen3.8-max`)                       |
 | `ZAI_API_KEY`         | Z.ai GLM (`glm-5.3`)                               |
+| `RUNCRATE_API_KEY`    | Runcrate (`deepseek-ai/DeepSeek-V4-Flash`, `moonshotai/Kimi-K2.6`, ...) |
 
 `LLM_PROVIDER` still decides the default. With `LLM_PROVIDER=openai`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` both set, both providers appear in the picker and `gpt-5.5` is the default. To make a DeepSeek, Qwen or GLM model the default, set `LLM_NAME` to its id (for example `LLM_NAME=deepseek-v4-flash`).
 
