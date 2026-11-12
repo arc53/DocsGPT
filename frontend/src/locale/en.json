@@ -2364,6 +2364,7 @@
         "tokenLabel": "Your token",
         "toolCreated": "Tool created. Find it in Settings › Tools and add it to an agent.",
         "toolFailed": "Could not create the tool.",
+        "toolSomeOff": "Deleting, and asking another agent, start switched off. Turn those actions on in the tool if you want them.",
         "usageHint": "Export it as an environment variable, then send it as a Bearer token in the Authorization header.",
         "usageTitle": "How to use it",
         "warning": "Copy the token now and store it somewhere safe. For security reasons it won't be shown again."

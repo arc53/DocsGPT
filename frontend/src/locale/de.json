@@ -2343,6 +2343,7 @@
         "tokenLabel": "Dein Token",
         "toolCreated": "Tool erstellt. Du findest es unter Einstellungen › Tools und kannst es einem Agenten hinzufügen.",
         "toolFailed": "Das Tool konnte nicht erstellt werden.",
+        "toolSomeOff": "Löschen und das Befragen eines anderen Agenten sind zunächst ausgeschaltet. Schalte diese Aktionen bei Bedarf im Tool ein.",
         "usageHint": "Exportiere es als Umgebungsvariable und sende es als Bearer-Token im Authorization-Header.",
         "usageTitle": "So verwendest du es",
         "warning": "Kopiere das Token jetzt und bewahre es an einem sicheren Ort auf. Aus Sicherheitsgründen wird es nicht noch einmal angezeigt."

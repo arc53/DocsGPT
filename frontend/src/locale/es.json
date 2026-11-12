@@ -2389,6 +2389,7 @@
         "tokenLabel": "Tu token",
         "toolCreated": "Herramienta creada. Está en Ajustes › Herramientas; añádela a un agente.",
         "toolFailed": "No se pudo crear la herramienta.",
+        "toolSomeOff": "Eliminar y preguntar a otro agente empiezan desactivados. Activa esas acciones en la herramienta si las necesitas.",
         "usageHint": "Expórtalo como variable de entorno y envíalo como token Bearer en la cabecera Authorization.",
         "usageTitle": "Cómo usarlo",
         "warning": "Copia el token ahora y guárdalo en un lugar seguro. Por motivos de seguridad no se volverá a mostrar."

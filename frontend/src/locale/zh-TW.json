@@ -2331,6 +2331,7 @@
         "tokenLabel": "您的權杖",
         "toolCreated": "工具已建立。可在 設定 › 工具 中找到，並加入智慧體。",
         "toolFailed": "無法建立工具。",
+        "toolSomeOff": "刪除和向其他智慧體提問的動作預設為關閉。如有需要，請在工具中開啟這些動作。",
         "usageHint": "將其匯出為環境變數，然後在 Authorization 標頭中作為 Bearer 權杖傳送。",
         "usageTitle": "使用方式",
         "warning": "請立即複製權杖並妥善保存。基於安全考量，它不會再次顯示。"

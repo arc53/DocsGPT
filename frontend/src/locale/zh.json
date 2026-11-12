@@ -2330,6 +2330,7 @@
         "tokenLabel": "您的令牌",
         "toolCreated": "工具已创建。可在 设置 › 工具 中找到，并添加到智能体。",
         "toolFailed": "无法创建工具。",
+        "toolSomeOff": "删除和向其他智能体提问的操作默认关闭。如有需要，请在工具中开启这些操作。",
         "usageHint": "将其导出为环境变量，然后在 Authorization 请求头中作为 Bearer 令牌发送。",
         "usageTitle": "使用方法",
         "warning": "请立即复制令牌并妥善保存。出于安全考虑，它不会再次显示。"

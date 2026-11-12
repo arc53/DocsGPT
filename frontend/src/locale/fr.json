@@ -2389,6 +2389,7 @@
         "tokenLabel": "Votre jeton",
         "toolCreated": "Outil créé. Retrouvez-le dans Paramètres › Outils et ajoutez-le à un agent.",
         "toolFailed": "Impossible de créer l'outil.",
+        "toolSomeOff": "La suppression et l’interrogation d’un autre agent sont désactivées au départ. Activez ces actions dans l’outil si besoin.",
         "usageHint": "Exportez-le comme variable d’environnement, puis envoyez-le comme jeton Bearer dans l’en-tête Authorization.",
         "usageTitle": "Utilisation",
         "warning": "Copiez le jeton maintenant et conservez-le en lieu sûr. Pour des raisons de sécurité, il ne sera plus affiché."
