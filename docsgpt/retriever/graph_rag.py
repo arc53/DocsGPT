@@ -29,7 +29,7 @@ import networkx as nx
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.graphrag.store import GraphStore
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text, expand_to_parent
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.storage.db.source_config import GraphRetrievalConfig
@@ -595,25 +595,53 @@ class GraphRAGRetriever(BaseRetriever):
         pool_budget = max(int(max(self.doc_token_limit, self.candidate_tokens or 0) * 0.9), 100)
         pool_tokens = 0
         selected = 0
-        in_selection, in_pool = True, pooled
+        # Tracks parent windows already added so sibling children produced by the
+        # parent_child chunking strategy don't repeat the same passage.
+        seen_parents: set = set()
         for text, metadata in candidates:
-            in_selection = in_selection and selected < source_top_k
-            in_pool = in_pool and len(docs) < pool_k
+            in_selection = selected < source_top_k and cumulative_tokens < token_budget
+            in_pool = pooled and len(docs) < pool_k and pool_tokens < pool_budget
             if not in_selection and not in_pool:
                 break
+
+            # Parent-child expansion: substitute the larger parent window for the
+            # narrow child chunk that was embedded (no-op for other strategies).
+            effective_text = expand_to_parent(metadata, text)
+
+            # Deduplication: sibling children sharing the same parent expand to
+            # identical text — keep only the first (highest-ranked) occurrence.
+            parent_text = (metadata or {}).get("parent_text")
+            parent_key = None
+            if isinstance(parent_text, str) and parent_text:
+                meta = metadata or {}
+                identities = [meta.get(key) for key in ("source", "filename", "file_name", "title", "post_title")]
+                source_key = next(
+                    (identity for identity in identities if isinstance(identity, str) and identity), None
+                )
+                if source_key is not None:
+                    parent_key = (source_id, source_key, parent_text)
+                    if parent_key in seen_parents:
+                        continue
+
             labels = labels_from_metadata(metadata, text, source_id)
             attribution = self._connector_labels.for_source(source_id, metadata)
-            doc_tokens = num_tokens_from_string(budget_text(labels["filename"], text, attribution.get("source_name")))
-            in_selection = in_selection and cumulative_tokens + doc_tokens < token_budget
-            in_pool = in_pool and pool_tokens + doc_tokens < pool_budget
-            if not in_selection and not in_pool:
-                break
-            doc = {"text": text, **labels, **attribution}
+            doc_tokens = num_tokens_from_string(
+                budget_text(labels["filename"], effective_text, attribution.get("source_name"))
+            )
+            selected_candidate = in_selection and cumulative_tokens + doc_tokens < token_budget
+            pooled_candidate = in_pool and pool_tokens + doc_tokens < pool_budget
+            if not selected_candidate and not pooled_candidate:
+                continue
+            if parent_key is not None:
+                seen_parents.add(parent_key)
+            doc = {"text": effective_text, **labels, **attribution}
+            if effective_text != text:
+                doc["matched_text"] = text
             if pooled:
-                doc["_base"] = in_selection
+                doc["_base"] = selected_candidate
                 pool_tokens += doc_tokens
             docs.append(doc)
-            if in_selection:
+            if selected_candidate:
                 cumulative_tokens += doc_tokens
                 selected += 1
         return docs

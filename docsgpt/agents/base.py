@@ -1762,7 +1762,7 @@ class BaseAgent(ABC):
         docs = getattr(self, "retrieved_docs", None) or []
         if decision.blocked:
             self.retrieved_docs = [
-                {**doc, "text": self.RETRIEVAL_WITHHELD_TEXT}
+                self._retrieval_doc_with_guarded_text(doc, self.RETRIEVAL_WITHHELD_TEXT)
                 if isinstance(doc, dict)
                 else doc
                 for doc in docs
@@ -1791,9 +1791,24 @@ class BaseAgent(ABC):
                 str(doc["text"]), Stage.RETRIEVAL, controls=redacting
             )
             scrubbed.append(
-                {**doc, "text": per_doc.text} if per_doc.redacted else doc
+                self._retrieval_doc_with_guarded_text(doc, per_doc.text) if per_doc.redacted else doc
             )
         self.retrieved_docs = scrubbed
+
+    @staticmethod
+    def _retrieval_doc_with_guarded_text(doc: Dict, text: str) -> Dict:
+        """Replace a guarded document's text and discard its unscreened child snippet.
+
+        Args:
+            doc: A retrieved document whose text was blocked or redacted.
+            text: The withheld or redacted text to retain.
+
+        Returns:
+            A copy with guarded ``text`` and no stale ``matched_text``.
+        """
+        guarded = {**doc, "text": text}
+        guarded.pop("matched_text", None)
+        return guarded
 
     EMBEDDED_WITHHELD_ERROR = (
         "Retrieved sources were withheld by a content policy and this "
@@ -1858,7 +1873,10 @@ class BaseAgent(ABC):
             text = doc.get("text") if isinstance(doc, dict) else None
             decision = cache.get(key(doc)) if isinstance(text, str) else None
             if decision is not None and decision.blocked and not doc.get("withheld"):
-                doc = {**doc, "text": self.RETRIEVAL_WITHHELD_TEXT, "withheld": "policy"}
+                doc = {
+                    **self._retrieval_doc_with_guarded_text(doc, self.RETRIEVAL_WITHHELD_TEXT),
+                    "withheld": "policy",
+                }
             name = one_line(doc.get("source_name")) if isinstance(doc, dict) else ""
             if name and self._source_name_blocked(str(doc.get("source_id") or ""), name):
                 doc = {k: v for k, v in doc.items() if k != "source_name"}

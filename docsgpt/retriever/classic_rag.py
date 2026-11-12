@@ -8,7 +8,7 @@ from docsgpt.tracing.retrieval import (
     start_source_search_span,
 )
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text, expand_to_parent
 from docsgpt.retriever.fanout import fetch_per_source, max_parallel_sources
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.utils import num_tokens_from_string
@@ -352,6 +352,9 @@ class ClassicRAG(BaseRetriever):
             return []
 
         all_docs = []
+        # Tracks parent windows already added so sibling children produced by the
+        # parent_child chunking strategy don't repeat the same passage N times.
+        seen_parents: set = set()
         # The Dispatcher inflates ``chunks`` to a prescreen source's candidate_k
         # so the fetch is large enough for the screening stage. That inflated
         # number must not become the top-k of the *other* sources in the group,
@@ -420,20 +423,48 @@ class ClassicRAG(BaseRetriever):
                         page_content = doc.get("text", doc.get("page_content", ""))
                         metadata = doc.get("metadata", {})
 
+                    # Parent-child expansion: substitute the larger parent window
+                    # for the narrow child chunk that was embedded, so the LLM
+                    # receives richer context.  For every other chunking strategy
+                    # expand_to_parent is a no-op (no "parent_text" key → returns
+                    # page_content unchanged).
+                    effective_text = expand_to_parent(metadata, page_content)
+
+                    # Deduplication: sibling children of the same parent window
+                    # all expand to identical text.  Keep only the first (highest-
+                    # ranked) one and skip the rest to avoid sending the same
+                    # passage multiple times.
+                    parent_text = (metadata or {}).get("parent_text")
+                    parent_key = None
+                    if isinstance(parent_text, str) and parent_text:
+                        meta = metadata or {}
+                        identities = [meta.get(key) for key in ("source", "filename", "file_name", "title", "post_title")]
+                        source_key = next(
+                            (identity for identity in identities if isinstance(identity, str) and identity), None
+                        )
+                        if source_key is not None:
+                            parent_key = (vectorstore_id, source_key, parent_text)
+                            if parent_key in seen_parents:
+                                continue
+
                     labels = labels_from_metadata(metadata, page_content, vectorstore_id)
                     attribution = self._connector_labels.for_source(vectorstore_id, metadata)
 
                     doc_tokens = num_tokens_from_string(
-                        budget_text(labels["filename"], page_content, attribution.get("source_name"))
+                        budget_text(labels["filename"], effective_text, attribution.get("source_name"))
                     )
 
                     selected = in_selection and cumulative_tokens + doc_tokens < token_budget
                     if selected or (in_pool and pool_tokens + doc_tokens < pool_budget):
+                        if parent_key is not None:
+                            seen_parents.add(parent_key)
                         entry = {
-                            "text": page_content,
+                            "text": effective_text,
                             **labels,
                             **attribution,
                         }
+                        if effective_text != page_content:
+                            entry["matched_text"] = page_content
                         if self.include_scores:
                             entry["score"] = score
                             entry["score_kind"] = score_kind

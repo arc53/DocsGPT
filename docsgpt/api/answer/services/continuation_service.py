@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from sqlalchemy import Connection
 
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
@@ -201,8 +202,9 @@ def retire_paused_message(conn: Connection, state: Mapping[str, Any], reason: st
     if exposed:
         response, thought, tool_calls = secret_refs.redact((response, thought, tool_calls), exposed)
 
-    sources = [dict(doc) for doc in (agent_config.get("retrieved_docs") or partial["sources"] or [])
-               if isinstance(doc, dict)]
+    sources = client_sources(
+        [doc for doc in (agent_config.get("retrieved_docs") or partial["sources"] or []) if isinstance(doc, dict)]
+    )
     for source in sources:
         if isinstance(source.get("text"), str):
             source["text"] = source["text"][:1000]

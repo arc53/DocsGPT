@@ -555,6 +555,48 @@ class TestAttribution:
         # The caller's chunks still carry the name for the prompt.
         assert docs[0]["source_name"] == "test-1"
 
+    def test_client_sources_use_matched_text_for_the_snippet(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "PARENT CHILD", "matched_text": "CHILD", "filename": "a.pdf"}]
+
+        sent = client_sources(docs)
+
+        assert sent == [{"text": "CHILD", "filename": "a.pdf"}]
+        assert docs[0]["text"] == "PARENT CHILD"
+        assert docs[0]["matched_text"] == "CHILD"
+
+    @pytest.mark.parametrize("matched", [None, ""])
+    def test_client_sources_ignore_empty_matched_text(self, matched):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "PARENT", "matched_text": matched, "filename": "a.pdf"}]
+
+        assert client_sources(docs) == [{"text": "PARENT", "filename": "a.pdf"}]
+
+    def test_client_sources_are_idempotent(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "PARENT CHILD", "matched_text": "CHILD", "filename": "a.pdf"}]
+
+        once = client_sources(docs)
+
+        assert client_sources(once) == once
+
+    def test_client_sources_ignore_matched_text_not_in_current_text(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "Guardrail-screened parent", "matched_text": "raw child", "filename": "a.pdf"}]
+
+        assert client_sources(docs) == [{"text": "Guardrail-screened parent", "filename": "a.pdf"}]
+
+    def test_client_sources_without_matched_text_are_unchanged(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "standalone chunk", "filename": "a.pdf"}]
+
+        assert client_sources(docs) == docs
+
     @pytest.mark.parametrize("docs", [None, [], "oops"])
     def test_client_sources_pass_non_lists_through(self, docs):
         from docsgpt.connectors.attribution import client_sources
