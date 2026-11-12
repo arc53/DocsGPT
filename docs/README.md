@@ -64,8 +64,9 @@ that already exists.
 Every page sets `title`, `description` and `lastUpdated` (`YYYY-MM-DD`). `lastUpdated` is
 shown at the bottom of the page and becomes the sitemap's `lastmod`. A new page gets today's
 date. On a page that already exists you leave it alone: after your change merges, the
-"Generated docs" workflow dates the page with the day its content changed. [AGENTS.md](AGENTS.md)
-has the full rule. CI fails on a missing, malformed or future date and, on pull requests, on
+"Generated docs" workflow dates the page with the day its content changed. For a change a
+reader would not notice, such as a typo, put `[keep-date]` in the pull request title or in the
+subject line of every commit that changes the page. [AGENTS.md](AGENTS.md) has the full rule. CI fails on a missing, malformed or future date and, on pull requests, on
 an existing page whose date was changed:
 
 ```bash

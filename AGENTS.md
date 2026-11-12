@@ -218,7 +218,10 @@ cd docs && npm run dates:check && npm run build
 
 Read `docs/AGENTS.md` first. Leave the `lastUpdated` date of an existing page alone (a new
 page gets today's date) and leave the generated files alone: the "Generated docs" workflow
-updates both on `main` after the merge, and CI fails a pull request that changes them.
+updates both on `main` after the merge, and CI fails a pull request that changes them. For a
+docs change a reader would not notice (a typo, wording polish), put `[keep-date]` in the pull
+request title or in the subject line of every commit that changes the page, so the page keeps
+its date; `docs/AGENTS.md` has the details.
 
 If Vale is installed locally and you edited prose, also run:
 

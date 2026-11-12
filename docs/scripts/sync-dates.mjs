@@ -26,9 +26,14 @@
 //     after the frontmatter counts, with whitespace collapsed (readerText), so
 //     a frontmatter edit, a reflowed paragraph or a trailing newline is passed
 //     over;
-//   - an entry whose commits all say [keep-date] is passed over. That is how
-//     an author says "readers would not notice": a typo, wording polish, a
-//     renamed link target.
+//   - an entry that says [keep-date] is passed over. That is how an author
+//     says "readers would not notice": a typo, wording polish, a renamed link
+//     target. A merge commit says it when its message (which carries the pull
+//     request's title) has the marker, or when the subject line of every commit
+//     it brought in that changed the page has it; a squash merge or a direct
+//     push, when its own subject line has it. Commit bodies never count: a
+//     squash merge's body lists every squashed commit, so only its subject
+//     (the pull request's title) speaks for all of them. See keepsDate.
 //
 //   node scripts/sync-dates.mjs           print the dates that would move
 //   node scripts/sync-dates.mjs --write   move them
@@ -106,21 +111,40 @@ function gitIn(cwd) {
 }
 
 /**
- * Says whether every commit an entry brought in for a page asks to keep its date.
+ * Says whether a page keeps its date for the changes a pull request (or push) made to it.
+ *
+ * Only places that land on main as written count: the pull request's title,
+ * which a merge commit's message carries, and each commit's subject line. A
+ * squash merge's subject is the pull request title; its body lists every
+ * squashed commit and is ignored, so one commit's marker cannot cover the rest.
+ *
+ * @param {{ mergeMessage?: string, subjects: string[] }} changes The merge commit's full message (or a
+ *   pull request's title), when there is one, and the subject of every other commit that changed the page.
+ * @returns {boolean} True when the merge message, or every one of at least one subject, carries the marker.
+ */
+export function keepsDate({ mergeMessage, subjects }) {
+  if (mergeMessage?.includes(KEEP_MARKER)) return true;
+  return subjects.length > 0 && subjects.every((subject) => subject.includes(KEEP_MARKER));
+}
+
+/**
+ * Says whether a page keeps its date for one entry of main's history.
  *
  * @param {(args: string[]) => string} run The git runner.
  * @param {string} commit A first-parent commit of main.
  * @param {string} file The page path, relative to the repository root.
- * @returns {boolean} True when each commit touching the page carries the marker.
+ * @returns {boolean} The keepsDate decision for that entry.
  */
-function keepsDate(run, commit, file) {
-  const messages = run(['log', '--no-merges', '--format=%B%x00', `${commit}^1..${commit}`, '--', file])
-    .split('\0')
-    .map((message) => message.trim())
+function entryKeepsDate(run, commit, file) {
+  const parents = run(['log', '-1', '--format=%P', commit]).trim().split(' ');
+  if (parents.length < 2) {
+    // A direct push or a squash merge: its own subject line.
+    return keepsDate({ subjects: [run(['log', '-1', '--format=%s', commit]).trim()] });
+  }
+  const subjects = run(['log', '--no-merges', '--format=%s', `${commit}^1..${commit}`, '--', file])
+    .split('\n')
     .filter(Boolean);
-  // A direct push or a squash merge is its own single commit.
-  const all = messages.length ? messages : [run(['log', '-1', '--format=%B', commit])];
-  return all.every((message) => message.includes(KEEP_MARKER));
+  return keepsDate({ mergeMessage: run(['log', '-1', '--format=%B', commit]), subjects });
 }
 
 /**
@@ -166,7 +190,7 @@ export function planDates({ root, since = BASELINE, head = 'HEAD' }) {
         if (set !== undefined && set >= day) settled.add(file);
         continue;
       }
-      if (readerText(before) === readerText(after) || keepsDate(run, commit, file)) continue;
+      if (readerText(before) === readerText(after) || entryKeepsDate(run, commit, file)) continue;
       settled.add(file);
       const from = readLastUpdated(current);
       if (from !== undefined && from < day) moves.push({ file, from, to: day, commit });

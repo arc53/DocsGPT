@@ -31,9 +31,12 @@ freshness signal.
   `description`) or one that only reflows lines leaves the date alone by itself. Two pull
   requests that each bumped the same page used to conflict on this one line; `npm run
   dates:check` now fails a pull request that changes it.
-- **For an edit a reader would not notice** (a typo, wording polish, formatting, a link
-  target renamed across many pages), put `[keep-date]` in the commit message. A page keeps
-  its date when every commit that touched it in the pull request says so.
+- **For an edit a reader would not notice** (a typo, wording polish, a link target renamed
+  across many pages), put `[keep-date]` in the pull request title, or in the subject line
+  (the first line) of every commit that changes the page. A commit body does not count. With
+  a squash merge of several commits only the pull request title counts: the squash commit's
+  body lists every commit, so one commit's marker cannot speak for the rest. A rebase merge
+  leaves no pull request title on `main`, so there only the commit subjects count.
 
 `npm run dates:check` fails on a missing, malformed or future date, and in CI on a pull
 request on an existing page whose date changed.

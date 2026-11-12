@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 
-import { planDates, readerText, readLastUpdated, setLastUpdated } from './sync-dates.mjs';
+import { keepsDate, planDates, readerText, readLastUpdated, setLastUpdated } from './sync-dates.mjs';
 
 const PAGE = 'docs/content/guide.mdx';
 let root;
@@ -36,12 +36,15 @@ function commit(message, files) {
   return git('rev-parse', 'HEAD');
 }
 
-/** Merges a branch made of the given commits into main, the way a pull request lands. */
-function mergePullRequest(commits) {
+/**
+ * Merges a branch made of the given commits into main, the way a pull request
+ * lands with a merge commit: GitHub's message carries the pull request's title.
+ */
+function mergePullRequest(commits, title = 'docs: a change') {
   git('switch', '-q', '-c', 'feature');
   for (const [message, files] of commits) commit(message, files);
   git('switch', '-q', 'main');
-  git('merge', '-q', '--no-ff', '-m', 'Merge pull request #1', 'feature');
+  git('merge', '-q', '--no-ff', '-m', `Merge pull request #1 from arc53/feature\n\n${title}`, 'feature');
   clock += 1;
   git('branch', '-q', '-D', 'feature');
   return git('rev-parse', 'HEAD');
@@ -173,6 +176,34 @@ test('[keep-date] on another page in the pull request does not cover this one', 
   assert.deepEqual(planDates({ root, since }).map((move) => move.file), [PAGE]);
 });
 
+test('a merge whose pull request title says [keep-date] is passed over', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
+  mergePullRequest([['docs: wording', { [PAGE]: page('2026-01-01', 'New.') }]], 'docs: typos [keep-date]');
+
+  assert.deepEqual(planDates({ root, since }), []);
+});
+
+test('[keep-date] in a commit body does not count', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
+  mergePullRequest([['docs: wording\n\nReaders will not notice. [keep-date]', { [PAGE]: page('2026-01-01', 'New.') }]]);
+
+  assert.equal(planDates({ root, since }).length, 1);
+});
+
+test('a squash merge whose title says [keep-date] is passed over', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
+  commit('docs: typos [keep-date] (#5)\n\n* docs: typo\n\n* docs: another', { [PAGE]: page('2026-01-01', 'New.') });
+
+  assert.deepEqual(planDates({ root, since }), []);
+});
+
+test('[keep-date] on one commit listed in a squash merge body does not cover the squash', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
+  commit('docs: new step (#5)\n\n* docs: new step\n\n* docs: typo [keep-date]', { [PAGE]: page('2026-01-01', 'New.') });
+
+  assert.equal(planDates({ root, since }).length, 1);
+});
+
 test('a kept-date fix on top of an undated change still leaves the change to date', () => {
   const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
   const change = commit('docs: new step', { [PAGE]: page('2026-01-01', 'New step.') });
@@ -227,6 +258,14 @@ test('setLastUpdated changes only the date line', () => {
 
   assert.equal(readLastUpdated(dated), '2026-05-05');
   assert.equal(dated, text.replace('lastUpdated: 2026-01-01', 'lastUpdated: 2026-05-05'));
+});
+
+test('keepsDate: the merge message, or every subject', () => {
+  assert.equal(keepsDate({ mergeMessage: 'Merge pull request #1\n\nTypos [keep-date]', subjects: ['x'] }), true);
+  assert.equal(keepsDate({ subjects: ['a [keep-date]', 'b [keep-date]'] }), true);
+  assert.equal(keepsDate({ subjects: ['a [keep-date]', 'b'] }), false);
+  assert.equal(keepsDate({ mergeMessage: 'Merge pull request #1', subjects: [] }), false);
+  assert.equal(keepsDate({ subjects: [] }), false);
 });
 
 test('readerText is the body with its whitespace collapsed', () => {
