@@ -11,9 +11,16 @@
 // For every page it walks main's own history (first parents: one entry per
 // merged pull request or direct push), newest first, from HEAD back to the
 // baseline below:
-//   - an entry that set the page's lastUpdated ends the walk: the date is
-//     current as of that entry (a new page, a hand-set date, or an earlier
-//     run of this script);
+//   - the entry that added the page ends the walk: a new page keeps the date
+//     it arrived with;
+//   - an entry that set the page's lastUpdated to its own day or later ends
+//     the walk: the date is current as of that entry, so no older change can
+//     be newer;
+//   - an entry that set an older date is passed over, and is not taken as a
+//     content change either. A "Generated docs" pull request opened before a
+//     later content change merged would otherwise hide that change for good,
+//     and a generated page, which its generator dates when its content changes,
+//     would be dated with the day the bot's pull request merged;
 //   - an entry that changed the page's content without setting the date dates
 //     the page with that entry's day (UTC), and ends the walk;
 //   - an entry whose commits all say [keep-date] is passed over. That is how
@@ -136,8 +143,14 @@ export function planDates({ root, since = BASELINE, head = 'HEAD' }) {
         continue;
       }
       const before = show(`${commit}^1`, file);
-      if (before === undefined || readLastUpdated(before) !== readLastUpdated(after)) {
+      if (before === undefined) {
         settled.add(file);
+        continue;
+      }
+      const set = readLastUpdated(after);
+      if (readLastUpdated(before) !== set) {
+        // A date older than its entry was stale when it merged: look further back.
+        if (set !== undefined && set >= day) settled.add(file);
         continue;
       }
       if (withoutDate(before) === withoutDate(after) || keepsDate(run, commit, file)) continue;

@@ -73,11 +73,35 @@ test('a direct push dates the page too', () => {
   assert.equal(planDates({ root, since })[0].to, '2026-03-02');
 });
 
-test('a change that set the date itself is left alone', () => {
+test('a change that set the date to the day it merged is left alone', () => {
   const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
-  mergePullRequest([['docs: new step', { [PAGE]: page('2026-02-02', 'New.') }]]);
+  // branch commit 03-02, merge 03-03
+  mergePullRequest([['docs: new step', { [PAGE]: page('2026-03-03', 'New.') }]]);
 
   assert.deepEqual(planDates({ root, since }), []);
+});
+
+test('a change that set an older date is not dated with the day it merged', () => {
+  // The settings reference: its generator sets the date when the content changes,
+  // and the bot's pull request merges days later.
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
+  mergePullRequest([['Update the generated docs files', { [PAGE]: page('2026-03-02', 'New.') }]]);
+
+  assert.deepEqual(planDates({ root, since }), []);
+});
+
+test('a stale generated-docs merge after a content change still leaves the change to date', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
+  commit('docs: first change', { [PAGE]: page('2026-01-01', 'First.') });
+  // The bot opens its pull request (dating the first change) before the second change merges.
+  git('switch', '-q', '-c', 'generated-docs');
+  commit('Update the generated docs files', { [PAGE]: page('2026-03-02', 'First.') });
+  git('switch', '-q', 'main');
+  const change = commit('docs: second change', { [PAGE]: page('2026-01-01', 'Second.') });
+  git('merge', '-q', '--no-ff', '-m', 'Merge pull request #2 from arc53/generated-docs', 'generated-docs');
+
+  // second change 03-04; the merge (03-05) set 2026-03-02, older than itself
+  assert.deepEqual(planDates({ root, since }), [{ file: PAGE, from: '2026-03-02', to: '2026-03-04', commit: change }]);
 });
 
 test('a new page keeps the date it arrived with', () => {
@@ -134,10 +158,12 @@ test('a kept-date fix on top of an undated change still leaves the change to dat
   assert.deepEqual(planDates({ root, since }), [{ file: PAGE, from: '2026-01-01', to: '2026-03-02', commit: change }]);
 });
 
-test('the walk stops at the last entry that set the date', () => {
+test('the walk stops at the last entry that set the date to its own day or later', () => {
   const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
   commit('docs: undated change', { [PAGE]: page('2026-01-01', 'Change one.') });
-  commit('Update the generated docs files', { [PAGE]: page('2026-03-02', 'Change one.') });
+  commit('docs: date it by hand', { [PAGE]: page('2026-03-03', 'Change one.') });
+  // A stale date on top is passed over; the walk stops at 03-03 and never reaches the 03-02 change.
+  commit('Update the generated docs files', { [PAGE]: page('2026-01-15', 'Change one.') });
 
   assert.deepEqual(planDates({ root, since }), []);
 });
