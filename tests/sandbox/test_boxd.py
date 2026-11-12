@@ -759,6 +759,61 @@ def test_use_pushes_the_timer_forward_at_most_every_quarter(fake_sdk, monkeypatc
     _machines(box).set_delete_after.assert_called_once_with("m-1", 3600)
 
 
+def test_a_long_run_pushes_the_timer_forward_when_it_ends(fake_sdk, monkeypatch):
+    from docsgpt.sandbox import boxd as mod
+
+    now = [1000.0]
+    monkeypatch.setattr(mod.time, "monotonic", lambda: now[0])
+    box = mod.BoxdSandbox(api_key="k", delete_after=1660)
+    box.open("conv-1")
+
+    def a_run_of_1000_seconds(command):
+        _machines(box).set_delete_after.assert_not_called()  # just created: no refresh at the start
+        now[0] += 1000
+        return _FakeExecResult(stdout="done\n")
+
+    _machines(box).handler = a_run_of_1000_seconds
+    assert box.exec("conv-1", "print('done')", timeout=1000).ok
+    _machines(box).set_delete_after.assert_called_once_with("m-1", 1660)
+    assert box._get_handle("conv-1").kept_at == 2000.0
+
+
+def test_a_run_that_timed_out_pushes_the_timer_forward(fake_sdk, monkeypatch):
+    from docsgpt.sandbox import boxd as mod
+
+    now = [1000.0]
+    monkeypatch.setattr(mod.time, "monotonic", lambda: now[0])
+    box = mod.BoxdSandbox(api_key="k", delete_after=1660)
+    box.open("conv-1")
+
+    def the_call_gives_up(command):
+        now[0] += 1030
+        raise TimeoutError("no reply")
+
+    _machines(box).handler = the_call_gives_up
+    result = box.exec("conv-1", "import time; time.sleep(5000)", timeout=1000)
+    assert result.error_name == "TimeoutError" and not result.runtime_invalidated
+    _machines(box).set_delete_after.assert_called_once_with("m-1", 1660)
+
+
+def test_a_run_on_a_machine_that_is_gone_does_not_touch_the_timer(fake_sdk, monkeypatch):
+    from docsgpt.sandbox import boxd as mod
+
+    now = [1000.0]
+    monkeypatch.setattr(mod.time, "monotonic", lambda: now[0])
+    box = mod.BoxdSandbox(api_key="k", delete_after=1660)
+    box.open("conv-1")
+
+    def the_machine_is_deleted_meanwhile(command):
+        now[0] += 1030
+        _machines(box).machines.pop("m-1")
+        raise _NotFoundError("m-1")
+
+    _machines(box).handler = the_machine_is_deleted_meanwhile
+    assert box.exec("conv-1", "print(1)", timeout=1000).runtime_invalidated
+    _machines(box).set_delete_after.assert_not_called()
+
+
 def test_a_reattached_machine_gets_its_timer_pushed_forward(fake_sdk):
     from docsgpt.sandbox.boxd import BoxdSandbox
 

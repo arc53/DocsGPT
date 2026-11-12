@@ -63,6 +63,8 @@ def box():
     print(f"\nopened machine {opened.handle} in {time.monotonic() - started:.2f}s (created={opened.created})")
     assert opened.created is True
     yield backend
+    # A no-op after test_close_deletes_the_machine; deletes the machine when a run stops before it.
+    backend.close(SESSION)
 
 
 def test_a_run_prints_its_output(box):
