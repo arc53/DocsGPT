@@ -21,8 +21,11 @@
 //     later content change merged would otherwise hide that change for good,
 //     and a generated page, which its generator dates when its content changes,
 //     would be dated with the day the bot's pull request merged;
-//   - an entry that changed the page's content without setting the date dates
-//     the page with that entry's day (UTC), and ends the walk;
+//   - an entry that changed what a reader sees without setting the date dates
+//     the page with that entry's day (UTC), and ends the walk. Only the body
+//     after the frontmatter counts, with whitespace collapsed (readerText), so
+//     a frontmatter edit, a reflowed paragraph or a trailing newline is passed
+//     over;
 //   - an entry whose commits all say [keep-date] is passed over. That is how
 //     an author says "readers would not notice": a typo, wording polish, a
 //     renamed link target.
@@ -71,7 +74,17 @@ export function setLastUpdated(text, day) {
   return `---${eol}${block}---${text.slice(frontmatter[0].length)}`;
 }
 
-const withoutDate = (text) => text.replace(FIELD_RE, '');
+/**
+ * Returns what a reader sees of a page: the body after the frontmatter, with
+ * every run of whitespace collapsed to one space. Two versions that compare
+ * equal differ only in frontmatter or formatting a reader would not notice.
+ *
+ * @param {string} text The page source.
+ * @returns {string} The body, whitespace collapsed and trimmed.
+ */
+export function readerText(text) {
+  return text.replace(FRONTMATTER_RE, '').replace(/\s+/g, ' ').trim();
+}
 
 /**
  * Builds the git helpers for one repository.
@@ -153,7 +166,7 @@ export function planDates({ root, since = BASELINE, head = 'HEAD' }) {
         if (set !== undefined && set >= day) settled.add(file);
         continue;
       }
-      if (withoutDate(before) === withoutDate(after) || keepsDate(run, commit, file)) continue;
+      if (readerText(before) === readerText(after) || keepsDate(run, commit, file)) continue;
       settled.add(file);
       const from = readLastUpdated(current);
       if (from !== undefined && from < day) moves.push({ file, from, to: day, commit });

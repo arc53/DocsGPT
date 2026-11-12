@@ -26,7 +26,9 @@ freshness signal.
 - **New pages** get today's date (`YYYY-MM-DD`).
 - **Leave it alone on a page that already exists**, whatever you changed. The "Generated
   docs" workflow (`../.github/workflows/generated-docs.yml`) runs `scripts/sync-dates.mjs` on
-  `main` after the merge and dates the page with the day its content changed. Two pull
+  `main` after the merge and dates the page with the day its content changed. Only the body
+  counts, and whitespace in it does not: a change to the frontmatter (`title`,
+  `description`) or one that only reflows lines leaves the date alone by itself. Two pull
   requests that each bumped the same page used to conflict on this one line; `npm run
   dates:check` now fails a pull request that changes it.
 - **For an edit a reader would not notice** (a typo, wording polish, formatting, a link

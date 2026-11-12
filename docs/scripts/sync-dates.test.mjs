@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 
-import { planDates, readLastUpdated, setLastUpdated } from './sync-dates.mjs';
+import { planDates, readerText, readLastUpdated, setLastUpdated } from './sync-dates.mjs';
 
 const PAGE = 'docs/content/guide.mdx';
 let root;
@@ -119,6 +119,29 @@ test('content that changed before the baseline is not re-dated', () => {
   assert.deepEqual(planDates({ root, since }), []);
 });
 
+test('a whitespace-only change does not date the page', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'One two.') });
+  commit('docs: reflow', { [PAGE]: `${page('2026-01-01', 'One\n  two.')}\n` });
+
+  assert.deepEqual(planDates({ root, since }), []);
+});
+
+test('a frontmatter-only change does not date the page', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
+  commit('docs: better description', {
+    [PAGE]: page('2026-01-01', 'Old.').replace('title: Guide', 'title: The Guide\ndescription: All of it.'),
+  });
+
+  assert.deepEqual(planDates({ root, since }), []);
+});
+
+test('a changed word in the body dates the page', () => {
+  const since = commit('baseline', { [PAGE]: page('2026-01-01', 'One two.') });
+  commit('docs: wording', { [PAGE]: page('2026-01-01', 'One three.') });
+
+  assert.equal(planDates({ root, since }).length, 1);
+});
+
 test('a pull request whose commits all say [keep-date] is passed over', () => {
   const since = commit('baseline', { [PAGE]: page('2026-01-01', 'Old.') });
   mergePullRequest([
@@ -204,4 +227,9 @@ test('setLastUpdated changes only the date line', () => {
 
   assert.equal(readLastUpdated(dated), '2026-05-05');
   assert.equal(dated, text.replace('lastUpdated: 2026-01-01', 'lastUpdated: 2026-05-05'));
+});
+
+test('readerText is the body with its whitespace collapsed', () => {
+  assert.equal(readerText('---\ntitle: A\nlastUpdated: 2026-01-01\n---\n\n# Hi\n\n  there\n'), '# Hi there');
+  assert.equal(readerText('No frontmatter\r\n here.'), 'No frontmatter here.');
 });
