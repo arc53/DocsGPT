@@ -1,7 +1,7 @@
 ---
 title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
-lastUpdated: 2026-10-22
+lastUpdated: 2026-11-12
 ---
 
 import { Callout } from 'nextra/components';
@@ -112,7 +112,7 @@ The Code Executor runs Python in a sandboxed session bound to your conversation 
 Key points:
 
 - The session stays open between runs until it has been idle for `SANDBOX_MAX_TTL` seconds (1200 by default) or a shorter time the model asks for. The model can pass `persist=false` to close it after a run.
-- What carries over to the next run depends on the backend. On the Jupyter runner, variables, imports, files, and installed packages all do. On Daytona, files and installed packages do, but each run starts a new Python interpreter, so the model re-imports and re-loads what it needs and passes data between runs through files.
+- What carries over to the next run depends on the backend. On the Jupyter runner, variables, imports, files, and installed packages all do. On Daytona and boxd, files and installed packages do, but each run starts a new Python interpreter, so the model re-imports and re-loads what it needs and passes data between runs through files.
 - Each result tells the model whether the session is `new` (nothing from earlier runs is left, for example after it idled out) or `reused`, so it knows when to rebuild its files.
 - Only a compact summary is returned to the model (an output tail plus artifact references), never raw file bytes.
 - Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For a long job, such as a video render, OCR of many pages or converting a large deck, the model can pass a `timeout` of up to `SANDBOX_EXEC_MAX_TIMEOUT` seconds (1000 by default); a larger value is cut to the maximum and the result says so. In a chat, a run that is still going after `BACKGROUND_YIELD_SECONDS` (30 by default) becomes a [background job](/Tools/background-jobs): the turn ends, the run keeps going in the sandbox, and the agent comes back with the result when it finishes (in conversations through the API, a widget or a shared link the result waits for `check_job` or the next message instead). The model can also pass `background=true` to start a run as a job right away; without a `timeout`, such a run may take up to `BACKGROUND_JOB_MAX_SECONDS` (still within `SANDBOX_EXEC_MAX_TIMEOUT`).
@@ -163,7 +163,7 @@ When a run shows a mistake the Code Executor recognizes, the result gets a `hint
 | `pip install` of a preinstalled package | It is already installed; drop the pip step |
 | `apt-get`, `apt` or `sudo` in the code | System packages can't be installed; the commands that exist |
 | A missing file or variable in a new session | Earlier files and variables are gone; recreate them or pass them as inputs |
-| A missing variable on Daytona | Each call is a new interpreter; re-import and reload from files |
+| A missing variable on Daytona or boxd | Each call is a new interpreter; re-import and reload from files |
 | A missing file under `/tmp` | `/tmp` isn't kept; use `scratch/` or the workspace |
 | The time cap | Work not written before the cap is lost; split it and write partial results to `scratch/`. Below the maximum, also to rerun with a larger `timeout`, except for a background run, which is reported and re-run only if the user asks |
 | Running out of memory: the kernel or process killed for memory, a `MemoryError`, or a subprocess killed with `SIGKILL` | Load less at once: read in chunks, one page or frame at a time, at a lower resolution |
@@ -211,10 +211,11 @@ See [Workflow Nodes](/Agents/nodes) for the node-level details.
 
 ## Configuration
 
-Code execution and rendering run inside a sandbox. DocsGPT ships two backends, selected with `SANDBOX_BACKEND`:
+Code execution and rendering run inside a sandbox. DocsGPT ships three backends, selected with `SANDBOX_BACKEND`:
 
 - **`jupyter`** (default): a self-hosted runner that you operate, added with a Compose overlay, a Kubernetes manifest, or the `arc53/docsgpt-sandbox` image. It needs a shared `SANDBOX_GATEWAY_AUTH_TOKEN`. One runner is one trust domain: sessions are separated only by working directory.
 - **`daytona`**: Daytona Cloud, a managed per-session sandbox. Set `DAYTONA_API_KEY` and choose a region with `DAYTONA_TARGET`. Use it for multi-tenant or untrusted workloads.
+- **`boxd`**: [boxd](https://boxd.sh/?ref=DocsGPT), one isolated machine (a microVM) per session. Set `BOXD_API_KEY`, and optionally `BOXD_ORG` and `BOXD_REGION`. Use it for multi-tenant or untrusted workloads. The machine has the Python standard library only; the model pip-installs what it needs, and only HTML artifacts render there.
 
 [Code Execution Sandbox](/Deploying/Sandbox) has the setup steps for each.
 
@@ -235,7 +236,7 @@ A snapshot can't change once it's built, so a new version of the contents comes 
 
 ### Useful settings
 
-- `SANDBOX_BACKEND`: `jupyter` or `daytona`.
+- `SANDBOX_BACKEND`: `jupyter`, `daytona` or `boxd`.
 - `SANDBOX_GATEWAY_URL`, `SANDBOX_GATEWAY_AUTH_TOKEN`, `SANDBOX_KERNEL_NAME`: where the Jupyter runner is, its shared token, and the kernel each session uses (`docsgpt-python`, which strips secrets from the kernel environment).
 - `SANDBOX_EXEC_TIMEOUT`: per-run wall-clock cap in seconds when the model doesn't pass a `timeout`.
 - `SANDBOX_EXEC_MAX_TIMEOUT`: the largest `timeout` the model may pass.
@@ -247,4 +248,5 @@ A snapshot can't change once it's built, so a new version of the contents comes 
   if the API and worker have the memory, and never above `ARTIFACT_MAX_BYTES` (50 MiB), which caps any stored
   artifact.
 - `DAYTONA_API_KEY`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`: Daytona Cloud settings.
+- `BOXD_API_KEY`, `BOXD_ORG`, `BOXD_REGION`, `BOXD_NAME_PREFIX`, `BOXD_MAX_MACHINES`, `BOXD_DELETE_AFTER`: boxd settings.
 - Per-user artifact quotas bound how many artifacts and how much storage each user can hold.

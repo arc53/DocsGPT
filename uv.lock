@@ -448,6 +448,22 @@ wheels = [
 ]
 
 [[package]]
+name = "boxd"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "httpx" },
+    { name = "protobuf" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/3b/33b32dd1b92215f07e3b880752878961074ef8f0882178dc2f57dc7eac04/boxd-0.3.1.tar.gz", hash = "sha256:723c15e6e611e4a9399f859d45b683efe52e0493ab52a6adcc8e476cb42ca4c0", size = 295610, upload-time = "2026-11-10T16:46:53.221Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/7a/dc92b6b533c87e2f870b293294e41c54c61cc284f6441ec4676dcd0a4230/boxd-0.3.1-py3-none-any.whl", hash = "sha256:9185d3e5196b5c1a788b96bf3a5f2e56df4be55033a4a2e0ef35d54f2577d99e", size = 192156, upload-time = "2026-11-10T16:46:51.937Z" },
+]
+
+[[package]]
 name = "cachetools"
 version = "8.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1431,6 +1447,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
+    { name = "boxd" },
     { name = "cel-python" },
     { name = "celery" },
     { name = "celery-redbeat" },
@@ -1554,6 +1571,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=2.3.0,<3" },
     { name = "beautifulsoup4", specifier = ">=4.15.0,<5" },
     { name = "boto3", specifier = ">=1.43.67,<2" },
+    { name = "boxd", specifier = ">=0.3.1,<0.4" },
     { name = "cel-python", specifier = ">=0.5.0,<0.6" },
     { name = "celery", specifier = ">=5.7.0,<6" },
     { name = "celery-redbeat", specifier = ">=2.4.2,<3" },

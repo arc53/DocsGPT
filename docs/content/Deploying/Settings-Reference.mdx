@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-11
+lastUpdated: 2026-11-12
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -2434,9 +2434,9 @@ The app is a CLIENT of an always-on runner; defaults are safe so app import neve
 
 ### `SANDBOX_BACKEND`
 
-Type `"jupyter" | "daytona"`, default `jupyter`.
+Type `"jupyter" | "daytona" | "boxd"`, default `jupyter`.
 
-Sandbox backend: jupyter (self-host) or daytona (Daytona Cloud).
+Sandbox backend: jupyter (self-host), daytona (Daytona Cloud) or boxd (boxd machines).
 
 ### `SANDBOX_GATEWAY_URL`
 
@@ -2569,6 +2569,42 @@ Minutes after stop before Daytona auto-deletes a sandbox (-1 disables).
 Type `int`, default `50`.
 
 Cap on concurrent live Daytona sandboxes (cost-DoS guard).
+
+### `BOXD_API_KEY`
+
+Type `str`, default unset.
+
+boxd API key (secret).
+
+### `BOXD_ORG`
+
+Type `str`, default unset.
+
+boxd organization the sandbox machines are created in; the key's own when unset.
+
+### `BOXD_REGION`
+
+Type `str`, default unset.
+
+boxd region for new sandbox machines, e.g. "fra" or "nyc"; the account default when unset.
+
+### `BOXD_NAME_PREFIX`
+
+Type `str`, default `docsgpt`.
+
+Prefix of the sandbox machines' names; a random suffix follows it.
+
+### `BOXD_MAX_MACHINES`
+
+Type `int`, default `50`.
+
+Cap on concurrent boxd sandbox machines per process (cost-DoS guard).
+
+### `BOXD_DELETE_AFTER`
+
+Type `int`, default `60`, must be `>= 0`.
+
+Minutes after its last use that boxd deletes a sandbox machine, the backstop for machines no process closes (each use pushes the timer forward). Raised to outlast SANDBOX_MAX_TTL and SANDBOX_EXEC_MAX_TIMEOUT; 0 disables it.
 
 
 ## Speech

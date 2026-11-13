@@ -50,7 +50,7 @@ from docsgpt.sandbox.artifacts_capture import (
     kind_for_mime as _kind_for_mime,
 )
 from docsgpt.sandbox.base import ExecResult, SandboxGoneError
-from docsgpt.sandbox import manifest
+from docsgpt.sandbox import FRESH_INTERPRETER_BACKENDS, manifest
 from docsgpt.sandbox.sandbox_creator import SandboxCreator
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly
@@ -198,13 +198,24 @@ class CodeExecutorTool(Tool):
     # ------------------------------------------------------------------
     @staticmethod
     def _backend() -> str:
-        """Return the configured sandbox backend, ``jupyter`` or ``daytona``."""
+        """Return the configured sandbox backend, ``jupyter``, ``daytona`` or ``boxd``."""
         return str(settings.SANDBOX_BACKEND or "jupyter").lower()
 
     @classmethod
+    def _fresh_interpreter(cls) -> bool:
+        """True when every call runs in a new interpreter (Daytona, boxd); only the filesystem carries over."""
+        return cls._backend() in FRESH_INTERPRETER_BACKENDS
+
+    @classmethod
     def _full_image(cls) -> bool:
-        """True when the sandbox runs the manifest's image; a Daytona sandbox without a snapshot is bare Python."""
-        return not (cls._backend() == "daytona" and not settings.DAYTONA_SNAPSHOT)
+        """True when the sandbox runs the manifest's image.
+
+        A Daytona sandbox without a snapshot and a boxd machine have bare Python.
+        """
+        backend = cls._backend()
+        if backend == "boxd":
+            return False
+        return not (backend == "daytona" and not settings.DAYTONA_SNAPSHOT)
 
     @staticmethod
     def _idle_minutes() -> int:
@@ -237,10 +248,10 @@ class CodeExecutorTool(Tool):
         """Backend-specific note on what survives from one ``run_code`` call to the next.
 
         The Jupyter runner keeps one kernel per session, so interpreter state
-        carries over. Daytona runs every call in a new interpreter: only the
-        sandbox filesystem (and so pip installs) outlives a call.
+        carries over. Daytona and boxd run every call in a new interpreter: only
+        the sandbox filesystem (and so pip installs) outlives a call.
         """
-        if cls._backend() == "daytona":
+        if cls._fresh_interpreter():
             return (
                 "files and installed packages persist while warm; each call is a fresh interpreter, so "
                 "re-import and re-load from files every call."
@@ -634,14 +645,14 @@ class CodeExecutorTool(Tool):
             return False
 
     def _can_detach(self, manager: Any, call: Any) -> bool:
-        """Run detached on Daytona always (no kernel state to lose); on Jupyter only for ``background``.
+        """Run detached on Daytona and boxd always (no kernel state to lose); on Jupyter only for ``background``.
 
         A Jupyter run in the kernel keeps its variables for the next call, so
         only an explicit background run gives that up for a separate process.
         """
         if not manager.supports_detached():
             return False
-        return self._backend() == "daytona" or bool(getattr(call, "explicit", False))
+        return self._fresh_interpreter() or bool(getattr(call, "explicit", False))
 
     def _run_detached(self, manager: Any, run: "PreparedRun", call: Any) -> Any:
         """Start the run detached and follow it until it ends or the turn hands it off.

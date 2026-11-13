@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
-from docsgpt.sandbox import manifest
+from docsgpt.sandbox import FRESH_INTERPRETER_BACKENDS, manifest
 from docsgpt.sandbox.base import ExecResult
 from docsgpt.sandbox.daytona import _WORKSPACE_ROOT as _DAYTONA_WORKSPACE
 from docsgpt.sandbox.jupyter_gateway import _WORKSPACE_ROOT as _JUPYTER_WORKSPACE
@@ -177,8 +177,8 @@ class RunFacts:
         result: The backend's result.
         artifacts: References of the files saved for the user (``filename``, ``mime_type``).
         session_new: The call started a fresh session.
-        backend: ``jupyter`` or ``daytona``.
-        full_image: The sandbox runs the manifest's image; False for a bare Daytona sandbox.
+        backend: ``jupyter``, ``daytona`` or ``boxd``.
+        full_image: The sandbox runs the manifest's image; False for a bare Daytona sandbox or boxd machine.
         timed_out: The run hit the wall-clock cap.
         timeout: The cap in seconds.
         max_timeout: The longest cap a call may ask for; 0 when unknown.
@@ -403,7 +403,7 @@ def _state_hints(facts: RunFacts, text: str) -> List[str]:
             "session: new — files/variables from earlier calls are gone. Recreate them in this call, or pass "
             "earlier outputs via inputs=['A2', ...]."
         )
-    elif facts.backend == "daytona" and name_errors:
+    elif facts.backend in FRESH_INTERPRETER_BACKENDS and name_errors:
         hints.append("Each call is a fresh interpreter: re-import and reload from files.")
     return hints
 
