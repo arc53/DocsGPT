@@ -53,6 +53,80 @@ def test_markdown_removes_links_and_images_in_parse():
     assert "link" in joined
 
 
+def test_markdown_removes_standard_images_before_links_in_parse():
+    content = (
+        "# Architecture\n"
+        "See [deployment docs](https://example.com/docs) before "
+        '![deployment diagram](assets/flow.png "system flow") after.\n'
+    )
+    parser = MarkdownParser()
+
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+
+    joined = "\n".join(result)
+    assert "deployment docs" in joined
+    assert "https://example.com/docs" not in joined
+    assert "deployment diagram" not in joined
+    assert "assets/flow.png" not in joined
+    assert "!deployment diagram" not in joined
+
+
+def test_markdown_keeps_standard_images_when_image_removal_is_disabled():
+    content = (
+        "# Architecture\n"
+        "See [deployment docs](https://example.com/docs) and "
+        '![deployment diagram](assets/flow.png "system flow").\n'
+    )
+    parser = MarkdownParser(remove_images=False)
+
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+
+    joined = "\n".join(result)
+    assert "deployment docs" in joined
+    assert "https://example.com/docs" not in joined
+    assert '![deployment diagram](assets/flow.png "system flow")' in joined
+
+
+def test_markdown_removes_supported_image_forms_and_preserves_escaped_images():
+    content = (
+        "inline ![one](image.png) titled ![two](image.png 'title') "
+        'angle ![three](<images/flow diagram.png> "title") '
+        "reference ![four][flow] collapsed ![five][] shortcut ![six] "
+        "obsidian ![[seven.png]] apostrophe ![eight](images/it's.png) "
+        "escaped \\![literal](keep.png)"
+    )
+
+    cleaned = MarkdownParser().remove_images(content)
+
+    assert cleaned == "inline  titled  angle  reference  collapsed  shortcut  obsidian  apostrophe  escaped \\![literal](keep.png)"
+
+
+def test_markdown_unclosed_alt_text_does_not_block_later_images():
+    content = "Type ![ to start.\n\nLater ![ok](a.png)"
+
+    cleaned = MarkdownParser().remove_images(content)
+
+    assert cleaned == "Type ![ to start.\n\nLater "
+
+
+def test_markdown_image_destination_does_not_cross_paragraphs():
+    content = "Before ![broken](asset\n\nkeep) after\n\nLater ![ok](a.png)"
+
+    cleaned = MarkdownParser().remove_images(content)
+
+    assert cleaned == "Before ![broken](asset\n\nkeep) after\n\nLater "
+
+
+def test_markdown_image_reference_does_not_cross_paragraphs():
+    content = "Before ![broken][label\n\nkeep] after\n\nLater ![ok](a.png)"
+
+    cleaned = MarkdownParser().remove_images(content)
+
+    assert cleaned == "Before ![broken][label\n\nkeep] after\n\nLater "
+
+
 def test_markdown_token_chunking_via_max_tokens():
 
     raw = "abcdefghij"  # 10 chars
