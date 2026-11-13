@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
     ContinuationNotPendingError,
+    InvalidToolActionsError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
@@ -234,6 +235,15 @@ class AnswerResource(Resource, BaseAnswerResource):
                 {"error": NOT_PENDING_MESSAGE, "code": NOT_PENDING_CODE},
                 409,
             )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on (a decision
+            # for a question, say). Nothing ran and the pause still waits.
+            logger.info(
+                "/api/answer - tool actions refused for conversation %s: %s",
+                data.get("conversation_id"),
+                e.message,
+            )
+            return make_response({"error": e.message, "code": e.code}, 400)
         except ResumeInProgressError as e:
             # Another request already owns this conversation's continuation
             # claim. Same contract as ``/stream`` and ``/v1/chat/completions``:

@@ -584,6 +584,46 @@ class TestChatCompletionsHappyPath:
         assert error["code"] == "tool_call_not_pending"
         assert error["message"] == NOT_PENDING_MESSAGE
 
+    def test_mixed_up_tool_actions_are_an_invalid_request_with_the_problem(self, pg_conn, caplog):
+        """Actions that don't fit the calls the pause waits on are told why, without an ERROR traceback."""
+        from docsgpt.api.answer.services.continuation_service import InvalidToolActionsError
+
+        problem = "A question call takes an answer or skipped, not a decision or a result."
+        app = _build_app()
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u-test"}
+        fake_processor.resume_from_tool_actions.side_effect = InvalidToolActionsError(problem)
+        with _patch_v1_db(pg_conn), patch(
+            "docsgpt.api.v1.routes.translate_request",
+            return_value={
+                "conversation_id": "conv-1",
+                "tool_actions": [{"call_id": "call-q", "result": "ok"}],
+                "messages": [],
+            },
+        ), patch(
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
+            return_value=True,
+        ), patch(
+            "docsgpt.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "docsgpt.api.v1.routes.ContinuationService.claim_state",
+            return_value={"pending_tool_calls": [{"call_id": "call-q", "pause_type": "awaiting_answer"}]},
+        ), caplog.at_level("ERROR", logger="docsgpt.api.v1.routes"):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "tool", "content": "ok"}]},
+                )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == {
+            "message": problem,
+            "type": "invalid_request_error",
+            "code": "invalid_tool_actions",
+        }
+        assert not caplog.records
+
     def test_a_resume_hands_its_new_attachments_to_the_resumed_turn(self, pg_conn):
         from docsgpt.api.answer.services.continuation_service import (
             NOT_PENDING_MESSAGE,

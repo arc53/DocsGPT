@@ -2346,6 +2346,7 @@ class StreamProcessor:
             NOT_PENDING_MESSAGE,
             ContinuationNotPendingError,
             ContinuationService,
+            InvalidToolActionsError,
             answered_call_ids,
             question_action_problem,
         )
@@ -2432,7 +2433,7 @@ class StreamProcessor:
                 cont_service.release_claim(conversation_id, self.initial_user_id)
             except Exception:
                 logger.warning("Failed to release a refused resume claim", exc_info=True)
-            raise ValueError(problem)
+            raise InvalidToolActionsError(problem)
 
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]

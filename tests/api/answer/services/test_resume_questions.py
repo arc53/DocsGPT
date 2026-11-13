@@ -71,19 +71,42 @@ class TestQuestionActions:
         service.release_claim.assert_not_called()
 
     def test_a_decision_on_a_question_is_malformed_and_the_claim_returned(self, resume):
+        from docsgpt.api.answer.services.continuation_service import InvalidToolActionsError
+
         sp, service, _built = resume
         service.claim_state.return_value = _state()
 
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidToolActionsError) as raised:
             sp.resume_from_tool_actions([{"call_id": "c1", "decision": "approved"}], CONV_ID)
+
+        assert raised.value.message == "A question call takes an answer or skipped, not a decision or a result."
+        assert raised.value.code == "invalid_tool_actions"
+        # Still a ValueError for callers that catch the old error.
+        assert isinstance(raised.value, ValueError)
+        service.release_claim.assert_called_once_with(CONV_ID, "alice")
+
+    def test_an_empty_answer_to_a_question_is_malformed(self, resume):
+        from docsgpt.api.answer.services.continuation_service import InvalidToolActionsError
+
+        sp, service, _built = resume
+        service.claim_state.return_value = _state()
+
+        with pytest.raises(InvalidToolActionsError) as raised:
+            sp.resume_from_tool_actions([{"call_id": "c1", "answer": ""}], CONV_ID)
+
+        assert raised.value.message == "A question call takes either a non-empty answer or skipped: true."
         service.release_claim.assert_called_once_with(CONV_ID, "alice")
 
     def test_an_answer_to_an_approval_is_malformed(self, resume):
+        from docsgpt.api.answer.services.continuation_service import InvalidToolActionsError
+
         sp, service, _built = resume
         service.claim_state.return_value = _state(pause_type="awaiting_approval")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidToolActionsError) as raised:
             sp.resume_from_tool_actions([{"call_id": "c1", "answer": "yes"}], CONV_ID)
+
+        assert raised.value.message == "Only a question call takes an answer or skipped."
         service.release_claim.assert_called_once_with(CONV_ID, "alice")
 
 

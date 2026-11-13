@@ -132,6 +132,39 @@ class TestStreamResourcePost:
             data = resp.get_data(as_text=True)
             assert "Malformed request body" in data
 
+    def test_mixed_up_tool_actions_return_400_with_the_problem(
+        self, stream_client, mock_stream_processor, caplog
+    ):
+        """A resume whose actions don't fit its calls is told why, not "Malformed request body"."""
+        from docsgpt.api.answer.services.continuation_service import (
+            InvalidToolActionsError,
+        )
+
+        problem = "A question call takes either a non-empty answer or skipped: true."
+        mock_stream_processor.resume_from_tool_actions.side_effect = (
+            InvalidToolActionsError(problem)
+        )
+        with patch(
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
+            return_value=None,
+        ), caplog.at_level("ERROR"):
+            resp = stream_client.post(
+                "/stream",
+                data=json.dumps({
+                    "question": "",
+                    "conversation_id": _CONV_ID,
+                    "tool_actions": [{"call_id": "call_1", "answer": ""}],
+                }),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 400
+        assert "text/event-stream" in resp.content_type
+        payload = json.loads(resp.get_data(as_text=True).split("data: ", 1)[1])
+        assert payload == {"type": "error", "error": problem, "code": "invalid_tool_actions"}
+        # The client's mistake, not a server fault: nothing on the ERROR channel.
+        assert not caplog.records
+
     def test_general_exception_returns_400_stream(
         self, stream_client, mock_stream_processor
     ):

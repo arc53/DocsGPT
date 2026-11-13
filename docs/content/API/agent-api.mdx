@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-11-11
+lastUpdated: 2026-11-13
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -378,7 +378,7 @@ Resume with `tool_actions`, one action for the call:
 - `"answer": "..."`: the user's answers as text, one line per question (for example `Team size? → 11-50`), or whatever they typed instead. At most 4000 characters reach the model.
 - `"skipped": true`: the model goes ahead with its best assumptions and says what it assumed.
 
-A question call takes only `answer` or `skipped`, and an approval or client-side call never does; a mixed-up action is refused with HTTP `400` and nothing runs. Questions nobody answers end like any pause: they are recorded as not answered.
+A question call takes only `answer` or `skipped`, and an approval or client-side call never does; a mixed-up action is refused with HTTP `400`, `"code": "invalid_tool_actions"` and an `error` naming the problem (on `/stream`, an `error` event with that code). Nothing runs and the turn stays paused, so you can send the corrected action. Questions nobody answers end like any pause: they are recorded as not answered.
 
 ## Letting API callers make changes
 

@@ -34,6 +34,7 @@ __all__ = [
     "answered_call_ids",
     "ContinuationNotPendingError",
     "ContinuationService",
+    "InvalidToolActionsError",
     "NOT_PENDING_CODE",
     "NOT_PENDING_MESSAGE",
     "PENDING_STATE_TTL_SECONDS",
@@ -69,6 +70,26 @@ NOT_PENDING_MESSAGE = "This request is no longer pending."
 
 #: The error code that goes with :data:`NOT_PENDING_MESSAGE`.
 NOT_PENDING_CODE = "tool_call_not_pending"
+
+
+class InvalidToolActionsError(ValueError):
+    """Raised when tool actions don't fit the calls their pause waits on. Nothing was run.
+
+    A question call given a decision, say, or an approval given an answer
+    (see :func:`question_action_problem`). The pause keeps waiting, so the
+    client can send the actions again, corrected.
+
+    Attributes:
+        code: The error code every route answers this refusal with.
+        message: The problem, worded for the client; routes send it as is.
+    """
+
+    code = "invalid_tool_actions"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
 
 #: A pause retired because the user started a new turn instead of answering it.
 RETIRED_MOVED_ON = "moved_on"

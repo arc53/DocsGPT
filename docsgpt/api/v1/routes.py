@@ -22,6 +22,7 @@ from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_MESSAGE,
     ContinuationNotPendingError,
     ContinuationService,
+    InvalidToolActionsError,
     RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
     answered_call_ids,
@@ -653,6 +654,13 @@ def chat_completions():
                 }),
                 409,
             )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on: nothing ran
+            # and the pause still waits.
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            logger.info("/v1/chat/completions tool actions refused: %s", e.message)
+            return _invalid_request(e.message, e.code)
         except ContextOverflowError as e:
             if idem_key:
                 v1_idempotency.release(idem_key)

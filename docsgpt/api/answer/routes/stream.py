@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
     ContinuationNotPendingError,
+    InvalidToolActionsError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
@@ -240,6 +241,21 @@ class StreamResource(Resource, BaseAnswerResource):
             return Response(
                 self.error_stream_generate(NOT_PENDING_MESSAGE, code=NOT_PENDING_CODE),
                 status=409,
+                mimetype="text/event-stream",
+            )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on (a decision
+            # for a question, say). Nothing ran and the pause still waits.
+            # Caught ahead of ``ValueError`` (its base class), so the client
+            # reads what is wrong instead of "Malformed request body".
+            logger.info(
+                "/stream - tool actions refused for conversation %s: %s",
+                data.get("conversation_id"),
+                e.message,
+            )
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
+                status=400,
                 mimetype="text/event-stream",
             )
         except ResumeInProgressError as e:
