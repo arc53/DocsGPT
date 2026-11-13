@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-11
+lastUpdated: 2026-11-13
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1716,6 +1716,18 @@ Type `list[str]`, default `[]`.
 
 Private-network hosts that user-supplied URLs (API and MCP tools, read_webpage, monitors, custom model base URLs, the API tool a personal access token makes) may reach, as a comma list or JSON list. An entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `fd20:ce::254`, `metadata.google.internal`) and `0.0.0.0` are refused whatever is listed. Empty, every private address is refused.
 
+### `TRUSTED_PROXIES`
+
+Type `list[str]`, default `["private"]`.
+
+Proxies whose X-Forwarded-For and X-Forwarded-Proto the API believes, as a comma list or JSON list of IPs and CIDR ranges plus two keywords: private (loopback, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) and cloudflare (Cloudflare's published ranges). The client IP recorded in the audit log and access log is the rightmost X-Forwarded-For entry outside this list, so a client cannot spoof it. Add cloudflare, or your load balancer's range, when one sits in front of a private hop. * trusts every peer and takes the leftmost entry, which any client can forge. none trusts no one and records the peer's address.
+
+### `TRUST_CF_CONNECTING_IP`
+
+Type `bool`, default `false`.
+
+Take the client IP from Cloudflare's CF-Connecting-IP header when the request reaches the API from a Cloudflare address, directly or through TRUSTED_PROXIES. The header is ignored from any other address, so a request that bypasses Cloudflare cannot set it.
+
 ### `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
 
 Type `int`, default `30`.
@@ -2248,6 +2260,12 @@ Seconds past the due time within which a missed run still fires.
 Type `int`, default `3`.
 
 Consecutive failures after which a schedule is paused automatically.
+
+### `SCHEDULE_NOTIFY_RECURRING_FAILURES`
+
+Type `bool`, default `false`.
+
+Also notify the owner of a recurring schedule on the first failed run in a row, not only when the schedule pauses itself.
 
 ### `SCHEDULE_ONCE_MAX_HORIZON`
 

@@ -17,6 +17,7 @@ from docsgpt.api.user.workflow_runs.download import run_artifact_download_routes
 from docsgpt.app import app as flask_app
 from docsgpt.core.settings import settings
 from docsgpt.mcp_server import mcp
+from docsgpt.security.client_ip import ClientAddressMiddleware
 from docsgpt.ui import StaticUI
 
 _WSGI_THREADPOOL = int(settings.WSGI_THREADPOOL_WORKERS)
@@ -82,6 +83,8 @@ asgi_app = Starlette(
         Mount("/", app=_backend),
     ],
     middleware=[
+        # Outermost: every route below, Flask included, sees the real client address.
+        Middleware(ClientAddressMiddleware),
         Middleware(
             CORSMiddleware,
             allow_origins=["*"],

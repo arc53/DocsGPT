@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-11-06
+lastUpdated: 2026-11-11
 ---
 
 # Personal Access Tokens
@@ -20,7 +20,7 @@ Every token is limited in three ways:
 2. Choose **Create token**, give it a name, and select the scopes it needs.
 3. Optionally restrict it to specific resources and pick an expiry.
 4. Copy the token. It starts with `dgpt_pat_` and is shown **once**. DocsGPT stores only a hash of it, so a lost token cannot be recovered. Revoke it and create a new one.
-5. Optionally, select **Create tool for agents**. It appears when the token has an `agents`, `analytics` or `conversations` scope, and adds an API tool that lets your agents read this account with the token. See [Let an agent review the logs](/Using/analytics-and-logs#let-an-agent-review-the-logs).
+5. Optionally, select **Create tool for agents** to let your agents use the token. See [Let an agent work in your account](#let-an-agent-work-in-your-account).
 
 Tokens can only be created, regenerated and revoked from a signed-in session. A token cannot create, list, regenerate or revoke tokens, so a leaked token cannot mint a replacement for itself.
 
@@ -268,7 +268,32 @@ These endpoints need a signed-in session and cannot be called with a token.
 | `POST /api/user/tokens` | Create a token. Body: `name`, `scopes`, optional `resource_filter`, optional `expires_in_days` (`0` = never, when allowed). The response carries the plaintext `token` once |
 | `POST /api/user/tokens/<id>/regenerate` | New secret and new expiry for the same token. Optional body `expires_in_days`; omitted = the lifetime it was last issued with. The response carries the plaintext `token` once |
 | `DELETE /api/user/tokens/<id>` | Revoke a token |
-| `POST /api/user/tokens/<id>/tool` | Create an API tool that reads this account with the token. Body: the plaintext `token` and `base_url`, where agents reach the API. The tool gets the read endpoints the token may call (`400` when there are none) |
+| `POST /api/user/tokens/<id>/tool` | Create an API tool that lets agents work in this account with the token. Body: the plaintext `token` and `base_url`, where agents reach the API. The tool gets an action for each endpoint the token may call; the response lists them in `actions`, and those that start switched off in `inactive` |
+
+## Let an agent work in your account
+
+**Create tool for agents**, offered once when a token is created, adds an API tool named **DocsGPT API (*token name*)** under **Settings › Tools**. Add it to an agent and the agent can do in your account what the token's scopes allow: create and update agents, add sources and wiki pages, edit prompts, tools and workflows, manage schedules, and read conversations, logs and analytics. The token is stored, encrypted, as the tool's `Authorization` header; neither the model nor the chat sees it.
+
+The tool has one action per endpoint the token may call, so its scopes and resource restrictions decide what the agent gets: a token with `prompts:write` brings `list_prompts`, `create_prompt`, `update_prompt` and `delete_prompt`, and one with every scope brings about 120 actions. Each action's description is sent to the model with every request, so give the token only the scopes the agent's job needs. The actions are fixed when the tool is created. To change them, create a new token and tool.
+
+Some actions start switched off, and you turn them on in the tool when you want them:
+
+- **Deletes** (`delete_agent`, `delete_source`, `delete_chunk`, `delete_prompt`, `delete_tool`, `delete_workflow`, `delete_schedule`, `delete_conversation`, `delete_agent_folder`), because they cannot be undone.
+- **`ask_agent`**, which runs another agent for real and spends its tokens.
+
+A few things a token can do are never given to an agent:
+
+- Deleting all conversations at once.
+- Creating, changing or deleting custom models, which hold a provider key and the address every chat is sent to.
+- Uploading files, importing an agent definition and streaming chat, which an API tool cannot send.
+
+A token cannot change a tool that holds an access token, this one included: `update_tool` and the other tool update endpoints answer `403`. So an agent cannot switch on an action you left off, or point an action at another endpoint. Change the tool yourself, signed in, under **Settings › Tools**.
+
+An agent that can change tools still cannot read or move a credential a tool stores. Stored values come back masked, a tool or MCP server pointed at another server does not keep them, and connections and their OAuth sign-ins are closed to every token.
+
+Treat the agent like the token: anyone who can chat with an agent that has this tool can ask it to act on your account, and so can text the agent reads, such as a web page or a document in a source. Do not add the tool to an agent you share publicly, and prefer read scopes for an agent that reads content you do not control.
+
+The tool calls the API at the address this web app uses. Agent tools can't call `localhost` or private IP addresses, so on an instance reached at such an address the button reports that agents can't reach it and creates nothing.
 
 ## Good practice
 

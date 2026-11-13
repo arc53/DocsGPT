@@ -419,18 +419,47 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ),
 )
 
-_PRESETS_FILE = Path(__file__).parent / "presets" / "mcp.yaml"
+#: One ``<name>.yaml`` per curated MCP server; see the README next to them.
+_PRESETS_DIR = Path(__file__).parent / "presets" / "mcp"
+
+#: Where a preset without a ``rank`` sorts: after every ranked one.
+_UNRANKED = 1_000_000
+
+
+def _read_preset_files(path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Read every preset file, in catalog order.
+
+    Args:
+        path: The presets folder; the one shipped with the package by default.
+
+    Returns:
+        One mapping per ``*.yaml`` file, ranked presets first (lowest ``rank``
+        first), then the rest by name.
+
+    Raises:
+        ValueError: A file does not hold a mapping, or its name is not the
+            part of its ``key`` after ``mcp:``.
+    """
+    path = path or _PRESETS_DIR
+    if not path.is_dir():
+        return []
+    entries = []
+    for file in sorted(path.glob("*.yaml")):
+        with file.open(encoding="utf-8") as fh:
+            entry = yaml.safe_load(fh)
+        if not isinstance(entry, dict):
+            raise ValueError(f"{file} must hold one preset as a mapping")
+        if entry.get("key") != f"mcp:{file.stem}":
+            raise ValueError(f"{file} must have key mcp:{file.stem}, not {entry.get('key')!r}")
+        entries.append(entry)
+    entries.sort(key=lambda entry: (entry.get("rank", _UNRANKED), str(entry["name"]).casefold(), entry["key"]))
+    return entries
 
 
 def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...]:
     """Read the curated MCP server presets shipped with the repository."""
-    path = path or _PRESETS_FILE
-    if not path.exists():
-        return ()
-    with path.open(encoding="utf-8") as fh:
-        entries = yaml.safe_load(fh) or []
     presets = []
-    for entry in entries:
+    for entry in _read_preset_files(path):
         presets.append(
             ConnectorDefinition(
                 key=entry["key"],

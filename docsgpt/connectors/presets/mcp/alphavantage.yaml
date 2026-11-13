@@ -1,0 +1,39 @@
+# Alpha Vantage only accepts redirect URIs on its allowlist (DocsGPT cloud) and
+# localhost, so a self-hosted instance on its own domain adds it as a custom
+# MCP connector with ``?apikey=<KEY>`` in the URL instead.
+key: mcp:alphavantage
+rank: 140
+name: Alpha Vantage
+description: Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.
+icon: alphavantage
+category: business
+mcp_url: https://mcp.alphavantage.co/mcp
+auth_kind: mcp_oauth
+capabilities: [read]
+docs_url: https://github.com/alphavantage/alpha_vantage_mcp
+# The server has 133 tools, more than OpenAI takes in one request (128).
+# These start on; the rest start Off. TOOL_LIST, TOOL_GET and TOOL_CALL
+# reach any other Alpha Vantage tool without sending its definition.
+default_actions:
+  - SYMBOL_SEARCH
+  - GLOBAL_QUOTE
+  - TIME_SERIES_DAILY
+  - TIME_SERIES_WEEKLY
+  - MARKET_STATUS
+  - TOP_GAINERS_LOSERS
+  - COMPANY_OVERVIEW
+  - EARNINGS
+  - INCOME_STATEMENT
+  - NEWS_SENTIMENT
+  - CURRENCY_EXCHANGE_RATE
+  - FX_DAILY
+  - DIGITAL_CURRENCY_DAILY
+  - CPI
+  - INFLATION
+  - REAL_GDP
+  - UNEMPLOYMENT
+  - TREASURY_YIELD
+  - FEDERAL_FUNDS_RATE
+  - TOOL_LIST
+  - TOOL_GET
+  - TOOL_CALL

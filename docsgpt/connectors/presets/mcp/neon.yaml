@@ -1,0 +1,10 @@
+key: mcp:neon
+rank: 160
+name: Neon
+description: Explore Neon Postgres projects, branches and schemas, and run SQL.
+icon: neon
+category: database
+mcp_url: https://mcp.neon.tech/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://neon.com/docs/ai/neon-mcp-server
