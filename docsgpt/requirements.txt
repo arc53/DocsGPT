@@ -1133,7 +1133,6 @@ httpx==0.28.1 \
     # via
     #   daytona
     #   elevenlabs
-    #   google-genai
     #   httpx-ws
     #   huggingface-hub
     #   qdrant-client
@@ -1148,6 +1147,7 @@ httpx2==2.16.0 \
     #   anthropic
     #   docsgpt
     #   fastmcp-slim
+    #   google-genai
     #   mcp
     #   openai
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten' \
