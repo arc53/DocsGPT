@@ -60,7 +60,7 @@ dependencies = [
   "flask-restx>=1.3.2,<2",
   "google-api-python-client>=2.198.0,<3",
   "google-auth-oauthlib>=1.4.0,<2",
-  "google-genai>=2.17.0,<3",
+  "google-genai>=2.17.0,<4",
   "gunicorn>=26.0.0,<27",
   # Imported directly by the BYOM DNS-pinning transport and the LLM
   # stream-retry error tuple; it is what anthropic and openai run on.
