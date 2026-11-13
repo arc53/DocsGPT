@@ -149,3 +149,18 @@ class TestV1Route:
                 )
         assert resp.status_code == 200
         assert cls.call_args.kwargs.get("external_caller") is True
+
+
+@pytest.mark.unit
+class TestV1NoQuestions:
+    @pytest.mark.parametrize(
+        "extra", [{"capabilities": ["forms"]}, {"docsgpt": {"capabilities": ["forms"]}}, {"questions": "cards"}],
+    )
+    def test_a_v1_request_never_asks_for_question_forms(self, extra):
+        """/v1 maps no capabilities, so its turns never get ask_user (an OpenAI client can't draw forms)."""
+        from docsgpt.api.v1.translator import translate_request
+
+        internal = translate_request({"messages": [{"role": "user", "content": "hi"}], **extra}, "key")
+
+        assert "capabilities" not in internal
+        assert "questions" not in internal

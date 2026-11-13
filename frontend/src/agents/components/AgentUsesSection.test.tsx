@@ -579,6 +579,10 @@ describe('AgentUsesSection', () => {
       ),
     ).find((b) => b.textContent === `${K}.openAccessDetails`);
     expect(button).toBeDefined();
+    // It fixes what the note says: a link in the note's text and colour.
+    expect(button!.closest('[data-slot="alert-description"] p')).not.toBeNull();
+    expect(button!.dataset.variant).toBe('link');
+    expect(button!.dataset.tone).toBe('current');
     act(() => button!.click());
     expect(openDetails).toHaveBeenCalledTimes(1);
   });

@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import userService from '../../api/services/userService';
 import { ActiveState } from '../../models/misc';
 import ConfirmationModal from '../../modals/ConfirmationModal';
+import { joinList } from '../../settings/insights/format';
 import { formatCount } from '../../utils/dateTimeUtils';
 import {
   analyticsOf,
@@ -26,6 +27,7 @@ import {
 } from '../analyticsConfig';
 import type { AnalyticsConfig, AnalyticsTopic, TopicFolder } from '../types';
 import TopicModal, { type TopicDraft } from './TopicModal';
+import { useTopicSuggestions } from './TopicSuggestions';
 
 const DOCS_URL =
   'https://docs.docsgpt.cloud/Using/analytics-and-logs#analytics-settings-for-an-agent';
@@ -56,6 +58,11 @@ export type InsightsSettingsBodyProps = {
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
   token: string | null;
+  /**
+   * Insights are on in the agent as saved (`value`'s when not given): the
+   * suggestions' status is read for the saved agent.
+   */
+  savedEnabled?: boolean;
   /**
    * Whether the agent has source folders. `none` (a workflow, which has no
    * agent-level sources) offers only the owner's own topics.
@@ -115,6 +122,7 @@ export default function InsightsSettingsBody({
   maxOverlapping,
   disabled = false,
   token,
+  savedEnabled,
   topicSource = 'sources',
   headingLevel = 'h3',
   active = true,
@@ -198,6 +206,25 @@ export default function InsightsSettingsBody({
   const showHidden = () => patch({ hidden_folders: [] });
   const removeTopic = (topic: AnalyticsTopic) =>
     patch({ topics: own.filter((item) => item.id !== topic.id) });
+
+  // Draft with DocsGPT's suggestions, added the way Add topic adds one.
+  const suggestions = useTopicSuggestions({
+    agentId,
+    enabled: active && !disabled && config.enabled,
+    savedEnabled,
+    token,
+    config,
+    folders: fromSources ? (loaded?.folders ?? null) : [],
+    maxTopics,
+    maxOverlapping,
+    onAdd: (drafts) =>
+      patch({
+        topics: [
+          ...own,
+          ...drafts.map((draft) => ({ id: newTopicId(), ...draft })),
+        ],
+      }),
+  });
 
   const saveTopic = (draft: TopicDraft) => {
     if (!editing) return;
@@ -335,7 +362,7 @@ export default function InsightsSettingsBody({
     </Button>
   );
   const names = (list: TopicFolder[]) =>
-    list.map((folder) => folder.name).join(', ');
+    joinList(list.map((folder) => folder.name));
   if (foldersFailed)
     note(
       'failed',
@@ -494,19 +521,32 @@ export default function InsightsSettingsBody({
               count={total > 0 ? total : undefined}
               description={k('topicsDescription')}
               actions={
-                canAdd ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditing({ index: null })}
-                  >
-                    <Plus />
-                    {k('addTopic')}
-                  </Button>
+                canAdd || suggestions.button ? (
+                  <>
+                    {canAdd && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditing({ index: null })}
+                      >
+                        <Plus />
+                        {k('addTopic')}
+                      </Button>
+                    )}
+                    {suggestions.button}
+                  </>
                 ) : undefined
               }
             />
+            {suggestions.panel}
+            {/* Suggestions wait for enough conversations, as Insights'
+                figures do; the line sits where the button would. */}
+            {suggestions.hold && (
+              <p className="text-muted-foreground text-xs">
+                {suggestions.hold}
+              </p>
+            )}
             <Card
               variant="subtle"
               padding="none"

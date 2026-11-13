@@ -1,0 +1,261 @@
+---
+title: Draft with DocsGPT
+description: Build an agent step by step with DocsGPT in a side panel, improve an agent from what its Insights found, review, improve or write a prompt, or get Insights topics suggested from an agent's conversations. You review every drafted field and save it yourself. Covers the steps, what it may change, the model it runs on, usage, privacy and the operator settings.
+lastUpdated: 2026-11-12
+---
+
+import { Callout } from 'nextra/components'
+
+# Draft with DocsGPT
+
+**Draft with DocsGPT** is an assistant in a panel beside the page. You say what you want ("an agent on our website that answers shipping questions"); DocsGPT looks at what you already have, may ask a question or two, and writes its answer into the form as unsaved edits. Each field it filled is marked **Drafted**. You check the fields, change or undo what you don't want, and save the form yourself.
+
+It works in three places:
+
+- [The agent form](#the-agent-form): builds a new agent with you one step at a time, or changes an existing one, starting from what its [Insights](#fix-what-insights-found) found.
+- [Prompts](#prompts): reviews a prompt against a checklist, improves it as a list of edits you accept or reject, or writes a new one.
+- [Insights topics](#insights-topics): suggests topics from what an agent's users actually asked.
+
+<Callout type="info" emoji="ℹ️">
+Draft with DocsGPT never publishes or deletes anything, and saves only one thing on its own: a prompt it wrote for an agent, when you choose **Use this prompt**. The agent itself is saved only when you choose **Save Draft** or **Publish**.
+</Callout>
+
+It runs on your [task model](/Using/web-app#task-model). Every button and box below is hidden while the operator has turned it off, or while there is no task model to run on (see [For operators](#for-operators)).
+
+## The agent form
+
+Draft with DocsGPT is on the form of a classic agent, for anyone who can edit the agent: its owner and its editors. Viewers don't see it, and the workflow builder doesn't have it.
+
+The wand button in the toolbar opens the **Draft with DocsGPT** panel beside the form (on a phone, a sheet over the page). It reads **Build** on a new agent's empty form, **Improve** on a saved agent (or once the form has something in it), and **Resume** while a build is unfinished and its panel is closed. The panel's footer names the model it uses and links to **Change model**. While it works, it shows what it is doing (**Thinking…**, **Looking at your workspace…**, **Drafting…**), and after 30 seconds without news it adds **Still waiting for the model**, since slow models can take a few minutes. What it looked at shows as one line, such as **Looked at your workspace: 12 knowledge sources · 4 tools**, repeated only when the counts change. **Stop** ends the turn and changes nothing, leaving a **Stopped** note; **Try again** repeats a turn that failed; and during a build **Continue: Basics** (or the current step), under the note or the error, picks the step up again.
+
+**Start over** in the panel's header begins a new conversation and forgets the step-by-step build; the form keeps its values and their **Drafted** marks. A conversation holds up to 24 messages, each up to 8,000 characters. When it is full, or the server can't take it, the panel offers **Start over**.
+
+### Build a new agent step by step
+
+On a new agent, DocsGPT builds the agent with you in four steps, in the order the form needs them:
+
+1. **Basics**: the name and the description, from what you wrote. When you don't say who uses the agent, customers or your own staff, it asks: that decides what is safe to attach, how the prompt talks and which checks it recommends.
+2. **Knowledge**: the sources and tools the agent needs, and its agent type.
+3. **Prompt and starters**: one of your prompts if it fits, otherwise a new one written for the knowledge and tools now attached; then the conversation starters.
+4. **Limits and safety**: a usage limit, guardrail checks and Insights topics, each only if you pick it or ask for it.
+
+Pick a starting point (**Website chat for customers**, **Internal helpdesk** or **Research assistant**), or describe the agent in the panel (**Describe the agent…**). A starting point tells every step what that kind of agent needs: a website chat, for example, asks for your company, attaches only what is safe for the public, and recommends the personal-information and prompt-injection checks. Each step ends with a short message, a **Filled 2 fields** line you can open to see what changed, and a button for the next step, such as **Next: Knowledge**. Before you go on, check the step's fields in the form: change them there, or tell DocsGPT what to change (**Or tell me what to change…**). If you edit a field DocsGPT just set, the step says so (**You changed Name in the form.**), and its next turn reads the form as you left it. Writing an approval such as "looks good" works like the button: the step moves on when DocsGPT's answer changes nothing and leaves nothing out, once any open prompt review is finished.
+
+The panel's header shows where you are (**Step 2 of 4 · Knowledge**) with a progress bar, and each finished step folds into one line, such as **Basics: Shipping help desk** (**Basics: no name yet** while the agent has none). A step with nothing to set, such as Limits and safety for an editor who can't change the agent's policy, is skipped.
+
+**The more you say, the fewer steps.** When your description already covers a step, for example "use my Ops analyst prompt and the Freight rates tool", DocsGPT fills that step in the same turn, and the header says so (**Step 4 of 4 · Limits and safety · 3 filled at once**). A later step counts as filled only when the draft covers what it is for: Knowledge needs sources or tools (an agent type alone isn't enough), and Prompt and starters needs a prompt and starters, drafted or already in the form. **Check the form first** closes the panel so you can look before going on. Limits and safety is never filled ahead this way, but what you wrote counts once you get there: it asks only about what your words leave open (see [Limits and safety](#limits-and-safety)).
+
+When every step is done, the panel says nothing is saved yet: **Publish**, then try the agent in **Preview**, or **Save Draft** to come back later (**Preview** and **Save Draft** are in the toolbar's **⋯** menu). While **Publish** is still off, the message names what it needs instead, such as a name or a prompt, with a link to the first one (**Go to Name**).
+
+### Questions
+
+When something changes the draft, such as whether the agent faces customers or staff, DocsGPT asks first: up to three questions, each a list of options to choose (one, or several where the question allows it) and **Something else…** for your own answer, or a box to type in for something only you know, such as the company name. Picking some options opens a field under the option for the rest, such as the address for **Send them to the HR team** (sent as "Send them to the HR team: hr@…"). A choice that rules out the others, such as **No topics**, comes last, after a line: ticking it clears the other options, and ticking another clears it. **Send answers** sends them; **Skip and draft** drafts the step at once with what DocsGPT knows. It asks at most two rounds of questions in a step, then drafts with what it knows, and it doesn't repeat a question you left blank.
+
+Answered questions stay in the panel as their cards, showing what you picked, with no message repeating your answers. A question you left blank, or a round you skipped, reads **Skipped**; a round you passed over by typing a message instead reads **Not answered**.
+
+Before it gives an agent that faces the public anything that looks internal, a source (contracts, negotiated rates, HR) or a tool (one that returns live prices), it asks, with the item unticked.
+
+### The prompt step
+
+When none of your prompts fits, DocsGPT writes one. First it asks where the agent sends people it can't help and what tone it takes, then asks for the detail your answer needs: the support email address, the contact form's link, or how people reach a person. The prompt then tells people exactly where to go, because an agent can't transfer a chat or contact anyone itself unless one of its tools does that.
+
+The new prompt opens in place of the form, with the panel still beside it. Read it and change it there, or ask DocsGPT for a change. **Use this prompt** saves it to your prompts and sets it on the agent, then the form comes back with the starters DocsGPT wrote from the prompt. A later change in this step updates the same prompt rather than making another.
+
+The prompt is saved when you use it, even if you leave the agent unsaved; it stays under **Settings → Prompts**, where you can delete it. The crumb back to the agent keeps the text unsaved in the step; the panel then offers **Open prompt**, or keeping the agent's current prompt (**Keep default instead**).
+
+### Limits and safety
+
+The last step asks about each part your words leave open, with the recommended choice marked and nothing set until you pick it. A part you already settled, in this step or an earlier one ("1,000 requests a day", "PII and injection guardrails", "no Insights topics"), is set as you said without a question, and when your words settle every part, DocsGPT drafts without asking. **Skip and draft** sets only what your words state:
+
+- **A usage limit**: one budget shared by everyone who uses the agent, counted over the last 24 hours: a request limit or a token limit, not both. The recommendation is the instance's default (500 requests or 50,000 tokens unless an admin changed it). It lands under **Advanced**, which opens by itself.
+- **Guardrail checks**: **Personal information** (redact), **Prompt injection (heuristic)** (block), **Grounding in sources** (flag) and **Credentials and secrets** (redact), one option each, the recommended ones first, and a last **No extra checks** that rules out the rest. They're added to the agent's own; a matching check the agent has switched off is switched back on, and one it runs on questions only (or answers only) can get the other side too. They start in **Monitor only**: they record what they would have done and change no answer until you switch the agent to **Enforce everywhere** under **Guardrails**. Offered when guardrails are on for the instance.
+- **Insights topics**: up to four starting topics drawn from what the agent is for, each offered by name so you tick the ones you want (or **No topics**, which rules out the rest). A topic is a subject people ask about, such as "Customs paperwork", never an outcome such as "Escalations". The folders of the agent's sources are already topics, so DocsGPT suggests only what they miss and never a topic a folder covers; if the ticked topics would push folders out of the 15 places topics that sort questions have, the step names those folders. On a saved agent that already has enough recent conversations, it suggests no topics and points you to [Suggest from conversations](#insights-topics), which works from what people actually asked. Offered when insights are on for the instance and for the agent.
+
+The usage limit and guardrails are the agent's policy: they're offered only to someone who can change it (the owner, or an editor with policy access). See [guardrails](/Agents/guardrails) and [insights](/Using/analytics-and-logs#analytics-settings-for-an-agent).
+
+### Change an existing agent
+
+On a saved agent, **Improve** opens the panel for changes: write what to change, such as "make the description shorter", and DocsGPT changes only that and leaves the other fields as they are. When Insights sorts the agent's conversations, the panel first lists what they show under **From its conversations** (see [Fix what Insights found](#fix-what-insights-found)), then the ideas from its setup under **From its setup**. Those offer what the agent lacks first: **Finish setup: limits and safety** when it has neither a usage limit nor guardrails, **Attach knowledge it can answer from**, **Write a prompt for this agent** while it uses a built-in prompt, and **Suggest conversation starters**. After those come **Make the description shorter** for a long description and **Tighten the prompt** for a prompt of its own. On a published or shared agent, the panel reminds you that a saved change reaches everyone using it.
+
+A change to the agent's prompt opens the prompt in place of the form, with the panel still beside it:
+
+- **Your own prompt** opens with its saved text and a list of **Proposed changes**, the same review as under **Settings → Prompts**: **Accept** or **Reject** each one in the text, or use **Accept all**, **Review one by one** or **Discard** in the panel. **Save** on the prompt waits until the review is done, and saving changes that prompt for every agent that uses it. Asking for something else mid-review keeps the choices made so far. The changes are checked against the prompt's whole saved text; if some no longer fit it, the review lists only those that do and says how many no longer fit.
+- **A built-in or shared prompt** isn't changed: DocsGPT writes a new prompt from its text, as in [the prompt step](#the-prompt-step), and lists what the new prompt drops from the one it replaces, as under [Check before you save](#check-before-you-save).
+
+While a prompt is open in place of the form, the panel works on that prompt, even one opened from the **Prompt** list that the agent doesn't use. On a prompt you can only read, a prompt DocsGPT writes opens as a new prompt to use.
+
+If a turn also changes the form while the prompt is open, such as new starters, the turn offers **Show in agent** to go back and see them.
+
+### Fix what Insights found
+
+When [Insights](/Using/analytics-and-logs#conversation-insights) sorts a saved agent's conversations and the agent has at least 10 analyzed conversations in the last 30 days, **Improve** opens on what they show. Under **From its conversations · last 30 days**, up to three rows name the gaps that cost the agent the most, by topic: **Returns & claims**, with **Docs gap · 23 of 160 questions · up from 19** under it. The figures come straight from Insights, with no model call, and use the gap names the Insights page uses (**Docs gap**, **Search missed the page**, **Needs account access or staff**, **Answer not backed by the docs** and the rest). An agent without topics gets one row per kind of gap. **Find what else to fix** asks DocsGPT to look for itself.
+
+Choosing a row sends a request such as **Fix “Docs gap” in Returns & claims**, and DocsGPT starts from that gap. It reads the agent's gap summary and then only what it needs: a few example questions for the one or two gaps it acts on, or a few short question-and-answer excerpts. While it works, the panel shows **Read Insights: 412 conversations, last 30 days** and **Read 5 example questions**, which you can open to see the questions it read.
+
+The answer puts each gap it acts on in a card: the gap with its figures, one question it read, and the fix. A fix DocsGPT can make lands in the form as usual, marked **Drafted**: a prompt edit (an honest hand-off, a scope line, what to do with an unclear question), starters, or, for answers the docs don't back, the **Grounding in sources** check, in **Monitor only** (only for someone who can change the agent's policy). A fix it can't make says what you need to do, such as adding a page to a source, with links to the source and to the questions in Logs. A docs gap is always such a fix: DocsGPT changes nothing in the form for it, not even a starter or a prompt line, and names the page the docs lack and the source it belongs in. Each change's reason quotes the question it rests on, and a change that no question it read backs is left out. It never changes the usage limit or the Insights settings this way.
+
+When Insights is off for the agent, a note says DocsGPT can only go by the agent's setup, with **Turn on Insights** for someone who can change it. Until the agent has enough analyzed answers, a note says how many it has so far. When Insights is off for the whole instance, the panel shows only the setup ideas.
+
+You can also start from Insights or Logs. On the agent's Insights page, a [Docs gaps](/Using/analytics-and-logs#docs-gaps) row's panel has **Improve the agent**, which opens the agent with the panel already working on that gap. A topic's row is asked by the name the agent's gap summary gives it, such as **Fix the docs gap in “Returns & claims”**; when the summary no longer has that row, the panel opens on its first screen and sends nothing. A row grouped by page or source asks **Fix: Docs gap** and works on that page's or source's own questions. The request is never worded from the link itself, so a link someone sends you can't put words in your mouth. In the agent's Logs, or under **Settings → Logs**, an expanded row has **Improve the agent** next to **View trace** when the answer was flagged (a docs gap, not fully answered, or asked for a person) or disliked; DocsGPT then works from that conversation alone, starting from the answer you expanded. Both appear for someone who can edit the agent.
+
+### What lands in the form
+
+Each field a draft changed is marked **Drafted**. **Undo** on the marker puts back what the field held before DocsGPT first drafted it, even after several drafts; editing the field yourself removes the marker and keeps your edit. In the panel, a field you undid reads **Undone, back to empty** (or **back to the previous value**) in the turn's **Filled** list, and a finished step's line counts it, such as **1 undone**. A setting with a switch, such as **Request limiting**, carries the marker after its title. **Left out** lists anything DocsGPT chose but isn't allowed to use, such as a source you can't open or a setting your role can't change. A prompt asked for after the prompt step, such as during **Finish setup**, is left out too, as a change for another step: change it in the form's **Prompt** field.
+
+Closing the panel halfway keeps the build: the wand button reads **Resume** while the panel is closed and opens it where you left off. On a phone, the sheet steps aside after each step so you can see the form, and a bar at the bottom holds the step and its **Next** (**Finish** on the last step), which opens the sheet again so you see the next turn, its questions or the done message.
+
+**Save Draft** or **Publish** saves the form as usual, drafted fields included, and their **Drafted** marks go; a field DocsGPT fills while the save is under way keeps its mark. **Publish** also ends the conversation, unless you went on with it while publishing.
+
+### What it may change
+
+A draft can set only these fields:
+
+| Field | What it does |
+| --- | --- |
+| Name and description | A short name, and one or two sentences on what the agent does and for whom. |
+| Agent type | **Classic** (one pass, fast, right for support and Q&A) or **Research** (searches several times and writes longer answers). It prefers Classic unless you ask for research-style work. |
+| Knowledge | Sources you can attach to your own agents. It skips sources that failed to ingest. |
+| Tools | Tools you can add to your own agents. |
+| Prompt | An existing prompt, or a new one you save with **Use this prompt**. |
+| Starters | Up to four example first questions, each up to 200 characters. |
+| Usage limit, guardrails, Insights topics | Only in the Limits and safety step, and only what you pick there. An improvement from [Insights](#fix-what-insights-found) may add the **Grounding in sources** check, in **Monitor only**. |
+
+It never changes the agent's models, allowed origins, API write permissions, JSON response schema or sharing. A list it sends (knowledge, tools, starters) replaces the whole list, adding at most 30 sources and 30 tools at a time (so it can still shorten a longer list), and it checks every item: an item that doesn't exist or that you can't open is left out and listed under **Left out**. If every item it sent is left out, the form keeps its list.
+
+### What it reads
+
+To pick knowledge, tools and prompts, DocsGPT reads your workspace as the form's pickers show it: your own sources, tools, prompts and agents, and those your teams share with you for use on your own agents. It starts from a short list: what the form already uses, then your newest sources, tools and prompts, by name with a line of detail. When you have more than the list holds, it searches the rest by name and description. It opens a source's file list, a tool's actions or a prompt's full text only when it needs to look closer, so a large workspace doesn't crowd what the model reads. It never reads a tool's configuration or secrets. On a saved agent with Insights, it also reads the agent's gap summary, and when it acts on a gap, a few of the agent's users' questions (see [Privacy](#privacy)); the footer then says it can read **this agent's Insights**. The prompt panel reads none of this: it works from the prompt's own text, the names, types, knowledge counts and tool names of the agents using it, and what you tell it, and its footer says so (**reads this prompt and the 3 agents using it**, or **reads only this prompt** when no agent uses it). What it reads is treated as data: an instruction written in a document name or a prompt doesn't steer it, only your own messages do. Invisible characters that can make text read differently to the model than to you (bidirectional overrides, zero-width spaces, tag characters) are removed from what it reads, from your messages and from the text its edits put in a prompt.
+
+## Prompts
+
+A prompt opens as a page of its own, under **Settings → Prompts** or from the agent form's **Prompt** list (**Add prompt**, or a prompt's pencil or eye), with **Improve** (or **Write**, on a prompt with no text yet, new or saved) next to **Save**. It opens the Draft with DocsGPT panel beside the prompt; **Start over** in its header begins a new conversation and keeps the text.
+
+- **Improve**, on a prompt with text: choose **Review it** (see [Review a prompt](#review-a-prompt)), **Make it clearer and shorter** or **Add what to do when it doesn't know**, or describe a change, such as "stop it from quoting prices". When a change needs a detail only you know that neither the prompt nor your messages give, such as the support email address, DocsGPT asks for it first rather than leave a blank; **Skip and draft** makes the change without it, for that request only. DocsGPT answers with a list of **Proposed changes** under the text, each marking only the words it removes and adds, with its reason, and the editor opens on change 1. **Accept** or **Reject** each one (**Undo** reverses your choice); in the panel, **Accept all**, **Review one by one** or **Discard** finishes the review. Accepted changes go into the text; nothing is saved until you choose **Save**. Under **Settings → Prompts**, the panel also offers **Save prompt** under its latest result once no review is open and the prompt has unsaved changes, and on a phone **Review one by one** and a finding's **Change 1** put the sheet aside so the page lands on the change, with **Back to DocsGPT** under the changes; the sheet comes back once every change is chosen. Accepting only some changes can leave a template whose tags don't pair up: the page then shows an error under the text and won't save it until you fix it (see [Add, edit and delete prompts](/Agents/prompts#add-edit-and-delete-prompts)).
+- **Write**, on a prompt with no text: pick a starting point (**Website chat for customers**, **Internal helpdesk** or **Research assistant**) or describe the prompt in your own words, such as "a friendly helper for our HR handbook". DocsGPT fills in the name and the text, each marked **Drafted** with an undo. See [Write a new prompt](#write-a-new-prompt).
+- On a prompt you can't edit (a built-in **default**, **creative** or **strict** prompt, or a shared prompt you can only view), **Improve** makes an editable copy first.
+
+The page names the agents that use the prompt, and the panel reminds you that a saved change reaches all of them. On the agent form, the same page opens in place of the form, and the panel there is the agent's: a change to your own prompt comes back as the same **Proposed changes**, and a new prompt as text marked **Drafted**. See [Change an existing agent](#change-an-existing-agent).
+
+### Review a prompt
+
+**Review it** (its status line reads **Reviewing the prompt…**) checks the prompt against a checklist and against the text DocsGPT itself wraps around a plain-text prompt (see [Plain text by default](#plain-text-by-default)):
+
+| Check | What it looks for |
+| --- | --- |
+| Who it serves | The audience, and the company or product. |
+| Scope and off-limits | What it covers and what it stays away from. |
+| Hand-off | Where it sends people it can't help, with a real contact. |
+| When it doesn't know | What it does when the knowledge doesn't cover a question. |
+| Tone and length | How it talks and how long its answers are. |
+| No placeholders left | Blanks such as "[support email]" or "TODO". |
+| DocsGPT's own rules | Nothing that fights how DocsGPT answers (from the attached knowledge, with citations, reading documents as data, never claiming an action it didn't take). In a template, the Boundaries section, the citation rules and the `{% if %}` blocks are kept, and it parses. |
+| Lines DocsGPT adds | No lines DocsGPT already adds, such as today's date. |
+| Fits its agents | It suits the agents that use it, their knowledge and tools. Only for a prompt agents use. |
+
+The answer lists what it found under **To fix** and **Worth a look**, each with its reason and one link: **Change 1** shows the matching change in the editor, where you accept or reject it as with any improvement; a link such as **Add the address** puts a request in the ask bar for a detail only you know; **Open Fleet Desk** opens an agent the finding is about. The checks that pass fold into one line, such as **5 checks pass**, which opens to name them. **Accept all**, **Review one by one** and **Discard** work as for an improvement.
+
+### Things to check
+
+Under a prompt's text, a folded line such as **2 things to check** lists what DocsGPT can spot without a model, as you type: a placeholder left, a line DocsGPT already adds (the date, how to cite, formatting, reading documents as data), a `{{ tools… }}` variable that runs its tool before every message (other than those the built-in prompts use), and a template without a Boundaries section or without `source.citation_rules`. It shows on prompts you can edit, under **Settings → Prompts** and in the agent form's prompt view, and works even while Draft with DocsGPT is off. While it is on, **Review the whole prompt with DocsGPT** at the end of the list runs **Review it**. Nothing is saved or blocked: it's a hint.
+
+### Write a new prompt
+
+Before it writes, DocsGPT asks about what your description leaves out: usually the company or product (you type the answer), where the assistant sends people it can't help, and the tone. A starting point tells it what that kind of prompt needs, so a website chat asks about the hand-off, and a research assistant about your documents and how answers should look. When an answer needs a detail only you know, a second round asks for it: the support email address, the contact form's link, or how people reach a person (a live-chat button and its hours). The prompt then tells people exactly where to go, because an assistant can't transfer a chat or contact anyone itself; it never promises "I'll connect you". It asks at most two rounds, and none when your description already covers it. **Skip and draft** writes the prompt straight away with what it knows; it skips only that turn's questions, so a later request may ask again.
+
+With the draft in the text, the panel lists what DocsGPT guessed under **I assumed**, such as "Hand-offs go to your support team", since it never leaves blanks like "[support email]" in the prompt. **Change** next to a guess puts it in the ask bar for your correction. Read the prompt through, then choose **Save prompt** in the panel (the same as **Save**), or ask for a change. Under **You could also**, the panel offers up to three next changes that build on your answers, such as "Add your opening hours"; choosing one sends it. Improvements end with these suggestions too.
+
+### Plain text by default
+
+DocsGPT writes prompts as plain text: who the agent serves, what it covers, and the rules that are specific to it (hand-offs, what it never promises, scope, tone, length). It leaves out what DocsGPT already adds around a plain-text prompt: the agent's identity and today's date, how to answer from the attached knowledge, the citation rules, formatting, the boundaries that treat documents and tool results as data, and notes about the platform, memory and attached files. See [How your prompt is assembled](/Agents/prompts#how-your-prompt-is-assembled).
+
+Any `{{ }}` turns a prompt into a template that DocsGPT uses exactly as written, without those sections, so DocsGPT adds template variables only when you ask for something only a variable can do. It never adds a `{{ tools… }}` variable you didn't name, since it runs the tool before every message: write the variable in your message (in the guided build, a message from an earlier step counts), such as `tools.memory.memory_view` (`tools.memory` allows any of the tool's actions). "Use my tools", or naming another variable, isn't enough, and a new action of a tool the prompt already uses must be named too. When it edits a template, such as a copy of a built-in prompt, it keeps the template's sections and changes only what you asked. It also keeps a `{summaries}` marker where your prompt has one, since that is where DocsGPT puts the retrieved documents.
+
+### Check before you save
+
+When a change affects how the prompt works, the panel warns you under **Check before you save**, for an edit and for a new prompt written in place of another:
+
+| Warning | When |
+| --- | --- |
+| It adds template variables | A plain-text prompt becomes a template, so DocsGPT stops adding the date, answering rules, citations, formatting and boundaries. |
+| It removes every template variable | A template becomes plain text, so DocsGPT starts adding its own sections around it. |
+| The Boundaries section is gone | Without it, the agent may follow instructions hidden in documents or tool results. |
+| The citation rules variable is gone | `{{ source.citation_rules }}` was removed, so answers stop citing sources as [1], [2]. |
+
+## Insights topics
+
+In an agent's [insights settings](/Using/analytics-and-logs#analytics-settings-for-an-agent), **Suggest from conversations** sits beside **Add topic**. It reads the agent's recent questions and suggests [topics](/Using/analytics-and-logs#topics) for what people ask that the current topics and folders don't cover. A suggestion may take the name of a folder you hid.
+
+It needs:
+
+- insights on for the instance (`DECISION_ANALYTICS_ENABLED`, with the [decision model](/Models/decision-model) running) and **Collect insights** on for the saved agent; while either is off, the button is hidden and a request is refused;
+- edit access to the agent, since it reads the agent's users' questions;
+- a saved agent with at least 10 conversations in the last 30 days, the same minimum Insights waits for before it shows a figure. Until then, a note stands in for the button: **Suggestions from conversations show once this agent has 10 recent conversations (4 so far).** Conversations through the agent's API key count. If DocsGPT can't check, a note says so with **Retry**.
+
+DocsGPT reads up to 300 recent questions, from the agent's newest 2,400 messages in the last 30 days and each repeated question once, putting first those the agent's current topics put under **None of these topics**, and suggests up to eight topics, written in the language most of the questions are in. Each suggestion shows:
+
+- its name and description, within the limits a topic has;
+- its kind, **One per question** or **Can overlap**. It suggests the second only for things that cut across subjects, such as "Bug report" or "Asks for a human";
+- its share of the questions, such as **18% of questions**. With the [decision model](/Models/decision-model) running, the share is measured: DocsGPT asks the model the same topic question the insights sweep asks, on up to 100 recent questions, and reports how many fit no topic before and after, such as **Tried the suggestions on 100 questions: 12% fit no topic, down from 41%.** When it can't measure, the share is the drafting model's guess, marked **Estimate**. A suggestion whose measured share comes to less than one of the questions it was tried on starts unticked, with a line saying so;
+- **Similar to "Shipping".** when it overlaps a topic you have, with a note on how they differ.
+
+Below the list, **Not suggested** lists what it left out, each with why, for example a subject a folder already covers. If adding the ticked topics would push folders out of the 15 places topics that sort questions have, it names them: **Adding these pushes out 2 folders, so their questions go to None of these: …**. If the ticked topics don't fit the room left, it asks you to untick some.
+
+Tick the topics you want and choose **Add 3 topics**. They join the list as if you had added each with **Add topic**, so you can still edit or remove them; **Save** stores them. **Discard** closes the suggestions.
+
+## Model and usage
+
+Draft with DocsGPT runs on your [task model](/Using/web-app#task-model), which you pick under **Settings → General**; the panel's **Change model** goes there. Without your choice, it uses the instance's task model. A model without tool calling works too: DocsGPT asks it for JSON instead. So do thinking models, such as DeepSeek's. A draft is never answered from the [LLM response cache](/Deploying/DocsGPT-Settings#llm-response-cache), so **Try again** asks the model again.
+
+Its model calls are recorded as token usage under your account with the source `drafter` (a flow of its own under **By flow** on [Analytics](/Using/analytics-and-logs#analytics)), and they count toward your [usage quota](/Deploying/Usage-Quotas) as chat without an agent. A turn you give up on (**Stop**, starting over, a new message while it works, leaving the page) makes no further model calls; a call already under way still counts. A turn has a deadline too: by default, a turn that takes more than 5 minutes in all ends with **The model didn't answer** (see [For operators](#for-operators)). A single model call has no limit of its own, since a slow model can take a few minutes to answer one. A draft leaves no conversation and no entry in Logs: the conversation lives in the open page, and leaving the page ends it.
+
+When a draft can't run, the panel says why:
+
+| Message | What to do |
+| --- | --- |
+| **Drafting is off** | An admin turned it off on this instance. |
+| **No model for drafting** | Pick a task model in **Settings → General**. |
+| **Too many requests** | You sent many requests in a minute, or have several drafts running at once. Wait a moment, then **Try again**. |
+| **Usage limit reached** | Your [usage quota](/Deploying/Usage-Quotas) is used up until it resets. |
+| **The draft didn't come out right** | The model's answer couldn't be used, even after one corrected try. Nothing changed; **Try again**, or pick a stronger task model. |
+| **The model didn't answer** | The model call failed or took too long. Nothing changed; **Try again**. |
+| **The prompt is too long** | DocsGPT drafts with prompts of up to 100,000 characters. Shorten the prompt, then send your message again. |
+| **Nothing to send** | Your message had no text DocsGPT can read, such as only invisible characters. Write it again. |
+| **You're signed out** | Your session ended. Sign in again, then send your message again; there's no **Try again**. |
+| **The task model can't run** | The model's provider refused its API key. Nothing changed, and there's no **Try again**: **Change the task model** opens **Settings → General**, where the model is marked **· key refused**, or ask an admin to check the key. |
+
+## Privacy
+
+- **What goes to the task model**: your messages, the form's current values, and, on the agent form, what DocsGPT reads from your workspace (names and descriptions of sources, tools and prompts, a source's file list, a prompt's text, a tool's actions). The prompt panel sends only the prompt, your messages and, for a review, the names, types, knowledge counts and tool names of the agents that use it. Tool configurations and secrets are never sent.
+- **Improving an agent from Insights sends end users' questions.** The task model gets the agent's gap summary (counts by topic and kind of gap), and when it acts on a gap, up to five of the agent's users' questions per read (each cut to 200 characters), or up to five question-and-answer excerpts (300 characters each); starting from a Logs row sends that one conversation's question and answer (600 characters each). As with topic suggestions, use a task model you trust with that data.
+- **Topic suggestions send end users' questions.** **Suggest from conversations** sends up to 300 of the agent's users' recent questions, each cut to 200 characters, to the task model. If the task model is a hosted provider's, those questions leave your stack, as chat messages do. Use a task model you trust with that data, or don't use topic suggestions on agents whose users should not be read this way.
+- **Nothing is stored** beyond the token usage rows. The measured shares come from the decision model, which runs inside your stack unless the operator set up [API mode](/Models/decision-model#api-mode).
+
+## For operators
+
+These settings control Draft with DocsGPT (see the [Settings Reference](/Deploying/Settings-Reference#agents)):
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `DRAFTER_ENABLED` | `true` | Offers Draft with DocsGPT. When `false`, every entry point is hidden and a request is refused. |
+| `DRAFTER_RATE_LIMIT_PER_MINUTE` | `10` | Draft requests one user may send per minute; every message, answer to questions and topic suggestion is one, and a request refused for the usage quota isn't counted. `0` turns the limit off. It is counted in Redis; without Redis nothing is limited. |
+| `DRAFTER_MAX_RUNNING_TURNS` | `4` | Draft turns one user may have running at once; one more is refused as rate-limited before any model call. `0` turns the limit off. It is counted in Redis; without Redis nothing is limited, and a turn that never ended (a crashed worker) stops counting once its deadline has passed. |
+| `DRAFTER_CALL_TIMEOUT_SECONDS` | `0` | Longest one model call may take, retries included, before the turn ends with an error the panel offers to try again. `0`, the default, sets no limit of its own, so only the turn's deadline applies: a slow model can take several minutes over one call. **Stop** ends a waiting call at once either way. |
+| `DRAFTER_TURN_TIMEOUT_SECONDS` | `300` | Longest one turn may take across all its model calls, reading your workspace included, before it ends with an error the panel offers to try again. `0` turns the limit off. |
+| `DRAFTER_MODEL_RETRIES` | `1` | Retries of one model call that failed before it answered with an error another try may fix (a 5xx, `429`, a timeout or a dropped connection). A retry waits what the provider's `Retry-After` asks, up to 10 seconds, and starts only with at least 30 seconds of the deadline left; otherwise the turn ends at once with an error the panel offers to try again. A call that failed partway is never retried, since its retry would bill the answer again. |
+
+It also needs a model: the user's task model, else the one an admin set under **Admin → Defaults**, else `TASK_MODEL_ID`, else the default model unless it is disabled (see [Task model](/Using/web-app#task-model)). With none it can use, it is hidden for that user.
+
+### Over the API
+
+Draft with DocsGPT is for the signed-in web app only. [Personal access tokens](/API/personal-access-tokens#scopes) can't call its routes (`403`, `not_available_to_tokens`), since a draft reads the whole workspace and runs the model on it.
+
+- `GET /api/drafter/config` returns `enabled`, `model` (`id` and `display_name`, or `null`) and `reason` (`disabled`, `no_model` or `null`).
+- `POST /api/drafter/stream` runs one turn and streams it as server-sent events. The body has `recipe` (`agent`, `prompt` or `topics`), `messages` (the conversation so far, oldest first, ending with the user's message; at most 24, each user message up to 8,000 characters), `context` (the form's current values, the prompt, or `{"agent_id": …}`) and, optionally, `turn_id`: an id you pick for the turn (32 lowercase hex characters), so you can stop it before its first event arrives. For the agent form, `context.step` is `basics`, `knowledge`, `prompt`, `safety` or `null` (changes to a saved agent); the web app sends only the current step's messages, with what you wrote in earlier steps in `context.earlier`, and each proposal names the steps it filled (`steps`) and the one to go to next (`next_step`). Events are `turn`, `status`, `message`, `questions`, `proposal` and `error`, and `end` always comes last. A refusal (`disabled`, `no_model`, `rate_limited`, `quota`, `bad_request`) is an `error` event in a `200` stream; a `bad_request` also has `reason`: `history` (the conversation itself is refused: start a new one), `too_long` (the prompt is over the read cap, given in `limit`), `empty` (the message is empty once cleaned) or `invalid`. A failed turn is an `error` event too: `invalid_output`, `model_error` (also for a call or turn past its deadline) or `model_auth`, when the provider refused the task model's key. `context.skip_questions` (`true`) sends a turn that takes no questions, as **Skip and draft** does. `turn` comes first and carries the turn's `id`: your `turn_id`, or one the server picked when you sent none or one that isn't a turn id. It is missing when the server can't stop turns (no Redis).
+- `POST /api/drafter/turns/<id>/cancel` stops your turn before its next model call, even one that hasn't started yet: a turn that starts later with that id stops at once. The stop is kept under your account, so it never reaches someone else's turn. It answers `202` once stored, `404` for an id that isn't a turn id, `429` past 60 stops a minute, and `503` without Redis. Closing the stream alone doesn't stop the turn on every server, so the web app calls this whenever it gives up on one.
+- For an improvement (`context.step` `null` on a saved agent), `context.gap` (`{"topic", "gap_type"}`, plus `group_by` (`page` or `source`) and `group_key`, the row's key, for a Docs gaps row grouped that way) starts from one gap and `context.conversation_id` from one conversation, with an optional `context.message_id` naming the answer in it to start from (one that isn't in that conversation of the agent is ignored). When the agent's Insights summary is available, the `status` event's `counts` has `insights_conversations`, each read of example questions adds a `read` event (`{"kind": "questions", "items": [...]}`), and the proposal has `gaps`: each with `topic`, `gap_type`, the figures (`expected`, `turns`, `previous`), `example`, the `fields` it set, `needs` and `links`. For the prompt recipe, `context.mode` is `improve`, `write` or `review`; a review proposal has `findings`, `passed` and `edits`.
+- `GET /api/drafter/agent_gaps?agent_id=<id>` returns the agent's gap summary for the last 30 days, with no model call: `available`, `reason` (`disabled`, `off_on_this_instance`, `agent_off`, `not_enough`, or `null`), `conversations`, `needed`, `days` and up to 10 `rows` (`topic`, `gap_type`, `expected`, `turns`, `previous`). It needs edit access to the agent.
+- `GET /api/drafter/topics/status?agent_id=<id>` returns `available`, `conversations` (in the last 30 days, counted only up to `needed`), `needed` and `reason`: `disabled` (Draft with DocsGPT is off), `off_on_this_instance` or `turned_off_for_this_agent` (insights are off; `conversations` is then `0`), else `null`. It needs edit access to the agent, and answers `500` when the status can't be read.
+
+`POST /api/check_prompt` (`{"content": "…"}`) is a prompts route, not a drafter one: it returns `checks`, the model-free [things to check](#things-to-check), whether Draft with DocsGPT is on or off, and a [personal access token](/API/personal-access-tokens#scopes) with `prompts:read` may call it. It answers `429` past 120 checks a minute per user.
+
+See the [REST API reference](/API/reference) for the full schemas.

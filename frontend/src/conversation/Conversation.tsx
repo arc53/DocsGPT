@@ -34,6 +34,7 @@ import { AgentCardSkeleton } from './ChatLoadingSkeleton';
 import ConversationMessages from './ConversationMessages';
 import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
+import { pendingQuestionCall, type QuestionAction } from './questionCall';
 import { composerSubmitTarget, resendPlan } from './turnSubmission';
 import { ToolCallsType } from './types';
 import {
@@ -42,6 +43,7 @@ import {
   loadConversation,
   resendQuery,
   resetConversation,
+  resumeQuestion,
   selectQueries,
   selectStatus,
   submitToolActions,
@@ -217,6 +219,15 @@ export default function Conversation() {
     [dispatch],
   );
 
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      dispatch(resumeQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them.
+  const waitingQuestion = pendingQuestionCall(queries);
+
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
   // The mount key the auto-open below last saw; a new one is a chat
   // whose history must not open anything.
@@ -226,6 +237,9 @@ export default function Conversation() {
   // Keeps the last content on screen while the phone sheet slides out.
   const [shownCompanion, setShownCompanion] = useState(companion);
   if (companion && companion !== shownCompanion) setShownCompanion(companion);
+  // Until the docked panel has shrunk out, so the columns widen with it.
+  const [companionPresent, setCompanionPresent] = useState(false);
+  if (companion && !companionPresent) setCompanionPresent(true);
 
   // The first prompt sent while the chat had no id. The id the server then
   // assigns belongs to that chat; a chat opened from the sidebar while the
@@ -392,7 +406,11 @@ export default function Conversation() {
         lastQueryReturnedErr,
         composerFileCount: sendableAttachments.length,
       });
-      if (target.kind === 'retry') {
+      if (target.kind === 'answer') {
+        // What is typed answers the questions; it resumes the paused turn
+        // instead of starting a new one.
+        handleQuestionAction(target.callId, { answer: question.trim() });
+      } else if (target.kind === 'retry') {
         // Different prompt = new logical action, fresh idempotency key.
         if (!target.samePrompt) {
           dispatch(
@@ -514,7 +532,7 @@ export default function Conversation() {
     [openArtifactId, openArtifactVersion, openArtifactListKey],
   );
 
-  const isCompanionDocked = !isMobile && companion !== null;
+  const isCompanionDocked = !isMobile && companionPresent;
 
   const companionPanel =
     shownCompanion?.kind === 'artifact' ? (
@@ -575,6 +593,7 @@ export default function Conversation() {
                 starters={selectedAgent?.starters}
                 onOpenArtifact={handleOpenArtifact}
                 onToolAction={handleToolAction}
+                onQuestionAction={handleQuestionAction}
                 isSplitView={isCompanionDocked}
                 agentId={selectedAgent?.id}
                 // Same rule as the composer's Knowledge picker: an agent's
@@ -632,6 +651,9 @@ export default function Conversation() {
                 queuedQuestion={queuedQuestion}
                 onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
                 loading={status === 'loading'}
+                placeholder={
+                  waitingQuestion ? t('questions.typeAnswer') : undefined
+                }
                 // A send now would go to the chat still applied, not the URL's.
                 sendBlocked={isLoadingUrlChat}
                 showSourceButton={selectedAgent ? false : true}
@@ -652,6 +674,7 @@ export default function Conversation() {
           onOpenChange={(open) => {
             if (!open) setCompanion(null);
           }}
+          onClosed={() => setCompanionPresent(false)}
           expandable={
             shownCompanion?.kind === 'artifact' ||
             shownCompanion?.kind === 'artifacts'

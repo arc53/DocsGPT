@@ -312,9 +312,7 @@ class TestCleanSchema:
         assert result["type"] == "STRING"
 
     def test_nested_properties_cleaned(self, llm):
-        # _clean_schema recursively cleans the properties dict value.
-        # Property names that happen to match allowed_fields survive.
-        # This tests the recursive cleaning on schema values.
+        # Each property's schema is cleaned; every property name survives.
         schema = {
             "type": "object",
             "properties": {
@@ -322,14 +320,10 @@ class TestCleanSchema:
             },
         }
         result = llm._clean_schema(schema)
-        # "type" is in allowed_fields, so the property survives as a key
-        # Its value gets uppercased since it's a type field
         assert "properties" in result
         assert result["properties"]["type"]["type"] == "STRING"
 
     def test_required_validated_against_properties(self, llm):
-        # Property names must be in allowed_fields to survive _clean_schema
-        # "type" is in allowed_fields so it survives as a property key
         schema = {
             "type": "object",
             "properties": {"type": {"type": "string"}},
@@ -993,9 +987,7 @@ class TestCleanSchemaAdditional:
         assert "required" not in result
 
     def test_valid_required_empty_after_filter(self, llm):
-        """Cover line 290: valid_required is non-empty.
-        Note: 'type' is in allowed_fields, so survives as a property key.
-        """
+        """Cover line 290: valid_required is non-empty."""
         schema = {
             "type": "object",
             "properties": {"type": {"type": "string"}},
@@ -1290,9 +1282,7 @@ class TestCleanSchemaAdditional2:
         assert "customField" not in result
 
     def test_required_validated_against_properties(self, llm):
-        """Cover lines 283: required validated against properties.
-        Note: _clean_schema recurses on 'properties' dict, keeping only allowed_fields.
-        So we need a 'properties' key after cleaning to trigger line 283."""
+        """Cover lines 283: required validated against properties."""
         schema = {
             "type": "object",
             "required": ["description"],
@@ -1301,11 +1291,8 @@ class TestCleanSchemaAdditional2:
             },
         }
         result = llm._clean_schema(schema)
-        # properties key exists (description has allowed subfields)
-        # required should validate against properties keys
         assert "properties" in result
-        if "required" in result:
-            assert "description" in result["required"]
+        assert result["required"] == ["description"]
 
     def test_required_removed_when_no_valid_props(self, llm):
         """Cover line 292-294: all required props invalid removes required key."""

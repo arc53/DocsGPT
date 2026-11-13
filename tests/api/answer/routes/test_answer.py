@@ -184,6 +184,38 @@ class TestAnswerResourcePost:
         # about retryability.
         assert body["error"] != "An error occurred processing your request"
 
+    def test_mixed_up_tool_actions_return_400_with_the_problem(
+        self, answer_client, mock_stream_processor, caplog,
+    ):
+        """A resume whose actions don't fit its calls is the client's mistake, not a 500."""
+        from docsgpt.api.answer.services.continuation_service import (
+            InvalidToolActionsError,
+        )
+
+        problem = "A question call takes an answer or skipped, not a decision or a result."
+        mock_stream_processor.resume_from_tool_actions.side_effect = (
+            InvalidToolActionsError(problem)
+        )
+
+        with patch(
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
+            return_value=None,
+        ), caplog.at_level("ERROR"):
+            resp = answer_client.post(
+                "/api/answer",
+                data=json.dumps({
+                    "question": "",
+                    "conversation_id": _CONV_ID,
+                    "tool_actions": [{"call_id": "call_1", "decision": "approved"}],
+                }),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 400
+        assert resp.get_json() == {"error": problem, "code": "invalid_tool_actions"}
+        # No traceback on the ERROR channel for a bad request.
+        assert not caplog.records
+
     def test_exception_returns_500(self, answer_client, mock_stream_processor):
         with patch(
             "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",

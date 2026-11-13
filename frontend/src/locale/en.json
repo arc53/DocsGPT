@@ -161,7 +161,7 @@
     "label": "Activity",
     "marks": {
       "failed": "Something failed",
-      "needsYou": "Waiting for your approval",
+      "needsYou": "Waiting for you",
       "unread": "Unread",
       "watching": "Watching for changes",
       "working": "Working"
@@ -174,6 +174,7 @@
     },
     "now": {
       "allMonitors": "All monitors",
+      "answer": "Answer",
       "apiRequests_one": "{{formatted}} request",
       "apiRequests_other": "{{formatted}} requests",
       "approval": "Approval",
@@ -222,6 +223,7 @@
       },
       "pausedAfter_one": "{{name}} paused after {{formatted}} failure",
       "pausedAfter_other": "{{name}} paused after {{formatted}} failures",
+      "question": "Question",
       "ranByHand": "run now",
       "reading": "reading the content",
       "reconnect": "{{name}} needs reconnecting",
@@ -259,6 +261,7 @@
       "timesToday_other": "{{formatted}} runs in the next 24 hours",
       "upNext": "Up next",
       "viewRuns": "View runs",
+      "waitingForAnswer": "Waiting for your answer",
       "watching": "Watching",
       "writing": "writing the answer"
     },
@@ -1502,9 +1505,9 @@
     "errors": {
       "clientDisconnect": "The response stopped before anything was produced. Try again.",
       "contextLength": "This message and its attached files are too large for the model's context window. Send fewer or smaller files.",
-      "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or make them a Knowledge source the chat can search instead of sending them whole.",
       "contextLengthSized": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files.",
-      "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or make them a Knowledge source the chat can search instead of sending them whole.",
       "noAnswer": "The model kept reasoning without starting an answer, so it was stopped. Try again, or choose a different model.",
       "serverError": "Please try again later. We apologize for any inconvenience.",
       "stopped": "You stopped this answer before it wrote anything. Try again to get one.",
@@ -1788,6 +1791,369 @@
     }
   },
   "documentation": "Documentation",
+  "drafter": {
+    "agent": {
+      "build": {
+        "allFilled": "All steps filled",
+        "changePlaceholder": "Or tell me what to change…",
+        "check": "Check {{step}}",
+        "checkForm": "Check the form first",
+        "continue": "Continue with {{step}}.",
+        "continueStep": "Continue: {{step}}",
+        "describePlaceholder": "Describe the agent…",
+        "done": "That's every part. Nothing about the agent is saved yet: Publish, then try it in Preview, or Save Draft to come back later.",
+        "doneBlocked": "That's every part, but Publish stays off until the agent has {{missing}}. Nothing about the agent is saved yet.",
+        "filledAtOnce_one": "{{count}} filled at once",
+        "filledAtOnce_other": "{{count}} filled at once",
+        "finish": "Finish",
+        "folded": "{{step}}: {{result}}",
+        "goTo": "Go to {{field}}",
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
+        "missing": {
+          "agentType": "an agent type",
+          "contextLimit": "a valid context limit",
+          "description": "a description",
+          "guardrails": "its guardrail checks set up",
+          "jsonSchema": "a valid JSON response schema",
+          "name": "a name",
+          "origins": "its allowed origins",
+          "prompt": "a prompt"
+        },
+        "next": "Next: {{step}}",
+        "nextShort": "Next",
+        "progress": "Step {{number}} of {{total}} · {{step}}",
+        "result": {
+          "checks_one": "{{count}} check in {{mode}}",
+          "checks_other": "{{count}} checks in {{mode}}",
+          "noLimit": "no limit",
+          "noName": "no name yet",
+          "none": "nothing set",
+          "requests_one": "{{count, number}} request per 24 hours",
+          "requests_other": "{{count, number}} requests per 24 hours",
+          "starters_one": "{{count}} starter",
+          "starters_other": "{{count}} starters",
+          "tokens_one": "{{count, number}} token per 24 hours",
+          "tokens_other": "{{count, number}} tokens per 24 hours",
+          "topics_one": "{{count}} Insights topic",
+          "topics_other": "{{count}} Insights topics"
+        },
+        "resume": "Resume",
+        "resumeLabel": "Resume drafting: step {{number}} of {{total}}",
+        "skipped": "{{step}}: nothing to set here",
+        "steps": {
+          "basics": "Basics",
+          "knowledge": "Knowledge",
+          "prompt": "Prompt and starters",
+          "safety": "Limits and safety"
+        }
+      },
+      "draftedCount_one": "Drafted {{count}} field. Check it before you save.",
+      "draftedCount_other": "Drafted {{count}} fields. Check them before you save.",
+      "droppedLine": "{{field}}: {{reason}}",
+      "droppedReasons": {
+        "not_allowed": "a setting your role can't change",
+        "not_found": "an item that doesn't exist",
+        "other": "an item it couldn't use",
+        "other_step": "a change for another step"
+      },
+      "fields": {
+        "limits": "Usage limit"
+      },
+      "formEdited": "You changed {{fields}} in the form.",
+      "improve": {
+        "finishSetup": "Finish setup: limits and safety",
+        "intro": "What should change in {{name}}?",
+        "introPublished": "What should change in {{name}}? It's published, so a saved change reaches everyone using it.",
+        "introShared": "What should change in {{name}}? It's shared, so a saved change reaches everyone using it.",
+        "knowledge": "Attach knowledge it can answer from",
+        "shorter": "Make the description shorter",
+        "starters": "Suggest conversation starters",
+        "tightenPrompt": "Tighten the prompt",
+        "writePrompt": "Write a prompt for this agent"
+      },
+      "insights": {
+        "agentOff": "Insights is off for this agent, so I can only go by its setup.",
+        "downFrom": "down from {{previous}}",
+        "findMore": "Find what else to fix",
+        "findMoreDescription": "Reads Insights and a few example conversations",
+        "fix": "Fix: {{gap}}",
+        "fixDocsGap": {
+          "topic": "Fix the docs gap in “{{where}}”"
+        },
+        "fixIn": "Fix “{{gap}}” in {{topic}}",
+        "fromConversation": "Improve the agent from this conversation",
+        "gapLine_one": "{{gap}} · {{expected}} of {{formatted}} question",
+        "gapLine_other": "{{gap}} · {{expected}} of {{formatted}} questions",
+        "heading": "From its conversations",
+        "improveAgent": "Improve the agent",
+        "notEnough": "Once it has {{needed}} analyzed answers in {{days}} days (it has {{conversations}}), I can suggest fixes from what users asked.",
+        "openSource": "Open {{name}}",
+        "quoted": "“{{text}}”",
+        "seeInLogs": "See the questions in Logs",
+        "setupHeading": "From its setup",
+        "theSource": "the source",
+        "turnOn": "Turn on Insights",
+        "upFrom": "up from {{previous}}",
+        "window_one": "last {{count}} day",
+        "window_other": "last {{count}} days"
+      },
+      "prompt": {
+        "changePlaceholder": "Or tell me what to change in the prompt…",
+        "changes_one": "{{count}} change to review",
+        "changes_other": "{{count}} changes to review",
+        "editsStale": "None of my changes fit the prompt's saved text any more. Ask me again and I'll work from it.",
+        "keep": "Keep {{name}} instead",
+        "newPrompt": "New prompt",
+        "open": "Open prompt",
+        "parked": "The prompt I wrote is still open, not saved.",
+        "reviewHint": "Accept or reject each change in the prompt view, then save the prompt. Every agent that uses it gets the saved text.",
+        "savedOnly": "Prompt saved and set.",
+        "saved_one": "Prompt saved and set. {{count}} starter is ready under Starters: check it.",
+        "saved_other": "Prompt saved and set. {{count}} starters are ready under Starters: check them.",
+        "unfit_one": "{{count}} change no longer fits the prompt's text",
+        "unfit_other": "{{count}} changes no longer fit the prompt's text",
+        "use": "Use this prompt",
+        "viewHint": "Check it in the prompt view: change it there, or tell me here, then press Use this prompt. It's saved to your prompts when you do.",
+        "wrote_one": "Wrote a new prompt · {{count}} word",
+        "wrote_other": "Wrote a new prompt · {{count}} words"
+      },
+      "showInAgent": "Show in agent"
+    },
+    "askLabel": "Message to DocsGPT",
+    "askPlaceholder": "Ask for a change…",
+    "build": "Build",
+    "changeModel": "Change model",
+    "counts": {
+      "agents_one": "{{count}} agent",
+      "agents_other": "{{count}} agents",
+      "models_one": "{{count}} model",
+      "models_other": "{{count}} models",
+      "prompts_one": "{{count}} prompt",
+      "prompts_other": "{{count}} prompts",
+      "sources_one": "{{count}} knowledge source",
+      "sources_other": "{{count}} knowledge sources",
+      "tools_one": "{{count}} tool",
+      "tools_other": "{{count}} tools"
+    },
+    "drafted": "Drafted",
+    "droppedTitle": "Left out",
+    "errors": {
+      "auth": {
+        "description": "Your session ended, so DocsGPT couldn't draft. Sign in again, then send your message again.",
+        "title": "You're signed out"
+      },
+      "bad_request": {
+        "description": "The request couldn't be read. Reload the page and try again.",
+        "startOver": "DocsGPT couldn't take this conversation. What you've drafted stays.",
+        "title": "Couldn't send that"
+      },
+      "disabled": {
+        "description": "An admin turned off drafting with DocsGPT on this instance.",
+        "title": "Drafting is off"
+      },
+      "empty_message": {
+        "description": "Your message has no text DocsGPT can read. Write it again and send it.",
+        "title": "Nothing to send"
+      },
+      "invalid_output": {
+        "description": "The model's answer couldn't be used. Nothing in the form changed.",
+        "title": "The draft didn't come out right"
+      },
+      "model_auth": {
+        "description": "The provider refused the API key for {{model}}. Nothing in the form changed.",
+        "descriptionNoModel": "The provider refused the task model's API key. Nothing in the form changed.",
+        "fix": "Change the task model",
+        "title": "The task model can't run"
+      },
+      "model_error": {
+        "description": "Something went wrong while drafting. Nothing in the form changed.",
+        "title": "The model didn't answer"
+      },
+      "no_model": {
+        "description": "Pick a task model in Settings › General, then try again.",
+        "title": "No model for drafting"
+      },
+      "prompt_too_long": {
+        "description": "DocsGPT drafts with prompts of up to {{limit, number}} characters. Shorten it, then send your message again.",
+        "title": "The prompt is too long"
+      },
+      "quota": {
+        "description": "You've used up your allowance for now. Drafting works again once it resets.",
+        "title": "Usage limit reached"
+      },
+      "rate_limited": {
+        "description": "Wait a moment.",
+        "title": "Too many requests"
+      },
+      "request_invalid": {
+        "description": "The request couldn't be read. Reload the page and try again.",
+        "title": "Couldn't send that"
+      }
+    },
+    "filled_one": "Filled {{count}} field",
+    "filled_other": "Filled {{count}} fields",
+    "footer": "Uses {{model}} · can read your agents, knowledge, tools and prompts.",
+    "footerInsights": "Uses {{model}} · can read your agents, knowledge, tools, prompts and this agent's Insights.",
+    "footerInsightsNoModel": "Can read your agents, knowledge, tools, prompts and this agent's Insights.",
+    "footerNoModel": "Can read your agents, knowledge, tools and prompts.",
+    "footerPrompt": "Uses {{model}} · reads only this prompt.",
+    "footerPromptAgentsNoModel_one": "Reads this prompt and the agent using it.",
+    "footerPromptAgentsNoModel_other": "Reads this prompt and the {{formatted}} agents using it.",
+    "footerPromptAgents_one": "Uses {{model}} · reads this prompt and the agent using it.",
+    "footerPromptAgents_other": "Uses {{model}} · reads this prompt and the {{formatted}} agents using it.",
+    "footerPromptNoModel": "Reads only this prompt.",
+    "full": {
+      "description": "It's as long as a draft conversation can get. What you've drafted stays.",
+      "title": "This conversation is full"
+    },
+    "improve": "Improve",
+    "lookedAtWorkspace": "Looked at your workspace",
+    "lookedAtWorkspaceCounts": "Looked at your workspace: {{counts}}",
+    "prompt": {
+      "accept": "Accept",
+      "acceptAll": "Accept all",
+      "acceptChange": "Accept change {{number}}",
+      "accepted": "Accepted",
+      "addedText": "Added: ",
+      "assumptionsTitle": "I assumed",
+      "backToDrafter": "Back to DocsGPT",
+      "changeAssumption": "Change",
+      "changeAssumptionLabel": "Change: {{assumption}}",
+      "changeAssumptionPrefill": "About “{{assumption}}”: ",
+      "checks": {
+        "boundaries_removed": "The Boundaries section is gone. Without it, the agent may follow instructions hidden in documents or tool results.",
+        "citations_removed": "The citation rules variable (source.citation_rules) is gone, so answers will stop citing sources as [1], [2].",
+        "to_persona": "This removes every template variable, so DocsGPT will treat the prompt as plain text and add its own sections around it: the date, answering rules, citations, formatting and boundaries.",
+        "to_template": "This adds template variables, so DocsGPT will use the prompt exactly as written and stop adding its own sections: the date, answering rules, citations, formatting and boundaries."
+      },
+      "discard": "Discard",
+      "improvePlaceholder": "Say what to change, e.g. stop it from quoting prices…",
+      "introImprove": "I can review this prompt or change something specific. Nothing is saved until you save.",
+      "introImproveUsedBy_one": "I can review this prompt or change something specific. It's used by {{formatted}} agent, so a saved change reaches it.",
+      "introImproveUsedBy_other": "I can review this prompt or change something specific. It's used by {{formatted}} agents, so a saved change reaches all of them.",
+      "introWrite": "What's this prompt for? Pick a starting point or describe it, and I'll ask what I need before I write. Nothing is saved until you save.",
+      "nextTitle": "You could also",
+      "readAndSave": "Read it through in the editor, then save it or tell me what to change.",
+      "reject": "Reject",
+      "rejectChange": "Reject change {{number}}",
+      "rejected": "Rejected",
+      "removedText": "Removed: ",
+      "review": {
+        "allPassed_one": "The {{count}} check passes",
+        "allPassed_other": "All {{count}} checks pass",
+        "change": "Change {{number}}",
+        "changeLabel": "Show change {{number}} in the editor",
+        "checks": {
+          "agents_fit": "Fits its agents",
+          "audience": "Who it serves",
+          "builtin_lines": "Lines DocsGPT adds",
+          "builtin_rules": "DocsGPT's own rules",
+          "hand_off": "Hand-off",
+          "placeholders": "No placeholders left",
+          "scope": "Scope and off-limits",
+          "tone": "Tone and length",
+          "unknowns": "When it doesn't know"
+        },
+        "openAgent": "Open {{name}}",
+        "passed_one": "{{count}} check passes",
+        "passed_other": "{{count}} checks pass",
+        "toFix": "To fix",
+        "worthALook": "Worth a look"
+      },
+      "reviewLabel": "Proposed changes",
+      "reviewOneByOne": "Review one by one",
+      "savePrompt": "Save prompt",
+      "skipMessage": "Draft it with what you know.",
+      "suggestions": {
+        "clearer": "Make it clearer and shorter",
+        "review": "Review it",
+        "reviewDescription": "Who it serves, scope, hand-offs and tone, and what clashes with DocsGPT's own instructions",
+        "unsure": "Add what to do when it doesn't know"
+      },
+      "undoChoice": "Undo",
+      "undoChoiceLabel": "Undo your choice on change {{number}}",
+      "warningsTitle": "Check before you save",
+      "write": "Write",
+      "writePlaceholder": "Describe what it's for and who will use it…"
+    },
+    "readInsights_one": "Read Insights: {{formatted}} conversation, last {{days}} days",
+    "readInsights_other": "Read Insights: {{formatted}} conversations, last {{days}} days",
+    "readQuestions_one": "Read {{count}} example question",
+    "readQuestions_other": "Read {{count}} example questions",
+    "retry": "Try again",
+    "send": "Send",
+    "skipQuestions": "Skip and draft",
+    "startOver": "Start over",
+    "starters": {
+      "helpdesk": {
+        "description": "HR, IT and policy questions from your team",
+        "title": "Internal helpdesk"
+      },
+      "research": {
+        "description": "Digs through your documents and cites them",
+        "title": "Research assistant"
+      },
+      "website": {
+        "description": "Answers visitors and hands off when unsure",
+        "title": "Website chat for customers"
+      }
+    },
+    "steps": {
+      "drafting": "Drafting…",
+      "reading": "Looking at your workspace…",
+      "reviewing": "Reviewing the prompt…",
+      "thinking": "Thinking…"
+    },
+    "stillWaiting": "Still waiting for the model. Slow models can take a few minutes; Stop ends the turn.",
+    "stop": "Stop",
+    "stoppedDescription": "You stopped this turn. Nothing in the form changed.",
+    "suggestionsLabel": "Ways to start",
+    "title": "Draft with DocsGPT",
+    "topics": {
+      "add_one": "Add {{formatted}} topic",
+      "add_other": "Add {{formatted}} topics",
+      "discard": "Discard",
+      "errors": {
+        "invalid_output": "The model's answer couldn't be used. No topics were added.",
+        "model_error": "Something went wrong while suggesting topics. No topics were added."
+      },
+      "estimate": "Estimate",
+      "estimateHint": "The drafting model's guess: it couldn't be measured on the questions.",
+      "fewQuestions_one": "Fits less than the {{formatted}} question it was tried on, so it starts unticked.",
+      "fewQuestions_other": "Fits less than one of the {{formatted}} questions it was tried on, so it starts unticked.",
+      "hold_one": "Suggestions from conversations show once this agent has {{needed}} recent conversation ({{formatted}} so far).",
+      "hold_other": "Suggestions from conversations show once this agent has {{needed}} recent conversations ({{formatted}} so far).",
+      "leftOutItem": "<name>{{name}}</name>: {{reason}}",
+      "leftOutTitle": "Not suggested",
+      "none": "Nothing to add: your topics and folders already cover the recent questions.",
+      "pushesOut_one": "Adding these pushes out {{count}} folder, so its questions go to None of these: {{names}}",
+      "pushesOut_other": "Adding these pushes out {{count}} folders, so their questions go to None of these: {{names}}",
+      "read_one": "Read {{formatted}} question from the last {{days}} days",
+      "read_other": "Read {{formatted}} questions from the last {{days}} days",
+      "reading": "Reading recent questions…",
+      "request": "Suggest topics from this agent's recent conversations.",
+      "share": "{{share}} of questions",
+      "similar": "Similar to \"{{name}}\".",
+      "statusFailed": "Couldn't check whether suggestions from conversations are available.",
+      "suggest": "Suggest from conversations",
+      "taken": "Already a topic",
+      "tooManyOnePick_one": "Only {{formatted}} more topic that sorts questions fits. Untick some before adding.",
+      "tooManyOnePick_other": "Only {{formatted}} more topics that sort questions fit. Untick some before adding.",
+      "tooManyOverlap_one": "Only {{formatted}} more topic that can overlap fits. Untick some before adding.",
+      "tooManyOverlap_other": "Only {{formatted}} more topics that can overlap fit. Untick some before adding.",
+      "triedAfter_one": "Tried the suggestions on {{formatted}} question: {{after}} fit no topic.",
+      "triedAfter_other": "Tried the suggestions on {{formatted}} questions: {{after}} fit no topic.",
+      "tried_one": "Tried the suggestions on {{formatted}} question: {{after}} fit no topic, down from {{before}}.",
+      "tried_other": "Tried the suggestions on {{formatted}} questions: {{after}} fit no topic, down from {{before}}."
+    },
+    "undoField": "Undo {{field}}",
+    "undone": {
+      "count_one": "{{count}} undone",
+      "count_other": "{{count}} undone",
+      "empty": "Undone, back to empty",
+      "previous": "Undone, back to the previous value"
+    }
+  },
   "emailUs": "Email us",
   "errorBoundary": {
     "message": "Something went wrong displaying this content.",
@@ -1978,24 +2344,14 @@
       "title": "Add JWT Token"
     },
     "prompts": {
-      "addDescription": "Add your custom prompt and save it to DocsGPT",
-      "addExamplePlaceholder": "Please summarize this text:",
-      "addPrompt": "Add Prompt",
-      "cancel": "Cancel",
+      "addPrompt": "Add prompt",
       "deleteConfirmation": "Delete \"{{name}}\"?",
       "duplicate": "Duplicate",
       "duplicateDescription": "You're editing a copy of \"{{name}}\" — save it as your own prompt",
-      "duplicatePrompt": "Duplicate Prompt",
-      "editDescription": "Edit your custom prompt and save it to DocsGPT",
-      "editPrompt": "Edit Prompt",
-      "learnAboutPrompts": "Learn about Prompts →",
+      "duplicatePrompt": "Duplicate prompt",
       "nameExists": "Name already exists",
-      "placeholderText": "Type your prompt text here...",
-      "promptName": "Prompt Name",
-      "promptText": "Prompt Text",
-      "promptTypePrivate": "private",
-      "promptTypePublic": "public",
-      "publicPromptEditDisabled": "Public prompts cannot be edited",
+      "promptName": "Prompt name",
+      "promptText": "Prompt text",
       "save": "Save",
       "systemVariableOptions": {
         "artifactsLookup": "Artifact metadata by id",
@@ -2010,14 +2366,12 @@
         "systemTimestamp": "ISO 8601 timestamp",
         "systemUserId": "Current user ID"
       },
-      "systemVariables": "Click to insert into prompt",
-      "systemVariablesDropdownLabel": "System Variables",
-      "toolVariables": "Tool Variables",
+      "systemVariablesDropdownLabel": "System variables",
+      "templateBroken": "This template won't run: a tag or variable isn't closed, or block tags such as {% if %} and {% endif %} don't pair up. Chats with it would fail, so fix it before saving.",
+      "toolVariables": "Tool variables",
       "variablesDescription": "Click to insert into prompt",
       "variablesLabel": "Variables",
-      "variablesSubtext": "Click To Insert Into Prompt",
-      "viewDescription": "Built-in prompts can't be edited. Duplicate to create your own editable copy.",
-      "viewPrompt": "View Prompt"
+      "viewDescription": "Built-in prompts can't be edited. Duplicate to create your own editable copy."
     },
     "saveKey": {
       "apiKeyLabel": "API Key",
@@ -2322,7 +2676,39 @@
     "range": "{{from}}–{{to}} of {{total}}"
   },
   "prompts": {
+    "checks": {
+      "boundariesMissing": "It has no Boundaries section, so the agent may follow instructions hidden in documents or tool results",
+      "citationsMissing": "It doesn't use <code>{{variable}}</code>, so DocsGPT's [1], [2] citation rules aren't in the prompt",
+      "onLine": "{{check}} (line {{line}})",
+      "placeholder": "A placeholder is left: “{{text}}”",
+      "repeatsBuiltin": {
+        "citations": "DocsGPT already tells the agent how to cite its sources",
+        "data_guard": "DocsGPT already tells the agent to read documents as data, not instructions",
+        "date": "DocsGPT already gives the agent the date",
+        "formatting": "DocsGPT already tells the agent how to format answers",
+        "other": "DocsGPT already adds this line"
+      },
+      "templateInvalid": "The template doesn't parse",
+      "toolVariables_one": "{{variables}} runs its tool before every message",
+      "toolVariables_other": "{{variables}} run their tools before every message"
+    },
+    "checksHint": {
+      "count_one": "{{count}} thing to check",
+      "count_other": "{{count}} things to check",
+      "review": "Review the whole prompt with DocsGPT"
+    },
     "textAriaLabel": "Prompt Text"
+  },
+  "questions": {
+    "answeredInMessage": "Answered in your message",
+    "justAnswer": "Just answer",
+    "notAnswered": "Not answered",
+    "sendAnswers": "Send answers",
+    "skipped": "Skipped",
+    "somethingElse": "Something else…",
+    "somethingElseLabel": "Your answer",
+    "somethingElsePlaceholder": "Type your own answer",
+    "typeAnswer": "Or type your answer…"
   },
   "retry": "Retry",
   "settings": {
@@ -3098,6 +3484,7 @@
       "modalSubtitle": "Connect any OpenAI-compatible endpoint (Mistral, Together, vLLM, etc).",
       "modelsGroup": {
         "builtin": "Built-in",
+        "owner": "Owner's Models",
         "user": "My Models"
       },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} model",
@@ -3192,9 +3579,20 @@
       "none": "None",
       "sections": {
         "appearance": "Appearance",
-        "dangerZone": "Danger zone"
+        "dangerZone": "Danger zone",
+        "models": "Models"
       },
-      "subtitle": "Choose how DocsGPT looks and which language it uses.",
+      "subtitle": "Choose how DocsGPT looks, which language it uses and which model runs its own tasks.",
+      "taskModel": "Task model",
+      "taskModelDescription": "Drafts forms, builds knowledge graphs and checks monitors. Chats use the agent's model.",
+      "taskModelFailed": "{{model}} couldn't run your last task: its provider refused the API key. Pick another model, or ask an admin to check the key.",
+      "taskModelFailedItem": "· key refused",
+      "taskModelInstanceDefault": "Use instance default ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Use instance default",
+      "taskModelLoadError": "Could not load the task model.",
+      "taskModelSaveFailed": "Couldn't save the task model. Try again.",
+      "taskModelUnavailable": "Your task model can't run any more (it was disabled or removed), so the instance default runs. If the model comes back, it runs again; pick an option here to replace it.",
+      "taskModelUnavailableValue": "Unavailable model",
       "theme": "Theme",
       "themeDescription": "Light or dark interface.",
       "unlimited": "Unlimited"
@@ -3398,6 +3796,10 @@
       "chatPromptLabel": "Prompt for chats without an agent",
       "chatPromptOff": "Use in chats without an agent",
       "chatPromptOn": "Used in chats without an agent",
+      "conflict": {
+        "description": "Your changes can't replace the version they saved. Keep yours as a new prompt, or leave and reopen this one to see theirs.",
+        "title": "Someone else changed this prompt"
+      },
       "delete": "Delete",
       "deleteFailed": "Couldn't delete this prompt.",
       "deleteInChats": "Your chats use it and go back to the default prompt. This can't be undone.",
@@ -3408,6 +3810,8 @@
       "duplicate": "Duplicate",
       "edit": "Edit",
       "editConflict": "Someone else changed this prompt. Reopen it to see their version.",
+      "editConflictLeave": "Someone else changed this prompt. Save your changes as a copy instead.",
+      "editNamed": "Edit {{name}}",
       "filters": {
         "all": "All"
       },
@@ -3416,7 +3820,9 @@
         "shared": "Shared"
       },
       "label": "Prompts",
+      "leaveWithoutSaving": "Leave without saving",
       "loadError": "Couldn't load your prompts.",
+      "loadPromptError": "Couldn't load this prompt.",
       "manage": "Go to Prompts",
       "noPromptsFound": "No prompts found",
       "presets": {
@@ -3424,6 +3830,14 @@
         "default": "Answers from your documents and cites them. When they don't cover the question, it says so, then answers from general knowledge.",
         "strict": "Answers only from your documents, tools and the chat. Says what is missing instead of guessing."
       },
+      "saveAndLeave": "Save and leave",
+      "saveAsCopy": "Save as a copy",
+      "saveBlocked": {
+        "content": "Write the prompt's text to save it.",
+        "name": "Give the prompt a name to save it.",
+        "review": "Finish the review first: Accept all or Discard in the drawer."
+      },
+      "saveCopyAndLeave": "Save as a copy and leave",
       "saveFailed": "Couldn't save this prompt.",
       "searchPlaceholder": "Search prompts…",
       "sections": {
@@ -3434,8 +3848,10 @@
       "select": "Select a prompt",
       "shareWithTeam": "Share with team",
       "subtitle": "System prompts tell the model how to answer. The one you pick is used in chats without an agent; agents choose their own.",
+      "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "useInChats": "Use {{name}} in chats",
-      "view": "View"
+      "view": "View",
+      "viewNamed": "View {{name}}"
     },
     "sources": {
       "actions": "Actions",

@@ -39,15 +39,21 @@ type SettingRowProps = {
   as?: 'label' | 'h2' | 'h3';
   /** A field under the row that belongs to it (a limit Input under a Switch). */
   after?: React.ReactNode;
+  /** Something that follows the title on its line (a status badge). */
+  titleAddon?: React.ReactNode;
   /** Layout only. */
   className?: string;
   /** The control on the right: a Switch, a small Input, a Select. */
   children?: React.ReactNode;
+} & {
+  /** Data attributes for the row's own element (a state its host marks). */
+  [data: `data-${string}`]: string | boolean | undefined;
 };
 
 /**
  * A settings row: title and muted description on the left, a control on the
  * right, 12px of padding above and below (none at the ends of its group).
+ * A `titleAddon` (a badge) follows the title on its line.
  * Like FormField it wires the control through context: the control gets the
  * row's id (`htmlFor`, or a generated one) and `aria-describedby` pointing at
  * the description. The `after` field is not wired.
@@ -60,8 +66,10 @@ function SettingRow({
   stack = false,
   as = 'label',
   after,
+  titleAddon,
   className,
   children,
+  ...data
 }: SettingRowProps) {
   const Heading = as === 'label' ? null : as;
   const generatedId = React.useId();
@@ -70,9 +78,22 @@ function SettingRow({
   // the control must not land on the description.
   const generatedDescriptionId = React.useId();
   const descriptionId = description ? generatedDescriptionId : undefined;
+  const title = Heading ? (
+    <Heading className="text-foreground text-sm leading-none font-medium">
+      {label}
+    </Heading>
+  ) : (
+    <Label
+      htmlFor={controlId}
+      className="text-foreground w-fit text-sm font-medium"
+    >
+      {label}
+    </Label>
+  );
   return (
     <div
       data-slot="setting-row"
+      {...data}
       className={cn('py-3 first:pt-0 last:pb-0', className)}
     >
       <div
@@ -87,17 +108,13 @@ function SettingRow({
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {Heading ? (
-            <Heading className="text-foreground text-sm leading-none font-medium">
-              {label}
-            </Heading>
+          {titleAddon ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {title}
+              {titleAddon}
+            </div>
           ) : (
-            <Label
-              htmlFor={controlId}
-              className="text-foreground w-fit text-sm font-medium"
-            >
-              {label}
-            </Label>
+            title
           )}
           {description ? (
             <p id={descriptionId} className="text-muted-foreground text-xs">

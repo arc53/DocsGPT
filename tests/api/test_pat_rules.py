@@ -246,6 +246,30 @@ class TestResourceRestrictions:
         plain = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": False})
         assert _denied(plain) is None
 
+    def test_task_model_preference_needs_models_write(self, client):
+        # The rule admits either write scope; the route then asks for the one each field needs.
+        body = {"task_model_id": "gpt-a"}
+        assert _denied(self._put_preferences(client, _claims(["models:write"]), body)) is None
+        assert _denied(self._put_preferences(client, _claims(["agents:read"]), body)) == "insufficient_scope"
+
+    def test_task_model_preference_is_open_to_a_prompt_restricted_token(self, client):
+        # It names no prompt, so the prompt allowlist has nothing to hold it to.
+        claims = self._restricted(["models:write"], prompts=[SOURCE_A])
+        assert _denied(self._put_preferences(client, claims, {"task_model_id": "gpt-a"})) is None
+        both = self._put_preferences(client, claims, {"task_model_id": "gpt-a", "chat_prompt_id": SOURCE_B})
+        assert _denied(both) == "resource_not_allowed"
+
+    def test_task_model_preference_is_readable_with_models_read(self, client):
+        # The route answers such a token with the task model alone; the rules only let it in.
+        with patch("docsgpt.api.user.me.routes.db_readonly", side_effect=RuntimeError("no database here")):
+            for claims in (
+                _claims(["models:read"]),
+                self._restricted(["models:read", "prompts:read"], prompts=[SOURCE_A]),
+            ):
+                assert _denied(_call(client, "GET", "/api/user/preferences", claims)) is None
+            refused = _call(client, "GET", "/api/user/preferences", _claims(["agents:read"]))
+        assert _denied(refused) == "insufficient_scope"
+
     def test_chat_prompt_only_if_unset_stays_open_to_other_tokens(self, client):
         for claims in (
             _claims(["prompts:write"]),
@@ -253,6 +277,15 @@ class TestResourceRestrictions:
         ):
             response = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": True})
             assert _denied(response) is None
+
+    def test_prompt_check_is_open_to_a_prompt_restricted_token(self, client):
+        # It checks the text in the body and reads no saved prompt, so there is no id to prove.
+        claims = self._restricted(["prompts:read"], prompts=[SOURCE_A])
+        response = _call(client, "POST", "/api/check_prompt", claims, json={"content": "You are {{ name }}."})
+        assert _denied(response) is None
+        assert response.status_code == 200
+        refused = _call(client, "POST", "/api/check_prompt", _claims(["agents:read"]), json={"content": "x"})
+        assert _denied(refused) == "insufficient_scope"
 
     def test_missing_id_is_refused_for_a_restricted_token(self, client):
         claims = self._restricted(["agents:read"], agents=[AGENT_A])

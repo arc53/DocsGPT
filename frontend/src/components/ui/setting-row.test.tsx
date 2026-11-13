@@ -1,5 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 import { Input } from './input';
 import { SettingRow, SettingRows } from './setting-row';
@@ -178,5 +182,23 @@ describe('SettingRows / SettingRow', () => {
     const limit = host.querySelector('[data-testid="limit"]')!;
     expect(limit.id).not.toBe('token-limiting');
     expect(limit.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('puts a title addon after the title, on its line', () => {
+    const host = render(
+      <SettingRow
+        label="Request limiting"
+        htmlFor="request-limiting"
+        titleAddon={<span data-testid="addon">New</span>}
+        data-state="marked"
+      >
+        <Switch />
+      </SettingRow>,
+    );
+    const row = host.firstElementChild as HTMLElement;
+    expect(row.dataset.state).toBe('marked');
+    const addon = row.querySelector('[data-testid="addon"]')!;
+    expect(addon.previousElementSibling?.tagName).toBe('LABEL');
+    expect(addon.parentElement!.className).toContain('flex-wrap');
   });
 });

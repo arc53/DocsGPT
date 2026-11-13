@@ -114,8 +114,8 @@ describe('RunDetailDrawer', () => {
     );
   });
 
-  // Decisions 63a / 63b: the title is the default SheetTitle; the Error
-  // heading is a destructive xs sub-heading.
+  // The title is the default SheetTitle; the Error heading is a destructive
+  // xs sub-heading.
   it('uses the default sheet title and an xs destructive error heading', async () => {
     await act(async () =>
       root.render(<RunDetailDrawer run={run} onClose={vi.fn()} />),

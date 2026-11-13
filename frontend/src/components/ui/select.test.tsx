@@ -42,6 +42,38 @@ describe('SelectItem', () => {
     );
     expect(item!.className).not.toContain('data-highlighted:bg-muted');
   });
+
+  it('puts a suffix after the name, left out of the trigger', () => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => {
+      root!.render(
+        <Select open value="a">
+          <SelectTrigger aria-label="Rows">a</SelectTrigger>
+          <SelectContent>
+            <SelectItem value="a" suffix="· key refused">
+              A
+            </SelectItem>
+          </SelectContent>
+        </Select>,
+      );
+    });
+    const item = document.querySelector('[data-slot="select-item"]')!;
+    const suffix = item.querySelector('[data-slot="select-item-suffix"]')!;
+    expect(suffix.textContent).toBe('· key refused');
+    expect(suffix.className).toContain('text-muted-foreground');
+    // Beside the item's text (which the trigger copies), not inside it.
+    expect(suffix.parentElement).toBe(item);
+    expect(item.textContent).toBe('A· key refused');
+    // A long name gives way with "…"; the suffix always shows (D07).
+    const text = suffix.previousElementSibling as HTMLElement;
+    expect(text.textContent).toBe('A');
+    expect(text.className.split(' ')).toEqual(
+      expect.arrayContaining(['min-w-0', 'truncate']),
+    );
+    expect(suffix.className.split(' ')).toContain('shrink-0');
+  });
 });
 
 describe('SelectTrigger sizes', () => {
@@ -117,6 +149,15 @@ describe('SelectTrigger sizes', () => {
     const classes = trigger({ size: 'sm' }).className.split(' ');
     expect(classes).not.toContain('text-base');
     expect(classes).toContain('text-sm');
+  });
+
+  it('ends a value too long for it in an ellipsis', () => {
+    const classes = trigger({}).className.split(' ');
+    // A flex display cancels line-clamp, so the value clips with no "…";
+    // it shrinks and truncates instead.
+    expect(classes).toContain('*:data-[slot=select-value]:min-w-0');
+    expect(classes).toContain('*:data-[slot=select-value]:truncate');
+    expect(classes).not.toContain('*:data-[slot=select-value]:line-clamp-1');
   });
 
   it('shows the not-allowed cursor while disabled', () => {

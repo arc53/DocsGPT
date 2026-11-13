@@ -296,7 +296,7 @@ it is `secret_exposed`, never the secret itself.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `MONITORS_ENABLED` | `true` | Offer the monitor tool |
-| `MONITOR_JUDGE_MODEL` | unset | Model that judges conditions; unset uses the default model |
+| `MONITOR_JUDGE_MODEL` | unset | Model that judges conditions; unset, or a model that isn't in the catalog or is disabled, uses the monitor owner's [task model](/Using/web-app#task-model) |
 | `MONITOR_DEFAULT_INTERVAL_SECONDS` | `900` | Interval when none is given |
 | `MONITOR_MIN_INTERVAL_SECONDS` | `300` | Shortest interval; a shorter request is raised to it (accepts down to 60) |
 | `MONITOR_DEFAULT_TTL_DAYS` | `7` | Lifetime when none is given |

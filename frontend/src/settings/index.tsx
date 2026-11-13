@@ -1,6 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useMatch,
+} from 'react-router-dom';
 
 import { ACTIVITY_MONITORS_PATH } from '../activity/paths';
 import userService from '../api/services/userService';
@@ -42,6 +48,9 @@ export default function Settings() {
   const { isMobile } = useMediaQuery();
 
   const showIndex = isMobile && location.pathname === SETTINGS_SECTION.rootPath;
+  // Prompts draws its own shell: an open prompt docks the drafter's drawer
+  // beside the page, as the agent form does.
+  const onPrompts = useMatch(`${SETTINGS_SECTION.rootPath}/prompts`);
 
   const token = useSelector(selectToken);
   const documents = useSelector(selectSourceDocs);
@@ -88,6 +97,8 @@ export default function Settings() {
     );
   }
 
+  if (onPrompts) return <Prompts />;
+
   return (
     <SectionShell>
       <Routes>
@@ -118,7 +129,6 @@ export default function Settings() {
           path="devices"
           element={<Navigate to="/settings/tools" replace />}
         />
-        <Route path="prompts" element={<Prompts />} />
         <Route path="custom-models" element={<CustomModels />} />
         <Route path="access-tokens" element={<PersonalAccessTokens />} />
         <Route path="*" element={<Navigate to="/settings" replace />} />

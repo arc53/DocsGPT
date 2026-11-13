@@ -133,15 +133,15 @@ class RerankerConfig(BaseModel):
 class GraphConfig(BaseModel):
     """Ingest-time GraphRAG extraction knobs (pgvector-only).
 
-    ``extraction_model`` None reuses the instance default model
-    (``LLM_PROVIDER``/``LLM_NAME``); ``max_chunks`` None falls back to the
-    ``GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`` setting. ``gleanings`` is off by
-    default (cost control).
+    ``extraction_model`` None uses ``GRAPHRAG_EXTRACTION_MODEL``, else the
+    source owner's task model (``get_task_model_id``); ``max_chunks`` None
+    falls back to the ``GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`` setting.
+    ``gleanings`` is off by default (cost control).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    extraction_model: Optional[str] = None  # None → instance default model
+    extraction_model: Optional[str] = None  # None → GRAPHRAG_EXTRACTION_MODEL, else the owner's task model
     max_chunks: Optional[int] = None  # None → GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
     gleanings: int = 0  # extra extraction passes per chunk
 

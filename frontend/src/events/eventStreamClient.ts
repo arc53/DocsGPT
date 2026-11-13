@@ -359,7 +359,7 @@ export function connectEventStream(
   };
 }
 
-interface ParsedSSERecord {
+export interface ParsedSSERecord {
   /**
    * ``undefined`` when the record had no ``id`` field at all. An empty
    * string means the server explicitly reset the cursor (an ``id:``
@@ -376,7 +376,7 @@ interface ParsedSSERecord {
  * chunk, keepalive comments included. Honours the WHATWG SSE
  * spec's mixed line-terminator handling and SSE comment lines.
  */
-async function readSSEStream(
+export async function readSSEStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
   onBytes: () => void,

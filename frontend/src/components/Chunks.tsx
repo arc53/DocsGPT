@@ -38,7 +38,7 @@ import SourceMarkdown from './SourceMarkdown';
 import PathHeader from './tree/PathHeader';
 import ReaderPanel from './tree/ReaderPanel';
 import SourceEditSheet from './tree/SourceEditSheet';
-import { Alert, AlertDescription } from './ui/alert';
+import { Alert, AlertAction, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardFooter } from './ui/card';
@@ -1121,16 +1121,9 @@ function InjectionNotice({
         <AlertDescription>
           {t('settings.sources.injection.safeNotice')}{' '}
           {canUndo ? (
-            <Button
-              type="button"
-              variant="link"
-              size="text"
-              tone="current"
-              loading={busy}
-              onClick={onUndo}
-            >
+            <AlertAction loading={busy} onClick={onUndo}>
               {t('settings.sources.injection.undo')}
-            </Button>
+            </AlertAction>
           ) : null}
         </AlertDescription>
       </Alert>

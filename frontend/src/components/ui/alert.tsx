@@ -3,6 +3,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { cn } from '@/lib/utils';
 
@@ -101,14 +102,42 @@ function AlertDescription({
   className,
   ...props
 }: React.ComponentProps<'div'>) {
+  // A link in the text has the Alert's colour (tone="current"), so only
+  // its underline, at rest too, tells it apart from the words around it.
   return (
     <div
       data-slot="alert-description"
-      className={cn('text-sm [&_p]:leading-relaxed', className)}
+      className={cn(
+        'text-sm [&_[data-slot=button][data-variant=link][data-tone=current]]:underline [&_p]:leading-relaxed',
+        className,
+      )}
       {...props}
     />
   );
 }
 
-export { Alert, AlertTitle, AlertDescription };
+/**
+ * The action that fixes what the Alert says (Try again, Reconnect, Start
+ * over): a link in the Alert's own colour, after the last sentence of the
+ * description. `asChild` around a router `<Link>` or an `<a>` when it
+ * navigates; `loading` while it runs.
+ */
+function AlertAction({
+  type,
+  asChild,
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, 'variant' | 'size' | 'tone'>) {
+  return (
+    <Button
+      type={asChild ? type : (type ?? 'button')}
+      variant="link"
+      size="text"
+      tone="current"
+      asChild={asChild}
+      {...props}
+    />
+  );
+}
+
+export { Alert, AlertAction, AlertDescription, AlertTitle };
 export type { AlertProps };

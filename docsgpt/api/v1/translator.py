@@ -951,8 +951,9 @@ def translate_stream_event(
                     }],
                 })
             )
-        elif status == "awaiting_approval":
-            # Extension: approval needed
+        elif status in ("awaiting_approval", "awaiting_answer"):
+            # Extension: approval or an answer needed (v1 callers never ask
+            # for question cards, so ``awaiting_answer`` is not expected)
             chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}, completion_id, model_name))
         elif status in ("completed", "pending", "error", "denied", "skipped"):
             # Extension: tool call progress

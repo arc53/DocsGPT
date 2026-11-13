@@ -10,7 +10,7 @@ Cost controls: gleanings off (exactly one ``.gen()`` per chunk), a hard
 chunk cap, a resumable ``graph_ingest_progress`` checkpoint (an idempotent retry
 never re-bills), and concat-merge of entity descriptions (no LLM summary pass).
 
-The extraction LLM is built through ``LLMCreator`` and tagged
+The extraction LLM is built through ``create_stateless_llm`` and tagged
 ``_token_usage_source="graph_extraction"`` + ``_request_id`` so ``gen_token_usage``
 writes a ``token_usage`` row per call attributed to the source owner, identical
 to every other LLM call in the app.
@@ -26,13 +26,10 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional
 
 from docsgpt import tracing
-from docsgpt.core.model_utils import (
-    get_api_key_for_provider,
-    get_provider_from_model_id,
-)
+from docsgpt.core.model_utils import get_task_model_id
 from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
-from docsgpt.llm.llm_creator import LLMCreator
+from docsgpt.llm.llm_creator import create_stateless_llm, ModelNotAvailableError
 from docsgpt.storage.db.source_config import SourceConfig
 # ``EmbeddingsSingleton`` is re-exported here so callers and tests can reach the
 # shared instance cache from this module.
@@ -57,13 +54,58 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _resolve_extraction_model(config: SourceConfig) -> Optional[str]:
-    """Resolve the extraction model: per-source override → setting → instance default."""
-    return (
-        config.graph.extraction_model
-        or settings.GRAPHRAG_EXTRACTION_MODEL
-        or settings.LLM_NAME
-    )
+def _disabled_in_registry(model_id: str, user: Optional[str]) -> bool:
+    """Whether the registry holds ``model_id`` (for ``user``) and it is disabled.
+
+    A model the registry doesn't know is not disabled: it still goes to
+    ``LLM_PROVIDER`` (see :func:`~docsgpt.llm.llm_creator.create_stateless_llm`).
+    """
+    from docsgpt.core.model_registry import ModelRegistry
+
+    model = ModelRegistry.get_instance().get_model(model_id, user_id=user)
+    return model is not None and not getattr(model, "enabled", True)
+
+
+def _resolve_extraction_model(config: SourceConfig, user: Optional[str]) -> str:
+    """Resolve the extraction model: per-source override → setting → the owner's task model.
+
+    An override or setting the registry holds disabled is skipped, as the
+    task model skips a choice that can't run. The task model
+    (``get_task_model_id``) is the owner's pick in Settings > General, else
+    the instance's, else ``TASK_MODEL_ID``, else the default model unless it
+    is disabled: always a registry id, never the raw ``LLM_NAME`` (which may
+    be unset or a comma-separated list).
+
+    Args:
+        config: The source's parsed config.
+        user: The source owner the build runs as.
+
+    Returns:
+        The model id to extract with.
+
+    Raises:
+        ModelNotAvailableError: No step names a model that can run. Built
+            without a model, the LLM would answer with ``LLM_PROVIDER``'s own
+            (the hosted ``docsgpt`` one, possibly the disabled default).
+    """
+    for label, choice in (
+        ("the source's extraction model", config.graph.extraction_model),
+        ("GRAPHRAG_EXTRACTION_MODEL", settings.GRAPHRAG_EXTRACTION_MODEL),
+    ):
+        if not choice:
+            continue
+        if _disabled_in_registry(choice, user):
+            logger.warning("Graph extraction skips %s %r: the model is disabled", label, choice)
+            continue
+        return choice
+    model_id = get_task_model_id(user)
+    if not model_id:
+        raise ModelNotAvailableError(
+            None,
+            "no extraction model can run. Set a task model (Settings > General or Admin > Defaults), "
+            "TASK_MODEL_ID or GRAPHRAG_EXTRACTION_MODEL, or enable the default model.",
+        )
+    return model_id
 
 
 def extraction_fingerprint(config: SourceConfig) -> str:
@@ -71,8 +113,9 @@ def extraction_fingerprint(config: SourceConfig) -> str:
 
     A sync keeps a chunk's graph only when this matches. It covers the
     source's own extraction settings, not the instance's default extraction
-    model: changing ``LLM_NAME`` must not rebuild every graph at its next sync
-    (an explicit rebuild does that). The embeddings model is included because
+    model: changing the task model or ``GRAPHRAG_EXTRACTION_MODEL`` must not
+    rebuild every graph at its next sync (an explicit rebuild does that). The
+    embeddings model is included because
     node and fact embeddings come from it, and a kept chunk would keep vectors
     retrieval no longer compares against.
     """
@@ -96,44 +139,19 @@ def _resolve_max_chunks(config: SourceConfig) -> int:
     return config.graph.max_chunks or settings.GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
 
 
-def _resolve_extraction_provider(
-    model_id: Optional[str], user: Optional[str]
-) -> str:
-    """The provider that serves ``model_id``, else the deployment default.
-
-    ``settings.LLM_PROVIDER`` is only a default (``docsgpt``, the hosted public
-    endpoint, out of the box). Dispatching the resolved extraction model
-    through it sends the request to a provider that does not serve that model:
-    the call is rejected, the shared fallback answers instead, and the graph is
-    built by a different model than the one configured — with nothing in the
-    summary to say so. ``user`` scopes the lookup so a per-user (BYOM) model id
-    resolves as well.
-    """
-    provider = (
-        get_provider_from_model_id(model_id, user_id=user) if model_id else None
-    )
-    return provider or settings.LLM_PROVIDER
-
-
 def _build_extraction_llm(
     model_id: Optional[str], user: Optional[str], request_id: Optional[str]
 ):
-    """Build the extraction LLM tagged for token-usage attribution to the owner."""
-    decoded_token = {"sub": user} if user else None
-    provider = _resolve_extraction_provider(model_id, user)
+    """Build the extraction LLM tagged for token-usage attribution to the owner.
+
+    Its provider is the one that serves ``model_id`` (see
+    :func:`~docsgpt.llm.llm_creator.create_stateless_llm`), so the graph is
+    built by the model configured, not by the shared fallback.
+    """
+    llm, provider = create_stateless_llm(model_id, user, source="graph_extraction", request_id=request_id)
     logger.info(
         "Graph extraction dispatching model=%s via provider=%s", model_id, provider
     )
-    llm = LLMCreator.create_llm(
-        provider,
-        api_key=get_api_key_for_provider(provider),
-        user_api_key=None,
-        decoded_token=decoded_token,
-        model_id=model_id,
-        stateless=True,
-    )
-    llm._token_usage_source = "graph_extraction"
-    llm._request_id = request_id
     return llm
 
 
@@ -295,7 +313,7 @@ def extract_graph_for_source(
 
     embedding = get_embeddings()
 
-    model_id = _resolve_extraction_model(config)
+    model_id = _resolve_extraction_model(config, user)
     fingerprint = extraction_fingerprint(config)
     # Built here first so a misconfigured model fails the run before any
     # chunk is touched; this instance serves the calling thread.

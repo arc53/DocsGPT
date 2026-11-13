@@ -278,7 +278,9 @@ size="xs"`. It is the same tint as a pressed toggle; the difference is that
   beside it. The agent form's pickers are `combobox field`, each labelled by
   a `FormField`; the Prompt picker is a `Combobox` with the pickers' `title`,
   row lines, kind track and phone sheet, whose footer goes to Prompts or adds
-  one, like the tool and knowledge pickers. Their footers'
+  one, like the tool and knowledge pickers. It takes one column, as Default
+  model does, with nothing under it: a row's Edit or View opens a prompt,
+  and the agent's Improve changes the one it uses. Their footers'
   Add is the only `outline-primary` on the agent pages themselves (the Access
   details modal they open has its own).
 - **Shape by place.** Form controls (Input, SelectTrigger, a combobox Button,
@@ -534,7 +536,9 @@ page byline (a muted `text-sm` paragraph).
 A title with controls beside it (Add, a filter Select, Import spec) passes
 them as `actions`, never a hand-rolled `flex justify-between` row around the
 header: the row centres the title on the buttons and wraps them under it on
-a phone (`flex-wrap items-center gap-x-4 gap-y-2`). Panel and chart titles
+a phone (`flex-wrap items-center gap-x-4 gap-y-2`); the actions wrap among
+themselves too when they don't fit side by side (Add topic and Suggest from
+conversations in a phone's Insights sheet), so no label is cut. Panel and chart titles
 are `size="xs"`, `as="h3"` under a section heading and `as="h2"` for a panel
 straight under the page's title (`ChartPanel` on Analytics and Insights, and
 Insights' share-bar panels); a title row that also holds a legend or a
@@ -767,8 +771,16 @@ labels and wires it (see FormField).
 - A server-searched list passes `shouldFilter={false}` with `search` /
   `onSearchChange`, and `valueOption` when the picked option isn't in the
   current results.
-- Rows carry no actions: what you do to an item (a prompt's Edit, Share or
-  Delete) is on its page, and the picker's footer links there.
+- A row's only action opens the item (`rowAction`: the agent form's Prompt
+  picker has Edit, `Pencil`, or View, `Eye`, for a prompt the role can't
+  change). It is a `ghost icon-sm` at the row's end, shown while the row is
+  hovered or highlighted and always on touch (`pointer-coarse:`, as
+  SuggestionRows), follows a `renderItem` body too, closes the picker and
+  doesn't pick the row. Only the
+  highlighted row's button is a tab stop (cmdk's `useCommandState`), so Tab
+  from the search reaches it in one step, and its Enter stops before cmdk's
+  root, which would pick the row. What else you do to an item (Duplicate,
+  Share, Delete) is on its page, and the picker's footer links there.
 - `mode="add"` is a picker that adds something (Share's "Add people or
   teams"): the trigger always shows the placeholder and no row is marked.
 - `footer` pins a row under the list, the same `PickerFooter` row as the
@@ -864,7 +876,12 @@ descriptions. `stack` puts a control too wide for a phone row (a 224px
 picker) under the title below `sm` at full width; give the picker
 `w-full sm:w-56`. `after` holds a field that belongs to the row, 8px under it
 (the agent form's limit Inputs); it isn't wired, so it names itself
-(`aria-label`, or a FormField of its own). Settings → General is the page-level example:
+(`aria-label`, or a FormField of its own). `titleAddon` puts a badge after
+the title, on its line. A row whose control the drafter set is a
+`DraftedSettingRow` (`drafter/DraftedBadge`): `drafted` + `onUndo` (+
+`fieldLabel` when the title isn't plain text) put the `DraftedBadge` there,
+since `DraftedField` frames only inputs, textareas and pickers; a field in
+its `after` keeps its own `DraftedField`. Settings → General is the page-level example:
 `PageToolbar` intro and rule, then `SectionHeader`ed groups of SettingRows in a
 `max-w-3xl` column. Inline "switch + label" pairs (a filter
 toggle) are not SettingRows.
@@ -1337,7 +1354,8 @@ hand-rolled `rounded-lg bg-<role>/10` box.
 no quiet default; a note is `info` with `role="note"`. 14px
 corners (`rounded-xl`), like a popover. Every variant is the same
 shape: `border-<role>/50 bg-<role>/10 text-<role>`. Children are
-`AlertTitle` and `AlertDescription`.
+`AlertTitle` and `AlertDescription`; `AlertAction` is the fix link at the
+end of the description (below).
 
 The variant draws its icon: destructive `CircleAlert`, warning
 `TriangleAlert`, success `CircleCheck`, info `Info`. Never pass an icon child, and no per-site overrides: a lock, a
@@ -1349,6 +1367,21 @@ a title with its description.
 
 A static note is `variant="info" role="note"` (see Where a message lives);
 `bg-muted` wells are for assets, not notes.
+
+An action that fixes what the Alert says (Try again, Reconnect, Start over,
+Open Access details, Add to Knowledge) is a link in the Alert's own colour
+at the end of its text: `AlertAction` (a `Button variant="link" size="text"
+tone="current"`, `type="button"`) after the last sentence in the
+description's `<p>` ("… Nothing in the form changed. Try again"), with
+`asChild` around a router `<Link>` or an `<a>` when it navigates and
+`loading` while it runs. `AlertDescription` underlines
+it at rest, not only on hover: in the text's own colour, the underline is all
+that marks it as a link. Never a framed Button
+(`outline`, `default`, `secondary`) inside an Alert: a filled or bordered
+control on the tinted box reads as a second surface stacked on the notice.
+A way past the problem that isn't a fix (the drafter's "Continue: <step>"
+during a guided build) goes under the Alert, as its own `flex flex-wrap
+gap-2` row with its own variant.
 
 Every variant is `role="alert"` except `success`, which is `role="status"` so a confirmation
 is announced politely; pass `role` only to override that. `onClose` adds a
@@ -1409,8 +1442,8 @@ Rows that sit straight on the page with no box around them (the empty chat's
 suggestions, `HeroSuggestions`) are `size="md"`: `px-3 py-2.5`, `gap-3` and
 `rounded-xl`, so the hover fill reads as a rounded row rather than a strip. They
 go in a plain `<ul>` too, with no divide rules. Their text is the point of
-the row (a question to send), so they are `wrap`: the title wraps instead of
-truncating, top-aligned, with no `title` tooltip, and the icons take `mt-0.5`
+the row (a question to send), so they are `wrap`: the title and its
+description wrap instead of truncating, top-aligned, with no `title` tooltip, and the icons take `mt-0.5`
 to sit on the first line. Each ends in a muted arrow shown on hover and focus
 (`group/row`, as StepGroup does) and always on a touch screen
 (`pointer-coarse:opacity-100`): `ArrowUp` (the composer's send glyph) on a row
@@ -1694,9 +1727,17 @@ it?
 - **`variant="docked"`** (yes): what you read or tweak beside a live page
   (the chat's artifact or an answer's sources, a workflow node's settings, a
   graph entity). An `<aside>` in the page: no scrim, `border-l` on
-  `bg-background`, the full height of its host. It slides in like the modal
-  one and closes at once (an exit slide snaps back for a frame before it
-  unmounts). The host is a `relative flex overflow-hidden` row with the page
+  `bg-background`, the full height of its host. It opens by growing its
+  width from the host's right edge and closes by shrinking back
+  (`duration-300 ease-in-out`, like the sidebar), so the page narrows and
+  widens with it; while it moves the content keeps the compact width, pinned
+  right, and slides with the edge (at rest it fills the panel, so a host
+  narrower than 480px never clips it), and while closing the panel is inert
+  and keeps what it last showed. A page that lays itself out differently
+  beside the panel (the chat's columns) switches back in `onClosed`, once
+  the panel has shrunk out, not when it starts to. Full width fades instead. Never a transform: a panel translated
+  off the edge overflows the host, which jumps sideways when the panel
+  focuses a field. The host is a `relative flex overflow-hidden` row with the page
   as a `min-w-0 flex-1` sibling. While open it covers the app's floating Share
   and account menu in the top-right corner (`ActionButtons`, `z-10` under the
   panel's `z-20`); they come back when it closes. One docked slot per page:
@@ -2011,7 +2052,9 @@ shows.
   only to the element that had it when they opened (`ui/use-focus-return.ts`).
   A tap on iOS, and a click in Safari, doesn't focus the trigger, so Radix's
   default `trigger.focus()` lit it with a ring nobody asked for; after a
-  keyboard open the trigger did have focus and still gets it back. Don't pass
+  keyboard open the trigger did have focus and still gets it back. One opened
+  from a menu row (Preview in a ⋯) gives it to the button that opened the
+  menu, since the row leaves with the menu. Don't pass
   `onCloseAutoFocus` from app code to remember focus yourself (ESLint rejects
   it); the primitive already does. `onOpenAutoFocus` with `preventDefault()`
   is still how a phone picker keeps the keyboard down (`MultiSelectPopover`),
@@ -2075,22 +2118,23 @@ Places where a rule is knowingly disabled. Each one carries the same reason
 as a comment at the call site; add a row here when you add a disable so the
 list stays reviewable.
 
-| Where                                                 | Rule                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `components/Notification.tsx`                         | `shadcn/no-restyle`             | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
-| `components/ui/calendar.tsx`                          | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
-| `navigation/SidebarLevel.tsx`                         | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
-| `components/MessageInput.tsx`                         | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
-| `agents/AgentsList.tsx`                               | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                         |
-| `lib/markdown.tsx`                                    | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable, in `markdownCode`, which every markdown fence goes through.                                                                                                                                                                                                                                     |
-| `agents/workflow/WorkflowPreview.tsx`                 | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
-| `agents/schedules/ScheduleFormModal.tsx`              | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle` (see Modal › Steps). One disable.                                                                                                                                                                                                                                                                                                                |
-| `components/MermaidRenderer.tsx`                      | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
-| `Navigation.tsx`, `conversation/ConversationTile.tsx` | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
-| `admin/Usage.tsx`                                     | `shadcn/no-restyle`             | The Top users name is a `link inline` Button inside a table cell; it wraps like the cell's text (`font-normal whitespace-normal text-left`), and a user with no email on file keeps the id's mono type (`font-mono text-xs`). One disable.                                                                                                                                                                                                                                                      |
-| `conversation/ConversationBubble.tsx`                 | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
-| `admin/Overview.tsx`                                  | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
-| `activity/AllSchedules.tsx`                           | `shadcn/no-restyle`             | A chat-made schedule's "Open chat" is a `link text` Button in the row's meta line. It keeps the line's 4px icon gap (`gap-1`), like Next run and Last run beside it, and a long chat name wraps beside its icon (`min-w-0 shrink whitespace-normal`); a `truncate` span would clip the hover underline. One disable.                                                                                                                                                                            |
+| Where                                                 | Rule                                     | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/Notification.tsx`                         | `shadcn/no-restyle`                      | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
+| `components/ui/calendar.tsx`                          | `shadcn/require-static-classes`          | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
+| `navigation/SidebarLevel.tsx`                         | `shadcn/no-arbitrary-values`             | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
+| `components/MessageInput.tsx`                         | `shadcn/no-restyle`                      | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
+| `agents/AgentsList.tsx`                               | `shadcn/no-restyle`                      | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                         |
+| `lib/markdown.tsx`                                    | `shadcn/no-inline-styles`                | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable, in `markdownCode`, which every markdown fence goes through.                                                                                                                                                                                                                                     |
+| `agents/workflow/WorkflowPreview.tsx`                 | `shadcn/no-restyle`                      | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
+| `agents/schedules/ScheduleFormModal.tsx`              | `shadcn/no-restyle`                      | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle` (see Modal › Steps). One disable.                                                                                                                                                                                                                                                                                                                |
+| `components/MermaidRenderer.tsx`                      | `shadcn/no-restyle`                      | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
+| `Navigation.tsx`, `conversation/ConversationTile.tsx` | `shadcn/no-restyle`                      | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
+| `admin/Usage.tsx`                                     | `shadcn/no-restyle`                      | The Top users name is a `link inline` Button inside a table cell; it wraps like the cell's text (`font-normal whitespace-normal text-left`), and a user with no email on file keeps the id's mono type (`font-mono text-xs`). One disable.                                                                                                                                                                                                                                                      |
+| `conversation/ConversationBubble.tsx`                 | `shadcn/no-restyle`                      | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
+| `admin/Overview.tsx`                                  | `shadcn/no-restyle`                      | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
+| `activity/AllSchedules.tsx`                           | `shadcn/no-restyle`                      | A chat-made schedule's "Open chat" is a `link text` Button in the row's meta line. It keeps the line's 4px icon gap (`gap-1`), like Next run and Last run beside it, and a long chat name wraps beside its icon (`min-w-0 shrink whitespace-normal`); a `truncate` span would clip the hover underline. One disable.                                                                                                                                                                            |
+| `components/QuestionCards.tsx`                        | className is placement only (not linted) | A question's option labels are `Label` with `font-normal leading-normal`: an answer reads as a sentence under the medium question, not as a field name, and Label's `leading-none` would crowd an option that wraps. The drafter and the chat's clarifying questions share this one component. One comment at the call site.                                                                                                                                                                                        |
 
 Note that a multi-line reason has to be a `/* ... */` block comment;
 consecutive `//` lines only disable the next comment line, not the code.

@@ -19,9 +19,15 @@ import {
   addQuery,
   fetchAnswer,
   resendQuery,
+  resumeQuestion,
   selectQueries,
   selectStatus,
 } from '../conversation/conversationSlice';
+import {
+  pendingQuestionCall,
+  type QuestionAction,
+} from '../conversation/questionCall';
+import { composerSubmitTarget } from '../conversation/turnSubmission';
 import { useArtifactDetail } from '../conversation/useArtifactDetail';
 import {
   selectConversationId,
@@ -29,7 +35,10 @@ import {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import { selectAttachments } from '../upload/uploadSlice';
+import {
+  selectAttachments,
+  toSendableAttachments,
+} from '../upload/uploadSlice';
 import SharedAgentCard from './SharedAgentCard';
 import { Agent } from './types';
 
@@ -138,6 +147,17 @@ export default function SharedAgent() {
     [dispatch, handleFetchAnswer, attachments],
   );
 
+  // The visitor's own token resumes the turn their message paused (a shared
+  // agent runs as its caller), as in the chat.
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      dispatch(resumeQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them.
+  const waitingQuestion = pendingQuestionCall(queries);
+
   const handleQuestionSubmission = (
     question?: string,
     updated?: boolean,
@@ -151,7 +171,17 @@ export default function SharedAgent() {
       });
     } else if (question && status !== 'loading') {
       const currentInput = question.trim();
-      if (lastQueryReturnedErr && queries.length > 0) {
+      const target = composerSubmitTarget({
+        question,
+        queries,
+        lastQueryReturnedErr,
+        composerFileCount: toSendableAttachments(attachments).length,
+      });
+      if (target.kind === 'answer') {
+        // What is typed answers the questions; it resumes the paused turn
+        // instead of starting a new one.
+        handleQuestionAction(target.callId, { answer: currentInput });
+      } else if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
           question: currentInput,
@@ -216,6 +246,7 @@ export default function SharedAgent() {
               status={status}
               showHeroOnEmpty={false}
               starters={sharedAgent.starters}
+              onQuestionAction={handleQuestionAction}
               onOpenArtifact={openArtifact}
               headerContent={
                 <div className="flex w-full items-center justify-center py-4">
@@ -232,6 +263,9 @@ export default function SharedAgent() {
               queuedQuestion={queuedQuestion}
               onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
               loading={status === 'loading'}
+              placeholder={
+                waitingQuestion ? t('questions.typeAnswer') : undefined
+              }
               showSourceButton={sharedAgent ? false : true}
               showToolButton={sharedAgent ? false : true}
               autoFocus={false}

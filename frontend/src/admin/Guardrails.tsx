@@ -122,7 +122,7 @@ export default function Guardrails() {
             onClick={save}
             loading={saving}
             disabled={(!floorChanged && !warningsChanged) || incomplete}
-            className="w-full sm:w-auto"
+            className="w-full @2xl:w-auto"
           >
             Save
           </Button>

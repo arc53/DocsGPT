@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 
+import { DraftedBadge } from '../../drafter/DraftedBadge';
+import { revealElement } from '../../settings/logsLinks';
 import { analyticsOf, isDefaultAnalytics } from '../analyticsConfig';
 import type { AnalyticsConfig } from '../types';
 import InsightsSettingsBody from './InsightsSettingsBody';
@@ -23,6 +25,19 @@ type AnalyticsSectionProps = {
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
   token: string | null;
+  /** Insights are on in the agent as saved. */
+  savedEnabled?: boolean;
+  /**
+   * The drafter added topics: the section opens and its title carries the
+   * Drafted badge with `onUndo`.
+   */
+  drafted?: boolean;
+  onUndo?: () => void;
+  /**
+   * Bumped to open the section and bring it into view (the drawer's Turn on
+   * Insights); 0 asks nothing.
+   */
+  openSignal?: number;
 };
 
 /**
@@ -42,19 +57,37 @@ export default function AnalyticsSection({
   maxOverlapping,
   disabled = false,
   token,
+  savedEnabled,
+  drafted = false,
+  onUndo,
+  openSignal = 0,
 }: AnalyticsSectionProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
   const bodyId = React.useId();
+  const cardRef = React.useRef<HTMLDivElement>(null);
+
+  // Asked from outside (the drawer's Turn on Insights): open and show it.
+  React.useEffect(() => {
+    if (!openSignal) return;
+    setExpanded(true);
+    revealElement(cardRef.current, 'start');
+  }, [openSignal]);
+
+  // Drafted topics open the section, so they show without a click.
+  React.useEffect(() => {
+    if (drafted) setExpanded(true);
+  }, [drafted]);
 
   if (!available && isDefaultAnalytics(value)) return null;
   const enabled = analyticsOf(value).enabled;
 
   return (
     <Card
+      ref={cardRef}
       variant="subtle"
       padding="lg"
-      className="gap-5"
+      className="scroll-mt-4 gap-5"
       data-testid="analytics-section"
     >
       {/* The card's gap-5 sits inside the body, so it folds away with it. */}
@@ -78,6 +111,12 @@ export default function AnalyticsSection({
               {t('agents.form.analytics.off')}
             </Badge>
           )}
+          {drafted && onUndo && (
+            <DraftedBadge
+              onUndo={onUndo}
+              fieldLabel={t('agents.form.sections.analytics')}
+            />
+          )}
         </div>
 
         <Collapsible open={expanded} id={bodyId}>
@@ -98,6 +137,7 @@ export default function AnalyticsSection({
               maxOverlapping={maxOverlapping}
               disabled={disabled}
               token={token}
+              savedEnabled={savedEnabled}
               // The source folders load once the section opens, with the
               // server's switch off too: hidden ones can still come back.
               active={expanded}

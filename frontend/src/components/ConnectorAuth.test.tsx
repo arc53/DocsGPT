@@ -67,7 +67,10 @@ describe('ConnectorAuth', () => {
     expect(banner?.className).toContain('bg-success/10');
     expect(banner?.querySelector('svg')).not.toBeNull();
     const button = banner?.querySelector('button');
-    expect(button?.className).toContain('text-link');
+    // A link in the banner's own colour, not the link token.
+    expect(button?.dataset.variant).toBe('link');
+    expect(button?.dataset.size).toBe('text');
+    expect(button?.dataset.tone).toBe('current');
     expect(button?.className).not.toContain('text-black');
     expect(button?.textContent).toBe(
       'modals.uploadDoc.connectors.auth.disconnect',

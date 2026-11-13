@@ -1,8 +1,12 @@
 import { ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
-import { Button } from '../components/ui/button';
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from '../components/ui/alert';
 import type { ConnectorDefinition } from './types';
 
 /**
@@ -32,13 +36,7 @@ export default function ConnectorSetupNotice({
             <span>{t('settings.connectors.askAdmin')}</span>
           )}
           {connector.docs_url && (
-            <Button
-              variant="link"
-              size="text"
-              tone="current"
-              asChild
-              className="w-fit"
-            >
+            <AlertAction asChild className="w-fit">
               <a
                 href={connector.docs_url}
                 target="_blank"
@@ -47,7 +45,7 @@ export default function ConnectorSetupNotice({
                 {t('settings.connectors.setupGuide')}
                 <ExternalLink />
               </a>
-            </Button>
+            </AlertAction>
           )}
         </div>
       </AlertDescription>

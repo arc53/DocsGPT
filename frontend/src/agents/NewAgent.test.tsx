@@ -1,12 +1,26 @@
-import { act } from 'react';
+import { act, type ComponentProps, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 
 import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
+import type { DrafterEvent } from '../drafter/drafterApi';
 
+// What the drafter's Insights requests were worded with (the mock's text is
+// the key alone).
+const i18n = vi.hoisted(() => ({ fixCalls: [] as [string, unknown][] }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: unknown) => {
+      if (key.startsWith('drafter.agent.insights.fix'))
+        i18n.fixCalls.push([key, options]);
+      return key;
+    },
     i18n: { language: 'en' },
   }),
 }));
@@ -39,6 +53,17 @@ const mocks = vi.hoisted(() => {
     getAgent: vi.fn(() => jsonResponse({})),
     getAgentDefaults: vi.fn(() => jsonResponse({ success: true })),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
+    createPrompt: vi.fn(
+      (_data: Record<string, unknown>, _token: string | null) =>
+        jsonResponse({}),
+    ),
+    getSinglePrompt: vi.fn((id: string) =>
+      jsonResponse({ content: `Text of ${id}`, updated_at: 'v1' }),
+    ),
+    updatePrompt: vi.fn(
+      (_data: Record<string, unknown>, _token: string | null) =>
+        jsonResponse({}),
+    ),
     tools: null as unknown[] | null,
     models: [] as unknown[],
     defaultModelId: '',
@@ -76,6 +101,60 @@ vi.mock('react-redux', () => ({
   useDispatch: () => mocks.dispatch,
 }));
 
+// The drafter: its config (off unless a test turns it on) and its stream,
+// which plays one script of events per turn (a promise is a turn whose
+// events land when it resolves).
+const drafter = vi.hoisted(() => ({
+  config: null as null | {
+    enabled: boolean;
+    model: { id: string; display_name: string } | null;
+    reason: null;
+  },
+  // The agent's gap summary (`GET /api/drafter/agent_gaps`), and who asked.
+  gaps: null as unknown,
+  gapsCalls: [] as string[],
+}));
+const stream = await vi.hoisted(async () =>
+  (await import('../drafter/testing/fakeDrafterStream')).fakeDrafterStream(),
+);
+/** A request the drawer sent, with the agent form's context. */
+type SentRequest = {
+  recipe: string;
+  messages: { role: string; content: string }[];
+  context: {
+    agent_id: string | null;
+    step?: string | null;
+    earlier?: string[];
+    gap?: { topic: string | null; gap_type: string };
+    conversation_id?: string;
+    message_id?: string;
+    form: Record<string, unknown>;
+  };
+};
+vi.mock('../drafter/useDrafterConfig', () => ({
+  useDrafterConfig: () => drafter.config,
+  // Insights' topic suggestions read it with the token they were handed.
+  useDrafterConfigFor: (_token: string | null, wanted = true) =>
+    wanted ? drafter.config : null,
+}));
+vi.mock('../drafter/drafterApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../drafter/drafterApi')>()),
+  streamDrafter: stream.streamDrafter,
+  getAgentGaps: async (agentId: string) => {
+    drafter.gapsCalls.push(agentId);
+    return (
+      drafter.gaps ?? {
+        available: false,
+        reason: 'off_on_this_instance',
+        conversations: 0,
+        needed: 10,
+        days: 30,
+        rows: [],
+      }
+    );
+  },
+}));
+
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
@@ -96,7 +175,10 @@ vi.mock('../api/services/userService', () => ({
     createAgent: mocks.createAgent,
     updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
-    createPrompt: () => jsonResponse({}),
+    createPrompt: mocks.createPrompt,
+    updatePrompt: mocks.updatePrompt,
+    getSinglePrompt: mocks.getSinglePrompt,
+    getPrompts: () => jsonResponse([]),
   },
 }));
 
@@ -189,7 +271,8 @@ vi.mock('../components/MultiSelectPopover', () => ({
 }));
 
 vi.mock('./AgentPreview', () => ({ default: () => null }));
-vi.mock('./components/GuardrailsSection', () => ({
+vi.mock('./components/GuardrailsSection', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./components/GuardrailsSection')>()),
   default: (props: { disabled?: boolean }) => {
     mocks.guardrailsProps(props);
     return null;
@@ -246,7 +329,6 @@ vi.mock('../modals/ConfirmationModal', () => ({
       </>
     ) : null,
 }));
-vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
 vi.mock('./components/SponsorConfirmModal', () => ({
   default: ({
     confirmation,
@@ -283,6 +365,17 @@ vi.mock('../components/ToolIcon', () => ({ default: () => null }));
 
 import NewAgent from './NewAgent';
 
+// The router's navigate and the location's state, for browser Back.
+const probe = {
+  navigate: null as null | ((delta: number) => void),
+  state: null as unknown,
+};
+function RouterProbe() {
+  probe.navigate = useNavigate();
+  probe.state = useLocation().state;
+  return null;
+}
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const setNativeValue = (
@@ -295,6 +388,104 @@ const setNativeValue = (
       : HTMLInputElement.prototype;
   Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
   el.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+/** Click an element inside act. */
+const click = (el: HTMLElement) => act(async () => el.click());
+/** Type a value into a field as a user would, inside act. */
+const type = (el: HTMLInputElement | HTMLTextAreaElement, value: string) =>
+  act(async () => setNativeValue(el, value));
+/** Press a Radix trigger (it opens on pointerdown), inside act. */
+const pointerDown = (el: Element) =>
+  act(async () => {
+    el.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+    );
+  });
+/** Open a combobox (a press, then its click), inside act. */
+const openCombobox = (trigger: HTMLElement) =>
+  act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+    );
+    trigger.click();
+  });
+/** The form's Name field. */
+const nameInput = (root: ParentNode) =>
+  root.querySelector<HTMLInputElement>(
+    'input[placeholder="agents.form.placeholders.agentName"]',
+  )!;
+
+/**
+ * Draw the form: a new agent, or a saved one (`edit`, `draft`) at its edit
+ * address.
+ *
+ * Args:
+ *   root: The test's root.
+ *   mode: The form's mode.
+ *   options: `entries` and `initialIndex`, the router's history (the saved
+ *     agent's address by default); `beside`, drawn next to the form in its
+ *     route; `after`, drawn after the routes.
+ */
+const mountForm = (
+  root: Root,
+  mode: 'new' | 'edit' | 'draft' = 'new',
+  {
+    entries = ['/agents/edit/agent-1'],
+    initialIndex,
+    beside,
+    after,
+  }: {
+    entries?: ComponentProps<typeof MemoryRouter>['initialEntries'];
+    initialIndex?: number;
+    beside?: ReactNode;
+    after?: ReactNode;
+  } = {},
+) =>
+  act(async () => {
+    root.render(
+      mode === 'new' ? (
+        <MemoryRouter>
+          <NewAgent mode="new" />
+          {after}
+        </MemoryRouter>
+      ) : (
+        <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={
+                <>
+                  <NewAgent mode={mode} />
+                  {beside}
+                </>
+              }
+            />
+          </Routes>
+          {after}
+        </MemoryRouter>
+      ),
+    );
+  });
+
+/** Open the toolbar's ⋯ and its items' labels. */
+const openToolbarMenu = async (root: ParentNode) => {
+  await pointerDown(
+    root.querySelector<HTMLButtonElement>(
+      'button[aria-label="agents.form.buttons.moreActions"]',
+    )!,
+  );
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  );
+};
+
+/** Pick an item from the toolbar's ⋯ (Save Draft, Preview). */
+const pickMenuItem = async (root: ParentNode, label: string) => {
+  const item = (await openToolbarMenu(root)).find(
+    (row) => row.textContent === label,
+  )!;
+  await click(item);
 };
 
 describe('NewAgent form', () => {
@@ -325,13 +516,7 @@ describe('NewAgent form', () => {
   });
 
   const render = async () => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <NewAgent mode="new" />
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root);
   };
 
   const buttonByText = (text: string) =>
@@ -366,12 +551,10 @@ describe('NewAgent form', () => {
     );
   });
 
-  // Decision 63 (3): every field, picker and button in the form is 42px.
+  // Every field, picker and button in the form is 42px.
   it('renders the name field as a default-size square Input', async () => {
     await render();
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
+    const name = nameInput(container);
     expect(name.getAttribute('data-slot')).toBe('input');
     expect(name.getAttribute('data-size')).toBe('default');
     // S8: form controls are square; only the page chrome is pill.
@@ -390,10 +573,10 @@ describe('NewAgent form', () => {
     }
   });
 
-  // The prompt is picked like a tool or a source: a plain picker whose
-  // footer goes to the Prompts page or adds one; no row actions, no Add
-  // button beside it.
-  it('picks the prompt from a plain Combobox with a Go to Prompts footer', async () => {
+  // The prompt is picked like a tool or a source: a picker whose footer
+  // goes to the Prompts page or adds one, no Add button beside it; a row's
+  // only action opens the prompt (Edit, or View for one the role can't).
+  it('picks the prompt from a Combobox with a Go to Prompts footer', async () => {
     mockState.preference.prompts = [
       { id: 'default', name: 'default', type: 'public' },
       { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
@@ -409,20 +592,24 @@ describe('NewAgent form', () => {
           ?.textContent,
       ).toBe('agents.form.sections.prompt');
       expect(buttonByText('agents.form.buttons.add')).toBeUndefined();
-      await act(async () => {
-        trigger.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-        );
-        trigger.click();
-      });
+      await openCombobox(trigger);
       const list = document.body.querySelector('[cmdk-list]')!;
       const rows = Array.from(list.querySelectorAll('[cmdk-item]'));
       expect(rows.map((row) => row.getAttribute('data-value'))).toEqual([
         'default',
         'p1',
       ]);
-      // No edit, duplicate, share or delete icons in a row.
-      expect(list.querySelector('button')).toBeNull();
+      // Edit or View only: duplicate, share and delete are on the page.
+      expect(
+        Array.from(list.querySelectorAll('button')).map((button) =>
+          button.getAttribute('aria-label'),
+        ),
+      ).toEqual(['settings.prompts.viewNamed', 'settings.prompts.editNamed']);
+      // Half width on a wide screen, like Default model.
+      expect(
+        trigger.closest('[data-slot="form-field"]')!.parentElement!
+          .parentElement!.className,
+      ).not.toContain('col-span-2');
       const link = Array.from(document.body.querySelectorAll('a')).find(
         (a) => a.textContent === 'settings.prompts.manage',
       )!;
@@ -431,7 +618,7 @@ describe('NewAgent form', () => {
         (b) => b.textContent === 'settings.prompts.addPrompt',
       )!;
       expect(add.getAttribute('data-variant')).toBe('outline-primary');
-      await act(async () => (rows[1] as HTMLElement).click());
+      await click(rows[1] as HTMLElement);
       expect(trigger.textContent).toContain('Tone');
     } finally {
       mockState.preference.prompts = [];
@@ -442,12 +629,7 @@ describe('NewAgent form', () => {
     const trigger = container.querySelector<HTMLButtonElement>(
       '[data-slot="combobox-trigger"]',
     )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-      trigger.click();
-    });
+    await openCombobox(trigger);
   };
   const promptRow = (value: string) =>
     document.body.querySelector<HTMLElement>(
@@ -524,7 +706,7 @@ describe('NewAgent form', () => {
         '[data-slot="combobox-trigger"]',
       )!;
       await openPromptPicker();
-      await act(async () => promptRow('team-1')!.click());
+      await click(promptRow('team-1')!);
       expect(trigger.textContent).toContain('Theirs');
       await openPromptPicker();
       const kinds = Array.from(
@@ -533,7 +715,7 @@ describe('NewAgent form', () => {
         ),
       );
       // Yours: the picked teammate's prompt is filtered out.
-      await act(async () => kinds[2].click());
+      await click(kinds[2]);
       expect(trigger.textContent).toContain('Theirs');
       expect(trigger.textContent).not.toContain('Mine 0');
     } finally {
@@ -572,7 +754,7 @@ describe('NewAgent form', () => {
         // Short, as on the Prompts page's track.
         'settings.prompts.kinds.shared',
       ]);
-      await act(async () => kinds[2].click());
+      await click(kinds[2]);
       const rows = Array.from(
         document.body.querySelectorAll('[cmdk-item]'),
       ).map((row) => row.getAttribute('data-value'));
@@ -592,10 +774,10 @@ describe('NewAgent form', () => {
     ] as never[];
     try {
       await render();
-      await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[data-slot="combobox-trigger"]')!
-          .click(),
+      await click(
+        container.querySelector<HTMLButtonElement>(
+          '[data-slot="combobox-trigger"]',
+        )!,
       );
       const sheet = document.body.querySelector<HTMLElement>(
         '[data-slot="sheet-content"]',
@@ -605,7 +787,7 @@ describe('NewAgent form', () => {
       expect(sheet.querySelector('h3')?.textContent).toBe(
         'agents.form.sections.prompt',
       );
-      await act(async () => promptRow('strict').click());
+      await click(promptRow('strict'));
       expect(document.body.querySelector('[data-slot="sheet-content"]')).toBe(
         null,
       );
@@ -619,9 +801,7 @@ describe('NewAgent form', () => {
 
   it('renders the token and request limits as default-size square Inputs', async () => {
     await render();
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced').click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced'));
     for (const key of ['enterTokenLimit', 'enterRequestLimit']) {
       const field = container.querySelector(
         `input[placeholder="agents.form.placeholders.${key}"]`,
@@ -663,7 +843,8 @@ describe('NewAgent form', () => {
       .querySelector(
         'textarea[placeholder="agents.form.placeholders.describeAgent"]',
       )!
-      .closest('[data-slot="form-field"]')!;
+      // The grid cell is the field's drafted-marker wrapper.
+      .closest('[data-slot="drafted-field"]')!;
     expect(description.className).toContain('col-span-2');
     expect(description.className).toContain('sm:col-start-2');
   });
@@ -760,18 +941,7 @@ describe('NewAgent form', () => {
         ...agent,
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'edit');
   };
 
   // The route guard sends a workflow on to its editor when its record says
@@ -824,20 +994,31 @@ describe('NewAgent form', () => {
     // This file stubs ConfirmationModal as its confirm button.
     container.querySelector('[data-testid="confirm-delete"]') !== null;
   const typeName = async (value: string) =>
-    act(async () =>
-      setNativeValue(
-        container.querySelector<HTMLInputElement>(
-          'input[placeholder="agents.form.placeholders.agentName"]',
-        )!,
-        value,
-      ),
-    );
+    act(async () => setNativeValue(nameInput(container), value));
 
   it('asks before Go to Tools leaves unsaved changes', async () => {
     await render();
     await typeName('Support bot');
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(true);
+  });
+
+  it("takes the instance's default model with no uncontrolled Select warning", async () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.models = [{ id: 'm1', display_name: 'Model one', provider: 'x' }];
+    mocks.defaultModelId = 'm1';
+    await render();
+    await act(async () => undefined);
+    expect(
+      [...error.mock.calls, ...warn.mock.calls].filter((call) =>
+        /uncontrolled/i.test(String(call[0])),
+      ),
+    ).toEqual([]);
+    error.mockRestore();
+    warn.mockRestore();
   });
 
   // The defaults a new agent starts from (the instance's model, the admin's
@@ -851,7 +1032,7 @@ describe('NewAgent form', () => {
     await render();
     await act(async () => undefined);
     expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -861,11 +1042,9 @@ describe('NewAgent form', () => {
     );
     await render();
     await typeName('Support bot');
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -879,7 +1058,7 @@ describe('NewAgent form', () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' });
     await act(async () => mocks.fileUploadProps!.onUpload([file]));
     const saveDraft = () =>
-      act(async () => buttonByText('agents.form.buttons.saveDraft').click());
+      pickMenuItem(container, 'agents.form.buttons.saveDraft');
     await saveDraft();
     const created = (
       mocks.createAgent.mock.calls.at(-1) as unknown as [FormData]
@@ -903,9 +1082,7 @@ describe('NewAgent form', () => {
     );
     await render();
     await typeName('Support bot');
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
     const guardrails = { controls: [{ id: 'pii' }] };
     mocks.getAgent.mockImplementationOnce(() =>
@@ -931,20 +1108,9 @@ describe('NewAgent form', () => {
         prompt_id: 'default',
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="draft" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'draft');
     expect(buttonByText('agents.form.buttons.publish').disabled).toBe(false);
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -981,20 +1147,16 @@ describe('NewAgent form', () => {
     );
     await render();
     await typeName('Support bot');
-    await act(async () =>
-      setNativeValue(
-        container.querySelector<HTMLTextAreaElement>(
-          'textarea[placeholder="agents.form.placeholders.describeAgent"]',
-        )!,
-        'Helps',
-      ),
+    await type(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+      )!,
+      'Helps',
     );
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     const publish = buttonByText('agents.form.buttons.publish');
     expect(publish.disabled).toBe(true);
-    await act(async () => publish.click());
+    await click(publish);
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
     await act(async () =>
       finish({ ok: true, json: () => Promise.resolve({ id: 'agent-9' }) }),
@@ -1018,7 +1180,7 @@ describe('NewAgent form', () => {
     );
     await renderEdit({ updated_at: '2026-10-30T10:00:00.123456+00:00' });
     await typeName('Renamed');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const form = mocks.updateAgent.mock.calls.at(-1)![1];
     expect(form.get('expected_updated_at')).toBe(
       '2026-10-30T10:00:00.123456+00:00',
@@ -1026,11 +1188,7 @@ describe('NewAgent form', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       'agents.form.errors.staleWrite',
     );
-    expect(
-      container.querySelector<HTMLInputElement>(
-        'input[placeholder="agents.form.placeholders.agentName"]',
-      )!.value,
-    ).toBe('Renamed');
+    expect(nameInput(container).value).toBe('Renamed');
   });
 
   it('sends the stamp the last save answered with', async () => {
@@ -1039,9 +1197,9 @@ describe('NewAgent form', () => {
     );
     await renderEdit({ updated_at: 'stamp-1' });
     await typeName('Once');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     await typeName('Twice');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const form = mocks.updateAgent.mock.calls.at(-1)![1];
     expect(form.get('expected_updated_at')).toBe('stamp-2');
   });
@@ -1062,14 +1220,14 @@ describe('NewAgent form', () => {
       details().onConfigChange({ api_write_allowlist: ['t:a'] }, 'stamp-2'),
     );
     await typeName('Renamed');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const form = mocks.updateAgent.mock.calls.at(-1)![1];
     expect(form.get('expected_updated_at')).toBe('stamp-2');
   });
 
   it('lets Go to Tools go when the agent is saved', async () => {
     await renderEdit({});
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(
       container.querySelector('[data-testid="confirm-delete"]'),
     ).toBeNull();
@@ -1086,7 +1244,7 @@ describe('NewAgent form', () => {
       ],
     });
     expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
-    await act(async () => goToTools().click());
+    await click(goToTools());
     expect(asked()).toBe(false);
   });
 
@@ -1281,11 +1439,9 @@ describe('NewAgent form', () => {
       ),
     );
     await renderEdit({});
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Renamed'));
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const name = nameInput(container);
+    await type(name, 'Renamed');
+    await click(buttonByText('agents.form.buttons.save'));
     const confirm = container.querySelector<HTMLButtonElement>(
       '[data-testid="confirm-sponsor"]',
     )!;
@@ -1296,7 +1452,7 @@ describe('NewAgent form', () => {
     const first = mocks.updateAgent.mock.calls[0][1];
     expect(first.get('confirm_sponsor')).toBeNull();
 
-    await act(async () => confirm.click());
+    await click(confirm);
     expect(mocks.updateAgent).toHaveBeenCalledTimes(2);
     const retried = mocks.updateAgent.mock.calls[1][1];
     expect(JSON.parse(retried.get('confirm_sponsor') as string)).toEqual([
@@ -1308,10 +1464,8 @@ describe('NewAgent form', () => {
   });
 
   const rename = async (value: string) => {
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, value));
+    const name = nameInput(container);
+    await type(name, value);
   };
 
   it('drops the remove-only row once the removal is saved', async () => {
@@ -1322,14 +1476,12 @@ describe('NewAgent form', () => {
         { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
       ],
     });
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[data-toggle="owners"]')!
-        .click(),
+    await click(
+      container.querySelector<HTMLButtonElement>('[data-toggle="owners"]')!,
     );
     // Still listed until saved, so it can be put back.
     expect(container.querySelector('[data-item="owners"]')).not.toBeNull();
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-item="owners"]')).toBeNull();
   });
@@ -1360,21 +1512,19 @@ describe('NewAgent form', () => {
     await renderEdit(withStoppedTool());
     const save = buttonByText('agents.form.buttons.save');
     expect(save.disabled).toBe(true);
-    await act(async () =>
-      buttonByText('agents.form.sponsors.takeOver').click(),
-    );
+    await click(buttonByText('agents.form.sponsors.takeOver'));
     // Nothing is taken over until the reader agrees in the dialog.
     expect(save.disabled).toBe(true);
     const confirm = container.querySelector<HTMLButtonElement>(
       '[data-testid="confirm-sponsor"]',
     )!;
     expect(confirm.textContent).toBe('Jira');
-    await act(async () => confirm.click());
+    await click(confirm);
     expect(container.textContent).toContain(
       'agents.form.sponsors.takeOverPending',
     );
     expect(save.disabled).toBe(false);
-    await act(async () => save.click());
+    await click(save);
     const sent = mocks.updateAgent.mock.calls[0][1];
     expect(JSON.parse(sent.get('confirm_sponsor') as string)).toEqual([
       'tool:t1',
@@ -1386,7 +1536,7 @@ describe('NewAgent form', () => {
   const openAdvanced = async () => {
     const trigger = buttonByText('agents.form.sections.advanced');
     if (trigger.getAttribute('aria-expanded') !== 'true') {
-      await act(async () => trigger.click());
+      await click(trigger);
     }
   };
   const limitInput = (key: 'contextLimitTokens' | 'historyLimitTokens') =>
@@ -1420,13 +1570,11 @@ describe('NewAgent form', () => {
       'false',
     );
     expect(limitInput('contextLimitTokens').disabled).toBe(true);
-    await act(async () => limitSwitch('contextLimit').click());
+    await click(limitSwitch('contextLimit'));
     // Switched on, it starts from a value the model's window allows.
     expect(limitInput('contextLimitTokens').value).toBe('100000');
-    await act(async () =>
-      setNativeValue(limitInput('contextLimitTokens'), '32000'),
-    );
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await type(limitInput('contextLimitTokens'), '32000');
+    await click(buttonByText('agents.form.buttons.save'));
     // The rest of the config rides along: a config save replaces it whole.
     expect(sentConfig()).toMatchObject({
       api_write_allowlist: ['t:a'],
@@ -1445,23 +1593,23 @@ describe('NewAgent form', () => {
     expect(input.value).toBe('32000');
     const save = buttonByText('agents.form.buttons.save');
     // Past the window is a note, not an error: the limit just has no effect.
-    await act(async () => setNativeValue(input, '200000'));
+    await type(input, '200000');
     expect(save.disabled).toBe(false);
     expect(input.getAttribute('aria-invalid')).toBeNull();
     expect(container.textContent).toContain(
       'agents.form.advanced.contextLimitAboveWindow',
     );
     // Below the server's floor is an error.
-    await act(async () => setNativeValue(input, '12000'));
+    await type(input, '12000');
     expect(save.disabled).toBe(true);
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(container.textContent).toContain('agents.form.advanced.limitRange');
     // Emptied while on is not a value either.
-    await act(async () => setNativeValue(input, ''));
+    await type(input, '');
     expect(save.disabled).toBe(true);
-    await act(async () => limitSwitch('contextLimit').click());
+    await click(limitSwitch('contextLimit'));
     expect(save.disabled).toBe(false);
-    await act(async () => save.click());
+    await click(save);
     expect(sentConfig().context_window_limit).toBeNull();
   });
 
@@ -1479,11 +1627,9 @@ describe('NewAgent form', () => {
     expect(container.textContent).toContain(
       'agents.form.advanced.historyLimitAboveWindow',
     );
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Renamed'));
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const name = nameInput(container);
+    await type(name, 'Renamed');
+    await click(buttonByText('agents.form.buttons.save'));
     expect(sentConfig()).toMatchObject({
       context_window_limit: 200_000,
       history_token_limit: 150_000,
@@ -1497,17 +1643,17 @@ describe('NewAgent form', () => {
       ...withModel(128_000),
     });
     await openAdvanced();
-    await act(async () => limitSwitch('historyLimit').click());
+    await click(limitSwitch('historyLimit'));
     const input = limitInput('historyLimitTokens');
     expect(input.value).toBe('8000');
     const save = buttonByText('agents.form.buttons.save');
-    await act(async () => setNativeValue(input, '32000'));
+    await type(input, '32000');
     expect(save.disabled).toBe(true);
     expect(container.textContent).toContain(
       'agents.form.advanced.historyLimitBelowContext',
     );
-    await act(async () => setNativeValue(input, '16000'));
-    await act(async () => save.click());
+    await type(input, '16000');
+    await click(save);
     expect(sentConfig()).toMatchObject({
       context_window_limit: 32000,
       history_token_limit: 16000,
@@ -1535,11 +1681,11 @@ describe('NewAgent form', () => {
     expect(fields().map((f) => f.value)).toEqual([
       'Run due diligence on a new vendor',
     ]);
-    await act(async () => buttonByText('agents.form.starters.add').click());
-    await act(async () => buttonByText('agents.form.starters.add').click());
+    await click(buttonByText('agents.form.starters.add'));
+    await click(buttonByText('agents.form.starters.add'));
     const save = buttonByText('agents.form.buttons.save');
-    await act(async () => setNativeValue(fields()[2], '  Which DPAs?  '));
-    await act(async () => save.click());
+    await type(fields()[2], '  Which DPAs?  ');
+    await click(save);
     const sent = mocks.updateAgent.mock.calls[0][1];
     expect(JSON.parse(sent.get('starters') as string)).toEqual([
       'Run due diligence on a new vendor',
@@ -1572,14 +1718,12 @@ describe('NewAgent form', () => {
     expect(container.textContent).toContain(
       'agents.form.resourceStates.reason.deleted',
     );
-    await act(async () =>
-      buttonByText('agents.form.resourceStates.remove').click(),
-    );
+    await click(buttonByText('agents.form.resourceStates.remove'));
     // Off the form, so off the notice too.
     expect(container.textContent).not.toContain(
       'agents.form.resourceStates.reason.deleted',
     );
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     const sent = mocks.updateAgent.mock.calls[0][1];
     expect(JSON.parse(sent.get('tools') as string)).toEqual([]);
   });
@@ -1595,9 +1739,7 @@ describe('NewAgent form', () => {
         connection: { id: 'c1', connector_key: 'telegram', name: 'Telegram' },
       }),
     );
-    await act(async () =>
-      buttonByText('settings.connectors.status.reconnect').click(),
-    );
+    await click(buttonByText('settings.connectors.status.reconnect'));
     expect(mocks.reconnect).toHaveBeenCalledWith(
       { id: 'c1', connector_key: 'telegram' },
       undefined,
@@ -1620,7 +1762,7 @@ describe('NewAgent form', () => {
     );
     await renderEdit({});
     await rename('Renamed');
-    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await click(buttonByText('agents.form.buttons.save'));
     expect(container.textContent).toContain(
       'agents.form.sponsors.confirmationOutdated',
     );
@@ -1683,9 +1825,7 @@ describe('NewAgent form', () => {
     mocks.createAgent.mockImplementationOnce(() =>
       jsonResponse({ id: 'agent-1' }),
     );
-    await act(async () =>
-      buttonByText('agents.form.buttons.saveDraft').click(),
-    );
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     expect(container.querySelector('h1')?.textContent).not.toBe(
       'agents.newAgent',
     );
@@ -1704,22 +1844,9 @@ describe('NewAgent form', () => {
         prompt_id: 'default',
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Unsaved name'));
+    await mountForm(root, 'edit');
+    const name = nameInput(container);
+    await type(name, 'Unsaved name');
 
     const pushed = mocks.dispatch.mock.calls
       .map(([action]) => action)
@@ -1730,12 +1857,15 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('offers Preview from the toolbar menu until the agent is published', async () => {
+  it('offers Save Draft and Preview first in the toolbar menu', async () => {
     await render();
     const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    // The row keeps Cancel, the wand and the main button.
     expect(
-      Array.from(toolbar.querySelectorAll('button')).some((b) =>
-        b.textContent?.includes('agents.form.sections.preview'),
+      Array.from(toolbar.querySelectorAll('button')).some(
+        (b) =>
+          b.textContent?.includes('agents.form.sections.preview') ||
+          b.textContent?.includes('agents.form.buttons.saveDraft'),
       ),
     ).toBe(false);
     const menu = container.querySelector<HTMLButtonElement>(
@@ -1745,24 +1875,24 @@ describe('NewAgent form', () => {
     // Last in the toolbar row, after the page's buttons.
     expect(menu.closest('[data-slot="page-toolbar"]')).toBe(toolbar);
     expect(menu.parentElement!.lastElementChild).toBe(menu);
-    await act(async () => {
-      menu.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-    });
-    const preview = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === 'agents.form.sections.preview')!;
-    await act(async () => preview.click());
+    const items = await openToolbarMenu(container);
+    expect(items.map((item) => item.textContent).slice(0, 2)).toEqual([
+      'agents.form.buttons.saveDraft',
+      'agents.form.sections.preview',
+    ]);
+    const preview = items[1];
+    await click(preview);
     const sheet = document.querySelector('[data-slot="sheet-content"]')!;
     expect(sheet.textContent).toContain('agents.form.preview.publishTitle');
   });
 
-  it('stretches the main button on a phone', async () => {
+  // By the toolbar's width, as its row stacks: also with the drawer docked.
+  it('stretches the main button while the toolbar row is stacked', async () => {
     await render();
-    const publish = buttonByText('agents.form.buttons.publish');
+    const publish = buttonByText('agents.form.buttons.publish')!;
     expect(publish.className).toContain('flex-1');
-    expect(publish.className).toContain('sm:flex-none');
+    expect(publish.className).toContain('@2xl:flex-none');
+    expect(publish.className).not.toContain('sm:flex-none');
   });
 
   // The sidebar (and the agent card's menu) already switch between an
@@ -1789,7 +1919,7 @@ describe('NewAgent form', () => {
       'has-[[data-variant=section-toggle]:focus-visible]:ring-3',
     );
 
-    await act(async () => toggle.click());
+    await click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(chevron.getAttribute('class')).toContain('rotate-90');
   });
@@ -1866,7 +1996,7 @@ describe('NewAgent form', () => {
       'settings.tools.groupAdded',
       'agents.form.toolsPopup.groupCustom',
     ]);
-    await act(async () => kinds[1].click());
+    await click(kinds[1]);
     expect(
       Array.from(tools.querySelectorAll('[data-item]')).map((item) =>
         item.getAttribute('data-item'),
@@ -1907,7 +2037,7 @@ describe('NewAgent form', () => {
         '[data-testid="picker-footer"] button',
       ),
     ).find((b) => b.textContent === 'settings.tools.addTool')!;
-    await act(async () => add.click());
+    await click(add);
     expect(mocks.addToolProps?.modalState).toBe('ACTIVE');
     const calls = mocks.toolsCalls.length;
     mocks.tools = [
@@ -1930,23 +2060,17 @@ describe('NewAgent form', () => {
     ).find(
       (picker) => picker.getAttribute('data-title') === 'settings.tools.label',
     )!;
-    await act(async () =>
-      tools
-        .querySelector<HTMLButtonElement>('[data-testid="picker-open"]')!
-        .click(),
+    await click(
+      tools.querySelector<HTMLButtonElement>('[data-testid="picker-open"]')!,
     );
     const badge = container.querySelector('[data-slot="badge"]');
     expect(badge?.textContent).toBe('settings.devices.online');
     expect(badge?.getAttribute('data-variant')).toBe('success');
   });
 
-  it('renders Save draft and Publish as pill button variants', async () => {
+  it('renders Publish as a pill button', async () => {
     await render();
     // A4: one purple button per page; every header button is field pill.
-    const draft = buttonByText('agents.form.buttons.saveDraft');
-    expect(draft.getAttribute('data-variant')).toBe('outline');
-    expect(draft.getAttribute('data-size')).toBe('field');
-    expect(draft.getAttribute('data-shape')).toBe('pill');
     const publish = buttonByText('agents.form.buttons.publish');
     expect(publish.getAttribute('data-variant')).toBe('default');
     expect(publish.getAttribute('data-size')).toBe('field');
@@ -1957,10 +2081,8 @@ describe('NewAgent form', () => {
   // Item 42: the header's Cancel (shown once the form is dirty) is ghost.
   it('renders the header Cancel as a ghost pill once the form changes', async () => {
     await render();
-    const name = container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.agentName"]',
-    )!;
-    await act(async () => setNativeValue(name, 'Support bot'));
+    const name = nameInput(container);
+    await type(name, 'Support bot');
     const cancel = buttonByText('agents.form.buttons.cancel');
     expect(cancel.getAttribute('data-variant')).toBe('ghost');
     expect(cancel.getAttribute('data-size')).toBe('field');
@@ -1969,38 +2091,35 @@ describe('NewAgent form', () => {
 
   it('shows a failed save as a destructive alert with an icon', async () => {
     await render();
-    const draft = buttonByText('agents.form.buttons.saveDraft');
-    await act(async () => draft.click());
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('Name is taken');
     // ui/alert's destructive variant.
     expect(alert.className).toContain('border-destructive/50');
     expect(alert.className).toContain('bg-destructive/10');
     expect(alert.querySelector('svg.lucide-circle-alert')).not.toBeNull();
-    // Decision 69 (b): the notice sits above the form panel, not in the
-    // header's button row.
-    expect(draft.parentElement?.contains(alert)).toBe(false);
+    // The notice sits above the form panel, not in the header's button row.
+    const publish = buttonByText('agents.form.buttons.publish');
+    expect(publish.parentElement?.contains(alert)).toBe(false);
   });
 
   it('marks JSON schema validity with token colours and lucide icons', async () => {
     await render();
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced').click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced'));
     const schema = Array.from(container.querySelectorAll('textarea')).find(
       (el) => el.className.includes('font-mono'),
     )!;
     expect(schema.getAttribute('data-slot')).toBe('textarea');
     expect(schema.getAttribute('data-size')).toBe('default');
 
-    await act(async () => setNativeValue(schema, '{ not json'));
+    await type(schema, '{ not json');
     const invalid = Array.from(container.querySelectorAll('div')).find(
       (el) => el.textContent === 'agents.form.advanced.invalidJson',
     )!;
     expect(invalid.className).toContain('text-destructive');
     expect(invalid.querySelector('svg.lucide-circle-x')).not.toBeNull();
 
-    await act(async () => setNativeValue(schema, '{}'));
+    await type(schema, '{}');
     const valid = Array.from(container.querySelectorAll('div')).find(
       (el) => el.textContent === 'agents.form.advanced.validJson',
     )!;
@@ -2108,18 +2227,7 @@ describe('NewAgent gating by role', () => {
         allowed_actions: allowed,
       }),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
-          <Routes>
-            <Route
-              path="/agents/edit/:agentId"
-              element={<NewAgent mode="edit" />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
-    });
+    await mountForm(root, 'edit');
   };
 
   const buttonByText = (text: string) =>
@@ -2127,19 +2235,8 @@ describe('NewAgent gating by role', () => {
       b.textContent?.includes(text),
     );
 
-  const menuLabels = async () => {
-    const menu = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="agents.form.buttons.moreActions"]',
-    )!;
-    await act(async () => {
-      menu.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-    });
-    return Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).map((item) => item.textContent);
-  };
+  const menuLabels = async () =>
+    (await openToolbarMenu(container)).map((item) => item.textContent);
 
   const lastGuardrailsDisabled = () =>
     mocks.guardrailsProps.mock.calls.at(-1)?.[0].disabled;
@@ -2147,6 +2244,7 @@ describe('NewAgent gating by role', () => {
   it('gives the owner Access details, Share and Delete', async () => {
     await renderEdit('owner', OWNER);
     expect(await menuLabels()).toEqual([
+      'agents.form.sections.preview',
       'agents.form.buttons.accessDetails',
       'agents.shareWithTeam',
       'agents.form.buttons.delete',
@@ -2169,15 +2267,16 @@ describe('NewAgent gating by role', () => {
 
   it('hides Share and Delete from an editor but keeps Access details', async () => {
     await renderEdit('editor', EDITOR);
-    expect(await menuLabels()).toEqual(['agents.form.buttons.accessDetails']);
+    expect(await menuLabels()).toEqual([
+      'agents.form.sections.preview',
+      'agents.form.buttons.accessDetails',
+    ]);
   });
 
   it('lets an editor change guardrails and quotas', async () => {
     await renderEdit('editor', EDITOR);
     expect(lastGuardrailsDisabled()).toBe(false);
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced')!.click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced')!);
     const switches =
       container.querySelectorAll<HTMLButtonElement>('[role="switch"]');
     expect(switches.length).toBeGreaterThan(0);
@@ -2190,9 +2289,7 @@ describe('NewAgent gating by role', () => {
       EDITOR.filter((a) => a !== 'edit_policy'),
     );
     expect(lastGuardrailsDisabled()).toBe(true);
-    await act(async () =>
-      buttonByText('agents.form.sections.advanced')!.click(),
-    );
+    await click(buttonByText('agents.form.sections.advanced')!);
     const token = container.querySelector<HTMLInputElement>(
       'input[placeholder="agents.form.placeholders.enterTokenLimit"]',
     )!;
@@ -2230,10 +2327,10 @@ describe('NewAgent gating by role', () => {
         setModalState: (state: string) => void;
       };
     await menuLabels();
-    await act(async () =>
-      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-        .find((item) => item.textContent === 'agents.shareWithTeam')!
-        .click(),
+    await click(
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((item) => item.textContent === 'agents.shareWithTeam')!,
     );
     const share = mocks.shareProps.mock.calls.at(-1)![0] as {
       onOpenAccessDetails?: () => void;
@@ -2253,10 +2350,10 @@ describe('NewAgent gating by role', () => {
       OWNER.filter((a) => a !== 'manage_access_details'),
     );
     await menuLabels();
-    await act(async () =>
-      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-        .find((item) => item.textContent === 'agents.shareWithTeam')!
-        .click(),
+    await click(
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((item) => item.textContent === 'agents.shareWithTeam')!,
     );
     const share = mocks.shareProps.mock.calls.at(-1)![0] as {
       onOpenAccessDetails?: () => void;
@@ -2269,12 +2366,8 @@ describe('NewAgent gating by role', () => {
       'editor',
       EDITOR.filter((a) => a !== 'manage_access_details'),
     );
-    // With nothing to offer, the ⋯ isn't drawn.
-    expect(
-      container.querySelector(
-        'button[aria-label="agents.form.buttons.moreActions"]',
-      ),
-    ).toBeNull();
+    // The ⋯ holds only the page's Preview.
+    expect(await menuLabels()).toEqual(['agents.form.sections.preview']);
   });
 
   it('keeps a failed delete in the dialog with the server message', async () => {
@@ -2283,15 +2376,15 @@ describe('NewAgent gating by role', () => {
     );
     await renderEdit('owner', OWNER);
     await menuLabels();
-    await act(async () =>
-      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-        .find((item) => item.textContent === 'agents.form.buttons.delete')!
-        .click(),
+    await click(
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((item) => item.textContent === 'agents.form.buttons.delete')!,
     );
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
-        .click(),
+    await click(
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="confirm-delete"]',
+      )!,
     );
     await expect(mocks.submitResult).rejects.toThrow();
     await act(async () => undefined);
@@ -2301,5 +2394,2610 @@ describe('NewAgent gating by role', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'actionToast/showActionToast' }),
     );
+  });
+});
+
+describe('NewAgent drafter', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const PROMPT_TEXT = 'You help customers with shipping.';
+  const proposal = (
+    fields: Record<string, unknown>,
+    progress: { steps?: string[]; next_step?: string | null } = {},
+  ): DrafterEvent => ({
+    type: 'proposal',
+    proposal: {
+      message: 'The draft is in the form.',
+      fields,
+      reasons: [{ field: 'name', summary: 'Shipping help' }],
+      notes: [],
+      dropped: [],
+      steps: progress.steps ?? [],
+      next_step: progress.next_step ?? null,
+    },
+  });
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    drafter.config = {
+      enabled: true,
+      model: { id: 'm1', display_name: 'Fast model' },
+      reason: null,
+    };
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    drafter.config = null;
+    stream.reset();
+    drafter.gaps = null;
+    drafter.gapsCalls = [];
+    mocks.createAgent.mockReset();
+    mocks.createAgent.mockImplementation(() =>
+      jsonResponse({ message: 'Name is taken' }, false),
+    );
+    mocks.createPrompt.mockReset();
+    mocks.createPrompt.mockImplementation(() => jsonResponse({}));
+    mocks.getAgent.mockReset();
+    mocks.getAgent.mockImplementation(() => jsonResponse({}));
+    mocks.guardrailsProps.mockClear();
+    mocks.tools = null;
+    media.isMobile = false;
+    media.isDesktop = true;
+  });
+
+  const render = async () => {
+    await mountForm(root, 'new', { after: <RouterProbe /> });
+  };
+
+  const renderEdit = async (
+    allowed: string[],
+    over: Record<string, unknown> = {},
+  ) => {
+    mocks.getAgent.mockImplementation(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Deal Desk',
+        description: 'Researches deals',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+        access: 'viewer',
+        allowed_actions: allowed,
+        ...over,
+      }),
+    );
+    await mountForm(root, 'edit');
+  };
+
+  const buttons = (root: ParentNode = container) =>
+    Array.from(root.querySelectorAll<HTMLButtonElement>('button'));
+  const buttonByText = (text: string, root: ParentNode = container) =>
+    buttons(root).find((b) => b.textContent?.includes(text));
+  const buttonByLabel = (label: string, root: ParentNode = container) =>
+    buttons(root).find((b) => b.getAttribute('aria-label') === label);
+  const wand = () =>
+    buttons().find(
+      (b) => b.hasAttribute('data-drafter-entry') && b.textContent !== '',
+    );
+  // A closed docked panel stays mounted, inert, while it shrinks out.
+  const panel = () =>
+    document.querySelector<HTMLElement>(
+      '[data-slot="side-panel"][data-state="open"], [data-slot="sheet-content"]',
+    );
+  const drafted = () =>
+    Array.from(container.querySelectorAll('[data-drafted]')).map(
+      (el) => el.querySelector('label')?.textContent,
+    );
+  const lastRequest = () => stream.requests.at(-1)! as SentRequest;
+
+  /** Open the drawer (unless it is open) and send a message from its composer. */
+  const ask = async (text: string) => {
+    if (!panel()) await act(async () => wand()!.click());
+    const input = panel()!.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="drafter.askLabel"]',
+    )!;
+    await type(input, text);
+    await click(buttonByLabel('drafter.send', panel()!)!);
+  };
+  const requestLimit = () =>
+    container.querySelector<HTMLInputElement>(
+      'input[aria-label="agents.form.advanced.requestLimit"]',
+    )!;
+  /** The drawer's line for the prompt it wrote that waits unused. */
+  const parked = () =>
+    Array.from(
+      panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+    ).find((el) => el.textContent?.includes('drafter.agent.prompt.parked'));
+  /** The phone's step strip. */
+  const strip = () =>
+    container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
+  /** The latest turn's Next (or Finish). */
+  const next = () =>
+    buttons(panel()!).find(
+      (b) =>
+        b.textContent === 'drafter.agent.build.next' ||
+        b.textContent === 'drafter.agent.build.finish',
+    );
+
+  it('shows no wand while the drafter is off', async () => {
+    drafter.config = { enabled: false, model: null, reason: null };
+    await render();
+    expect(wand()).toBeUndefined();
+    expect(panel()).toBeNull();
+  });
+
+  it("hides the wand from someone who can't edit the agent", async () => {
+    await renderEdit(['use', 'view']);
+    expect(wand()).toBeUndefined();
+  });
+
+  it('shows no wand until the agent says what the caller may do', async () => {
+    let answer: (value: {
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }) => void = () => undefined;
+    mocks.getAgent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    await mountForm(root, 'edit');
+    // Still loading: the form's stub has no access fields to read.
+    expect(wand()).toBeUndefined();
+    await act(async () =>
+      answer({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'agent-1',
+            name: 'Deal Desk',
+            status: 'published',
+            access: 'editor',
+            allowed_actions: ['edit', 'publish', 'use', 'view'],
+          }),
+      }),
+    );
+    expect(wand()).toBeDefined();
+  });
+
+  it('reads Improve on a saved agent with an empty form, as its drawer runs', async () => {
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      name: '',
+      description: '',
+    });
+    expect(wand()!.textContent).toContain('drafter.improve');
+    await click(wand()!);
+    expect(panel()!.textContent).not.toContain('drafter.agent.build.intro');
+  });
+
+  it('loads an agent without its switch settings as off, with no warning', async () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    // The Advanced panel draws the switch once open.
+    await click(buttonByText('agents.form.sections.advanced')!);
+    const switches = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[role="switch"]'),
+    );
+    expect(switches.length).toBeGreaterThan(0);
+    for (const s of switches)
+      expect(s.getAttribute('aria-checked')).toBe('false');
+    expect(
+      [...error.mock.calls, ...warn.mock.calls].filter((call) =>
+        /uncontrolled/i.test(String(call[0])),
+      ),
+    ).toEqual([]);
+    error.mockRestore();
+    warn.mockRestore();
+  });
+
+  it('offers Improve on a filled agent, and Preview first in the ⋯', async () => {
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    expect(wand()!.textContent).toContain('drafter.improve');
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(
+      buttons(toolbar).some((b) =>
+        b.textContent?.includes('agents.form.sections.preview'),
+      ),
+    ).toBe(false);
+    const items = await openToolbarMenu(container);
+    expect(items[0].textContent).toBe('agents.form.sections.preview');
+  });
+
+  it('greets an empty new agent with the plan and starts at Basics', async () => {
+    await render();
+    expect(wand()!.textContent).toContain('drafter.build');
+    // No describe box on the form.
+    expect(container.querySelector('textarea[rows="3"]')).toBeNull();
+    await click(wand()!);
+    expect(panel()!.textContent).toContain('drafter.agent.build.intro');
+    expect(
+      panel()!
+        .querySelector('textarea[aria-label="drafter.askLabel"]')
+        ?.getAttribute('placeholder'),
+    ).toBe('drafter.agent.build.describePlaceholder');
+    // A starting point sends its title and begins the build from its id.
+    expect(panel()!.textContent).toContain(
+      'drafter.starters.website.titledrafter.starters.website.description',
+    );
+    await click(buttonByText('drafter.starters.website.title', panel()!)!);
+    expect(stream.requests).toHaveLength(1);
+    expect(stream.requests[0]).toMatchObject({
+      recipe: 'agent',
+      messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
+      context: {
+        agent_id: null,
+        step: 'basics',
+        earlier: [],
+        starter: 'website',
+        form: {
+          name: '',
+          description: '',
+          agent_type: 'classic',
+          sources: [],
+          tools: [],
+          prompt_id: 'default',
+          prompt_draft: null,
+          starters: [],
+          limits: { mode: 'none', value: null },
+          analytics: { enabled: true, topics: [], hidden_folders: [] },
+        },
+      },
+    });
+    expect((stream.requests[0] as SentRequest).context.form).not.toHaveProperty(
+      'pending_prompt',
+    );
+    expect(panel()!.textContent).toContain('drafter.agent.build.progress');
+  });
+
+  it('fills the form from a proposal, marks each field, and undoes one', async () => {
+    mocks.tools = [
+      { id: 'tool-1', name: 'api_tool', display_name: 'Tracking' },
+    ];
+    stream.scripts = [
+      [
+        proposal({
+          name: 'Shipping help',
+          description: 'Answers shipping questions.',
+          agent_type: 'research',
+          tools: ['tool-1'],
+          starters: ['Where is my parcel?'],
+        }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    expect(nameInput(container).value).toBe('Shipping help');
+    expect(drafted()).toEqual([
+      'agents.form.labels.name',
+      'agents.form.labels.description',
+      'agents.form.sections.tools',
+      'agents.form.sections.agentType',
+      'agents.form.starters.label',
+    ]);
+    expect(
+      container.querySelector('[data-drafted] [data-slot="drafted-badge"]'),
+    ).not.toBeNull();
+    expect(panel()!.textContent).toContain('The draft is in the form.');
+    // No drafted strip and no Undo all over the form.
+    expect(container.querySelector('[data-slot="drafted-strip"]')).toBeNull();
+    expect(buttonByText('drafter.undoAll')).toBeUndefined();
+
+    await click(buttonByLabel('drafter.undoField')!);
+    expect(nameInput(container).value).toBe('');
+    expect(drafted()).not.toContain('agents.form.labels.name');
+  });
+
+  it('gives reasons only for the fields the draft changed, and announces them', async () => {
+    stream.scripts = [
+      [
+        {
+          type: 'proposal',
+          proposal: {
+            message: 'The draft is in the form.',
+            // The form is already Classic: that field doesn't change.
+            fields: { name: 'Shipping help', agent_type: 'classic' },
+            reasons: [
+              { field: 'name', summary: 'Says what it does' },
+              { field: 'agent_type', summary: 'Classic suits Q&A' },
+            ],
+            notes: [],
+            dropped: [],
+          },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
+    expect(summary.textContent).toContain('Says what it does');
+    expect(summary.textContent).not.toContain('Classic suits Q&A');
+    expect(
+      panel()!.querySelector('[data-slot="drafter-live"] .sr-only')
+        ?.textContent,
+    ).toBe('drafter.agent.draftedCount');
+  });
+
+  it('moves to the next step on Next, with the earlier words and a hidden message', async () => {
+    stream.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help desk', description: 'Answers shipping.' },
+          { steps: ['basics'], next_step: 'knowledge' },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent for our website');
+    expect(
+      panel()!
+        .querySelector('textarea[aria-label="drafter.askLabel"]')
+        ?.getAttribute('placeholder'),
+    ).toBe('drafter.agent.build.changePlaceholder');
+    await click(next()!);
+    expect(stream.requests).toHaveLength(2);
+    expect(lastRequest().messages).toEqual([
+      { role: 'user', content: 'drafter.agent.build.continue' },
+    ]);
+    expect(lastRequest().context).toMatchObject({
+      step: 'knowledge',
+      earlier: ['A shipping agent for our website'],
+      form: { name: 'Shipping help desk' },
+    });
+    // The step folds to a line; the hidden message draws no bubble.
+    expect(
+      panel()!.querySelector('[data-slot="build-finished"]')?.textContent,
+    ).toContain('drafter.agent.build.folded');
+    expect(panel()!.querySelector('[data-item="user"]')).toBeNull();
+    // The step's marks stay on the form.
+    expect(drafted()).toContain('agents.form.labels.name');
+  });
+
+  it('takes an empty proposal as the step approved and moves on', async () => {
+    stream.scripts = [
+      [
+        proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+      [
+        proposal({}, { steps: ['basics'], next_step: 'knowledge' }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    await ask('ok, next');
+    expect(stream.requests).toHaveLength(3);
+    expect(lastRequest().context.step).toBe('knowledge');
+    expect(lastRequest().context.earlier).toEqual([
+      'A shipping agent',
+      'ok, next',
+    ]);
+  });
+
+  it("doesn't move on when every part of a proposal was dropped", async () => {
+    stream.scripts = [
+      [
+        proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+      [
+        {
+          type: 'proposal',
+          proposal: {
+            message: 'Added your handbook.',
+            fields: {},
+            reasons: [],
+            notes: [],
+            dropped: [{ field: 'sources', id: 'made-up', reason: 'not_found' }],
+            steps: ['basics'],
+            next_step: 'knowledge',
+          },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    await ask('Use the handbook');
+    expect(stream.requests).toHaveLength(2);
+    expect(panel()!.textContent).toContain('drafter.agent.droppedLine');
+    expect(next()).toBeDefined();
+  });
+
+  it('jumps past the steps one description covered', async () => {
+    stream.scripts = [
+      [
+        proposal(
+          {
+            name: 'Ops customs desk',
+            prompt: { kind: 'existing', id: 'creative' },
+          },
+          { steps: ['basics', 'knowledge', 'prompt'], next_step: 'safety' },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Internal agent for the ops team, use the creative prompt');
+    expect(
+      buttonByText('drafter.agent.build.checkForm', panel()!),
+    ).toBeTruthy();
+    await click(next()!);
+    expect(lastRequest().context.step).toBe('safety');
+    const header = panel()!.textContent!;
+    expect(header).toContain('drafter.agent.build.filledAtOnce');
+    // Three finished steps fold into one line.
+    expect(
+      panel()!.querySelectorAll(
+        '[data-slot="build-finished"] > [data-slot="drafter-step-row"]',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('applies limits and guardrails from the safety step, and undoes them', async () => {
+    stream.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help desk' },
+          { steps: ['basics', 'knowledge', 'prompt'], next_step: 'safety' },
+        ),
+        { type: 'end' },
+      ],
+      [
+        proposal(
+          {
+            limits: { mode: 'requests', value: 500 },
+            guardrails: {
+              controls: [
+                { check: 'pii', stage: 'input', action: 'redact' },
+                { check: 'pii', stage: 'output', action: 'redact' },
+                { check: 'injection', stage: 'input', action: 'block' },
+              ],
+            },
+          },
+          { steps: ['safety'] },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A public shipping agent');
+    await click(next()!);
+    // Advanced opens itself for the drafted limit.
+    const advanced = buttonByText('agents.form.sections.advanced')!;
+    expect(advanced.getAttribute('aria-expanded')).toBe('true');
+    expect(requestLimit().value).toBe('500');
+    expect(requestLimit().disabled).toBe(false);
+    const requestRow = requestLimit().closest('[data-slot="setting-row"]')!;
+    expect(requestRow.getAttribute('data-drafted')).toBe('true');
+    // One badge, on the row: none on the number it holds.
+    expect(
+      requestRow.querySelectorAll('[data-slot="drafted-badge"]'),
+    ).toHaveLength(1);
+    expect(requestRow.querySelector('[data-slot="drafted-field"]')).toBeNull();
+    const guardrails = mocks.guardrailsProps.mock.calls.at(-1)![0] as {
+      drafted: boolean;
+      value: { enabled: boolean; mode: string; controls: { check: string }[] };
+    };
+    expect(guardrails.drafted).toBe(true);
+    expect(guardrails.value.enabled).toBe(true);
+    expect(guardrails.value.mode).toBe('monitor_only');
+    expect(guardrails.value.controls.map((c) => c.check)).toEqual([
+      'pii',
+      'pii',
+      'injection',
+    ]);
+    expect(next()!.textContent).toBe('drafter.agent.build.finish');
+
+    // The row's badge undoes the limit: both limits off again.
+    await click(buttonByLabel('drafter.undoField', requestRow)!);
+    expect(requestLimit().disabled).toBe(true);
+    expect(
+      requestLimit()
+        .closest('[data-slot="setting-row"]')!
+        .hasAttribute('data-drafted'),
+    ).toBe(false);
+    await act(async () =>
+      (
+        mocks.guardrailsProps.mock.calls.at(-1)![0] as { onUndo: () => void }
+      ).onUndo(),
+    );
+    expect(
+      (mocks.guardrailsProps.mock.calls.at(-1)![0] as { drafted: boolean })
+        .drafted,
+    ).toBe(false);
+
+    await click(next()!);
+    expect(panel()!.textContent).toContain('drafter.agent.build.done');
+    expect(panel()!.textContent).toContain('drafter.agent.build.allFilled');
+  });
+
+  it('says what Publish needs when the build ends without it', async () => {
+    stream.scripts = [
+      [
+        proposal(
+          { description: 'Helps with shipping' },
+          { steps: ['basics', 'knowledge', 'prompt', 'safety'] },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    await click(next()!);
+    const doneLine = () =>
+      panel()!.querySelector<HTMLElement>('[data-slot="build-done"]')!;
+    // A warning in place of the done line, with the way to the field.
+    const alert = doneLine().querySelector('[data-slot="alert"]')!;
+    expect(alert.textContent).toContain('drafter.agent.build.doneBlocked');
+    expect(panel()!.textContent).not.toContain('drafter.agent.build.done ');
+    // The folded step reads the form: no name yet.
+    expect(nameInput(container).value).toBe('');
+    await click(buttonByText('drafter.agent.build.goTo', alert)!);
+    await act(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+    expect(document.activeElement).toBe(nameInput(container));
+    // Once it has a name, the done line is back.
+    await type(nameInput(container), 'Shipping help');
+    expect(doneLine().querySelector('[data-slot="alert"]')).toBeNull();
+    expect(doneLine().textContent).toBe('drafter.agent.build.done');
+  });
+
+  it('reads an agent as unchanged once its drafted guardrails are undone', async () => {
+    stream.scripts = [
+      [
+        proposal({
+          guardrails: {
+            controls: [
+              { check: 'pii', stage: 'input', action: 'redact' },
+              { check: 'pii', stage: 'output', action: 'redact' },
+            ],
+          },
+        }),
+        { type: 'end' },
+      ],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view', 'edit_policy']);
+    await ask('Screen for personal data');
+    const guardrails = () =>
+      mocks.guardrailsProps.mock.calls.at(-1)![0] as {
+        drafted: boolean;
+        onUndo: () => void;
+      };
+    expect(guardrails().drafted).toBe(true);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeDefined();
+    await act(async () => guardrails().onUndo());
+    expect(guardrails().drafted).toBe(false);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+  });
+
+  it('starts the build over from the drawer, back at its plan', async () => {
+    stream.scripts = [
+      [
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    expect(panel()!.textContent).toContain('drafter.agent.build.progress');
+    await click(buttonByLabel('drafter.startOver', panel()!)!);
+    // No step, no progress: the next message is free-form again.
+    expect(panel()!.textContent).not.toContain('drafter.agent.build.progress');
+    expect(panel()!.querySelector('[data-item="proposal"]')).toBeNull();
+    await ask('Shorter name');
+    expect(lastRequest().context.step).toBeNull();
+  });
+
+  it('reads Resume while a build is unfinished', async () => {
+    stream.scripts = [
+      [
+        proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    // Open, the drawer is the build itself: no Resume.
+    expect(wand()!.textContent).not.toContain('drafter.agent.build.resume');
+    expect(wand()!.hasAttribute('aria-label')).toBe(false);
+    await click(wand()!);
+    expect(panel()).toBeNull();
+    expect(wand()!.textContent).toContain('drafter.agent.build.resume');
+    expect(wand()!.getAttribute('aria-label')).toBe(
+      'drafter.agent.build.resumeLabel',
+    );
+    expect(wand()!.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('offers improve rows on a saved agent, and Finish setup asks for safety', async () => {
+    await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view']);
+    await click(wand()!);
+    const text = panel()!.textContent!;
+    expect(text).toContain('drafter.agent.improve.introPublished');
+    expect(text).not.toContain('drafter.agent.build.progress');
+    expect(
+      buttons(panel()!)
+        .map((b) => b.textContent)
+        .filter((label) => label?.startsWith('drafter.agent.improve.')),
+    ).toEqual([
+      // What this agent lacks: no knowledge, the default prompt, no starters.
+      'drafter.agent.improve.finishSetup',
+      'drafter.agent.improve.knowledge',
+      'drafter.agent.improve.writePrompt',
+      'drafter.agent.improve.starters',
+    ]);
+    await click(buttonByText('drafter.agent.improve.finishSetup', panel()!)!);
+    expect(lastRequest().context).toMatchObject({
+      agent_id: 'agent-1',
+      step: 'safety',
+    });
+    await ask('Make it friendlier');
+    // The rest of the conversation stays on limits and safety.
+    expect(lastRequest().context.step).toBe('safety');
+  });
+
+  it('leaves out Finish setup once limits or guardrails are set', async () => {
+    await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view'], {
+      status: 'draft',
+      limited_request_mode: true,
+      request_limit: 100,
+    });
+    await click(wand()!);
+    expect(panel()!.textContent).toContain('drafter.agent.improve.intro');
+    expect(
+      buttonByText('drafter.agent.improve.finishSetup', panel()!),
+    ).toBeUndefined();
+    await ask('Shorter');
+    expect(lastRequest().context.step).toBeNull();
+  });
+
+  it('undoes a field drafted twice back to before the first draft', async () => {
+    stream.scripts = [
+      [proposal({ limits: { mode: 'requests', value: 500 } }), { type: 'end' }],
+      [proposal({ limits: { mode: 'requests', value: 300 } }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view']);
+    await ask('Cap it at 500');
+    await ask('300 is enough');
+    expect(requestLimit().value).toBe('300');
+    await click(
+      buttonByLabel(
+        'drafter.undoField',
+        requestLimit().closest('[data-slot="setting-row"]')!,
+      )!,
+    );
+    // No limit, as the agent had before either draft.
+    expect(requestLimit().disabled).toBe(true);
+  });
+
+  it('reads an Undo of a field drafted twice as undone, not as an edit', async () => {
+    stream.scripts = [
+      [proposal({ name: 'Shipping help' }), { type: 'end' }],
+      [proposal({ name: 'Shipping desk' }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    const before = nameInput(container).value;
+    await ask('Name it for shipping');
+    await ask('Shorter');
+    expect(nameInput(container).value).toBe('Shipping desk');
+    await click(
+      buttonByLabel(
+        'drafter.undoField',
+        nameInput(container).closest<HTMLElement>(
+          '[data-slot="drafted-field"]',
+        )!,
+      )!,
+    );
+    expect(nameInput(container).value).toBe(before);
+    expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
+    const summaries = panel()!.querySelectorAll(
+      '[data-slot="proposal-summary"]',
+    );
+    expect(summaries[summaries.length - 1].textContent).toContain(
+      'drafter.undone.count',
+    );
+  });
+
+  it('keeps the marks and the conversation of a draft that lands during Publish', async () => {
+    let answer: (value: {
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }) => void = () => undefined;
+    mocks.createAgent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    stream.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help', description: 'Answers shipping.' },
+          { steps: ['basics'] },
+        ),
+        { type: 'end' },
+      ],
+      [proposal({ starters: ['Where is my parcel?'] }), { type: 'end' }],
+    ];
+    await render();
+    await ask('Shipping agent');
+    await click(buttonByText('agents.form.buttons.publish')!);
+    await ask('Add a starter');
+    await act(async () =>
+      answer({ ok: true, json: () => Promise.resolve({ id: 'new-1' }) }),
+    );
+    // What was published loses its marks; the starter that came after keeps
+    // its, and the drawer its conversation.
+    expect(drafted()).toEqual(['agents.form.starters.label']);
+    expect(
+      panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+    ).toHaveLength(2);
+  });
+
+  it('keeps a draft started over and asked again while Publish is out', async () => {
+    let answer: (value: {
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }) => void = () => undefined;
+    mocks.createAgent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    stream.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help', description: 'Answers shipping.' },
+          { steps: ['basics'] },
+        ),
+        { type: 'end' },
+      ],
+      [proposal({ starters: ['Where is my parcel?'] }), { type: 'end' }],
+    ];
+    await render();
+    await ask('Shipping agent');
+    await click(buttonByText('agents.form.buttons.publish')!);
+    await click(buttonByLabel('drafter.startOver', panel()!)!);
+    // As many items as before the Start over: still a newer conversation.
+    await ask('Add a starter');
+    await act(async () =>
+      answer({ ok: true, json: () => Promise.resolve({ id: 'new-1' }) }),
+    );
+    expect(drafted()).toEqual(['agents.form.starters.label']);
+    expect(
+      panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+    ).toHaveLength(1);
+  });
+
+  it('drops the mark of a field edited by hand', async () => {
+    stream.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
+    await render();
+    await ask('Shipping agent');
+    expect(drafted()).toEqual(['agents.form.labels.name']);
+    await type(nameInput(container), 'My own name');
+    expect(drafted()).toEqual([]);
+  });
+
+  // A prompt it writes opens in the prompt view beside the drawer; Use this
+  // prompt saves it and sets it on the agent.
+  describe('the prompt step', () => {
+    const WRITTEN = {
+      kind: 'new',
+      name: 'Shipping support',
+      content: PROMPT_TEXT,
+    };
+    const writes = (content = PROMPT_TEXT): DrafterEvent[] => [
+      proposal(
+        {
+          prompt: { ...WRITTEN, content },
+          starters: ['Where is my parcel?'],
+        },
+        { steps: ['basics', 'knowledge', 'prompt'], next_step: 'safety' },
+      ),
+      { type: 'end' },
+    ];
+    beforeEach(() => {
+      mockState.preference.prompts = [
+        { id: 'default', name: 'default', type: 'public' },
+      ] as never[];
+    });
+    afterEach(() => {
+      mockState.preference.prompts = [];
+      mocks.updatePrompt.mockClear();
+    });
+
+    const view = () =>
+      container.querySelector<HTMLElement>('[data-slot="prompt-view"]');
+    const viewName = () =>
+      view()!.querySelector<HTMLInputElement>('input[type="text"]')!;
+    const viewText = () => view()!.querySelector('textarea')!;
+    const crumb = () => view()!.querySelector<HTMLButtonElement>('nav button')!;
+    const viewDrafted = () =>
+      Array.from(view()!.querySelectorAll('[data-drafted]')).map(
+        (el) => el.querySelector('label')?.textContent,
+      );
+    const use = () => buttonByText('drafter.agent.prompt.use', view()!)!;
+
+    it('opens the prompt it wrote in the view, and Use this prompt saves and sets it', async () => {
+      // A save answers with the version it wrote.
+      mocks.createPrompt.mockImplementation(() =>
+        jsonResponse({ id: 'np1', updated_at: 'v1' }),
+      );
+      stream.scripts = [writes()];
+      await render();
+      await ask('A shipping agent for our website');
+      // The view takes the main column; the form stays, hidden.
+      expect(view()).not.toBeNull();
+      expect(nameInput(container).closest('.hidden')).not.toBeNull();
+      expect(view()!.textContent).toContain('agents.newAgent');
+      expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
+      expect(viewName().value).toBe('Shipping support');
+      expect(viewText().value).toBe(PROMPT_TEXT);
+      expect(viewDrafted()).toEqual([
+        'modals.prompts.promptName',
+        'modals.prompts.promptText',
+      ]);
+      // Nothing is created yet, and Next waits for the prompt.
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.wrote');
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.viewHint');
+      expect(next()).toBeUndefined();
+      expect(
+        panel()!
+          .querySelector('textarea[aria-label="drafter.askLabel"]')
+          ?.getAttribute('placeholder'),
+      ).toBe('drafter.agent.prompt.changePlaceholder');
+
+      // The view's unsaved text goes with the next message, edits included.
+      await type(viewText(), 'My own text.');
+      stream.scripts = [writes('Friendlier text.')];
+      await ask('Make it friendlier');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        name: 'Shipping support',
+        content: 'My own text.',
+      });
+      // A further prompt replaces the view's text, marked again.
+      expect(viewText().value).toBe('Friendlier text.');
+      expect(viewDrafted()).toContain('modals.prompts.promptText');
+
+      use().focus();
+      await click(use());
+      await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+      // Focus lands on the Prompt field it set, not <body>.
+      expect(
+        document.activeElement?.closest('[data-publish-blocker="prompt"]'),
+      ).not.toBeNull();
+      expect(mocks.createPrompt.mock.calls).toEqual([
+        [{ name: 'Shipping support', content: 'Friendlier text.' }, null],
+      ]);
+      // The list the pickers read now has it (the store is stubbed here).
+      mockState.preference.prompts = [
+        { id: 'default', name: 'default', type: 'public' },
+        { id: 'np1', name: 'Shipping support', type: 'private' },
+      ] as never[];
+      // Back on the form with the prompt set and marked.
+      expect(view()).toBeNull();
+      expect(nameInput(container).closest('.hidden')).toBeNull();
+      expect(drafted()).toContain('agents.form.sections.prompt');
+      // The drawer says so and ends the turn with what it set and Next.
+      const message = Array.from(
+        panel()!.querySelectorAll('[data-item="message"]'),
+      ).at(-1)!;
+      expect(message.textContent).toBe('drafter.agent.prompt.saved');
+      expect(
+        message.compareDocumentPosition(next()!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      // A change asked for afterwards updates the same prompt.
+      stream.scripts = [writes('Shorter text.')];
+      await ask('Shorter');
+      expect(view()!.textContent).toContain('Shipping support');
+      expect(viewText().value).toBe('Shorter text.');
+      await click(use());
+      expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
+      // At the version it was saved at.
+      expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
+        id: 'np1',
+        name: 'Shipping support',
+        content: 'Shorter text.',
+        expected_updated_at: 'v1',
+      });
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('Shipping support');
+      await click(next()!);
+      expect(lastRequest().context.step).toBe('safety');
+      expect(lastRequest().context.form).toMatchObject({
+        prompt_id: 'np1',
+        prompt_draft: null,
+      });
+    });
+
+    it('lists what a written prompt does to the one it replaces, as edits do', async () => {
+      stream.scripts = [
+        [
+          proposal({
+            prompt: { ...WRITTEN, checks: ['citations_removed'] },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await render();
+      await ask('Write a prompt with no citations');
+      expect(panel()!.textContent).toContain(
+        'drafter.prompt.checks.citations_removed',
+      );
+      // The view's text goes back without the proposal's own keys.
+      await ask('Shorter');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        name: 'Shipping support',
+        content: PROMPT_TEXT,
+      });
+    });
+
+    it('keeps the prompt in the step on Back, then opens it again or keeps the old one', async () => {
+      stream.scripts = [writes()];
+      await render();
+      await ask('A shipping agent');
+      await click(crumb());
+      expect(view()).toBeNull();
+      expect(parked()).toBeDefined();
+      expect(next()).toBeUndefined();
+      // An approval now isn't the step's Next: the prompt still waits.
+      stream.scripts = [
+        [
+          proposal({}, { steps: ['prompt'], next_step: 'safety' }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('ok, next');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        name: 'Shipping support',
+        content: PROMPT_TEXT,
+      });
+      expect(stream.requests).toHaveLength(2);
+      expect(parked()).toBeDefined();
+
+      await click(buttonByText('drafter.agent.prompt.open', parked()!)!);
+      expect(viewText().value).toBe(PROMPT_TEXT);
+      expect(viewDrafted()).toContain('modals.prompts.promptText');
+      await click(crumb());
+      await click(buttonByText('drafter.agent.prompt.keep', parked()!)!);
+      expect(parked()).toBeUndefined();
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      await click(next()!);
+      expect(lastRequest().context.form).toMatchObject({
+        prompt_id: 'default',
+        prompt_draft: null,
+      });
+    });
+
+    it('keeps a parked prompt and its conversation through Publish', async () => {
+      mocks.createAgent.mockImplementation(() =>
+        jsonResponse({ id: 'new-1', key: 'k1' }),
+      );
+      stream.scripts = [
+        [
+          proposal(
+            {
+              name: 'Shipping help',
+              description: 'Answers shipping.',
+              prompt: WRITTEN,
+            },
+            { steps: ['basics', 'prompt'], next_step: 'safety' },
+          ),
+          { type: 'end' },
+        ],
+      ];
+      await render();
+      await ask('A shipping agent');
+      await click(crumb());
+      expect(parked()).toBeDefined();
+      await click(buttonByText('agents.form.buttons.publish')!);
+      expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+      // The prompt it wrote wasn't sent: it still waits, and opens again.
+      expect(parked()).toBeDefined();
+      await click(buttonByText('drafter.agent.prompt.open', parked()!)!);
+      expect(viewText().value).toBe(PROMPT_TEXT);
+    });
+
+    it('keeps the id of the used prompt on an update left unsaved', async () => {
+      mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
+      stream.scripts = [writes()];
+      await render();
+      await ask('A shipping agent');
+      await click(use());
+      mockState.preference.prompts = [
+        { id: 'default', name: 'default', type: 'public' },
+        { id: 'np1', name: 'Shipping support', type: 'private' },
+      ] as never[];
+      stream.scripts = [writes('Shorter text.')];
+      await ask('Shorter');
+      await click(crumb());
+      expect(view()).toBeNull();
+      // The parked update still names the prompt it changes.
+      await ask('Anything else?');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'np1',
+        name: 'Shipping support',
+        content: 'Shorter text.',
+      });
+    });
+
+    it('returns to the form on browser Back', async () => {
+      stream.scripts = [writes()];
+      await render();
+      await ask('A shipping agent');
+      expect(probe.state).toMatchObject({ promptView: true });
+      await act(async () => probe.navigate!(-1));
+      expect(view()).toBeNull();
+      expect(nameInput(container).closest('.hidden')).toBeNull();
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.parked');
+    });
+  });
+
+  it('sends the failed message again on Try again, with no Continue', async () => {
+    stream.scripts = [
+      [{ type: 'error', code: 'model_error' }, { type: 'end' }],
+    ];
+    await render();
+    await ask('A shipping agent');
+    // Continue would draft the step afresh and drop what was asked.
+    expect(panel()!.querySelector('[data-slot="drafter-continue"]')).toBeNull();
+    await click(buttonByText('drafter.retry', panel()!)!);
+    expect(lastRequest().messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'A shipping agent',
+    });
+  });
+
+  it('offers Continue on the step after an error Try again cannot fix', async () => {
+    stream.scripts = [[{ type: 'error', code: 'model_auth' }, { type: 'end' }]];
+    await render();
+    await ask('A shipping agent');
+    // A way past the error, under it rather than in it.
+    const row = panel()!.querySelector('[data-slot="drafter-continue"]')!;
+    await click(buttonByText('drafter.agent.build.continueStep', row)!);
+    expect(lastRequest().messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'drafter.agent.build.continue',
+    });
+    expect(lastRequest().context.step).toBe('basics');
+  });
+
+  it('skips a question round and drafts with what it has', async () => {
+    stream.scripts = [
+      [
+        {
+          type: 'questions',
+          questions: [
+            {
+              id: 'q1',
+              text: 'What tone should it use?',
+              note: null,
+              multi: false,
+              options: [
+                { id: 'a', label: 'Warm' },
+                { id: 'b', label: 'Neutral' },
+              ],
+            },
+          ],
+        },
+        { type: 'end' },
+      ],
+      [
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    expect(lastRequest().context).not.toHaveProperty('skip_questions');
+    await click(buttonByText('drafter.skipQuestions', panel()!)!);
+    // A hidden turn that takes no questions.
+    expect(lastRequest().messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'drafter.prompt.skipMessage',
+    });
+    expect(lastRequest().context).toMatchObject({ skip_questions: true });
+    expect(panel()!.textContent).toContain('questions.skipped');
+    expect(nameInput(container).value).toBe('Shipping help');
+    // Only that turn.
+    await click(next()!);
+    expect(lastRequest().context.step).toBe('knowledge');
+    expect(lastRequest().context).not.toHaveProperty('skip_questions');
+  });
+
+  it('marks a field undone in the form as undone in the drawer', async () => {
+    stream.scripts = [
+      [
+        {
+          type: 'proposal',
+          proposal: {
+            message: 'The basics are in.',
+            fields: { name: 'Shipping help', description: 'Helps' },
+            reasons: [
+              { field: 'name', summary: 'Says what it does' },
+              { field: 'description', summary: 'Names who it serves' },
+            ],
+            notes: [],
+            dropped: [],
+            steps: ['basics'],
+            next_step: 'knowledge',
+          },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    const nameField = nameInput(container).closest<HTMLElement>(
+      '[data-slot="drafted-field"]',
+    )!;
+    await click(buttonByLabel('drafter.undoField', nameField)!);
+    expect(nameInput(container).value).toBe('');
+    const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
+    const rows = () =>
+      Array.from(summary.querySelectorAll('[data-slot="filled-row"] p')).map(
+        (p) => p.textContent,
+      );
+    expect(summary.textContent).toContain('drafter.undone.count');
+    expect(rows()).toEqual([
+      'agents.form.labels.name · drafter.undone.empty',
+      'agents.form.labels.description · Names who it serves',
+    ]);
+    // The folded step's rows say so too.
+    await click(next()!);
+    const folded = panel()!.querySelector<HTMLElement>(
+      '[data-slot="build-finished"] [data-slot="drafter-step-row"]',
+    )!;
+    await click(buttons(folded)[0]);
+    expect(
+      Array.from(folded.querySelectorAll('[data-slot="filled-row"] p')).map(
+        (p) => p.textContent,
+      ),
+    ).toEqual([
+      'agents.form.labels.name · drafter.undone.empty',
+      'agents.form.labels.description · Names who it serves',
+    ]);
+    expect(folded.textContent).toContain('drafter.undone.count');
+  });
+
+  it('notes a field edited in the form since the turn', async () => {
+    stream.scripts = [
+      [
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
+    await type(nameInput(container), 'My own name');
+    expect(panel()!.textContent).toContain('drafter.agent.formEdited');
+    // Undo is no edit by hand.
+    await type(nameInput(container), 'Shipping help');
+    await type(nameInput(container), '');
+    expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
+  });
+
+  it('keeps a field edited in the form while the turn ran, and says so', async () => {
+    let land: (events: DrafterEvent[]) => void = () => undefined;
+    stream.scripts = [
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    ];
+    await render();
+    await ask('Shipping agent');
+    await type(nameInput(container), 'My own name');
+    await act(async () =>
+      land([
+        proposal(
+          { name: 'Shipping help', description: 'Helps with shipping' },
+          { steps: ['basics'] },
+        ),
+        { type: 'end' },
+      ]),
+    );
+    expect(nameInput(container).value).toBe('My own name');
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+      )!.value,
+    ).toBe('Helps with shipping');
+    expect(panel()!.textContent).toContain('drafter.agent.formEdited');
+    // The name kept is no drafted field: it has nothing to undo.
+    expect(
+      nameInput(container)
+        .closest('[data-slot="drafted-field"]')!
+        .hasAttribute('data-drafted'),
+    ).toBe(false);
+  });
+
+  it('steps the sheet aside on a phone and keeps the step in a strip', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    stream.scripts = [
+      [
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    expect(nameInput(container).value).toBe('Shipping help');
+    expect(strip()).not.toBeNull();
+    expect(strip()!.className).toContain('lg:hidden');
+    expect(strip()!.textContent).toContain('drafter.agent.build.check');
+    // The strip brings the sheet back.
+    await click(buttonByText('drafter.agent.build.check', strip()!)!);
+    expect(strip()).toBeNull();
+    // Closed again, the strip is back; its Next runs the step's Next.
+    await click(wand()!);
+    expect(panel()).toBeNull();
+    const stripNext = buttonByText('drafter.agent.build.nextShort', strip()!)!;
+    stripNext.focus();
+    await click(stripNext);
+    expect(lastRequest().context.step).toBe('knowledge');
+    // In the open sheet, where the turn shows it runs.
+    expect(panel()).not.toBeNull();
+    // Closed, focus goes to the wand: the Next that opened it is gone.
+    await click(
+      document.querySelector<HTMLButtonElement>(
+        'button[aria-label="sidePanel.close"]',
+      )!,
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(panel()).toBeNull();
+    expect(document.activeElement?.hasAttribute('data-drafter-entry')).toBe(
+      true,
+    );
+  });
+
+  it("opens the sheet for a phone strip's Finish", async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    stream.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help', description: 'Helps with shipping' },
+          { steps: ['basics', 'knowledge', 'prompt', 'safety'] },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Shipping agent');
+    expect(panel()).toBeNull();
+    await click(buttonByText('drafter.agent.build.finish', strip()!)!);
+    // The done message lands in the open sheet.
+    expect(panel()).not.toBeNull();
+    expect(
+      panel()!.querySelector('[data-slot="build-done"]')!.textContent,
+    ).toBe('drafter.agent.build.done');
+  });
+
+  // The picker's Add prompt and each row's Edit or View open the same
+  // prompt view; Improve on its crumb row opens the drawer.
+  {
+    const PROMPTS = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
+      { id: 'p2', name: 'Team tone', type: 'team', access: 'viewer' },
+    ];
+    beforeEach(() => {
+      mockState.preference.prompts = PROMPTS as never[];
+    });
+    afterEach(() => {
+      mockState.preference.prompts = [];
+      mocks.getSinglePrompt.mockClear();
+      mocks.updatePrompt.mockClear();
+    });
+
+    const view = () =>
+      container.querySelector<HTMLElement>('[data-slot="prompt-view"]');
+    const viewText = () => view()!.querySelector('textarea')!;
+    const save = () => buttonByText('modals.prompts.save', view()!);
+    // The crumb row's wand: Draft on a new agent, Improve on a saved one.
+    const viewWand = () =>
+      view()!.querySelector<HTMLButtonElement>('[data-drafter-entry]');
+    const promptTrigger = () =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="combobox-trigger"]',
+        ),
+      ).find(
+        (button) =>
+          button.closest('[data-slot="form-field"]')?.querySelector('label')
+            ?.textContent === 'agents.form.sections.prompt',
+      )!;
+    /** Open the Prompt picker and press a row's Edit or View. */
+    const openFromRow = async (id: string) => {
+      const trigger = promptTrigger();
+      await openCombobox(trigger);
+      await click(
+        document.body.querySelector<HTMLButtonElement>(
+          `[cmdk-item][data-value="${id}"] [data-slot="combobox-row-action"]`,
+        )!,
+      );
+    };
+
+    const renderWithPrompt = async (promptId: string) => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          description: 'Researches deals',
+          status: 'draft',
+          agent_type: 'research',
+          prompt_id: promptId,
+          access: 'owner',
+        }),
+      );
+      await mountForm(root, 'edit');
+    };
+
+    it('edits an own prompt in the view and saves it', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('p1', null);
+      expect(view()!.textContent).toContain('Deal Desk');
+      expect(view()!.textContent).toContain('Tone');
+      expect(viewText().value).toBe('Text of p1');
+      await type(viewText(), 'Shorter.');
+      await click(save()!);
+      expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Shorter.',
+        expected_updated_at: 'v1',
+      });
+      expect(view()).toBeNull();
+    });
+
+    it('keeps the changes after a conflict as a copy, which the agent then uses', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await type(viewText(), 'Shorter.');
+      mocks.updatePrompt.mockImplementationOnce(() =>
+        Promise.resolve(new Response('{}', { status: 409 })),
+      );
+      await click(save()!);
+      // The view stays, says so, and Save now keeps the changes as a copy.
+      expect(
+        view()!.querySelector('[data-slot="prompt-conflict"]')!.textContent,
+      ).toContain('settings.prompts.conflict.title');
+      expect(save()).toBeUndefined();
+      mocks.createPrompt.mockImplementationOnce(() =>
+        jsonResponse({ id: 'p9', updated_at: 'v9' }),
+      );
+      await click(buttonByText('settings.prompts.saveAsCopy', view()!)!);
+      expect(mocks.updatePrompt).toHaveBeenCalledTimes(1);
+      const copy = mocks.createPrompt.mock.calls[0][0] as {
+        name: string;
+        content: string;
+      };
+      expect(copy.content).toBe('Shorter.');
+      expect(view()).toBeNull();
+      // The agent saves with the copy.
+      await pickMenuItem(container, 'agents.form.buttons.saveDraft');
+      const sent = mocks.updateAgent.mock.calls.at(-1)![1] as FormData;
+      expect(sent.get('prompt_id')).toBe('p9');
+    });
+
+    it("drops the prompt view's history entry when Back comes onto it with no view open", async () => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          status: 'draft',
+          agent_type: 'classic',
+          prompt_id: 'p1',
+          access: 'owner',
+        }),
+      );
+      const seen: { state: unknown } = { state: undefined };
+      function StateProbe() {
+        seen.state = useLocation().state;
+        return null;
+      }
+      // Left through the sidebar with the view open, then Back: the entry
+      // the view pushed is where Back lands.
+      await mountForm(root, 'edit', {
+        entries: [
+          '/agents/edit/agent-1',
+          { pathname: '/agents/edit/agent-1', state: { promptView: true } },
+        ],
+        initialIndex: 1,
+        beside: <StateProbe />,
+      });
+      expect(view()).toBeNull();
+      expect(
+        (seen.state as { promptView?: boolean } | null)?.promptView,
+      ).not.toBe(true);
+    });
+
+    it('opens a prompt from its picker row without picking it', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('default');
+      expect(document.body.querySelector('[cmdk-list]')).toBeNull();
+      // A built-in opens read-only.
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
+      expect(viewText().value).toBe('Text of default');
+      expect(viewText().readOnly).toBe(true);
+      // Back on the form, the agent still has its prompt.
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
+      expect(view()).toBeNull();
+      expect(promptTrigger().textContent).toContain('Tone');
+    });
+
+    it('asks before leaving the view with unsaved text', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await type(viewText(), 'Shorter.');
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
+      expect(view()).not.toBeNull();
+      // Save and leave.
+      await click(
+        document.querySelector<HTMLButtonElement>(
+          '[data-testid="confirm-delete"]',
+        )!,
+      );
+      await act(async () => {
+        await mocks.submitResult;
+      });
+      expect(mocks.updatePrompt).toHaveBeenCalledTimes(1);
+      expect(view()).toBeNull();
+    });
+
+    it("keeps the leave dialog open with the reason when the prompt can't be saved", async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await type(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
+        '',
+      );
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
+      await click(
+        document.querySelector<HTMLButtonElement>(
+          '[data-testid="confirm-delete"]',
+        )!,
+      );
+      await expect(mocks.submitResult).rejects.toThrow('name');
+      expect(mocks.updatePrompt).not.toHaveBeenCalled();
+      expect(
+        document.querySelector('[data-testid="confirm-delete"]'),
+      ).not.toBeNull();
+      expect(view()).not.toBeNull();
+    });
+
+    it("keeps the page's history state when Back asks about unsaved text", async () => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          description: 'Researches deals',
+          status: 'draft',
+          prompt_id: 'p1',
+          access: 'owner',
+        }),
+      );
+      await mountForm(root, 'edit', {
+        entries: [
+          { pathname: '/agents/edit/agent-1', state: { from: 'list' } },
+        ],
+        after: <RouterProbe />,
+      });
+      await openFromRow('p1');
+      await type(viewText(), 'Shorter.');
+      await act(async () => probe.navigate!(-1));
+      // Put back while it asks, with what the entry held.
+      expect(view()).not.toBeNull();
+      expect(probe.state).toEqual({ from: 'list', promptView: true });
+    });
+
+    it('stays on the prompt, without scrolling the form, when Show in agent asks first', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await type(viewText(), 'Shorter.');
+      stream.scripts = [
+        [proposal({ starters: ['Where is my deal?'] }), { type: 'end' }],
+      ];
+      await ask('Add a starter');
+      const scroll = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => undefined);
+      await click(buttonByText('drafter.agent.showInAgent', panel()!)!);
+      await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+      expect(view()).not.toBeNull();
+      expect(scroll).not.toHaveBeenCalled();
+      scroll.mockRestore();
+    });
+
+    it('improves an own prompt with the drawer, filling the view instead of creating one', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await click(buttonByText('drafter.improve', view()!)!);
+      expect(view()).not.toBeNull();
+      expect(panel()).not.toBeNull();
+      expect(
+        buttonByText('drafter.improve', view()!)!.getAttribute('aria-expanded'),
+      ).toBe('true');
+      stream.scripts = [
+        [
+          proposal({
+            prompt: { kind: 'new', name: 'Other', content: 'Tighter.' },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Tighten it');
+      // The open prompt's text goes along, with the id of the prompt it is.
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Text of p1',
+      });
+      // A saved prompt keeps its name; the text is drafted.
+      expect(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
+      ).toBe('Tone');
+      expect(viewText().value).toBe('Tighter.');
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      await ask('More');
+      // The view's unsaved text changes the saved prompt it came from.
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Tighter.',
+      });
+    });
+
+    it('improves the prompt opened from a picker row, not the one the agent uses', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p3', name: 'Formal', type: 'private', access: 'owner' },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p3');
+      stream.scripts = [
+        [
+          proposal({
+            prompt: { kind: 'new', name: 'Other', content: 'Formal, shorter.' },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Shorter');
+      // The drafter reads the prompt on screen, unchanged as it is.
+      expect(lastRequest().context.form).toMatchObject({
+        prompt_id: 'p1',
+        prompt_draft: { id: 'p3', name: 'Formal', content: 'Text of p3' },
+      });
+      expect(viewText().value).toBe('Formal, shorter.');
+      await click(save()!);
+      expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
+        id: 'p3',
+        content: 'Formal, shorter.',
+      });
+    });
+
+    it('opens a rewrite that lands after another prompt opened as a new prompt, leaving that one alone', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p3', name: 'Formal', type: 'private', access: 'owner' },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      let land: (events: DrafterEvent[]) => void = () => undefined;
+      stream.scripts = [
+        new Promise((resolve) => {
+          land = resolve;
+        }),
+      ];
+      await ask('Rewrite it');
+      expect(lastRequest().context.form.prompt_draft).toMatchObject({
+        id: 'p1',
+      });
+      // Back on the form, then another prompt opened before the turn ends.
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
+      await openFromRow('p3');
+      await act(async () =>
+        land([
+          proposal({
+            prompt: { kind: 'new', name: 'Rewrite', content: 'Rewritten.' },
+          }),
+          { type: 'end' },
+        ]),
+      );
+      // The rewrite opens as a prompt of its own; Formal is untouched.
+      expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
+      expect(viewText().value).toBe('Rewritten.');
+      await click(buttonByText('drafter.agent.prompt.use', view()!)!);
+      expect(mocks.updatePrompt).not.toHaveBeenCalled();
+      expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
+        name: 'Rewrite',
+        content: 'Rewritten.',
+      });
+    });
+
+    it('keeps the unsaved text of another prompt opened before a rewrite lands', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p3', name: 'Formal', type: 'private', access: 'owner' },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      let land: (events: DrafterEvent[]) => void = () => undefined;
+      stream.scripts = [
+        new Promise((resolve) => {
+          land = resolve;
+        }),
+      ];
+      await ask('Rewrite it');
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
+      await openFromRow('p3');
+      await type(viewText(), 'My formal text.');
+      await act(async () =>
+        land([
+          proposal({
+            prompt: { kind: 'new', name: 'Rewrite', content: 'Rewritten.' },
+          }),
+          { type: 'end' },
+        ]),
+      );
+      // Formal stays open with what the user typed; the rewrite waits.
+      expect(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
+      ).toBe('Formal');
+      expect(viewText().value).toBe('My formal text.');
+      await click(save()!);
+      expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
+        id: 'p3',
+        content: 'My formal text.',
+      });
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.parked');
+    });
+
+    it('opens a prompt it wrote in a view of its own, never in a read-only one', async () => {
+      await renderWithPrompt('p1');
+      // The drawer open on the form, then a team prompt opened to read.
+      await click(wand()!);
+      await openFromRow('p2');
+      stream.scripts = [
+        [
+          proposal({
+            prompt: { kind: 'new', name: 'Warm tone', content: 'Be warm.' },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Warmer');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p2',
+        name: 'Team tone',
+        content: 'Text of p2',
+      });
+      // A new prompt to use, with its Save: the team's prompt is untouched.
+      expect(viewText().readOnly).toBe(false);
+      expect(viewText().value).toBe('Be warm.');
+      expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
+      expect(buttonByText('drafter.agent.prompt.use', view()!)).toBeDefined();
+    });
+
+    const promptEdits = (
+      edits: { id: string; find: string; replace: string; reason: string }[],
+    ): DrafterEvent[] => [
+      proposal({ prompt: { kind: 'edit', id: 'p1', edits, checks: [] } }),
+      { type: 'end' },
+    ];
+    const review = () =>
+      view()?.querySelector<HTMLElement>('[data-slot="prompt-review"]') ?? null;
+
+    it("reviews changes to the agent's own prompt in its view, then saves it", async () => {
+      await renderWithPrompt('p1');
+      stream.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          {
+            id: 'e2',
+            find: 'of p1',
+            replace: 'for p1',
+            reason: 'Reads better.',
+          },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      // The saved prompt opens with its own text, and the drawer stays the agent's.
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('p1', null);
+      expect(view()).not.toBeNull();
+      expect(review()).not.toBeNull();
+      expect(review()!.querySelectorAll('[data-change-id]')).toHaveLength(2);
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.changes');
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.reviewHint');
+      // Save waits for the review.
+      expect(save()!.disabled).toBe(true);
+      await click(
+        buttonByText(
+          'drafter.prompt.reject',
+          review()!.querySelector('[data-change-id="e2"]')!,
+        )!,
+      );
+      const acceptAll = buttonByText('drafter.prompt.acceptAll', panel()!)!;
+      acceptAll.focus();
+      await click(acceptAll);
+      expect(review()).toBeNull();
+      expect(viewText().value).toBe('Words of p1');
+      expect(
+        buttonByText('drafter.prompt.acceptAll', panel()!),
+      ).toBeUndefined();
+      // Focus goes on to the ask bar, not <body>, as the button goes.
+      expect(document.activeElement).toBe(
+        panel()!.querySelector('textarea[aria-label="drafter.askLabel"]'),
+      );
+      await click(save()!);
+      expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Words of p1',
+        expected_updated_at: 'v1',
+      });
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      expect(view()).toBeNull();
+    });
+
+    it('ends an open review with the choices so far on a new request, and Discard keeps the text', async () => {
+      await renderWithPrompt('p1');
+      stream.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          {
+            id: 'e2',
+            find: 'of p1',
+            replace: 'for p1',
+            reason: 'Reads better.',
+          },
+        ]),
+        promptEdits([
+          { id: 'e1', find: 'of p1', replace: 'about p1', reason: 'Clearer.' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      await click(
+        review()!.querySelector<HTMLButtonElement>(
+          '[data-change-id="e1"] [data-action="accept"]',
+        )!,
+      );
+      await ask('Something else too');
+      // The accepted change went along as the view's text.
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Words of p1',
+      });
+      expect(review()!.querySelectorAll('[data-change-id]')).toHaveLength(1);
+      await click(buttonByText('drafter.prompt.discard', panel()!)!);
+      expect(review()).toBeNull();
+      expect(viewText().value).toBe('Words of p1');
+    });
+
+    it('offers Show in agent when a turn changes the form behind the prompt view', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      stream.scripts = [
+        [proposal({ starters: ['Where is my deal?'] }), { type: 'end' }],
+        [
+          proposal({ starters: ['Where is my deal?', 'Rates?'] }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Add a starter');
+      const show = buttonByText('drafter.agent.showInAgent', panel()!)!;
+      expect(show).toBeDefined();
+      await click(show);
+      expect(view()).toBeNull();
+      // On the form, nothing to show.
+      await ask('Another one');
+      expect(
+        buttonByText('drafter.agent.showInAgent', panel()!),
+      ).toBeUndefined();
+    });
+
+    it('waits for an open review before an approval moves the build on', async () => {
+      await render();
+      stream.scripts = [
+        [
+          proposal(
+            { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
+            { steps: ['basics'] },
+          ),
+          { type: 'end' },
+        ],
+        [
+          ...promptEdits([
+            { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          ]).slice(0, 1),
+          // The same turn approves the step while the review is open.
+          proposal({}, { steps: ['basics'], next_step: 'knowledge' }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('A deal desk on my Tone prompt');
+      await ask('Plainer prompt, then go on');
+      expect(review()).not.toBeNull();
+      expect(stream.requests).toHaveLength(2);
+      // The drawer's latest turn offers the review's actions.
+      await click(buttonByText('drafter.prompt.acceptAll', panel()!)!);
+      expect(viewText().value).toBe('Words of p1');
+      // Once it is decided, the approval moves on.
+      expect(stream.requests).toHaveLength(3);
+      expect(lastRequest().context.step).toBe('knowledge');
+    });
+
+    describe("a phone's step Next", () => {
+      /** A guided build on a phone, its basics on the Tone prompt. */
+      const startOnPhone = async () => {
+        media.isMobile = true;
+        media.isDesktop = false;
+        await render();
+        stream.scripts = [
+          [
+            proposal(
+              { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
+              { steps: ['basics'] },
+            ),
+            { type: 'end' },
+          ],
+          promptEdits([
+            { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          ]),
+        ];
+        await ask('A deal desk on my Tone prompt');
+        expect(strip()).not.toBeNull();
+      };
+
+      it('waits while changes to the prompt are under review', async () => {
+        await startOnPhone();
+        await ask('Plainer prompt');
+        expect(review()).not.toBeNull();
+        // Next would drop the undecided changes.
+        expect(strip()).toBeNull();
+        await click(
+          review()!.querySelector<HTMLButtonElement>(
+            '[data-change-id="e1"] [data-action="accept"]',
+          )!,
+        );
+        expect(review()).toBeNull();
+        expect(strip()).not.toBeNull();
+      });
+
+      it("waits while changes wait for the saved prompt's text", async () => {
+        await startOnPhone();
+        // The load fails; the changes stay for the view's Retry.
+        mocks.getSinglePrompt.mockImplementationOnce(() =>
+          jsonResponse({}, false),
+        );
+        await ask('Plainer prompt');
+        expect(view()).not.toBeNull();
+        expect(review()).toBeNull();
+        expect(strip()).toBeNull();
+      });
+    });
+
+    it("holds the desktop Next while changes wait for the saved prompt's text", async () => {
+      await render();
+      stream.scripts = [
+        [
+          proposal(
+            { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
+            { steps: ['basics'] },
+          ),
+          { type: 'end' },
+        ],
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+        ]),
+      ];
+      await ask('A deal desk on my Tone prompt');
+      expect(next()).toBeDefined();
+      // The load fails; the changes stay for the view's Retry.
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({}, false),
+      );
+      await ask('Plainer prompt');
+      expect(view()).not.toBeNull();
+      expect(review()).toBeNull();
+      // Next would leave the undecided changes behind.
+      expect(next()).toBeUndefined();
+    });
+
+    it('drops changes that waited for a prompt the view never loaded', async () => {
+      await renderWithPrompt('p1');
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({}, false),
+      );
+      stream.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      expect(review()).toBeNull();
+      await click(view()!.querySelector<HTMLButtonElement>('nav button')!);
+      expect(view()).toBeNull();
+      // Opened later on its own, the prompt shows no stale review.
+      await openFromRow('p1');
+      expect(viewText().value).toBe('Text of p1');
+      expect(review()).toBeNull();
+    });
+
+    it('counts only the changes that fit the saved text, and says how many did not', async () => {
+      await renderWithPrompt('p1');
+      stream.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          { id: 'e2', find: 'Not there', replace: 'x', reason: 'r' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      expect(review()!.querySelectorAll('[data-change-id]')).toHaveLength(1);
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.unfit');
+    });
+
+    it('reviews changes to a prompt saved with Windows line ends', async () => {
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({ content: 'Be brief.\r\nBe kind.', updated_at: 'v1' }),
+      );
+      await renderWithPrompt('p1');
+      stream.scripts = [
+        promptEdits([
+          {
+            id: 'e1',
+            find: 'brief.\nBe',
+            replace: 'short.\nBe',
+            reason: 'Plainer.',
+          },
+        ]),
+      ];
+      await ask('Plainer');
+      expect(review()).not.toBeNull();
+      expect(panel()!.textContent).not.toContain(
+        'drafter.agent.prompt.editsStale',
+      );
+    });
+
+    it('keeps the characters outside an accepted change as they were', async () => {
+      const saved = 'Be brief.\u200b Be kind.  ';
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({ content: saved, updated_at: 'v1' }),
+      );
+      await renderWithPrompt('p1');
+      stream.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'brief.', replace: 'short.', reason: 'Plainer.' },
+        ]),
+      ];
+      await ask('Plainer');
+      await click(buttonByText('drafter.prompt.acceptAll', panel()!)!);
+      await click(save()!);
+      expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
+        id: 'p1',
+        content: 'Be short.\u200b Be kind.  ',
+      });
+    });
+
+    it('says so when none of the changes fit the saved text', async () => {
+      await renderWithPrompt('p1');
+      stream.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Not there', replace: 'x', reason: 'r' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      expect(view()).not.toBeNull();
+      expect(review()).toBeNull();
+      expect(viewText().value).toBe('Text of p1');
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.editsStale');
+    });
+
+    it("shows a prompt the caller can't edit read-only, and improves a copy", async () => {
+      await renderWithPrompt('p2');
+      await openFromRow('p2');
+      expect(viewText().readOnly).toBe(true);
+      expect(save()).toBeUndefined();
+      // Improve on the crumb row makes the copy.
+      await click(buttonByText('drafter.improve', view()!)!);
+      expect(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
+      ).toBe('Team tone copy');
+      expect(viewText().value).toBe('Text of p2');
+      expect(save()).toBeDefined();
+      expect(panel()).not.toBeNull();
+    });
+
+    it("offers no Improve on a prompt the caller can't change or copy", async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        {
+          id: 'p4',
+          name: 'Locked tone',
+          type: 'team',
+          access: 'viewer',
+          allowed_actions: ['use'],
+        },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p4');
+      expect(viewText().readOnly).toBe(true);
+      expect(viewWand()).toBeNull();
+    });
+
+    it('improves a copy of a built-in, and saving picks the copy', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p-new', name: 'default copy', type: 'private', access: 'owner' },
+      ] as never[];
+      mocks.createPrompt.mockImplementation(() =>
+        jsonResponse({ id: 'p-new' }),
+      );
+      await render();
+      await openFromRow('default');
+      await click(viewWand()!);
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
+      expect(view()!.textContent).toContain('modals.prompts.duplicatePrompt');
+      expect(panel()).not.toBeNull();
+      // "default copy" is listed already: the name has to change first.
+      const name =
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!;
+      await type(name, 'Mine');
+      await click(save()!);
+      expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
+        name: 'Mine',
+        content: 'Text of default',
+      });
+      expect(view()).toBeNull();
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('default copy');
+    });
+
+    it("adds a prompt from the picker's footer in the view", async () => {
+      mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'p1' }));
+      await render();
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-slot="combobox-trigger"]',
+      )!;
+      await openCombobox(trigger);
+      await click(
+        Array.from(document.body.querySelectorAll('button')).find(
+          (b) => b.textContent === 'settings.prompts.addPrompt',
+        )!,
+      );
+      expect(view()!.textContent).toContain('modals.prompts.addPrompt');
+      expect(save()!.disabled).toBe(true);
+      await type(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
+        'Brand voice',
+      );
+      await type(viewText(), 'Be brief.');
+      await click(save()!);
+      expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
+        name: 'Brand voice',
+        content: 'Be brief.',
+      });
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('Tone');
+    });
+
+    it('offers no Improve while the drafter is off', async () => {
+      drafter.config = { enabled: false, model: null, reason: null };
+      await render();
+      await openFromRow('default');
+      expect(view()).not.toBeNull();
+      expect(viewWand()).toBeNull();
+    });
+  }
+
+  describe('from Insights', () => {
+    const EDITOR = ['edit', 'publish', 'use', 'view'];
+    const GAPS = {
+      available: true,
+      reason: null,
+      conversations: 412,
+      needed: 10,
+      days: 30,
+      rows: [
+        {
+          topic: 'Returns & claims',
+          gap_type: 'docs missing',
+          expected: 23,
+          turns: 160,
+          previous: 19,
+        },
+        {
+          topic: 'Order status',
+          gap_type: 'needs account data',
+          expected: 31,
+          turns: 96,
+          previous: null,
+        },
+        {
+          topic: 'Delivery windows',
+          gap_type: 'confidently ungrounded',
+          expected: 9,
+          turns: 120,
+          previous: 5,
+        },
+        {
+          topic: 'Billing',
+          gap_type: 'out of scope',
+          expected: 6,
+          turns: 40,
+          previous: null,
+        },
+      ],
+    };
+    const suggestion = (key: string) =>
+      panel()!.querySelector<HTMLButtonElement>(`[data-suggestion="${key}"]`);
+    const note = () =>
+      panel()!.querySelector('[data-slot="drafter-insights-note"]');
+
+    it('reads its gaps when the drawer opens and leads with at most three', async () => {
+      drafter.gaps = GAPS;
+      await renderEdit(EDITOR);
+      expect(drafter.gapsCalls).toEqual([]);
+      await click(wand()!);
+      expect(drafter.gapsCalls).toEqual(['agent-1']);
+      const headings = Array.from(panel()!.querySelectorAll('h3')).map(
+        (h) => h.textContent,
+      );
+      expect(headings).toEqual([
+        'drafter.agent.insights.headingdrafter.agent.insights.window',
+        'drafter.agent.insights.setupHeading',
+      ]);
+      expect(suggestion('gap-0')!.textContent).toContain('Returns & claims');
+      expect(suggestion('gap-2')).not.toBeNull();
+      expect(suggestion('gap-3')).toBeNull();
+      expect(suggestion('findMore')).not.toBeNull();
+      expect(panel()!.textContent).toContain('drafter.footerInsights');
+      expect(note()).toBeNull();
+    });
+
+    it('sends a gap row with its gap, and keeps it for the conversation until Start over', async () => {
+      drafter.gaps = GAPS;
+      stream.scripts = [
+        [{ type: 'message', text: 'On it.' }, { type: 'end' }],
+        [{ type: 'message', text: 'Done.' }, { type: 'end' }],
+      ];
+      await renderEdit(EDITOR);
+      await click(wand()!);
+      await click(suggestion('gap-1')!);
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fixIn' },
+      ]);
+      expect(lastRequest().context.gap).toEqual({
+        topic: 'Order status',
+        gap_type: 'needs account data',
+      });
+      await ask('Shorter, please');
+      expect(lastRequest().context.gap).toEqual({
+        topic: 'Order status',
+        gap_type: 'needs account data',
+      });
+      await click(buttonByLabel('drafter.startOver', panel()!)!);
+      await click(suggestion('findMore')!);
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.findMore' },
+      ]);
+      expect(lastRequest().context).not.toHaveProperty('gap');
+    });
+
+    it('forgets the gap once Publish ends the conversation', async () => {
+      drafter.gaps = GAPS;
+      stream.scripts = [
+        [{ type: 'message', text: 'On it.' }, { type: 'end' }],
+        [{ type: 'message', text: 'Done.' }, { type: 'end' }],
+      ];
+      mocks.updateAgent.mockImplementation(() =>
+        jsonResponse({ id: 'agent-1' }),
+      );
+      await renderEdit(EDITOR, { status: 'draft' });
+      await click(wand()!);
+      await click(suggestion('gap-1')!);
+      expect(lastRequest().context.gap).toBeDefined();
+      await click(buttonByText('agents.form.buttons.publish')!);
+      expect(mocks.updateAgent).toHaveBeenCalled();
+      await ask('Shorter, please');
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'Shorter, please' },
+      ]);
+      expect(lastRequest().context).not.toHaveProperty('gap');
+    });
+
+    it('says once that Insights is off for the agent, with a way to turn it on', async () => {
+      drafter.gaps = {
+        ...GAPS,
+        available: false,
+        reason: 'agent_off',
+        rows: [],
+      };
+      await renderEdit(EDITOR, {
+        config: { analytics: { enabled: false, topics: [] } },
+      });
+      await click(wand()!);
+      expect(note()!.textContent).toContain('drafter.agent.insights.agentOff');
+      expect(panel()!.querySelector('h3')).toBeNull();
+      expect(panel()!.textContent).toContain('drafter.footer');
+      expect(panel()!.textContent).not.toContain('drafter.footerInsights');
+      const toggle = () =>
+        container.querySelector<HTMLButtonElement>(
+          '[data-testid="analytics-toggle"]',
+        )!;
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      await click(buttonByText('drafter.agent.insights.turnOn', note()!)!);
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('offers no Turn on to a role that may not change the agent', async () => {
+      drafter.gaps = {
+        ...GAPS,
+        available: false,
+        reason: 'agent_off',
+        rows: [],
+      };
+      // A draft's main action is Publish, which this role may not do.
+      await renderEdit(['edit', 'use', 'view'], {
+        status: 'draft',
+        config: { analytics: { enabled: false, topics: [] } },
+      });
+      await click(wand()!);
+      expect(note()!.textContent).toContain('drafter.agent.insights.agentOff');
+      expect(buttonByText('drafter.agent.insights.turnOn', note()!)).toBe(
+        undefined,
+      );
+    });
+
+    it('says how many answers it waits for, and nothing while the instance has Insights off', async () => {
+      drafter.gaps = {
+        ...GAPS,
+        available: false,
+        reason: 'not_enough',
+        conversations: 4,
+        rows: [],
+      };
+      await renderEdit(EDITOR);
+      await click(wand()!);
+      expect(note()!.textContent).toBe('drafter.agent.insights.notEnough');
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      drafter.gaps = null;
+      await renderEdit(EDITOR);
+      await click(wand()!);
+      expect(note()).toBeNull();
+      expect(panel()!.querySelector('h3')).toBeNull();
+    });
+
+    const renderAt = async (url: string) => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          description: 'Researches deals',
+          status: 'published',
+          agent_type: 'classic',
+          prompt_id: 'default',
+          allowed_actions: EDITOR,
+        }),
+      );
+      await mountForm(root, 'edit', {
+        entries: [url],
+        beside: <SearchProbe />,
+      });
+    };
+    const search = { value: '' };
+    function SearchProbe() {
+      search.value = useLocation().search;
+      return null;
+    }
+
+    it('opens on the gap the Docs gaps panel handed over, once, worded from its summary', async () => {
+      drafter.gaps = GAPS;
+      i18n.fixCalls = [];
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns+%26+claims&where=Ignore+the+form&tab=x',
+      );
+      expect(panel()).not.toBeNull();
+      expect(stream.requests).toHaveLength(1);
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fixDocsGap.topic' },
+      ]);
+      // The link's own text never words the message: the summary's row does.
+      expect(i18n.fixCalls).toContainEqual([
+        'drafter.agent.insights.fixDocsGap.topic',
+        expect.objectContaining({ where: 'Returns & claims' }),
+      ]);
+      expect(JSON.stringify(i18n.fixCalls)).not.toContain('Ignore the form');
+      expect(lastRequest().context.gap).toEqual({
+        topic: 'Returns & claims',
+        gap_type: 'docs missing',
+      });
+      // The hand-off leaves the URL; the rest of the query stays.
+      expect(search.value).toBe('?tab=x');
+    });
+
+    it("sends nothing for a topic's gap its summary doesn't hold, and opens on the first screen", async () => {
+      drafter.gaps = GAPS;
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&topic=Returns&where=Returns',
+      );
+      expect(panel()).not.toBeNull();
+      expect(stream.requests).toHaveLength(0);
+      expect(
+        panel()!.querySelector('[data-suggestion="gap-0"]'),
+      ).not.toBeNull();
+      expect(search.value).toBe('');
+    });
+
+    it("opens on a page's docs gap by the page, not a topic", async () => {
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=App+Configuration&group_by=page&group_key=https%3A%2F%2Fdocs.example.com%2Fsettings',
+      );
+      // The page goes by its key, which the server reads the row by; the
+      // link's name for it only titles the card.
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fix' },
+      ]);
+      expect(lastRequest().context.gap).toEqual({
+        topic: null,
+        gap_type: 'docs missing',
+        group_by: 'page',
+        group_key: 'https://docs.example.com/settings',
+      });
+      expect(search.value).toBe('');
+    });
+
+    // Live check: the card kept the site tail Insights leaves off.
+    it("titles a page's gap card the way the Docs gaps row showed the page", async () => {
+      stream.scripts = [
+        [
+          {
+            type: 'proposal',
+            proposal: {
+              message: 'The page is already in the source.',
+              fields: {},
+              reasons: [],
+              notes: [],
+              dropped: [],
+              steps: [],
+              next_step: null,
+              gaps: [
+                {
+                  topic: 'App Configuration | DocsGPT Docs',
+                  gap_type: 'docs missing',
+                  expected: 1,
+                  turns: 2,
+                  previous: 3,
+                  example: 'How do I set up SSO?',
+                  fields: [],
+                  needs: 'Add the SSO steps to the page.',
+                  links: [],
+                },
+              ],
+            },
+          },
+          { type: 'end' },
+        ],
+      ];
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=App+Configuration&group_by=page&group_key=https%3A%2F%2Fdocs.example.com%2Fsettings',
+      );
+      const card = panel()!.querySelector('[data-slot="gap-card"]')!;
+      expect(card.querySelector('h3')!.textContent).toBe('App Configuration');
+    });
+
+    it('opens on the conversation a Logs row handed over', async () => {
+      const id = '0b6f3a52-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+      const message = '7d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6';
+      await renderAt(
+        `/agents/edit/agent-1?improve=conversation&conversation=${id}&message=${message}`,
+      );
+      expect(lastRequest().messages).toEqual([
+        { role: 'user', content: 'drafter.agent.insights.fromConversation' },
+      ]);
+      expect(lastRequest().context.conversation_id).toBe(id);
+      expect(lastRequest().context.message_id).toBe(message);
+      expect(lastRequest().context).not.toHaveProperty('gap');
+      expect(search.value).toBe('');
+    });
+
+    it('drops a hand-off it may not act on, sending nothing', async () => {
+      drafter.config = { enabled: false, model: null, reason: null };
+      await renderAt(
+        '/agents/edit/agent-1?improve=gap&gap_type=docs+missing&where=Page',
+      );
+      expect(stream.requests).toHaveLength(0);
+      expect(search.value).toBe('');
+    });
+
+    it('applies a monitor-only groundedness guardrail an improve sets for a gap', async () => {
+      drafter.gaps = GAPS;
+      stream.scripts = [
+        [
+          {
+            type: 'proposal',
+            proposal: {
+              message: 'Watch for answers the docs do not back.',
+              fields: {
+                guardrails: {
+                  controls: [
+                    {
+                      check: 'groundedness',
+                      stage: 'output',
+                      action: 'block',
+                    },
+                  ],
+                },
+              },
+              reasons: [
+                { field: 'guardrails', summary: 'groundedness, monitor only' },
+              ],
+              notes: [],
+              dropped: [],
+              steps: [],
+              next_step: null,
+              gaps: [
+                {
+                  topic: 'Delivery windows',
+                  gap_type: 'confidently ungrounded',
+                  expected: 9,
+                  turns: 120,
+                  previous: 5,
+                  example: null,
+                  fields: ['guardrails'],
+                  needs: null,
+                  links: [],
+                },
+              ],
+            },
+          },
+          { type: 'end' },
+        ],
+      ];
+      await renderEdit(EDITOR);
+      await click(wand()!);
+      await click(suggestion('gap-2')!);
+      const guardrails = mocks.guardrailsProps.mock.calls.at(-1)![0] as {
+        drafted: boolean;
+        value: {
+          enabled: boolean;
+          mode: string;
+          controls: { check: string }[];
+        };
+      };
+      expect(guardrails.drafted).toBe(true);
+      expect(guardrails.value.enabled).toBe(true);
+      expect(guardrails.value.mode).toBe('monitor_only');
+      expect(guardrails.value.controls.map((c) => c.check)).toContain(
+        'groundedness',
+      );
+      const card = panel()!.querySelector('[data-slot="gap-card"]')!;
+      expect(
+        card.querySelector('[data-slot="filled-row"] p')!.textContent,
+      ).toBe('agents.form.sections.guardrails · groundedness, monitor only');
+      // No example read: no quote.
+      expect(card.textContent).not.toContain('drafter.agent.insights.quoted');
+    });
+
+    it('shows the gaps a proposal acts on as cards, before what it filled', async () => {
+      drafter.gaps = GAPS;
+      stream.scripts = [
+        [
+          {
+            type: 'proposal',
+            proposal: {
+              message: 'Three gaps cost it the most.',
+              fields: {
+                starters: ['Where is my order?'],
+                description: 'Answers shipping questions for customers.',
+              },
+              reasons: [
+                { field: 'starters', summary: 'asks for the order id' },
+                { field: 'description', summary: 'says who it serves' },
+              ],
+              notes: [],
+              dropped: [],
+              steps: [],
+              next_step: null,
+              gaps: [
+                {
+                  topic: 'Order status',
+                  gap_type: 'needs account data',
+                  expected: 31,
+                  turns: 96,
+                  previous: null,
+                  example: 'Where is shipment MRD-48213?',
+                  fields: ['starters'],
+                  needs: null,
+                  links: [],
+                },
+                {
+                  topic: 'Returns & claims',
+                  gap_type: 'docs missing',
+                  expected: 23,
+                  turns: 160,
+                  previous: 19,
+                  example: 'How long do I have to file a damage claim?',
+                  fields: [],
+                  needs: 'The Claims policy source has no page on deadlines.',
+                  links: [
+                    { kind: 'source', id: 's1', name: 'Claims policy' },
+                    { kind: 'logs', label: 'docs_gap' },
+                  ],
+                },
+              ],
+            },
+          },
+          { type: 'end' },
+        ],
+      ];
+      await renderEdit(EDITOR);
+      await click(wand()!);
+      await click(suggestion('findMore')!);
+      const cards = Array.from(
+        panel()!.querySelectorAll('[data-slot="gap-card"]'),
+      );
+      expect(cards).toHaveLength(2);
+      expect(cards[0].querySelector('h3')!.textContent).toBe('Order status');
+      expect(cards[0].textContent).toContain('drafter.agent.insights.quoted');
+      expect(
+        cards[0].querySelector('[data-slot="filled-row"] p')!.textContent,
+      ).toBe('agents.form.sections.starters · asks for the order id');
+      expect(cards[1].textContent).toContain(
+        'The Claims policy source has no page on deadlines.',
+      );
+      const links = Array.from(cards[1].querySelectorAll('a')).map((a) =>
+        a.getAttribute('href'),
+      );
+      expect(links).toEqual([
+        '/settings/knowledge?source=s1',
+        '/agents/manage/logs/agent-1?label=docs_gap#logs',
+      ]);
+      // The cards come before the Filled row, which lists only what no card
+      // shows.
+      const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
+      const order = Array.from(
+        summary.querySelectorAll(
+          '[data-slot="gap-cards"], [data-slot="drafter-step-row"]',
+        ),
+      ).map((el) => el.getAttribute('data-slot'));
+      expect(order).toEqual(['gap-cards', 'drafter-step-row']);
+      const filled = Array.from(
+        summary.querySelectorAll(
+          '[data-slot="drafter-step-row"] [data-slot="filled-row"] p',
+        ),
+      ).map((p) => p.textContent);
+      expect(filled).toEqual([
+        'agents.form.labels.description · says who it serves',
+      ]);
+    });
   });
 });

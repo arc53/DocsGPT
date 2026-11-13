@@ -46,6 +46,9 @@ class Rule:
     in_route: bool = False
     blocked_by: tuple[str, ...] = ()
     check: Optional[Callable[[Any, dict, Optional[str]], Optional[str]]] = None
+    #: Scopes that let a token restricted on ``family`` through anyway: with one, the route answers
+    #: such a token with nothing from the family (``allowed_ids``), so there is nothing to prove.
+    family_exempt_with: tuple[str, ...] = ()
 
 
 def _rule(scope: Optional[str] = None, *ids: Locator, any_of: tuple[str, ...] = (), **kwargs) -> Rule:
@@ -162,12 +165,15 @@ def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -
 
     It may not send ``only_if_unset``: with a chat prompt already stored, the route answers with
     that one, which may lie outside the allowlist, and the read (GET) is closed to such a token.
+    A body that sets only the task model names no prompt, so the allowlist doesn't hold it.
     """
     if "prompts" not in resource_filter:
         return None
     body = _json_body(request)
     if body.get("only_if_unset") is True:
         return "This token is restricted to specific prompts and cannot read the stored chat prompt"
+    if "task_model_id" in body and "chat_prompt_id" not in body:
+        return None
     ids = _as_ids(body.get("chat_prompt_id"))
     if not ids:
         return "This token is restricted to specific prompts and cannot use this endpoint"
@@ -306,12 +312,21 @@ RULES: dict[tuple[str, str], Rule] = {
     # Prompts
     ("/api/get_prompts", "GET"): _rule("prompts:read", listing=True),
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
+    # Checks the text in the body: no saved prompt is read, so open to restricted tokens.
+    ("/api/check_prompt", "POST"): _rule("prompts:read", open=True),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
-    # The caller's chat prompt. Its stored id can't be proven from the request, so the read is
-    # closed to prompt-restricted tokens; a write names the prompt it picks (a preset always passes),
-    # and may not ask for only_if_unset, whose answer carries the stored id.
-    ("/api/user/preferences", "GET"): _rule("prompts:read"),
-    ("/api/user/preferences", "PUT"): _rule("prompts:write", in_route=True, check=_chat_prompt_check),
+    # The caller's chat prompt and task model. The read answers with the parts the token's scopes
+    # cover: the chat prompt for prompts:read, the task model for models:read. The stored prompt id
+    # can't be proven from the request, so a prompt-restricted token never reads it (and needs
+    # models:read to read anything); a write names the prompt it picks (a preset always passes), and
+    # may not ask for only_if_unset, whose answer carries the stored id. The route asks for
+    # prompts:write to set the chat prompt and models:write to set the task model.
+    ("/api/user/preferences", "GET"): _rule(
+        any_of=("prompts:read", "models:read"), family="prompts", family_exempt_with=("models:read",)
+    ),
+    ("/api/user/preferences", "PUT"): _rule(
+        any_of=("prompts:write", "models:write"), family="prompts", in_route=True, check=_chat_prompt_check
+    ),
     ("/api/update_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     ("/api/delete_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     # Tools
@@ -444,6 +459,12 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/activity/planned": ("*",),
     "/api/activity/history": ("*",),
     "/api/messages/<string:message_id>/cancel": ("*",),
+    # Draft with DocsGPT reads the whole workspace for the signed-in user and runs the model on it.
+    "/api/drafter/config": ("*",),
+    "/api/drafter/stream": ("*",),
+    "/api/drafter/topics/status": ("*",),
+    "/api/drafter/agent_gaps": ("*",),
+    "/api/drafter/turns/<string:turn_id>/cancel": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),
     "/api/approvals/<string:token>": ("*",),
@@ -587,6 +608,8 @@ def authorize(request, decoded_token: dict) -> Optional[tuple[dict, int]]:
             403,
         )
     resource_filter = decoded_token.get("resource_filter") or {}
+    if rule.family in resource_filter and granted.intersection(rule.family_exempt_with):
+        resource_filter = {family: ids for family, ids in resource_filter.items() if family != rule.family}
     if not resource_filter:
         return None
     reason = _check_resources(request, rule, resource_filter, decoded_token.get("sub"))

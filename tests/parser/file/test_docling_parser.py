@@ -1571,6 +1571,9 @@ class TestForceFullPageOCRWiring:
 
     def _pipeline_options(self, monkeypatch, **kwargs):
         import docling.datamodel.pipeline_options as dpo
+        # Load the converter before the class is swapped: a first import after the
+        # swap binds the tracking function, and docling's isinstance check raises.
+        import docling.document_converter  # noqa: F401
 
         from docsgpt.parser.file.docling_parser import DoclingParser
 

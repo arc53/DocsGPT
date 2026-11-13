@@ -1,8 +1,14 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import * as sheetModule from './sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './dropdown-menu';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './sheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -238,6 +244,77 @@ describe('SheetContent focus', () => {
     await act(async () => trigger().click());
     await pressEscape();
     expect(document.activeElement).toBe(trigger());
+  });
+
+  // Live check 100: Review one by one closes the phone sheet and focuses
+  // change 1's Accept; the sheet's return mustn't take that back.
+  it('leaves focus where the page moved it as the sheet closed', async () => {
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    try {
+      await renderWithTrigger();
+      trigger().focus();
+      await act(async () => trigger().click());
+      await act(async () => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+        elsewhere.focus();
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(document.activeElement).toBe(elsewhere);
+    } finally {
+      elsewhere.remove();
+    }
+  });
+
+  // Live check I03: Preview from a toolbar ⋯ left focus on <body>.
+  it("returns focus to a menu's trigger when one of its items opened the sheet", async () => {
+    function Harness() {
+      const [menuOpen, setMenuOpen] = useState(true);
+      const [sheetOpen, setSheetOpen] = useState(false);
+      return (
+        <>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger data-testid="menu-trigger">
+              More
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem
+                data-testid="preview"
+                onSelect={() => {
+                  setMenuOpen(false);
+                  setSheetOpen(true);
+                }}
+              >
+                Preview
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+            <SheetContent title="Preview" aria-describedby={undefined}>
+              <button type="button">Inside</button>
+            </SheetContent>
+          </Sheet>
+        </>
+      );
+    }
+    await render(<Harness />);
+    const item = document.querySelector<HTMLElement>(
+      '[data-testid="preview"]',
+    )!;
+    item.focus();
+    await act(async () => item.click());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(content()).not.toBeNull();
+    await pressEscape();
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-testid="menu-trigger"]'),
+    );
   });
 });
 

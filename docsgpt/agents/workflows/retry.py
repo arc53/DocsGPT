@@ -6,6 +6,8 @@ from typing import Any, Dict, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from docsgpt.error import cause_chain, http_status
+
 # What a node's ``retry.on`` may name.
 TRANSIENT = "transient"
 INVALID_OUTPUT = "invalid_output"
@@ -45,9 +47,6 @@ _TRANSPORT_ERROR_NAMES = frozenset(
         "ChunkedEncodingError",
     }
 )
-
-# How deep to follow ``raise ... from`` when looking for the provider's error.
-_MAX_CAUSE_DEPTH = 5
 
 # Provider error codes for an account out of credit: sent with a 429, but no
 # wait makes the next request succeed.
@@ -172,42 +171,9 @@ def resolve_retry_policy(
     return RetryPolicy(max_attempts=attempts, backoff_seconds=delays, on=reasons)
 
 
-def _causes(error: BaseException):
-    """``error`` and what it was raised from, outermost first."""
-    seen = 0
-    current: Optional[BaseException] = error
-    while current is not None and seen < _MAX_CAUSE_DEPTH:
-        yield current
-        current = current.__cause__
-        seen += 1
-
-
-def http_status(error: BaseException) -> Optional[int]:
-    """The HTTP status a provider error carries, or None.
-
-    Reads ``status_code`` (OpenAI, Anthropic), an integer ``code`` (Google
-    GenAI), the attached response's status, or a boto ``ClientError``'s
-    metadata, following ``raise ... from`` chains.
-    """
-    for current in _causes(error):
-        status = getattr(current, "status_code", None)
-        if status is None:
-            code = getattr(current, "code", None)
-            status = code if isinstance(code, int) and 100 <= code < 600 else None
-        if status is None:
-            response = getattr(current, "response", None)
-            if isinstance(response, Mapping):
-                status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
-            else:
-                status = getattr(response, "status_code", None)
-        if isinstance(status, int) and not isinstance(status, bool):
-            return status
-    return None
-
-
 def retry_after_seconds(error: BaseException) -> Optional[float]:
     """The delay a 429/503 response asked for in ``Retry-After``, or None."""
-    for current in _causes(error):
+    for current in cause_chain(error):
         headers = getattr(getattr(current, "response", None), "headers", None)
         if headers is None:
             continue
@@ -236,7 +202,7 @@ def retry_after_seconds(error: BaseException) -> Optional[float]:
 
 def is_transport_error(error: BaseException) -> bool:
     """Whether the request failed in transit: a timeout, a refused or reset connection."""
-    for current in _causes(error):
+    for current in cause_chain(error):
         if any(cls.__name__ in _TRANSPORT_ERROR_NAMES for cls in type(current).__mro__):
             return True
     return False
@@ -264,7 +230,7 @@ def _never_retried(error: BaseException) -> bool:
         or isinstance(current, QuotaExceededError)
         or is_context_length_error(current)
         or bool(_provider_codes(current) & _EXHAUSTED_QUOTA_CODES)
-        for current in _causes(error)
+        for current in cause_chain(error)
     )
 
 

@@ -11,7 +11,7 @@ import {
 
 // Counts mounts, and shows the agent it was mounted for next to the
 // route's current one.
-const mounts = vi.hoisted(() => ({ count: 0 }));
+const mounts = vi.hoisted(() => ({ count: 0, forms: 0 }));
 vi.mock('./workflow/WorkflowBuilder', () => ({
   default: function WorkflowBuilder() {
     const { agentId } = useParams();
@@ -31,7 +31,20 @@ vi.mock('./AgentRouteGuard', () => ({
 }));
 vi.mock('./AgentLogs', () => ({ default: () => null }));
 vi.mock('./AgentsList', () => ({ default: () => null }));
-vi.mock('./NewAgent', () => ({ default: () => null }));
+vi.mock('./NewAgent', () => ({
+  default: function NewAgent() {
+    const { agentId } = useParams();
+    const [mountedFor] = useState(() => {
+      mounts.forms += 1;
+      return agentId;
+    });
+    return (
+      <div data-testid="form">
+        {mountedFor}:{agentId}
+      </div>
+    );
+  },
+}));
 vi.mock('./schedules/SchedulesView', () => ({ default: () => null }));
 vi.mock('./SharedAgent', () => ({ default: () => null }));
 
@@ -51,6 +64,7 @@ describe('Agents routes', () => {
 
   beforeEach(() => {
     mounts.count = 0;
+    mounts.forms = 0;
     container = document.createElement('div');
     root = createRoot(container);
   });
@@ -77,5 +91,25 @@ describe('Agents routes', () => {
     await act(async () => navigate('/agents/manage/workflow/edit/b'));
     expect(container.textContent).toBe('b:b');
     expect(mounts.count).toBe(2);
+  });
+
+  // The form holds one agent's drafter conversation and build; another
+  // agent's edit page must not inherit them.
+  it("opens another agent's edit page in a fresh form", async () => {
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/edit/a']}>
+          <Routes>
+            <Route path="/agents/*" element={<Agents />} />
+          </Routes>
+          <CaptureNavigate />
+        </MemoryRouter>,
+      ),
+    );
+    expect(container.textContent).toBe('a:a');
+
+    await act(async () => navigate('/agents/manage/edit/b'));
+    expect(container.textContent).toBe('b:b');
+    expect(mounts.forms).toBe(2);
   });
 });

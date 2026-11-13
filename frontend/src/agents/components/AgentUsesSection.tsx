@@ -2,11 +2,10 @@ import { Database, ScrollText, Wrench } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Button } from '@/components/ui/button';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 
 import ConnectorIcon from '../../connectors/ConnectorIcon';
@@ -209,27 +208,22 @@ export default function AgentUsesSection({
           {anyBlocked && (
             <Alert variant="warning">
               <AlertDescription>
-                {t(ownerReads ? `${K}.writesNote` : `${K}.writesNoteEditor`)}
-              </AlertDescription>
-              {/* Only the owner sets the allowlist. */}
-              {ownerReads && onOpenAccessDetails && (
-                <div className="mt-2 flex flex-col items-start gap-1.5">
-                  {/* Access details lists these writes once there is a key
-                      (a draft gets one when it is published). */}
-                  {!agent.key && (
-                    <p className="text-xs">{t(`${K}.accessDetailsNeedsKey`)}</p>
+                <p>
+                  {t(ownerReads ? `${K}.writesNote` : `${K}.writesNoteEditor`)}
+                  {/* Only the owner sets the allowlist: Open Access details
+                      fixes it, a link at the end of the text. */}
+                  {ownerReads && onOpenAccessDetails && (
+                    <>
+                      {/* Access details lists these writes once there is a
+                          key (a draft gets one when it is published). */}
+                      {!agent.key && <> {t(`${K}.accessDetailsNeedsKey`)}</>}{' '}
+                      <AlertAction onClick={onOpenAccessDetails}>
+                        {t(`${K}.openAccessDetails`)}
+                      </AlertAction>
+                    </>
                   )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    shape="pill"
-                    variant="outline"
-                    onClick={onOpenAccessDetails}
-                  >
-                    {t(`${K}.openAccessDetails`)}
-                  </Button>
-                </div>
-              )}
+                </p>
+              </AlertDescription>
             </Alert>
           )}
         </div>

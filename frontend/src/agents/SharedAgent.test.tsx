@@ -21,6 +21,7 @@ vi.mock('react-router-dom', () => ({
 
 // The composer as the page drives it: what it was handed, and its submit.
 type ComposerProps = {
+  placeholder?: string;
   onSubmit: (text: string) => void;
   queuedQuestion?: string | null;
   onQueuedQuestionConsumed?: () => void;
@@ -36,6 +37,10 @@ vi.mock('../conversation/ConversationMessages', () => ({
   default: (props: {
     starters?: string[];
     handleQuestion: (args: { question: string }) => void;
+    onQuestionAction?: (
+      callId: string,
+      action: { answer: string } | { skipped: true },
+    ) => void;
     onOpenArtifact?: (request: {
       id: string;
       toolName: string;
@@ -54,6 +59,15 @@ vi.mock('../conversation/ConversationMessages', () => ({
           {starter}
         </button>
       ))}
+      {props.onQuestionAction && (
+        <button
+          type="button"
+          data-testid="answer-cards"
+          onClick={() =>
+            props.onQuestionAction?.('call-1', { answer: 'Size → Large' })
+          }
+        />
+      )}
       {props.onOpenArtifact && (
         <button
           type="button"
@@ -76,6 +90,7 @@ vi.mock('../conversation/conversationSlice', () => ({
   addQuery: vi.fn(),
   fetchAnswer: vi.fn(),
   resendQuery: vi.fn(),
+  resumeQuestion: vi.fn((args: unknown) => ({ type: 'resumeQuestion', args })),
   selectQueries: () => [],
   selectStatus: () => 'idle',
 }));
@@ -88,7 +103,12 @@ vi.mock('../api/services/userService', () => ({
 }));
 
 import SharedAgent from './SharedAgent';
-import { addQuery } from '../conversation/conversationSlice';
+import {
+  addQuery,
+  fetchAnswer,
+  resumeQuestion,
+  selectQueries,
+} from '../conversation/conversationSlice';
 import { selectAttachments, type Attachment } from '../upload/uploadSlice';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -102,6 +122,10 @@ describe('SharedAgent', () => {
     redux.values = new Map();
     redux.dispatch.mockReset();
     vi.mocked(addQuery).mockClear();
+    vi.mocked(fetchAnswer).mockClear();
+    vi.mocked(resumeQuestion).mockClear();
+    redux.values.set(selectQueries, []);
+    redux.values.set(selectAttachments, []);
     composer.props = null;
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -206,5 +230,70 @@ describe('SharedAgent', () => {
     await render();
     await act(async () => props().onSubmit(question));
     expect(addQuery).toHaveBeenCalledWith({ prompt: question });
+  });
+
+  // The page asks for question cards (it sends through the chat's slice), so
+  // its cards and composer answer them, resuming the paused turn.
+  describe('clarifying questions', () => {
+    const waiting = [
+      {
+        prompt: 'Plan the trip',
+        tool_calls: [
+          {
+            call_id: 'call-1',
+            tool_name: 'ask_user',
+            action_name: 'ask_user',
+            arguments: {},
+            status: 'awaiting_answer',
+            questions: [{ id: 'q1', text: 'Size?', options: [] }],
+          },
+        ],
+      },
+    ];
+    const load = async () => {
+      getSharedAgent.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'a1', name: 'Vendor' }),
+      });
+      await render();
+    };
+
+    it("resumes the turn with the cards' answers", async () => {
+      redux.values.set(selectQueries, waiting);
+      await load();
+      const cards = container.querySelector<HTMLButtonElement>(
+        '[data-testid="answer-cards"]',
+      );
+      expect(cards).not.toBeNull();
+      await act(async () => cards!.click());
+      expect(resumeQuestion).toHaveBeenCalledWith({
+        callId: 'call-1',
+        action: { answer: 'Size → Large' },
+      });
+    });
+
+    it('answers the waiting questions from the composer', async () => {
+      redux.values.set(selectQueries, waiting);
+      await load();
+      const props = composer.props as ComposerProps;
+      expect(props.placeholder).toBe('questions.typeAnswer');
+      await act(async () => props.onSubmit('  Large  '));
+      expect(resumeQuestion).toHaveBeenCalledWith({
+        callId: 'call-1',
+        action: { answer: 'Large' },
+      });
+      expect(addQuery).not.toHaveBeenCalled();
+      expect(fetchAnswer).not.toHaveBeenCalled();
+    });
+
+    it('starts a new turn when nothing waits', async () => {
+      await load();
+      const props = composer.props as ComposerProps;
+      expect(props.placeholder).toBeUndefined();
+      await act(async () => props.onSubmit('Hello'));
+      expect(resumeQuestion).not.toHaveBeenCalled();
+      expect(addQuery).toHaveBeenCalledWith({ prompt: 'Hello' });
+    });
   });
 });

@@ -270,9 +270,11 @@ function ModalActions({
   return (
     <>
       {footerStart ? (
+        // Centred on the row from sm up, so a link (shorter than the
+        // buttons) lines up with Cancel and Save.
         <div
           data-slot="modal-footer-start"
-          className="flex flex-col sm:mr-auto"
+          className="flex flex-col sm:mr-auto sm:justify-center"
         >
           {footerStart}
         </div>

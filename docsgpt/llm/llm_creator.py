@@ -1,5 +1,6 @@
 import logging
 import uuid
+from typing import Any, Optional, Tuple
 
 from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
@@ -222,6 +223,45 @@ class LLMCreator:
         # Calls to a user's own model are recorded at $0 (see ``docsgpt/usage.py``).
         llm._is_byom = model is not None and getattr(model, "source", "builtin") == "user"
         return llm
+
+
+def create_stateless_llm(
+    model_id: Optional[str], user_id: Optional[str], *, source: str, request_id: Optional[str]
+) -> Tuple[Any, str]:
+    """A one-shot LLM for a background task, run under ``user_id`` and billed to them as ``source``.
+
+    The provider is the one that serves ``model_id``, else ``LLM_PROVIDER``.
+    That setting is only a default (``docsgpt``, the hosted public endpoint,
+    out of the box): dispatching another model through it sends the request to
+    a provider that doesn't serve that model, so the call is refused and the
+    shared fallback answers instead. ``user_id`` scopes the lookup, so a
+    per-user (BYOM) model id resolves as well.
+
+    Args:
+        model_id: The model's registry id; None for the provider's default model.
+        user_id: Whose models resolve and who is billed; None for no user.
+        source: The ``token_usage.source`` of its calls.
+        request_id: The ``token_usage`` request id of its calls.
+
+    Returns:
+        ``(llm, provider)``: the stateless LLM and the provider it was built for.
+    """
+    from docsgpt.core.model_utils import get_api_key_for_provider, get_provider_from_model_id
+
+    provider = (get_provider_from_model_id(model_id, user_id=user_id) if model_id else None) \
+        or _settings().LLM_PROVIDER
+    llm = LLMCreator.create_llm(
+        provider,
+        api_key=get_api_key_for_provider(provider),
+        user_api_key=None,
+        decoded_token={"sub": user_id} if user_id else None,
+        model_id=model_id,
+        model_user_id=user_id,
+        stateless=True,
+    )
+    llm._token_usage_source = source
+    llm._request_id = request_id
+    return llm, provider
 
 
 def _settings():

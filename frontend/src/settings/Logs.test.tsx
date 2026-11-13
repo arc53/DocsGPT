@@ -4,8 +4,9 @@ import { createRoot, type Root } from 'react-dom/client';
 // Selectors read this state; a test bumps `activity.revision` to stand for
 // the app-wide Now snapshot reloading after a live event.
 const store = vi.hoisted(() => ({
+  drafter: null as null | { enabled: boolean },
   state: {
-    preference: { token: 'token' },
+    preference: { token: 'token', agents: [] as unknown[] },
     activity: { now: null as object | null, revision: 0 },
   },
 }));
@@ -14,7 +15,10 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: 'en' },
+  }),
 }));
 
 // The loader's 250ms hide delay would outlast the test.
@@ -42,6 +46,9 @@ vi.mock('react-router-dom', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router-dom')>()),
   useSearchParams: () => [new URLSearchParams(), vi.fn()],
 }));
+vi.mock('../drafter/useDrafterConfig', () => ({
+  useDrafterConfig: () => store.drafter,
+}));
 vi.mock('./traces/TraceSheet', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 
@@ -49,6 +56,8 @@ const getLogs = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: { getLogs: (...args: unknown[]) => getLogs(...args) },
 }));
+
+import { MemoryRouter } from 'react-router-dom';
 
 import Logs, { typeFilterParams } from './Logs';
 
@@ -739,6 +748,103 @@ describe('Logs chat row context', () => {
     expect(container.textContent).toContain('user_id=emp-42, office=Berlin');
     expect(container.textContent).toContain('settings.logs.detail.feedback');
     expect(container.textContent).not.toContain(chat.conversation_id);
+  });
+});
+
+describe('Improve the agent from a Logs row', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const CONVERSATION = '0b6f3a52-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+  const editor = {
+    id: 'agent-1',
+    name: 'Meridian',
+    agent_type: 'classic',
+    allowed_actions: ['edit', 'use', 'view'],
+  };
+  const chat = {
+    ...log,
+    agent_id: 'agent-1',
+    conversation_id: CONVERSATION,
+    labels: ['docs_gap'],
+  };
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    store.drafter = { enabled: true };
+    store.state.preference.agents = [editor];
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    store.drafter = null;
+    store.state.preference.agents = [];
+  });
+
+  const show = async (row: object, props = {}) => {
+    getLogs.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ logs: [row], has_more: false }),
+    });
+    await act(async () =>
+      root.render(
+        <MemoryRouter>
+          <Logs {...props} />
+        </MemoryRouter>,
+      ),
+    );
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
+    await act(async () => toggle.click());
+    return container.querySelector<HTMLAnchorElement>(
+      'a[data-slot="improve-agent"]',
+    );
+  };
+
+  it('offers it in the action strip of a row with a docs gap', async () => {
+    const link = (await show(chat))!;
+    expect(link.textContent).toBe('drafter.agent.insights.improveAgent');
+    expect(link.getAttribute('href')).toBe(
+      `/agents/manage/edit/agent-1?improve=conversation&conversation=${CONVERSATION}`,
+    );
+  });
+
+  it('carries the answer the row is on, for the drafter to read that one', async () => {
+    const message = '7d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6';
+    const link = (await show({ ...chat, message_id: message }))!;
+    expect(link.getAttribute('href')).toBe(
+      `/agents/manage/edit/agent-1?improve=conversation&conversation=${CONVERSATION}&message=${message}`,
+    );
+  });
+
+  it('offers it for a thumbs-down, with the page’s own agent', async () => {
+    store.state.preference.agents = [];
+    const link = await show(
+      { ...chat, labels: [], feedback: { text: 'dislike' } },
+      { agentId: 'agent-1', agent: editor },
+    );
+    expect(link).not.toBeNull();
+  });
+
+  it('offers none for a fine answer, a viewer, an unknown agent or the drafter off', async () => {
+    expect(await show({ ...chat, labels: ['tag:abcdefgh'] })).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(container);
+    store.state.preference.agents = [
+      { ...editor, allowed_actions: ['use', 'view'] },
+    ];
+    expect(await show(chat)).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(container);
+    store.state.preference.agents = [];
+    expect(await show(chat)).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(container);
+    store.state.preference.agents = [editor];
+    store.drafter = { enabled: false };
+    expect(await show(chat)).toBeNull();
   });
 });
 

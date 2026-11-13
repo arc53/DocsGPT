@@ -5,7 +5,7 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import { isTrustedConnectorMessage } from '../utils/connectorAuthUtils';
-import { Alert, AlertDescription } from './ui/alert';
+import { Alert, AlertAction, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 
 interface ConnectorAuthOptions {
@@ -263,15 +263,9 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
               })}
             </span>
             {onDisconnect && (
-              <Button
-                type="button"
-                variant="link"
-                size="xs"
-                onClick={onDisconnect}
-                className="-my-1 ml-2 shrink-0"
-              >
+              <AlertAction onClick={onDisconnect} className="ml-2 shrink-0">
                 {t('modals.uploadDoc.connectors.auth.disconnect')}
-              </Button>
+              </AlertAction>
             )}
           </AlertDescription>
         </Alert>

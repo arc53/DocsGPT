@@ -18,7 +18,7 @@ from docsgpt.llm.deadlines import (
     is_thought,
     timed_stream,
 )
-from docsgpt.error import bounded_error_text
+from docsgpt.error import bounded_error_text, provider_failure_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,16 @@ def optional_int(value) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _clear_finish(llm: Any) -> None:
+    """Forget the finish signal of ``llm``'s previous streamed call before the next one starts.
+
+    Args:
+        llm: The LLM about to stream.
+    """
+    llm._stream_reached_finish = False
+    llm._last_finish_reason = None
 
 
 class BaseLLM(ABC):
@@ -746,7 +756,7 @@ class BaseLLM(ABC):
             if is_budget_exhausted(e):
                 raise
             if not self.fallback_llm:
-                logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
+                logger.error("Primary LLM failed and no fallback configured: %s", provider_failure_text(e))
                 raise
             fallback = self.fallback_llm
             fallback_kwargs = self._fallback_request(fallback, kwargs, e)
@@ -754,8 +764,7 @@ class BaseLLM(ABC):
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
-                f"Primary LLM failed. Falling back to "
-                f"{fallback.model_id}. Error: {str(e)}"
+                "Primary LLM failed. Falling back to %s. Error: %s", fallback.model_id, provider_failure_text(e)
             )
 
             # Mirror the streaming path: emit the fallback's own start event so
@@ -897,6 +906,12 @@ class BaseLLM(ABC):
         as before.
         """
         self._responding_provider = self.provider_name
+        # A finish signal belongs to the call that received it. Adapters clear
+        # the flag only once their own setup has run, so an error before that
+        # (building the request) would read the previous call's finish and be
+        # taken for a trailing-frame failure: no fallback, and an empty answer
+        # kept as complete.
+        _clear_finish(self)
         chunks_yielded = 0
         # Reasoning alone is not the answer: a fallback after it repeats nothing.
         answer_yielded = reasoned = False
@@ -985,9 +1000,7 @@ class BaseLLM(ABC):
                 logger.warning(f"Primary LLM stalled after delivering output; not engaging fallback. Error: {str(e)}")
                 raise e
             if not self.fallback_llm:
-                logger.error(
-                    f"Primary LLM failed and no fallback configured: {str(e)}"
-                )
+                logger.error("Primary LLM failed and no fallback configured: %s", provider_failure_text(e))
                 raise
             fallback = self.fallback_llm
             fallback_kwargs = self._fallback_request(fallback, kwargs, e)
@@ -995,8 +1008,8 @@ class BaseLLM(ABC):
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
-                f"Primary LLM failed mid-stream. Falling back to "
-                f"{fallback.model_id}. Error: {str(e)}"
+                "Primary LLM failed mid-stream. Falling back to %s. Error: %s",
+                fallback.model_id, provider_failure_text(e),
             )
             # Apply decorators to fallback's raw stream method directly —
             # calling fallback.gen_stream() would re-enter the orchestrator
@@ -1015,6 +1028,7 @@ class BaseLLM(ABC):
             fallback_method = getattr(fallback, method_name)
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
+            _clear_finish(fallback)
             fallback_stream = fallback._timed_stream(lambda: fallback_method(fallback, *args, **fallback_kwargs))
             if reasoned:
                 fallback_stream = _after_primary_reasoning(fallback_stream)

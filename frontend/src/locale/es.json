@@ -166,7 +166,7 @@
     "label": "Actividad",
     "marks": {
       "failed": "Algo falló",
-      "needsYou": "Esperando tu aprobación",
+      "needsYou": "Te está esperando",
       "unread": "Sin leer",
       "watching": "Vigilando cambios",
       "working": "En curso"
@@ -181,6 +181,7 @@
     },
     "now": {
       "allMonitors": "Todos los monitores",
+      "answer": "Responder",
       "apiRequests_many": "{{formatted}} solicitudes",
       "apiRequests_one": "{{formatted}} solicitud",
       "apiRequests_other": "{{formatted}} solicitudes",
@@ -231,6 +232,7 @@
       "pausedAfter_many": "{{name}} en pausa tras {{formatted}} fallos",
       "pausedAfter_one": "{{name}} en pausa tras {{formatted}} fallo",
       "pausedAfter_other": "{{name}} en pausa tras {{formatted}} fallos",
+      "question": "Pregunta",
       "ranByHand": "ejecución manual",
       "reading": "leyendo el contenido",
       "reconnect": "{{name}} necesita reconectarse",
@@ -272,6 +274,7 @@
       "timesToday_other": "{{formatted}} ejecuciones en las próximas 24 horas",
       "upNext": "A continuación",
       "viewRuns": "Ver ejecuciones",
+      "waitingForAnswer": "Esperando tu respuesta",
       "watching": "Vigilando",
       "writing": "escribiendo la respuesta"
     },
@@ -1516,9 +1519,9 @@
     "errors": {
       "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo.",
       "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
-      "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o conviértelos en una fuente de conocimiento en la que el chat pueda buscar en lugar de enviarlos completos.",
       "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
-      "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o conviértelos en una fuente de conocimiento en la que el chat pueda buscar en lugar de enviarlos completos.",
       "noAnswer": "El modelo siguió razonando sin empezar a responder, así que se detuvo. Inténtalo de nuevo o elige otro modelo.",
       "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
       "stopped": "Detuviste esta respuesta antes de que escribiera nada. Inténtalo de nuevo para obtener una.",
@@ -1808,6 +1811,405 @@
     }
   },
   "documentation": "Documentación",
+  "drafter": {
+    "agent": {
+      "build": {
+        "allFilled": "Todos los pasos completados",
+        "changePlaceholder": "O dime qué cambiar…",
+        "check": "Revisa {{step}}",
+        "checkForm": "Revisar primero el formulario",
+        "continue": "Continúa con {{step}}.",
+        "continueStep": "Continuar: {{step}}",
+        "describePlaceholder": "Describe el agente…",
+        "done": "Ya están todas las partes. Todavía no se ha guardado nada del agente: publícalo y pruébalo en la vista previa, o guarda un borrador para volver más tarde.",
+        "doneBlocked": "Ya están todas las partes, pero Publicar sigue desactivado hasta que el agente tenga {{missing}}. Todavía no se ha guardado nada del agente.",
+        "filledAtOnce_many": "{{count}} pasos de una vez",
+        "filledAtOnce_one": "{{count}} paso de una vez",
+        "filledAtOnce_other": "{{count}} pasos de una vez",
+        "finish": "Terminar",
+        "folded": "{{step}}: {{result}}",
+        "goTo": "Ir a {{field}}",
+        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige un punto de partida o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
+        "missing": {
+          "agentType": "un tipo de agente",
+          "contextLimit": "un límite de contexto válido",
+          "description": "una descripción",
+          "guardrails": "sus controles de barreras de protección configurados",
+          "jsonSchema": "un esquema de respuesta JSON válido",
+          "name": "un nombre",
+          "origins": "sus orígenes permitidos",
+          "prompt": "un prompt"
+        },
+        "next": "Siguiente: {{step}}",
+        "nextShort": "Siguiente",
+        "progress": "Paso {{number}} de {{total}} · {{step}}",
+        "result": {
+          "checks_many": "{{count}} comprobaciones en modo {{mode}}",
+          "checks_one": "{{count}} comprobación en modo {{mode}}",
+          "checks_other": "{{count}} comprobaciones en modo {{mode}}",
+          "noLimit": "sin límite",
+          "noName": "aún sin nombre",
+          "none": "nada configurado",
+          "requests_many": "{{count, number}} solicitudes cada 24 horas",
+          "requests_one": "{{count, number}} solicitud cada 24 horas",
+          "requests_other": "{{count, number}} solicitudes cada 24 horas",
+          "starters_many": "{{count}} preguntas de inicio",
+          "starters_one": "{{count}} pregunta de inicio",
+          "starters_other": "{{count}} preguntas de inicio",
+          "tokens_many": "{{count, number}} tokens cada 24 horas",
+          "tokens_one": "{{count, number}} token cada 24 horas",
+          "tokens_other": "{{count, number}} tokens cada 24 horas",
+          "topics_many": "{{count}} temas de Información",
+          "topics_one": "{{count}} tema de Información",
+          "topics_other": "{{count}} temas de Información"
+        },
+        "resume": "Reanudar",
+        "resumeLabel": "Reanudar la redacción: paso {{number}} de {{total}}",
+        "skipped": "{{step}}: aquí no hay nada que configurar",
+        "steps": {
+          "basics": "Básico",
+          "knowledge": "Conocimiento",
+          "prompt": "Prompt y preguntas de inicio",
+          "safety": "Límites y seguridad"
+        }
+      },
+      "draftedCount_many": "Se redactaron {{count}} campos. Revísalos antes de guardar.",
+      "draftedCount_one": "Se redactó {{count}} campo. Revísalo antes de guardar.",
+      "draftedCount_other": "Se redactaron {{count}} campos. Revísalos antes de guardar.",
+      "droppedLine": "{{field}}: {{reason}}",
+      "droppedReasons": {
+        "not_allowed": "un ajuste que tu rol no puede cambiar",
+        "not_found": "un elemento que no existe",
+        "other": "un elemento que no se pudo usar",
+        "other_step": "un cambio para otro paso"
+      },
+      "fields": {
+        "limits": "Límite de uso"
+      },
+      "formEdited": "Cambiaste {{fields}} en el formulario.",
+      "improve": {
+        "finishSetup": "Terminar la configuración: límites y seguridad",
+        "intro": "¿Qué debería cambiar en {{name}}?",
+        "introPublished": "¿Qué debería cambiar en {{name}}? Está publicado, así que un cambio guardado llega a todos los que lo usan.",
+        "introShared": "¿Qué debería cambiar en {{name}}? Está compartido, así que un cambio guardado llega a todos los que lo usan.",
+        "knowledge": "Añade conocimiento del que pueda responder",
+        "shorter": "Acorta la descripción",
+        "starters": "Sugiere preguntas iniciales",
+        "tightenPrompt": "Haz el prompt más conciso",
+        "writePrompt": "Escribe un prompt para este agente"
+      },
+      "insights": {
+        "agentOff": "La Información está desactivada para este agente, así que solo puedo guiarme por su configuración.",
+        "downFrom": "antes {{previous}}, menos",
+        "findMore": "Encuentra qué más corregir",
+        "findMoreDescription": "Lee la Información y algunas conversaciones de ejemplo",
+        "fix": "Corrige: {{gap}}",
+        "fixDocsGap": {
+          "topic": "Corrige el hueco de documentación en «{{where}}»"
+        },
+        "fixIn": "Corrige «{{gap}}» en {{topic}}",
+        "fromConversation": "Mejora el agente a partir de esta conversación",
+        "gapLine_many": "{{gap}} · {{expected}} de {{formatted}} preguntas",
+        "gapLine_one": "{{gap}} · {{expected}} de {{formatted}} pregunta",
+        "gapLine_other": "{{gap}} · {{expected}} de {{formatted}} preguntas",
+        "heading": "De sus conversaciones",
+        "improveAgent": "Mejorar el agente",
+        "notEnough": "Cuando tenga {{needed}} respuestas analizadas en {{days}} días (tiene {{conversations}}), podré sugerir correcciones a partir de lo que preguntaron los usuarios.",
+        "openSource": "Abrir {{name}}",
+        "quoted": "«{{text}}»",
+        "seeInLogs": "Ver las preguntas en los registros",
+        "setupHeading": "De su configuración",
+        "theSource": "la fuente",
+        "turnOn": "Activar la Información",
+        "upFrom": "antes {{previous}}",
+        "window_many": "últimos {{count}} días",
+        "window_one": "último {{count}} día",
+        "window_other": "últimos {{count}} días"
+      },
+      "prompt": {
+        "changePlaceholder": "O dime qué cambiar en el prompt…",
+        "changes_many": "{{count}} cambios por revisar",
+        "changes_one": "{{count}} cambio por revisar",
+        "changes_other": "{{count}} cambios por revisar",
+        "editsStale": "Ninguno de mis cambios encaja ya con el texto guardado del prompt. Vuelve a pedírmelo y partiré de él.",
+        "keep": "Mantener {{name}} en su lugar",
+        "newPrompt": "Nuevo prompt",
+        "open": "Abrir prompt",
+        "parked": "El prompt que escribí sigue abierto, sin guardar.",
+        "reviewHint": "Acepta o rechaza cada cambio en la vista del prompt y luego guarda el prompt. Todos los agentes que lo usan reciben el texto guardado.",
+        "savedOnly": "Prompt guardado y asignado.",
+        "saved_many": "Prompt guardado y asignado. {{count}} preguntas de inicio están listas en Preguntas de inicio: revísalas.",
+        "saved_one": "Prompt guardado y asignado. {{count}} pregunta de inicio está lista en Preguntas de inicio: revísala.",
+        "saved_other": "Prompt guardado y asignado. {{count}} preguntas de inicio están listas en Preguntas de inicio: revísalas.",
+        "unfit_many": "{{count}} cambios ya no encajan en el texto del prompt",
+        "unfit_one": "{{count}} cambio ya no encaja en el texto del prompt",
+        "unfit_other": "{{count}} cambios ya no encajan en el texto del prompt",
+        "use": "Usar este prompt",
+        "viewHint": "Revísalo en la vista del prompt: cámbialo ahí o dímelo aquí, y luego pulsa Usar este prompt. Se guarda en tus prompts cuando lo hagas.",
+        "wrote_many": "Escribí un prompt nuevo · {{count}} palabras",
+        "wrote_one": "Escribí un prompt nuevo · {{count}} palabra",
+        "wrote_other": "Escribí un prompt nuevo · {{count}} palabras"
+      },
+      "showInAgent": "Ver en el agente"
+    },
+    "askLabel": "Mensaje para DocsGPT",
+    "askPlaceholder": "Pide un cambio…",
+    "build": "Construir",
+    "changeModel": "Cambiar modelo",
+    "counts": {
+      "agents_many": "{{count}} agentes",
+      "agents_one": "{{count}} agente",
+      "agents_other": "{{count}} agentes",
+      "models_many": "{{count}} modelos",
+      "models_one": "{{count}} modelo",
+      "models_other": "{{count}} modelos",
+      "prompts_many": "{{count}} prompts",
+      "prompts_one": "{{count}} prompt",
+      "prompts_other": "{{count}} prompts",
+      "sources_many": "{{count}} fuentes de conocimiento",
+      "sources_one": "{{count}} fuente de conocimiento",
+      "sources_other": "{{count}} fuentes de conocimiento",
+      "tools_many": "{{count}} herramientas",
+      "tools_one": "{{count}} herramienta",
+      "tools_other": "{{count}} herramientas"
+    },
+    "drafted": "Redactado",
+    "droppedTitle": "Se dejó fuera",
+    "errors": {
+      "auth": {
+        "description": "Tu sesión terminó, así que DocsGPT no pudo redactar. Vuelve a iniciar sesión y envía tu mensaje de nuevo.",
+        "title": "Has cerrado sesión"
+      },
+      "bad_request": {
+        "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo.",
+        "startOver": "DocsGPT no pudo aceptar esta conversación. Lo que has redactado se mantiene.",
+        "title": "No se pudo enviar"
+      },
+      "disabled": {
+        "description": "Un administrador desactivó la redacción con DocsGPT en esta instancia.",
+        "title": "La redacción está desactivada"
+      },
+      "empty_message": {
+        "description": "Tu mensaje no tiene texto que DocsGPT pueda leer. Vuelve a escribirlo y envíalo.",
+        "title": "No hay nada que enviar"
+      },
+      "invalid_output": {
+        "description": "No se pudo usar la respuesta del modelo. El formulario no ha cambiado.",
+        "title": "El borrador no salió bien"
+      },
+      "model_auth": {
+        "description": "El proveedor rechazó la clave de API de {{model}}. El formulario no ha cambiado.",
+        "descriptionNoModel": "El proveedor rechazó la clave de API del modelo de tareas. El formulario no ha cambiado.",
+        "fix": "Cambiar el modelo de tareas",
+        "title": "El modelo de tareas no puede ejecutarse"
+      },
+      "model_error": {
+        "description": "Algo salió mal al redactar. El formulario no ha cambiado.",
+        "title": "El modelo no respondió"
+      },
+      "no_model": {
+        "description": "Elige un modelo de tareas en Ajustes › General y vuelve a intentarlo.",
+        "title": "No hay modelo para redactar"
+      },
+      "prompt_too_long": {
+        "description": "DocsGPT redacta con prompts de hasta {{limit, number}} caracteres. Acórtalo y vuelve a enviar tu mensaje.",
+        "title": "El prompt es demasiado largo"
+      },
+      "quota": {
+        "description": "Has agotado tu cuota por ahora. La redacción volverá a funcionar cuando se restablezca.",
+        "title": "Límite de uso alcanzado"
+      },
+      "rate_limited": {
+        "description": "Espera un momento.",
+        "title": "Demasiadas solicitudes"
+      },
+      "request_invalid": {
+        "description": "No se pudo leer la solicitud. Recarga la página y vuelve a intentarlo.",
+        "title": "No se pudo enviar"
+      }
+    },
+    "filled_many": "Se rellenaron {{count}} campos",
+    "filled_one": "Se rellenó {{count}} campo",
+    "filled_other": "Se rellenaron {{count}} campos",
+    "footer": "Usa {{model}} · puede leer tus agentes, conocimiento, herramientas y prompts.",
+    "footerInsights": "Usa {{model}} · puede leer tus agentes, conocimiento, herramientas, prompts y la Información de este agente.",
+    "footerInsightsNoModel": "Puede leer tus agentes, conocimiento, herramientas, prompts y la Información de este agente.",
+    "footerNoModel": "Puede leer tus agentes, conocimiento, herramientas y prompts.",
+    "footerPrompt": "Usa {{model}} · solo lee este prompt.",
+    "footerPromptAgentsNoModel_many": "Lee este prompt y los {{formatted}} agentes que lo usan.",
+    "footerPromptAgentsNoModel_one": "Lee este prompt y el agente que lo usa.",
+    "footerPromptAgentsNoModel_other": "Lee este prompt y los {{formatted}} agentes que lo usan.",
+    "footerPromptAgents_many": "Usa {{model}} · lee este prompt y los {{formatted}} agentes que lo usan.",
+    "footerPromptAgents_one": "Usa {{model}} · lee este prompt y el agente que lo usa.",
+    "footerPromptAgents_other": "Usa {{model}} · lee este prompt y los {{formatted}} agentes que lo usan.",
+    "footerPromptNoModel": "Solo lee este prompt.",
+    "full": {
+      "description": "Una conversación de borrador no puede ser más larga. Lo que has redactado se mantiene.",
+      "title": "Esta conversación está llena"
+    },
+    "improve": "Mejorar",
+    "lookedAtWorkspace": "Revisó tu espacio de trabajo",
+    "lookedAtWorkspaceCounts": "Revisó tu espacio de trabajo: {{counts}}",
+    "prompt": {
+      "accept": "Aceptar",
+      "acceptAll": "Aceptar todo",
+      "acceptChange": "Aceptar el cambio {{number}}",
+      "accepted": "Aceptado",
+      "addedText": "Añadido: ",
+      "assumptionsTitle": "Lo que supuse",
+      "backToDrafter": "Volver a DocsGPT",
+      "changeAssumption": "Cambiar",
+      "changeAssumptionLabel": "Cambiar: {{assumption}}",
+      "changeAssumptionPrefill": "Sobre «{{assumption}}»: ",
+      "checks": {
+        "boundaries_removed": "Ya no está la sección Boundaries. Sin ella, el agente podría seguir instrucciones ocultas en documentos o resultados de herramientas.",
+        "citations_removed": "Ya no está la variable de reglas de citas (source.citation_rules), así que las respuestas dejarán de citar fuentes como [1], [2].",
+        "to_persona": "Esto quita todas las variables de plantilla, así que DocsGPT tratará el prompt como texto sin formato y le añadirá sus propias secciones: la fecha, las reglas de respuesta, las citas, el formato y los límites.",
+        "to_template": "Esto añade variables de plantilla, así que DocsGPT usará el prompt tal cual y dejará de añadir sus propias secciones: la fecha, las reglas de respuesta, las citas, el formato y los límites."
+      },
+      "discard": "Descartar",
+      "improvePlaceholder": "Di qué cambiar, p. ej. que no dé precios…",
+      "introImprove": "Puedo revisar este prompt o cambiar algo concreto. No se guardará nada hasta que guardes.",
+      "introImproveUsedBy_many": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
+      "introImproveUsedBy_one": "Puedo revisar este prompt o cambiar algo concreto. Lo usa {{formatted}} agente, así que un cambio guardado también le llega.",
+      "introImproveUsedBy_other": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
+      "introWrite": "¿Para qué es este prompt? Elige un punto de partida o descríbelo, y te preguntaré lo que necesito antes de escribir. No se guardará nada hasta que guardes.",
+      "nextTitle": "También podrías",
+      "readAndSave": "Léelo en el editor y luego guárdalo o dime qué cambiar.",
+      "reject": "Rechazar",
+      "rejectChange": "Rechazar el cambio {{number}}",
+      "rejected": "Rechazado",
+      "removedText": "Eliminado: ",
+      "review": {
+        "allPassed_many": "Se superan las {{count}} comprobaciones",
+        "allPassed_one": "Se supera la comprobación",
+        "allPassed_other": "Se superan las {{count}} comprobaciones",
+        "change": "Cambio {{number}}",
+        "changeLabel": "Mostrar el cambio {{number}} en el editor",
+        "checks": {
+          "agents_fit": "Encaja con sus agentes",
+          "audience": "A quién atiende",
+          "builtin_lines": "Líneas que añade DocsGPT",
+          "builtin_rules": "Las reglas propias de DocsGPT",
+          "hand_off": "Derivación",
+          "placeholders": "Sin marcadores pendientes",
+          "scope": "Alcance y temas vetados",
+          "tone": "Tono y extensión",
+          "unknowns": "Cuando no sabe algo"
+        },
+        "openAgent": "Abrir {{name}}",
+        "passed_many": "{{count}} comprobaciones superadas",
+        "passed_one": "{{count}} comprobación superada",
+        "passed_other": "{{count}} comprobaciones superadas",
+        "toFix": "Por corregir",
+        "worthALook": "Vale la pena revisar"
+      },
+      "reviewLabel": "Cambios propuestos",
+      "reviewOneByOne": "Revisar uno a uno",
+      "savePrompt": "Guardar prompt",
+      "skipMessage": "Redáctalo con lo que sabes.",
+      "suggestions": {
+        "clearer": "Hazlo más claro y breve",
+        "review": "Revísalo",
+        "reviewDescription": "A quién atiende, alcance, derivaciones y tono, y lo que choca con las instrucciones propias de DocsGPT",
+        "unsure": "Añade qué hacer cuando no sepa algo"
+      },
+      "undoChoice": "Deshacer",
+      "undoChoiceLabel": "Deshacer tu elección en el cambio {{number}}",
+      "warningsTitle": "Revisa antes de guardar",
+      "write": "Escribir",
+      "writePlaceholder": "Describe para qué es y quién lo usará…"
+    },
+    "readInsights_many": "Leyó la Información: {{formatted}} conversaciones, últimos {{days}} días",
+    "readInsights_one": "Leyó la Información: {{formatted}} conversación, últimos {{days}} días",
+    "readInsights_other": "Leyó la Información: {{formatted}} conversaciones, últimos {{days}} días",
+    "readQuestions_many": "Leyó {{count}} preguntas de ejemplo",
+    "readQuestions_one": "Leyó {{count}} pregunta de ejemplo",
+    "readQuestions_other": "Leyó {{count}} preguntas de ejemplo",
+    "retry": "Reintentar",
+    "send": "Enviar",
+    "skipQuestions": "Omitir y redactar",
+    "startOver": "Empezar de nuevo",
+    "starters": {
+      "helpdesk": {
+        "description": "Preguntas de RR. HH., TI y políticas de tu equipo",
+        "title": "Mesa de ayuda interna"
+      },
+      "research": {
+        "description": "Busca en tus documentos y los cita",
+        "title": "Asistente de investigación"
+      },
+      "website": {
+        "description": "Responde a visitantes y deriva si no está seguro",
+        "title": "Chat web para clientes"
+      }
+    },
+    "steps": {
+      "drafting": "Redactando…",
+      "reading": "Revisando tu espacio de trabajo…",
+      "reviewing": "Revisando el prompt…",
+      "thinking": "Pensando…"
+    },
+    "stillWaiting": "Aún esperando al modelo. Los modelos lentos pueden tardar unos minutos; Detener termina el turno.",
+    "stop": "Detener",
+    "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado.",
+    "suggestionsLabel": "Formas de empezar",
+    "title": "Redactar con DocsGPT",
+    "topics": {
+      "add_many": "Añadir {{formatted}} temas",
+      "add_one": "Añadir {{formatted}} tema",
+      "add_other": "Añadir {{formatted}} temas",
+      "discard": "Descartar",
+      "errors": {
+        "invalid_output": "No se pudo usar la respuesta del modelo. No se añadió ningún tema.",
+        "model_error": "Algo salió mal al sugerir temas. No se añadió ningún tema."
+      },
+      "estimate": "Estimación",
+      "estimateHint": "Una estimación del modelo de redacción: no se pudo medir con las preguntas.",
+      "fewQuestions_many": "Encaja en menos de una de las {{formatted}} preguntas con las que se probó, así que empieza sin marcar.",
+      "fewQuestions_one": "Encaja en menos de la {{formatted}} pregunta con la que se probó, así que empieza sin marcar.",
+      "fewQuestions_other": "Encaja en menos de una de las {{formatted}} preguntas con las que se probó, así que empieza sin marcar.",
+      "hold_many": "Las sugerencias a partir de conversaciones aparecen cuando este agente tiene {{needed}} conversaciones recientes ({{formatted}} por ahora).",
+      "hold_one": "Las sugerencias a partir de conversaciones aparecen cuando este agente tiene {{needed}} conversación reciente ({{formatted}} por ahora).",
+      "hold_other": "Las sugerencias a partir de conversaciones aparecen cuando este agente tiene {{needed}} conversaciones recientes ({{formatted}} por ahora).",
+      "leftOutItem": "<name>{{name}}</name>: {{reason}}",
+      "leftOutTitle": "No sugeridos",
+      "none": "Nada que añadir: tus temas y carpetas ya cubren las preguntas recientes.",
+      "pushesOut_many": "Al añadirlos, {{count}} carpetas quedan fuera y sus preguntas van a Ninguno de estos temas: {{names}}",
+      "pushesOut_one": "Al añadirlos, {{count}} carpeta queda fuera y sus preguntas van a Ninguno de estos temas: {{names}}",
+      "pushesOut_other": "Al añadirlos, {{count}} carpetas quedan fuera y sus preguntas van a Ninguno de estos temas: {{names}}",
+      "read_many": "Se leyeron {{formatted}} preguntas de los últimos {{days}} días",
+      "read_one": "Se leyó {{formatted}} pregunta de los últimos {{days}} días",
+      "read_other": "Se leyeron {{formatted}} preguntas de los últimos {{days}} días",
+      "reading": "Leyendo preguntas recientes…",
+      "request": "Sugiere temas a partir de las conversaciones recientes de este agente.",
+      "share": "{{share}} de las preguntas",
+      "similar": "Parecido a \"{{name}}\".",
+      "statusFailed": "No se pudo comprobar si hay sugerencias a partir de conversaciones.",
+      "suggest": "Sugerir a partir de conversaciones",
+      "taken": "Ya es un tema",
+      "tooManyOnePick_many": "Solo caben {{formatted}} temas más que clasifican preguntas. Desmarca algunos antes de añadir.",
+      "tooManyOnePick_one": "Solo cabe {{formatted}} tema más que clasifica preguntas. Desmarca algunos antes de añadir.",
+      "tooManyOnePick_other": "Solo caben {{formatted}} temas más que clasifican preguntas. Desmarca algunos antes de añadir.",
+      "tooManyOverlap_many": "Solo caben {{formatted}} temas más que pueden solaparse. Desmarca algunos antes de añadir.",
+      "tooManyOverlap_one": "Solo cabe {{formatted}} tema más que puede solaparse. Desmarca algunos antes de añadir.",
+      "tooManyOverlap_other": "Solo caben {{formatted}} temas más que pueden solaparse. Desmarca algunos antes de añadir.",
+      "triedAfter_many": "Se probaron las sugerencias con {{formatted}} preguntas: {{after}} no encajan en ningún tema.",
+      "triedAfter_one": "Se probaron las sugerencias con {{formatted}} pregunta: {{after}} no encaja en ningún tema.",
+      "triedAfter_other": "Se probaron las sugerencias con {{formatted}} preguntas: {{after}} no encajan en ningún tema.",
+      "tried_many": "Se probaron las sugerencias con {{formatted}} preguntas: {{after}} no encajan en ningún tema, antes {{before}}.",
+      "tried_one": "Se probaron las sugerencias con {{formatted}} pregunta: {{after}} no encaja en ningún tema, antes {{before}}.",
+      "tried_other": "Se probaron las sugerencias con {{formatted}} preguntas: {{after}} no encajan en ningún tema, antes {{before}}."
+    },
+    "undoField": "Deshacer {{field}}",
+    "undone": {
+      "count_many": "{{count}} deshechos",
+      "count_one": "{{count}} deshecho",
+      "count_other": "{{count}} deshechos",
+      "empty": "Deshecho, vuelve a estar vacío",
+      "previous": "Deshecho, vuelve al valor anterior"
+    }
+  },
   "emailUs": "Envíanos un correo",
   "errorBoundary": {
     "message": "Algo salió mal al mostrar este contenido.",
@@ -2000,24 +2402,14 @@
       "title": "Añadir token JWT"
     },
     "prompts": {
-      "addDescription": "Agrega tu prompt personalizado y guárdalo en DocsGPT",
-      "addExamplePlaceholder": "Por favor, resume este texto:",
-      "addPrompt": "Agregar Prompt",
-      "cancel": "Cancelar",
+      "addPrompt": "Agregar prompt",
       "deleteConfirmation": "¿Eliminar \"{{name}}\"?",
       "duplicate": "Duplicar",
       "duplicateDescription": "Estás editando una copia de \"{{name}}\"; guárdala como tu propio prompt",
-      "duplicatePrompt": "Duplicar Prompt",
-      "editDescription": "Edita tu prompt personalizado y guárdalo en DocsGPT",
-      "editPrompt": "Editar Prompt",
-      "learnAboutPrompts": "Aprende sobre los Prompts →",
+      "duplicatePrompt": "Duplicar prompt",
       "nameExists": "El nombre ya existe",
-      "placeholderText": "Escribe tu texto de prompt aquí...",
-      "promptName": "Nombre del Prompt",
-      "promptText": "Texto del Prompt",
-      "promptTypePrivate": "privado",
-      "promptTypePublic": "público",
-      "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
+      "promptName": "Nombre del prompt",
+      "promptText": "Texto del prompt",
       "save": "Guardar",
       "systemVariableOptions": {
         "artifactsLookup": "Metadatos de artefactos por id",
@@ -2032,14 +2424,12 @@
         "systemTimestamp": "Marca de tiempo ISO 8601",
         "systemUserId": "ID del usuario actual"
       },
-      "systemVariables": "Variables del sistema",
       "systemVariablesDropdownLabel": "Variables del sistema",
+      "templateBroken": "Esta plantilla no funcionará: una etiqueta o una variable no está cerrada, o etiquetas de bloque como {% if %} y {% endif %} no se emparejan. Los chats con ella fallarían, así que corrígela antes de guardar.",
       "toolVariables": "Variables de herramientas",
       "variablesDescription": "Haz clic para insertar en el prompt",
       "variablesLabel": "Variables",
-      "variablesSubtext": "Haz clic para insertar en el prompt",
-      "viewDescription": "Los prompts integrados no se pueden editar. Duplícalo para crear tu propia copia editable.",
-      "viewPrompt": "Ver Prompt"
+      "viewDescription": "Los prompts integrados no se pueden editar. Duplícalo para crear tu propia copia editable."
     },
     "saveKey": {
       "apiKeyLabel": "Clave de API",
@@ -2346,7 +2736,41 @@
     "range": "{{from}}–{{to}} de {{total}}"
   },
   "prompts": {
+    "checks": {
+      "boundariesMissing": "No tiene la sección Boundaries, así que el agente podría seguir instrucciones ocultas en documentos o en resultados de herramientas",
+      "citationsMissing": "No usa <code>{{variable}}</code>, así que las reglas de citas [1], [2] de DocsGPT no están en el prompt",
+      "onLine": "{{check}} (línea {{line}})",
+      "placeholder": "Queda un marcador: “{{text}}”",
+      "repeatsBuiltin": {
+        "citations": "DocsGPT ya le indica al agente cómo citar sus fuentes",
+        "data_guard": "DocsGPT ya le indica al agente que lea los documentos como datos, no como instrucciones",
+        "date": "DocsGPT ya le da la fecha al agente",
+        "formatting": "DocsGPT ya le indica al agente cómo dar formato a las respuestas",
+        "other": "DocsGPT ya añade esta línea"
+      },
+      "templateInvalid": "La plantilla no se puede analizar",
+      "toolVariables_many": "{{variables}} ejecutan sus herramientas antes de cada mensaje",
+      "toolVariables_one": "{{variables}} ejecuta su herramienta antes de cada mensaje",
+      "toolVariables_other": "{{variables}} ejecutan sus herramientas antes de cada mensaje"
+    },
+    "checksHint": {
+      "count_many": "{{count}} cosas por revisar",
+      "count_one": "{{count}} cosa por revisar",
+      "count_other": "{{count}} cosas por revisar",
+      "review": "Revisar todo el prompt con DocsGPT"
+    },
     "textAriaLabel": "Texto del prompt"
+  },
+  "questions": {
+    "answeredInMessage": "Respondidas en tu mensaje",
+    "justAnswer": "Solo responde",
+    "notAnswered": "Sin responder",
+    "sendAnswers": "Enviar respuestas",
+    "skipped": "Omitida",
+    "somethingElse": "Otra cosa…",
+    "somethingElseLabel": "Tu respuesta",
+    "somethingElsePlaceholder": "Escribe tu propia respuesta",
+    "typeAnswer": "O escribe tu respuesta…"
   },
   "retry": "Reintentar",
   "settings": {
@@ -3153,6 +3577,7 @@
       "modalSubtitle": "Conecta cualquier endpoint compatible con OpenAI (Mistral, Together, vLLM, etc.).",
       "modelsGroup": {
         "builtin": "Integrados",
+        "owner": "Modelos del propietario",
         "user": "Mis modelos"
       },
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} modelos",
@@ -3248,9 +3673,20 @@
       "none": "Ninguno",
       "sections": {
         "appearance": "Apariencia",
-        "dangerZone": "Zona de peligro"
+        "dangerZone": "Zona de peligro",
+        "models": "Modelos"
       },
-      "subtitle": "Elige el aspecto de DocsGPT y el idioma que usa.",
+      "subtitle": "Elige el aspecto de DocsGPT, el idioma que usa y el modelo que ejecuta sus propias tareas.",
+      "taskModel": "Modelo de tareas",
+      "taskModelDescription": "Redacta formularios, crea grafos de conocimiento y revisa monitores. Los chats usan el modelo del agente.",
+      "taskModelFailed": "{{model}} no pudo ejecutar tu última tarea: su proveedor rechazó la clave de API. Elige otro modelo o pide a un administrador que revise la clave.",
+      "taskModelFailedItem": "· clave rechazada",
+      "taskModelInstanceDefault": "Usar el valor predeterminado de la instancia ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Usar el valor predeterminado de la instancia",
+      "taskModelLoadError": "No se pudo cargar el modelo de tareas.",
+      "taskModelSaveFailed": "No se pudo guardar el modelo de tareas. Inténtalo de nuevo.",
+      "taskModelUnavailable": "Tu modelo de tareas ya no puede ejecutarse (se desactivó o se eliminó), así que se usa el valor predeterminado de la instancia. Si el modelo vuelve, se usará de nuevo; elige una opción aquí para reemplazarlo.",
+      "taskModelUnavailableValue": "Modelo no disponible",
       "theme": "Tema",
       "themeDescription": "Interfaz clara u oscura.",
       "unlimited": "Ilimitado"
@@ -3462,6 +3898,10 @@
       "chatPromptLabel": "Prompt para los chats sin agente",
       "chatPromptOff": "Usar en chats sin agente",
       "chatPromptOn": "Se usa en chats sin agente",
+      "conflict": {
+        "description": "Tus cambios no pueden reemplazar la versión que guardó. Guárdalos como un prompt nuevo, o sal y vuelve a abrir este para ver su versión.",
+        "title": "Otra persona cambió este prompt"
+      },
       "delete": "Eliminar",
       "deleteFailed": "No se pudo eliminar este prompt.",
       "deleteInChats": "Lo usan tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
@@ -3474,6 +3914,8 @@
       "duplicate": "Duplicar",
       "edit": "Editar",
       "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión.",
+      "editConflictLeave": "Otra persona cambió este prompt. Guarda tus cambios como copia.",
+      "editNamed": "Editar {{name}}",
       "filters": {
         "all": "Todos"
       },
@@ -3482,7 +3924,9 @@
         "shared": "Compartidos"
       },
       "label": "Prompts",
+      "leaveWithoutSaving": "Salir sin guardar",
       "loadError": "No se pudieron cargar tus prompts.",
+      "loadPromptError": "No se pudo cargar este prompt.",
       "manage": "Ir a Prompts",
       "noPromptsFound": "No se encontraron prompts",
       "presets": {
@@ -3490,6 +3934,14 @@
         "default": "Responde a partir de tus documentos y los cita. Si no cubren la pregunta, lo dice y responde con conocimiento general.",
         "strict": "Responde solo a partir de tus documentos, herramientas y el chat. Dice qué falta en lugar de suponer."
       },
+      "saveAndLeave": "Guardar y salir",
+      "saveAsCopy": "Guardar como copia",
+      "saveBlocked": {
+        "content": "Escribe el texto del prompt para guardarlo.",
+        "name": "Ponle un nombre al prompt para guardarlo.",
+        "review": "Termina antes la revisión: «Aceptar todo» o «Descartar» en el panel."
+      },
+      "saveCopyAndLeave": "Guardar como copia y salir",
       "saveFailed": "No se pudo guardar este prompt.",
       "searchPlaceholder": "Buscar prompts…",
       "sections": {
@@ -3500,8 +3952,10 @@
       "select": "Selecciona un prompt",
       "shareWithTeam": "Compartir con el equipo",
       "subtitle": "Los prompts del sistema indican al modelo cómo responder. El que elijas se usa en los chats sin agente; los agentes eligen el suyo.",
+      "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
       "useInChats": "Usar {{name}} en los chats",
-      "view": "Ver"
+      "view": "Ver",
+      "viewNamed": "Ver {{name}}"
     },
     "sources": {
       "actions": "Acciones",

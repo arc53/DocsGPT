@@ -75,6 +75,25 @@ describe('SectionHeader', () => {
     expect(html).not.toContain('items-start');
   });
 
+  it('wraps its actions when they do not fit, instead of running past the edge', () => {
+    const html = renderToStaticMarkup(
+      <SectionHeader
+        title="Topics"
+        actions={
+          <>
+            <button type="button">Add topic</button>
+            <button type="button">Suggest from conversations</button>
+          </>
+        }
+      />,
+    );
+    const box = /<div class="([^"]*)"><button/.exec(html)![1].split(' ');
+    expect(box).toEqual(
+      expect.arrayContaining(['flex', 'max-w-full', 'min-w-0', 'flex-wrap']),
+    );
+    expect(box).not.toContain('shrink-0');
+  });
+
   it('draws a count after the title: muted, normal weight, tabular, not uppercased', () => {
     const html = renderToStaticMarkup(
       <SectionHeader size="sm" title="Members" count={7} />,

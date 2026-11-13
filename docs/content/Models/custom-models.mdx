@@ -8,7 +8,7 @@ import { Callout } from 'nextra/components'
 
 # Custom Models
 
-**Settings → Custom Models** lets any signed-in user add a model from an OpenAI-compatible endpoint (Mistral, Together, a hosted vLLM, and so on) with their own API key. The model is private to that user: it appears in their model pickers next to the models the operator configured, and nobody else sees it.
+**Settings → Custom Models** lets any signed-in user add a model from an OpenAI-compatible endpoint (Mistral, Together, a hosted vLLM, and so on) with their own API key. The model is private to that user: it appears in their model pickers next to the models the operator configured, and nobody else sees it, except a team editor of one of their workflows (see below).
 
 Operators who want a model available to everyone configure it on the server instead, with a [cloud provider key](/Models/cloud-providers), `OPENAI_BASE_URL`, or a model YAML in [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
 
@@ -53,7 +53,7 @@ An agent that uses your custom model keeps using it for everyone who can run the
 The same goes for a workflow **AI Agent** node set to your custom model: whoever runs the workflow agent, the node calls your endpoint with your key, and the usage counts toward the agent. A model set on a node is looked up in the workflow owner's account, so:
 
 - If you delete the model, or its key can no longer be decrypted, the nodes set to it fail with *Model '…' is not available* until you pick another model for them. They don't fall back to the default model. Disabling the model only hides it from the pickers; the nodes keep using it.
-- A team editor of your workflow can set a node to one of your custom models, but not to one of their own: the save is refused, because you don't have that model.
+- A team editor of your workflow picks a node's model from your custom models, listed under **Owner's Models** in place of their own. The list their browser gets carries each model's name, provider, context window and whether it supports structured output, not its endpoint, key or other settings. The picker shows the name and provider. The context window feeds the workflow's context-limit note, and the structured-output flag the node's **Advanced settings** warning when the picked model can't return structured output. An editor's [access token](/API/personal-access-tokens#scopes) gets this list only with `models:read`. A node set to one of their own custom models can't run, because you don't have that model, so the save is refused.
 - A node without a model of its own runs on the agent's model, looked up as for the agent itself.
 
 To edit or delete a model, open the menu on its card in **Settings → Custom Models**. A model disabled through the API (`"enabled": false`) shows a **Disabled** badge and is hidden from the pickers.

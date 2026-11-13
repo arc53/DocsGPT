@@ -190,3 +190,76 @@ class TestBoundedErrorText:
 
     def test_long_text_is_capped(self):
         assert len(bounded_error_text(ValueError("x " * 10_000))) <= 2_000
+
+
+class _StatusError(Exception):
+    """A provider error carrying an HTTP status, as the openai and anthropic SDKs raise."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+@pytest.mark.unit
+class TestHttpStatus:
+    def test_reads_each_place_a_provider_sdk_puts_the_status(self):
+        from types import SimpleNamespace
+
+        from docsgpt.error import http_status
+
+        google = RuntimeError("google")
+        google.code = 429
+        response = RuntimeError("httpx")
+        response.response = SimpleNamespace(status_code=502)
+        boto = RuntimeError("boto")
+        boto.response = {"ResponseMetadata": {"HTTPStatusCode": 403}}
+        assert http_status(_StatusError("openai", 401)) == 401
+        assert (http_status(google), http_status(response), http_status(boto)) == (429, 502, 403)
+
+    def test_ignores_what_is_no_http_status(self):
+        from docsgpt.error import http_status
+
+        flagged = RuntimeError("flag")
+        flagged.status_code = True
+        coded = RuntimeError("errno-like")
+        coded.code = 2
+        assert http_status(flagged) is None and http_status(coded) is None
+        assert http_status(RuntimeError("plain")) is None
+
+    def test_follows_the_cause_unless_told_not_to(self):
+        from docsgpt.error import http_status
+
+        try:
+            try:
+                raise _StatusError("inner", 503)
+            except _StatusError as inner:
+                raise RuntimeError("outer") from inner
+        except RuntimeError as outer:
+            assert http_status(outer) == 503
+            assert http_status(outer, follow_causes=False) is None
+
+
+@pytest.mark.unit
+class TestProviderFailureText:
+    def test_a_refused_key_is_an_auth_failure(self):
+        from docsgpt.error import is_auth_failure
+
+        assert is_auth_failure(_StatusError("Invalid API key", 401))
+        assert is_auth_failure(_StatusError("forbidden", 403))
+        assert not is_auth_failure(_StatusError("timeout", 524))
+        assert is_auth_failure(RuntimeError("The api_key client option must be set"))
+
+    def test_an_auth_failure_logs_only_its_type_and_status(self):
+        from docsgpt.error import provider_failure_text
+
+        body = "Error code: 401 - {'error': {'message': 'Invalid API key provided: sk-abc123', 'code': 'invalid_api_key'}}"
+        text = provider_failure_text(_StatusError(body, 401))
+        assert text == "_StatusError (HTTP 401)"
+
+    def test_another_failure_keeps_its_message_cut_short(self):
+        from docsgpt.error import MAX_PROVIDER_FAILURE_CHARS, provider_failure_text
+
+        text = provider_failure_text(_StatusError("Error code: 524 - " + "{'detail': 'timeout'} " * 200, 524))
+        assert text.startswith("_StatusError: Error code: 524 - {'detail'")
+        assert len(text) <= MAX_PROVIDER_FAILURE_CHARS
+        assert provider_failure_text(RuntimeError("boom")) == "RuntimeError: boom"

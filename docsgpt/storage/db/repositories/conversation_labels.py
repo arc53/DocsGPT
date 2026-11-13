@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.analytics.derive import NEGATIVE_REACTIONS
+from docsgpt.analytics.derive import GAP_TYPES, NEGATIVE_REACTIONS
 from docsgpt.analytics.states import (
     COMPRESSION_SUMMARY_MARKER,
     COMPRESSION_SUMMARY_PROMPT,
@@ -74,6 +74,9 @@ def _tags_hash(config: str) -> str:
 
 
 _TAGS_HASH = _tags_hash("ag.config")
+
+#: How many recent messages ``agent_questions`` reads for each question it returns, before dropping repeats.
+QUESTION_SCAN = 4
 
 
 #: ``states.WHITESPACE`` as the inside of a regex bracket expression, each character an ``\uXXXX`` escape, so blank
@@ -411,6 +414,10 @@ _GAP_KEYS = {
              "COALESCE(NULLIF(m.sources->0->>'title', ''), NULLIF(m.sources->0->>'source', ''))"),
 }
 GAP_GROUPS = ("topic", "source", "page")
+#: Groups (and an agent's topic and gap type pairs) with fewer expected gaps are left out: they would show as 0.
+MIN_GROUP_GAPS = 0.5
+#: The gap types an agent's gap summary sums: every one but ``other``, which names no fix.
+SUMMARY_GAP_TYPES = tuple(gap for gap in GAP_TYPES if gap != "other")
 
 
 def _dump(value: Any) -> str:
@@ -1064,24 +1071,34 @@ class ConversationLabelsRepository:
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
-    def _gaps_cte(self, group_by: str, scope: Scope, schema_hash: str, params: Dict[str, Any]) -> str:
+    def _gaps_cte(self, group_by: str, scope: Scope, schema_hash: str, params: Dict[str, Any],
+                  gap_type: str = "docs missing") -> str:
         """SQL: one row per gap turn and group in ``[:prev_start, :end]``, with its share of the group.
 
         Columns: ``key``, ``name``, ``source_id`` (the turn's first stored source; ``NULL`` by topic),
-        ``message_id``, ``conversation_id``, ``occurred_at``, ``model_version``, ``current`` (in
-        ``[:start, :end]``), ``gap`` (the turn's ``docs missing`` probability), ``weight`` (its share of the group:
-        its effective-topic probability, else 1), ``p`` (``gap * weight``) and ``usual`` (the group is the turn's
-        most likely one).
+        ``message_id``, ``conversation_id``, ``occurred_at``, ``model_version``, ``probabilities`` (every gap
+        type's), ``current`` (in ``[:start, :end]``), ``gap`` (the turn's probability of ``gap_type``), ``weight``
+        (its share of the group: its effective-topic probability, else 1), ``p`` (``gap * weight``) and ``usual``
+        (the group is the turn's most likely one).
+
+        Args:
+            group_by: ``topic``, ``source``, ``page``, or ``all`` (one group, key ``NULL``, of every turn).
+            scope: Whose labels.
+            schema_hash: The running label schema.
+            params: The query's parameters, extended in place.
+            gap_type: The gap type ``gap`` and ``p`` read.
         """
         params["schema_hash"] = schema_hash
+        params["gap_type"] = gap_type
         where = (f"{scope.labels('g', params)} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash"
                  " AND g.occurred_at >= :prev_start AND g.occurred_at <= :end")
-        common = ("g.message_id, g.conversation_id, g.occurred_at, g.model_version, g.occurred_at >= :start AS current,"
-                  " (g.probabilities->>'docs missing')::float8 AS gap")
+        gap = "COALESCE((g.probabilities->>:gap_type)::float8, 0)"
+        common = ("g.message_id, g.conversation_id, g.occurred_at, g.model_version, g.probabilities,"
+                  f" g.occurred_at >= :start AS current, {gap} AS gap")
         if group_by == "topic":
             return f"""
                 SELECT t.key, t.key AS name, NULL::text AS source_id, {common}, t.value::float8 AS weight,
-                       (g.probabilities->>'docs missing')::float8 * t.value::float8 AS p, te.top = t.key AS usual
+                       {gap} * t.value::float8 AS p, te.top = t.key AS usual
                 FROM conversation_labels g
                 JOIN conversation_labels te
                     ON te.message_id = g.message_id AND te.label = 'topic_effective'
@@ -1089,11 +1106,18 @@ class ConversationLabelsRepository:
                 CROSS JOIN LATERAL jsonb_each_text(te.probabilities) AS t(key, value)
                 WHERE {where}
             """
+        if group_by == "all":
+            return f"""
+                SELECT NULL::text AS key, NULL::text AS name, NULL::text AS source_id, {common},
+                       1.0::float8 AS weight, {gap} AS p, true AS usual
+                FROM conversation_labels g
+                WHERE {where}
+            """
         key, name = _GAP_KEYS[group_by]
         return f"""
             SELECT {key} AS key, {name} AS name, {_GAP_KEYS["source"][0]} AS source_id, {common},
                    1.0::float8 AS weight,
-                   (g.probabilities->>'docs missing')::float8 AS p, true AS usual
+                   {gap} AS p, true AS usual
             FROM conversation_labels g
             LEFT JOIN conversation_messages m ON m.id = g.message_id
             WHERE {where}
@@ -1140,6 +1164,111 @@ class ConversationLabelsRepository:
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
+    def gap_type_groups(
+        self, scope: Scope, schema_hash: str, start, end, previous_start, limit: int, min_expected: float,
+        by_topic: bool,
+    ) -> List[dict]:
+        """An agent's gap summary: expected gaps per topic and gap type in ``[start, end]``, the most first, with
+        the window before.
+
+        Every gap type of ``SUMMARY_GAP_TYPES`` is summed, weighted by the turn's effective-topic share when
+        ``by_topic``, under the same scope as :meth:`gap_groups`.
+
+        Args:
+            scope: Whose labels.
+            schema_hash: The running label schema.
+            start: The window's start.
+            end: The window's end.
+            previous_start: Start of the window of equal length just before ``start``.
+            limit: Most rows returned.
+            min_expected: Pairs with fewer expected gaps are left out.
+            by_topic: One row per topic and gap type (the agent asks a topic question); else one per gap type.
+
+        Returns:
+            ``topic`` (``None`` without ``by_topic``), ``gap_type``, ``expected``, ``turns`` (the topic's summed
+            weights, or every labelled turn), ``previous`` and ``versions`` (the models of its rows).
+        """
+        params: Dict[str, Any] = {"start": start, "end": end, "prev_start": previous_start, "limit": int(limit),
+                                  "min_expected": float(min_expected)}
+        turns = self._gaps_cte("topic" if by_topic else "all", scope, schema_hash, params)
+        # One pass over the turns, each gap type summed in its own column; only the per-topic sums are then
+        # turned into one row per gap type, so a pair's summed weights are its topic's.
+        for i, gap_type in enumerate(SUMMARY_GAP_TYPES):
+            params[f"gt{i}"] = gap_type
+        sums = ",\n".join(
+            f"COALESCE(SUM(COALESCE((g.probabilities->>:gt{i})::float8, 0) * weight) FILTER (WHERE current), 0)"
+            f" AS e{i}, COALESCE(SUM(COALESCE((g.probabilities->>:gt{i})::float8, 0) * weight)"
+            f" FILTER (WHERE NOT current), 0) AS p{i}"
+            for i in range(len(SUMMARY_GAP_TYPES))
+        )
+        pairs = ", ".join(f"(CAST(:gt{i} AS text), s.e{i}, s.p{i})" for i in range(len(SUMMARY_GAP_TYPES)))
+        result = self._conn.execute(
+            text(
+                f"""
+                WITH g AS ({turns}),
+                s AS (
+                    SELECT key,
+                           COALESCE(SUM(weight) FILTER (WHERE current), 0) AS turns,
+                           array_agg(DISTINCT model_version) FILTER (WHERE current) AS versions,
+                           {sums}
+                    FROM g
+                    GROUP BY key
+                )
+                SELECT s.key AS topic, v.gap_type, v.expected, s.turns, v.previous, s.versions
+                FROM s
+                CROSS JOIN LATERAL (VALUES {pairs}) AS v(gap_type, expected, previous)
+                WHERE v.expected >= :min_expected
+                ORDER BY v.expected DESC, s.key NULLS LAST, v.gap_type
+                LIMIT :limit
+                """
+            ),
+            params,
+        )
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    def _count_gap_rows(self, count: str, scope: Scope, schema_hash: str, start: datetime.datetime,
+                        end: datetime.datetime, end_op: str) -> int:
+        """SQL ``count`` over the scope's ``gap_type`` rows from ``start`` to ``end``.
+
+        Args:
+            count: The aggregate, such as ``COUNT(*)``.
+            scope: Whose labels.
+            schema_hash: The running label schema.
+            start: The window's start.
+            end: The window's end.
+            end_op: ``<=`` to count rows at ``end``, ``<`` to leave them out.
+
+        Returns:
+            The count.
+        """
+        params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end}
+        where = scope.labels("g", params)
+        return int(self._conn.execute(
+            text(
+                f"""
+                SELECT {count} FROM conversation_labels g
+                WHERE {where} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash
+                  AND g.occurred_at >= :start AND g.occurred_at {end_op} :end
+                """
+            ),
+            params,
+        ).scalar() or 0)
+
+    def gap_conversations(self, scope: Scope, schema_hash: str, start: datetime.datetime,
+                          end: datetime.datetime) -> int:
+        """Conversations with a labelled turn (a ``gap_type`` row) in ``[start, end]``: those Insights analysed.
+
+        Args:
+            scope: Whose labels.
+            schema_hash: The running label schema.
+            start: The window's start.
+            end: The window's end.
+
+        Returns:
+            The count of distinct conversations.
+        """
+        return self._count_gap_rows("COUNT(DISTINCT g.conversation_id)", scope, schema_hash, start, end, "<=")
+
     def gap_labelled(self, scope: Scope, schema_hash: str, start: datetime.datetime,
                      end: datetime.datetime) -> int:
         """Labelled turns (``gap_type`` rows) in ``[start, end)``.
@@ -1156,25 +1285,18 @@ class ConversationLabelsRepository:
         Returns:
             The count of the window's ``gap_type`` rows.
         """
-        params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end}
-        where = scope.labels("g", params)
-        return int(self._conn.execute(
-            text(
-                f"""
-                SELECT COUNT(*) FROM conversation_labels g
-                WHERE {where} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash
-                  AND g.occurred_at >= :start AND g.occurred_at < :end
-                """
-            ),
-            params,
-        ).scalar() or 0)
+        return self._count_gap_rows("COUNT(*)", scope, schema_hash, start, end, "<")
 
     def gap_examples(
         self, group_by: str, scope: Scope, schema_hash: str, start, end, keys: Iterable[Optional[str]],
-        min_probability: float, per_group: int,
+        min_probability: float, per_group: int, gap_type: str = "docs missing",
     ) -> List[dict]:
         """Example questions of docs-gap groups: turns in ``[start, end]`` that are a gap at ``min_probability``
         or better, under the group they most likely belong to, the likeliest first.
+
+        Args:
+            group_by: ``topic``, ``source``, ``page`` or ``all`` (key ``None``).
+            gap_type: The gap type the turns are examples of; ``docs missing`` for the Docs gaps table.
 
         Returns:
             ``key``, ``message_id``, ``conversation_id``, ``prompt`` (its first 200 characters), ``p`` (the
@@ -1185,7 +1307,7 @@ class ConversationLabelsRepository:
         params: Dict[str, Any] = {"start": start, "end": end, "prev_start": start, "keys": named,
                                   "with_null": None in keys, "min_p": float(min_probability),
                                   "per_group": int(per_group)}
-        cte = self._gaps_cte(group_by, scope, schema_hash, params)
+        cte = self._gaps_cte(group_by, scope, schema_hash, params, gap_type)
         result = self._conn.execute(
             text(
                 f"""
@@ -1206,6 +1328,93 @@ class ConversationLabelsRepository:
                 """
             ),
             params,
+        )
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    def labelled_turns(
+        self, scope: Scope, schema_hash: str, start, end, key: str, min_probability: float, limit: int,
+        topic: Optional[str] = None,
+    ) -> List[dict]:
+        """Turns in ``[start, end]`` the Logs filter ``key`` selects (``LOG_LABELS``), the likeliest first.
+
+        The turn is the Logs row the label sits on: the answered message for a turn label, the reacting message
+        for a reaction (as :func:`log_label_exists` matches them).
+
+        Args:
+            scope: Whose labels; an agent's, so another agent's turns never show.
+            schema_hash: The running label schema.
+            start: The window's start.
+            end: The window's end.
+            key: A ``LOG_LABELS`` key.
+            min_probability: The label's least summed probability (the Logs filter's).
+            limit: Most turns returned.
+            topic: Only turns whose effective topic is this one at ``min_probability`` or better.
+
+        Returns:
+            ``message_id``, ``conversation_id``, ``prompt``, ``response`` (their first 600 characters) and ``p``.
+        """
+        side, label, options = LOG_LABELS[key]
+        column = "message_id" if side == "message" else "reply_message_id"
+        params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end,
+                                  "label_min": float(min_probability), "limit": int(limit)}
+        where = scope.labels("l", params)
+        narrowed = ""
+        if topic:
+            params["topic_name"] = topic
+            narrowed = " AND " + log_label_exists(
+                f"{TOPIC_PREFIX}{topic}", "m.id", visible_to=None if scope.agent_id else "scope_user",
+                of_agent="scope_agent" if scope.agent_id else None)
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT CAST(m.id AS text) AS message_id, CAST(m.conversation_id AS text) AS conversation_id,
+                       LEFT(m.prompt, 600) AS prompt, LEFT(m.response, 600) AS response, {_mass("l", options)} AS p
+                FROM conversation_labels l
+                JOIN conversation_messages m ON m.id = l.{column}
+                WHERE {where} AND l.label = '{label}' AND l.schema_hash = :schema_hash
+                  AND l.occurred_at >= :start AND l.occurred_at <= :end
+                  AND {_mass("l", options)} >= :label_min{narrowed}
+                ORDER BY p DESC, l.occurred_at DESC, m.id
+                LIMIT :limit
+                """
+            ),
+            params,
+        )
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    def agent_conversation_turns(self, conversation_id: str, agent_id: str, agent_key: Optional[str],
+                                 limit: int, message_id: Optional[str] = None) -> List[dict]:
+        """The first finished user messages of one conversation, when it is the agent's (by id, or by key for API
+        and widget traffic); empty otherwise.
+
+        Args:
+            conversation_id: The conversation (a UUID).
+            agent_id: The agent.
+            agent_key: Its API key; ``None`` when it has none.
+            limit: Most messages returned.
+            message_id: Only this message (a UUID), when it is one of the conversation's.
+
+        Returns:
+            ``id``, ``prompt`` and ``response`` (their first 2000 characters), in position order.
+        """
+        only = "AND m.id = CAST(:mid AS uuid)" if message_id else ""
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT CAST(m.id AS text) AS id, LEFT(m.prompt, 2000) AS prompt, LEFT(m.response, 2000) AS response
+                FROM conversations c
+                JOIN conversation_messages m ON m.conversation_id = c.id
+                WHERE c.id = CAST(:cid AS uuid)
+                  AND (c.agent_id = CAST(:agent_id AS uuid)
+                       OR (c.agent_id IS NULL AND c.api_key = :agent_key AND :agent_key <> ''))
+                  AND {_usable("m")}
+                  {only}
+                ORDER BY m.position
+                LIMIT :limit
+                """
+            ),
+            {"cid": conversation_id, "agent_id": agent_id, "agent_key": agent_key or "", "limit": int(limit),
+             **({"mid": message_id} if message_id else {})},
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
@@ -1317,3 +1526,122 @@ class ConversationLabelsRepository:
                 if isinstance(tag, dict) and tag.get("id") and tag.get("name"):
                     names[str(tag["id"])] = str(tag["name"])
         return names
+
+    # ---- an agent's recent questions (topic suggestions) ----------------------------------------------------------
+
+    @staticmethod
+    def _agent_conversations(params: Dict[str, Any], agent_id: str, agent_key: Optional[str]) -> str:
+        """SQL: a CTE body listing the agent's conversation ids, binding its parameters.
+
+        Its own conversations (``agent_id``) and, for API and widget traffic (no ``agent_id``), those asked with its
+        key, which the answer routes store as the agent row's own key. Two branches, so each runs on its index
+        (``conversations_agent_idx``, ``conversations_api_key_date_idx``); an ``OR`` across them, or a ``citext``
+        cast of ``api_key``, scans every conversation.
+        """
+        params["agent_id"] = agent_id
+        params["agent_key"] = agent_key or ""
+        return """
+            SELECT c.id FROM conversations c WHERE c.agent_id = CAST(:agent_id AS uuid)
+            UNION ALL
+            SELECT c.id FROM conversations c
+            WHERE c.agent_id IS NULL AND c.api_key = :agent_key AND :agent_key <> ''
+        """
+
+    def agent_question_counts(
+        self, agent_id: str, agent_key: Optional[str], days: int, cap: Optional[int] = None
+    ) -> Dict[str, int]:
+        """How many of an agent's conversations had a finished user message in the last ``days``.
+
+        Args:
+            agent_id: The agent.
+            agent_key: Its API key, which links its API and widget conversations; ``None`` when it has none.
+            days: The window.
+            cap: Stop counting at this many (whether there are enough is all a caller may need); None counts all.
+
+        Returns:
+            ``conversations``.
+        """
+        params: Dict[str, Any] = {"days": int(days), "cap": int(cap) if cap is not None else None}
+        conversations = self._agent_conversations(params, agent_id, agent_key)
+        row = self._conn.execute(
+            text(
+                f"""
+                WITH conv AS ({conversations})
+                SELECT COUNT(*) AS conversations FROM (
+                    SELECT 1 FROM conv
+                    WHERE EXISTS (
+                        SELECT 1 FROM conversation_messages m
+                        WHERE m.conversation_id = conv.id
+                          AND m.timestamp >= NOW() - make_interval(days => :days) AND {_usable("m")}
+                    )
+                    LIMIT :cap
+                ) counted
+                """
+            ),
+            params,
+        ).one()
+        return {"conversations": int(row.conversations or 0)}
+
+    def agent_questions(
+        self, agent_id: str, agent_key: Optional[str], days: int, limit: int, schema_hash: str
+    ) -> List[dict]:
+        """An agent's most recent distinct user questions of the last ``days``, newest first.
+
+        Only the newest ``limit * QUESTION_SCAN`` finished user messages are read, so the cost stays bounded on a
+        busy agent. A question asked again (same text, ignoring case and runs of whitespace) is listed once, at its
+        newest. Each carries how likely the topic question put it under "none of these" (the highest of its
+        ``topic`` rows under ``schema_hash``), ``None`` when it was never asked.
+
+        Args:
+            agent_id: The agent.
+            agent_key: Its API key (API and widget conversations); ``None`` when it has none.
+            days: The window.
+            limit: Most questions returned.
+            schema_hash: The running label schema.
+
+        Returns:
+            ``prompt``, ``conversation_id``, ``timestamp`` and ``p_none``.
+        """
+        from docsgpt.analytics.schema import NONE_OPTION
+
+        params: Dict[str, Any] = {"days": int(days), "limit": int(limit), "scan": int(limit) * QUESTION_SCAN,
+                                  "schema_hash": schema_hash, "none_option": NONE_OPTION}
+        conversations = self._agent_conversations(params, agent_id, agent_key)
+        result = self._conn.execute(
+            text(
+                f"""
+                WITH conv AS ({conversations}),
+                recent AS (
+                    -- the caller reads 4000 characters of a question; a huge one is never pulled whole
+                    SELECT m.id, LEFT(m.prompt, 4000) AS prompt, m.conversation_id, m.timestamp
+                    FROM conversation_messages m
+                    WHERE m.conversation_id IN (SELECT id FROM conv)
+                      AND m.timestamp >= NOW() - make_interval(days => :days) AND {_usable("m")}
+                    ORDER BY m.timestamp DESC, m.id
+                    LIMIT :scan
+                ),
+                distinct_q AS (
+                    SELECT DISTINCT ON (r.question) r.id, r.prompt, r.conversation_id, r.timestamp
+                    FROM (
+                        SELECT recent.*, md5(lower(btrim(regexp_replace(recent.prompt, '[{_SPACE}]+', ' ', 'g'))))
+                               AS question
+                        FROM recent
+                    ) r
+                    ORDER BY r.question, r.timestamp DESC, r.id
+                ),
+                picked AS (
+                    SELECT * FROM distinct_q ORDER BY timestamp DESC, id LIMIT :limit
+                )
+                SELECT p.prompt, CAST(p.conversation_id AS text) AS conversation_id, p.timestamp, lt.p_none
+                FROM picked p
+                LEFT JOIN LATERAL (
+                    SELECT MAX(CAST(l.probabilities->>:none_option AS float8)) AS p_none
+                    FROM conversation_labels l
+                    WHERE l.message_id = p.id AND l.label = 'topic' AND l.schema_hash = :schema_hash
+                ) lt ON true
+                ORDER BY p.timestamp DESC, p.id
+                """
+            ),
+            params,
+        )
+        return [dict(row._mapping) for row in result.fetchall()]

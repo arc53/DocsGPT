@@ -45,6 +45,7 @@ import {
   handleFetchAnswerSteaming,
   handleSubmitToolActions,
   handleV1ChatCompletionStreaming,
+  type ToolAction,
 } from './conversationHandlers';
 import {
   Answer,
@@ -55,6 +56,11 @@ import {
   ResearchStep,
   Status,
 } from './conversationModels';
+import {
+  findQuestionCall,
+  type QuestionAction,
+  resumeQuestionCall,
+} from './questionCall';
 import { ToolCallsType } from './types';
 import { readJobArtifacts } from './artifactChips';
 import {
@@ -843,13 +849,14 @@ export const NOT_PENDING_CODE = 'tool_call_not_pending';
 /** Why a ``tool.approval.cleared`` means the open chat shows a stale approval. */
 const APPROVAL_RETIRED_REASONS = new Set(['moved_on', 'expired']);
 
-/** Whether a turn's calls include one paused for the user to decide or run. */
+/** Whether a turn's calls include one paused for the user to decide, answer or run. */
 export function isWaitingOnUser(toolCalls: unknown): boolean {
   return (
     Array.isArray(toolCalls) &&
     toolCalls.some(
       (call) =>
         call?.status === 'awaiting_approval' ||
+        call?.status === 'awaiting_answer' ||
         call?.status === 'requires_client_execution',
     )
   );
@@ -945,18 +952,56 @@ export const tailInFlightMessage = createAsyncThunk<
 );
 
 type SubmitToolActionsArgs = {
-  toolActions: {
-    call_id: string;
-    decision?: 'approved' | 'denied';
-    comment?: string;
-    result?: Record<string, any>;
-  }[];
+  toolActions: ToolAction[];
 };
 
-export const submitToolActions = createAsyncThunk<void, SubmitToolActionsArgs>(
-  'submitToolActions',
-  streamed(sendToolActions),
-);
+/**
+ * How a tool-actions request went: `ran` once the server took it (the resumed
+ * run may still fail later) or the pause was already over (the turn reloads),
+ * `refused` when it was turned away before anything ran (an error frame
+ * first: a 400, a 429).
+ */
+export type ToolActionsOutcome = 'ran' | 'refused';
+
+export const submitToolActions = createAsyncThunk<
+  ToolActionsOutcome,
+  SubmitToolActionsArgs
+>('submitToolActions', streamed(sendToolActions));
+
+/**
+ * Resume a turn paused on clarifying questions (`ask_user`) with the user's
+ * answers, or with Just answer. The cards fold into their record at once
+ * (`answeredCall`); the resumed stream then writes the answer below them.
+ */
+export const resumeQuestion = createAsyncThunk<
+  void,
+  { callId: string; action: QuestionAction }
+>('resumeQuestion', async ({ callId, action }, { dispatch, getState }) => {
+  const { queries } = (getState() as RootState).conversation;
+  const { index, call } = findQuestionCall(queries, callId);
+  await resumeQuestionCall({
+    turn: queries[index],
+    call,
+    action,
+    updateQuery: (query) =>
+      dispatch(conversationSlice.actions.updateQuery({ index, query })),
+    updateToolCall: (toolCall) =>
+      dispatch(
+        conversationSlice.actions.updateToolCall({
+          index,
+          tool_call: toolCall,
+        }),
+      ),
+    send: async () => {
+      const sent = await dispatch(
+        submitToolActions({ toolActions: [{ call_id: callId, ...action }] }),
+      );
+      return submitToolActions.rejected.match(sent)
+        ? !sent.meta.aborted
+        : sent.payload === 'refused';
+    },
+  });
+});
 
 async function sendToolActions(
   { toolActions }: SubmitToolActionsArgs,
@@ -965,7 +1010,7 @@ async function sendToolActions(
     getState,
   }: Parameters<AsyncThunkPayloadCreator<void, SubmitToolActionsArgs>>[1],
   signal: AbortSignal,
-): Promise<void> {
+): Promise<ToolActionsOutcome> {
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
   if (!conversationId) {
@@ -981,13 +1026,14 @@ async function sendToolActions(
       );
     }
     dispatch(conversationSlice.actions.setStatus('failed'));
-    return;
+    return 'refused';
   }
 
   dispatch(conversationSlice.actions.setStatus('loading'));
 
   // Fresh per submission: a tool decision is its own logical action.
   const idempotencyKey = newIdempotencyKey();
+  let outcome: ToolActionsOutcome | null = null;
   await handleSubmitToolActions(
     conversationId,
     toolActions,
@@ -996,6 +1042,12 @@ async function sendToolActions(
     (event) => {
       const data = JSON.parse(event.data);
       const targetIndex = state.conversation.queries.length - 1;
+      // The first frame tells whether the server took the request.
+      if (outcome === null)
+        outcome =
+          data.type !== 'error' || data.code === NOT_PENDING_CODE
+            ? 'ran'
+            : 'refused';
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));
@@ -1083,6 +1135,7 @@ async function sendToolActions(
     },
     idempotencyKey,
   );
+  return outcome ?? 'ran';
 }
 
 export const conversationSlice = createSlice({
@@ -1533,6 +1586,14 @@ export const conversationSlice = createSlice({
               : state.queries.length - 1;
           state.queries[targetIndex].error = 'Something went wrong';
         }
+      })
+      // A decision whose request threw (no connection) must not leave the
+      // chat busy: it fails on the turn it was for, as a send does.
+      .addCase(submitToolActions.rejected, (state, action) => {
+        if (action.meta.aborted) return;
+        state.status = 'failed';
+        const last = state.queries[state.queries.length - 1];
+        if (last) last.error = 'Something went wrong';
       });
   },
 });

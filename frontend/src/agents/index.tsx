@@ -40,6 +40,16 @@ function WorkflowBuilderForAgent() {
   return <WorkflowBuilder key={agentId} />;
 }
 
+/**
+ * The edit form for the agent in the URL, keyed by it like the workflow
+ * builder: another agent's edit page starts a fresh form, never carrying the
+ * last one's drafter conversation, build or a proposal still on its way.
+ */
+function NewAgentForAgent() {
+  const { agentId } = useParams();
+  return <NewAgent key={agentId} mode="edit" />;
+}
+
 export default function Agents() {
   return (
     <Routes>
@@ -58,7 +68,7 @@ export default function Agents() {
         path="manage/edit/:agentId"
         element={
           <AgentRouteGuard key="edit" action="view" classicEditor>
-            <NewAgent mode="edit" />
+            <NewAgentForAgent />
           </AgentRouteGuard>
         }
       />

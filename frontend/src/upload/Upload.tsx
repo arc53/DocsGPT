@@ -8,7 +8,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { IconButton } from '../components/ui/icon-button';
@@ -1158,22 +1158,18 @@ function Upload({
     githubConnector ? (
       <Alert variant="info" role="note">
         <AlertDescription>
-          {t('modals.uploadDoc.github.privateHint')}
+          <p>
+            {t('modals.uploadDoc.github.privateHint')}{' '}
+            <AlertAction
+              onClick={() => {
+                setHandedOver(true);
+                launch(githubConnector, { purpose: 'knowledge' });
+              }}
+            >
+              {t('modals.uploadDoc.github.connect')}
+            </AlertAction>
+          </p>
         </AlertDescription>
-        <div className="mt-2">
-          <Button
-            type="button"
-            size="sm"
-            shape="pill"
-            variant="outline"
-            onClick={() => {
-              setHandedOver(true);
-              launch(githubConnector, { purpose: 'knowledge' });
-            }}
-          >
-            {t('modals.uploadDoc.github.connect')}
-          </Button>
-        </div>
       </Alert>
     ) : null;
 
