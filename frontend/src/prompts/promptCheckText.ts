@@ -37,7 +37,7 @@ export function promptCheckText(
   facts: PromptCheckFacts,
 ): ReactNode {
   const plain = { interpolation: { escapeValue: false } };
-  let text: ReactNode = null;
+  let text: ReactNode;
   switch (facts.code) {
     case 'placeholder':
       text = t('prompts.checks.placeholder', {
