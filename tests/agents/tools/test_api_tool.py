@@ -294,6 +294,96 @@ class TestErrorHandling:
         ):
             result = tool.execute_action("any", key="val")
             assert "serialization error" in result["message"].lower()
+            assert result["status"] == "error"
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_3xx_redirect_returns_error(self, mock_pinned, get_tool):
+        """Test that 3xx redirects are treated as errors with proper status field."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {"Location": "/v1/orders/"}
+        mock_resp.content = b""
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status_code"] == 307
+        assert result["status"] == "error"
+        assert "redirect" in result["message"].lower()
+        # Relative location should be resolved to absolute URL
+        assert "https://api.example.com/v1/orders/" in result["message"]
+        assert result["data"] is None
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_301_redirect_with_location(self, mock_pinned, get_tool):
+        """Test 301 redirect handling with absolute location."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 301
+        mock_resp.headers = {"Location": "https://new.example.com"}
+        mock_resp.content = b""
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status_code"] == 301
+        assert result["status"] == "error"
+        assert "301" in result["message"]
+        assert "new.example.com" in result["message"]
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_304_not_modified_not_treated_as_error(self, mock_pinned, get_tool):
+        """Test that 304 Not Modified is not treated as a redirect error."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 304
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_resp.content = b""
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status_code"] == 304
+        # 304 should NOT have status: error since it's a valid response
+        assert result.get("status") != "error"
+        assert result["message"] == "API call successful."
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_timeout_error_has_status_field(self, mock_pinned, get_tool):
+        """Test that timeout errors include status: error field."""
+        mock_pinned.side_effect = requests.exceptions.Timeout()
+        result = get_tool.execute_action("any")
+        assert result["status_code"] is None
+        assert result["status"] == "error"
+        assert "timeout" in result["message"].lower()
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_connection_error_has_status_field(self, mock_pinned, get_tool):
+        """Test that connection errors include status: error field."""
+        mock_pinned.side_effect = requests.exceptions.ConnectionError("refused")
+        result = get_tool.execute_action("any")
+        assert result["status_code"] is None
+        assert result["status"] == "error"
+        assert "Connection error" in result["message"]
+
+    def test_unsupported_method_has_status_field(self):
+        """Test that unsupported method errors include status: error field."""
+        tool = APITool(config={"url": "https://example.com", "method": "CUSTOM"})
+        result = tool.execute_action("any")
+        assert result["status_code"] is None
+        assert result["status"] == "error"
+        assert "Unsupported" in result["message"]
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_http_error_has_status_field(self, mock_pinned, get_tool):
+        """Test that HTTP errors include status: error field."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 422
+        mock_resp.json.return_value = {"error": "invalid_field"}
+        mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=mock_resp
+        )
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status_code"] == 422
+        assert result["status"] == "error"
+        assert result["data"] == {"error": "invalid_field"}
 
 
 # =====================================================================
