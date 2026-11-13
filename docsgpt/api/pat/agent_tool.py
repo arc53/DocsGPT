@@ -455,6 +455,10 @@ CATALOG: tuple[Action, ...] = (
            {"name": _req("Name of the prompt."), "content": _req("The prompt text.")}),
     Action("update_prompt", "POST", "/api/update_prompt", "Replace a prompt's name and content.", {},
            {"id": _req("The prompt's id, from list_prompts."), "name": _req("Its name."), "content": _req("Its text.")}),
+    Action("check_prompt", "POST", "/api/check_prompt",
+           "Check a prompt's text without a model: blanks left in, lines DocsGPT already adds, and a template "
+           "that doesn't parse, runs tool variables, or lacks the Boundaries section or citation rules.", {},
+           {"content": _req("The prompt text to check.")}),
     Action("delete_prompt", "POST", "/api/delete_prompt", "Delete a prompt.", {},
            {"id": _req("The prompt's id, from list_prompts.")}, active=False),
     # --- Tools ---
