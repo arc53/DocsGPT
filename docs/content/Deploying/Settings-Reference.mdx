@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-13
+lastUpdated: 2026-11-11
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -305,12 +305,6 @@ API key for the fallback LLM. Unset uses the fallback provider's own key (e.g. A
 Type `str`, default unset.
 
 Optional cheaper model for conversation titles; unset reuses the answer model.
-
-### `TASK_MODEL_ID`
-
-Type `str`, default unset.
-
-Built-in model for DocsGPT's own jobs (drafting forms, GraphRAG extraction, monitor judging) when neither the user (Settings > General) nor an admin (Admin > Defaults) picked one; unset uses the default model. Chats use the agent's model.
 
 ### `MODELS_CONFIG_DIR`
 
@@ -834,7 +828,7 @@ Gates graph-aware ingestion and retrieval.
 
 Type `str`, default unset.
 
-Model for ingest-time graph extraction when the source sets none; unset, or a model the instance has disabled, uses the source owner's task model: their pick in Settings > General, else the instance's in Admin > Defaults, else TASK_MODEL_ID, else the default model.
+Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME.
 
 ### `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`
 
@@ -1716,18 +1710,6 @@ Type `list[str]`, default `[]`.
 
 Private-network hosts that user-supplied URLs (API and MCP tools, read_webpage, monitors, custom model base URLs, the API tool a personal access token makes) may reach, as a comma list or JSON list. An entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `fd20:ce::254`, `metadata.google.internal`) and `0.0.0.0` are refused whatever is listed. Empty, every private address is refused.
 
-### `TRUSTED_PROXIES`
-
-Type `list[str]`, default `["private"]`.
-
-Proxies whose X-Forwarded-For and X-Forwarded-Proto the API believes, as a comma list or JSON list of IPs and CIDR ranges plus two keywords: private (loopback, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) and cloudflare (Cloudflare's published ranges). The client IP recorded in the audit log and access log is the rightmost X-Forwarded-For entry outside this list, so a client cannot spoof it. Add cloudflare, or your load balancer's range, when one sits in front of a private hop. * trusts every peer and takes the leftmost entry, which any client can forge. none trusts no one and records the peer's address.
-
-### `TRUST_CF_CONNECTING_IP`
-
-Type `bool`, default `false`.
-
-Take the client IP from Cloudflare's CF-Connecting-IP header when the request reaches the API from a Cloudflare address, directly or through TRUSTED_PROXIES. The header is ignored from any other address, so a request that bypasses Cloudflare cannot set it.
-
 ### `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
 
 Type `int`, default `30`.
@@ -1897,7 +1879,7 @@ Per-agent default quotas: tokens and requests.
 
 Type `list[str]`, default `["memory", "read_webpage", "scheduler", "monitor"]`.
 
-Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): every turn that can hand calls off to a background job gets it; nor is ask_user, which every interactive chat turn from a client that draws question forms gets. monitor is offered only while MONITORS_ENABLED is on.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): every turn that can hand calls off to a background job gets it. monitor is offered only while MONITORS_ENABLED is on.
 
 ### `WEBHOOK_RUN_TIMEOUT`
 
@@ -2048,42 +2030,6 @@ Cap on artifacts a user may own (0 disables).
 Type `int`, default `5368709120`.
 
 Cap on a user's total stored artifact bytes (0 disables).
-
-### `DRAFTER_ENABLED`
-
-Type `bool`, default `true`.
-
-Offer "Draft with DocsGPT", which fills the agent form from a description. It never publishes or deletes anything and saves only a prompt it wrote, when the user picks "Use this prompt"; the agent is saved only by the user. It runs on the task model; with no model to run on it is hidden even while this is on.
-
-### `DRAFTER_RATE_LIMIT_PER_MINUTE`
-
-Type `int`, default `10`, must be `>= 0`.
-
-Drafts one user may start per minute (0 disables the limit). Counted in Redis; without Redis nothing is limited. Drafter calls also count against the user's usage quota.
-
-### `DRAFTER_MAX_RUNNING_TURNS`
-
-Type `int`, default `4`, must be `>= 0`.
-
-Draft turns one user may have running at once (0 disables the limit); a turn past it is refused as rate-limited. Counted in Redis; without Redis nothing is limited. A turn that never ended (a crashed worker) stops counting once its turn deadline has passed.
-
-### `DRAFTER_CALL_TIMEOUT_SECONDS`
-
-Type `float`, default `0.0`, must be `>= 0`.
-
-Longest one drafter model call may take, retries included, before the turn ends with a retryable error the panel offers to try again (0, the default: no limit of its own, so only the turn deadline applies). Off by default because a slow model's single call can take several minutes. A Stop ends a waiting call at once either way.
-
-### `DRAFTER_TURN_TIMEOUT_SECONDS`
-
-Type `float`, default `300.0`, must be `>= 0`.
-
-Longest one draft turn may take across all its model calls (reading included) before it ends with a retryable error the panel offers to try again (0: no limit).
-
-### `DRAFTER_MODEL_RETRIES`
-
-Type `int`, default `1`, must be `>= 0`.
-
-Retries of one drafter model call that failed before it answered with an error another try may fix (a 5xx, 429, timeout or dropped connection). A retry waits what the provider's Retry-After asks, up to 10 seconds, and starts only with at least 30 seconds of the deadline left; otherwise the turn ends at once with an error the panel offers to try again. A call that failed partway is never retried, and the provider SDK makes no retries of its own.
 
 
 ## Guardrails
@@ -2383,7 +2329,7 @@ Offer the monitor tool: polled checks of a webpage or any tool, ingest events, w
 
 Type `str`, default unset.
 
-Model that judges a monitor's natural-language condition, only after its deterministic check passed (or on a change when it has none). Unset, or a model the instance has disabled, uses the monitor owner's task model: their pick in Settings > General, else the instance's in Admin > Defaults, else TASK_MODEL_ID, else the default model.
+Model that judges a monitor's natural-language condition, only after its deterministic check passed (or on a change when it has none). Unset uses the deployment's default model.
 
 ### `MONITOR_DEFAULT_INTERVAL_SECONDS`
 

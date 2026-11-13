@@ -71,13 +71,6 @@
           "description": "API key",
           "type": "string"
         },
-        "capabilities": {
-          "description": "What this client can render. 'forms': the assistant may ask clarifying questions (ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Optional and not enforced: unknown values are ignored, and without 'forms' the assistant never asks and answers as usual.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "chunks": {
           "default": 6,
           "description": "Number of chunks",
@@ -166,18 +159,6 @@
       },
       "required": [
         "agent_ids"
-      ],
-      "type": "object"
-    },
-    "CheckPromptModel": {
-      "properties": {
-        "content": {
-          "description": "The prompt's text as the editor holds it, at most 100,000 characters",
-          "type": "string"
-        }
-      },
-      "required": [
-        "content"
       ],
       "type": "object"
     },
@@ -500,34 +481,6 @@
       },
       "required": [
         "id"
-      ],
-      "type": "object"
-    },
-    "DrafterStreamModel": {
-      "properties": {
-        "context": {
-          "description": "The recipe's screen state: the agent form's current values (agent), the prompt being written or improved (prompt), or {agent_id} (topics)",
-          "type": "object"
-        },
-        "messages": {
-          "description": "The conversation so far, oldest first: {role: user | assistant, content}. An assistant message is the JSON of an earlier questions or proposal event. Ends with a user message.",
-          "items": {
-            "type": "object"
-          },
-          "type": "array"
-        },
-        "recipe": {
-          "description": "What is drafted: agent (the agent form), prompt (a prompt), topics (Insights topics)",
-          "type": "string"
-        },
-        "turn_id": {
-          "description": "The id the client picks for this turn (32 lowercase hex characters), so it can stop the turn before the turn event arrives. Optional: without one, or with one that isn't a turn id, the server picks it.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "messages",
-        "recipe"
       ],
       "type": "object"
     },
@@ -1432,13 +1385,6 @@
           },
           "type": "array"
         },
-        "capabilities": {
-          "description": "What this client can render. 'forms': the assistant may ask clarifying questions (ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Optional and not enforced: unknown values are ignored, and without 'forms' the assistant never asks and answers as usual.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "chunks": {
           "default": 6,
           "description": "Number of chunks",
@@ -1697,10 +1643,6 @@
           "description": "New content of the prompt",
           "type": "string"
         },
-        "expected_updated_at": {
-          "description": "The prompt's updated_at as last read or saved; the save is refused (409) when someone saved it since",
-          "type": "string"
-        },
         "id": {
           "description": "Prompt ID to update",
           "type": "string"
@@ -1845,12 +1787,11 @@
         "only_if_unset": {
           "description": "Store it only when no chat prompt was ever stored (moving a browser's old choice); otherwise the stored one is kept and returned. Refused to a token restricted to specific prompts",
           "type": "boolean"
-        },
-        "task_model_id": {
-          "description": "The model the caller's DocsGPT jobs run on (drafting, graph extraction, monitor judging): a model the caller can use, their own custom models included; null uses the instance's. A token needs models:write to send it",
-          "type": "string"
         }
       },
+      "required": [
+        "chat_prompt_id"
+      ],
       "type": "object"
     },
     "WebsiteSettingsModel": {
@@ -2194,35 +2135,6 @@
           }
         },
         "summary": "Store the body's `guardrails` object as the default for new agents; existing agents keep their own",
-        "tags": [
-          "admin"
-        ],
-        "x-pat-denied": true
-      }
-    },
-    "/api/admin/defaults/models": {
-      "get": {
-        "description": "`task_model_id` is null when none is stored or the stored one can't run; `task_model_unavailable`\nis then true for the latter, and a PUT with null clears it. `task_model_error` is {model_id, code, at}\nwhen the model that runs for members without a choice failed a draft because its provider refused the\nkey (code model_auth), else null; a draft that works on it, or any PUT, clears it.",
-        "operationId": "get_admin_model_defaults_resource",
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "summary": "The instance task model, what runs when it is unset (TASK_MODEL_ID or the default), the built-ins",
-        "tags": [
-          "admin"
-        ],
-        "x-pat-denied": true
-      },
-      "put": {
-        "operationId": "put_admin_model_defaults_resource",
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "summary": "Store the body's `task_model_id` (a built-in model id, or null to clear) as the instance task model",
         "tags": [
           "admin"
         ],
@@ -3359,39 +3271,6 @@
         ]
       }
     },
-    "/api/check_prompt": {
-      "post": {
-        "description": "Check a prompt's text without a model: blanks left in, lines DocsGPT already adds to a persona, and a template that doesn't parse, runs tool variables, or lacks the Boundaries section or citation rules. Each check is a code the client words; works with the drafter off",
-        "operationId": "post_check_prompt",
-        "parameters": [
-          {
-            "in": "body",
-            "name": "payload",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/CheckPromptModel"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "checks: at most 20 of {code, ...}: placeholder {text, line}, repeats_builtin {topic, line}, template_invalid, tool_variables {variables}, boundaries_missing, citations_missing"
-          },
-          "400": {
-            "description": "content is missing, not text, or too long"
-          },
-          "429": {
-            "description": "more than 120 checks in a minute"
-          }
-        },
-        "tags": [
-          "prompts"
-        ],
-        "x-pat-scopes": [
-          "prompts:read"
-        ]
-      }
-    },
     "/api/combine": {
       "get": {
         "description": "Redirects /api/combine to /api/sources for backward compatibility",
@@ -4025,7 +3904,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The new prompt's id and updated_at (the version a save over it sends back)"
+            "description": "Success"
           }
         },
         "tags": [
@@ -4263,165 +4142,6 @@
         "x-pat-scopes": [
           "sources:read"
         ]
-      }
-    },
-    "/api/drafter/agent_gaps": {
-      "get": {
-        "description": "An agent's gap summary from Insights for Draft with DocsGPT's improve screen: expected gaps per topic and gap type over the last 30 days, the most first, read from the decision model's labels (no model call). Returns {\"available\", \"reason\", \"conversations\", \"needed\", \"days\", \"rows\": [{\"topic\", \"gap_type\", \"expected\", \"turns\", \"previous\"}]}: at most 10 rows, each with at least half an expected gap, counts rounded as Insights shows them; topic is null for an agent without a topic question, previous null until the period before has labelled answers. reason is disabled (the drafter is off), off_on_this_instance, agent_off (Insights is off for the agent) or not_enough (fewer than needed analysed conversations; conversations counts them), else null. Needs edit access to the agent.",
-        "operationId": "get_drafter_agent_gaps",
-        "parameters": [
-          {
-            "description": "Agent id",
-            "in": "query",
-            "name": "agent_id",
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The agent's gap summary"
-          },
-          "400": {
-            "description": "No agent_id"
-          },
-          "401": {
-            "description": "Not signed in"
-          },
-          "404": {
-            "description": "No agent the caller may edit"
-          },
-          "500": {
-            "description": "The summary could not be read"
-          }
-        },
-        "summary": "Report an agent's gap summary",
-        "tags": [
-          "drafter"
-        ],
-        "x-pat-denied": true
-      }
-    },
-    "/api/drafter/config": {
-      "get": {
-        "description": "Whether Draft with DocsGPT is offered to the caller, and the model it runs on (the task model). Returns {\"enabled\", \"model\": {\"id\", \"display_name\"} | null, \"reason\": \"disabled\" | \"no_model\" | null}.",
-        "operationId": "get_drafter_config",
-        "responses": {
-          "200": {
-            "description": "The drafter's config"
-          },
-          "401": {
-            "description": "Not signed in"
-          }
-        },
-        "summary": "Report whether the drafter is on for the caller, and its model",
-        "tags": [
-          "drafter"
-        ],
-        "x-pat-denied": true
-      }
-    },
-    "/api/drafter/stream": {
-      "post": {
-        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, {\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, {\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream; a bad_request carries reason: history (the conversation is refused: start a new one), too_long (the prompt is over the read cap, with limit), empty (the message is empty once cleaned) or invalid. Nothing is saved.",
-        "operationId": "post_drafter_stream",
-        "parameters": [
-          {
-            "in": "body",
-            "name": "payload",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/DrafterStreamModel"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "text/event-stream of draft events"
-          },
-          "401": {
-            "description": "Not signed in"
-          }
-        },
-        "summary": "Stream one draft turn",
-        "tags": [
-          "drafter"
-        ],
-        "x-pat-denied": true
-      }
-    },
-    "/api/drafter/topics/status": {
-      "get": {
-        "description": "Whether Draft with DocsGPT suggests Insights topics for an agent from its conversations: Insights sorts them (on this server and for the agent) and it had enough in the last 30 days. Returns {\"available\", \"conversations\", \"needed\", \"reason\"}; reason is disabled (the drafter is off), off_on_this_instance or turned_off_for_this_agent (Insights is off), with conversations 0 and uncounted, else null. Needs edit access to the agent: the suggestions read its users' questions.",
-        "operationId": "get_drafter_topics_status",
-        "parameters": [
-          {
-            "description": "Agent id",
-            "in": "query",
-            "name": "agent_id",
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The agent's status"
-          },
-          "400": {
-            "description": "No agent_id"
-          },
-          "401": {
-            "description": "Not signed in"
-          },
-          "403": {
-            "description": "No edit access"
-          },
-          "404": {
-            "description": "Agent not found"
-          },
-          "500": {
-            "description": "The status could not be read"
-          }
-        },
-        "summary": "Report whether topic suggestions are available for an agent",
-        "tags": [
-          "drafter"
-        ],
-        "x-pat-denied": true
-      }
-    },
-    "/api/drafter/turns/{turn_id}/cancel": {
-      "parameters": [
-        {
-          "in": "path",
-          "name": "turn_id",
-          "required": true,
-          "type": "string"
-        }
-      ],
-      "post": {
-        "description": "Stop the caller's draft turn: it makes no further model calls and its stream ends with end. The id is the turn_id the stream request sent, or the stream's first event (turn). A stop that arrives before the turn has started stops it as soon as it does. The stop is kept under the caller's name, so it never reaches another user's turn. Answers 202 once the request is stored, whether or not the caller has such a turn.\nArgs:\n    turn_id: The id the stream request sent, or the one its ``turn`` event carried.\n\nReturns:\n    202 when the stop was stored, 404 for a malformed id, 503 without Redis.",
-        "operationId": "post_drafter_turn_cancel",
-        "responses": {
-          "202": {
-            "description": "The stop was requested"
-          },
-          "401": {
-            "description": "Not signed in"
-          },
-          "404": {
-            "description": "Not a turn id (32 lowercase hex characters)"
-          },
-          "429": {
-            "description": "More than 60 stops in a minute"
-          },
-          "503": {
-            "description": "Stopping is unavailable right now"
-          }
-        },
-        "summary": "Ask a running draft turn to stop",
-        "tags": [
-          "drafter"
-        ],
-        "x-pat-denied": true
       }
     },
     "/api/export_agent": {
@@ -7440,10 +7160,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Saved: success and the new updated_at, the version the next save sends back"
-          },
-          "409": {
-            "description": "Someone saved the prompt since expected_updated_at (code stale_write)"
+            "description": "Success"
           }
         },
         "tags": [
@@ -7737,24 +7454,23 @@
     },
     "/api/user/preferences": {
       "get": {
-        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, task_model_unavailable, task_model_error, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default. task_model_id is the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; task_model_unavailable is true when a choice is stored that can no longer run (a disabled or deleted model): the instance's runs meanwhile, the stored one again if it comes back, until a PUT with task_model_id null clears it. task_model_error is {model_id, code, at} when the task model that runs now failed its last draft because its provider refused the key (code model_auth, at ISO 8601), else null; a draft that works on it, or a PUT of task_model_id, clears it. instance_task_model_id is the one that runs without a usable choice, null when no model can. A token gets the chat prompt fields with prompts:read (never when restricted to specific prompts) and the task model fields with models:read.\nA token reads only the parts its scopes cover: the chat prompt with\n``prompts:read`` and no prompt allowlist (the stored id can't be\nproven inside one), the task model with ``models:read``.\n\nReturns:\n    Response: The preferences the caller may read.",
+        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default.",
         "operationId": "get_preferences_resource",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Return the chat prompt and the task model fields the caller may read",
+        "summary": "Return ``{success, chat_prompt_id, chat_prompt_set}`` for the caller",
         "tags": [
           "me"
         ],
         "x-pat-scopes": [
-          "models:read",
           "prompts:read"
         ]
       },
       "put": {
-        "description": "Set the prompt the caller's chats use, the model their DocsGPT jobs run on, or both; send at least one. Answers {success} with chat_prompt_id and applied when a chat prompt was sent, and task_model_id when one was. With only_if_unset and a chat prompt already stored, the chat prompt is not written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a chat_prompt_id that is neither a preset nor a prompt id, a non-boolean only_if_unset, or a task_model_id the caller can't use (code invalid_model), in which case nothing is written; 403 for only_if_unset from a token restricted to specific prompts, or a token without prompts:write (chat_prompt_id) or models:write (task_model_id); 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success}`` plus, for a sent chat prompt,\n    ``chat_prompt_id`` and ``applied`` (false only when\n    ``only_if_unset`` found a stored chat prompt, whose readable value\n    ``chat_prompt_id`` then carries), and for a sent task model,\n    ``task_model_id`` as stored (``None``: the instance's applies).",
+        "description": "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a non-boolean only_if_unset; 403 for only_if_unset from a token restricted to specific prompts; 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success, chat_prompt_id, applied}``; ``applied`` is\n    false only when ``only_if_unset`` found a stored chat prompt, whose\n    readable value ``chat_prompt_id`` then carries.",
         "operationId": "put_preferences_resource",
         "parameters": [
           {
@@ -7771,12 +7487,11 @@
             "description": "Success"
           }
         },
-        "summary": "Store ``chat_prompt_id`` and/or ``task_model_id`` after checking the caller may use them",
+        "summary": "Store ``chat_prompt_id`` after checking the caller may use that prompt",
         "tags": [
           "me"
         ],
         "x-pat-scopes": [
-          "models:write",
           "prompts:write"
         ]
       }
@@ -8324,10 +8039,6 @@
     {
       "description": "Conversation management operations",
       "name": "conversations"
-    },
-    {
-      "description": "Draft with DocsGPT",
-      "name": "drafter"
     },
     {
       "description": "Current user identity and roles",
