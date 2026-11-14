@@ -1,7 +1,7 @@
 ---
 title: Tools Basics
 description: Understand what DocsGPT Tools are, how they work, and explore the built-in tools available to extend DocsGPT's functionality.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-03
 ---
 
 import { Callout } from 'nextra/components';
@@ -46,6 +46,11 @@ DocsGPT includes a suite of pre-built tools designed to expand its capabilities 
       title: 'DuckDuckGo Search',
       link: 'https://github.com/arc53/DocsGPT/blob/main/docsgpt/agents/tools/duckduckgo.py',
       description: 'Performs web and image searches using DuckDuckGo. No API key required.'
+    },
+    {
+      title: 'Keenable Search',
+      link: 'https://github.com/arc53/DocsGPT/blob/main/docsgpt/agents/tools/keenable.py',
+      description: 'Web search and page fetch (clean markdown) from the Keenable web index. Works without an API key; an optional key lifts the per-IP rate limit.'
     },
     {
       title: 'CryptoPrice',
