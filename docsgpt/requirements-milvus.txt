@@ -3354,9 +3354,9 @@ sniffio==1.3.1 \
     #   anthropic
     #   google-genai
     #   openai
-soupsieve==4.0.1 \
-    --hash=sha256:2e68cf7dd5a0f29d81f9d485275ccf294e6475f615e211895d91cb81f8614f04 \
-    --hash=sha256:7621e3c5f6b371ed2c5eabaac5de300ac3d66d05e6d7f34783e31b63c4f90c75
+soupsieve==4.1 \
+    --hash=sha256:ca9abf7126667010d8f6e9b39bfc1bc3b23c8aed9bcb0f54a754dde969bb8aab \
+    --hash=sha256:e4d667b3974ce6e038e7390486b8093369854a1d345ffdd4c121dfc4a782e809
     # via beautifulsoup4
 sqlalchemy==2.1.8 \
     --hash=sha256:06ba41b90d1cf018cbe9a5474958dbdd2a72ec946ace8d314021d24e42ae2f39 \
