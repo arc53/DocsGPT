@@ -497,7 +497,7 @@ class TestMCPServerSave:
             "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "docsgpt.api.user.tools.mcp.encrypt_credentials",
+            "docsgpt.api.user.tools.mcp.encrypt_tool_credentials",
             return_value="enc-blob",
         ):
             with app.test_request_context(
@@ -774,7 +774,7 @@ class TestMCPServerSave:
             "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "docsgpt.api.user.tools.mcp.encrypt_credentials",
+            "docsgpt.api.user.tools.mcp.encrypt_tool_credentials",
             return_value="enc",
         ):
             with app.test_request_context(
@@ -826,10 +826,10 @@ class TestMCPServerSave:
             "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "docsgpt.api.user.tools.mcp.decrypt_credentials",
+            "docsgpt.api.user.tools.mcp.decrypt_tool_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
-            "docsgpt.api.user.tools.mcp.encrypt_credentials",
+            "docsgpt.api.user.tools.mcp.encrypt_tool_credentials",
             return_value="merged-enc",
         ) as mock_encrypt:
             with app.test_request_context(
