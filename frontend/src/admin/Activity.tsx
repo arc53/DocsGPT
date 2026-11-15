@@ -52,8 +52,11 @@ type ActivityRow = {
   category: string;
   actor_id: string | null;
   actor_email?: string | null;
+  /** The email, or "Team <name>" for a team's own account. */
+  actor_label?: string | null;
   target_id: string | null;
   target_email?: string | null;
+  target_label?: string | null;
   ip: string | null;
   user_agent: string | null;
   outcome: string | null;
@@ -108,10 +111,16 @@ function RowDetail({ row }: { row: ActivityRow }) {
       <DescriptionList layout="columns" size="xs">
         <DetailRow label="Event" value={row.event} />
         <DetailRow label="Journal" value={row.feed} />
+        {row.actor_label && row.actor_label !== row.actor_email ? (
+          <DetailRow label="Actor name" value={row.actor_label} />
+        ) : null}
         {row.actor_email ? (
           <DetailRow label="Actor email" value={row.actor_email} />
         ) : null}
         {row.actor_id ? <DetailRow label="Actor" value={row.actor_id} /> : null}
+        {row.target_label && row.target_label !== row.target_email ? (
+          <DetailRow label="Affected name" value={row.target_label} />
+        ) : null}
         {row.target_email ? (
           <DetailRow label="Affected email" value={row.target_email} />
         ) : null}
@@ -419,6 +428,7 @@ export default function Activity() {
                           <UserIdentity
                             userId={row.actor_id}
                             email={row.actor_email}
+                            label={row.actor_label}
                           />
                         ) : (
                           '—'
@@ -429,6 +439,7 @@ export default function Activity() {
                           <UserIdentity
                             userId={row.target_id}
                             email={row.target_email}
+                            label={row.target_label}
                           />
                         ) : (
                           '—'

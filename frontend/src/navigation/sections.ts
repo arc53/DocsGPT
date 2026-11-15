@@ -49,6 +49,8 @@ import {
 } from '../agents/paths';
 import { type AccessFields } from '../utils/accessUtils';
 import { canAgent } from '../agents/agentAccess';
+import { teamPath } from '../teams/page/teamTabs';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
 
 /** A single destination in a section's vertical nav. */
 export type SectionItem = {
@@ -492,6 +494,26 @@ export function buildAgentSection(
     parentPath: AGENTS_MANAGE_ROOT,
     parentLabelKey: 'navigation.backToAgents',
     groups: visible,
+  };
+}
+
+/**
+ * The sidebar's "Team" entry while the app is in a team workspace: it opens
+ * that team's page (members, shared items, settings). Personal has none.
+ *
+ * Args:
+ *   workspaceId: The current workspace, `personal` or a team id.
+ *
+ * Returns:
+ *   The entry, or null in Personal.
+ */
+export function teamNavItem(workspaceId: string): SectionItem | null {
+  if (!workspaceId || workspaceId === PERSONAL_WORKSPACE) return null;
+  return {
+    key: 'team',
+    path: teamPath(workspaceId),
+    labelKey: 'workspace.team.navEntry',
+    icon: Users,
   };
 }
 

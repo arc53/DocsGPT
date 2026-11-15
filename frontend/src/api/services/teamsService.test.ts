@@ -12,7 +12,12 @@ vi.mock('../client', () => ({
   },
 }));
 
-import teamsService, { TeamsApiError } from './teamsService';
+import teamsService, {
+  memberTeamRole,
+  teamErrorMessage,
+  teamRoleOf,
+  TeamsApiError,
+} from './teamsService';
 
 const response = (status: number, body: unknown) =>
   ({
@@ -77,5 +82,75 @@ describe('teamsService', () => {
       resource_id: 'a1',
       settings: { editors_can_share: true },
     });
+  });
+
+  it('keeps a refusal code and its body', async () => {
+    del.mockResolvedValue(
+      response(409, {
+        success: false,
+        error: 'team_not_empty',
+        message: 'Move or delete the team items first',
+        counts: { agent: 2, folder: 1 },
+      }),
+    );
+    const error = await teamsService.remove('team-1', 't').catch((e) => e);
+    expect(error).toBeInstanceOf(TeamsApiError);
+    expect(error.code).toBe('team_not_empty');
+    expect(error.message).toBe('Move or delete the team items first');
+    expect(error.body.counts).toEqual({ agent: 2, folder: 1 });
+  });
+
+  it('sends the new role names for members', async () => {
+    post.mockResolvedValue(response(200, { success: true }));
+    await teamsService.addMember(
+      't1',
+      { email: 'a@x.io', role: 'viewer' },
+      't',
+    );
+    expect(post.mock.calls[0][1]).toEqual({ email: 'a@x.io', role: 'viewer' });
+    put.mockResolvedValue(response(200, { success: true }));
+    await teamsService.setMemberRole('t1', 'u1', 'editor', 't');
+    expect(put.mock.calls[0][1]).toEqual({ role: 'editor' });
+  });
+});
+
+describe('team roles and refusals', () => {
+  const t = (key: string, opts?: Record<string, unknown>) =>
+    opts?.name ? `${key}(${opts.name})` : key;
+
+  it('reads the new role first and maps the old names', () => {
+    expect(memberTeamRole({ team_role: 'editor', role: 'team_member' })).toBe(
+      'editor',
+    );
+    expect(memberTeamRole({ role: 'team_admin' })).toBe('admin');
+    expect(memberTeamRole({ role: 'team_member' })).toBe('viewer');
+    expect(teamRoleOf({ role: 'owner', member_role: 'team_admin' })).toBe(
+      'owner',
+    );
+    expect(teamRoleOf({ member_role: 'team_admin' })).toBe('admin');
+    expect(teamRoleOf({})).toBe('viewer');
+  });
+
+  it('maps each member refusal by its code', () => {
+    const refusal = (code: string, message = 'server words') =>
+      Object.assign(new TeamsApiError(409, message), { code });
+    expect(teamErrorMessage(t, refusal('last_admin'), 'fallback')).toBe(
+      'settings.teams.errors.lastAdmin',
+    );
+    expect(
+      teamErrorMessage(t, refusal('owner_must_transfer'), 'fallback'),
+    ).toBe('settings.teams.errors.ownerMustTransfer');
+    expect(teamErrorMessage(t, refusal('owner_protected'), 'fallback')).toBe(
+      'settings.teams.errors.ownerProtected',
+    );
+  });
+
+  it("falls back to the server's message, then to the caller's", () => {
+    expect(
+      teamErrorMessage(t, new TeamsApiError(404, 'No such user'), 'fallback'),
+    ).toBe('No such user');
+    expect(teamErrorMessage(t, new Error('network'), 'fallback')).toBe(
+      'fallback',
+    );
   });
 });

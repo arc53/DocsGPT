@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import adminService from '../api/services/adminService';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
@@ -55,7 +56,19 @@ type AdminUser = {
   active: boolean;
   created_at?: string;
   last_seen?: string | null;
+  /** `user` for a person; a team's own account is `team`. */
+  kind?: string;
+  /** A team account's name ("Team <name>"). */
+  label?: string | null;
 };
+
+/** People only: a team's own account owns the team's items and has no actions here. */
+const isPerson = (user?: { kind?: string } | null): boolean =>
+  !user?.kind || user.kind === 'user';
+
+/** What an action on a team's own account answers (409 `not_a_person`). */
+const NOT_A_PERSON_MESSAGE =
+  "This account belongs to a team, not a person, so it can't be changed here.";
 
 type Action = {
   key: string;
@@ -105,7 +118,8 @@ export default function Users() {
       ]);
       const usersJson = await usersRes.json().catch(() => ({}));
       const adminsJson = await adminsRes.json().catch(() => ({}));
-      setUsers(usersJson.users ?? []);
+      // The list holds people; leave out anything else a server might send.
+      setUsers((usersJson.users ?? []).filter(isPerson));
       setTotal(usersJson.total ?? 0);
       setAdminIds(
         new Set((adminsJson.admins ?? []).map((a: any) => a.user_id)),
@@ -151,6 +165,8 @@ export default function Users() {
       }
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.success === false) {
+        if (json.error === 'not_a_person')
+          throw new Error(NOT_A_PERSON_MESSAGE);
         throw new Error(json.message || `Action failed for ${userId}`);
       }
       if (successMsg) setFeedback({ ok: true, message: successMsg });
@@ -448,12 +464,13 @@ export default function Users() {
         }}
         title={
           detail?.user
-            ? userName(detail.user.user_id, detail.user.email)
+            ? detail.user.label?.trim() ||
+              userName(detail.user.user_id, detail.user.email)
             : 'User'
         }
         size="lg"
         footer={
-          detail ? (
+          detail && isPerson(detail.user) ? (
             <ActionMenu
               trigger={
                 <Button type="button" variant="outline" size="lg" shape="pill">
@@ -483,6 +500,14 @@ export default function Users() {
       >
         {detail ? (
           <div className="flex flex-col gap-4 text-sm">
+            {!isPerson(detail.user) && (
+              <Alert variant="info">
+                <AlertDescription>
+                  This account belongs to a team, not a person. It owns the
+                  team&apos;s items; it can&apos;t sign in or be changed here.
+                </AlertDescription>
+              </Alert>
+            )}
             <DescriptionList size="sm">
               <DescriptionItem label="Email">
                 {detail.user?.email?.trim() || 'Not on file'}

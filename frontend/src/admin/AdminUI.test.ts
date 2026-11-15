@@ -16,6 +16,18 @@ describe('eventLabel', () => {
     expect(eventLabel('source_defaults_set')).toBe('Source defaults changed');
   });
 
+  it('names the team workspace events', () => {
+    expect(eventLabel('team.member_role_changed')).toBe('Member role changed');
+    // Rows written before the rename keep their label.
+    expect(eventLabel('team.member_role')).toBe('Member role changed');
+    expect(eventLabel('team.item_moved_in')).toBe('Item moved into team');
+    expect(eventLabel('team.item_moved_out')).toBe('Item moved out of team');
+    expect(eventLabel('team.folder_moved_in')).toBe('Folder moved into team');
+    expect(eventLabel('team.folder_moved_out')).toBe(
+      'Folder moved out of team',
+    );
+  });
+
   it('stays legible for an event a newer release added', () => {
     expect(eventLabel('source.archived')).toBe('Source archived');
     expect(eventLabel('brand_new_event')).toBe('Brand new event');

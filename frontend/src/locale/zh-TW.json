@@ -4561,6 +4561,11 @@
       "deleteTeamError": "無法刪除團隊。",
       "descriptionLabel": "描述",
       "descriptionPlaceholder": "這個團隊的用途是什麼？（選填）",
+      "detail": {
+        "backToTeams": "返回團隊列表",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "這個團隊不存在，或者您不在其中。"
+      },
       "drawer": {
         "accessIn": "{{team}} 中的存取權",
         "capabilitiesHint": "來自擁有者的存取設定。此處為唯讀。",
@@ -4599,6 +4604,12 @@
         "tool": "編輯者可以變更動作並取代憑證，但無法讀取密鑰。",
         "toolNoCredentials": "編輯者可以變更動作，但不能變更憑證。"
       },
+      "errors": {
+        "lastAdmin": "團隊至少需要一位管理員。請先將其他人設為管理員。",
+        "ownerMustTransfer": "您是這個團隊的擁有者。請先將它轉讓給其他成員。",
+        "ownerProtected": "團隊擁有者不能被降級或移除。",
+        "teamNotEmpty": "團隊仍擁有一些項目。請先移動或刪除它們。"
+      },
       "label": "團隊",
       "loadError": "載入團隊失敗。",
       "memberCount_one": "{{formatted}} 位成員",
@@ -4614,11 +4625,38 @@
       "newTeam": "新增團隊",
       "noMembers": "尚無成員。使用「新增成員」以電子郵件邀請。",
       "noTeams": "尚無團隊。",
+      "notEmpty": {
+        "counts": {
+          "agent_one": "{{count}} 個代理",
+          "agent_other": "{{count}} 個代理",
+          "folder_one": "{{count}} 個資料夾",
+          "folder_other": "{{count}} 個資料夾",
+          "other_one": "{{count}} 筆其他記錄",
+          "other_other": "{{count}} 筆其他記錄",
+          "prompt_one": "{{count}} 個提示",
+          "prompt_other": "{{count}} 個提示",
+          "source_one": "{{count}} 個來源",
+          "source_other": "{{count}} 個來源",
+          "tool_one": "{{count}} 個工具",
+          "tool_other": "{{count}} 個工具",
+          "workflow_one": "{{count}} 個工作流程",
+          "workflow_other": "{{count}} 個工作流程"
+        },
+        "hint": "將它們移到個人空間或刪除，然後再刪除團隊。",
+        "open": "開啟 {{name}}",
+        "title": "{{name}} 仍擁有一些項目"
+      },
       "nothingShared": "尚未分享任何內容。可從代理、來源、提示或工具的選單進行分享。",
       "openTeamError": "無法載入團隊詳細資訊。",
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
       "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
       "remove": "移除",
+      "removeMember": {
+        "personalItemsHint": "這些項目屬於 {{name}}，而不屬於團隊。移除前，請 {{name}} 把團隊依賴的項目移入團隊。",
+        "personalItems_one": "{{name}} 與 {{team}} 共用的 {{count}} 個個人項目",
+        "personalItems_other": "{{name}} 與 {{team}} 共用的 {{count}} 個個人項目",
+        "teamItemsStay": "{{name}} 新增的團隊項目會留在 {{team}}。{{name}} 將無法再存取它們；您可以隨時重新新增此人。"
+      },
       "removeMemberConfirmation": "要將「{{name}}」從 {{team}} 移除嗎？",
       "removeMemberConsequence": "對方將無法再存取與 {{team}} 共用的所有內容。您可以隨時重新加入。",
       "removeMemberError": "無法移除成員。",
@@ -4630,11 +4668,20 @@
       },
       "roleAdmin": "管理員",
       "roleChangeError": "無法變更角色（最後一位管理員受保護）。",
+      "roleHints": {
+        "admin": "還可以刪除項目、管理成員和角色，並開啟外部存取。",
+        "editor": "還可以新增、編輯、移動和歸檔項目，並查看記錄。",
+        "viewer": "使用團隊的代理、知識、工具和提示。"
+      },
       "roleMember": "成員",
       "save": "儲存",
       "searchMembers": "搜尋成員…",
       "selectTeamHint": "選擇團隊以管理其成員與共享資源。",
       "selectTeamTitle": "未選擇團隊",
+      "settingsTab": {
+        "deleteHint": "只能刪除空的團隊。請先移動或刪除它的代理、知識、工具、提示和資料夾。",
+        "details": "詳細資料"
+      },
       "share": {
         "access": "存取權",
         "accessLevel": {
@@ -4714,6 +4761,11 @@
       },
       "sharedCount_one": "已分享 {{formatted}} 項",
       "sharedCount_other": "已分享 {{formatted}} 項",
+      "sharedItems": {
+        "empty": "還沒有人與這個團隊共用個人項目。",
+        "intro": "這些項目屬於共用它們的人，而不屬於團隊。請擁有者把團隊依賴的項目移入團隊。",
+        "title": "與團隊共用的個人項目"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} 編輯者",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} 編輯者",
@@ -4737,10 +4789,28 @@
       "sourceScim": "透過 SCIM",
       "sourceSso": "透過 SSO",
       "subtitle": "管理您的團隊、成員與共享資源。",
+      "tabs": {
+        "label": "團隊頁面",
+        "members": "成員",
+        "settings": "設定",
+        "shared": "共用的個人項目",
+        "usage": "用量"
+      },
       "teamActions": "團隊操作",
       "teamNamePlaceholder": "團隊名稱",
       "teamSubtitle": "管理成員以及與此團隊分享的資源。",
       "teamsHeading": "您的團隊",
+      "transfer": {
+        "action": "轉讓",
+        "confirm": "要將 {{team}} 轉讓給 {{name}} 嗎？",
+        "consequence": "此人將成為擁有者和管理員。只有新的擁有者才能再轉讓回來。",
+        "description": "只有擁有者可以刪除或轉讓團隊。",
+        "error": "無法轉讓團隊。",
+        "memberLabel": "新擁有者",
+        "placeholder": "選擇成員",
+        "submit": "轉讓",
+        "title": "轉讓擁有權"
+      },
       "unshare": "取消分享",
       "unshareError": "無法取消分享資源。",
       "updateFailed": "更新失敗"

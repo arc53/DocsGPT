@@ -11,6 +11,7 @@ import {
   getSectionItems,
   getVisibleGroups,
   SETTINGS_SECTION,
+  teamNavItem,
 } from './sections';
 
 describe('getSectionForPath', () => {
@@ -371,5 +372,22 @@ describe('depthOf', () => {
 
   it('keeps a chat with an agent at the chat level', () => {
     expect(depthOf(getSectionForPath('/agents/a1/c/c1'))).toBe(0);
+  });
+});
+
+describe('teamNavItem', () => {
+  it('has no Team entry in Personal', () => {
+    expect(teamNavItem('personal')).toBeNull();
+  });
+
+  it("links a team workspace to that team's page", () => {
+    const item = teamNavItem('t1');
+    expect(item?.path).toBe('/teams/t1');
+    expect(item?.labelKey).toBe('workspace.team.navEntry');
+    // The team page is in Settings, under Teams.
+    expect(getSectionForPath('/teams/t1/settings')?.key).toBe('settings');
+    expect(getActiveItem(SETTINGS_SECTION, '/teams/t1/members')?.key).toBe(
+      'teams',
+    );
   });
 });

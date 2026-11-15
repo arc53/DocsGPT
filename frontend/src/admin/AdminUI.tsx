@@ -39,17 +39,21 @@ export function userName(userId: string, email?: string | null): string {
 }
 
 /**
- * A user in an admin table: the email on file over the full user id, or the
- * id alone. Admins filter and set quotas by the id, so it is never cut.
+ * A user in an admin table: the label (the server's name for the account:
+ * the email, or "Team <name>" for a team's own account), else the email on
+ * file, over the full user id; or the id alone. Admins filter and set
+ * quotas by the id, so it is never cut.
  */
 export function UserIdentity({
   userId,
   email,
+  label,
 }: {
   userId: string;
   email?: string | null;
+  label?: string | null;
 }) {
-  const mail = emailOf(email);
+  const mail = emailOf(label) ?? emailOf(email);
   if (!mail) {
     return <span className="font-mono text-xs wrap-anywhere">{userId}</span>;
   }
@@ -142,11 +146,17 @@ const EVENT_LABELS: Record<string, string> = {
   'team.create': 'Team created',
   'team.delete': 'Team deleted',
   'team.member_add': 'Member added',
+  // Older rows; the event is `team.member_role_changed` now.
   'team.member_role': 'Member role changed',
+  'team.member_role_changed': 'Member role changed',
   'team.member_remove': 'Member removed',
   'team.share': 'Resource shared',
   'team.unshare': 'Resource unshared',
   'team.transfer_owner': 'Ownership transferred',
+  'team.item_moved_in': 'Item moved into team',
+  'team.item_moved_out': 'Item moved out of team',
+  'team.folder_moved_in': 'Folder moved into team',
+  'team.folder_moved_out': 'Folder moved out of team',
   'source.created': 'Source created',
   'source.deleted': 'Source deleted',
   'source.reingested': 'Source reingested',

@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 // A JWT whose payload is {"sub":"me"}.
 const TOKEN = `x.${btoa(JSON.stringify({ sub: 'me' }))}.y`;
@@ -14,9 +14,17 @@ const mockState = {
   },
   teams: {
     teams: [] as Array<Record<string, unknown>>,
-    currentTeamId: null,
     loading: false,
     error: null,
+  },
+  workspace: {
+    current: 'personal',
+    workspaces: [{ id: 'personal', kind: 'personal', name: 'Personal' }],
+    loaded: true,
+    loading: false,
+    epoch: 0,
+    lastReason: null,
+    latestRequestId: null,
   },
 };
 
@@ -46,6 +54,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+// The team page's tabs come from the routes under /teams.
 vi.mock('../navigation/SectionShell', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -127,11 +136,13 @@ vi.mock('../components/ui/dropdown-menu', () => ({
     </div>
   ),
 }));
+// The shared list names items from the grants alone: no list lookups.
+const getAgents = vi.fn();
+const getUserTools = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
-    getAgents: () => Promise.resolve({ json: () => Promise.resolve([]) }),
-    getUserTools: () =>
-      Promise.resolve({ json: () => Promise.resolve({ tools: [] }) }),
+    getAgents: (...a: unknown[]) => getAgents(...a),
+    getUserTools: (...a: unknown[]) => getUserTools(...a),
   },
 }));
 
@@ -143,7 +154,8 @@ const getResourceSettings = vi.fn();
 const addMember = vi.fn();
 const removeMember = vi.fn();
 
-vi.mock('../api/services/teamsService', () => ({
+vi.mock('../api/services/teamsService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/services/teamsService')>()),
   default: {
     listMembers: (...a: unknown[]) => listMembers(...a),
     listGrants: (...a: unknown[]) => listGrants(...a),
@@ -265,23 +277,30 @@ describe('Teams page', () => {
     return <div data-testid="where">{useLocation().pathname}</div>;
   }
 
-  // Opens team t1 unless `list`; the list's toolbar (New team) shows only
-  // on the list.
-  const render = async ({ list = false } = {}) => {
+  // The page at `path`, mounted under /teams/* as the app mounts it.
+  const mount = async (path: string) => {
     act(() => {
       root.render(
-        <MemoryRouter
-          initialEntries={[
-            { pathname: '/teams', state: list ? null : { openTeamId: 't1' } },
-          ]}
-        >
-          <Teams />
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/teams/*" element={<Teams />} />
+          </Routes>
           <Where />
         </MemoryRouter>,
       );
     });
     await flush();
   };
+
+  // Team t1's Members tab, or the teams list (its toolbar has New team);
+  // `tab` opens another tab of t1.
+  const render = async ({
+    list = false,
+    tab = '',
+  }: { list?: boolean; tab?: string } = {}) =>
+    mount(list ? '/teams' : `/teams/t1${tab ? `/${tab}` : ''}`);
+  const renderShared = () => render({ tab: 'shared' });
+  const renderSettings = () => render({ tab: 'settings' });
 
   const openDrawer = async (index = 0) => {
     act(() => rowButtons()[index].click());
@@ -360,7 +379,7 @@ describe('Teams page', () => {
         grant({ resource_id: `s${i}`, resource_name: `Source ${i}` }),
       ),
     });
-    await render();
+    await renderShared();
     expect(rowButtons()).toHaveLength(48);
     const pager = () =>
       body().querySelector<HTMLElement>('[data-slot="pagination-full"]')!;
@@ -390,14 +409,7 @@ describe('Teams page', () => {
       owner_id: 'me',
       member_role: 'member',
     }));
-    act(() => {
-      root.render(
-        <MemoryRouter initialEntries={['/teams']}>
-          <Teams />
-        </MemoryRouter>,
-      );
-    });
-    await flush();
+    await render({ list: true });
     const pager = body().querySelector('[data-slot="pagination-full"]');
     expect(pager?.textContent).toContain('settings.teams.pageRange');
     expect(body().textContent).toContain('Team 47');
@@ -415,33 +427,49 @@ describe('Teams page', () => {
         member_role: 'member',
       },
     ];
-    act(() => {
-      root.render(
-        <MemoryRouter initialEntries={['/teams']}>
-          <Teams />
-        </MemoryRouter>,
-      );
-    });
-    await flush();
+    await render({ list: true });
     expect(body().textContent).toContain('Logistics ops');
     expect(body().textContent).not.toContain('settings.teams.noDescription');
   });
 
-  // The verb says "add": page actions carry no plus.
-  it('swaps the list toolbar for the team crumb row when a team is open', async () => {
+  it('swaps the list toolbar for the crumb row and tabs when a team is open', async () => {
     await render();
     expect(body().querySelector('[data-slot="page-toolbar"]')).toBeNull();
-    const menu = body().querySelector<HTMLElement>(
-      '[data-testid="team-menu"]',
-    )!;
-    expect(menu.dataset.size).toBe('toolbar');
-    // Ends the crumb row (the breadcrumb is mocked away here), not the name.
-    expect(menu.parentElement!.className).toBe(
-      'flex min-h-9.5 items-center justify-between gap-3',
-    );
-    expect(menu.parentElement!.querySelector('h3')).toBeNull();
+    // Editing and deleting the team moved to its Settings tab.
+    expect(body().querySelector('[data-testid="team-menu"]')).toBeNull();
+    expect(
+      body().querySelector('nav[aria-label="settings.teams.tabs.label"]'),
+    ).not.toBeNull();
   });
 
+  it('names shared items from the grants, without loading agents or tools', async () => {
+    getAgents.mockClear();
+    getUserTools.mockClear();
+    listGrants.mockResolvedValue({
+      team_role: 'team_admin',
+      grants: [
+        grant({
+          resource_type: 'agent',
+          resource_id: 'a1',
+          resource_name: 'Desk',
+        }),
+        grant({
+          resource_type: 'tool',
+          resource_id: 'tl1',
+          resource_name: null,
+        }),
+      ],
+    });
+    await renderShared();
+    expect(rowButtons()).toHaveLength(2);
+    expect(rowButtons()[0].textContent).toContain('Desk');
+    // No name from the server: the short id.
+    expect(rowButtons()[1].textContent).toContain('tl1');
+    expect(getAgents).not.toHaveBeenCalled();
+    expect(getUserTools).not.toHaveBeenCalled();
+  });
+
+  // The verb says "add": page actions carry no plus.
   it('puts no plus on the New team page action', async () => {
     await render({ list: true });
     const action = Array.from(
@@ -467,7 +495,7 @@ describe('Teams page', () => {
         }),
       ],
     });
-    await render();
+    await renderShared();
     const rows = rowButtons();
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('Key Accounts');
@@ -492,7 +520,7 @@ describe('Teams page', () => {
       ['settings.teams.sharedList.filter.prompt', '#1'],
     ]);
     const sharedHeading = Array.from(body().querySelectorAll('h4')).find(
-      (h) => h.firstChild?.textContent === 'settings.teams.sharedResources',
+      (h) => h.firstChild?.textContent === 'settings.teams.sharedItems.title',
     );
     expect(
       sharedHeading?.querySelector('[data-slot="count"]')?.textContent,
@@ -504,7 +532,7 @@ describe('Teams page', () => {
       team_role: 'team_admin',
       grants: [grant()],
     });
-    await render();
+    await renderShared();
     const search = body().querySelector<HTMLInputElement>(
       'input[aria-label="settings.teams.sharedList.search"]',
     )!;
@@ -530,7 +558,7 @@ describe('Teams page', () => {
       team_role: 'team_admin',
       grants: [grant()],
     });
-    await render();
+    await renderShared();
     await openDrawer();
     const sheet = body().querySelector('[data-slot="sheet-content"]')!;
     const title = sheet.querySelector('[data-slot="sheet-title"]')!;
@@ -557,7 +585,7 @@ describe('Teams page', () => {
       ],
     });
     setTeam({ member_role: 'team_member' });
-    await render();
+    await renderShared();
     await openDrawer();
     const sheet = body().querySelector('[data-slot="sheet-content"]');
     expect(sheet).not.toBeNull();
@@ -587,7 +615,7 @@ describe('Teams page', () => {
       team_role: 'team_admin',
       grants: [grant({ caller: VIEWER })],
     });
-    await render();
+    await renderShared();
     await openDrawer();
     const sheet = body().querySelector('[data-slot="sheet-content"]')!;
     expect(sheet.querySelectorAll('[role="combobox"]')).toHaveLength(0);
@@ -607,7 +635,7 @@ describe('Teams page', () => {
       team_role: 'team_member',
       grants: [grant({ caller: VIEWER })],
     });
-    await render();
+    await renderShared();
     await openDrawer();
     const sheet = body().querySelector('[data-slot="sheet-content"]')!;
     expect(sheet.querySelectorAll('[role="combobox"]')).toHaveLength(0);
@@ -626,7 +654,7 @@ describe('Teams page', () => {
       team_role: 'team_member',
       grants: [grant({ caller: VIEWER })],
     });
-    await render();
+    await renderShared();
     await openDrawer();
     const open = Array.from(
       body().querySelectorAll<HTMLButtonElement>(
@@ -653,7 +681,7 @@ describe('Teams page', () => {
         }),
       ],
     });
-    await render();
+    await renderShared();
     await openDrawer();
     const remove = body().querySelector<HTMLButtonElement>(
       'button[aria-label="settings.teams.drawer.removeGrant"]',
@@ -682,27 +710,28 @@ describe('Teams page', () => {
     );
   });
 
+  const deleteButton = () =>
+    Array.from(body().querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === 'settings.teams.deleteTeam',
+    );
+
   it('shows Delete team only to the team owner', async () => {
-    await render();
-    let menu = body().querySelector('[data-testid="team-menu"]');
-    expect(menu?.textContent).toContain('settings.teams.deleteTeam');
+    await renderSettings();
+    expect(deleteButton()).toBeDefined();
 
     act(() => root.unmount());
     root = createRoot(container);
     setTeam({ owner_id: 'someone-else', member_role: 'team_admin' });
-    await render();
-    menu = body().querySelector('[data-testid="team-menu"]');
-    expect(menu?.textContent).toContain('settings.teams.editTeam');
-    expect(menu?.textContent).not.toContain('settings.teams.deleteTeam');
+    await renderSettings();
+    expect(body().textContent).toContain('settings.teams.save');
+    expect(deleteButton()).toBeUndefined();
   });
 
   it('prefers is_owner over owner_id when the server sends it', async () => {
     setTeam({ owner_id: 'me', is_owner: false, member_role: 'team_admin' });
-    await render();
-    const menu = body().querySelector('[data-testid="team-menu"]');
-    expect(menu?.textContent).not.toContain('settings.teams.deleteTeam');
+    await renderSettings();
+    expect(deleteButton()).toBeUndefined();
   });
-
   it('keeps the members row at the 38px field height', async () => {
     listMembers.mockResolvedValue({
       members: Array.from({ length: 25 }, (_, i) => ({
@@ -723,14 +752,7 @@ describe('Teams page', () => {
   it('a failed teams load offers the pill Retry', async () => {
     mockState.teams.error = 'down' as unknown as null;
     try {
-      act(() => {
-        root.render(
-          <MemoryRouter initialEntries={['/teams']}>
-            <Teams />
-          </MemoryRouter>,
-        );
-      });
-      await flush();
+      await render({ list: true });
       const retry = Array.from(body().querySelectorAll('button')).find(
         (b) => b.textContent === 'retry',
       );
@@ -742,14 +764,7 @@ describe('Teams page', () => {
 
   it('an empty team list offers a text-only pill New team', async () => {
     mockState.teams.teams = [];
-    act(() => {
-      root.render(
-        <MemoryRouter initialEntries={['/teams']}>
-          <Teams />
-        </MemoryRouter>,
-      );
-    });
-    await flush();
+    await render({ list: true });
     const cta = body().querySelector<HTMLButtonElement>(
       '[data-slot="empty-state"] button',
     )!;
@@ -980,16 +995,11 @@ describe('Teams page', () => {
   });
 
   it("shows the server's reason when deleting a team is refused", async () => {
-    await render();
+    await renderSettings();
     mockUnwrap.mockImplementation(() =>
       Promise.reject(serverError('Only the owner can delete a team')),
     );
-    const menuItem = Array.from(
-      body().querySelectorAll<HTMLButtonElement>(
-        '[data-testid="team-menu"] button',
-      ),
-    ).find((b) => b.textContent === 'settings.teams.deleteTeam')!;
-    act(() => menuItem.click());
+    act(() => deleteButton()!.click());
     await flush();
     act(() => confirmSubmit('settings.teams.delete').click());
     await flush();
@@ -1017,16 +1027,11 @@ describe('Teams page', () => {
   });
 
   it('keeps a failed delete team open with the domain error, no toast', async () => {
-    await render();
+    await renderSettings();
     mockUnwrap.mockImplementation(() =>
       Promise.reject(new Error('Request failed (500)')),
     );
-    const menuItem = Array.from(
-      body().querySelectorAll<HTMLButtonElement>(
-        '[data-testid="team-menu"] button',
-      ),
-    ).find((b) => b.textContent === 'settings.teams.deleteTeam')!;
-    act(() => menuItem.click());
+    act(() => deleteButton()!.click());
     await flush();
     act(() => confirmSubmit('settings.teams.delete').click());
     await flush();
@@ -1043,7 +1048,7 @@ describe('Teams page', () => {
       grants: [grant()],
     });
     unshare.mockRejectedValue(new Error('Request failed (500)'));
-    await render();
+    await renderShared();
     await openDrawer();
     act(() =>
       body()

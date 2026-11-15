@@ -4559,6 +4559,11 @@
       "deleteTeamError": "无法删除团队。",
       "descriptionLabel": "描述",
       "descriptionPlaceholder": "这个团队的用途是什么？（可选）",
+      "detail": {
+        "backToTeams": "返回团队列表",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "该团队不存在，或者您不在其中。"
+      },
       "drawer": {
         "accessIn": "{{team}} 中的访问权限",
         "capabilitiesHint": "来自所有者的访问设置。此处只读。",
@@ -4597,6 +4602,12 @@
         "tool": "编辑者可以更改操作并替换凭据，但无法读取密钥。",
         "toolNoCredentials": "编辑者可以更改操作，但不能更改凭据。"
       },
+      "errors": {
+        "lastAdmin": "团队至少需要一名管理员。请先将其他人设为管理员。",
+        "ownerMustTransfer": "您是该团队的所有者。请先将其转让给其他成员。",
+        "ownerProtected": "团队所有者不能被降级或移除。",
+        "teamNotEmpty": "团队仍拥有一些项目。请先移动或删除它们。"
+      },
       "label": "团队",
       "loadError": "加载团队失败。",
       "memberCount_one": "{{formatted}} 名成员",
@@ -4612,11 +4623,38 @@
       "newTeam": "新建团队",
       "noMembers": "暂无成员。使用“添加成员”通过邮箱邀请他人。",
       "noTeams": "暂无团队。",
+      "notEmpty": {
+        "counts": {
+          "agent_one": "{{count}} 个智能体",
+          "agent_other": "{{count}} 个智能体",
+          "folder_one": "{{count}} 个文件夹",
+          "folder_other": "{{count}} 个文件夹",
+          "other_one": "{{count}} 条其他记录",
+          "other_other": "{{count}} 条其他记录",
+          "prompt_one": "{{count}} 个提示词",
+          "prompt_other": "{{count}} 个提示词",
+          "source_one": "{{count}} 个来源",
+          "source_other": "{{count}} 个来源",
+          "tool_one": "{{count}} 个工具",
+          "tool_other": "{{count}} 个工具",
+          "workflow_one": "{{count}} 个工作流",
+          "workflow_other": "{{count}} 个工作流"
+        },
+        "hint": "将它们移到个人空间或删除，然后再删除团队。",
+        "open": "打开 {{name}}",
+        "title": "{{name}} 仍拥有一些项目"
+      },
       "nothingShared": "尚未共享任何内容。可从智能体、来源、提示词或工具的菜单中共享。",
       "openTeamError": "无法加载团队详情。",
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "remove": "移除",
+      "removeMember": {
+        "personalItemsHint": "这些项目属于 {{name}}，而不属于团队。移除前，请让 {{name}} 把团队依赖的项目移入团队。",
+        "personalItems_one": "{{name}} 与 {{team}} 共享的 {{count}} 个个人项目",
+        "personalItems_other": "{{name}} 与 {{team}} 共享的 {{count}} 个个人项目",
+        "teamItemsStay": "{{name}} 添加的团队项目会留在 {{team}}。{{name}} 将无法再访问它们；您可以随时重新添加此人。"
+      },
       "removeMemberConfirmation": "将“{{name}}”从 {{team}} 移除？",
       "removeMemberConsequence": "对方将无法再访问与 {{team}} 共享的所有内容。您可以随时重新添加。",
       "removeMemberError": "无法移除成员。",
@@ -4628,11 +4666,20 @@
       },
       "roleAdmin": "管理员",
       "roleChangeError": "无法更改角色（最后一名管理员受保护）。",
+      "roleHints": {
+        "admin": "还可以删除项目、管理成员和角色，并开启外部访问。",
+        "editor": "还可以添加、编辑、移动和归档项目，并查看日志。",
+        "viewer": "使用团队的智能体、知识、工具和提示词。"
+      },
       "roleMember": "成员",
       "save": "保存",
       "searchMembers": "搜索成员…",
       "selectTeamHint": "选择一个团队以管理其成员和共享资源。",
       "selectTeamTitle": "未选择团队",
+      "settingsTab": {
+        "deleteHint": "只能删除空团队。请先移动或删除其智能体、知识、工具、提示词和文件夹。",
+        "details": "详情"
+      },
       "share": {
         "access": "访问权限",
         "accessLevel": {
@@ -4712,6 +4759,11 @@
       },
       "sharedCount_one": "{{formatted}} 项共享",
       "sharedCount_other": "{{formatted}} 项共享",
+      "sharedItems": {
+        "empty": "还没有人与此团队共享个人项目。",
+        "intro": "这些项目属于共享它们的人，而不属于团队。请让所有者把团队依赖的项目移入团队。",
+        "title": "与团队共享的个人项目"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} 编辑者",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} 编辑者",
@@ -4735,10 +4787,28 @@
       "sourceScim": "通过 SCIM",
       "sourceSso": "通过 SSO",
       "subtitle": "管理您的团队、成员和共享资源。",
+      "tabs": {
+        "label": "团队页面",
+        "members": "成员",
+        "settings": "设置",
+        "shared": "共享的个人项目",
+        "usage": "用量"
+      },
       "teamActions": "团队操作",
       "teamNamePlaceholder": "团队名称",
       "teamSubtitle": "管理成员以及与此团队共享的资源。",
       "teamsHeading": "您的团队",
+      "transfer": {
+        "action": "转让",
+        "confirm": "将 {{team}} 转让给 {{name}}？",
+        "consequence": "此人将成为所有者和管理员。只有新的所有者才能再转让回来。",
+        "description": "只有所有者可以删除或转让团队。",
+        "error": "无法转让团队。",
+        "memberLabel": "新所有者",
+        "placeholder": "选择成员",
+        "submit": "转让",
+        "title": "转让所有权"
+      },
       "unshare": "取消共享",
       "unshareError": "无法取消共享该资源。",
       "updateFailed": "更新失败"

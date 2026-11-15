@@ -4761,6 +4761,11 @@
       "deleteTeamError": "No se pudo eliminar el equipo.",
       "descriptionLabel": "Descripción",
       "descriptionPlaceholder": "¿Para qué es este equipo? (opcional)",
+      "detail": {
+        "backToTeams": "Volver a los equipos",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "Este equipo no existe o no formas parte de él."
+      },
       "drawer": {
         "accessIn": "Acceso en {{team}}",
         "capabilitiesHint": "Según los ajustes de acceso del propietario. Solo lectura aquí.",
@@ -4799,6 +4804,12 @@
         "tool": "Los editores pueden cambiar acciones y sustituir credenciales, pero no pueden leer secretos.",
         "toolNoCredentials": "Los editores pueden cambiar acciones, pero no las credenciales."
       },
+      "errors": {
+        "lastAdmin": "Un equipo necesita al menos un administrador. Haz administrador a otra persona primero.",
+        "ownerMustTransfer": "Eres el propietario de este equipo. Transfiérelo primero a otro miembro.",
+        "ownerProtected": "El propietario del equipo no puede perder su rol ni ser quitado.",
+        "teamNotEmpty": "El equipo todavía posee elementos. Muévelos o elimínalos primero."
+      },
       "label": "Equipos",
       "loadError": "No se pudieron cargar los equipos.",
       "memberCount_many": "{{formatted}} miembros",
@@ -4816,12 +4827,47 @@
       "newTeam": "Nuevo equipo",
       "noMembers": "Aún no hay miembros. Usa “Añadir miembro” para invitar a alguien por correo.",
       "noTeams": "Aún no hay equipos.",
+      "notEmpty": {
+        "counts": {
+          "agent_many": "{{count}} agentes",
+          "agent_one": "{{count}} agente",
+          "agent_other": "{{count}} agentes",
+          "folder_many": "{{count}} carpetas",
+          "folder_one": "{{count}} carpeta",
+          "folder_other": "{{count}} carpetas",
+          "other_many": "{{count}} registros más",
+          "other_one": "{{count}} registro más",
+          "other_other": "{{count}} registros más",
+          "prompt_many": "{{count}} prompts",
+          "prompt_one": "{{count}} prompt",
+          "prompt_other": "{{count}} prompts",
+          "source_many": "{{count}} fuentes",
+          "source_one": "{{count}} fuente",
+          "source_other": "{{count}} fuentes",
+          "tool_many": "{{count}} herramientas",
+          "tool_one": "{{count}} herramienta",
+          "tool_other": "{{count}} herramientas",
+          "workflow_many": "{{count}} flujos de trabajo",
+          "workflow_one": "{{count}} flujo de trabajo",
+          "workflow_other": "{{count}} flujos de trabajo"
+        },
+        "hint": "Muévelos a Personal o elimínalos y después elimina el equipo.",
+        "open": "Abrir {{name}}",
+        "title": "{{name}} todavía posee elementos"
+      },
       "nothingShared": "Aún no se ha compartido nada. Comparte un agente, fuente, prompt o herramienta desde su menú.",
       "openTeamError": "No se pudieron cargar los detalles del equipo.",
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} equipos",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} equipo",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos",
       "remove": "Quitar",
+      "removeMember": {
+        "personalItemsHint": "Pertenecen a {{name}}, no al equipo. Pide a {{name}} que mueva los que necesita el equipo antes de quitarle.",
+        "personalItems_many": "{{count}} elementos personales que {{name}} comparte con {{team}}",
+        "personalItems_one": "{{count}} elemento personal que {{name}} comparte con {{team}}",
+        "personalItems_other": "{{count}} elementos personales que {{name}} comparte con {{team}}",
+        "teamItemsStay": "Los elementos del equipo que añadió {{name}} se quedan en {{team}}. {{name}} pierde el acceso a ellos; puedes volver a añadirle cuando quieras."
+      },
       "removeMemberConfirmation": "¿Quitar a \"{{name}}\" de {{team}}?",
       "removeMemberConsequence": "Pierde el acceso a todo lo que se compartió con {{team}}. Puedes volver a añadir a esta persona en cualquier momento.",
       "removeMemberError": "No se pudo quitar al miembro.",
@@ -4833,11 +4879,20 @@
       },
       "roleAdmin": "administrador",
       "roleChangeError": "No se pudo cambiar el rol (el último admin está protegido).",
+      "roleHints": {
+        "admin": "Además elimina elementos, gestiona miembros y roles, y activa el acceso desde fuera.",
+        "editor": "Además añade, edita, mueve y archiva elementos, y ve los registros.",
+        "viewer": "Usa los agentes, el conocimiento, las herramientas y los prompts del equipo."
+      },
       "roleMember": "miembro",
       "save": "Guardar",
       "searchMembers": "Buscar miembros…",
       "selectTeamHint": "Selecciona un equipo para gestionar sus miembros y recursos compartidos.",
       "selectTeamTitle": "Ningún equipo seleccionado",
+      "settingsTab": {
+        "deleteHint": "Solo se puede eliminar un equipo vacío. Mueve o elimina primero sus agentes, conocimiento, herramientas, prompts y carpetas.",
+        "details": "Detalles"
+      },
       "share": {
         "access": "Acceso",
         "accessLevel": {
@@ -4919,6 +4974,11 @@
       "sharedCount_many": "{{formatted}} compartidos",
       "sharedCount_one": "{{formatted}} compartido",
       "sharedCount_other": "{{formatted}} compartidos",
+      "sharedItems": {
+        "empty": "Nadie ha compartido un elemento personal con este equipo.",
+        "intro": "Pertenecen a quienes los compartieron, no al equipo. Pide al propietario que mueva los que necesita el equipo.",
+        "title": "Elementos personales compartidos con el equipo"
+      },
       "sharedList": {
         "badgeWithEditors_many": "{{level}} · +{{formatted}} editores",
         "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
@@ -4944,10 +5004,28 @@
       "sourceScim": "vía SCIM",
       "sourceSso": "vía SSO",
       "subtitle": "Gestiona tus equipos, miembros y recursos compartidos.",
+      "tabs": {
+        "label": "Páginas del equipo",
+        "members": "Miembros",
+        "settings": "Configuración",
+        "shared": "Elementos personales compartidos",
+        "usage": "Uso"
+      },
       "teamActions": "Acciones del equipo",
       "teamNamePlaceholder": "Nombre del equipo",
       "teamSubtitle": "Gestiona los miembros y los recursos compartidos con este equipo.",
       "teamsHeading": "Tus equipos",
+      "transfer": {
+        "action": "Transferir",
+        "confirm": "¿Transferir {{team}} a {{name}}?",
+        "consequence": "Pasa a ser propietario y administrador. Solo el nuevo propietario puede devolverlo.",
+        "description": "Solo el propietario puede eliminar el equipo o transferirlo.",
+        "error": "No se pudo transferir el equipo.",
+        "memberLabel": "Nuevo propietario",
+        "placeholder": "Elige un miembro",
+        "submit": "Transferir",
+        "title": "Transferir la propiedad"
+      },
       "unshare": "Dejar de compartir",
       "unshareError": "No se pudo dejar de compartir el recurso.",
       "updateFailed": "Error al actualizar"

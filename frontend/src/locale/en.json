@@ -4616,6 +4616,11 @@
       "deleteTeamError": "Could not delete team.",
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "What's this team for? (optional)",
+      "detail": {
+        "backToTeams": "Back to teams",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "This team doesn't exist, or you're not in it."
+      },
       "drawer": {
         "accessIn": "Access in {{team}}",
         "capabilitiesHint": "From the owner’s access settings. Read-only here.",
@@ -4654,6 +4659,12 @@
         "tool": "Editors can change actions and replace credentials, but can’t read secrets.",
         "toolNoCredentials": "Editors can change actions, but not credentials."
       },
+      "errors": {
+        "lastAdmin": "A team needs at least one admin. Make someone else an admin first.",
+        "ownerMustTransfer": "You own this team. Transfer it to another member first.",
+        "ownerProtected": "The team's owner can't be demoted or removed.",
+        "teamNotEmpty": "The team still owns items. Move or delete them first."
+      },
       "label": "Teams",
       "loadError": "Failed to load teams.",
       "memberCount_one": "{{formatted}} member",
@@ -4669,11 +4680,38 @@
       "newTeam": "New team",
       "noMembers": "No members yet. Use “Add member” to invite someone by email.",
       "noTeams": "No teams yet.",
+      "notEmpty": {
+        "counts": {
+          "agent_one": "{{count}} agent",
+          "agent_other": "{{count}} agents",
+          "folder_one": "{{count}} folder",
+          "folder_other": "{{count}} folders",
+          "other_one": "{{count}} other record",
+          "other_other": "{{count}} other records",
+          "prompt_one": "{{count}} prompt",
+          "prompt_other": "{{count}} prompts",
+          "source_one": "{{count}} source",
+          "source_other": "{{count}} sources",
+          "tool_one": "{{count}} tool",
+          "tool_other": "{{count}} tools",
+          "workflow_one": "{{count}} workflow",
+          "workflow_other": "{{count}} workflows"
+        },
+        "hint": "Move them to Personal or delete them, then delete the team.",
+        "open": "Open {{name}}",
+        "title": "{{name}} still owns items"
+      },
       "nothingShared": "Nothing shared yet. Share an agent, source, prompt, or tool from its menu.",
       "openTeamError": "Could not load team details.",
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams",
       "remove": "Remove",
+      "removeMember": {
+        "personalItemsHint": "They belong to {{name}}, not to the team. Ask {{name}} to move the ones the team depends on before you remove them.",
+        "personalItems_one": "{{count}} personal item {{name}} shares with {{team}}",
+        "personalItems_other": "{{count}} personal items {{name}} shares with {{team}}",
+        "teamItemsStay": "Team items {{name}} added stay with {{team}}. {{name}} loses access to them; you can add them again at any time."
+      },
       "removeMemberConfirmation": "Remove \"{{name}}\" from {{team}}?",
       "removeMemberConsequence": "They lose access to everything shared with {{team}}. You can add them again at any time.",
       "removeMemberError": "Could not remove member.",
@@ -4685,11 +4723,20 @@
       },
       "roleAdmin": "admin",
       "roleChangeError": "Could not change role (last admin is protected).",
+      "roleHints": {
+        "admin": "Also deletes items, manages members and roles, and turns on outside access.",
+        "editor": "Also adds, edits, moves and files items, and sees logs.",
+        "viewer": "Uses the team's agents, knowledge, tools and prompts."
+      },
       "roleMember": "member",
       "save": "Save",
       "searchMembers": "Search members…",
       "selectTeamHint": "Select a team to manage its members and shared resources.",
       "selectTeamTitle": "No team selected",
+      "settingsTab": {
+        "deleteHint": "Only an empty team can be deleted. Move or delete its agents, knowledge, tools, prompts and folders first.",
+        "details": "Details"
+      },
       "share": {
         "access": "Access",
         "accessLevel": {
@@ -4769,6 +4816,11 @@
       },
       "sharedCount_one": "{{formatted}} shared",
       "sharedCount_other": "{{formatted}} shared",
+      "sharedItems": {
+        "empty": "No one has shared a personal item with this team.",
+        "intro": "These belong to the people who shared them, not to the team. Ask the owner to move the ones the team depends on.",
+        "title": "Personal items shared with the team"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} editors",
@@ -4792,10 +4844,28 @@
       "sourceScim": "via SCIM",
       "sourceSso": "via SSO",
       "subtitle": "Manage your teams, members, and shared resources.",
+      "tabs": {
+        "label": "Team pages",
+        "members": "Members",
+        "settings": "Settings",
+        "shared": "Personal items shared",
+        "usage": "Usage"
+      },
       "teamActions": "Team actions",
       "teamNamePlaceholder": "Team name",
       "teamSubtitle": "Manage members and the resources shared with this team.",
       "teamsHeading": "Your teams",
+      "transfer": {
+        "action": "Transfer",
+        "confirm": "Transfer {{team}} to {{name}}?",
+        "consequence": "They become the owner and an admin. Only the new owner can transfer it back.",
+        "description": "Only the owner can delete the team or transfer it.",
+        "error": "Could not transfer the team.",
+        "memberLabel": "New owner",
+        "placeholder": "Choose a member",
+        "submit": "Transfer",
+        "title": "Transfer ownership"
+      },
       "unshare": "Unshare",
       "unshareError": "Could not unshare resource.",
       "updateFailed": "Update failed"

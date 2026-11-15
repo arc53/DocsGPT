@@ -4595,6 +4595,11 @@
       "deleteTeamError": "Team konnte nicht gelöscht werden.",
       "descriptionLabel": "Beschreibung",
       "descriptionPlaceholder": "Wofür ist dieses Team? (optional)",
+      "detail": {
+        "backToTeams": "Zurück zu den Teams",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "Dieses Team gibt es nicht, oder du bist nicht Mitglied."
+      },
       "drawer": {
         "accessIn": "Zugriff in {{team}}",
         "capabilitiesHint": "Aus den Zugriffseinstellungen des Eigentümers. Hier nur lesend.",
@@ -4633,6 +4638,12 @@
         "tool": "Bearbeiter können Aktionen ändern und Anmeldedaten ersetzen, aber keine Geheimnisse lesen.",
         "toolNoCredentials": "Bearbeiter können Aktionen ändern, aber keine Anmeldedaten."
       },
+      "errors": {
+        "lastAdmin": "Ein Team braucht mindestens einen Admin. Mach zuerst jemand anderen zum Admin.",
+        "ownerMustTransfer": "Dir gehört dieses Team. Übertrage es zuerst an ein anderes Mitglied.",
+        "ownerProtected": "Der Eigentümer des Teams kann weder herabgestuft noch entfernt werden.",
+        "teamNotEmpty": "Dem Team gehören noch Elemente. Verschiebe oder lösche sie zuerst."
+      },
       "label": "Teams",
       "loadError": "Teams konnten nicht geladen werden.",
       "memberCount_one": "{{formatted}} Mitglied",
@@ -4648,11 +4659,38 @@
       "newTeam": "Neues Team",
       "noMembers": "Noch keine Mitglieder. Nutze „Mitglied hinzufügen“, um jemanden per E-Mail einzuladen.",
       "noTeams": "Noch keine Teams.",
+      "notEmpty": {
+        "counts": {
+          "agent_one": "{{count}} Agent",
+          "agent_other": "{{count}} Agenten",
+          "folder_one": "{{count}} Ordner",
+          "folder_other": "{{count}} Ordner",
+          "other_one": "{{count}} weiterer Eintrag",
+          "other_other": "{{count}} weitere Einträge",
+          "prompt_one": "{{count}} Prompt",
+          "prompt_other": "{{count}} Prompts",
+          "source_one": "{{count}} Quelle",
+          "source_other": "{{count}} Quellen",
+          "tool_one": "{{count}} Werkzeug",
+          "tool_other": "{{count}} Werkzeuge",
+          "workflow_one": "{{count}} Workflow",
+          "workflow_other": "{{count}} Workflows"
+        },
+        "hint": "Verschiebe sie nach „Persönlich“ oder lösche sie, dann lösche das Team.",
+        "open": "{{name}} öffnen",
+        "title": "{{name}} gehören noch Elemente"
+      },
       "nothingShared": "Noch nichts geteilt. Teile einen Agenten, eine Quelle, einen Prompt oder ein Werkzeug über dessen Menü.",
       "openTeamError": "Team-Details konnten nicht geladen werden.",
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams",
       "remove": "Entfernen",
+      "removeMember": {
+        "personalItemsHint": "Sie gehören {{name}}, nicht dem Team. Bitte {{name}}, die Elemente, auf die das Team angewiesen ist, vor dem Entfernen ins Team zu verschieben.",
+        "personalItems_one": "{{count}} persönliches Element, das {{name}} mit {{team}} teilt",
+        "personalItems_other": "{{count}} persönliche Elemente, die {{name}} mit {{team}} teilt",
+        "teamItemsStay": "Team-Elemente, die {{name}} hinzugefügt hat, bleiben bei {{team}}. {{name}} verliert den Zugriff darauf; du kannst die Person jederzeit wieder hinzufügen."
+      },
       "removeMemberConfirmation": "\"{{name}}\" aus {{team}} entfernen?",
       "removeMemberConsequence": "Die Person verliert den Zugriff auf alles, was mit {{team}} geteilt wurde. Du kannst sie jederzeit wieder hinzufügen.",
       "removeMemberError": "Mitglied konnte nicht entfernt werden.",
@@ -4664,11 +4702,20 @@
       },
       "roleAdmin": "Admin",
       "roleChangeError": "Rolle konnte nicht geändert werden (der letzte Admin ist geschützt).",
+      "roleHints": {
+        "admin": "Löscht außerdem Elemente, verwaltet Mitglieder und Rollen und schaltet Zugriff von außen ein.",
+        "editor": "Fügt außerdem Elemente hinzu, bearbeitet, verschiebt und ordnet sie ein und sieht Logs.",
+        "viewer": "Nutzt die Agenten, das Wissen, die Werkzeuge und Prompts des Teams."
+      },
       "roleMember": "Mitglied",
       "save": "Speichern",
       "searchMembers": "Mitglieder suchen…",
       "selectTeamHint": "Wähle ein Team aus, um seine Mitglieder und geteilten Ressourcen zu verwalten.",
       "selectTeamTitle": "Kein Team ausgewählt",
+      "settingsTab": {
+        "deleteHint": "Nur ein leeres Team kann gelöscht werden. Verschiebe oder lösche zuerst seine Agenten, Wissensquellen, Werkzeuge, Prompts und Ordner.",
+        "details": "Details"
+      },
       "share": {
         "access": "Zugriff",
         "accessLevel": {
@@ -4748,6 +4795,11 @@
       },
       "sharedCount_one": "{{formatted}} geteilt",
       "sharedCount_other": "{{formatted}} geteilt",
+      "sharedItems": {
+        "empty": "Niemand hat ein persönliches Element mit diesem Team geteilt.",
+        "intro": "Sie gehören den Personen, die sie geteilt haben, nicht dem Team. Bitte die Eigentümer, die Elemente, auf die das Team angewiesen ist, ins Team zu verschieben.",
+        "title": "Mit dem Team geteilte persönliche Elemente"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} Bearbeiter",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} Bearbeiter",
@@ -4771,10 +4823,28 @@
       "sourceScim": "über SCIM",
       "sourceSso": "über SSO",
       "subtitle": "Verwalte deine Teams, Mitglieder und geteilten Ressourcen.",
+      "tabs": {
+        "label": "Team-Seiten",
+        "members": "Mitglieder",
+        "settings": "Einstellungen",
+        "shared": "Geteilte persönliche Elemente",
+        "usage": "Nutzung"
+      },
       "teamActions": "Team-Aktionen",
       "teamNamePlaceholder": "Teamname",
       "teamSubtitle": "Verwalte Mitglieder und die mit diesem Team geteilten Ressourcen.",
       "teamsHeading": "Deine Teams",
+      "transfer": {
+        "action": "Übertragen",
+        "confirm": "{{team}} an {{name}} übertragen?",
+        "consequence": "Die Person wird Eigentümer und Admin. Nur der neue Eigentümer kann es zurückübertragen.",
+        "description": "Nur der Eigentümer kann das Team löschen oder übertragen.",
+        "error": "Das Team konnte nicht übertragen werden.",
+        "memberLabel": "Neuer Eigentümer",
+        "placeholder": "Mitglied auswählen",
+        "submit": "Übertragen",
+        "title": "Eigentum übertragen"
+      },
       "unshare": "Freigabe aufheben",
       "unshareError": "Freigabe der Ressource konnte nicht aufgehoben werden.",
       "updateFailed": "Aktualisierung fehlgeschlagen"

@@ -4561,6 +4561,11 @@
       "deleteTeamError": "チームを削除できませんでした。",
       "descriptionLabel": "説明",
       "descriptionPlaceholder": "このチームの目的は？（任意）",
+      "detail": {
+        "backToTeams": "チーム一覧に戻る",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "このチームは存在しないか、あなたはメンバーではありません。"
+      },
       "drawer": {
         "accessIn": "{{team}} でのアクセス権",
         "capabilitiesHint": "所有者のアクセス設定に基づきます。ここでは読み取り専用です。",
@@ -4599,6 +4604,12 @@
         "tool": "編集者はアクションの変更と認証情報の置き換えができますが、シークレットは読めません。",
         "toolNoCredentials": "編集者はアクションを変更できますが、認証情報は変更できません。"
       },
+      "errors": {
+        "lastAdmin": "チームには管理者が少なくとも1人必要です。先に別のメンバーを管理者にしてください。",
+        "ownerMustTransfer": "あなたはこのチームの所有者です。先に別のメンバーに譲渡してください。",
+        "ownerProtected": "チームの所有者は降格も削除もできません。",
+        "teamNotEmpty": "チームはまだアイテムを所有しています。先に移動するか削除してください。"
+      },
       "label": "チーム",
       "loadError": "チームの読み込みに失敗しました。",
       "memberCount_one": "{{formatted}}人のメンバー",
@@ -4614,11 +4625,38 @@
       "newTeam": "新しいチーム",
       "noMembers": "メンバーはまだいません。「メンバーを追加」からメールアドレスで招待してください。",
       "noTeams": "チームはまだありません。",
+      "notEmpty": {
+        "counts": {
+          "agent_one": "エージェント {{count}} 件",
+          "agent_other": "エージェント {{count}} 件",
+          "folder_one": "フォルダー {{count}} 件",
+          "folder_other": "フォルダー {{count}} 件",
+          "other_one": "その他のレコード {{count}} 件",
+          "other_other": "その他のレコード {{count}} 件",
+          "prompt_one": "プロンプト {{count}} 件",
+          "prompt_other": "プロンプト {{count}} 件",
+          "source_one": "ソース {{count}} 件",
+          "source_other": "ソース {{count}} 件",
+          "tool_one": "ツール {{count}} 件",
+          "tool_other": "ツール {{count}} 件",
+          "workflow_one": "ワークフロー {{count}} 件",
+          "workflow_other": "ワークフロー {{count}} 件"
+        },
+        "hint": "個人に移動するか削除してから、チームを削除してください。",
+        "open": "{{name}} を開く",
+        "title": "{{name}} はまだアイテムを所有しています"
+      },
       "nothingShared": "まだ何も共有されていません。エージェント、ソース、プロンプト、ツールのメニューから共有できます。",
       "openTeamError": "チームの詳細を読み込めませんでした。",
       "pageRange_one": "チーム {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件",
       "remove": "削除",
+      "removeMember": {
+        "personalItemsHint": "これらはチームではなく {{name}} のものです。削除する前に、チームが必要としているものを移動するよう {{name}} に依頼してください。",
+        "personalItems_one": "{{name}} が {{team}} と共有している個人アイテム {{count}} 件",
+        "personalItems_other": "{{name}} が {{team}} と共有している個人アイテム {{count}} 件",
+        "teamItemsStay": "{{name}} が追加したチームのアイテムは {{team}} に残ります。{{name}} はそれらにアクセスできなくなります。いつでも再び追加できます。"
+      },
       "removeMemberConfirmation": "「{{name}}」を {{team}} から削除しますか？",
       "removeMemberConsequence": "{{team}} と共有されたすべてにアクセスできなくなります。いつでも再度追加できます。",
       "removeMemberError": "メンバーを削除できませんでした。",
@@ -4630,11 +4668,20 @@
       },
       "roleAdmin": "管理者",
       "roleChangeError": "ロールを変更できませんでした（最後の管理者は保護されています）。",
+      "roleHints": {
+        "admin": "さらにアイテムの削除、メンバーとロールの管理、外部からのアクセスの有効化ができます。",
+        "editor": "さらにアイテムの追加、編集、移動、整理とログの閲覧ができます。",
+        "viewer": "チームのエージェント、ナレッジ、ツール、プロンプトを使えます。"
+      },
       "roleMember": "メンバー",
       "save": "保存",
       "searchMembers": "メンバーを検索…",
       "selectTeamHint": "チームを選択して、メンバーと共有リソースを管理します。",
       "selectTeamTitle": "チームが選択されていません",
+      "settingsTab": {
+        "deleteHint": "削除できるのは空のチームだけです。先にエージェント、ナレッジ、ツール、プロンプト、フォルダーを移動するか削除してください。",
+        "details": "詳細"
+      },
       "share": {
         "access": "アクセス",
         "accessLevel": {
@@ -4714,6 +4761,11 @@
       },
       "sharedCount_one": "{{formatted}}件の共有",
       "sharedCount_other": "{{formatted}}件の共有",
+      "sharedItems": {
+        "empty": "このチームと個人アイテムを共有している人はいません。",
+        "intro": "これらはチームではなく、共有した人のものです。チームが必要としているものは所有者に移動を依頼してください。",
+        "title": "チームと共有された個人アイテム"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} 編集者",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} 編集者",
@@ -4737,10 +4789,28 @@
       "sourceScim": "SCIM経由",
       "sourceSso": "SSO経由",
       "subtitle": "チーム、メンバー、共有リソースを管理します。",
+      "tabs": {
+        "label": "チームのページ",
+        "members": "メンバー",
+        "settings": "設定",
+        "shared": "共有された個人アイテム",
+        "usage": "使用状況"
+      },
       "teamActions": "チームアクション",
       "teamNamePlaceholder": "チーム名",
       "teamSubtitle": "このチームのメンバーと共有リソースを管理します。",
       "teamsHeading": "あなたのチーム",
+      "transfer": {
+        "action": "譲渡",
+        "confirm": "{{team}} を {{name}} に譲渡しますか？",
+        "consequence": "その人が所有者兼管理者になります。元に戻せるのは新しい所有者だけです。",
+        "description": "チームの削除と譲渡ができるのは所有者だけです。",
+        "error": "チームを譲渡できませんでした。",
+        "memberLabel": "新しい所有者",
+        "placeholder": "メンバーを選択",
+        "submit": "譲渡",
+        "title": "所有権の譲渡"
+      },
       "unshare": "共有を解除",
       "unshareError": "リソースの共有を解除できませんでした。",
       "updateFailed": "更新に失敗しました"

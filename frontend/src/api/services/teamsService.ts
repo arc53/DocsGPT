@@ -1,7 +1,14 @@
+import type { TFunction } from 'i18next';
+
 import apiClient from '../client';
 import endpoints from '../endpoints';
 
-export type TeamRole = 'team_admin' | 'team_member';
+/** A person's role in a team: one role on everything the team owns. */
+export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
+/** The roles a member can be given; the owner changes only by a transfer. */
+export type AssignableTeamRole = Exclude<TeamRole, 'owner'>;
+/** The two role names older servers send (`role` on members, `member_role` on teams). */
+export type LegacyTeamRole = 'team_admin' | 'team_member';
 export type AccessLevel = 'viewer' | 'editor';
 export type ResourceType = 'agent' | 'source' | 'prompt' | 'tool';
 
@@ -10,11 +17,66 @@ export type TeamMember = {
   // Resolved on the server from the user's profile; may be null when the user
   // has never signed in or has no email on record.
   email?: string | null;
-  role: TeamRole;
+  /** The old role name, kept for older clients. */
+  role: LegacyTeamRole;
+  /** The role (`owner` for the team's owner); absent on older servers. */
+  team_role?: TeamRole;
   source?: string;
   granted_by?: string | null;
   granted_at?: string | null;
 };
+
+const TEAM_ROLES: ReadonlySet<string> = new Set([
+  'owner',
+  'admin',
+  'editor',
+  'viewer',
+]);
+
+const isTeamRole = (value: unknown): value is TeamRole =>
+  typeof value === 'string' && TEAM_ROLES.has(value);
+
+/** An old role name read as a role: an admin stays one, a member reads as Viewer. */
+const fromLegacy = (value: unknown): TeamRole | null =>
+  value === 'team_admin' ? 'admin' : value === 'team_member' ? 'viewer' : null;
+
+/**
+ * A member's role, from `team_role`, else from the old `role` name.
+ *
+ * Args:
+ *   member: A member row.
+ *
+ * Returns:
+ *   The role; Viewer when neither field says.
+ */
+export function memberTeamRole(member: {
+  team_role?: unknown;
+  role?: unknown;
+}): TeamRole {
+  if (isTeamRole(member.team_role)) return member.team_role;
+  return fromLegacy(member.role) ?? 'viewer';
+}
+
+/**
+ * The caller's role in a team row, from `role`, else from `member_role`.
+ *
+ * Args:
+ *   team: A team row (or the grants answer, which carries the same fields).
+ *
+ * Returns:
+ *   The role; Viewer when neither field says.
+ */
+export function teamRoleOf(team: {
+  role?: unknown;
+  member_role?: unknown;
+}): TeamRole {
+  if (isTeamRole(team.role)) return team.role;
+  return fromLegacy(team.member_role) ?? 'viewer';
+}
+
+/** Whether a role may manage members, edit the team and see its settings. */
+export const canManageTeam = (role: TeamRole | null | undefined): boolean =>
+  role === 'owner' || role === 'admin';
 
 // A single resource-sharing grant as returned by listResourceShares.
 // `target_user_id` is null/undefined for a whole-team grant, or a member's
@@ -60,15 +122,63 @@ export type ResourceSettingsResponse = {
   allowed_actions?: string[];
 };
 
-/** A non-2xx teams API response; `message` is the server's own message. */
+/**
+ * A non-2xx teams API response; `message` is the server's own message,
+ * `code` its stable `error` code when it sent one, `body` the whole answer
+ * (a team that still owns items names them in `counts`).
+ */
 export class TeamsApiError extends Error {
   status: number;
+  code?: string;
+  body?: Record<string, unknown>;
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    code?: string,
+    body?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'TeamsApiError';
     this.status = status;
+    this.code = code;
+    this.body = body;
   }
+}
+
+/** The app's own words for each refusal code a teams call can answer. */
+export const TEAM_ERROR_KEYS: Readonly<Record<string, string>> = {
+  last_admin: 'settings.teams.errors.lastAdmin',
+  owner_must_transfer: 'settings.teams.errors.ownerMustTransfer',
+  owner_protected: 'settings.teams.errors.ownerProtected',
+  team_not_empty: 'settings.teams.errors.teamNotEmpty',
+};
+
+/**
+ * What to say about a failed teams call: the app's words for a known
+ * refusal code, else the server's message, else `fallback`.
+ *
+ * Args:
+ *   t: The translate function.
+ *   error: What the call threw (a `TeamsApiError`, or its serialized form
+ *     from a thunk's `unwrap`).
+ *   fallback: The text when the error says nothing usable (a network
+ *     failure).
+ *
+ * Returns:
+ *   The message to show.
+ */
+export function teamErrorMessage(
+  t: TFunction | ((key: string) => string),
+  error: unknown,
+  fallback: string,
+): string {
+  const e = error as { name?: unknown; message?: unknown; code?: unknown };
+  if (typeof e !== 'object' || e === null || e.name !== 'TeamsApiError')
+    return fallback;
+  const key = typeof e.code === 'string' ? TEAM_ERROR_KEYS[e.code] : undefined;
+  if (key) return (t as (key: string) => string)(key);
+  return typeof e.message === 'string' && e.message ? e.message : fallback;
 }
 
 // apiClient resolves to the raw fetch Response (the app convention); services
@@ -80,17 +190,23 @@ const json = async (response: Response | unknown) => {
   if (!r || !('json' in r) || typeof r.json !== 'function') return r as unknown;
   if (typeof r.ok === 'boolean' && !r.ok) {
     let message = `Request failed (${r.status})`;
+    let code: string | undefined;
+    let parsed: Record<string, unknown> | undefined;
     try {
       const body = await r.json();
+      if (body && typeof body === 'object') parsed = body;
+      if (body && typeof body.error === 'string' && body.error) {
+        code = body.error;
+      }
       if (body && typeof body.message === 'string' && body.message) {
         message = body.message;
-      } else if (body && typeof body.error === 'string' && body.error) {
-        message = body.error;
+      } else if (code) {
+        message = code;
       }
     } catch {
       // Not JSON: keep the generic message.
     }
-    throw new TeamsApiError(r.status, message);
+    throw new TeamsApiError(r.status, message, code, parsed);
   }
   return r.json();
 };
@@ -136,14 +252,14 @@ const teamsService = {
   addMember: async (
     id: string,
     // Pass either an email (resolved to a sub server-side) or a raw user_id.
-    data: { email?: string; user_id?: string; role: TeamRole },
+    data: { email?: string; user_id?: string; role: AssignableTeamRole },
     token: string | null,
   ): Promise<any> =>
     json(await apiClient.post(endpoints.USER.TEAM_MEMBERS(id), data, token)),
   setMemberRole: async (
     id: string,
     memberId: string,
-    role: TeamRole,
+    role: AssignableTeamRole,
     token: string | null,
   ): Promise<any> =>
     json(

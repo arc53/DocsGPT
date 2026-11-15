@@ -1,6 +1,14 @@
-import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import {
+  createAsyncThunk,
+  createSlice,
+  miniSerializeError,
+  type SerializedError,
+} from '@reduxjs/toolkit';
 
-import teamsService, { TeamRole } from '../api/services/teamsService';
+import teamsService, {
+  LegacyTeamRole,
+  TeamRole,
+} from '../api/services/teamsService';
 import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
 import type { WorkspaceState } from '../workspace/workspaceSlice';
 
@@ -13,7 +21,10 @@ export type Team = {
   // Whether the caller owns the team (only the owner may delete it). Newer
   // servers send it; older ones only `owner_id`, compared to the caller's sub.
   is_owner?: boolean;
-  member_role?: TeamRole;
+  /** The caller's role; null for a non-member (an instance admin). */
+  role?: TeamRole | null;
+  /** The caller's role in the old names. */
+  member_role?: LegacyTeamRole;
   // Annotations from the list endpoint for the teams grid cards.
   member_count?: number;
   shared_count?: number;
@@ -58,18 +69,42 @@ export const createTeam = createAsyncThunk<
   return r.team as Team;
 });
 
+/** A refused delete: the error's fields, and what the team still owns. */
+export type DeleteTeamError = SerializedError & {
+  counts?: Record<string, number>;
+};
+
 export const deleteTeam = createAsyncThunk<
   string,
-  { id: string; token: string | null }
->('teams/delete', async ({ id, token }) => {
-  // A non-2xx (e.g. 403 for a non-owner) rejects in teamsService, so the team
-  // stays in the list; a 2xx that still says success:false rejects too.
-  const r = await teamsService.remove(id, token);
-  if (r?.success === false) {
-    throw new Error(r?.message ?? 'Failed to delete team');
-  }
-  return id;
-});
+  { id: string; token: string | null },
+  { serializedErrorType: DeleteTeamError }
+>(
+  'teams/delete',
+  async ({ id, token }) => {
+    // A non-2xx (e.g. 403 for a non-owner) rejects in teamsService, so the
+    // team stays in the list; a 2xx that still says success:false rejects too.
+    const r = await teamsService.remove(id, token);
+    if (r?.success === false) {
+      throw new Error(r?.message ?? 'Failed to delete team');
+    }
+    return id;
+  },
+  {
+    // A team that still owns items is refused with their counts; keep them
+    // (and the refusal's code) for the caller of `unwrap`.
+    serializeError: (error): DeleteTeamError => {
+      // A `TeamsApiError` carries the answer's body.
+      const counts = (error as { body?: { counts?: unknown } } | null)?.body
+        ?.counts;
+      return {
+        ...miniSerializeError(error),
+        ...(counts && typeof counts === 'object'
+          ? { counts: counts as Record<string, number> }
+          : {}),
+      };
+    },
+  },
+);
 
 const teamsSlice = createSlice({
   name: 'teams',
