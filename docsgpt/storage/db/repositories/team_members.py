@@ -17,18 +17,33 @@ from typing import Optional
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import like_escape, row_to_dict
+from docsgpt.workspaces.principal import is_principal_id
+from docsgpt.workspaces.roles import to_stored_role
 
 ROLE_TEAM_ADMIN = "team_admin"
 ROLE_TEAM_EDITOR = "team_editor"
 ROLE_TEAM_VIEWER = "team_viewer"
-#: The pre-workspace name of a non-admin member: still accepted on writes (stored as a viewer) and
-#: still what :meth:`TeamMembersRepository.role_for` answers for editors and viewers, for today's callers.
+#: The pre-workspace name of a non-admin member: still accepted on writes, stored as a viewer.
 ROLE_TEAM_MEMBER = "team_member"
+
+#: Stored roles, strongest first (``role_for`` answers the first one a member holds).
+_STRENGTH_SQL = """
+    CASE WHEN bool_or(role = 'team_admin') THEN 'team_admin'
+         WHEN bool_or(role = 'team_editor') THEN 'team_editor'
+         ELSE 'team_viewer' END
+"""
 
 
 def _stored_role(role: str) -> str:
-    """The stored role for ``role``: the legacy ``team_member`` is a viewer; the rest pass through."""
-    return ROLE_TEAM_VIEWER if role == ROLE_TEAM_MEMBER else role
+    """The stored role for ``role``.
+
+    Accepts the API names (``admin``, ``editor``, ``viewer``), the stored names and the legacy
+    ``team_member`` (a viewer).
+
+    Raises:
+        ValueError: Anything else, ``owner`` included (ownership is transferred, not assigned).
+    """
+    return to_stored_role(role)
 
 
 class MembershipChangeRefused(Exception):
@@ -39,13 +54,15 @@ class MembershipChangeRefused(Exception):
     ownership is transferred, and a team always keeps at least one admin.
 
     Attributes:
-        reason: ``OWNER`` (the target owns the team) or ``LAST_ADMIN``.
-        change: ``"demote"`` or ``"remove"``.
+        reason: ``OWNER`` (the target owns the team), ``LAST_ADMIN``, or ``NOT_A_PERSON`` (the
+            target is not an existing person: unknown, a team principal or a system row).
+        change: ``"demote"``, ``"remove"`` or ``"add"``.
         self_change: True when the caller is changing their own membership.
     """
 
     OWNER = "owner"
     LAST_ADMIN = "last_admin"
+    NOT_A_PERSON = "not_a_person"
 
     def __init__(self, reason: str, change: str, self_change: bool) -> None:
         super().__init__(f"{change} refused: {reason}")
@@ -64,19 +81,26 @@ class TeamMembersRepository:
     # Reads
     # ------------------------------------------------------------------
     def role_for(self, user_id: str, team_id: str) -> Optional[str]:
-        """Strongest role ``user_id`` holds in ``team_id`` (any source), or None.
+        """Strongest stored role ``user_id`` holds in ``team_id`` (any source), or None.
 
-        Answers in the pre-workspace names: ``team_admin``, or ``team_member``
-        for editors and viewers. Returns None when the user is not a member —
-        the caller treats that as "no team access".
+        Answers ``team_admin``, ``team_editor`` or ``team_viewer``; None when
+        the user is not a member, which the caller treats as "no team access".
+        The team's owner is ``teams.owner_id``, not a stored role: use
+        ``docsgpt.workspaces.roles.team_role_for`` for the role including Owner.
+
+        Args:
+            user_id: The person's id.
+            team_id: Team UUID.
+
+        Returns:
+            Optional[str]: The stored role, or None.
         """
         if not user_id or not team_id:
             return None
         result = self._conn.execute(
             text(
-                """
-                SELECT CASE WHEN bool_or(role = 'team_admin') THEN 'team_admin'
-                            ELSE 'team_member' END AS role
+                f"""
+                SELECT {_STRENGTH_SQL} AS role
                 FROM team_members
                 WHERE team_id = CAST(:team_id AS uuid) AND user_id = :user_id
                 HAVING count(*) > 0
@@ -86,6 +110,28 @@ class TeamMembersRepository:
         )
         row = result.fetchone()
         return row[0] if row is not None else None
+
+    def roles_by_team(self, user_id: str) -> dict[str, str]:
+        """``team_id -> strongest stored role`` for every team ``user_id`` belongs to, in one query.
+
+        Args:
+            user_id: The person's id.
+
+        Returns:
+            dict[str, str]: Canonical team ids to ``team_admin``, ``team_editor`` or ``team_viewer``.
+        """
+        if not user_id:
+            return {}
+        rows = self._conn.execute(
+            text(
+                f"""
+                SELECT team_id, {_STRENGTH_SQL} AS role
+                FROM team_members WHERE user_id = :user_id GROUP BY team_id
+                """
+            ),
+            {"user_id": user_id},
+        ).fetchall()
+        return {str(team_id): role for team_id, role in rows}
 
     def is_member(self, user_id: str, team_id: str) -> bool:
         return self.role_for(user_id, team_id) is not None
@@ -246,22 +292,32 @@ class TeamMembersRepository:
         ``add_member`` / ``set_manual_role`` / ``remove_member`` stay
         unguarded primitives for team creation, ownership transfer and tests.
 
+        A new member must be an existing person (a ``users`` row of kind
+        ``user``): a team principal, a system row or an id nobody has signed
+        in with is refused before anything is written. Any role below
+        admin is a demotion for an admin, so editor and viewer get the same
+        owner and last-admin guards as the old member role.
+
         Args:
             team_id: Team UUID.
             user_id: The member's auth ``sub`` (need not be a member yet).
-            role: The manual role to set, or ``None`` to remove every row the
-                user holds in the team.
+            role: The role to set (``admin``/``editor``/``viewer``, the stored
+                names, or the legacy ``team_member``), or ``None`` to remove
+                every row the user holds in the team.
             actor: The caller's ``sub``; recorded as ``granted_by``.
 
         Returns:
             True. A removal that found no rows returns False.
 
         Raises:
-            MembershipChangeRefused: The change would demote or remove the
-                owner, or leave the team with no admin.
+            ValueError: ``role`` is not an assignable role (``owner`` included).
+            MembershipChangeRefused: The target is not a person, or the change
+                would demote or remove the owner, or leave the team with no admin.
         """
         if role is not None:
             role = _stored_role(role)
+            if not self.is_member(user_id, team_id) and not self._is_person(user_id):
+                raise MembershipChangeRefused(MembershipChangeRefused.NOT_A_PERSON, "add", actor == user_id)
         if role != ROLE_TEAM_ADMIN:
             change = "remove" if role is None else "demote"
             owner = self._conn.execute(
@@ -281,6 +337,15 @@ class TeamMembersRepository:
             return self.remove_member(team_id, user_id)
         self.set_manual_role(team_id, user_id, role, granted_by=actor)
         return True
+
+    def _is_person(self, user_id: str) -> bool:
+        """Whether ``user_id`` is an existing ``users`` row of kind ``user`` (a principal never is)."""
+        if not user_id or is_principal_id(user_id):
+            return False
+        kind = self._conn.execute(
+            text("SELECT kind FROM users WHERE user_id = :user_id"), {"user_id": user_id}
+        ).scalar()
+        return kind == "user"
 
     def add_member(
         self,

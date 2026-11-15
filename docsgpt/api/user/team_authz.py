@@ -15,6 +15,12 @@ Key differences from the global resolver, all deliberate:
 - Resolution FAILS CLOSED: a DB error while reading membership denies access
   (the inverse of the global resolver, which fails open — here, failing open
   would grant team access during an outage).
+
+Team roles rank Viewer < Editor < Admin (``docsgpt.workspaces.roles``); a
+route asks for the weakest stored role it needs. ``team_member`` means "any
+member". This plane guards team management (members, team settings, grants
+lists); access to a team's *items* never comes from here, and the instance
+admin short-circuit does not reach them (``resource_access.resolve``).
 """
 
 from __future__ import annotations
@@ -27,16 +33,21 @@ from flask import jsonify, make_response, request
 from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.storage.db.repositories.team_members import (
     ROLE_TEAM_ADMIN,
+    ROLE_TEAM_EDITOR,
     ROLE_TEAM_MEMBER,
     TeamMembersRepository,
 )
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.roles import from_stored_role, role_at_least
 
 logger = logging.getLogger(__name__)
 
 
 def team_role_for(token: dict | None, team_id: str | None) -> str | None:
-    """Strongest team role the principal holds in ``team_id``, or None.
+    """Strongest stored team role the caller holds in ``team_id``, or None.
+
+    ``team_admin``, ``team_editor`` or ``team_viewer``; the team owner holds an
+    admin row, so they answer ``team_admin`` here.
 
     Fails closed to None on a DB error so a membership-read outage denies team
     access rather than granting it.
@@ -60,19 +71,29 @@ def team_role_for(token: dict | None, team_id: str | None) -> str | None:
 
 
 def has_team_role(token: dict | None, team_id: str | None, name: str) -> bool:
-    """True if the principal satisfies ``name`` for ``team_id``.
+    """True if the caller holds ``name`` or a stronger role in ``team_id``.
 
-    A global ``admin`` satisfies any team role (superuser over all teams).
-    Otherwise ``team_admin`` implies ``team_member`` (admin ⊇ member).
+    A global ``admin`` satisfies any team role for team management
+    (superuser over all teams' membership, not over their items).
+    ``team_member`` asks for any membership; the other names rank
+    ``team_viewer`` < ``team_editor`` < ``team_admin``. An unknown ``name``
+    or stored role never passes.
+
+    Args:
+        token: The decoded request token.
+        team_id: The team, from the URL path.
+        name: The weakest stored role the route needs.
+
+    Returns:
+        bool: Whether the caller may go on.
     """
     if has_role(token, ROLE_ADMIN):
         return True
-    role = team_role_for(token, team_id)
-    if role is None:
+    held = from_stored_role(team_role_for(token, team_id))
+    if held is None:
         return False
-    if name == ROLE_TEAM_MEMBER:
-        return True
-    return role == name
+    needed = from_stored_role(name)
+    return needed is not None and role_at_least(held, needed)
 
 
 def require_team_role(name: str):
@@ -106,4 +127,5 @@ def require_team_role(name: str):
 
 
 team_admin_required = require_team_role(ROLE_TEAM_ADMIN)
+team_editor_required = require_team_role(ROLE_TEAM_EDITOR)
 team_member_required = require_team_role(ROLE_TEAM_MEMBER)

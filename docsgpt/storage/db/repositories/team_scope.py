@@ -17,6 +17,27 @@ from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid
 
+# The item table of each grantable kind.
+_TABLES = {"agent": "agents", "source": "sources", "prompt": "prompts", "tool": "user_tools"}
+
+
+def _personal_only(resource_type: str) -> str:
+    """SQL that keeps grants on personal items only.
+
+    A grant never answers for an item a team workspace owns (its owner is a
+    ``__team__`` principal): access there comes from the team role alone
+    (``resource_access.resolve``). The 0065 CHECK keeps principal owners off
+    ``team_resource_grants``; this also drops a grant left on an item that
+    moved to a team after it was granted. An unknown kind matches nothing.
+    """
+    table = _TABLES.get(resource_type)
+    if table is None:
+        return " AND FALSE"
+    return (
+        f" AND NOT EXISTS (SELECT 1 FROM {table} r WHERE r.id = g.resource_id"
+        " AND left(r.user_id, 8) = '__team__')"
+    )
+
 
 class TeamScopeRepository:
     """Live JOIN of ``team_members`` × ``team_resource_grants`` for one user."""
@@ -41,6 +62,7 @@ class TeamScopeRepository:
                 WHERE m.user_id = :user_id AND g.resource_type = :resource_type
                   AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
                 """
+                + _personal_only(resource_type)
             ),
             {"user_id": user_id, "resource_type": resource_type},
         )
@@ -64,8 +86,9 @@ class TeamScopeRepository:
                 JOIN team_members m ON m.team_id = g.team_id
                 WHERE m.user_id = :user_id AND g.resource_type = :resource_type
                   AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
-                GROUP BY g.resource_id
                 """
+                + _personal_only(resource_type)
+                + " GROUP BY g.resource_id"
             ),
             {"user_id": user_id, "resource_type": resource_type},
         )
@@ -98,8 +121,9 @@ class TeamScopeRepository:
                   AND g.resource_type = :resource_type
                   AND g.resource_id = CAST(:resource_id AS uuid)
                   AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
-                HAVING count(*) > 0
                 """
+                + _personal_only(resource_type)
+                + " HAVING count(*) > 0"
             ),
             {"user_id": user_id, "resource_type": resource_type, "resource_id": resource_id},
         )

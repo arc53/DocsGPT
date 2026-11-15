@@ -16,6 +16,14 @@ role may not do this). List and get responses embed ``ResourceAccess.payload()``
 
 Access is resolved live on every call (grants JOIN ``team_members``), so a
 revoked grant or membership denies on the next request.
+
+An item a team workspace owns (its ``user_id`` is the team's principal,
+``docsgpt/workspaces/principal.py``) follows a different table: the caller's
+role in that team decides (``WORKSPACE_ACTIONS``), switches don't apply, and
+grants are never consulted, so a non-member gets nothing whatever grant rows
+exist. Its ``access`` is ``viewer``, ``editor`` or ``admin`` (the team Owner
+included), never ``owner``, so every ``access == "owner"`` check keeps
+meaning "the person who owns the row".
 """
 
 from __future__ import annotations
@@ -24,7 +32,7 @@ import json
 import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Iterable, Optional
 
 from sqlalchemy import Connection, text
@@ -39,6 +47,8 @@ from docsgpt.storage.db.repositories.team_resource_grants import (
 )
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +72,7 @@ ACTIONS: dict[str, dict[str, str]] = {
         "share": "owner",
         "delete": "owner",
         "manage_settings": "owner",
+        "move_to_team": "owner",  # the team side also needs Editor there (the move service checks)
     },
     "source": {
         "use": "viewer",  # browse files, chunks, graph, wiki; test retrieval; attach to agents
@@ -72,6 +83,7 @@ ACTIONS: dict[str, dict[str, str]] = {
         "share": "owner",
         "delete": "owner",
         "manage_settings": "owner",
+        "move_to_team": "owner",
     },
     "tool": {
         "use": "viewer",  # see it and run it inside the owner's shared agents
@@ -81,6 +93,7 @@ ACTIONS: dict[str, dict[str, str]] = {
         "share": "owner",
         "delete": "owner",
         "manage_settings": "owner",
+        "move_to_team": "owner",
     },
     "prompt": {
         "use": "viewer",  # read it and use it in my own agents
@@ -89,8 +102,69 @@ ACTIONS: dict[str, dict[str, str]] = {
         "share": "owner",
         "delete": "owner",
         "manage_settings": "owner",
+        "move_to_team": "owner",
     },
 }
+
+# Weakest *team* role per action on an item a team workspace owns (STEP1_PLAN §4, the T4 table).
+# The Owner ranks above Admin and so has every row. There are no switches here, and no ``share``
+# or ``manage_settings``: a team item has no per-item people (T6). ``folder`` is the team's one
+# folder tree (``docsgpt/api/user/folders``); ``resolve`` doesn't serve it.
+WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
+    "agent": {
+        "use": "viewer",
+        "pin": "viewer",
+        "view": "editor",  # Viewers don't read an agent's config
+        "edit": "editor",
+        "edit_policy": "editor",
+        "view_logs": "editor",
+        "manage_schedules": "editor",
+        "export": "editor",
+        "move_folder": "editor",  # file it in the team's tree
+        "publish": "admin",  # outward exposure belongs to the team
+        "manage_access_details": "admin",
+        "delete": "admin",
+        "move_out": "admin",  # to the acting Admin's Personal
+    },
+    "source": {
+        "use": "viewer",
+        "view_config": "viewer",
+        "edit": "editor",
+        "move_folder": "editor",
+        "reconnect": "admin",
+        "delete": "admin",
+        "move_out": "admin",
+    },
+    "tool": {
+        "use": "viewer",
+        "use_in_own": "viewer",
+        "edit": "editor",
+        "edit_credentials": "editor",
+        "move_folder": "editor",
+        "delete": "admin",
+        "move_out": "admin",
+    },
+    "prompt": {
+        "use": "viewer",
+        "duplicate": "viewer",
+        "edit": "editor",
+        "move_folder": "editor",
+        "delete": "admin",
+        "move_out": "admin",
+    },
+    "folder": {
+        "list": "viewer",
+        "create": "editor",
+        "rename": "editor",
+        "move": "editor",
+        "file": "editor",
+        "delete": "editor",  # items survive, moved to its parent
+        "move_out": "admin",
+    },
+}
+
+# The ``access`` a team role gives on a team item: never ``owner`` (that stays the row's person-owner).
+_TEAM_ACCESS = {"owner": "admin", "admin": "admin", "editor": "editor", "viewer": "viewer"}
 
 
 @dataclass(frozen=True)
@@ -178,6 +252,53 @@ def allowed_actions(
         return set()
     rank = _RANK[access]
     return {action for action, role in role_table(resource_type, settings).items() if rank >= _RANK[role]}
+
+
+def team_access_level(team_role: Optional[str]) -> Optional[str]:
+    """The ``access`` a team role gives on a team item: ``admin`` for the Owner and Admins, else the role.
+
+    Args:
+        team_role: ``owner``, ``admin``, ``editor``, ``viewer`` or None.
+
+    Returns:
+        Optional[str]: ``admin``, ``editor`` or ``viewer``; None for no role (or an unknown one).
+    """
+    return _TEAM_ACCESS.get(team_role or "")
+
+
+def workspace_allowed_actions(resource_type: str, team_role: Optional[str]) -> set[str]:
+    """The actions a team role may perform on an item (or folder) a team workspace owns.
+
+    Args:
+        resource_type: ``agent``, ``source``, ``tool``, ``prompt`` or ``folder``.
+        team_role: The caller's role in the owning team, or None.
+
+    Returns:
+        set[str]: Empty for no role, an unknown role or an unknown type.
+    """
+    table = WORKSPACE_ACTIONS.get(resource_type)
+    if not table or team_access_level(team_role) is None:
+        return set()
+    return {action for action, minimum in table.items() if role_at_least(team_role, minimum)}
+
+
+def _access_payload(
+    access: Optional[str], actions: Iterable[str], team_id: Optional[str], team_role: Optional[str]
+) -> dict:
+    """The access fields of an item payload (STEP1_PLAN §6)."""
+    if team_id:
+        origin = "team"
+    elif access == "owner":
+        origin = "own"
+    else:
+        origin = "shared" if access else None
+    return {
+        "access": access,
+        "allowed_actions": sorted(actions),
+        "workspace": {"kind": "team" if team_id else "personal", "team_id": team_id},
+        "team_role": team_role,
+        "origin": origin,
+    }
 
 
 def public_settings(resource_type: str, settings: Optional[dict]) -> list[dict]:
@@ -273,21 +394,42 @@ def delete_settings(conn: Connection, resource_type: str, resource_id: str) -> N
 
 @dataclass(frozen=True)
 class ResourceAccess:
-    """What one user may do on one resource."""
+    """What one user may do on one resource.
+
+    Attributes:
+        access: ``owner``, ``editor`` or ``viewer`` on a personal item; ``admin``, ``editor`` or
+            ``viewer`` on a team item (never ``owner``: that is the row's person-owner only).
+        owner_id: The id to read and write the resource as (the team's principal for a team item).
+        team_id: The owning team, for a team item; None for a personal one.
+        team_role: The caller's role in that team (``owner``, ``admin``, ``editor``, ``viewer``), for
+            a team item reached through membership; None otherwise.
+    """
 
     resource_type: str
     resource_id: str
-    access: str  # owner | editor | viewer
-    owner_id: str  # the id to read and write the resource as
+    access: str
+    owner_id: str
     settings: dict = field(default_factory=dict)
     actions: frozenset = frozenset()
+    team_id: Optional[str] = None
+    team_role: Optional[str] = None
 
     def can(self, action: str) -> bool:
         return action in self.actions
 
+    @property
+    def is_team_item(self) -> bool:
+        """Whether a team workspace owns the item."""
+        return self.team_id is not None
+
     def payload(self) -> dict:
-        """The fields every API response embeds for this resource."""
-        return {"access": self.access, "allowed_actions": sorted(self.actions)}
+        """The access fields every API response embeds for this resource.
+
+        Returns:
+            dict: ``access``, ``allowed_actions``, ``workspace`` (``{kind, team_id}``), ``team_role``
+            and ``origin`` (``own``, ``team`` or ``shared``).
+        """
+        return _access_payload(self.access, self.actions, self.team_id, self.team_role)
 
 
 def build(resource_type: str, resource_id: str, access: str, owner_id: str, settings: dict) -> ResourceAccess:
@@ -303,12 +445,65 @@ def build(resource_type: str, resource_id: str, access: str, owner_id: str, sett
     )
 
 
-def payload_for(resource_type: str, access: Optional[str], settings: Optional[dict]) -> dict:
-    """``access`` + ``allowed_actions`` without an owner lookup (list endpoints)."""
-    return {
-        "access": access,
-        "allowed_actions": sorted(allowed_actions(resource_type, access, settings)),
-    }
+def build_team(
+    resource_type: str, resource_id: str, owner_id: str, team_role: Optional[str]
+) -> Optional[ResourceAccess]:
+    """A :class:`ResourceAccess` for a team item from the caller's role (team list endpoints).
+
+    Args:
+        resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
+        resource_id: The item's id.
+        owner_id: The item's ``user_id``: the team's principal.
+        team_role: The caller's role in the team (``Workspace.role``).
+
+    Returns:
+        Optional[ResourceAccess]: None when ``owner_id`` is not a principal or the role gives nothing.
+    """
+    team_id = team_of_principal(owner_id)
+    access = team_access_level(team_role)
+    if team_id is None or access is None:
+        return None
+    return ResourceAccess(
+        resource_type=resource_type,
+        resource_id=str(resource_id),
+        access=access,
+        owner_id=owner_id,
+        settings={},
+        actions=frozenset(workspace_allowed_actions(resource_type, team_role)),
+        team_id=team_id,
+        team_role=team_role,
+    )
+
+
+def payload_for(
+    resource_type: str,
+    access: Optional[str],
+    settings: Optional[dict],
+    *,
+    team_id: Optional[str] = None,
+    team_role: Optional[str] = None,
+) -> dict:
+    """The access fields of an item payload without a lookup (list endpoints).
+
+    For a personal item pass the caller's ``access`` and the item's switches.
+    For a team item pass ``team_id`` and the caller's ``team_role``
+    (``Workspace.role``); ``access`` and ``settings`` are then ignored, since
+    the role decides and switches don't apply.
+
+    Args:
+        resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
+        access: ``owner``, ``editor``, ``viewer`` or None (personal items).
+        settings: The item's stored switches (personal items).
+        team_id: The owning team, for a team item.
+        team_role: The caller's role in that team.
+
+    Returns:
+        dict: See :meth:`ResourceAccess.payload`.
+    """
+    if team_id:
+        level = team_access_level(team_role)
+        return _access_payload(level, workspace_allowed_actions(resource_type, team_role), str(team_id), team_role)
+    return _access_payload(access, allowed_actions(resource_type, access, settings), None, None)
 
 
 # Per-read memo of :func:`resolve`, on only inside :func:`cached_resolves`.
@@ -343,6 +538,45 @@ def resolve(
     return cache[key]
 
 
+# The table of each item kind, for owner-agnostic lookups by id.
+_ITEM_TABLES = {"agent": "agents", "source": "sources", "prompt": "prompts", "tool": "user_tools", "folder": "folders"}
+
+
+def resource_owner(conn: Connection, resource_type: str, resource_id: Optional[str]) -> Optional[str]:
+    """The ``user_id`` that owns an item, whoever asks (a person, or a team's principal).
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``agent``, ``source``, ``prompt``, ``tool`` or ``folder``.
+        resource_id: The item's id.
+
+    Returns:
+        Optional[str]: The owner, or None for an unknown kind, a non-UUID id or a missing row.
+    """
+    table = _ITEM_TABLES.get(resource_type)
+    if table is None or not resource_id or not looks_like_uuid(str(resource_id)):
+        return None
+    return conn.execute(
+        text(f"SELECT user_id FROM {table} WHERE id = CAST(:id AS uuid)"), {"id": str(resource_id)}
+    ).scalar()
+
+
+def _resolve_team_item(
+    conn: Connection, resource_type: str, resource_id: str, owner_id: str, user_id: str
+) -> Optional[ResourceAccess]:
+    """The caller's access to an item a team owns: their role in that team, or None.
+
+    Never falls back to grants: a team item has none that count.
+    """
+    if is_principal_id(user_id):
+        # Another team's principal (a team's own principal resolved as owner above).
+        return None
+    team_id = team_of_principal(owner_id)
+    if team_id is None:
+        return None
+    return build_team(resource_type, resource_id, owner_id, team_role_for(conn, user_id, team_id))
+
+
 def _resolve_uncached(
     conn: Connection, resource_type: str, resource_id: str, user_id: str
 ) -> Optional[ResourceAccess]:
@@ -355,11 +589,18 @@ def _resolve_uncached(
     owned = repo_cls(conn).get_any(resource_id, user_id)
     if owned is not None:
         rid = str(owned.get("id") or resource_id)
-        return build(resource_type, rid, "owner", user_id, settings_for(conn, resource_type, rid))
-    # Only canonical UUIDs can carry a grant; casting anything else would
-    # poison the transaction.
+        ra = build(resource_type, rid, "owner", user_id, settings_for(conn, resource_type, rid))
+        # A team's principal reads its own items as their owner (runs as the team).
+        return replace(ra, team_id=team_of_principal(user_id)) if is_principal_id(user_id) else ra
+    # Only canonical UUIDs can carry a grant or a team owner; casting anything
+    # else would poison the transaction.
     if not looks_like_uuid(str(resource_id)):
         return None
+    # The workspace step: a team's item answers from the caller's team role
+    # alone, so no grant row (stale, or forced in) can open it to anyone else.
+    owner = resource_owner(conn, resource_type, str(resource_id))
+    if is_principal_id(owner):
+        return _resolve_team_item(conn, resource_type, str(resource_id), owner, user_id)
     level = TeamScopeRepository(conn).effective_access(user_id, resource_type, str(resource_id))
     if level is None:
         return None
@@ -381,7 +622,7 @@ def require(
         AccessDenied: 404 when the resource isn't visible, 403 when the
             caller's role may not perform ``action``.
     """
-    if action not in ACTIONS.get(resource_type, {}):
+    if action not in ACTIONS.get(resource_type, {}) and action not in WORKSPACE_ACTIONS.get(resource_type, {}):
         raise KeyError(f"{resource_type} has no action {action!r}")
     ra = resolve(conn, resource_type, resource_id, user_id)
     if ra is None:
@@ -493,7 +734,9 @@ def can_sponsor_ref(conn: Connection, resource_type: str, resource_id: str, user
 
     Using a resource is not enough to hand it to another agent's audience:
     the sponsor must own it or reach it with ``edit`` through a team grant
-    (any team).
+    (any team). A team's own item is never sponsored: it reaches people by
+    their team role only, so an Editor can't extend it to someone else's
+    agent and its audience.
 
     Args:
         conn: Open database connection.
@@ -504,10 +747,15 @@ def can_sponsor_ref(conn: Connection, resource_type: str, resource_id: str, user
     Returns:
         True when the user owns the resource or may edit it.
     """
-    if not user_id or not resource_id:
+    if not user_id or not resource_id or is_principal_id(user_id):
         return False
     ra = resolve(conn, resource_type, str(resource_id), user_id)
-    return ra is not None and ra.can(SPONSOR_ACTION) and ra.can(REF_USE_ACTION[resource_type])
+    return (
+        ra is not None
+        and not ra.is_team_item
+        and ra.can(SPONSOR_ACTION)
+        and ra.can(REF_USE_ACTION[resource_type])
+    )
 
 
 def _holder_editable_by(conn: Connection, holder_type: str, holder: dict, user_id: str) -> bool:
@@ -554,13 +802,15 @@ def sponsor_state(
         :data:`REASON_CANNOT_EDIT_HOLDER` or :data:`REASON_CANNOT_EDIT_RESOURCE`.
         With no usable record both are None.
     """
-    if not holder or not resource_id:
+    if not holder or not resource_id or is_principal_id(holder.get("user_id")):
+        # A team holder never runs anything as a sponsor (D7), whatever is recorded.
         return None, None
     recorded = holder.get("resource_sponsors") or {}
     sponsor = recorded.get(sponsor_key(resource_type, str(resource_id))) or recorded.get(
         sponsor_key(resource_type, str(resource_id).lower())
     )
-    if not sponsor or sponsor == holder.get("user_id"):
+    if not sponsor or sponsor == holder.get("user_id") or is_principal_id(sponsor):
+        # A principal is never a sponsor: it would hand a team's item to a personal agent.
         return None, None
     try:
         if not _holder_editable_by(conn, holder_type, holder, sponsor):
@@ -938,6 +1188,11 @@ def plan_sponsors(
     Removed refs drop out. A confirmed key that names none of the refs the
     caller could sponsor lands in ``unexpected``.
 
+    A team holder (``owner_id`` a principal) takes no sponsors (D7): a newly
+    attached resource the team can't use goes to ``not_allowed``, one already
+    attached stays stopped, and every confirmed key is ``unexpected``. The
+    routes refuse such refs first with :func:`workspace_mismatch_refusal`.
+
     Args:
         conn: Open database connection.
         holder_type: ``agent`` or ``workflow``.
@@ -955,6 +1210,8 @@ def plan_sponsors(
     before = {sponsor_key(t, str(i).lower()) for t, i in previous_refs}
     confirmed = set(confirmed)
     plan = SponsorPlan()
+    if is_principal_id(owner_id):
+        return _plan_team_holder(conn, owner_id, refs, before, confirmed)
     eligible: set[str] = set()
     seen: set[str] = set()
     for resource_type, resource_id in refs:
@@ -981,6 +1238,23 @@ def plan_sponsors(
         elif not is_new and previous.get(key):
             plan.sponsors[key] = previous[key]
     plan.unexpected = sorted(confirmed - eligible)
+    return plan
+
+
+def _plan_team_holder(
+    conn: Connection, owner_id: str, refs: Iterable[tuple[str, str]], before: set[str], confirmed: set[str]
+) -> SponsorPlan:
+    """:func:`plan_sponsors` for a team holder: no sponsors, ever."""
+    plan = SponsorPlan(unexpected=sorted(confirmed))
+    seen: set[str] = set()
+    for resource_type, resource_id in refs:
+        resource_id = str(resource_id).lower()
+        key = sponsor_key(resource_type, resource_id)
+        if key in seen or not _sponsorable(resource_type, resource_id):
+            continue
+        seen.add(key)
+        if key not in before and not can_use_ref(conn, resource_type, resource_id, owner_id):
+            plan.not_allowed.append((resource_type, resource_id))
     return plan
 
 
@@ -1258,19 +1532,29 @@ def _ref_rows(conn: Connection, refs: Iterable[tuple[str, str]]) -> dict[str, di
 
 
 def _user_labels(conn: Connection, user_ids: Iterable[Optional[str]]) -> dict[str, str]:
-    """``user_id -> email`` for the ones with an email on file."""
+    """``user_id -> label``: a person's email when on file, a team principal's team name.
+
+    Args:
+        conn: Open database connection.
+        user_ids: The ids to label.
+
+    Returns:
+        dict[str, str]: Only the ids that have a label.
+    """
     ids = sorted({u for u in user_ids if u})
     if not ids:
         return {}
-    return dict(
-        conn.execute(
-            text(
-                "SELECT user_id, email FROM users WHERE user_id = ANY(:ids) "
-                "AND email IS NOT NULL AND email <> ''"
-            ),
-            {"ids": ids},
-        ).fetchall()
-    )
+    rows = conn.execute(
+        text(
+            """
+            SELECT u.user_id, CASE WHEN u.kind = 'team' THEN t.name ELSE u.email END
+            FROM users u LEFT JOIN teams t ON t.id = u.team_id
+            WHERE u.user_id = ANY(:ids)
+            """
+        ),
+        {"ids": ids},
+    ).fetchall()
+    return {user_id: label for user_id, label in rows if label}
 
 
 # ``resource_states`` ``note`` for a running tool on each caller's own account.
@@ -1842,3 +2126,115 @@ def borrowed_refusal(
         "error": message,
         "resources": resources,
     }, 403
+
+
+# --- Workspace references -------------------------------------------------------
+#
+# A team agent or workflow runs as the team's principal, so everything it
+# references must be the team's own (D7): a member's personal source or tool
+# would otherwise run for the whole team (and for its outside traffic) with no
+# sponsor to answer for it. Presets and builtin tools belong to no one and
+# always pass. A personal holder may still reference a team item its owner can
+# use; ``borrowed_refs`` keeps such an agent unpublished.
+
+# Error code of a save that references items from another workspace.
+CODE_WORKSPACE_MISMATCH = "workspace_mismatch"
+
+
+def _ownerless_ref(resource_type: str, resource_id: str) -> bool:
+    """Presets and builtin tools: references that belong to no workspace."""
+    if resource_type == "source" and resource_id == "default":
+        return True
+    if resource_type == "prompt" and resource_id in ("default", *STORED_PROMPT_PRESETS):
+        return True
+    if resource_type == "tool":
+        # Lazy: default_tools imports this module lazily too.
+        from docsgpt.agents.default_tools import is_synthesized_tool_id
+
+        return is_synthesized_tool_id(resource_id)
+    return False
+
+
+def workspace_mismatches(
+    conn: Connection, owner_id: Optional[str], refs: Iterable[tuple[str, Optional[str]]]
+) -> list[tuple[str, str]]:
+    """The refs a team holder may not use: anything not owned by the holder's own principal.
+
+    Call it on every save that writes a team agent's or workflow node's
+    references (create, update, graph save, import), with every ``(type, id)``
+    it will hold, knowledge folders included as ``("folder", id)``. A
+    personal holder is not judged here and gets an empty list.
+
+    Fails closed: an unknown kind or a non-UUID id that isn't a preset or a
+    builtin tool is a mismatch. A UUID that names no row is not (it runs
+    nowhere, and refusing it would block every save of an agent whose tool
+    was deleted).
+
+    Args:
+        conn: Open database connection.
+        owner_id: The holder's owner (``Workspace.owner_id`` on create).
+        refs: ``(type, id)`` pairs: ``source``, ``prompt``, ``tool``, ``folder`` or ``agent``.
+
+    Returns:
+        list[tuple[str, str]]: The offending pairs, ids lowercased, each once, in the order given.
+    """
+    if not is_principal_id(owner_id):
+        return []
+    out: list[tuple[str, str]] = []
+    for resource_type, resource_id in refs:
+        if resource_id is None or not str(resource_id).strip():
+            continue
+        rid = str(resource_id).strip().lower()
+        pair = (resource_type, rid)
+        if pair in out or _ownerless_ref(resource_type, rid):
+            continue
+        if resource_type not in _ITEM_TABLES or not looks_like_uuid(rid):
+            out.append(pair)
+            continue
+        owner = resource_owner(conn, resource_type, rid)
+        if owner is not None and owner != owner_id:
+            out.append(pair)
+    return out
+
+
+def _reader_sees(conn: Connection, resource_type: str, resource_id: str, viewer: Optional[str]) -> bool:
+    """Whether ``viewer`` may learn the name of an item (they can reach it, or own the folder)."""
+    if not viewer or not looks_like_uuid(resource_id):
+        return False
+    if resource_type == "folder":
+        return resource_owner(conn, "folder", resource_id) == viewer
+    if resource_type not in _REPO_FOR_TYPE:
+        return False
+    return resolve(conn, resource_type, resource_id, viewer) is not None
+
+
+def workspace_mismatch_refusal(
+    conn: Connection, refs: list[tuple[str, str]], viewer: Optional[str]
+) -> tuple[dict, int]:
+    """The 400 body for a save :func:`workspace_mismatches` refuses.
+
+    Args:
+        conn: Open database connection.
+        refs: The offending pairs.
+        viewer: The user saving; an item is named only when they can reach it.
+
+    Returns:
+        ``(body, 400)``: ``success``, ``error`` and ``code`` (:data:`CODE_WORKSPACE_MISMATCH`),
+        ``message`` and ``resources`` (``{key, type, id, name}``).
+    """
+    names = ref_names(conn, refs)
+    resources = []
+    for resource_type, rid in refs:
+        key = sponsor_key(resource_type, rid)
+        visible = _reader_sees(conn, resource_type, rid, viewer)
+        resources.append({"key": key, "type": resource_type, "id": rid, "name": names.get(key) if visible else None})
+    return {
+        "success": False,
+        "error": CODE_WORKSPACE_MISMATCH,
+        "code": CODE_WORKSPACE_MISMATCH,
+        "message": (
+            "A team's agents can only use the team's own sources, tools, prompts and folders. "
+            "Move these to the team first, or pick the team's own."
+        ),
+        "resources": resources,
+    }, 400

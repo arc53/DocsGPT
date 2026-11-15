@@ -432,6 +432,9 @@ class TestGrantListing:
         assert tool_row["caller"] == {
             "access": "viewer",
             "allowed_actions": ["use", "use_in_own"],
+            "workspace": {"kind": "personal", "team_id": None},
+            "team_role": None,
+            "origin": "shared",
         }
 
     def test_owner_caller_and_missing_labels(self, client, db):
@@ -558,7 +561,7 @@ class TestTeamOwnerProtection:
                 f"/api/teams/{tid}/members", json={"user_id": "carol", "role": "team_member"}
             )
         assert resp.status_code == 200
-        assert TeamMembersRepository(db).role_for("carol", tid) == "team_member"
+        assert TeamMembersRepository(db).role_for("carol", tid) == "team_viewer"
 
     def test_re_adding_owner_as_admin_is_allowed(self, client, db):
         tid = _team(db, members=(("bob", "team_admin"),))
