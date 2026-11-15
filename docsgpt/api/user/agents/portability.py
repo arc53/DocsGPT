@@ -1729,7 +1729,7 @@ def _create_tool_from_spec(
     Returns:
         The new tool's id, or None.
     """
-    from docsgpt.api.user.tools.routes import _encrypt_secret_fields, transform_actions
+    from docsgpt.api.user.tools.routes import _encrypt_secret_fields, _seal_api_tool_secrets, transform_actions
 
     tool_type = tool.get("type") or ""
     inst = _tool_instance(tool_type)
@@ -1767,6 +1767,10 @@ def _create_tool_from_spec(
         return None
     provided_secrets = [k for k in _secret_field_names(config_requirements) if config.get(k)]
     storage_config = _encrypt_secret_fields(config, config_requirements, user)
+    if tool_type == "api_tool":
+        # Header and query values a file carries are sealed under the owner like
+        # the create route's, not stored as plaintext in the actions.
+        storage_config = _seal_api_tool_secrets(storage_config, {}, user)
     if provided_secrets and not storage_config.get("encrypted_credentials"):
         warnings.append(f"Tool '{tool_type}' secret encryption failed; not created")
         return None

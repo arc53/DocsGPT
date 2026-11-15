@@ -530,3 +530,50 @@ class TestTeamExport:
         assert parse_agent_yaml(resp.get_data(as_text=True))["spec"]["sources"] == [
             {"name": "EU", "type": "folder", "key": "folder-0"}
         ]
+
+
+# ---------------------------------------------------------------------------
+# An imported api_tool's header and query values are sealed like a created one's
+# ---------------------------------------------------------------------------
+def _api_tool_doc(value="sk-live"):
+    action = {
+        "name": "get_users", "description": "Get users", "url": "https://api.example.com/users", "method": "GET",
+        "active": True,
+        "headers": {"type": "object", "properties": {
+            "X-Key": {"type": "string", "description": "k", "value": value, "filled_by_llm": False},
+        }},
+        "query_params": {"type": "object", "properties": {}},
+        "body": {"type": "object", "properties": {}},
+    }
+    return _doc(tools=[{"type": "api_tool", "name": "API", "config": {"actions": {"get_users": action}}}])
+
+
+class TestImportedApiToolSecrets:
+    def _import(self, conn, workspace=None):
+        with patch(f"{PORT}.validate_url"):
+            result = apply_import(conn, EDITOR, _api_tool_doc(), workspace=workspace)
+        owner = workspace.owner_id if workspace else EDITOR
+        agent = AgentsRepository(conn).get(result["agent_id"], owner)
+        return UserToolsRepository(conn).get(str(agent["tools"][0]), owner)
+
+    def _assert_sealed_and_runs(self, tool, owner):
+        import json
+
+        from docsgpt.agents.tool_executor import api_tool_action_with_secrets
+
+        assert "sk-live" not in json.dumps(tool["config"])
+        assert decrypt_credentials(tool["config"]["encrypted_action_secrets"], owner) == {
+            "get_users": {"headers": {"X-Key": "sk-live"}}
+        }
+        action = api_tool_action_with_secrets(tool, "get_users")
+        assert action["headers"]["properties"]["X-Key"]["value"] == "sk-live"
+
+    def test_a_personal_import_seals_the_value_and_the_run_opens_it(self, pg_conn):
+        self._assert_sealed_and_runs(self._import(pg_conn), EDITOR)
+
+    def test_a_team_import_seals_the_value_to_the_team(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        tool = self._import(pg_conn, _team_ws(tid, principal))
+        assert tool["user_id"] == principal
+        self._assert_sealed_and_runs(tool, principal)
+        assert decrypt_credentials(tool["config"]["encrypted_action_secrets"], EDITOR) == {}
