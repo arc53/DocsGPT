@@ -1405,6 +1405,10 @@
     "share": "分享"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "此智能体已达到上限：过去 {{hours}} 小时内已使用 {{limit}} 次请求中的 {{used}} 次。请稍后再试。",
+      "tokens": "此智能体已达到上限：过去 {{hours}} 小时内已使用 {{limit}} 令牌中的 {{used}}。请稍后再试。"
+    },
     "answer": "回答",
     "artifacts": {
       "backToList": "返回文件列表",
@@ -3595,6 +3599,7 @@
       "dark": "暗色",
       "default": "默认",
       "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
+      "deleteAllInWorkspace": "永久删除您在 {{name}} 中开始的所有聊天。此操作无法撤销。",
       "deleteAllLabel": "删除所有对话",
       "high": "高",
       "label": "一般",
@@ -5017,7 +5022,15 @@
   },
   "workspace": {
     "chat": {
-      "newChatLine": "{{workspace}} · 只有您能看到此聊天"
+      "deleteAll": {
+        "confirm": "删除您在 {{name}} 中的所有聊天？",
+        "consequence": "您在 {{name}} 中开始的每个聊天都会连同其消息一起删除。您其他工作区中的聊天会保留。此操作无法撤销。"
+      },
+      "mismatch": "此智能体属于与此聊天不同的工作区。",
+      "notFound": "您已不在此团队中，因此无法在这里继续聊天。",
+      "onlyYou": "只有您能看到此聊天",
+      "switchTo": "切换到 {{name}}",
+      "thisTeam": "此团队"
     },
     "common": {
       "personal": "个人",
@@ -5049,6 +5062,8 @@
     "notices": {
       "lost": "您已不在 {{name}} 中，已切换到个人",
       "lostUnnamed": "您已不在该团队中，已切换到个人",
+      "ownerInactive": "外部访问已暂停：其所有者的账户已被禁用。",
+      "ownerInactiveShort": "外部访问已暂停",
       "roleChanged": "您在 {{name}} 中的角色已更改。页面现在显示您可以执行的操作。",
       "switched": "已切换到 {{name}}"
     },

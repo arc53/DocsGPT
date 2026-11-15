@@ -1407,6 +1407,10 @@
     "share": "Teilen"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "Dieser Agent hat sein Limit erreicht: {{used}} von {{limit}} Anfragen in den letzten {{hours}} Stunden. Bitte versuche es später erneut.",
+      "tokens": "Dieser Agent hat sein Limit erreicht: {{used}} von {{limit}} Tokens in den letzten {{hours}} Stunden. Bitte versuche es später erneut."
+    },
     "answer": "Antwort",
     "artifacts": {
       "backToList": "Zurück zu den Dateien",
@@ -3628,6 +3632,7 @@
       "dark": "Dunkel",
       "default": "Standard",
       "deleteAllDescription": "Löscht alle Unterhaltungen in Ihrem Konto dauerhaft. Dies kann nicht rückgängig gemacht werden.",
+      "deleteAllInWorkspace": "Löscht dauerhaft alle Chats, die Sie in {{name}} begonnen haben. Dies kann nicht rückgängig gemacht werden.",
       "deleteAllLabel": "Alle Konversationen löschen",
       "high": "Hoch",
       "label": "Allgemein",
@@ -5053,7 +5058,15 @@
   },
   "workspace": {
     "chat": {
-      "newChatLine": "{{workspace}} · Nur du siehst diesen Chat"
+      "deleteAll": {
+        "confirm": "Alle deine Chats in {{name}} löschen?",
+        "consequence": "Jeder Chat, den du in {{name}} begonnen hast, wird mitsamt seinen Nachrichten gelöscht. Chats in deinen anderen Arbeitsbereichen bleiben. Das kann nicht rückgängig gemacht werden."
+      },
+      "mismatch": "Dieser Agent gehört zu einem anderen Arbeitsbereich als dieser Chat.",
+      "notFound": "Du bist nicht mehr in diesem Team, daher kann der Chat hier nicht weitergehen.",
+      "onlyYou": "Nur du siehst diesen Chat",
+      "switchTo": "Zu {{name}} wechseln",
+      "thisTeam": "diesem Team"
     },
     "common": {
       "personal": "Persönlich",
@@ -5085,6 +5098,8 @@
     "notices": {
       "lost": "Du bist nicht mehr in {{name}}; zu Persönlich gewechselt",
       "lostUnnamed": "Du bist nicht mehr in diesem Team; zu Persönlich gewechselt",
+      "ownerInactive": "Der Zugriff von außen ist pausiert: Das Konto des Eigentümers ist deaktiviert.",
+      "ownerInactiveShort": "Zugriff von außen pausiert",
       "roleChanged": "Deine Rolle in {{name}} hat sich geändert. Die Seite zeigt jetzt, was du tun kannst.",
       "switched": "Zu {{name}} gewechselt"
     },

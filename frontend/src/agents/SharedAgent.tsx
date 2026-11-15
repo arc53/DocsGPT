@@ -27,6 +27,7 @@ import {
   pendingQuestionCall,
   type QuestionAction,
 } from '../conversation/questionCall';
+import { followItemWorkspace } from '../conversation/followWorkspace';
 import { composerSubmitTarget } from '../conversation/turnSubmission';
 import { useArtifactDetail } from '../conversation/useArtifactDetail';
 import {
@@ -39,6 +40,8 @@ import {
   selectAttachments,
   toSendableAttachments,
 } from '../upload/uploadSlice';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import { selectWorkspaceId } from '../workspace/workspaceSlice';
 import SharedAgentCard from './SharedAgentCard';
 import { Agent } from './types';
 
@@ -46,6 +49,9 @@ export default function SharedAgent() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const dispatch = useDispatch<AppDispatch>();
+  // A shared agent is someone's personal agent: for a link user it lives in
+  // Personal, and a chat with it from a team would be refused.
+  const inPersonal = useSelector(selectWorkspaceId) === PERSONAL_WORKSPACE;
 
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
@@ -200,14 +206,19 @@ export default function SharedAgent() {
   };
 
   useEffect(() => {
-    if (agentId) getSharedAgent();
-  }, [agentId, token]);
+    if (!inPersonal) void dispatch(followItemWorkspace({ kind: 'personal' }));
+  }, [inPersonal, dispatch]);
+
+  // Nothing is asked from a team: the switch to Personal comes first.
+  useEffect(() => {
+    if (agentId && inPersonal) getSharedAgent();
+  }, [agentId, token, inPersonal]);
 
   useEffect(() => {
     if (sharedAgent) dispatch(setSelectedAgent(sharedAgent));
   }, [sharedAgent, dispatch]);
 
-  if (isLoading) return <LoadingState fill="parent" />;
+  if (isLoading || !inPersonal) return <LoadingState fill="parent" />;
   if (loadFailed)
     return (
       <EmptyState

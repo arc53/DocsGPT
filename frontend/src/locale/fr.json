@@ -1439,6 +1439,10 @@
     "share": "Partager"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "Cet agent a atteint sa limite : {{used}} sur {{limit}} requêtes au cours des {{hours}} dernières heures. Veuillez réessayer plus tard.",
+      "tokens": "Cet agent a atteint sa limite : {{used}} sur {{limit}} jetons au cours des {{hours}} dernières heures. Veuillez réessayer plus tard."
+    },
     "answer": "Réponse",
     "artifacts": {
       "backToList": "Retour aux fichiers",
@@ -3756,6 +3760,7 @@
       "dark": "Sombre",
       "default": "Par défaut",
       "deleteAllDescription": "Supprime définitivement toutes les conversations de votre compte. Cette action est irréversible.",
+      "deleteAllInWorkspace": "Supprime définitivement tous les chats que vous avez commencés dans {{name}}. Cette action est irréversible.",
       "deleteAllLabel": "Supprimer toutes les conversations",
       "high": "Élevé",
       "label": "Général",
@@ -5241,7 +5246,15 @@
   },
   "workspace": {
     "chat": {
-      "newChatLine": "{{workspace}} · Vous seul voyez ce chat"
+      "deleteAll": {
+        "confirm": "Supprimer tous vos chats dans {{name}} ?",
+        "consequence": "Chaque chat que vous avez commencé dans {{name}} est supprimé, avec ses messages. Les chats de vos autres espaces de travail restent. Cette action est irréversible."
+      },
+      "mismatch": "Cet agent appartient à un autre espace de travail que ce chat.",
+      "notFound": "Vous ne faites plus partie de cette équipe ; le chat ne peut pas continuer ici.",
+      "onlyYou": "Vous seul voyez ce chat",
+      "switchTo": "Passer à {{name}}",
+      "thisTeam": "cette équipe"
     },
     "common": {
       "personal": "Personnel",
@@ -5274,6 +5287,8 @@
     "notices": {
       "lost": "Vous ne faites plus partie de {{name}} ; retour à Personnel",
       "lostUnnamed": "Vous ne faites plus partie de cette équipe ; retour à Personnel",
+      "ownerInactive": "L’accès externe est en pause : le compte de son propriétaire est désactivé.",
+      "ownerInactiveShort": "Accès externe en pause",
       "roleChanged": "Votre rôle dans {{name}} a changé. La page montre désormais ce que vous pouvez faire.",
       "switched": "Vous êtes passé à {{name}}"
     },

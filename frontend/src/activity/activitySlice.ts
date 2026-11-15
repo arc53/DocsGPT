@@ -17,6 +17,10 @@ import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import {
+  PERSONAL_WORKSPACE,
+  requestWorkspace,
+} from '../workspace/requestWorkspace';
 import { switchWorkspace } from '../workspace/workspaceSlice';
 import type { NowSnapshot } from './types';
 
@@ -55,6 +59,8 @@ export type ActivityState = {
   readSinceRequest: string[];
   /** Chats being marked read, until the server answers. */
   readPending: string[];
+  /** The workspace the snapshot is for: `personal` or a team id. */
+  workspace: string;
 };
 
 const initialState: ActivityState = {
@@ -69,7 +75,26 @@ const initialState: ActivityState = {
   finishedSinceRequest: [],
   readSinceRequest: [],
   readPending: [],
+  workspace: requestWorkspace(),
 };
+
+/**
+ * Whether a live event is about another workspace than the one shown: its
+ * payload's `team_id` names another team, or a team while Personal shows
+ * (null names Personal). An event without the field is taken.
+ *
+ * Args:
+ *   event: The live event.
+ *   workspace: The workspace shown: `personal` or a team id.
+ */
+export function fromOtherWorkspace(
+  event: SSEEvent,
+  workspace: string,
+): boolean {
+  const payload = event.payload as { team_id?: string | null } | undefined;
+  if (!payload || !('team_id' in payload)) return false;
+  return (payload.team_id ?? PERSONAL_WORKSPACE) !== workspace;
+}
 
 /** Whether a fetch's answer is the latest one's (or none is being tracked). */
 const isLatest = (state: ActivityState, requestId: string) =>
@@ -100,13 +125,21 @@ const activitySlice = createSlice({
   reducers: {
     // Another account: its fetch comes next, and an answer to one sent
     // before (no request id matches this) is the last account's.
-    resetActivity: () => ({ ...initialState, requestId: 'reset' }),
+    resetActivity: (state) => ({
+      ...initialState,
+      requestId: 'reset',
+      workspace: state.workspace,
+    }),
   },
   extraReducers: (builder) => {
     builder
       // Another workspace: as for another account, the next fetch fills it
       // and an answer to one sent before is dropped.
-      .addCase(switchWorkspace, () => ({ ...initialState, requestId: 'reset' }))
+      .addCase(switchWorkspace, (_state, action) => ({
+        ...initialState,
+        requestId: 'reset',
+        workspace: action.payload.id,
+      }))
       .addCase(loadActivityNow.pending, (state, action) => {
         state.loading = true;
         state.requestId = action.meta.requestId;
@@ -197,6 +230,7 @@ const activitySlice = createSlice({
       .addMatcher(
         (action) => action.type === sseEventReceived.type,
         (state, action: PayloadAction<SSEEvent>) => {
+          if (fromOtherWorkspace(action.payload, state.workspace)) return;
           const payload = (action.payload.payload || {}) as {
             conversation_id?: string;
           };
@@ -284,9 +318,14 @@ let burstEnded = false;
 export const activityListenerMiddleware = createListenerMiddleware();
 
 activityListenerMiddleware.startListening({
-  predicate: (action) =>
+  // Another workspace's event changes nothing the current snapshot shows.
+  predicate: (action, state) =>
     action.type === sseEventReceived.type &&
-    REFRESH_EVENTS.has((action as PayloadAction<SSEEvent>).payload?.type),
+    REFRESH_EVENTS.has((action as PayloadAction<SSEEvent>).payload?.type) &&
+    !fromOtherWorkspace(
+      (action as PayloadAction<SSEEvent>).payload,
+      (state as WithActivity).activity?.workspace ?? requestWorkspace(),
+    ),
   effect: async (action, api) => {
     if (endsSomething((action as PayloadAction<SSEEvent>).payload)) {
       burstEnded = true;

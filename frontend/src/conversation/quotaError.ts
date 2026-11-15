@@ -46,3 +46,55 @@ export function quotaErrorMessage(
     { used: amount(body.usage), limit: amount(body.limit), resetsAt },
   );
 }
+
+/** A 429 ``agent-limit-exceeded`` body: the agent's own 24-hour limit. */
+export type AgentLimitErrorBody = {
+  error_code?: string;
+  dimension?: string;
+  usage?: number;
+  limit?: number;
+  window_hours?: number;
+};
+
+/** The window an agent's limit counts over, when the body leaves it out. */
+const AGENT_LIMIT_WINDOW_HOURS = 24;
+
+export function isAgentLimitError(body: unknown): body is AgentLimitErrorBody {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    (body as AgentLimitErrorBody).error_code === 'agent-limit-exceeded'
+  );
+}
+
+/**
+ * The chat message for an agent over its own limit, in the user's language.
+ * It names the agent's limit, not the user's quota: the user can't change it.
+ *
+ * Args:
+ *   body: The 429 body.
+ *   t: The translate function.
+ *   locale: The UI language, for the numbers.
+ *
+ * Returns:
+ *   "This agent has reached its limit: N of M tokens in the last 24 hours…".
+ */
+export function agentLimitErrorMessage(
+  body: AgentLimitErrorBody,
+  t: TFunction,
+  locale?: string,
+): string {
+  const tag = locale ? intlLocale(locale) : undefined;
+  const count = (value?: number) =>
+    new Intl.NumberFormat(tag).format(value ?? 0);
+  return t(
+    body.dimension === 'requests'
+      ? 'conversation.agentLimit.requests'
+      : 'conversation.agentLimit.tokens',
+    {
+      used: count(body.usage),
+      limit: count(body.limit),
+      hours: body.window_hours ?? AGENT_LIMIT_WINDOW_HOURS,
+    },
+  );
+}

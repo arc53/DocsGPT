@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { buildAgentSection, getVisibleGroups } from '../navigation/sections';
 import { selectAnalyticsEnabled } from '../preferences/preferenceSlice';
 import { type AccessFields } from '../utils/accessUtils';
+import { OwnerInactiveBadge } from './OwnerInactiveNotice';
 import { AGENTS_MANAGE_ROOT } from './paths';
 
 type AgentPageHeaderProps = {
@@ -139,6 +140,7 @@ export default function AgentPageHeader({
           </BreadcrumbList>
         </Breadcrumb>
         {status}
+        <OwnerInactiveBadge />
       </div>
 
       {agentId && (

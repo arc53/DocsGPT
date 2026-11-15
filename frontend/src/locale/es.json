@@ -1439,6 +1439,10 @@
     "share": "Compartir"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "Este agente ha alcanzado su límite: {{used}} de {{limit}} solicitudes en las últimas {{hours}} horas. Inténtalo de nuevo más tarde.",
+      "tokens": "Este agente ha alcanzado su límite: {{used}} de {{limit}} tokens en las últimas {{hours}} horas. Inténtalo de nuevo más tarde."
+    },
     "answer": "Respuesta",
     "artifacts": {
       "backToList": "Volver a los archivos",
@@ -3756,6 +3760,7 @@
       "dark": "Oscuro",
       "default": "Predeterminado",
       "deleteAllDescription": "Elimina de forma permanente todas las conversaciones de tu cuenta. No se puede deshacer.",
+      "deleteAllInWorkspace": "Elimina de forma permanente todos los chats que iniciaste en {{name}}. No se puede deshacer.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
       "high": "Alto",
       "label": "General",
@@ -5241,7 +5246,15 @@
   },
   "workspace": {
     "chat": {
-      "newChatLine": "{{workspace}} · Solo tú puedes ver este chat"
+      "deleteAll": {
+        "confirm": "¿Eliminar todos tus chats en {{name}}?",
+        "consequence": "Se eliminan todos los chats que iniciaste en {{name}}, con sus mensajes. Los chats de tus otros espacios de trabajo se conservan. No se puede deshacer."
+      },
+      "mismatch": "Este agente pertenece a otro espacio de trabajo que este chat.",
+      "notFound": "Ya no estás en este equipo, así que el chat no puede continuar aquí.",
+      "onlyYou": "Solo tú puedes ver este chat",
+      "switchTo": "Cambiar a {{name}}",
+      "thisTeam": "este equipo"
     },
     "common": {
       "personal": "Personal",
@@ -5274,6 +5287,8 @@
     "notices": {
       "lost": "Ya no estás en {{name}}; has pasado a Personal",
       "lostUnnamed": "Ya no estás en ese equipo; has pasado a Personal",
+      "ownerInactive": "El acceso externo está en pausa: la cuenta de su propietario está desactivada.",
+      "ownerInactiveShort": "Acceso externo en pausa",
       "roleChanged": "Tu rol en {{name}} ha cambiado. La página muestra ahora lo que puedes hacer.",
       "switched": "Has pasado a {{name}}"
     },

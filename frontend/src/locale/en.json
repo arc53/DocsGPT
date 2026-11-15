@@ -1428,6 +1428,10 @@
     "share": "Share"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "This agent has reached its limit: {{used}} of {{limit}} requests in the last {{hours}} hours. Try again later.",
+      "tokens": "This agent has reached its limit: {{used}} of {{limit}} tokens in the last {{hours}} hours. Try again later."
+    },
     "answer": "Answer",
     "artifacts": {
       "backToList": "Back to files",
@@ -3649,6 +3653,7 @@
       "dark": "Dark",
       "default": "Default",
       "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
+      "deleteAllInWorkspace": "Permanently deletes every chat you started in {{name}}. This can't be undone.",
       "deleteAllLabel": "Delete all conversations",
       "high": "High",
       "label": "General",
@@ -5074,7 +5079,15 @@
   },
   "workspace": {
     "chat": {
-      "newChatLine": "{{workspace}} · Only you can see this chat"
+      "deleteAll": {
+        "confirm": "Delete all your chats in {{name}}?",
+        "consequence": "Every chat you started in {{name}} is deleted, with its messages. Chats in your other workspaces stay. This can't be undone."
+      },
+      "mismatch": "This agent belongs to another workspace than this chat.",
+      "notFound": "You're no longer in this team, so the chat can't continue here.",
+      "onlyYou": "Only you can see this chat",
+      "switchTo": "Switch to {{name}}",
+      "thisTeam": "this team"
     },
     "common": {
       "personal": "Personal",
@@ -5106,6 +5119,8 @@
     "notices": {
       "lost": "You're no longer in {{name}}; switched to Personal",
       "lostUnnamed": "You're no longer in that team; switched to Personal",
+      "ownerInactive": "Outside access is paused: its owner's account is deactivated.",
+      "ownerInactiveShort": "Outside access paused",
       "roleChanged": "Your role in {{name}} has changed. The page now shows what you can do.",
       "switched": "Switched to {{name}}"
     },

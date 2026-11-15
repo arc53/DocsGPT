@@ -91,6 +91,12 @@ export function curatedErrorText(
       return t('conversation.errors.stopped');
     case 'no_answer':
       return t('conversation.errors.noAnswer');
+    // The chat's agent lives in another workspace; the bubble offers the
+    // switch when the caller is in that workspace.
+    case 'workspace_mismatch':
+      return t('workspace.chat.mismatch');
+    case 'workspace_not_found':
+      return t('workspace.chat.notFound');
     default:
       return message;
   }

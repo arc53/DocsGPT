@@ -105,6 +105,7 @@ import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
 import { toolInChat } from '../utils/toolUtils';
+import ChatWorkspaceLine from '../conversation/ChatWorkspaceLine';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -365,6 +366,8 @@ type MessageInputProps = {
   sendBlocked?: boolean;
   /** Replaces the empty field's prompt ("Or type your answer…"). */
   placeholder?: string;
+  /** The chat's own composer: in a team it says whose chat this is. */
+  workspaceLine?: boolean;
 };
 
 export default function MessageInput({
@@ -378,6 +381,7 @@ export default function MessageInput({
   onQueuedQuestionConsumed,
   sendBlocked = false,
   placeholder,
+  workspaceLine = false,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -1826,6 +1830,8 @@ export default function MessageInput({
           )}
         </div>
       </div>
+
+      {workspaceLine && <ChatWorkspaceLine />}
 
       {uploadModalState === 'ACTIVE' && (
         <Upload

@@ -1,6 +1,10 @@
 import i18n from 'i18next';
 
 import { baseURL } from '../api/client';
+import {
+  reportWorkspaceRefusal,
+  requestWorkspace,
+} from '../workspace/requestWorkspace';
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../models/misc';
 import {
@@ -9,7 +13,12 @@ import {
   FEEDBACK,
   RetrievalPayload,
 } from './conversationModels';
-import { isQuotaError, quotaErrorMessage } from './quotaError';
+import {
+  agentLimitErrorMessage,
+  isAgentLimitError,
+  isQuotaError,
+  quotaErrorMessage,
+} from './quotaError';
 import { ToolCallsType } from './types';
 
 /**
@@ -20,6 +29,12 @@ import { ToolCallsType } from './types';
  * happily coerce.
  */
 const _SEQUENCE_NO_RE = /^\d+$/;
+
+/** Chat refusals about the workspace, which the chat words and can fix. */
+const WORKSPACE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'workspace_mismatch',
+  'workspace_not_found',
+]);
 
 /**
  * Drain an SSE response body, forwarding each ``data:`` line to
@@ -51,6 +66,7 @@ async function _handlePreStreamHttpError(
   ).toLowerCase();
   if (contentType.includes('text/event-stream')) return false;
   let message: string | null = null;
+  let code: string | null = null;
   try {
     const text = await response.text();
     if (text) {
@@ -58,7 +74,23 @@ async function _handlePreStreamHttpError(
         const parsed = JSON.parse(text);
         if (isQuotaError(parsed)) {
           message = quotaErrorMessage(parsed, i18n.t.bind(i18n), i18n.language);
+        } else if (isAgentLimitError(parsed)) {
+          // The agent's own limit, worded for the user: a code makes the
+          // chat show it as prose rather than a raw server error.
+          message = agentLimitErrorMessage(
+            parsed,
+            i18n.t.bind(i18n),
+            i18n.language,
+          );
+          code = 'agent-limit-exceeded';
         } else if (parsed && typeof parsed === 'object') {
+          // A workspace refusal keeps its code, so the chat can word it and
+          // offer the fix.
+          if (
+            typeof parsed.error === 'string' &&
+            WORKSPACE_ERROR_CODES.has(parsed.error)
+          )
+            code = parsed.error;
           message =
             (typeof parsed.message === 'string' && parsed.message) ||
             (typeof parsed.error === 'string' && parsed.error) ||
@@ -76,8 +108,38 @@ async function _handlePreStreamHttpError(
   if (!message) {
     message = `HTTP ${response.status} ${response.statusText}`.trim();
   }
-  dispatch(JSON.stringify({ type: 'error', error: message }));
+  dispatch(
+    JSON.stringify(
+      code
+        ? { type: 'error', error: message, code }
+        : { type: 'error', error: message },
+    ),
+  );
   return true;
+}
+
+/**
+ * Passes a refused stream's ``error`` code to the workspace checks, as the
+ * API client does for a JSON refusal (a 404 ``workspace_not_found`` reloads
+ * the caller's workspaces).
+ *
+ * Args:
+ *   status: The response's HTTP status.
+ *   data: One ``data:`` payload of the stream.
+ *   workspace: The workspace the request was sent for.
+ */
+function _reportStreamRefusal(
+  status: number,
+  data: string,
+  workspace: string,
+): void {
+  try {
+    const parsed = JSON.parse(data);
+    if (parsed?.type === 'error' && typeof parsed.code === 'string')
+      reportWorkspaceRefusal(status, parsed.code, workspace);
+  } catch {
+    // Not JSON: nothing to report.
+  }
 }
 
 async function _drainSseBody(
@@ -351,6 +413,8 @@ export function handleFetchAnswerSteaming(
   };
 
   const runInitialPost = async (): Promise<void> => {
+    // The workspace a new chat is started in, as the request names it.
+    const workspace = requestWorkspace();
     const response = await conversationService.answerStream(
       payload,
       token,
@@ -363,9 +427,20 @@ export function handleFetchAnswerSteaming(
     // them into a typed ``error`` frame so the real message surfaces.
     if (await _handlePreStreamHttpError(response, dispatch)) return;
     if (!response.body) throw new Error('No response body');
-    await _drainSseBody(response.body, signal, dispatch, (id) => {
-      lastEventId = id;
-    });
+    // A refusal sent as an event stream: the API client checks only JSON
+    // bodies for a team the caller is no longer in, so it is told here.
+    const refusal = response.ok ? null : response.status;
+    await _drainSseBody(
+      response.body,
+      signal,
+      (data) => {
+        if (refusal !== null) _reportStreamRefusal(refusal, data, workspace);
+        dispatch(data);
+      },
+      (id) => {
+        lastEventId = id;
+      },
+    );
   };
 
   // Reconnect's stop predicate: as soon as ``dispatch`` flips

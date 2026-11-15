@@ -110,6 +110,7 @@ import {
   selectQueries,
 } from '../conversation/conversationSlice';
 import { selectAttachments, type Attachment } from '../upload/uploadSlice';
+import { selectWorkspaceId } from '../workspace/workspaceSlice';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -126,6 +127,8 @@ describe('SharedAgent', () => {
     vi.mocked(resumeQuestion).mockClear();
     redux.values.set(selectQueries, []);
     redux.values.set(selectAttachments, []);
+    // A shared agent opens in Personal (switching there first from a team).
+    redux.values.set(selectWorkspaceId, 'personal');
     composer.props = null;
     container = document.createElement('div');
     document.body.appendChild(container);
