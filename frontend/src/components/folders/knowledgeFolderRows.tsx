@@ -16,6 +16,7 @@ import {
   childFolders,
   type FolderTree,
   folderPath,
+  folderShowsOn,
   formatFolderPath,
   matchingFolders,
   subtreeIds,
@@ -113,6 +114,10 @@ export function buildKnowledgeRows({
     const below = path.slice(start);
     return below.length > 0 ? formatFolderPath(below) : null;
   };
+  // The tree holds every kind; a folder with only agents, tools or prompts
+  // has nothing to pick here.
+  const holdsKnowledge = (folder: Folder) =>
+    folderShowsOn(tree, folder, 'source');
   const includedLine = (folder: Folder) =>
     t('folders.picker.includedWith', {
       name: folder.name,
@@ -134,7 +139,7 @@ export function buildKnowledgeRows({
     },
   ): MultiSelectPopoverItem => {
     const state = folderPickState(tree, docs, pick, folder.id);
-    const countLine = folderCountLine(t, folder, 'source');
+    const countLine = folderCountLine(t, folder, 'source', { also: false });
     // A flat list leads with the trail, which already names the folder
     // that brings it in; the muted box says it is included.
     const stateLine = state.includedBy
@@ -210,13 +215,15 @@ export function buildKnowledgeRows({
       ? new Set([...subtreeIds(tree, place)].filter((id) => id !== place))
       : undefined;
     const folders = needle
-      ? matchingFolders(tree, needle, within).map((folder) =>
-          folderRow(folder, {
-            group: labels.folders,
-            opener: false,
-            lead: trailBelowPlace(tree.parentOf.get(folder.id) ?? null),
-          }),
-        )
+      ? matchingFolders(tree, needle, within)
+          .filter(holdsKnowledge)
+          .map((folder) =>
+            folderRow(folder, {
+              group: labels.folders,
+              opener: false,
+              lead: trailBelowPlace(tree.parentOf.get(folder.id) ?? null),
+            }),
+          )
       : [];
     const sources = shownDocs.map((doc) =>
       docRow(doc, groupOf(doc), trailBelowPlace(docFolderId(tree, doc))),
@@ -252,9 +259,11 @@ export function buildKnowledgeRows({
     );
     return [
       allRow,
-      ...childFolders(tree, placeFolder.id).map((folder) =>
-        folderRow(folder, { group: labels.inFolder, opener: true }),
-      ),
+      ...childFolders(tree, placeFolder.id)
+        .filter(holdsKnowledge)
+        .map((folder) =>
+          folderRow(folder, { group: labels.inFolder, opener: true }),
+        ),
       ...inside
         .filter((doc) => doc.ownership !== 'team')
         .map((doc) => docRow(doc, labels.inFolder, null)),
@@ -265,7 +274,7 @@ export function buildKnowledgeRows({
   }
 
   // The root.
-  const topLevel = childFolders(tree, null);
+  const topLevel = childFolders(tree, null).filter(holdsKnowledge);
   const topIds = new Set(topLevel.map((folder) => folder.id));
   const nestedPicked = pick.folders
     .filter((id) => tree.byId.has(id) && !topIds.has(id))

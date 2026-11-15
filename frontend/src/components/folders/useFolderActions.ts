@@ -5,13 +5,15 @@ import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../store';
 import { folderRemoved, loadFolders } from './foldersSlice';
-import type { Folder, FolderType } from './types';
+import type { RenamedFolder } from './folderCopy';
+import type { Folder, ItemKind } from './types';
 
 /**
  * A refused folder request: `code` is the server's error code
  * (`folder_name_taken`, `folder_too_deep`, `folder_cycle`,
- * `invalid_folder_name`, `folder_not_found`, `skipped` when nothing could be
- * filed), or `request_failed` for a transport or unknown failure.
+ * `invalid_folder_name`, `folder_not_found`, `team_item_not_fileable`,
+ * `item_not_in_team`, `workspace_role_required`, `skipped` when nothing could
+ * be filed), or `request_failed` for a transport or unknown failure.
  */
 export class FolderRequestError extends Error {
   code: string;
@@ -61,36 +63,48 @@ export type FolderActions = {
   rename: (id: string, name: string) => Promise<Folder>;
   /** Move a folder under `parentId` (null: the top level). */
   move: (id: string, parentId: string | null) => Promise<Folder>;
-  /** Delete a folder; its contents move to its parent (null: the root). */
+  /**
+   * Delete a folder; its contents move to its parent (null: the root), and
+   * `renamed` lists the child folders renamed to keep names unique there.
+   */
   remove: (
     id: string,
     parentId: string | null,
-  ) => Promise<{ moved_items: number; moved_folders: number }>;
+  ) => Promise<{
+    moved_items: number;
+    moved_folders: number;
+    renamed: RenamedFolder[];
+  }>;
   /**
-   * File items into `folderId` (null unfiles them). Rejects with `skipped`
-   * when none of them could be filed.
+   * File items of the hook's kind into `folderId` (null unfiles them).
+   * Rejects with `skipped` when none of them could be filed, and with
+   * `team_item_not_fileable` / `item_not_in_team` when an item doesn't
+   * belong in the tree.
    */
   fileItems: (
     ids: string[],
     folderId: string | null,
   ) => Promise<{ moved: string[]; skipped: string[] }>;
-  /** Reload this type's folders (counts change with every filing). */
+  /** Reload the folder tree (counts change with every filing). */
   reload: () => Promise<unknown>;
 };
 
 /**
- * The folder requests for one type. Each resolves once the server has done it
- * and the folder list has been reloaded, so the counts on screen are the
- * server's, and rejects with a `FolderRequestError` the caller shows where
- * the user is looking (a FormField, the dialog's Alert, a toast).
+ * The folder requests of the current workspace's tree. Each resolves once the
+ * server has done it and the tree has been reloaded, so the counts on screen
+ * are the server's, and rejects with a `FolderRequestError` the caller shows
+ * where the user is looking (a FormField, the dialog's Alert, a toast).
+ *
+ * Args:
+ *   kind: The kind `fileItems` files; folders themselves hold every kind.
  */
-export function useFolderActions(type: FolderType): FolderActions {
+export function useFolderActions(kind: ItemKind): FolderActions {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
 
   const reload = useCallback(
-    () => dispatch(loadFolders({ type, token })),
-    [dispatch, type, token],
+    () => dispatch(loadFolders({ token })),
+    [dispatch, token],
   );
 
   const run = useCallback(
@@ -116,7 +130,7 @@ export function useFolderActions(type: FolderType): FolderActions {
     () => ({
       create: (name, parentId) =>
         run<Folder>(
-          userService.createFolder({ type, name, parent_id: parentId }, token),
+          userService.createFolder({ name, parent_id: parentId }, token),
         ),
       rename: (id, name) =>
         run<Folder>(userService.updateFolder(id, { name }, token)),
@@ -124,14 +138,24 @@ export function useFolderActions(type: FolderType): FolderActions {
         run<Folder>(
           userService.updateFolder(id, { parent_id: parentId }, token),
         ),
-      remove: (id, parentId) =>
-        run(userService.deleteFolder(id, token), () =>
-          dispatch(folderRemoved({ type, id, parentId })),
-        ),
+      remove: async (id, parentId) => {
+        const result = await run<{
+          moved_items?: number;
+          moved_folders?: number;
+          renamed?: RenamedFolder[];
+        }>(userService.deleteFolder(id, token), () =>
+          dispatch(folderRemoved({ id, parentId })),
+        );
+        return {
+          moved_items: result?.moved_items ?? 0,
+          moved_folders: result?.moved_folders ?? 0,
+          renamed: Array.isArray(result?.renamed) ? result.renamed : [],
+        };
+      },
       fileItems: async (ids, folderId) => {
         const result = await run<{ moved?: string[]; skipped?: string[] }>(
           userService.fileFolderItems(
-            { type, folder_id: folderId, ids },
+            { type: kind, folder_id: folderId, ids },
             token,
           ),
         );
@@ -143,6 +167,6 @@ export function useFolderActions(type: FolderType): FolderActions {
       },
       reload,
     }),
-    [run, reload, dispatch, type, token],
+    [run, reload, dispatch, kind, token],
   );
 }

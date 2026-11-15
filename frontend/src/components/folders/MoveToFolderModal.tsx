@@ -1,8 +1,12 @@
 import {
+  Bot,
   ChevronRight,
   Database,
   Folder as FolderIcon,
+  type LucideIcon,
+  MessageSquareText,
   User,
+  Wrench,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -37,7 +41,7 @@ import {
   folderRootLabel,
 } from './folderCopy';
 import FolderNameModal from './FolderNameModal';
-import { selectFolderList } from './foldersSlice';
+import { selectFolderTree } from './foldersSlice';
 import {
   buildFolderTree,
   canCreateIn,
@@ -47,14 +51,15 @@ import {
   formatFolderPath,
   subtreeIds,
 } from './folderTree';
+import { selectFoldersInTeam } from './folderWorkspace';
 import NewFolderButton from './NewFolderButton';
-import type { Folder, FolderType } from './types';
+import type { Folder, ItemKind } from './types';
 import { useFolderActions } from './useFolderActions';
 
 // cmdk keys rows by `value`: the root row needs one no folder id can take.
 const ROOT_ROW_VALUE = '__docsgpt-no-folder__';
 
-/** What the dialog moves: items of the type (one or many) or a folder. */
+/** What the dialog moves: items of the dialog's kind (one or many) or a folder. */
 export type MoveSubject =
   | {
       kind: 'items';
@@ -69,7 +74,10 @@ export type MoveSubject =
 export type MoveToFolderModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  type: FolderType;
+  /** The kind of the items moved (and of the page): names the root row. */
+  kind?: ItemKind;
+  /** @deprecated Use `kind`. */
+  type?: ItemKind;
   subject: MoveSubject;
   /** After the server moved it and the folder list reloaded. */
   onMoved?: (folderId: string | null) => void;
@@ -77,25 +85,38 @@ export type MoveToFolderModalProps = {
 
 type RowState = 'ok' | 'current' | 'too_deep';
 
+/** The root row's icon: the place an item in no folder sits. */
+const ROOT_ICONS: Record<ItemKind, LucideIcon> = {
+  agent: User,
+  source: Database,
+  tool: Wrench,
+  prompt: MessageSquareText,
+};
+
 /**
- * Move to folder, for agents, sources and folders alike: a search over every
- * folder, the root as the first row ("My agents" / "Knowledge", no folder),
- * folder rows with a chevron into their subfolders, the current place marked
+ * Move to folder, for agents, sources, tools, prompts and folders alike: a
+ * search over the workspace's whole tree, the root as the first row ("My
+ * agents" / "Knowledge" / "Tools" / "Prompts", no folder), folder rows with
+ * their count and a chevron into their subfolders, the current place marked
  * Current and disabled, and targets a folder move would push past three
  * levels disabled as Too deep. New folder makes one at the level open; a
- * failed move stays in the dialog as an Alert.
+ * failed move (a team's filing refusal included) stays in the dialog as an
+ * Alert.
  */
 export default function MoveToFolderModal({
   open,
   onOpenChange,
+  kind: kindProp,
   type,
   subject,
   onMoved,
 }: MoveToFolderModalProps) {
   const { t } = useTranslation();
+  const kind = kindProp ?? type ?? 'agent';
   const { isMobile } = useMediaQuery();
-  const list = useSelector(selectFolderList(type));
-  const actions = useFolderActions(type);
+  const list = useSelector(selectFolderTree);
+  const inTeam = useSelector(selectFoldersInTeam);
+  const actions = useFolderActions(kind);
   const tree = useMemo(() => buildFolderTree(list.items), [list.items]);
 
   // The level open in the list (null: the top level).
@@ -148,7 +169,7 @@ export default function MoveToFolderModal({
 
   const searching = query.trim().length > 0;
   const needle = query.trim().toLowerCase();
-  const rootLabel = folderRootLabel(t, type);
+  const rootLabel = folderRootLabel(t, kind, { team: inTeam });
 
   const rows: Folder[] = searching
     ? list.items
@@ -189,7 +210,7 @@ export default function MoveToFolderModal({
       <Badge variant="neutral">{t('folders.tooDeep')}</Badge>
     ) : null;
 
-  const RootIcon = type === 'agent' ? User : Database;
+  const RootIcon = kind === 'agent' && inTeam ? Bot : ROOT_ICONS[kind];
   const rootState = rowState(null);
 
   const body = !list.loaded ? (
@@ -257,7 +278,7 @@ export default function MoveToFolderModal({
                 {folder.name}
               </span>
               <span className="text-muted-foreground shrink-0 text-xs">
-                {folderCountLine(t, folder, type)}
+                {folderCountLine(t, folder, kind)}
               </span>
               <span className="ml-auto flex shrink-0 items-center gap-2">
                 {stateLabel(state)}
@@ -391,7 +412,7 @@ export default function MoveToFolderModal({
       <FolderNameModal
         open={creating}
         onOpenChange={setCreating}
-        type={type}
+        kind={kind}
         mode="create"
         parentId={level}
         onSaved={(folder) => {

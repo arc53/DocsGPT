@@ -10,7 +10,11 @@ vi.mock('../../hooks', async (importOriginal) => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
-      options && 'name' in options ? `${key}:${options.name}` : key,
+      options && 'name' in options
+        ? `${key}:${options.name}`
+        : options && 'list' in options
+          ? `${key}:${options.list}`
+          : key,
   }),
 }));
 
@@ -23,9 +27,34 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../../api/services/userService', () => ({ default: api }));
 
+// The Move to team / Move to Personal option, as the page's hook gives it.
+const moveToWorkspace = vi.hoisted(() => ({
+  kinds: [] as string[],
+  items: [] as unknown[],
+}));
+vi.mock('../../workspace/move/useMoveToWorkspace', () => ({
+  useMoveToWorkspace: (kind: string) => {
+    moveToWorkspace.kinds.push(kind);
+    return {
+      menuOption: (item: unknown) => {
+        moveToWorkspace.items.push(item);
+        return { label: 'workspace.menu.moveToTeam', onClick: () => undefined };
+      },
+      dialog: <div data-testid="move-to-workspace-dialog" />,
+    };
+  },
+  default: () => ({ menuOption: () => null, dialog: null }),
+}));
+
+import actionToastReducer from '../../notifications/actionToastSlice';
+import workspaceReducer, {
+  PERSONAL_ROW,
+  type WorkspaceRole,
+} from '../../workspace/workspaceSlice';
 import FolderNameModal from './FolderNameModal';
 import foldersReducer from './foldersSlice';
 import MoveToFolderModal, { type MoveSubject } from './MoveToFolderModal';
+import NewFolderButton from './NewFolderButton';
 import type { Folder } from './types';
 import { useFolderMenu } from './useFolderMenu';
 
@@ -41,16 +70,35 @@ const folders: Folder[] = [
 const json = (body: unknown, ok = true, status = 200) =>
   Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
 
-const makeStore = () =>
+/** Personal, or a team where the caller has `role`. */
+const workspaceState = (role?: WorkspaceRole) => ({
+  current: role ? 't1' : 'personal',
+  workspaces: role
+    ? [
+        PERSONAL_ROW,
+        { id: 't1', kind: 'team' as const, name: 'Operations', role },
+      ]
+    : [PERSONAL_ROW],
+  loaded: true,
+  loading: false,
+  epoch: 0,
+  lastReason: null,
+  latestRequestId: null,
+});
+
+let store: ReturnType<typeof makeStore>;
+
+const makeStore = (role?: WorkspaceRole) =>
   configureStore({
     reducer: {
       preference: () => ({ token: 'tok' }),
       folders: foldersReducer,
-      actionToast: () => ({ current: null, nextId: 1 }),
+      actionToast: actionToastReducer,
+      workspace: workspaceReducer,
     },
     preloadedState: {
       folders: {
-        agent: {
+        tree: {
           items: folders,
           loaded: true,
           loading: false,
@@ -58,15 +106,8 @@ const makeStore = () =>
           latestRequestId: null,
           removedParents: {},
         },
-        source: {
-          items: [],
-          loaded: true,
-          loading: false,
-          failed: false,
-          latestRequestId: null,
-          removedParents: {},
-        },
       },
+      workspace: workspaceState(role),
     },
   });
 
@@ -75,6 +116,8 @@ let root: Root;
 
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset());
+  moveToWorkspace.kinds = [];
+  moveToWorkspace.items = [];
   api.getFolders.mockImplementation(() => json({ folders }));
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -86,9 +129,10 @@ afterEach(async () => {
   container.remove();
 });
 
-const mount = async (node: React.ReactNode) => {
+const mount = async (node: React.ReactNode, role?: WorkspaceRole) => {
+  store = makeStore(role);
   await act(async () => {
-    root.render(<Provider store={makeStore()}>{node}</Provider>);
+    root.render(<Provider store={store}>{node}</Provider>);
   });
 };
 
@@ -127,7 +171,7 @@ describe('FolderNameModal', () => {
       <FolderNameModal
         open
         onOpenChange={onOpenChange}
-        type="agent"
+        kind="agent"
         mode="create"
         parentId="carriers"
       />,
@@ -138,7 +182,7 @@ describe('FolderNameModal', () => {
     await typeInto(input, '  Rate archive ');
     await click(button('folders.create'));
     expect(api.createFolder).toHaveBeenCalledWith(
-      { type: 'agent', name: 'Rate archive', parent_id: 'carriers' },
+      { name: 'Rate archive', parent_id: 'carriers' },
       'tok',
     );
     expect(onOpenChange).not.toHaveBeenCalled();
@@ -156,7 +200,7 @@ describe('FolderNameModal', () => {
       <FolderNameModal
         open
         onOpenChange={onOpenChange}
-        type="agent"
+        kind="agent"
         mode="rename"
         folder={{ id: 'customs', name: 'Customs' }}
       />,
@@ -181,7 +225,7 @@ describe('MoveToFolderModal', () => {
       <MoveToFolderModal
         open
         onOpenChange={() => undefined}
-        type="agent"
+        kind="agent"
         subject={subject}
         onMoved={onMoved}
       />,
@@ -277,6 +321,54 @@ describe('MoveToFolderModal', () => {
       'folders.errors.tooDeep',
     );
   });
+
+  it('says why a personal item cannot go in a team folder', async () => {
+    api.fileFolderItems.mockImplementation(() =>
+      json(
+        {
+          success: false,
+          error: 'item_not_in_team',
+          message: 'move it first',
+          ids: ['a1'],
+        },
+        false,
+        409,
+      ),
+    );
+    await renderMove({
+      kind: 'items',
+      ids: ['a1'],
+      name: 'Support',
+      folderId: null,
+    });
+    await click(row('Carriers'));
+    await click(button('folders.move'));
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe(
+      'folders.errors.itemNotInTeam',
+    );
+  });
+
+  it('names the root Agents in a team, and lists the whole tree', async () => {
+    await mount(
+      <MoveToFolderModal
+        open
+        onOpenChange={() => undefined}
+        kind="agent"
+        subject={{
+          kind: 'items',
+          ids: ['a1'],
+          name: 'Support',
+          folderId: null,
+        }}
+      />,
+      'editor',
+    );
+    const rows = Array.from(
+      document.body.querySelectorAll('[data-slot="command-item"]'),
+    ).map((el) => el.textContent);
+    expect(rows[0]).toContain('folders.root.teamAgent');
+    expect(rows.some((text) => text?.includes('Customs'))).toBe(true);
+  });
 });
 
 describe('useFolderMenu', () => {
@@ -299,13 +391,41 @@ describe('useFolderMenu', () => {
     );
   }
 
-  it('offers Rename, Move to folder, then Delete after a rule', async () => {
+  const labels = () =>
+    Array.from(container.querySelectorAll('button')).map((b) => b.textContent);
+
+  it('offers Rename, Move to folder, Move to team, then Delete after a rule', async () => {
     await mount(<Harness folder={folders[0]} />);
+    expect(labels()).toEqual([
+      'folders.rename',
+      'folders.moveToFolder',
+      'workspace.menu.moveToTeam',
+      'folders.delete',
+    ]);
+    // The move option is asked for the folder, in the workspace it lives in.
+    expect(moveToWorkspace.kinds).toContain('folder');
+    expect(moveToWorkspace.items[0]).toMatchObject({
+      id: 'carriers',
+      name: 'Carriers',
+      workspace: { kind: 'personal' },
+      origin: 'own',
+    });
     expect(
-      Array.from(container.querySelectorAll('button')).map(
-        (b) => b.textContent,
-      ),
-    ).toEqual(['folders.rename', 'folders.moveToFolder', 'folders.delete']);
+      container.querySelector('[data-testid="move-to-workspace-dialog"]'),
+    ).not.toBeNull();
+  });
+
+  it("names a team's folder as the team's", async () => {
+    await mount(<Harness folder={folders[0]} />, 'editor');
+    expect(moveToWorkspace.items[0]).toMatchObject({
+      workspace: { kind: 'team', team_id: 't1' },
+      origin: 'team',
+    });
+  });
+
+  it('leaves a Viewer in a team only what the move hook offers', async () => {
+    await mount(<Harness folder={folders[0]} />, 'viewer');
+    expect(labels()).toEqual(['workspace.menu.moveToTeam']);
   });
 
   it('confirms a delete with what moves where, then deletes', async () => {
@@ -318,5 +438,42 @@ describe('useFolderMenu', () => {
     expect(dialog()?.textContent).toContain('folders.deleteMoves');
     await click(button('folders.deleteFolder'));
     expect(api.deleteFolder).toHaveBeenCalledWith('carriers', 'tok');
+    // Nothing was renamed: the folder leaving the page says enough.
+    expect(store.getState().actionToast.current).toBeNull();
+  });
+
+  it('names the folders a delete renamed in the toast', async () => {
+    api.deleteFolder.mockImplementation(() =>
+      json({
+        success: true,
+        moved_items: 0,
+        moved_folders: 1,
+        renamed: [
+          { id: 'rates', from: 'Rate archive', to: 'Rate archive (2)' },
+        ],
+      }),
+    );
+    await mount(<Harness folder={folders[0]} />);
+    await click(button('folders.delete'));
+    await click(button('folders.deleteFolder'));
+    const toast = store.getState().actionToast.current;
+    expect(toast?.variant).toBe('success');
+    expect(toast?.message).toContain('Rate archive → Rate archive (2)');
+  });
+});
+
+describe('NewFolderButton', () => {
+  it('shows in Personal and for an Editor in a team', async () => {
+    await mount(<NewFolderButton onClick={() => undefined} />);
+    expect(button('folders.newFolder')).toBeDefined();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await mount(<NewFolderButton onClick={() => undefined} />, 'editor');
+    expect(button('folders.newFolder')).toBeDefined();
+  });
+
+  it('is left out for a Viewer in a team', async () => {
+    await mount(<NewFolderButton onClick={() => undefined} />, 'viewer');
+    expect(button('folders.newFolder')).toBeUndefined();
   });
 });

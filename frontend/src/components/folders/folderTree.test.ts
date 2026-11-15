@@ -6,7 +6,9 @@ import {
   childFolders,
   folderDepth,
   folderMoveCheck,
+  folderPagePath,
   folderPath,
+  folderShowsOn,
   formatFolderPath,
   matchingFolders,
   searchParentName,
@@ -154,5 +156,70 @@ describe('searchParentName', () => {
     expect(
       searchParentName(tree, tree.byId.get('rates')!, 'carriers'),
     ).toBeUndefined();
+  });
+});
+
+describe('folderShowsOn', () => {
+  const counted = (
+    id: string,
+    parent_id: string | null,
+    counts: Partial<Record<'agent' | 'source' | 'tool' | 'prompt', number>>,
+  ): Folder => ({
+    id,
+    name: id,
+    parent_id,
+    counts: { agent: 0, source: 0, tool: 0, prompt: 0, ...counts },
+  });
+  // onboarding (2 prompts) ─ forms (1 agent) ; agents (3 agents) ─ deep (1
+  // prompt) ; empty ─ inner (empty) ; mixed (1 tool) ─ inner2 (empty)
+  const tree = buildFolderTree([
+    counted('onboarding', null, { prompt: 2 }),
+    counted('forms', 'onboarding', { agent: 1 }),
+    counted('agents', null, { agent: 3 }),
+    counted('deep', 'agents', { prompt: 1 }),
+    counted('empty', null, {}),
+    counted('inner', 'empty', {}),
+    counted('mixed', null, { tool: 1 }),
+    counted('inner2', 'mixed', {}),
+  ]);
+  const shows = (id: string, kind: 'agent' | 'source' | 'tool' | 'prompt') =>
+    folderShowsOn(tree, tree.byId.get(id)!, kind);
+
+  it('shows a folder whose subtree holds the kind', () => {
+    expect(shows('onboarding', 'prompt')).toBe(true);
+    // Its prompt sits a level down.
+    expect(shows('agents', 'prompt')).toBe(true);
+    expect(shows('onboarding', 'agent')).toBe(true);
+  });
+
+  it('shows a folder with nothing in its subtree on every page', () => {
+    for (const kind of ['agent', 'source', 'tool', 'prompt'] as const) {
+      expect(shows('empty', kind)).toBe(true);
+      expect(shows('inner', kind)).toBe(true);
+    }
+  });
+
+  it('hides a folder that holds only other kinds', () => {
+    expect(shows('forms', 'prompt')).toBe(false);
+    expect(shows('mixed', 'agent')).toBe(false);
+    expect(shows('onboarding', 'source')).toBe(false);
+    // An empty folder inside one still shows: there is nothing in it.
+    expect(shows('inner2', 'agent')).toBe(true);
+  });
+
+  it('shows a folder whose counts the server did not send', () => {
+    const old = buildFolderTree([f('legacy', null)]);
+    expect(folderShowsOn(old, old.byId.get('legacy')!, 'tool')).toBe(true);
+  });
+});
+
+describe('folderPagePath', () => {
+  it("opens the folder on each kind's page", () => {
+    expect(folderPagePath('agent', 'f 1')).toBe('/agents?folder=f%201');
+    expect(folderPagePath('source', 'f1')).toBe(
+      '/settings/knowledge?folder=f1',
+    );
+    expect(folderPagePath('tool', 'f1')).toBe('/settings/tools?folder=f1');
+    expect(folderPagePath('prompt', 'f1')).toBe('/settings/prompts?folder=f1');
   });
 });

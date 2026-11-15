@@ -140,15 +140,15 @@ describe('workspace/switched resets what belongs to the old workspace', () => {
       meta: { arg: { type: 'agent', token: 'tok' }, requestId: 'old' },
     });
     store.dispatch(switchWorkspace('t1'));
-    expect(store.getState().folders.source.items).toEqual([]);
-    expect(store.getState().folders.source.loaded).toBe(false);
+    expect(store.getState().folders.tree.items).toEqual([]);
+    expect(store.getState().folders.tree.loaded).toBe(false);
     // …answers after the switch: it is not applied.
     store.dispatch({
       type: loadFolders.fulfilled.type,
       payload: [{ id: 'f9', name: 'Old' }],
       meta: { arg: { type: 'agent', token: 'tok' }, requestId: 'old' },
     });
-    expect(store.getState().folders.agent.items).toEqual([]);
+    expect(store.getState().folders.tree.items).toEqual([]);
   });
 
   it('clears the chat tools and drops an answer still out', () => {

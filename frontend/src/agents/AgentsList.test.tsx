@@ -15,17 +15,9 @@ const state = vi.hoisted(() => ({
     sharedAgents: [] as unknown[],
   },
   folders: {
-    agent: {
+    tree: {
       items: [] as unknown[],
       loaded: true,
-      loading: false,
-      failed: false,
-      latestRequestId: null,
-      removedParents: {},
-    },
-    source: {
-      items: [],
-      loaded: false,
       loading: false,
       failed: false,
       latestRequestId: null,
@@ -140,9 +132,9 @@ beforeEach(() => {
   sections.user = [];
   sections.team = [];
   state.preference.agents = [];
-  state.folders.agent.items = [];
-  state.folders.agent.loaded = true;
-  state.folders.agent.failed = false;
+  state.folders.tree.items = [];
+  state.folders.tree.loaded = true;
+  state.folders.tree.failed = false;
 });
 
 afterEach(async () => {
@@ -228,7 +220,7 @@ describe('AgentsList empties', () => {
 
 describe('AgentsList folders', () => {
   const setUp = () => {
-    state.folders.agent.items = [
+    state.folders.tree.items = [
       folder('f1', 'Customer-facing', null, { item_count: 1, folder_count: 1 }),
       folder('f2', 'Internal ops', null, { item_count: 1 }),
       folder('f3', 'EU desk', 'f1'),
@@ -314,9 +306,9 @@ describe('AgentsList folders', () => {
 
   it('shows a failed folder load with Retry', async () => {
     setUp();
-    state.folders.agent.loaded = false;
-    state.folders.agent.failed = true;
-    state.folders.agent.items = [];
+    state.folders.tree.loaded = false;
+    state.folders.tree.failed = true;
+    state.folders.tree.items = [];
     await render('/agents/manage');
     const error = empties().find((el) =>
       el.textContent?.includes('folders.errors.loadFailed'),

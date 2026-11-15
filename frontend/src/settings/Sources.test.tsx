@@ -15,7 +15,7 @@ const {
   changeModals,
   folderState,
 } = vi.hoisted(() => ({
-  // The caller's source folders (`folders.source`); undefined is unloaded.
+  // The workspace's folder tree (`folders.tree`); undefined is unloaded.
   folderState: { items: undefined as unknown[] | undefined },
   // The callbacks Convert to wiki and Enable GraphRAG were given.
   changeModals: {
@@ -115,15 +115,7 @@ vi.mock('react-redux', () => ({
       notifications: { recentEvents: connectors.events },
       folders: folderState.items
         ? {
-            agent: {
-              items: [],
-              loaded: true,
-              loading: false,
-              failed: false,
-              latestRequestId: null,
-              removedParents: {},
-            },
-            source: {
+            tree: {
               items: folderState.items,
               loaded: true,
               loading: false,

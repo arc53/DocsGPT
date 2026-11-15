@@ -19,7 +19,12 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { agentEditPath } from '../agents/paths';
-import { formatFolderPath, folderPath } from '../components/folders/folderTree';
+import {
+  folderPath,
+  folderShowsOn,
+  formatFolderPath,
+} from '../components/folders/folderTree';
+import { importFolderRefs } from '../components/folders/importFolderRef';
 import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
 import { ActiveState } from '../models/misc';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
@@ -38,6 +43,12 @@ type PlanSource = {
   type: string;
   status: 'matched' | 'missing';
   target_id: string | null;
+  /** Folder entries: the entry's key in the file (`folder-N` by default). */
+  key?: string;
+  /** Folder entries: the names down to it, when the file carries them. */
+  path?: string[] | null;
+  /** Folder entries: `path` joined with `/`. */
+  path_key?: string | null;
 };
 
 type PlanTool = {
@@ -98,12 +109,20 @@ export default function ImportAgentModal({
   const [plan, setPlan] = useState<ImportPlan | null>(null);
 
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
-  // A missing folder mapped by hand to one of the importer's own.
+  // A missing folder mapped by hand to a folder of the workspace's tree,
+  // keyed the way the server reads `resolution.folders` (its key, else its
+  // path, else its name: whichever is the entry's alone).
   const [folderMap, setFolderMap] = useState<Record<string, string>>({});
+  const folderRefs = useMemo(() => {
+    const entries = (plan?.sources ?? []).filter(isFolderEntry);
+    const refs = importFolderRefs(entries);
+    return new Map(entries.map((entry, index) => [entry, refs[index]]));
+  }, [plan]);
   const { tree: folderTree } = useSourceFolderTree();
   const folderOptions = useMemo(
     () =>
       [...folderTree.byId.values()]
+        .filter((folder) => folderShowsOn(folderTree, folder, 'source'))
         .map((folder) => ({
           id: folder.id,
           label: formatFolderPath(folderPath(folderTree, folder.id)),
@@ -186,6 +205,53 @@ export default function ImportAgentModal({
     }
   };
 
+  /** A whole-folder entry of the plan: matched, or missing with a picker. */
+  const renderFolderEntry = (s: PlanSource, index: number) => {
+    const ref = folderRefs.get(s) ?? null;
+    // Two folders of one name read apart by their path.
+    const name = s.path?.length ? s.path.join(' › ') : s.name;
+    return s.status === 'matched' ? (
+      <p
+        key={`folder:${ref ?? index}`}
+        className="flex items-center gap-2 text-sm"
+      >
+        <CircleCheck className="text-success size-4" aria-hidden="true" />
+        {t('modals.importAgent.folderMatched', { name })}
+      </p>
+    ) : (
+      <div key={`folder:${ref ?? index}`} className="flex flex-col gap-1">
+        <p className="flex items-center gap-2 text-sm">
+          <TriangleAlert className="text-warning size-4" aria-hidden="true" />
+          {t('modals.importAgent.folderMissing', { name })}
+        </p>
+        {ref && folderOptions.length > 0 && (
+          <Select
+            value={folderMap[ref] || ''}
+            onValueChange={(value) =>
+              setFolderMap((prev) => ({
+                ...prev,
+                [ref]: value,
+              }))
+            }
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue
+                placeholder={t('modals.importAgent.leaveUnattached')}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {folderOptions.map((folder) => (
+                <SelectItem key={folder.id} value={folder.id}>
+                  {folder.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+    );
+  };
+
   const handleImport = async () => {
     if (!plan) return;
     setImporting(true);
@@ -201,7 +267,8 @@ export default function ImportAgentModal({
     plan.sources.forEach((s) => {
       if (s.status !== 'missing') return;
       if (isFolderEntry(s)) {
-        if (folderMap[s.name]) resolution.folders[s.name] = folderMap[s.name];
+        const ref = folderRefs.get(s);
+        if (ref && folderMap[ref]) resolution.folders[ref] = folderMap[ref];
       } else if (sourceMap[s.name]) {
         resolution.sources[s.name] = sourceMap[s.name];
       }
@@ -396,63 +463,9 @@ export default function ImportAgentModal({
 
             {plan.sources.length > 0 && (
               <Section title={t('modals.importAgent.sources')}>
-                {plan.sources.map((s) =>
+                {plan.sources.map((s, index) =>
                   isFolderEntry(s) ? (
-                    s.status === 'matched' ? (
-                      <p
-                        key={`folder:${s.name}`}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <CircleCheck
-                          className="text-success size-4"
-                          aria-hidden="true"
-                        />
-                        {t('modals.importAgent.folderMatched', {
-                          name: s.name,
-                        })}
-                      </p>
-                    ) : (
-                      <div
-                        key={`folder:${s.name}`}
-                        className="flex flex-col gap-1"
-                      >
-                        <p className="flex items-center gap-2 text-sm">
-                          <TriangleAlert
-                            className="text-warning size-4"
-                            aria-hidden="true"
-                          />
-                          {t('modals.importAgent.folderMissing', {
-                            name: s.name,
-                          })}
-                        </p>
-                        {folderOptions.length > 0 && (
-                          <Select
-                            value={folderMap[s.name] || ''}
-                            onValueChange={(value) =>
-                              setFolderMap((prev) => ({
-                                ...prev,
-                                [s.name]: value,
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue
-                                placeholder={t(
-                                  'modals.importAgent.leaveUnattached',
-                                )}
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {folderOptions.map((folder) => (
-                                <SelectItem key={folder.id} value={folder.id}>
-                                  {folder.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
-                    )
+                    renderFolderEntry(s, index)
                   ) : s.status === 'matched' ? (
                     <p key={s.name} className="flex items-center gap-2 text-sm">
                       <CircleCheck

@@ -399,12 +399,11 @@ prefListenerMiddleware.startListening({
   },
 });
 
-// The picked folders follow the caller's folder list: a rename shows, and a
-// deleted folder drops out of the pick.
+// The picked folders follow the workspace's folder tree (whichever page
+// loaded it): a rename shows, and a deleted folder drops out of the pick.
 prefListenerMiddleware.startListening({
   actionCreator: loadFolders.fulfilled,
   effect: (action, listenerApi) => {
-    if (action.meta.arg.type !== 'source') return;
     const { selectedFolders } = (listenerApi.getState() as RootState)
       .preference;
     if (selectedFolders.length === 0) return;

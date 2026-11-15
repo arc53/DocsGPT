@@ -1,8 +1,10 @@
 import { FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { selectCanEditFolders } from './folderWorkspace';
 
 type NewFolderButtonProps = {
   onClick: () => void;
@@ -18,7 +20,8 @@ type NewFolderButtonProps = {
 /**
  * "New folder", the same button wherever a folder can be made. At the depth
  * limit it is disabled and says why in a tooltip (a disabled button gets no
- * pointer events, so the tooltip hangs on a focusable wrapper).
+ * pointer events, so the tooltip hangs on a focusable wrapper). Below Editor
+ * in a team it isn't drawn at all.
  */
 export default function NewFolderButton({
   onClick,
@@ -26,6 +29,8 @@ export default function NewFolderButton({
   look = 'toolbar',
 }: NewFolderButtonProps) {
   const { t } = useTranslation();
+  const canEdit = useSelector(selectCanEditFolders);
+  if (!canEdit) return null;
   const button =
     look === 'dialog' ? (
       <Button

@@ -2169,11 +2169,16 @@
     "counts": {
       "agent_one": "{{formatted}} agent",
       "agent_other": "{{formatted}} agents",
+      "also": "also {{list}}",
       "empty": "Empty",
       "folder_one": "{{formatted}} folder",
       "folder_other": "{{formatted}} folders",
+      "prompt_one": "{{formatted}} prompt",
+      "prompt_other": "{{formatted}} prompts",
       "source_one": "{{formatted}} source",
-      "source_other": "{{formatted}} sources"
+      "source_other": "{{formatted}} sources",
+      "tool_one": "{{formatted}} tool",
+      "tool_other": "{{formatted}} tools"
     },
     "create": "Create",
     "current": "Current",
@@ -2183,6 +2188,8 @@
     "deleteFolder": "Delete folder",
     "deleteMoves_one": "Its {{what}} moves to {{parent}}. Nothing is deleted.",
     "deleteMoves_other": "Its {{what}} move to {{parent}}. Nothing is deleted.",
+    "deletedRenamed_one": "Folder deleted. {{formatted}} folder was renamed to keep names unique: {{list}}.",
+    "deletedRenamed_other": "Folder deleted. {{formatted}} folders were renamed to keep names unique: {{list}}.",
     "depthLimit": "Folders go 3 levels deep",
     "emptyTitle": "This folder is empty",
     "errors": {
@@ -2190,15 +2197,18 @@
       "cycle": "A folder can't move into itself or a folder inside it.",
       "deleteFailed": "Couldn't delete the folder. Try again.",
       "invalidName": "Use 1 to 80 characters, without line breaks.",
+      "itemNotInTeam": "A team's folders hold only the team's own items. Move the item to the team first.",
       "loadFailed": "Couldn't load your folders.",
       "moveFailed": "Couldn't move it. Try again.",
       "nameTaken": "A folder with this name already exists.",
       "notFound": "This folder no longer exists.",
       "openFailed": "That folder doesn't exist any more.",
       "saveFailed": "Couldn't save the folder. Try again.",
+      "teamItemNotFileable": "A team's items can't go in a personal folder.",
       "tooDeep": "Folders go 3 levels deep."
     },
     "inParent": "In {{name}}",
+    "listSeparator": ", ",
     "menuLabel": "Actions for {{name}}",
     "move": "Move",
     "moveTitle": "Move \"{{name}}\"",
@@ -2233,7 +2243,10 @@
     "renameTitle": "Rename folder",
     "root": {
       "agent": "My agents",
-      "source": "Knowledge"
+      "prompt": "Prompts",
+      "source": "Knowledge",
+      "teamAgent": "Agents",
+      "tool": "Tools"
     },
     "searchFolders": "Search folders…",
     "searchIn": "Search in {{name}}…",

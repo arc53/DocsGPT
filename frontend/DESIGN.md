@@ -1416,30 +1416,41 @@ disabled button either. The header of every source view is
 
 ### Folders (`components/folders/`)
 
-Agents and Knowledge share one folder system: personal folders (each user files
-what they can see into their own), three levels deep, one set of parts. A page
-never hand-draws a folder.
+Agents, Knowledge, Tools and Prompts share one folder tree per workspace (the
+caller's own in Personal, the team's in a team), three levels deep, one set of
+parts. A folder holds every kind (`ItemKind`); each page lists the folders whose
+subtree holds its kind plus empty ones (`folderShowsOn`), and the Move dialogs
+show the whole tree. A page never hand-draws a folder.
 
-- **Tile**: `FolderTile` (`folder`, `type` `agent | source`, `onOpen`,
-  `menuOptions`), a compact `filled` Card at `default` padding: the 24px muted
-  `Folder` icon, the name on one line (`truncate`, its `title`), and a count
-  line in `CardFooter` counted on the server, so a search doesn't change it
-  ("3 sources · 1 folder", "2 agents", "Empty"; `folderCountLine`). A source
-  folder agents read adds `UsedByAgents` to that line. The name is a stretched
+- **Tile**: `FolderTile` (`folder`, `kind` `agent | source | tool | prompt`,
+  `onOpen`, `menuOptions`, `alsoLinks`), a compact `filled` Card at `default`
+  padding: the 24px muted `Folder` icon, the name on one line (`truncate`, its
+  `title`), and a count line in `CardFooter` counted on the server, so a search
+  doesn't change it: the page's kind first, then what else the folder holds
+  ("6 prompts · also 2 agents, 3 tools", "3 sources · 1 folder", "Empty";
+  `folderCountLine`). Each "also" kind is a text-coloured link to the same
+  folder on its page (`folderPagePath`). A source folder agents read adds
+  `UsedByAgents` to that line. The name is a stretched
   button that is the Card's direct child (see A clickable card that holds a
   link); the ⋯ is `ActionMenu size="row"`. Folder tiles lead the item tiles,
   in their own grid with the same columns. A search that lists folders from
   several levels passes `parentName`, which leads the line ("In Carriers ·
   4 sources").
-- **Menu**: `useFolderMenu(type)` gives every folder's ⋯ (Rename, Move to
-  folder, then Delete after a rule) and draws its dialogs once per page. The
-  tile and the crumb row use the same items.
-- **Inside a folder**: `FolderCrumbRow` replaces the section heading:
-  `My agents › Customer-facing` (`Knowledge › Carriers`) on one line (parents
-  truncate, the root stays whole), the count line under it as the byline, the
-  page's buttons on the right and the folder's ⋯ (`ActionMenu size="toolbar"`)
-  last on the row. On a phone the ⋯ stays at the end of the crumb line and the
-  buttons take their own row under the count line. Nothing from outside the
+- **Menu**: `useFolderMenu(kind)` gives every folder's ⋯ (Rename, Move to
+  folder, Move to team… / Move to Personal…, then Delete after a rule) and
+  draws its dialogs once per page. The tile and the crumb row use the same
+  items. Below Editor in a team the folder edits are left out, and New folder
+  (`NewFolderButton`) isn't drawn. A delete that renamed child folders says so
+  in a success toast.
+- **Inside a folder**: `FolderCrumbRow` (`kind`) replaces the section heading:
+  `My agents › Customer-facing` (`Knowledge › Carriers`, `Prompts › Intake`;
+  `Agents` in a team) on one line (parents truncate, the root stays whole),
+  the count line under it as the byline, "Also in this folder" with an
+  `outline xs pill` link per other kind it holds (the same folder on that
+  page), the page's buttons on the right and the folder's ⋯
+  (`ActionMenu size="toolbar"`) last on the row. On a phone the ⋯ stays at the
+  end of the crumb line and the buttons take their own row under the count
+  line. Nothing from outside the
   folder renders (no other sections), the page search says "Search in
   <folder>…" and covers the folder and its subfolders, and an empty folder is
   `EmptyState size="sm" icon={FolderOpen}` ("This folder is empty", a hint that
@@ -1456,7 +1467,7 @@ never hand-draws a folder.
   `SourceFolderTrail` (PathHeader puts it after the root crumb): a folder
   crumb returns to the folder, Knowledge to the root. Inside a folder,
   nothing found offers "Search all knowledge", the same search at the root.
-- **URL**: `useFolderParam(type)` keeps the open folder in `?folder=`; the trail
+- **URL**: `useFolderParam(kind)` keeps the open folder in `?folder=`; the trail
   comes from the folder list's `parent_id` chain, so a link to a nested folder
   shows every parent. An unknown id returns to the root with a destructive
   toast; a folder deleted here steps up to its parent silently.
@@ -1471,10 +1482,11 @@ never hand-draws a folder.
   `folder_too_deep` and a failed request stay under the field). New folder is
   `NewFolderButton`: a text-only `outline field pill` on a page, and at the
   third level it is disabled with a "Folders go 3 levels deep" tooltip.
-- **Move**: `MoveToFolderModal` (`type`, `subject` items or a folder) is the
-  one Move dialog: `Move "<name>"`, a `CommandInput variant="field"` search
-  over every level (a match shows its trail), the root ("My agents" /
-  "Knowledge", no folder) as the first row, folder rows with their count and
+- **Move**: `MoveToFolderModal` (`kind`, `subject` items or a folder) is the
+  one Move to folder dialog: `Move "<name>"`, a `CommandInput variant="field"`
+  search over every level of the whole tree (a match shows its trail), the
+  root ("My agents" / "Knowledge" / "Tools" / "Prompts", no folder) as the
+  first row, folder rows with their count and
   a chevron into subfolders, the current place a disabled row with a neutral
   Current Badge, targets a folder move would push past three levels disabled
   as Too deep (a folder's own subtree isn't listed), New folder (ghost, with
@@ -1503,11 +1515,15 @@ never hand-draws a folder.
   counts a folder once ("2 selected"), reads a lone folder as its icon and
   name (the composer pill too), and says what the folders bring in its hint;
   a stopped or deleted folder says so there and keeps a remove-only row.
-- **State**: one Redux copy per type (`folders.agent`, `folders.source`,
-  `loadFolders`); every change reloads it, so counts stay the server's. A failed
-  load is `EmptyState tone="destructive"` with Retry where the folders would be,
-  never an empty list. Requests go through `useFolderActions(type)`, whose
-  errors carry the server's code (`folderErrorMessage` maps it).
+- **State**: one Redux copy of the workspace's tree (`folders.tree`,
+  `loadFolders`, `useFolderTree`), reset on a workspace switch, an answer from
+  the old workspace dropped; every change reloads it, so counts stay the
+  server's. A failed load is `EmptyState tone="destructive"` with Retry where
+  the folders would be, never an empty list. Requests go through
+  `useFolderActions(kind)`, whose errors carry the server's code
+  (`folderErrorMessage` maps it, the team filing refusals included). Move to
+  folder shows in an item's ⋯ only when `canMoveToFolder(item, isTeam)`: a
+  team's folders hold only its own items, a personal one never a team's.
 
 ### ListRow and DescriptionList (`ui/list-row.tsx`, `ui/description-list.tsx`)
 

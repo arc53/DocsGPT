@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 import FolderTile from './FolderTile';
-import type { Folder } from './types';
+import type { Folder, ItemKind } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -30,7 +30,7 @@ afterEach(async () => {
 
 const render = async (
   folder: Folder,
-  type: 'agent' | 'source',
+  kind: ItemKind,
   onOpen = vi.fn(),
   parentName?: string,
 ) => {
@@ -39,7 +39,7 @@ const render = async (
       <MemoryRouter>
         <FolderTile
           folder={folder}
-          type={type}
+          kind={kind}
           onOpen={onOpen}
           menuOptions={[{ label: 'Rename', onClick: () => undefined }]}
           parentName={parentName}
@@ -101,5 +101,53 @@ describe('FolderTile', () => {
       container.querySelectorAll('[data-slot="meta-item"]'),
     ).map((item) => item.textContent);
     expect(items).toEqual(['folders.inParent', 'folders.counts.source:4']);
+  });
+
+  it('links what else the folder holds to the same folder on its page', async () => {
+    await render(
+      {
+        id: 'f1',
+        name: 'Carrier onboarding',
+        parent_id: null,
+        counts: { agent: 2, source: 0, tool: 3, prompt: 6 },
+        folder_count: 0,
+      },
+      'prompt',
+    );
+    const card = container.querySelector('[data-folder-tile]') as HTMLElement;
+    expect(card.textContent).toContain('folders.counts.prompt:6');
+    const links = Array.from(
+      card.querySelectorAll<HTMLAnchorElement>('[data-slot="folder-also"] a'),
+    ).map((a) => [a.getAttribute('href'), a.textContent]);
+    expect(links).toEqual([
+      ['/agents?folder=f1', 'folders.counts.agent:2'],
+      ['/settings/tools?folder=f1', 'folders.counts.tool:3'],
+    ]);
+    // The links sit above the stretched open button.
+    expect(
+      card.querySelector('[data-slot="folder-also"]')?.closest('button'),
+    ).toBeNull();
+  });
+
+  it('draws the rest as text when links are off', async () => {
+    await act(async () =>
+      root.render(
+        <MemoryRouter>
+          <FolderTile
+            folder={{
+              id: 'f1',
+              name: 'Onboarding',
+              parent_id: null,
+              counts: { agent: 1, source: 0, tool: 0, prompt: 2 },
+            }}
+            kind="prompt"
+            alsoLinks={false}
+            onOpen={vi.fn()}
+          />
+        </MemoryRouter>,
+      ),
+    );
+    expect(container.querySelectorAll('a')).toHaveLength(0);
+    expect(container.textContent).toContain('folders.counts.prompt:2');
   });
 });

@@ -1,13 +1,10 @@
 import { ChevronLeft } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
 
 import type { Connection } from '../../connectors/types';
 import type { Doc } from '../../models/misc';
-import { selectToken } from '../../preferences/preferenceSlice';
 import { useSourceKindFilter } from '../../settings/SourceKindFilter';
-import type { AppDispatch } from '../../store';
 import type {
   MultiSelectPopoverItem,
   MultiSelectPopoverProps,
@@ -29,18 +26,13 @@ import {
   pickRowIds,
   togglePick,
 } from './folderPick';
-import { loadFolders, selectFolderList } from './foldersSlice';
-import {
-  buildFolderTree,
-  type FolderTree,
-  folderPath,
-  subtreeIds,
-} from './folderTree';
+import { type FolderTree, folderPath, subtreeIds } from './folderTree';
 import {
   buildKnowledgeRows,
   type UnlistedFolderRow,
 } from './knowledgeFolderRows';
 import type { Folder } from './types';
+import { useFolderTree } from './useFolderTree';
 
 export type KnowledgeFolderPickerOptions = {
   /** Whether the picker is open: it opens at the root, search cleared. */
@@ -75,24 +67,17 @@ export type KnowledgeFolderPopoverProps = Pick<
 >;
 
 /**
- * The caller's source folders as a tree, loaded once when nothing has asked
- * yet (the pickers' folder rows and the composer pill's name read it).
+ * The workspace's folder tree for knowledge, loaded once when nothing has
+ * asked yet (the pickers' folder rows and the composer pill's name read it).
+ * It is the one tree every kind shares (`useFolderTree`).
  */
 export function useSourceFolderTree(): {
   tree: FolderTree;
   loaded: boolean;
   reload: () => void;
 } {
-  const dispatch = useDispatch<AppDispatch>();
-  const token = useSelector(selectToken);
-  const list = useSelector(selectFolderList('source'));
-  const tree = useMemo(() => buildFolderTree(list.items), [list.items]);
-  const reload = () => void dispatch(loadFolders({ type: 'source', token }));
-  useEffect(() => {
-    if (!list.loaded && !list.loading && !list.failed)
-      void dispatch(loadFolders({ type: 'source', token }));
-  }, [list.loaded, list.loading, list.failed, dispatch, token]);
-  return { tree, loaded: list.loaded, reload };
+  const { tree, loaded, reload } = useFolderTree();
+  return { tree, loaded, reload };
 }
 
 /**

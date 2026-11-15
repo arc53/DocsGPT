@@ -4,9 +4,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
 
 import { showActionToast } from '../../notifications/actionToastSlice';
-import { selectFolderList } from './foldersSlice';
+import { selectFolderTree } from './foldersSlice';
 import { buildFolderTree, folderPath, type FolderTree } from './folderTree';
-import type { Folder, FolderType } from './types';
+import type { Folder, ItemKind } from './types';
 
 /** The URL parameter that holds the open folder. */
 export const FOLDER_PARAM = 'folder';
@@ -25,16 +25,21 @@ export type FolderParam = {
 
 /**
  * The open folder of a page, kept in the URL (`?folder=<id>`) so a link and
- * the browser's Back work. The trail comes from the folder list's parent
- * chain in Redux, so a link to a nested folder shows every parent. A folder
- * the list doesn't have (deleted, or someone else's) sends the page back to
- * the root with a toast.
+ * the browser's Back work, and so "Also in this folder" can open the same
+ * folder on another kind's page. The trail comes from the workspace tree's
+ * parent chain in Redux, so a link to a nested folder shows every parent. A
+ * folder the tree doesn't have (deleted, or another workspace's) sends the
+ * page back to the root with a toast.
+ *
+ * Args:
+ *   kind: The page's kind; every page reads the same tree.
  */
-export function useFolderParam(type: FolderType): FolderParam {
+export function useFolderParam(kind?: ItemKind): FolderParam {
+  void kind;
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const [searchParams, setSearchParams] = useSearchParams();
-  const list = useSelector(selectFolderList(type));
+  const list = useSelector(selectFolderTree);
   const tree = useMemo(() => buildFolderTree(list.items), [list.items]);
   const folderId = searchParams.get(FOLDER_PARAM) || null;
 

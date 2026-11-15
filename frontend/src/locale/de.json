@@ -2148,11 +2148,16 @@
     "counts": {
       "agent_one": "{{formatted}} Agent",
       "agent_other": "{{formatted}} Agenten",
+      "also": "außerdem {{list}}",
       "empty": "Leer",
       "folder_one": "{{formatted}} Ordner",
       "folder_other": "{{formatted}} Ordner",
+      "prompt_one": "{{formatted}} Prompt",
+      "prompt_other": "{{formatted}} Prompts",
       "source_one": "{{formatted}} Quelle",
-      "source_other": "{{formatted}} Quellen"
+      "source_other": "{{formatted}} Quellen",
+      "tool_one": "{{formatted}} Werkzeug",
+      "tool_other": "{{formatted}} Werkzeuge"
     },
     "create": "Erstellen",
     "current": "Aktuell",
@@ -2162,6 +2167,8 @@
     "deleteFolder": "Ordner löschen",
     "deleteMoves_one": "{{what}} wird nach {{parent}} verschoben. Es wird nichts gelöscht.",
     "deleteMoves_other": "{{what}} werden nach {{parent}} verschoben. Es wird nichts gelöscht.",
+    "deletedRenamed_one": "Ordner gelöscht. {{formatted}} Ordner wurde umbenannt, damit die Namen eindeutig bleiben: {{list}}.",
+    "deletedRenamed_other": "Ordner gelöscht. {{formatted}} Ordner wurden umbenannt, damit die Namen eindeutig bleiben: {{list}}.",
     "depthLimit": "Ordner sind höchstens 3 Ebenen tief",
     "emptyTitle": "Dieser Ordner ist leer",
     "errors": {
@@ -2169,15 +2176,18 @@
       "cycle": "Ein Ordner kann nicht in sich selbst oder einen seiner Unterordner verschoben werden.",
       "deleteFailed": "Der Ordner konnte nicht gelöscht werden. Bitte versuche es erneut.",
       "invalidName": "Verwende 1 bis 80 Zeichen ohne Zeilenumbrüche.",
+      "itemNotInTeam": "Die Ordner eines Teams enthalten nur die Elemente des Teams. Verschiebe das Element zuerst in das Team.",
       "loadFailed": "Deine Ordner konnten nicht geladen werden.",
       "moveFailed": "Verschieben fehlgeschlagen. Bitte versuche es erneut.",
       "nameTaken": "Ein Ordner mit diesem Namen existiert bereits.",
       "notFound": "Diesen Ordner gibt es nicht mehr.",
       "openFailed": "Diesen Ordner gibt es nicht mehr.",
       "saveFailed": "Der Ordner konnte nicht gespeichert werden. Bitte versuche es erneut.",
+      "teamItemNotFileable": "Elemente eines Teams können nicht in einem persönlichen Ordner abgelegt werden.",
       "tooDeep": "Ordner sind höchstens 3 Ebenen tief."
     },
     "inParent": "In {{name}}",
+    "listSeparator": ", ",
     "menuLabel": "Aktionen für {{name}}",
     "move": "Verschieben",
     "moveTitle": "„{{name}}“ verschieben",
@@ -2212,7 +2222,10 @@
     "renameTitle": "Ordner umbenennen",
     "root": {
       "agent": "Meine Agenten",
-      "source": "Wissen"
+      "prompt": "Prompts",
+      "source": "Wissen",
+      "teamAgent": "Agenten",
+      "tool": "Werkzeuge"
     },
     "searchFolders": "Ordner suchen…",
     "searchIn": "In {{name}} suchen…",

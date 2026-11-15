@@ -2124,11 +2124,16 @@
     "counts": {
       "agent_one": "{{formatted}}件のエージェント",
       "agent_other": "{{formatted}}件のエージェント",
+      "also": "ほかに{{list}}",
       "empty": "空",
       "folder_one": "{{formatted}}個のフォルダ",
       "folder_other": "{{formatted}}個のフォルダ",
+      "prompt_one": "{{formatted}}件のプロンプト",
+      "prompt_other": "{{formatted}}件のプロンプト",
       "source_one": "{{formatted}}件のソース",
-      "source_other": "{{formatted}}件のソース"
+      "source_other": "{{formatted}}件のソース",
+      "tool_one": "{{formatted}}件のツール",
+      "tool_other": "{{formatted}}件のツール"
     },
     "create": "作成",
     "current": "現在",
@@ -2138,6 +2143,8 @@
     "deleteFolder": "フォルダを削除",
     "deleteMoves_one": "中身（{{what}}）は{{parent}}に移動します。何も削除されません。",
     "deleteMoves_other": "中身（{{what}}）は{{parent}}に移動します。何も削除されません。",
+    "deletedRenamed_one": "フォルダを削除しました。名前が重複しないよう、{{formatted}}個のフォルダの名前を変更しました: {{list}}。",
+    "deletedRenamed_other": "フォルダを削除しました。名前が重複しないよう、{{formatted}}個のフォルダの名前を変更しました: {{list}}。",
     "depthLimit": "フォルダは3階層までです",
     "emptyTitle": "このフォルダは空です",
     "errors": {
@@ -2145,15 +2152,18 @@
       "cycle": "フォルダをそれ自身やそのサブフォルダに移動することはできません。",
       "deleteFailed": "フォルダを削除できませんでした。もう一度お試しください。",
       "invalidName": "改行を含めず、1〜80文字で入力してください。",
+      "itemNotInTeam": "チームのフォルダにはチーム自身の項目しか入れられません。先に項目をチームに移動してください。",
       "loadFailed": "フォルダを読み込めませんでした。",
       "moveFailed": "移動できませんでした。もう一度お試しください。",
       "nameTaken": "同じ名前のフォルダが既にあります。",
       "notFound": "このフォルダはもう存在しません。",
       "openFailed": "そのフォルダはもう存在しません。",
       "saveFailed": "フォルダを保存できませんでした。もう一度お試しください。",
+      "teamItemNotFileable": "チームの項目は個人のフォルダに入れられません。",
       "tooDeep": "フォルダは3階層までです。"
     },
     "inParent": "{{name}} 内",
+    "listSeparator": "、",
     "menuLabel": "{{name}} の操作",
     "move": "移動",
     "moveTitle": "「{{name}}」を移動",
@@ -2188,7 +2198,10 @@
     "renameTitle": "フォルダ名を変更",
     "root": {
       "agent": "自分のエージェント",
-      "source": "ナレッジ"
+      "prompt": "プロンプト",
+      "source": "ナレッジ",
+      "teamAgent": "エージェント",
+      "tool": "ツール"
     },
     "searchFolders": "フォルダを検索…",
     "searchIn": "{{name}} 内を検索…",

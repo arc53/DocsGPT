@@ -322,13 +322,13 @@ describe('composer folder pick', () => {
     ]);
   });
 
-  it("ignores the agents' folder list", () => {
+  it('follows the one tree whichever page loaded it', () => {
     const store = storeWithListener();
     store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
-    store.dispatch(loaded([], 'agent'));
-    expect(selectSelectedFolders(store.getState() as RootState)).toHaveLength(
-      1,
-    );
+    store.dispatch(loaded([{ id: 'c', name: 'Carrier docs' }], 'agent'));
+    expect(selectSelectedFolders(store.getState() as RootState)).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
   });
 
   it('reads malformed storage as no folders', () => {

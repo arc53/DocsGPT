@@ -18,8 +18,7 @@ vi.mock('react-redux', () => ({
     selector({
       preference: { token: 'token', sourceDocs: [] },
       folders: {
-        agent: folderList([]),
-        source: folderList([
+        tree: folderList([
           { id: 'f-1', name: 'Carriers', parent_id: null },
           { id: 'f-2', name: 'Rate archive', parent_id: 'f-1' },
         ]),

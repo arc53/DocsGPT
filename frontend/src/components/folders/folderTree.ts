@@ -1,4 +1,9 @@
-import { type Folder, MAX_FOLDER_DEPTH } from './types';
+import {
+  type Folder,
+  ITEM_KINDS,
+  type ItemKind,
+  MAX_FOLDER_DEPTH,
+} from './types';
 
 /**
  * The folder list as a tree. The server keeps folders acyclic and three
@@ -27,7 +32,7 @@ export const sortFoldersByName = (folders: Folder[]): Folder[] =>
  * Builds the tree from the flat list `GET /api/folders` returns.
  *
  * Args:
- *   folders: The caller's folders of one type.
+ *   folders: The workspace's folders.
  *
  * Returns:
  *   The tree: folders by id, each one's parent, and children by parent.
@@ -188,3 +193,55 @@ export function searchParentName(
   if (parentId === null || parentId === openId) return undefined;
   return tree.byId.get(parentId)?.name;
 }
+
+/**
+ * Whether a page of one kind lists a folder: when anything of that kind sits
+ * in it or below it, or when nothing at all does (an empty folder shows on
+ * every page, so a new one appears where it was made). A folder that holds
+ * only other kinds stays off the page. Counted from each folder's direct
+ * `counts`; a folder without them (an older server) always shows.
+ *
+ * Args:
+ *   tree: The workspace's folder tree.
+ *   folder: The folder to test.
+ *   kind: The page's kind.
+ *
+ * Returns:
+ *   True when the page lists it.
+ */
+export function folderShowsOn(
+  tree: FolderTree,
+  folder: Folder,
+  kind: ItemKind,
+): boolean {
+  let mine = 0;
+  let any = 0;
+  for (const id of subtreeIds(tree, folder.id)) {
+    const counts = (tree.byId.get(id) ?? folder).counts;
+    if (!counts) return true;
+    mine += counts[kind] ?? 0;
+    for (const other of ITEM_KINDS) any += counts[other] ?? 0;
+  }
+  return mine > 0 || any === 0;
+}
+
+/** The list page of each kind. */
+const KIND_PAGES: Record<ItemKind, string> = {
+  agent: '/agents',
+  source: '/settings/knowledge',
+  tool: '/settings/tools',
+  prompt: '/settings/prompts',
+};
+
+/**
+ * The page that lists one kind, opened on a folder (`?folder=`).
+ *
+ * Args:
+ *   kind: The kind whose page to open.
+ *   folderId: The folder to open there.
+ *
+ * Returns:
+ *   A path such as `/settings/tools?folder=<id>`.
+ */
+export const folderPagePath = (kind: ItemKind, folderId: string): string =>
+  `${KIND_PAGES[kind]}?folder=${encodeURIComponent(folderId)}`;

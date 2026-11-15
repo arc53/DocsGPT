@@ -5,7 +5,7 @@ import { FormField } from '../ui/form-field';
 import { Input } from '../ui/input';
 import { Modal, ModalActions } from '../ui/modal';
 import { folderErrorMessage } from './folderCopy';
-import type { Folder, FolderType } from './types';
+import type { Folder, ItemKind } from './types';
 import { useFolderActions } from './useFolderActions';
 
 /** The longest name the server takes. */
@@ -14,7 +14,10 @@ const MAX_NAME_LENGTH = 80;
 export type FolderNameModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  type: FolderType;
+  /** The page's kind; a folder holds every kind, so it changes nothing. */
+  kind?: ItemKind;
+  /** @deprecated Use `kind`. */
+  type?: ItemKind;
   /** `create` a folder inside `parentId`, or `rename` `folder`. */
   mode: 'create' | 'rename';
   /** Where a new folder goes (null: the top level). */
@@ -33,6 +36,7 @@ export type FolderNameModalProps = {
 export default function FolderNameModal({
   open,
   onOpenChange,
+  kind,
   type,
   mode,
   parentId = null,
@@ -40,7 +44,7 @@ export default function FolderNameModal({
   onSaved,
 }: FolderNameModalProps) {
   const { t } = useTranslation();
-  const actions = useFolderActions(type);
+  const actions = useFolderActions(kind ?? type ?? 'agent');
   const initialName = mode === 'rename' ? (folder?.name ?? '') : '';
   const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);

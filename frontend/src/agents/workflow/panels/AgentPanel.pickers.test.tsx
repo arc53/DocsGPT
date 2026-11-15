@@ -135,7 +135,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
         loaded: true,
         loading: false,
       },
-      folders: { source: folderList([]), agent: folderList([]) },
+      folders: { tree: folderList([]) },
     };
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -447,10 +447,9 @@ describe('AgentPanel knowledge and tool pickers', () => {
         ],
       },
       folders: {
-        source: folderList([
+        tree: folderList([
           { id: 'carriers', name: 'Carriers', parent_id: null, item_count: 2 },
         ]),
-        agent: folderList([]),
       },
     };
     const onUpdate = await render(makeNode({ sources: ['own-1'] }));

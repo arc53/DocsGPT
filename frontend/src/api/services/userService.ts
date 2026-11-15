@@ -1,3 +1,4 @@
+import { workspaceHeader } from '../../workspace/requestWorkspace';
 import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
@@ -41,8 +42,22 @@ const userService = {
     apiClient.post(endpoints.USER.OIDC_REFRESH, {}, token),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
-  getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
-    apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`, token),
+  /**
+   * One page of the workspace's knowledge. `origin` narrows it: `own` the
+   * workspace's own sources, `shared` those shared with the caller (Personal
+   * only); left out, both. The answer carries `origin_counts {own, shared}`.
+   */
+  getDocsWithPagination: (
+    query: string,
+    token: string | null,
+    origin?: 'own' | 'shared',
+  ): Promise<any> =>
+    apiClient.get(
+      `${endpoints.USER.DOCS_PAGINATED}?${query}${
+        origin ? `${query ? '&' : ''}origin=${origin}` : ''
+      }`,
+      token,
+    ),
   getAgent: (id: string, token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>
@@ -441,14 +456,26 @@ const userService = {
   ): Promise<any> =>
     apiClient.post(endpoints.USER.TTS, { text }, token, {}, signal),
   /**
-   * The caller's folders of one type, oldest first:
-   * `{folders: [{id, name, parent_id, type, item_count, folder_count, used_by?}]}`.
+   * The workspace's folder tree, oldest first: `{folders: [{id, name,
+   * parent_id, created_by, counts {agent, source, tool, prompt}, item_count,
+   * folder_count, used_by}], workspace}`. `workspace` reads another
+   * workspace's tree than the current one (a move's target).
    */
-  getFolders: (type: 'agent' | 'source', token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.FOLDERS(type), token),
-  /** 201 with the folder; 409 `folder_name_taken`, 400 `folder_too_deep`. */
+  getFolders: (
+    token: string | null,
+    options: { workspace?: string } = {},
+  ): Promise<any> =>
+    apiClient.get(
+      endpoints.USER.FOLDERS(),
+      token,
+      options.workspace ? workspaceHeader(options.workspace) : {},
+    ),
+  /**
+   * 201 with the folder, in the current workspace's tree; 409
+   * `folder_name_taken`, 400 `folder_too_deep`, 403 `workspace_role_required`.
+   */
   createFolder: (
-    data: { type: 'agent' | 'source'; name: string; parent_id?: string | null },
+    data: { name: string; parent_id?: string | null },
     token: string | null,
   ): Promise<any> => apiClient.post(endpoints.USER.FOLDERS_CREATE, data, token),
   /** Rename or move a folder; `parent_id: null` moves it to the top level. */
@@ -457,16 +484,23 @@ const userService = {
     data: { name?: string; parent_id?: string | null },
     token: string | null,
   ): Promise<any> => apiClient.put(endpoints.USER.FOLDER(id), data, token),
-  /** `{moved_items, moved_folders}`: the contents move to the parent. */
+  /**
+   * `{moved_items, moved_folders, renamed: [{id, from, to}]}`: the contents
+   * move to the parent, and a child folder whose name is taken there is
+   * renamed.
+   */
   deleteFolder: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.FOLDER(id), token),
   /**
-   * File items (one or many, up to 500) into a folder; `folder_id: null`
-   * unfiles them. `{moved, skipped}`: skipped ids are ones the caller can't see.
+   * File items of one kind (up to 500) into a folder; `folder_id: null`
+   * unfiles them from the current workspace's tree. `{moved, skipped}`:
+   * skipped ids are ones the caller can't see. 409 `team_item_not_fileable`
+   * (a team's item into a personal folder) or `item_not_in_team` (anything
+   * else into a team's folder), with `ids`; nothing is filed then.
    */
   fileFolderItems: (
     data: {
-      type: 'agent' | 'source';
+      type: 'agent' | 'source' | 'tool' | 'prompt';
       folder_id: string | null;
       ids: string[];
     },
