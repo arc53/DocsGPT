@@ -647,8 +647,11 @@ class AgentScheduleStats(Resource):
             days = 30
         try:
             with db_readonly() as conn:
+                # A team agent's schedules are stored under the members who set
+                # them; whoever manages them (Editors and up, checked above)
+                # sees every one's runs, as in the schedule list.
                 stats = ScheduleRunsRepository(conn).stats_for_agent(
-                    str(agent["id"]), owner_id, days=days,
+                    str(agent["id"]), None if is_principal_id(agent.get("user_id")) else owner_id, days=days,
                 )
         except Exception as exc:
             current_app.logger.error(

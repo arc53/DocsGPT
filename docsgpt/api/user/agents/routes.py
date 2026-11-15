@@ -79,7 +79,11 @@ from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.api.user.workflows.routes import (
+    CODE_CUSTOM_MODEL_PERSONAL_ONLY,
+    CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE,
+    graph_model_ids,
     parse_workflow_graph,
+    personal_custom_models,
     plan_graph_save,
     workflow_graph_errors,
     write_graph_save,
@@ -471,6 +475,48 @@ def _drops_controls(new, old) -> bool:
     protection all the same.
     """
     return not _controls(old) <= _controls(new)
+
+
+def _personal_model_refusal(conn, owner_id: str, data: dict, graph: Optional[dict], user: str):
+    """The 400 that refuses a save naming a custom model the agent's owner can't run with, or None.
+
+    An agent runs with its owner's models, and a team's principal has no
+    custom models: a team agent (or its inline graph) that names a person's
+    custom model would fail on every run, so it is refused at save.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The agent's owner.
+        data: The request body (``default_model_id``, ``models``).
+        graph: The inline ``workflow_graph``, or None.
+        user: The caller, for the log line.
+
+    Returns:
+        A 400 response with ``error: custom_model_personal_only`` and the
+        offending ``models``, or None when the save may go ahead.
+    """
+    model_ids: list = []
+    if isinstance(data.get("default_model_id"), str):
+        model_ids.append(data["default_model_id"])
+    if isinstance(data.get("models"), list):
+        model_ids += [m for m in data["models"] if isinstance(m, str)]
+    if graph:
+        model_ids += graph_model_ids(graph.get("nodes"))
+    bad = personal_custom_models(conn, owner_id, model_ids)
+    if not bad:
+        return None
+    current_app.logger.warning("Agent save rejected: personal custom model on a team agent (user=%s)", user)
+    return make_response(
+        jsonify(
+            {
+                "success": False,
+                "message": CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE,
+                "error": CODE_CUSTOM_MODEL_PERSONAL_ONLY,
+                "models": bad,
+            }
+        ),
+        400,
+    )
 
 
 def _reject(message: str, user: str, field: str = "-"):
@@ -1200,6 +1246,9 @@ class CreateAgent(Resource):
                 except WorkspaceError as err:
                     return err.response()
                 owner_id, created_by = workspace.owner_for_create(user)
+                model_refusal = _personal_model_refusal(conn, owner_id, data, inline_graph, user)
+                if model_refusal is not None:
+                    return model_refusal
                 # Publishing a team agent (and the key that comes with it) is
                 # outward exposure: an Admin's to do, and they pay for the key.
                 team_actions = workspace_allowed_actions("agent", workspace.role) if workspace.is_team else None
@@ -1579,6 +1628,9 @@ class UpdateAgent(Resource):
                 )
                 if graph_error is not None:
                     return graph_error
+                model_refusal = _personal_model_refusal(conn, owner_id, data, inline_graph, user)
+                if model_refusal is not None:
+                    return model_refusal
                 # The image is stored only once the save is known to go
                 # ahead, so a refused save (a sponsor confirmation round
                 # trip, a validation error) leaves no orphaned file.

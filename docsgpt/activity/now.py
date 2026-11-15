@@ -32,7 +32,7 @@ from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.workspaces.context import Workspace
-from docsgpt.workspaces.principal import team_of_principal
+from docsgpt.workspaces.principal import canonical_team_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least
 
 logger = logging.getLogger(__name__)
@@ -416,8 +416,8 @@ def _workspace_markers(
     The caller's own markers, plus (``agents_owner``) the webhook runs of a
     team's agents, whose markers sit under the team's principal. A marker
     whose source or agent is known and lives in another workspace is left
-    out; one with no row yet (a new upload still being read) can't be placed
-    and shows in every workspace.
+    out. An ingest with no row yet (a new upload still being read) is placed
+    by the ``team_id`` its marker carries, Personal when it has none.
 
     Args:
         conn: A read-only connection.
@@ -449,9 +449,15 @@ def _workspace_markers(
             owners[str(row[0]).lower()] = row[1]
     out: List[Dict[str, Any]] = []
     seen: set = set()
+    team_id = canonical_team_id(team_id)
     for marker in sorted(markers, key=lambda item: item.get("started_at") or 0):
         ref = refs.get(str(id(marker)))
-        if ref in owners and team_of_principal(owners[ref]) != team_id:
+        if ref in owners:
+            if team_of_principal(owners[ref]) != team_id:
+                continue
+        elif marker.get("kind") == "ingest" and canonical_team_id(marker.get("team_id")) != team_id:
+            # A new upload, no row yet: its marker names the workspace it runs
+            # in (one set before the field existed has none: Personal).
             continue
         key = (marker.get("kind"), marker.get("id"))
         if key in seen:

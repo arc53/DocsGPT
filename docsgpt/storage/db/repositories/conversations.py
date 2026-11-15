@@ -713,25 +713,41 @@ class ConversationsRepository:
             self._reap_artifact_storage(paths)
         return deleted
 
-    def delete_all_for_user(self, user_id: str) -> int:
+    def delete_all_for_user(self, user_id: str, team_id: Optional[str] = None) -> int:
+        """Delete every conversation the user has in one workspace, with its artifacts and traces.
+
+        Args:
+            user_id: Whose conversations.
+            team_id: The team workspace; None deletes the Personal ones
+                (``team_id`` NULL). Other workspaces' chats are kept.
+
+        Returns:
+            The number of conversations deleted.
+        """
         from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 
+        team_id = str(team_id) if team_id else None
+        params = {"user_id": user_id, "team_id": team_id}
         # Reap artifacts BEFORE the conversations: delete_for_user_conversations
         # resolves them via a subquery over the still-present conversation rows.
         artifacts = ArtifactsRepository(self._conn)
-        paths = artifacts.storage_paths_for_user_conversations(user_id)
-        artifacts.delete_for_user_conversations(user_id)
+        paths = artifacts.storage_paths_for_user_conversations(user_id, team_id)
+        artifacts.delete_for_user_conversations(user_id, team_id)
         # See ``delete``: traces not linked to a message are removed explicitly.
         self._conn.execute(
             text(
                 "DELETE FROM request_traces WHERE conversation_id IN "
-                "(SELECT id FROM conversations WHERE user_id = :user_id)"
+                "(SELECT id FROM conversations WHERE user_id = :user_id "
+                "AND team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid))"
             ),
-            {"user_id": user_id},
+            params,
         )
         result = self._conn.execute(
-            text("DELETE FROM conversations WHERE user_id = :user_id"),
-            {"user_id": user_id},
+            text(
+                "DELETE FROM conversations WHERE user_id = :user_id "
+                "AND team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid)"
+            ),
+            params,
         )
         self._reap_artifact_storage(paths)
         return result.rowcount

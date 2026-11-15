@@ -133,7 +133,7 @@ class TestConvertSourceToWikiTask:
 
         result = convert_source_to_wiki("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", actor_id=None)
         assert result == {"status": "converted"}
 
 

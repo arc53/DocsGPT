@@ -119,6 +119,27 @@ class UserCustomModelsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def existing_ids(self, model_ids: list[str]) -> list[str]:
+        """Which of ``model_ids`` are custom models of anyone.
+
+        Args:
+            model_ids: Candidate ids; ones that aren't UUIDs are ignored.
+
+        Returns:
+            The ids (as given) that name a ``user_custom_models`` row.
+        """
+        from docsgpt.storage.db.base_repository import looks_like_uuid
+
+        candidates = {str(m).lower(): str(m) for m in model_ids if m and looks_like_uuid(str(m))}
+        if not candidates:
+            return []
+        rows = self._conn.execute(
+            text("SELECT id::text FROM user_custom_models WHERE id = ANY(CAST(:ids AS uuid[]))"),
+            {"ids": sorted(candidates)},
+        ).fetchall()
+        found = {str(r[0]).lower() for r in rows}
+        return [given for key, given in candidates.items() if key in found]
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text(

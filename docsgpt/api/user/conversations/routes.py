@@ -68,7 +68,10 @@ class DeleteConversation(Resource):
 @conversations_ns.route("/delete_all_conversations")
 class DeleteAllConversations(Resource):
     @api.doc(
-        description="Deletes all conversations for a specific user",
+        description=(
+            "Deletes all of the caller's conversations in the current workspace (the workspace header; "
+            "Personal without it). A team's needs current membership (404 otherwise)."
+        ),
     )
     def get(self):
         decoded_token = request.decoded_token
@@ -77,7 +80,11 @@ class DeleteAllConversations(Resource):
         user_id = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                deleted = ConversationsRepository(conn).delete_all_for_user(user_id)
+                try:
+                    workspace = current_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
+                deleted = ConversationsRepository(conn).delete_all_for_user(user_id, workspace.team_id)
                 # Nothing deleted is not an event; the endpoint is idempotent
                 # and a row here would render as a destructive action.
                 if deleted:
@@ -86,6 +93,7 @@ class DeleteAllConversations(Resource):
                         "conversation.deleted_all",
                         actor=user_id,
                         deleted=deleted,
+                        team_id=workspace.team_id,
                     )
         except Exception as err:
             current_app.logger.error(

@@ -169,17 +169,19 @@ class ScheduleRunsRepository:
         return [row_to_dict(r) for r in rows]
 
     def stats_for_agent(
-        self, agent_id: str, user_id: str, *, days: int = 30,
+        self, agent_id: str, user_id: Optional[str], *, days: int = 30,
     ) -> dict:
-        """Aggregate run stats for an agent's owned schedules over a window.
+        """Aggregate run stats for an agent's schedules over a window.
 
-        Only runs of schedules owned by ``user_id`` on ``agent_id`` whose
-        ``scheduled_for`` falls within the last ``days`` days are counted;
-        runs scheduled in the future are not.
+        Only runs of schedules on ``agent_id`` set by ``user_id`` (every
+        setter's when None) whose ``scheduled_for`` falls within the last
+        ``days`` days are counted; runs scheduled in the future are not.
 
         Args:
             agent_id: Agent UUID the schedules belong to.
-            user_id: Owner of the schedules (and runs).
+            user_id: Owner of the schedules (and runs), or None for every
+                schedule on the agent (a team's agent, whose schedules are
+                stored under the members who set them).
             days: Window length in days, counted back from now.
 
         Returns:
@@ -197,8 +199,8 @@ class ScheduleRunsRepository:
                     FROM schedule_runs r
                     JOIN schedules s ON s.id = r.schedule_id
                     WHERE s.agent_id = CAST(:agent_id AS uuid)
-                      AND s.user_id = :user_id
-                      AND r.user_id = :user_id
+                      AND (CAST(:user_id AS text) IS NULL
+                           OR (s.user_id = :user_id AND r.user_id = :user_id))
                       AND r.scheduled_for >= now() - make_interval(days => :days)
                       AND r.scheduled_for <= now()
                 ),

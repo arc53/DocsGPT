@@ -1643,9 +1643,27 @@ def _progress_recipients(user: str, actor_id: Optional[str]) -> Tuple[Optional[s
 
 def _mark_ingest_running(user: str, actor_id: Optional[str], queued: Dict[str, Any]) -> None:
     """Mark a retried ingest running in Activity: for the owner, or for a team's source, the person who started it."""
+    queued = _with_workspace(user, queued)
     for recipient in (_person(actor_id),) if is_principal_id(user) else (user,):
         if recipient:
             mark_ingest_running(recipient, queued)
+
+
+def _with_workspace(user: str, queued: Dict[str, Any]) -> Dict[str, Any]:
+    """A ``source.ingest.queued`` payload with the workspace the ingest runs in.
+
+    A new upload has no source row until it ends, so Activity › Now places its
+    marker by this field: ``team_id`` is the team whose principal owns the
+    source, None for a person's own.
+
+    Args:
+        user: The source's owner.
+        queued: The payload.
+
+    Returns:
+        A copy of ``queued`` with ``team_id``.
+    """
+    return {**queued, "team_id": team_of_principal(user)}
 
 
 def _creator_field(user: str, actor_id: Optional[str]) -> Dict[str, str]:
@@ -1710,6 +1728,8 @@ def _publish_source_event(
         payload: Its payload.
         **kwargs: Passed to ``publish_user_event`` (``scope``).
     """
+    if event_type == "source.ingest.queued":
+        payload = _with_workspace(user, payload)
     for recipient in _source_event_recipients(user, actor_id, event_type):
         publish_user_event(recipient, event_type, payload, **kwargs)
 
@@ -4377,15 +4397,16 @@ def agent_webhook_worker(self, agent_id, payload):
                 agent_config = agent_row_to_dict(result.fetchone())
             if agent_config is None:
                 agent_config = repo.get_by_legacy_id(str(agent_id))
-            from docsgpt.api.owner_pause import OWNER_INACTIVE, PAUSED_MESSAGE, any_deactivated
+            from docsgpt.api.owner_pause import outside_access_refusal
 
-            # Queued before the owner was deactivated: it pauses like the route.
-            paused = bool(agent_config) and any_deactivated(conn, agent_config.get("user_id"))
+            # Queued before the owner or payer was deactivated (or before a
+            # team agent lost its payer): it is refused like key traffic.
+            refusal = outside_access_refusal(conn, agent_config) if agent_config else None
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
-        if paused:
-            logging.info("Webhook skipped for agent %s: its owner is deactivated", agent_id)
-            return {"status": OWNER_INACTIVE, "error": PAUSED_MESSAGE}
+        if refusal is not None:
+            logging.info("Webhook skipped for agent %s: %s", agent_id, refusal.code)
+            return {"status": refusal.code, "error": refusal.message}
         # Unescaped, so the model (and a prompt-injection check) reads non-ASCII text as written.
         input_data = json.dumps(payload, ensure_ascii=False)
     except Exception as e:
@@ -6558,7 +6579,7 @@ def _join_chunk_texts(texts: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-def convert_source_to_wiki_worker(self, source_id, user):
+def convert_source_to_wiki_worker(self, source_id, user, actor_id=None):
     """Convert an ingested source into a wiki by reassembling pages from chunks.
 
     Groups the source's existing vector-store chunks by their page path
@@ -6573,7 +6594,10 @@ def convert_source_to_wiki_worker(self, source_id, user):
     Args:
         self: Celery task instance.
         source_id: ID of the source to convert.
-        user: Owner identifier used to load the source row and author pages.
+        user: Owner identifier used to load the source row.
+        actor_id: The person who asked for the conversion. A team's source is
+            owned by the team's principal, which is never a person, so its
+            pages name this person (or, with none, whoever added the source).
 
     Returns:
         A summary dict ``{"status": "converted", "pages_created", "skipped"}``,
@@ -6583,10 +6607,12 @@ def convert_source_to_wiki_worker(self, source_id, user):
     # It reads every chunk and deletes them: a sync or a Website page change
     # on the source meanwhile would be lost or half-converted.
     with source_index_lock(str(source_id)):
-        return _convert_source_to_wiki(self, source_id, user)
+        return _convert_source_to_wiki(self, source_id, user, actor_id)
 
 
-def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, Any]:
+def _convert_source_to_wiki(
+    self: Any, source_id: str, user: str, actor_id: Optional[str] = None
+) -> Dict[str, Any]:
     """The body of ``convert_source_to_wiki_worker``, run holding the source's index lock."""
     from docsgpt.api.user.tasks import reembed_wiki_page
     from docsgpt.vectorstore.vector_creator import VectorCreator
@@ -6598,6 +6624,8 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+    # A page names a person: a team's principal never edits anything itself.
+    author = (_person(actor_id) or _person(source.get("created_by"))) if is_principal_id(user) else user
 
     cfg = SourceConfig.parse(source.get("config"))
     if cfg.kind == "wiki":
@@ -6657,7 +6685,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
                 page_path,
                 content,
                 title=title,
-                updated_by=user,
+                updated_by=author,
                 updated_via="agent",
             )
             created_pages.append((page_path, _content_hash(content)))

@@ -804,6 +804,57 @@ def _editor_only_model(model_id: Any, owner_id: str | None, editor_id: str | Non
     )
 
 
+#: The refusal code of a team item that names a person's custom model.
+CODE_CUSTOM_MODEL_PERSONAL_ONLY = "custom_model_personal_only"
+CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE = (
+    "A team's agents and workflows can't use a personal custom model yet. Pick a model the whole instance offers."
+)
+
+
+def graph_model_ids(nodes: Any) -> List[str]:
+    """The ``model_id`` of every agent node of a graph (from ``data.config`` when present).
+
+    Args:
+        nodes: The graph's nodes, as the builder sends them.
+
+    Returns:
+        The non-empty model ids, in node order.
+    """
+    out: List[str] = []
+    for node in nodes if isinstance(nodes, list) else []:
+        if not isinstance(node, dict) or node.get("type") != "agent":
+            continue
+        cfg = node.get("data") or {}
+        if isinstance(cfg, dict) and isinstance(cfg.get("config"), dict):
+            cfg = cfg["config"]
+        model_id = cfg.get("model_id") if isinstance(cfg, dict) else None
+        if isinstance(model_id, str) and model_id.strip():
+            out.append(model_id.strip())
+    return out
+
+
+def personal_custom_models(conn, owner_id: Optional[str], model_ids: List[Any]) -> List[str]:
+    """The custom models among ``model_ids`` that an item owned by ``owner_id`` can't run with.
+
+    A team's item runs as the team's principal, which has no custom models:
+    a custom model is one person's, so naming anyone's on a team item fails
+    at run time. A person's own items are not checked here.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The item's owner.
+        model_ids: Model ids the item names (blank and non-string ones are ignored).
+
+    Returns:
+        The offending ids; empty for a person's item.
+    """
+    if not is_principal_id(owner_id):
+        return []
+    from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
+
+    return UserCustomModelsRepository(conn).existing_ids([m for m in model_ids if isinstance(m, str) and m])
+
+
 #: What a team editor's node model picker reads of the owner's custom models: what
 #: it shows (name, provider) and checks (structured output for a node with a schema).
 _OWNER_MODEL_FIELDS = ("id", "display_name", "provider", "source", "supports_structured_output", "context_window")
@@ -1236,10 +1287,16 @@ class WorkflowList(Resource):
         try:
             with db_readonly() as conn:
                 workspace = current_workspace(conn)
-            require_workspace_role(workspace, "editor")
+                require_workspace_role(workspace, "editor")
+                owner_id, created_by = workspace.owner_for_create(user_id)
+                personal_models = personal_custom_models(conn, owner_id, graph_model_ids(nodes_data))
         except WorkspaceError as err:
             return err.response()
-        owner_id, created_by = workspace.owner_for_create(user_id)
+        if personal_models:
+            return error_response(
+                CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE, code=CODE_CUSTOM_MODEL_PERSONAL_ONLY,
+                errors=[CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE], models=personal_models,
+            )
         validation_errors = workflow_graph_errors(graph, draft=False, user_id=owner_id, editor_id=user_id)
         if validation_errors:
             return error_response(
@@ -1350,6 +1407,12 @@ class WorkflowDetail(Resource):
                 graph = {"nodes": nodes_data, "edges": edges_data}
                 if "retry_defaults" in data:
                     graph["retry_defaults"] = data.get("retry_defaults")
+                personal_models = personal_custom_models(conn, acting, graph_model_ids(nodes_data))
+                if personal_models:
+                    return error_response(
+                        CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE, code=CODE_CUSTOM_MODEL_PERSONAL_ONLY,
+                        errors=[CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE], models=personal_models,
+                    )
                 validation_errors = workflow_graph_errors(
                     graph, draft=False, user_id=acting, editor_id=user_id
                 )

@@ -240,10 +240,10 @@ def reembed_wiki_page(
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="convert_source_to_wiki")
-def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
+def convert_source_to_wiki(self, source_id, user, idempotency_key=None, actor_id=None):
     from docsgpt.worker import convert_source_to_wiki_worker
 
-    resp = convert_source_to_wiki_worker(self, source_id, user)
+    resp = convert_source_to_wiki_worker(self, source_id, user, actor_id=actor_id)
     return resp
 
 

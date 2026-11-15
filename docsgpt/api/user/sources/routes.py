@@ -1845,6 +1845,8 @@ class ConvertSourceToWiki(Resource):
             task = convert_source_to_wiki.delay(
                 source_id=resolved_source_id,
                 user=owner,
+                # The pages name the person who asked, never a team's principal.
+                actor_id=user,
                 idempotency_key=f"convert-wiki:{resolved_source_id}",
             )
         except Exception as err:
