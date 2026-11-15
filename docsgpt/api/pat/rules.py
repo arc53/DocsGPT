@@ -476,6 +476,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/teams/<string:team_id>/grants", "GET"): _rule("teams:read"),
     ("/api/resource_shares", "GET"): _rule("teams:read"),
     ("/api/resource_settings", "GET"): _rule("teams:read"),
+    ("/api/workspaces", "GET"): _rule("teams:read"),
     # Chat
     ("/api/answer", "POST"): _rule("chat:run", **_CHAT),
     ("/stream", "POST"): _rule("chat:run", **_CHAT),
@@ -513,6 +514,9 @@ DENIED: dict[str, tuple[str, ...]] = {
     # Draft with DocsGPT reads the whole workspace for the signed-in user and runs the model on it.
     "/api/drafter/config": ("*",),
     "/api/drafter/stream": ("*",),
+    # Moving re-owns items and their credentials between Personal and a team.
+    "/api/workspace_moves/plan": ("*",),
+    "/api/workspace_moves": ("*",),
     "/api/drafter/topics/status": ("*",),
     "/api/drafter/agent_gaps": ("*",),
     "/api/drafter/turns/<string:turn_id>/cancel": ("*",),

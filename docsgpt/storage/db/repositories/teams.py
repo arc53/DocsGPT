@@ -262,6 +262,36 @@ class TeamsRepository:
         ).fetchall()
         return sorted({str(r[0]) for r in rows if r[0]})
 
+    def workspaces_for(self, user_id: str) -> list[dict]:
+        """The teams a person is in (as owner or member), by name, for the workspace switcher.
+
+        Args:
+            user_id: The person's id.
+
+        Returns:
+            Team rows with ``is_owner``, ``stored_roles`` (their ``team_members.role`` values) and
+            ``member_count`` (distinct people, the owner included).
+        """
+        if not user_id:
+            return []
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT t.*, t.owner_id = :user_id AS is_owner,
+                       (SELECT array_agg(DISTINCT m.role) FROM team_members m
+                        WHERE m.team_id = t.id AND m.user_id = :user_id) AS stored_roles,
+                       (SELECT count(*) FROM (SELECT mm.user_id FROM team_members mm WHERE mm.team_id = t.id
+                                              UNION SELECT t.owner_id) people) AS member_count
+                FROM teams t
+                WHERE t.owner_id = :user_id
+                   OR EXISTS (SELECT 1 FROM team_members m WHERE m.team_id = t.id AND m.user_id = :user_id)
+                ORDER BY lower(t.name), t.id
+                """
+            ),
+            {"user_id": user_id},
+        )
+        return [row_to_dict(r) for r in rows.fetchall()]
+
     def principal_holdings(self, team_id: str) -> dict[str, int]:
         """What the team's principal still owns, apart from its chats (which go with the team).
 

@@ -39,6 +39,7 @@ from .teams import teams_ns
 from .tools import tools_mcp_ns, tools_ns
 from .workflow_runs import workflow_runs_ns
 from .workflows import workflows_ns
+from .workspaces import workspaces_ns
 
 
 user = Blueprint("user", __name__)
@@ -116,3 +117,6 @@ api.add_namespace(tools_mcp_ns)
 # Workflows, and the runs they leave behind
 api.add_namespace(workflows_ns)
 api.add_namespace(workflow_runs_ns)
+
+# Workspaces (the switcher's list, moving items into and out of a team)
+api.add_namespace(workspaces_ns)

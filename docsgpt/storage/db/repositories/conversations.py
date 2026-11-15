@@ -339,6 +339,54 @@ class ConversationsRepository:
         ).scalar()
         return str(team_id) if team_id else None
 
+    _AGENT_CHATS_WHERE = (
+        "agent_id = ANY(CAST(:agents AS uuid[])) AND team_id IS NOT DISTINCT FROM CAST(:from_team AS uuid) "
+        "AND user_id = ANY(:users)"
+    )
+
+    def count_agent_chats(self, agent_ids: list[str], *, team_id: Optional[str], user_ids: list[str]) -> int:
+        """How many of these people's chats with these agents live in one workspace.
+
+        Args:
+            agent_ids: Agent UUIDs.
+            team_id: The workspace (None for Personal).
+            user_ids: The chats' owners to count.
+
+        Returns:
+            int: The number of conversations.
+        """
+        if not agent_ids or not user_ids:
+            return 0
+        return int(self._conn.execute(
+            text(f"SELECT count(*) FROM conversations WHERE {self._AGENT_CHATS_WHERE}"),
+            {"agents": list(agent_ids), "from_team": team_id, "users": list(user_ids)},
+        ).scalar() or 0)
+
+    def move_agent_chats(
+        self, agent_ids: list[str], *, from_team_id: Optional[str], to_team_id: Optional[str], user_ids: list[str]
+    ) -> int:
+        """Move these people's chats with these agents to another workspace (an agent moved there).
+
+        This is the one change of ``team_id`` after creation.
+
+        Args:
+            agent_ids: The moved agents.
+            from_team_id: The workspace the chats are in now (None for Personal).
+            to_team_id: The workspace they go to (None for Personal).
+            user_ids: Whose chats move: the people who can reach the agent where it went.
+
+        Returns:
+            int: The number of conversations moved.
+        """
+        if not agent_ids or not user_ids:
+            return 0
+        return self._conn.execute(
+            text(
+                f"UPDATE conversations SET team_id = CAST(:to_team AS uuid) WHERE {self._AGENT_CHATS_WHERE}"
+            ),
+            {"agents": list(agent_ids), "from_team": from_team_id, "to_team": to_team_id, "users": list(user_ids)},
+        ).rowcount
+
     def list_for_user(
         self,
         user_id: str,
