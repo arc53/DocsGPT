@@ -3,9 +3,9 @@
 ``GET /api/workspaces`` lists Personal and every team the caller is in, with
 their role there. A move is planned with ``POST /api/workspace_moves/plan``
 and applied with ``POST /api/workspace_moves``, sending back the plan's
-fingerprint; the rules live in :mod:`docsgpt.workspaces.move`. Personal access
-tokens can't call these routes yet: the token rule table refuses any route it
-doesn't list.
+fingerprint; the rules live in :mod:`docsgpt.workspaces.move`. A personal
+access token reads the list with ``teams:read``; a move needs a signed-in
+person, so tokens can't plan or apply one.
 """
 
 from __future__ import annotations
