@@ -35,6 +35,25 @@ A **session token** is what the web app sends. How you get one depends on `AUTH_
 - **`session_jwt`**: `GET /api/generate_token` returns a new token with a new, empty identity.
 - **`oidc`**: the token DocsGPT issues after a sign-in with your identity provider. For scripts, use a personal access token instead.
 
+## Work in a team workspace
+
+A session token or a personal access token works in your Personal workspace unless the request names a [team workspace](/Using/team-workspaces):
+
+- Send the `X-DocsGPT-Workspace` header with a team id, or with `personal`.
+- Where a client can't set headers, such as an `EventSource` or a download link, send the `workspace` query parameter instead. The header wins when both are sent.
+
+Only lists, creates and new conversations read it: `GET /api/get_agents` lists the team's agents, `POST /api/create_agent` creates one the team owns, and a new chat lives in the team. A request about one item, such as `PUT /api/update_agent/<agent_id>`, goes by that item's own workspace. A team you're not in answers `404` with `"error": "workspace_not_found"`, the same as a team that doesn't exist, and a create from a Viewer answers `403` with `"error": "workspace_role_required"`.
+
+`GET /api/workspaces` lists where you can work: Personal first, then each team with its `id`, `name`, your `role` (`owner`, `admin`, `editor` or `viewer`) and `member_count`. With a personal access token it needs `teams:read`.
+
+```bash
+curl -H "Authorization: Bearer $DOCSGPT_TOKEN" \
+     -H "X-DocsGPT-Workspace: <team id>" \
+     "$DOCSGPT_URL/api/get_agents"
+```
+
+An agent API key doesn't need either: it always runs its own agent, wherever that agent lives. Moving items between workspaces (`/api/workspace_moves`) needs a signed-in session; see [Personal access tokens](/API/personal-access-tokens#team-workspaces).
+
 ## Which page covers what
 
 | To... | Use | Page |

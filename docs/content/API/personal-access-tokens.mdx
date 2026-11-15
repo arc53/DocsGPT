@@ -164,7 +164,7 @@ A `write` scope includes the matching `read` scope.
 | `schedules:read` / `schedules:write` | View / create, update, run and delete agent schedules |
 | `conversations:read` / `conversations:write` | View / rename, delete and rate conversations |
 | `analytics:read` | View usage analytics and logs |
-| `teams:read` | View teams, members and resource shares |
+| `teams:read` | View teams, members and resource shares, and list your workspaces (`GET /api/workspaces`) |
 | `runs:read` | View the workflow runs you started: status, steps, final state and the files they produced |
 | `artifacts:read` | Download files your workflow runs produced, and view and download your artifacts |
 | `chat:run` | Ask agents, search sources and list an agent's starters (`/api/answer`, `/stream`, `/api/search`, `/api/agent_starters`); used for benchmarking |
@@ -182,11 +182,20 @@ Some parts of the API are never available to a token, whatever its scopes:
 - the OpenAI-compatible `/v1` API (use an [agent API key](/API/agent-keys)) and the live event stream `/api/events`;
 - [Activity](/Using/activity#over-the-api) (`/api/activity/now`, `/api/activity/planned`, `/api/activity/history`) and stopping a running answer (`POST /api/messages/<message_id>/cancel`), because they span every chat and agent of the account;
 - [Draft with DocsGPT](/Agents/draft-with-docsgpt#over-the-api) (`/api/drafter/config`, `/api/drafter/stream`, `/api/drafter/topics/status`), because a draft reads the whole workspace and runs the model on it;
-- the agent webhook trigger, whose URL is its own credential.
+- the agent webhook trigger, whose URL is its own credential;
+- moving items between Personal and a team (`/api/workspace_moves/plan`, `/api/workspace_moves`), because a move changes who owns them and re-seals their credentials.
 
 The [REST API reference](/API/reference) shows, for each endpoint, the scope a token needs or that tokens can't call it. A token also never carries the `admin` role, even when its owner is an admin.
 
 Authorization is deny by default. An endpoint that is not explicitly mapped to a scope cannot be called with a token, and answers `403` with `"error": "not_available_to_tokens"`. A mapped endpoint called without the scope answers `403` with `"error": "insufficient_scope"` and names the `required_scope`.
+
+## Team workspaces
+
+A token acts as you, in your Personal workspace by default. To list or create in a [team workspace](/Using/team-workspaces), send the `X-DocsGPT-Workspace` header (or the `workspace` query parameter) with the team's id; see [Work in a team workspace](/API#work-in-a-team-workspace). The token gets what your team role allows there, within its scopes: a token of a Viewer can't create in the team. If you leave the team, the token loses access to it on the next request.
+
+- `GET /api/workspaces` lists your workspaces and needs `teams:read`.
+- Moving items into or out of a team can't be done with a token.
+- The [tool for agents](#let-an-agent-work-in-your-account) has a `list_workspaces` action when the token has `teams:read`, and its list and create actions (such as `list_agents`, `create_agent`, `list_sources`, `create_prompt`, `list_folders` and `file_in_folder`) take a `workspace` parameter: a team id from `list_workspaces`, or empty for Personal. A tool created before this release has no such parameter; create a new token and tool to get it.
 
 ## Resource restrictions
 

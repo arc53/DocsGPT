@@ -181,7 +181,7 @@ Each source on the Knowledge page has a menu. Which items appear depends on the 
 - **Settings** opens one dialog for the source. A website source starts with its pages and schedule (see [Manage the pages of a website source](#manage-the-pages-of-a-website-source)); a GitHub or connector source starts with **Keep up to date**, its sync schedule. Then come the retrieval and chunking settings. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested; for a website, GitHub or connector source, **Reingest** runs a sync, which fetches the pages or files again with the new settings. A connector source whose account was disconnected can't be reingested until the account is connected again. See [Per-source configuration](/Sources/Per-source-configuration).
 - **Test retrieval** runs a question against the source and shows which chunks come back.
 - **Convert to wiki** turns the source into editable wiki pages. This can't be undone, and it stops the source's sync schedule: a wiki doesn't sync.
-- **Share with team** shares the source with a team. See [Access control](/Deploying/Access-Control).
+- **Share** shares a personal source with a team or a teammate, or shows who can use a team's source. See [Teams and sharing](/Using/teams-and-sharing) and [Team workspaces](/Using/team-workspaces).
 - **Move to folder** files the source in one of your folders. See [Move a source into a folder](#move-a-source-into-a-folder).
 - **Delete** removes the source and its index. While a sync or a page change runs on the source, it waits a few seconds, then is refused with the same message; delete it once the change is done.
 
@@ -234,19 +234,21 @@ At the top of Knowledge, a search or a kind or usage filter looks in every folde
 
 Deleting a folder never deletes a source. Its sources and folders move up to the folder it was in, or to the top of Knowledge. The confirmation says what moves where and names the agents that use the folder: they lose its sources, because the folder comes off them. Sources those agents use one by one stay on them.
 
-### Folders are personal
+### Personal and team folders
 
-Your folders are your own: teammates don't see them, and filing a source changes nothing for anyone else. You can file any source you can see, including sources teammates share with you, and each teammate files the same source in their own folders. Deleting a source takes it out of every folder.
+In Personal, your folders are your own: teammates don't see them, and filing a source changes nothing for anyone else. You can file any source you can see, including sources teammates share with you, and each teammate files the same source in their own folders. Deleting a source takes it out of every folder.
 
 A teammate sees one of your folders only when you give it to an agent you share, and then only its name; see [Pick a whole folder](#pick-a-whole-folder).
 
+In a team workspace, the folders are the team's: the same for everyone in it, and one tree for agents, knowledge, tools and prompts. See [Team workspaces](/Using/team-workspaces#folders).
+
 ### Folders through the API
 
-Folders are the same for Knowledge and agents: every folder route takes `type`, `source` for Knowledge or `agent` for agents.
+A workspace has one folder tree for agents, knowledge, tools and prompts. `type` names the kind: `source` for Knowledge, `agent`, `tool` or `prompt`. On a list it only picks what `item_count` counts and can be left out; filing items needs it. A list or a create works in the request's workspace, the team's tree when it names a team (see [Work in a team workspace](/API#work-in-a-team-workspace)).
 
 | Method | Path | What it does |
 | --- | --- | --- |
-| `GET` | `/api/folders?type=source` | Your folders of that type, oldest first, each with `id`, `name`, `parent_id`, `item_count` and `folder_count` (what it holds directly). A Knowledge folder also has `used_by`, the agents that use it. |
+| `GET` | `/api/folders?type=source` | The workspace's folders, oldest first, each with `id`, `name`, `parent_id`, `item_count` and `folder_count` (what it holds directly). A Knowledge folder also has `used_by`, the agents that use it. |
 | `POST` | `/api/folders` | Create one: `{"type": "source", "name": "Carriers", "parent_id": null}`. Answers `201` with the folder. |
 | `PUT` | `/api/folders/<id>` | Rename or move it: `name`, `parent_id` (`null` moves it to the top level). |
 | `DELETE` | `/api/folders/<id>` | Delete it. Its contents move to its parent; the response counts them in `moved_items` and `moved_folders`. |

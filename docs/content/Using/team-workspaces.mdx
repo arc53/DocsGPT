@@ -1,0 +1,183 @@
+---
+title: Team Workspaces
+description: How team workspaces work in DocsGPT, including the workspace switcher, Personal and team items, the four team roles, shared folders, moving work into a team and back, and what stays personal.
+lastUpdated: 2026-11-15
+---
+
+import { Callout } from 'nextra/components'
+
+# Team Workspaces
+
+Every team has a workspace: a place for the team's agents, knowledge, tools and prompts. The team owns what is in it, and everyone in the team can use it, according to their team role. **Personal** is your own workspace. It holds what you own, plus what people share with you.
+
+Each item lives in exactly one workspace. Where it lives decides who owns it and who can reach it.
+
+To create a team and add members, see [Teams and sharing](/Using/teams-and-sharing). For the team API and the audit events, see [Access Control & Teams](/Deploying/Access-Control#teams).
+
+## Personal and team workspaces
+
+| | Personal | A team workspace |
+| --- | --- | --- |
+| Who owns an item | You | The team. You stay listed as the person who added it |
+| Who can reach it | You, plus the people and teams you share it with, item by item | Everyone in the team, by their team role |
+| Folders | Your own | The team's, the same for everyone in it |
+| What its agents can use | Your items, and items shared with you | The team's items only |
+| When someone leaves the team | Their items leave with them | Team items stay with the team |
+
+A team agent uses only the team's knowledge, tools and prompts. Nobody's personal credentials sit behind a team agent, so it works the same for every member.
+
+## Switch workspace
+
+The name at the top of the sidebar is the workspace switcher. It lists **Personal** ("Only you"), then your **Teams**, each with its member count and your role, then **Manage teams** and **Create team**.
+
+The workspace you pick is the scope of the app:
+
+- the **Agents**, **Knowledge**, **Tools** and **Prompts** pages, and their folders,
+- the chats in the sidebar, and chat search,
+- [Activity](/Using/activity) and your pinned agents,
+- the pickers in the chat composer and the agent builder.
+
+Under its intro, each of these pages names the workspace and who can reach it, for example "Operations · Everyone in the team can use what's here · 12 people", or "Personal · Only you, unless you share an item".
+
+When you switch, a list page stays open and shows the other workspace's items. An item page, such as an agent or a chat, goes back to its list. **General** and **Access tokens** in Settings are yours, whatever the workspace.
+
+DocsGPT remembers your workspace in this browser. Each browser tab keeps its own: switching in one tab doesn't change the others.
+
+A link to a team item or a team chat switches to its workspace, and DocsGPT says so ("Switched to Operations"). If you're no longer in the team, DocsGPT switches to Personal and tells you.
+
+In a team workspace, the sidebar has a **Team** entry that opens the team's page: its **Members**, **Personal items shared**, and, for Admins, **Settings**.
+
+## Team roles
+
+Your role is the same on everything in the workspace. A team item's tile names who added it rather than your access.
+
+| Role | Can |
+| --- | --- |
+| **Viewer** | Chat with the team's agents and pin them. Use the team's knowledge, tools and prompts, browse its sources, and duplicate its prompts. |
+| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules, create folders and file items in them, and move their own items in from Personal. A new agent from an Editor is a draft until an Admin publishes it. |
+| **Admin** | Everything an Editor can, plus publish agents and manage outside access (API key and widget, public link, webhook), delete items, move items out to their own Personal, add and remove members and change their roles, and edit the team's name and description. |
+| **Owner** | The person who created the team, or was given it. An Admin who can also transfer ownership and delete the team. |
+
+New members join as Viewers. A team always keeps at least one Admin, and the Owner can't be demoted or removed: to step down, transfer ownership first, under the team's **Settings**.
+
+<Callout type="info">
+  After upgrading to this release, a team's former members are Viewers and its admins are Admins. Give Editor to the people who should create and change the team's items.
+</Callout>
+
+## What each page shows
+
+The **Agents**, **Knowledge**, **Tools** and **Prompts** pages follow the same order:
+
+1. **Folders**: the workspace's folders that hold this kind of item, plus empty folders.
+2. The items in no folder.
+3. In Personal only, **Shared with you**: items other people shared with you, each with its owner and your access, **Viewer** or **Editor**.
+
+In a team, **New**, **Add**, **Import** and **New folder** appear only for Editors and up. On the Agents page, templates are there in both workspaces: an Editor's copy of a template lands in the team as a draft. **Discovered** is in Personal only.
+
+**Connectors** and **Custom models** are personal. In a team, those pages say so and offer **Switch to Personal**. A team can't hold a source synced from a connected service, or a tool that signs in with an account, so the tool forms leave those out in a team.
+
+## Folders
+
+A workspace has one folder tree, and a folder can hold agents, knowledge, tools and prompts together. Each page shows its own part of the folder. A tile reads, for example, "6 prompts · also 2 agents, 3 tools", and an open folder has **Also in this folder**, with links to the same folder on the other pages.
+
+- Folders nest up to three levels deep.
+- Team folders are the same for everyone in the team. Editors and up create, rename, move and delete folders and file items in them; Viewers browse them.
+- Deleting a folder never deletes what it holds: its items and folders move up to its parent.
+- In Personal, you can file your own items and items shared with you. A team's items can't go in a personal folder; pin a team agent instead.
+- When you pick tools or knowledge for an agent or a workflow that sits in a folder, the picker lists that folder's items first ("In Support, this agent's folder").
+- A Knowledge folder on a team agent is the team's folder, so every member sees the same folder and the same sources in it.
+
+For the folder pages themselves, see [Organize knowledge in folders](/Sources/adding-knowledge#organize-knowledge-in-folders) and [Organize agents in folders](/Using/web-app#organize-agents-in-folders).
+
+## Move to team and back
+
+Moving is how existing work gets into a team. Choose **Move to team…** in the **⋯** menu of an agent, a source, a tool, a prompt or a folder. In a team, an Admin's menu has **Move to Personal…** to take an item out. A move changes the owner in place: ids, API keys, links and history stay the same.
+
+| Move | Who can |
+| --- | --- |
+| Into a team | The item's owner, if they are an Editor or above in that team |
+| Into a team, an agent with outside access (API key, public link or webhook) | The item's owner, if they are an Admin in that team. An Editor turns its outside access off first, or asks an Admin |
+| Out of a team, into your own Personal | An Admin of the team |
+
+### The plan
+
+Before anything moves, the dialog shows the whole plan. Pick the team and, if you like, a folder there; then check:
+
+- **Who gains or loses access.** Everyone in the team gets access by their role. People you shared the item with outside the team lose access, by name, because a team item has no per-item shares.
+- **Who owns it.** "Operations will own it. It stays with the team if you leave. You stay listed as the person who added it."
+- **Moves along.** What the item brings with it, and why: used by the agent, in the folder, or on the same workflow.
+- **Can't move.** What stays behind, and why.
+- **Renamed to avoid a clash.** A folder or an agent's address that already exists in the team gets a new name.
+- **Nothing changes about who pays.** Schedules and outside access keep their payer.
+- **Chats.** How many chats with a moving agent move along.
+
+If something changed while the dialog was open, the plan reloads with "Something changed; check again". Choose **Move to Operations** to apply it, all at once or not at all.
+
+### What moves along
+
+- **An agent** brings what it uses that you own: its sources, tools and prompt, the Knowledge folders it reads, and its workflow, with every other agent of yours on that workflow. From a Knowledge folder, only the sources and sub-folders come; agents, tools and prompts filed in it stay in Personal, unfiled.
+- **A folder** brings its sub-folders and everything you filed in it.
+- **Chats** with a moving agent follow it into the team, so its members keep their history.
+- Per-item shares and access settings on a moved item are removed, and saved secrets are sealed again for the team.
+
+### What can't move
+
+A team item can't depend on one person's account, device or permission, so these stay personal:
+
+| Item | Why | What happens |
+| --- | --- | --- |
+| A tool signed in with an account (a connected service, or an MCP server you sign in to) | The connection is personal | Taken off the moving agent |
+| A source synced from a connected service | The sync runs on your connection | Taken off the moving agent |
+| A personal custom model | Custom models are personal | Taken off the moving agent |
+| A tool that runs on a paired device | It runs on your machine | Taken off the moving agent |
+| Someone else's item, such as a source shared with you | It isn't yours to move | Taken off the moving agent; it stays with its owner |
+| A tool whose saved secret can't be read any more | It can't be sealed for the team | Enter the secret again, then move |
+
+### When a move is refused
+
+- **An agent people outside the team can reach would use what moves.** An API key, public link or webhook must not serve a team's item. Move that agent too, turn its outside access off, or take the items off it first. A personal agent of yours without outside access can keep using what moved, but can't be published while it does.
+- **Moving out, a team agent that stays still uses what moves.** A team agent can't use a personal item. Move that agent too, or take the items off it first.
+
+Moving out, only your own chats with the agent go back to Personal. Other members can still read their old chats with it, but can't continue them.
+
+## Sharing and where access comes from
+
+Menus say **Share**. What the dialog shows depends on where the item lives.
+
+**A team item** has no per-item people: access follows team membership. The dialog says "It belongs to Operations. Access follows team membership", with one row for everyone in the team and its member count, and your own role ("Admin in Operations · From the team"). Admins get **Manage members**. For an agent, **Outside the team** lists its public link, API key and widget, and webhook, each **Off**, or **On** with who pays for it. Only Admins change those, on the agent's own page.
+
+**A personal item** keeps per-item sharing with teams and people (see [Teams and sharing](/Using/teams-and-sharing#share-with-a-team-or-a-teammate)). Each row says where the access comes from: **Added by you**, **via Operations**, or **Shared, not owned by the team**. For each team you're an Editor or above in, the dialog asks **Should Operations own this?** and offers **Move to team…**.
+
+A team's page lists, under **Personal items shared**, the personal items members share with it. They belong to the people who shared them, not to the team, so they would leave with them. Ask the owner to move the ones the team depends on.
+
+## When someone leaves a team
+
+- **Team items stay.** Items they added belong to the team and keep working. They lose access to them. If they're added again, they get it back.
+- **Their chats in the team** can no longer be opened by them, and nobody else can open them either. If they're added again, the chats come back.
+- **Their personal items stay theirs.** What they shared with the team pauses: nobody in the team reaches it while they're out. If they're added again, those shares work again. Before removing someone, the dialog lists the personal items they share with the team, so you can ask them to move the ones the team depends on first.
+
+A team that still owns items can't be deleted. Move its items to Personal or delete them first; the team's **Settings** names what is left.
+
+## What stays personal
+
+- **Connections and connectors.** Accounts you connect, and the tools and synced sources that use them, stay in Personal.
+- **Custom models.** A team agent uses the models your instance offers, not a member's custom model.
+- **Paired devices.** A remote device runs on one person's machine.
+- **Access tokens.** A token acts as you; see [Over the API](#over-the-api).
+- **Your chats.** A chat belongs to the workspace you started it in and can use only that workspace's items. In a team, the composer says "Operations · Only you can see this chat". Other members, Admins included, can't open your chats. As with any agent, a team agent's **Logs** and **Insights**, which Editors and up see, record each run, the question included.
+
+A team chat can be shared only as a read-only link, and only by an Admin. **Delete all chats** in **Settings → General** deletes your chats in the current workspace only.
+
+## Who pays
+
+Whoever starts a run pays for it from their own allowance: the person chatting, the person who set a schedule, or the person who published the agent. Where an agent lives doesn't change that, and moving an agent doesn't either.
+
+## Over the API
+
+Requests work in Personal unless they name a team. Send the `X-DocsGPT-Workspace` header with a team id, or `personal`. Where a client can't set headers, send the `workspace` query parameter instead. Only lists, creates and new chats read it; a request about one item goes by that item's own workspace. `GET /api/workspaces` lists your workspaces and your role in each. See [Work in a team workspace](/API#work-in-a-team-workspace).
+
+## Related
+
+- [Teams and sharing](/Using/teams-and-sharing): create a team, add members, and share personal items.
+- [Access Control & Teams](/Deploying/Access-Control#teams): the team API, sharing rules and audit events.
+- [Personal access tokens](/API/personal-access-tokens): tokens and team workspaces.

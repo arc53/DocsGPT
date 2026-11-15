@@ -11,9 +11,9 @@ import { Callout } from 'nextra/components'
 DocsGPT has two independent permission planes:
 
 - **Global RBAC** — every user holds the `admin` or `user` role for the whole instance. Admins can manage other users and see instance-wide usage and audit data.
-- **Team roles** — within a team a user is a `team_admin` or `team_member`, and resources can be shared to teams or individual members.
+- **Team roles** — within a team a user is its `owner`, an `admin`, an `editor` or a `viewer`. The role decides what they can do with the items the [team workspace](/Using/team-workspaces) owns. Personal resources can still be shared to teams or individual members.
 
-The two planes never mix: a global `admin` is a superuser over *all* teams, but a `team_admin` is **not** a global admin.
+The two planes never mix: a global `admin` can manage every team's members and settings, but a team `admin` is **not** a global admin. A global admin gets no role in a team's workspace from being an admin: they see its items and chats only as a member.
 
 <Callout type="info" emoji="🔒">
 Roles are resolved **server-side on every request** and are never trusted from the JWT. The frontend route guards are cosmetic — the server-side decorators are the real boundary. Persisted roles apply under `AUTH_TYPE=oidc`; token-only modes (`simple_jwt`, `session_jwt`) can never hold the admin role.
@@ -134,16 +134,20 @@ Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#sc
 
 ## Teams
 
-Teams let a group of users collaborate and share resources. Teams are self-serve — any user can create one and manage its membership.
+Teams let a group of users collaborate and share resources. Teams are self-serve — any user can create one and manage its membership. Each team has a workspace that owns the agents, sources, tools, prompts and folders created in it or moved into it; see [Team workspaces](/Using/team-workspaces).
 
 ### Team roles
 
+Each role includes everything the role above it in the table can do.
+
 | Role | Capabilities |
 | --- | --- |
-| `team_member` | Belongs to the team; can use resources shared with the team. |
-| `team_admin` | Manages membership and team settings. Implies `team_member`. |
+| `viewer` | Uses the team's agents, sources, tools and prompts, and lists its folders. New members join as viewers. |
+| `editor` | Creates, imports, edits and exports the team's items, sees an agent's logs and manages its schedules, manages the team's folders, and moves their own items into the team. |
+| `admin` | Publishes the team's agents and manages their API key, public link and webhook, deletes items, moves items out to their own Personal workspace, manages members and roles, and edits the team's name and description. |
+| `owner` | The team's creator, or whoever ownership was transferred to. An admin who can also transfer ownership and delete the team. |
 
-The team **owner** is a distinct concept from `team_admin`: ownership can be transferred, and a global `admin` is treated as a superuser over every team.
+The owner is `teams.owner_id`; the other roles are stored per member as `team_admin`, `team_editor` and `team_viewer`. Requests take and return the short names. The older names still work: `team_member` is read and accepted as `viewer`, and team payloads keep `member_role` (`team_admin` or `team_member`) beside the new `role`. Upgrading turns existing members into viewers and existing admins into admins.
 
 ### Managing a team
 
@@ -151,11 +155,13 @@ The team **owner** is a distinct concept from `team_admin`: ownership can be tra
 | --- | --- | --- |
 | `GET` / `POST` | `/api/teams` | List your teams / create a team. |
 | `GET` / `PUT` / `DELETE` | `/api/teams/<id>` | Read, update (team admin), or delete a team (owner only; a global admin overrides). |
-| `GET` / `POST` | `/api/teams/<id>/members` | List members / add a member. |
-| `PUT` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's role / remove (or leave). |
-| `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership to an existing member, who becomes a `team_admin` (owner only; a global admin overrides). |
+| `GET` / `POST` | `/api/teams/<id>/members` | List members / add a member: `email` or `user_id`, and `role` (`viewer`, the default, `editor` or `admin`). |
+| `PUT` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's `role` / remove (or leave). |
+| `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership to an existing member, who becomes an `admin` too (owner only; a global admin overrides). |
 
-A team always keeps at least one `team_admin`: demoting or removing the last one returns `409`. The team owner can't be demoted or removed either: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave.
+A team always keeps at least one `admin`: demoting or removing the last one returns `409`. The team owner can't be demoted or removed either: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave. `owner` can't be set as a role: only the transfer changes it.
+
+A team that still owns items can't be deleted: `DELETE /api/teams/<id>` returns `409` with `"error": "team_not_empty"` and counts what is left. Move the items out or delete them first.
 
 <Callout type="info" emoji="ℹ️">
 Members are added by email (or subject id). The invitee **must have signed in at least once** so DocsGPT can resolve them to a user account.
@@ -164,6 +170,8 @@ Members are added by email (or subject id). The invitee **must have signed in at
 ## Sharing resources with a team
 
 Four resource types can be shared: **agents**, **sources**, **prompts**, and **tools**. Sharing is **additive** — it grants access to others without changing ownership.
+
+Sharing is for personal resources. A resource a team workspace owns is reached by team role only, so it has no per-item shares: a share on one returns `409` with `"error": "team_item"`, and `GET /api/resource_shares` for one returns the team, its member count and the agent's outside access instead of a list of people. To give a team ownership of a personal resource, [move it to the team](/Using/team-workspaces#move-to-team-and-back).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -175,6 +183,7 @@ Sharing rules:
 
 - Only the **owner** of a resource can share it, unless they turn on **Editors can share** in the share dialog's **Access settings**.
 - A share targets either the **whole team** or a **single member**.
+- A share works only while the resource's owner is in that team. When they leave or are removed, their shares to the team pause; when they're added again, the shares work again.
 - Each share carries an access level: **`viewer`** (read-only) or **`editor`** (read and modify).
 - `editor` is not the same as owner — an editor can change a resource but cannot re-share it unless the owner turns on **Editors can share**, or delete it unless the owner turns on **Editors can delete** (agents and sources only; editors never delete tools or prompts).
 - Shared tools run server-side with the **owner's** credentials, or with each member's own account when a connected tool is shared that way; a grantee never sees the owner's secrets.
@@ -307,7 +316,8 @@ Admin, team, token and data-plane actions are appended to the `auth_events` tabl
 | `role_granted` / `role_revoked` | `access` | The admin role is granted or revoked; `metadata.source` is `manual` or `oidc_group`. |
 | `admin_user_activated` / `admin_user_deactivated` | `access` | An admin activates or deactivates a user. |
 | `admin_sessions_revoked` | `access` | An admin force-logs-out a user. |
-| `team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete` | `access` | Team management. |
+| `team.create`, `team.member_add`, `team.member_role_changed`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete` | `access` | Team management. Older rows name a role change `team.member_role`. |
+| `team.item_moved_in`, `team.item_moved_out`, `team.folder_moved_in`, `team.folder_moved_out` | `access` | An agent, source, tool or prompt, or a folder, [moves](/Using/team-workspaces#move-to-team-and-back) into a team's workspace or out of it to a member's Personal workspace. |
 | `quota_policy_set` / `quota_policy_deleted` | `config` | A [usage quota](/Deploying/Usage-Quotas) is changed. |
 | `connector_policy_set` | `config` | An admin changes connector policies under **Admin → Connectors**. |
 | `source_defaults_set` | `config` | An admin changes the default retrieval settings for new sources under **Admin → Defaults**. The metadata lists each changed field as `[old, new]`. |
@@ -351,6 +361,7 @@ Two guardrail columns are deliberately never projected into the feed or the expo
 ## Related
 
 - [Teams and sharing](/Using/teams-and-sharing) — the web-app walkthrough for creating a team, adding members and sharing.
+- [Team workspaces](/Using/team-workspaces) — what a team owns, the workspace switcher, and moving items into a team and back.
 - [SSO with OIDC](/Deploying/OIDC-SSO) — sign-in, group allowlists, and the `auth_events` table.
 - [Usage Quotas](/Deploying/Usage-Quotas) — token and cost limits per user and per team.
 - [App Configuration](/Deploying/DocsGPT-Settings) — the full settings reference.
