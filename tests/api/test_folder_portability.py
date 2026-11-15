@@ -106,7 +106,8 @@ class TestClassic:
         theirs = _folder(pg_conn, IMPORTER, "eu")
         plan = plan_import(pg_conn, IMPORTER, doc)
         assert [s for s in plan["sources"] if s["type"] == "folder"] == [
-            {"name": "EU", "type": "folder", "status": "matched", "target_id": theirs}
+            {"name": "EU", "type": "folder", "status": "matched", "target_id": theirs,
+             "key": "folder-0", "path": None, "path_key": None, "target_path": ["eu"]}
         ]
         result = apply_import(pg_conn, IMPORTER, doc)
         assert _folders(pg_conn, result["agent_id"], IMPORTER) == [theirs]
@@ -147,7 +148,8 @@ class TestClassic:
         FoldersRepository(pg_conn).create(IMPORTER, "Shippers", resource_type="agent")
         plan = plan_import(pg_conn, IMPORTER, doc)
         assert [s for s in plan["sources"] if s["type"] == "folder"] == [
-            {"name": "Carriers", "type": "folder", "status": "missing", "target_id": None}
+            {"name": "Carriers", "type": "folder", "status": "missing", "target_id": None,
+             "key": "folder-0", "path": ["Carriers"], "path_key": "Carriers", "target_path": None}
         ]
         assert plan["warnings"] == ["Folder 'Carriers' not found; left unattached"]
         result = apply_import(pg_conn, IMPORTER, doc)
