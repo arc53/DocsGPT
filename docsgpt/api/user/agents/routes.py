@@ -89,7 +89,7 @@ from docsgpt.api.user.workflows.routes import (
     write_graph_save,
 )
 from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
-from docsgpt.api.user.folders.service import FolderError, resolve_folder
+from docsgpt.api.user.folders.service import FolderError, filing_owner, resolve_folder
 from docsgpt.api.user.folder_knowledge import (
     FOLDER_NOT_ACCESSIBLE,
     FolderRefError,
@@ -343,11 +343,6 @@ def _legacy_team_access(access: Optional[str]) -> Optional[str]:
     if not access or access == "owner":
         return None
     return "editor" if access in ("editor", "admin") else "viewer"
-
-
-def _filing_owner(ra, user: str) -> str:
-    """Whose filing an agent's ``folder_id`` is: the team's tree for a team agent, else the caller's own."""
-    return ra.owner_id if ra is not None and ra.is_team_item else user
 
 
 # What a caller who reached an agent only through its public share link may
@@ -856,7 +851,7 @@ class GetAgent(Resource):
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
                 if agent:
-                    folder_id = FolderItemsRepository(conn).filing(_filing_owner(ra, user), "agent", str(agent["id"]))
+                    folder_id = FolderItemsRepository(conn).filing(filing_owner(ra, user), "agent", str(agent["id"]))
                     owner_inactive = bool(UsersRepository(conn).deactivated_among([agent.get("user_id")]))
                     creator = created_by_payload(agent, creator_payloads(conn, user, [agent]))
                 # Edit-page detail: who vouches for resources the owner can't
@@ -1816,7 +1811,7 @@ class UpdateAgent(Resource):
                         # The caller's own filing (folder_items), written once
                         # the save lands; it never touches the agent row.
                         pg_folder_id, folder_err = _resolve_folder_id(
-                            conn, data.get("folder_id") or None, _filing_owner(ra, user),
+                            conn, data.get("folder_id") or None, filing_owner(ra, user),
                         )
                         if folder_err:
                             return folder_err
@@ -2269,7 +2264,7 @@ class UpdateAgent(Resource):
                         404,
                     )
                 if filing is not None:
-                    FolderItemsRepository(conn).file(_filing_owner(ra, user), "agent", pg_agent_id, filing[0])
+                    FolderItemsRepository(conn).file(filing_owner(ra, user), "agent", pg_agent_id, filing[0])
                 # The row's new stamp: the builder's next save sends it as
                 # ``expected_updated_at``.
                 saved_row = agents_repo.get_by_id(pg_agent_id) or {}
@@ -2894,6 +2889,18 @@ class AdoptAgent(Resource):
                 for col in ("json_schema", "models", "shared_metadata", "config", "starters"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
+                # A team's agent runs as the team, which has no custom models:
+                # a custom model the template names (anyone's, the adopter's
+                # too) would fail every run, so the team's copy drops it.
+                if workspace.is_team:
+                    named = [create_kwargs.get("default_model_id")] + list(create_kwargs.get("models") or [])
+                    personal = {str(m).lower() for m in personal_custom_models(conn, owner_id, named)}
+                    if str(create_kwargs.get("default_model_id") or "").lower() in personal:
+                        create_kwargs.pop("default_model_id")
+                    if isinstance(create_kwargs.get("models"), list):
+                        create_kwargs["models"] = [
+                            m for m in create_kwargs["models"] if str(m).lower() not in personal
+                        ]
                 # The adopted agent starts from the admin's default guardrails,
                 # under any the template sets.
                 adopted_config = agent_defaults.seed(conn, create_kwargs.get("config"))

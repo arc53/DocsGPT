@@ -346,3 +346,72 @@ class TestCustomModelsOnATeamAgent:
         resp = _create(pg_conn, EDITOR, None, default_model_id=model, models=[model])
         assert _status(resp) == 201, _json(resp)
         assert AgentsRepository(pg_conn).get_by_id(_json(resp)["id"])["default_model_id"] == model
+
+
+# --------------------------------------------------------------------------- adopting a template into a team
+
+
+def _template(conn, *, default_model_id=None, models=None, node_model_id=None) -> str:
+    from docsgpt.storage.db.repositories.users import UsersRepository
+    from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+
+    UsersRepository(conn).upsert("__system__")
+    extra: dict = {}
+    if node_model_id is not None:
+        wf = str(WorkflowsRepository(conn).create("__system__", "tpl-wf")["id"])
+        WorkflowNodesRepository(conn).create(
+            wf, 1, "a1", "agent", config={"agent_type": "classic", "model_id": node_model_id},
+        )
+        extra = {"agent_type": "workflow", "workflow_id": wf}
+    else:
+        extra = {"agent_type": "classic"}
+    if default_model_id is not None:
+        extra["default_model_id"] = default_model_id
+    if models is not None:
+        extra["models"] = models
+    return str(AgentsRepository(conn).create("__system__", "Template", "published", **extra)["id"])
+
+
+def _adopt(conn, user, template, team=None):
+    from docsgpt.api.user.agents.routes import AdoptAgent
+
+    resp = _call(conn, AdoptAgent, "post", "/api/adopt_agent", user, team=team, query={"id": template})
+    assert _status(resp) == 200, _json(resp)
+    return AgentsRepository(conn).get_by_id(_json(resp)["agent"]["id"])
+
+
+def _node_model(conn, workflow_id):
+    from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+
+    nodes = WorkflowNodesRepository(conn).find_by_version(str(workflow_id), 1)
+    cfg = next(n for n in nodes if n["node_type"] == "agent")["config"]
+    return cfg.get("model_id")
+
+
+class TestAdoptingATemplateIntoATeam:
+    def test_the_adopters_custom_default_model_is_dropped(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        model = _custom_model(pg_conn, EDITOR)
+        row = _adopt(pg_conn, EDITOR, _template(pg_conn, default_model_id=model), tid)
+        assert row["user_id"] == principal
+        assert not row.get("default_model_id")
+
+    def test_custom_models_in_models_are_dropped_and_the_rest_kept(self, pg_conn):
+        tid, _ = _team(pg_conn)
+        model = _custom_model(pg_conn, ADMIN)
+        row = _adopt(pg_conn, ADMIN, _template(pg_conn, models=["gpt-4o", model], default_model_id="gpt-4o"), tid)
+        assert row["models"] == ["gpt-4o"]
+        assert row["default_model_id"] == "gpt-4o"
+
+    def test_a_custom_model_on_a_graph_node_is_dropped(self, pg_conn):
+        tid, _ = _team(pg_conn)
+        model = _custom_model(pg_conn, EDITOR)
+        row = _adopt(pg_conn, EDITOR, _template(pg_conn, node_model_id=model), tid)
+        assert _node_model(pg_conn, row["workflow_id"]) is None
+
+    def test_a_personal_adoption_keeps_the_adopters_own_custom_model(self, pg_conn):
+        model = _custom_model(pg_conn, EDITOR)
+        row = _adopt(pg_conn, EDITOR, _template(pg_conn, default_model_id=model, models=[model], node_model_id=model))
+        assert row["default_model_id"] == model
+        assert row["models"] == [model]
+        assert _node_model(pg_conn, row["workflow_id"]) == model
