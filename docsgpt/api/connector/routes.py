@@ -18,6 +18,7 @@ from flask_restx import fields, Namespace, Resource
 from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import load_source
+from docsgpt.api.user.sources.upload import connector_personal_only
 from docsgpt.api.user.sources.routes import (
     _CONNECTION_REMOVED,
     _WIKI_NO_SYNC,
@@ -625,6 +626,9 @@ class ConnectorSync(Resource):
                     err.status,
                 )
             owner_id = ra.owner_id
+            if ra.is_team_item:
+                # A connector source syncs through a person's connection; a team has none in v1.
+                return connector_personal_only()
             is_owner = ra.access == "owner"
             # A converted wiki doesn't sync: it would replace the wiki's pages,
             # and the worker skips it, so a success here would never finish.

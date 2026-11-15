@@ -122,26 +122,29 @@ def _emit_ingest_poison_event(task_name, bound):
 
     The guard returns before the worker runs, so the worker's own failed
     event never fires — without this the upload toast spins on "training".
+    It reaches whoever the worker's own event would: for a team's source, the
+    person who started it, never the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
     from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import close_failed_ingest_progress
+    from docsgpt.worker import _source_event_recipients, close_failed_ingest_progress
 
     close_failed_ingest_progress(source_id)
-    publish_user_event(
-        user,
-        "source.ingest.failed",
-        {
-            "source_id": str(source_id),
-            "filename": bound.get("filename") or "",
-            "operation": _INGEST_POISON_OPERATION.get(task_name, "upload"),
-            "error": "Ingestion stopped after repeated failures.",
-        },
-        scope={"kind": "source", "id": str(source_id)},
-    )
+    for recipient in _source_event_recipients(user, bound.get("actor_id"), "source.ingest.failed"):
+        publish_user_event(
+            recipient,
+            "source.ingest.failed",
+            {
+                "source_id": str(source_id),
+                "filename": bound.get("filename") or "",
+                "operation": _INGEST_POISON_OPERATION.get(task_name, "upload"),
+                "error": "Ingestion stopped after repeated failures.",
+            },
+            scope={"kind": "source", "id": str(source_id)},
+        )
 
 
 # ``dont_autoretry_for=(DocumentParseError,)`` now comes from ``DURABLE_TASK``:
@@ -167,7 +170,9 @@ def ingest(
     source_id=None,
     copy_files=None,
     folder_id=None,
+    actor_id=None,
 ):
+    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner)."""
     resp = ingest_worker(
         self,
         directory,
@@ -183,6 +188,7 @@ def ingest(
         # Only when given, so the worker's call shape is unchanged otherwise.
         **({"copy_files": copy_files} if copy_files else {}),
         **({"folder_id": folder_id} if folder_id else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
@@ -195,8 +201,9 @@ def ingest(
 def ingest_remote(
     self, source_data, job_name, user, loader,
     config=None, idempotency_key=None, source_id=None, connection_id=None,
-    sync_frequency="never", folder_id=None,
+    sync_frequency="never", folder_id=None, actor_id=None,
 ):
+    """Ingest a remote source; ``actor_id`` is who added it when ``user`` is a team's principal (the owner)."""
     resp = remote_worker(
         self, source_data, job_name, user, loader,
         sync_frequency=sync_frequency,
@@ -205,6 +212,7 @@ def ingest_remote(
         source_id=source_id,
         connection_id=connection_id,
         **({"folder_id": folder_id} if folder_id else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
@@ -243,36 +251,42 @@ def _emit_graph_poison_event(task_name, bound):
     """Publish a terminal ``graph.extract.failed`` when the poison-guard trips.
 
     The guard returns before the worker runs, so the worker's own failed event
-    never fires — without this the build UI spins forever.
+    never fires — without this the build UI spins forever. For a team's source
+    it reaches the person who started the build, never the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
     from docsgpt.events.publisher import publish_user_event
+    from docsgpt.worker import _source_event_recipients
 
-    publish_user_event(
-        user,
-        "graph.extract.failed",
-        {
-            "source_id": str(source_id),
-            "error": "Graph extraction stopped after repeated failures.",
-        },
-        scope={"kind": "source", "id": str(source_id)},
-    )
+    for recipient in _source_event_recipients(user, bound.get("actor_id"), "graph.extract.failed"):
+        publish_user_event(
+            recipient,
+            "graph.extract.failed",
+            {
+                "source_id": str(source_id),
+                "error": "Graph extraction stopped after repeated failures.",
+            },
+            scope={"kind": "source", "id": str(source_id)},
+        )
 
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
-def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False):
+def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False, actor_id=None):
     """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks.
 
     ``sync`` (after a sync re-embedded the source) carries the graph over by
-    chunk content and extracts only new text.
+    chunk content and extracts only new text. ``actor_id`` (who added the
+    knowledge) pays for the extraction's model calls and hears its events.
     """
     from docsgpt.worker import extract_graph_worker
 
-    return extract_graph_worker(self, source_id, user, chunk_ids=chunk_ids, sync=sync)
+    return extract_graph_worker(
+        self, source_id, user, chunk_ids=chunk_ids, sync=sync, **({"actor_id": actor_id} if actor_id else {}),
+    )
 
 
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL

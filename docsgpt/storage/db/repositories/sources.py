@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Any, Optional
 
-from sqlalchemy import case, Connection, func, or_, select, text
+from sqlalchemy import and_, case, Connection, func, or_, select, text
 
 from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import ingest_chunk_progress_table, sources_table
@@ -43,17 +43,28 @@ def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
     return out
 
 
+# Prefix of a team principal's id (``docsgpt.workspaces.principal.PRINCIPAL_PREFIX``); matched with ``left``,
+# since ``_`` is a LIKE wildcard.
+_PRINCIPAL_PREFIX = "__team__"
+
+
 def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
     """WHERE predicate matching the owner's rows plus any ``extra_ids``.
 
     Lets the paginated/count queries include team-shared sources (passed by id)
     alongside owned ones in a single query, so count/sort/search/pagination
-    stay correct across the union.
+    stay correct across the union. An extra id never brings in a row a team
+    workspace owns: those are listed in their team, never by a grant (a stale
+    grant row must not open one to a Personal list).
     """
     scope = sources_table.c.user_id == user_id
     ids = _coerce_uuid_ids(extra_ids)
     if ids:
-        scope = or_(scope, sources_table.c.id.in_(ids))
+        shared = and_(
+            sources_table.c.id.in_(ids),
+            func.left(sources_table.c.user_id, len(_PRINCIPAL_PREFIX)) != _PRINCIPAL_PREFIX,
+        )
+        scope = or_(scope, shared)
     return scope
 
 
@@ -148,7 +159,17 @@ class SourcesRepository:
         model: Optional[str] = None,
         date: Any = None,
         legacy_mongo_id: Optional[str] = None,
+        created_by: Optional[str] = None,
     ) -> dict:
+        """Insert a source.
+
+        ``created_by`` names the person who added it. Without it the
+        ``fill_created_by`` trigger records the owner, except for a team
+        principal owner, so a create in a team passes the uploader. A
+        principal is never recorded as a creator.
+        """
+        if created_by is not None and str(created_by).startswith(_PRINCIPAL_PREFIX):
+            created_by = None
         result = self._conn.execute(
             text(
                 """
@@ -156,7 +177,7 @@ class SourcesRepository:
                     id, user_id, name, type, metadata, config,
                     retriever, sync_frequency, tokens, file_path,
                     remote_data, directory_structure, file_name_map,
-                    language, model, date, legacy_mongo_id
+                    language, model, date, legacy_mongo_id, created_by
                 )
                 VALUES (
                     COALESCE(CAST(:source_id AS uuid), gen_random_uuid()),
@@ -168,7 +189,7 @@ class SourcesRepository:
                     CAST(:file_name_map AS jsonb),
                     :language, :model,
                     COALESCE(:date, now()),
-                    :legacy_mongo_id
+                    :legacy_mongo_id, :created_by
                 )
                 RETURNING *
                 """
@@ -200,6 +221,7 @@ class SourcesRepository:
                 "model": model,
                 "date": date,
                 "legacy_mongo_id": legacy_mongo_id,
+                "created_by": created_by,
             },
         )
         return row_to_dict(result.fetchone())

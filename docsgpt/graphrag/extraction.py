@@ -30,6 +30,7 @@ from docsgpt.core.model_utils import get_task_model_id
 from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
 from docsgpt.llm.llm_creator import create_stateless_llm, ModelNotAvailableError
+from docsgpt.quotas.payer import billed_to
 from docsgpt.storage.db.source_config import SourceConfig
 # ``EmbeddingsSingleton`` is re-exported here so callers and tests can reach the
 # shared instance cache from this module.
@@ -245,6 +246,7 @@ def extract_graph_for_source(
     request_id: Optional[str] = None,
     progress_cb: Optional[Callable[[Dict[str, int]], None]] = None,
     chunk_ids: Optional[List[str]] = None,
+    payer: Optional[str] = None,
 ) -> Dict[str, int]:
     """Build the per-source graph from its chunks via per-chunk LLM extraction.
 
@@ -269,7 +271,8 @@ def extract_graph_for_source(
 
     Args:
         source_id: The source whose graph is being built.
-        user: Owner id for token-usage attribution (``None`` skips attribution).
+        user: The source's owner: the build runs as them (model choice) and,
+            without ``payer``, its token usage is attributed to them.
         chunks: The same chunk dicts the vector store ingested, each carrying a
             retrievable id (``doc_id``/``chunk_id``/``id``) and text.
         config: The source's parsed ``SourceConfig`` (graph knobs).
@@ -278,6 +281,9 @@ def extract_graph_for_source(
             ``{current, total, nodes, edges}`` for progress reporting.
         chunk_ids: For a page change, the ids of the chunks it stored; the
             other pending chunks are left as they are. ``None`` for a build.
+        payer: The person every extraction call bills (``billed_to``), when
+            not the owner: whoever added the knowledge, since a team's
+            principal never pays (STEP1_PLAN D10).
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,
@@ -285,6 +291,25 @@ def extract_graph_for_source(
         source's graph holds after the run — not how many upserts ran, which
         counts the same entity once per chunk it appears in.
     """
+    kwargs = {"config": config, "request_id": request_id, "progress_cb": progress_cb, "chunk_ids": chunk_ids}
+    if payer is None:
+        return _build_graph(source_id, user, chunks, **kwargs)
+    # Carried into the pool threads with the trace (``tracing.wrap``), so each thread's calls bill the payer too.
+    with billed_to(payer, request_id):
+        return _build_graph(source_id, user, chunks, **kwargs)
+
+
+def _build_graph(
+    source_id: str,
+    user: Optional[str],
+    chunks: List[Dict[str, Any]],
+    *,
+    config: SourceConfig,
+    request_id: Optional[str] = None,
+    progress_cb: Optional[Callable[[Dict[str, int]], None]] = None,
+    chunk_ids: Optional[List[str]] = None,
+) -> Dict[str, int]:
+    """The body of :func:`extract_graph_for_source`, inside its payer's billing."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
 

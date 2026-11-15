@@ -227,6 +227,8 @@ def upload_index_files():
                 model=settings.EMBEDDINGS_NAME,
                 date=now,
                 legacy_mongo_id=None if looks_like_uuid(source_id) else str(source_id),
+                # Who added it: a team's source (``user`` is its principal) names the person.
+                created_by=request.form.get("created_by") or None,
             )
     return {"status": "ok"}
 

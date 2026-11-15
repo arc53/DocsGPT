@@ -81,6 +81,8 @@ from docsgpt.storage.db.repositories.wiki_pages import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.storage.storage_creator import StorageCreator
+from docsgpt.workspaces.principal import ADMIN_NOTICE_KINDS, is_principal_id, route_owner_notice, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
 from docsgpt.upload_limits import (
     enforce_parseable_attachment,
     UnsupportedUploadTypeError,
@@ -238,29 +240,34 @@ def _reset_graph_for_source(source_id) -> None:
     GraphStore().delete_by_source(str(source_id))
 
 
-def _publish_graph_event(user, source_id, event_type, payload) -> None:
-    """Publish a graph-extraction SSE event, scoped to the source. Never raises."""
+def _publish_graph_event(user, source_id, event_type, payload, actor_id=None) -> None:
+    """Publish a graph-extraction SSE event, scoped to the source. Never raises.
+
+    It reaches the source's owner and whoever started the build; for a team's
+    source, that person only (``_source_event_recipients``).
+    """
     if not user:
         return
     try:
-        publish_user_event(
-            user,
-            event_type,
-            payload,
-            scope={"kind": "source", "id": str(source_id)},
-        )
+        _publish_source_event(user, actor_id, event_type, payload, scope={"kind": "source", "id": str(source_id)})
     except Exception as e:
         logging.debug(f"Failed to publish graph event {event_type}: {e}")
 
 
-def _maybe_enqueue_graph_extraction(cfg, source_id, user):
+def _actor_kwargs(actor_id: Optional[str]) -> Dict[str, str]:
+    """``{"actor_id": id}`` for a task queued on someone's behalf, else ``{}`` (the call shape stays as it was)."""
+    return {"actor_id": str(actor_id)} if actor_id else {}
+
+
+def _maybe_enqueue_graph_extraction(cfg, source_id, user, actor_id=None):
     """Reset and re-enqueue graph extraction after embed for a graphrag source.
 
     The graph lights up asynchronously once chunks are embedded, so ClassicRAG
     works immediately. A no-op for non-graphrag sources or when GraphRAG is
     unavailable. The prior graph is cleared first so a re-ingest rebuilds rather
     than accumulating stale nodes. The work is isolated so a broker hiccup can
-    never fail an otherwise-successful ingest.
+    never fail an otherwise-successful ingest. ``actor_id`` (who added the
+    knowledge) pays for the extraction and hears its events.
     """
     if cfg.kind != "graphrag":
         return
@@ -277,7 +284,7 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
             source = SourcesRepository(conn).get_any(source_id, user)
         _reset_graph_for_source(source_id)
         key = graph_extraction_key(source_id, _source_updated_at(source))
-        extract_graph.delay(source_id, user, idempotency_key=key)
+        extract_graph.delay(source_id, user, idempotency_key=key, **_actor_kwargs(actor_id))
     except Exception as e:
         logging.warning(
             f"Failed to enqueue graph extraction for {source_id}: {e}",
@@ -285,7 +292,7 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
         )
 
 
-def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
+def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None, actor_id=None):
     """Queue the graph's catch-up after a sync re-embedded a graphrag source.
 
     A sync stores every chunk again under a new id. Rather than reset and
@@ -306,7 +313,7 @@ def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
         from docsgpt.api.user.tasks import extract_graph
 
         key = f"extract-graph:{source_id}:sync:{task_id or uuid.uuid4().hex}"
-        extract_graph.delay(source_id, user, idempotency_key=key, sync=True)
+        extract_graph.delay(source_id, user, idempotency_key=key, sync=True, **_actor_kwargs(actor_id))
     except Exception as e:
         logging.warning(f"Failed to enqueue the graph sync for {source_id}: {e}", exc_info=True)
 
@@ -413,10 +420,11 @@ def _stop_ingest_heartbeat(thread, stop_event):
         thread.join(timeout=5)
 
 
-def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
+def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct, actor_id=None):
     """Build a ``load_data`` callback mapping parse progress to
     ``[start_pct, end_pct]`` via ``update_state`` + a throttled
-    ``stage='parsing'`` SSE event.
+    ``stage='parsing'`` SSE event (to the owner, or for a team's source to
+    the person who started the ingest).
     """
     span = end_pct - start_pct
     source_id_str = str(source_id)
@@ -431,8 +439,9 @@ def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
             meta={"current": pct, "status": "Parsing files"},
         )
         if user and pct > state["last_pct"]:
-            publish_user_event(
+            _publish_source_event(
                 user,
+                actor_id,
                 "source.ingest.progress",
                 {
                     "current": pct,
@@ -814,6 +823,7 @@ def ingest_worker(
     source_id=None,
     copy_files=None,
     folder_id=None,
+    actor_id=None,
 ):
     """
     Ingest and process documents.
@@ -844,6 +854,8 @@ def ingest_worker(
             rather than in the request; a retry copies again, harmlessly.
         folder_id (str|None): One of the uploader's source folders to file
             the new source in once it is stored.
+        actor_id (str|None): The uploader, when ``user`` is a team's principal:
+            the new source names them as its creator, and its events reach them.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -880,15 +892,17 @@ def ingest_worker(
         "operation": "upload",
     }
     if self.request.retries == 0:
-        publish_user_event(
+        _publish_source_event(
             user,
+            actor_id,
             "source.ingest.queued",
             queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
+    progress_user, progress_actor = _progress_recipients(user, actor_id)
 
     # Wrap the entire body in try/except so a failure between the
     # ``queued`` publish above and the inner work (e.g. tempdir
@@ -965,7 +979,7 @@ def ingest_worker(
             # Parsing/OCR owns 1-50% of the bar; embedding takes 50-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
-                    self, user, source_uuid, start_pct=1, end_pct=50,
+                    self, user, source_uuid, start_pct=1, end_pct=50, actor_id=actor_id,
                 )
             )
 
@@ -1011,7 +1025,8 @@ def ingest_worker(
                 embed_and_store_documents(
                     docs, vector_store_path, source_uuid, self,
                     attempt_id=getattr(self.request, "id", None),
-                    user_id=user,
+                    user_id=progress_user,
+                    **_actor_kwargs(progress_actor),
                     progress_start=50, progress_end=100,
                 )
             finally:
@@ -1036,6 +1051,7 @@ def ingest_worker(
                 "type": "local",
                 "file_path": file_path,
                 "directory_structure": json.dumps(directory_structure),
+                **_creator_field(user, actor_id),
             }
             if file_name_map:
                 file_data["file_name_map"] = json.dumps(file_name_map)
@@ -1044,8 +1060,9 @@ def ingest_worker(
 
             upload_index(vector_store_path, file_data)
             _file_new_source(user, source_id_for_events, folder_id)
-            publish_user_event(
+            _publish_source_event(
                 user,
+                actor_id,
                 "source.ingest.completed",
                 {
                     "source_id": source_id_for_events,
@@ -1060,12 +1077,13 @@ def ingest_worker(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
-        publish_user_event(
+        _publish_source_event(
             user,
+            actor_id,
             "source.ingest.failed",
             {
                 "source_id": source_id_for_events,
@@ -1199,7 +1217,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             )
         else:
             # The failed attempt before cleared the Activity marker.
-            mark_ingest_running(user, queued)
+            _mark_ingest_running(user, actor_id, queued)
 
         try:
             held.enter_context(source_index_lock(source_id))
@@ -1523,7 +1541,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     completed_payload,
                     scope={"kind": "source", "id": source_id},
                 )
-                _maybe_enqueue_graph_extraction(cfg, source_id, user)
+                _maybe_enqueue_graph_extraction(cfg, source_id, user, actor_id)
 
                 return {
                     "source_id": source_id,
@@ -1574,6 +1592,107 @@ def _task_id_field(task: Any) -> Dict[str, str]:
     return {"task_id": task_id} if isinstance(task_id, str) and task_id else {}
 
 
+def _person(user_id: Optional[str]) -> Optional[str]:
+    """``user_id`` as a string when it names a person, ``None`` for nobody or a team's principal."""
+    return str(user_id) if user_id and not is_principal_id(user_id) else None
+
+
+def _source_event_recipients(user: str, actor_id: Optional[str], event_type: str) -> List[str]:
+    """Who hears an event about a source.
+
+    A person's source: the owner, and whoever asked for the change when that
+    is someone else (a team editor of a shared source). A team's source: its
+    principal's stream is read by nobody, so the event goes to the person who
+    started the work; with nobody, a failure reaches the team's admins and
+    anything else is dropped (``route_owner_notice``).
+
+    Args:
+        user: The source's owner.
+        actor_id: The person who asked for the change, if any.
+        event_type: The event type; it decides whether admins hear a failure nobody asked for.
+
+    Returns:
+        The person ids to publish to, owner first.
+    """
+    actor = _person(actor_id)
+    if not is_principal_id(user):
+        return ([user] if user else []) + ([actor] if actor and actor != str(user) else [])
+    if actor:
+        return [actor]
+    if event_type not in ADMIN_NOTICE_KINDS:
+        # Progress and the like: dropped without a read (a parse sends one per percent).
+        return []
+    try:
+        with db_readonly() as conn:
+            return route_owner_notice(conn, user, None, event_type)
+    except Exception:  # noqa: BLE001 - a notice must never fail the job
+        logging.warning("Could not find who hears %s for %s", event_type, user, exc_info=True)
+        return []
+
+
+def _progress_recipients(user: str, actor_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """``(user_id, actor_id)`` for the embedding pipeline's progress events.
+
+    The pipeline sends to its ``user_id`` and to a different ``actor_id``; for
+    a team's source that is the person who started the ingest, or nobody.
+    """
+    if not is_principal_id(user):
+        return user, actor_id
+    return _person(actor_id), None
+
+
+def _mark_ingest_running(user: str, actor_id: Optional[str], queued: Dict[str, Any]) -> None:
+    """Mark a retried ingest running in Activity: for the owner, or for a team's source, the person who started it."""
+    for recipient in (_person(actor_id),) if is_principal_id(user) else (user,):
+        if recipient:
+            mark_ingest_running(recipient, queued)
+
+
+def _creator_field(user: str, actor_id: Optional[str]) -> Dict[str, str]:
+    """``{"created_by": person}`` for a team's new source (``fill_created_by`` names nobody for a principal).
+
+    A person's source is left to the trigger, which names its owner.
+    """
+    actor = _person(actor_id)
+    return {"created_by": actor} if is_principal_id(user) and actor else {}
+
+
+def _team_payer(conn: Any, owner: str, created_by: Optional[str]) -> Optional[str]:
+    """The person who added a team's source, while they may still add knowledge there (Editor or above).
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner (a team's principal).
+        created_by: ``sources.created_by``.
+
+    Returns:
+        Their id, or ``None`` when they are gone, demoted to Viewer, or unknown.
+    """
+    team_id = team_of_principal(owner)
+    person = _person(created_by)
+    if team_id is None or person is None:
+        return None
+    return person if role_at_least(team_role_for(conn, person, team_id), "editor") else None
+
+
+def _knowledge_payer(conn: Any, owner: str, actor_id: Optional[str], created_by: Optional[str]) -> Optional[str]:
+    """Who pays for model use a source's knowledge needs (graph extraction), STEP1_PLAN D10.
+
+    The person who started it; with nobody (a scheduled sync, a task queued
+    before ``actor_id`` existed), a person's source bills its owner and a
+    team's source the person who added it, while still an Editor there.
+
+    Returns:
+        The payer, or ``None`` for a team's source nobody can pay for (never the principal).
+    """
+    actor = _person(actor_id)
+    if actor:
+        return actor
+    if not is_principal_id(owner):
+        return owner
+    return _team_payer(conn, owner, created_by)
+
+
 def _publish_source_event(
     user: str, actor_id: Optional[str], event_type: str, payload: Dict[str, Any], **kwargs: Any,
 ) -> None:
@@ -1581,6 +1700,8 @@ def _publish_source_event(
 
     A team editor changes a source they don't own: the job runs as the owner,
     and without a copy of its events the editor's view would never see it end.
+    For a team's source the person who asked hears it instead of the team's
+    principal (``_source_event_recipients``).
 
     Args:
         user: The source's owner.
@@ -1589,9 +1710,8 @@ def _publish_source_event(
         payload: Its payload.
         **kwargs: Passed to ``publish_user_event`` (``scope``).
     """
-    publish_user_event(user, event_type, payload, **kwargs)
-    if actor_id and str(actor_id) != str(user):
-        publish_user_event(str(actor_id), event_type, payload, **kwargs)
+    for recipient in _source_event_recipients(user, actor_id, event_type):
+        publish_user_event(recipient, event_type, payload, **kwargs)
 
 
 def _loaded_file_count(docs: Iterable[Any]) -> int:
@@ -1674,7 +1794,8 @@ def remote_worker(
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
+    progress_user, progress_actor = _progress_recipients(user, actor_id)
 
     # Wrap ``update_state`` plus the entire body so any pre-loader
     # failure (Celery backend down, OS resource issue) still emits a
@@ -1817,8 +1938,8 @@ def remote_worker(
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
-                user_id=user,
-                actor_id=actor_id,
+                user_id=progress_user,
+                actor_id=progress_actor,
             )
             assert_index_complete(source_uuid)
         elif operation_mode == "sync":
@@ -1828,8 +1949,8 @@ def remote_worker(
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
-                user_id=user,
-                actor_id=actor_id,
+                user_id=progress_user,
+                actor_id=progress_actor,
             )
             assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})
@@ -1848,6 +1969,7 @@ def remote_worker(
             "remote_data": remote_data_serialized,
             "sync_frequency": sync_frequency,
             "directory_structure": json.dumps(directory_structure),
+            **_creator_field(user, actor_id),
         }
         if operation_mode == "sync":
             # The API keeps the row's own name, type, remote_data, schedule
@@ -1901,9 +2023,9 @@ def remote_worker(
             scope={"kind": "source", "id": source_id_for_events},
         )
         if operation_mode == "sync":
-            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None), actor_id)
         else:
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
@@ -2247,6 +2369,42 @@ def _release_scheduled_sync_claim(key: str, task_id: str) -> None:
         logging.exception("Could not release the claim of scheduled sync %s", key)
 
 
+#: ``sources.metadata`` key of a team source's scheduled sync paused for want of a payer (step 3 shows it).
+SYNC_PAUSED_KEY = "sync_paused"
+SYNC_NO_PAYER = "sync_no_payer"
+
+
+def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any) -> Optional[str]:
+    """Who a team source's scheduled sync bills, flagging the source when nobody can (STEP1_PLAN D10).
+
+    The person who added the source pays while they are still an Editor or
+    above in the team. Otherwise the sync is skipped and the source carries
+    ``metadata.sync_paused = {"reason": "sync_no_payer", "since"}``, written
+    once and cleared when someone can pay again.
+
+    Args:
+        doc: The source row (``id``, ``user_id``, ``created_by``).
+        metadata: Its parsed ``metadata``.
+
+    Returns:
+        The payer, or ``None`` to skip the sync.
+    """
+    owner = doc.get("user_id")
+    source_id = str(doc.get("id"))
+    flagged = isinstance(metadata, dict) and SYNC_PAUSED_KEY in metadata
+    with db_session() as conn:
+        payer = _team_payer(conn, owner, doc.get("created_by"))
+        repo = SourcesRepository(conn)
+        if payer is None and not flagged:
+            repo.set_metadata_key(
+                source_id, owner, SYNC_PAUSED_KEY,
+                {"reason": SYNC_NO_PAYER, "since": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+            )
+        elif payer is not None and flagged:
+            repo.remove_metadata_key(source_id, owner, SYNC_PAUSED_KEY)
+    return payer
+
+
 def sync_worker(self, frequency):
     from sqlalchemy import text as sql_text
 
@@ -2254,8 +2412,8 @@ def sync_worker(self, frequency):
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config "
-                "FROM sources WHERE sync_frequency = :freq"
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config, "
+                "created_by FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
         )
@@ -2280,7 +2438,7 @@ def sync_worker(self, frequency):
         # worker can refresh. Legacy ones with no connection still need the
         # browser, so they are skipped as before.
         if source_type and source_type.startswith("connector"):
-            if doc.get("connection_id"):
+            if doc.get("connection_id") and not is_principal_id(user):
                 from docsgpt.api.user.tasks import sync_connector_source as sync_task
 
                 sync_task.delay(doc_id)
@@ -2318,6 +2476,19 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
+        # A team's source runs as its principal, which never pays: the sync bills
+        # (and tells) the person who added it, or doesn't run.
+        actor = None
+        if is_principal_id(user):
+            try:
+                actor = _scheduled_sync_payer(doc, metadata)
+            except Exception:  # noqa: BLE001 - one source must not stop the tick
+                logging.exception("Could not find who pays for the sync of source %s", doc_id)
+            if actor is None:
+                sync_counts["sync_skipped"] += 1
+                sync_counts[SYNC_NO_PAYER] += 1
+                continue
+
         outcome = _dispatch_scheduled_sync(
             _scheduled_sync_key(self, doc_id),
             source_data=source_data,
@@ -2328,6 +2499,7 @@ def sync_worker(self, frequency):
             retriever=retriever,
             doc_id=doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
+            **_actor_kwargs(actor),
         )
         sync_counts[
             {"dispatched": "sync_dispatched", "already_queued": "sync_skipped"}.get(outcome, "sync_failure")
@@ -2335,7 +2507,7 @@ def sync_worker(self, frequency):
     return {
         key: sync_counts[key]
         for key in [
-            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched",
+            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched", SYNC_NO_PAYER,
         ]
     }
 
@@ -4791,7 +4963,7 @@ def _ingest_connector(
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
@@ -5073,9 +5245,11 @@ def _ingest_connector(
                 scope={"kind": "source", "id": source_id_for_events},
             )
             if operation_mode == "sync":
-                _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+                _maybe_enqueue_graph_sync(
+                    cfg, source_id_for_events, user, getattr(self.request, "id", None), actor_id,
+                )
             else:
-                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
 
             return {
                 "user": user,
@@ -5523,7 +5697,7 @@ def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]]
 
 def _update_page_graph(
     cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str],
-    new_chunk_ids: Iterable[str] = (),
+    new_chunk_ids: Iterable[str] = (), actor_id: Optional[str] = None,
 ) -> None:
     """Bring a graphrag source's graph up to date after a page change, chunk by chunk.
 
@@ -5542,6 +5716,7 @@ def _update_page_graph(
         task_id: The page task's id, for the extraction's idempotency key.
         old_chunk_ids: Ids of the chunks the change deleted.
         new_chunk_ids: Ids of the chunks the change stored, to extract.
+        actor_id: Who asked for the change; the extraction bills them.
     """
     if cfg.kind != "graphrag":
         return
@@ -5559,7 +5734,7 @@ def _update_page_graph(
             from docsgpt.api.user.tasks import extract_graph
 
             key = f"extract-graph:{source_id}:pages:{task_id or uuid.uuid4().hex}"
-            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids)
+            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids, **_actor_kwargs(actor_id))
     except Exception as e:  # noqa: BLE001 - the page change is done; the graph catches up at the next build
         logging.warning(f"Could not update the graph of {source_id} after a page change: {e}", exc_info=True)
 
@@ -5868,6 +6043,7 @@ def _not_listed_again(
 
 def _remove_web_pages(
     source: Dict[str, Any], user: str, task_id: Optional[str], pages: Optional[List[Dict[str, str]]],
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Delete pages from a Website source: their chunks first, then their tree entries.
 
@@ -5937,9 +6113,9 @@ def _remove_web_pages(
         if still is not None:
             gone = [chunk_id for chunk_id in chunk_ids if str(chunk_id) not in still]
             if gone:
-                _update_page_graph(cfg, source_id, user, task_id, gone)
+                _update_page_graph(cfg, source_id, user, task_id, gone, actor_id=actor_id)
         raise
-    _update_page_graph(cfg, source_id, user, task_id, chunk_ids)
+    _update_page_graph(cfg, source_id, user, task_id, chunk_ids, actor_id=actor_id)
 
     removed_keys = {_web_page_key(url) for url in urls}
     with db_session() as conn:
@@ -6109,7 +6285,7 @@ def website_pages_worker(
         with source_index_lock(source_id):
             source = _website_to_change(source_id, user)
             if operation == "remove":
-                outcome = _remove_web_pages(source, user, task_id, pages)
+                outcome = _remove_web_pages(source, user, task_id, pages, actor_id)
             else:
                 outcome = _run_website_pages(source, user, operation, urls, file_path, task_id, url, actor_id)
     except Exception as e:
@@ -6263,7 +6439,9 @@ def _run_website_pages(
         ):
             # The next sync drops a crawled page that now leads out of scope,
             # so the refresh does too rather than store it.
-            _remove_web_pages(source, user, task_id, [{"path": target["path"], "url": target["old_url"]}])
+            _remove_web_pages(
+                source, user, task_id, [{"path": target["path"], "url": target["old_url"]}], actor_id,
+            )
             moved = f"{target['old_url']} now leads to {doc_url}, which is" if doc_url != target["old_url"] else (
                 f"{doc_url} is"
             )
@@ -6281,7 +6459,7 @@ def _run_website_pages(
         # Every replaced copy's chunks were deleted, kept or not; only kept pages add any.
         old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
         new_ids = [chunk_id for change in kept for chunk_id in change["new_ids"]]
-        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
+        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids, actor_id=actor_id)
     if failure is not None:
         raise failure
     return {"pages": len(kept), "paths": paths, **({"failed_pages": failed_pages} if failed_pages else {})}
@@ -6529,7 +6707,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     }
 
 
-def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
+def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False, actor_id=None):
     """Build a graphrag source's knowledge graph from its embedded chunks.
 
     Loads the source, fetches its chunks from the vector store, and runs the
@@ -6554,10 +6732,15 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
         sync: After a sync re-embedded the source: the graph is carried over
             to the new chunk ids by content first (``sync_graph_to_chunks``)
             and only new text is extracted.
+        actor_id: Who added the knowledge; the extraction's model calls bill
+            them and its events reach them (STEP1_PLAN D10).
 
     Returns:
-        ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
-        extraction summary ``{nodes, edges, chunks_processed, ...}``.
+        ``{"status": "unavailable"}`` when GraphRAG is off;
+        ``{"status": "skipped", "reason": "sync_no_payer"}`` for a team's
+        source nobody can pay for (nobody asked, and whoever added it is no
+        longer an Editor there); otherwise the extraction summary
+        ``{nodes, edges, chunks_processed, ...}``.
 
     Raises:
         celery.exceptions.Retry: Another extraction held the source; this
@@ -6574,25 +6757,41 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
 
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)
+        payer = _knowledge_payer(conn, user, actor_id, source.get("created_by")) if source else None
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+    if payer is None:
+        # Never the team's principal: nobody asked, and whoever added it can't add knowledge there now.
+        logging.info("Not extracting the graph of team source %s: nobody to bill", source_id)
+        _publish_graph_event(
+            user, source_id, "graph.extract.failed",
+            {"source_id": source_id, "error": "Nobody in the team can pay for this build", "reason": "sync_no_payer"},
+            actor_id=actor_id,
+        )
+        return {"status": "skipped", "reason": "sync_no_payer"}
 
     def _out_of_retries(error: SourceBusy) -> None:
         _publish_graph_event(
             user, source_id, "graph.extract.failed", {"source_id": source_id, "error": str(error)[:1024]},
+            actor_id=actor_id,
         )
 
     return _locked_or_retry(
-        self, graph_extract_lock, source_id, lambda: _extract_graph(self, source, user, chunk_ids, sync),
+        self, graph_extract_lock, source_id,
+        lambda: _extract_graph(self, source, user, chunk_ids, sync, actor_id=actor_id, payer=payer),
         _out_of_retries,
     )
 
 
 def _extract_graph(
-    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False
+    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False,
+    actor_id: Optional[str] = None, payer: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock."""
+    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock.
+
+    ``payer`` is billed for every model call (``extract_graph_for_source``); ``actor_id`` hears the events.
+    """
     from docsgpt.graphrag.extraction import extract_graph_for_source, sync_graph_to_chunks
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
@@ -6631,6 +6830,7 @@ def _extract_graph(
                 "nodes": int(info.get("nodes", 0)),
                 "edges": int(info.get("edges", 0)),
             },
+            actor_id=actor_id,
         )
 
     _publish_graph_event(
@@ -6644,6 +6844,7 @@ def _extract_graph(
             "nodes": 0,
             "edges": 0,
         },
+        actor_id=actor_id,
     )
 
     trace = tracing.start_trace(
@@ -6666,6 +6867,7 @@ def _extract_graph(
                 request_id=getattr(self.request, "id", None),
                 progress_cb=_progress,
                 chunk_ids=chunk_ids,
+                payer=payer,
             )
             if isinstance(summary, dict):
                 span.set(
@@ -6682,6 +6884,7 @@ def _extract_graph(
             source_id,
             "graph.extract.failed",
             {"source_id": source_id, "error": str(e)[:1024]},
+            actor_id=actor_id,
         )
         raise
 
@@ -6691,5 +6894,6 @@ def _extract_graph(
         source_id,
         "graph.extract.completed",
         {"source_id": source_id, **summary},
+        actor_id=actor_id,
     )
     return summary

@@ -14,6 +14,11 @@ spends none of the poison guard's attempts, and the task's ``task_dedup`` row
 stays queued, so a same-source submit still joins it. A deferred ingest that
 has a progress row (a resume) has it bumped, so the reconciler doesn't take
 the wait for a stall and queue it again.
+
+A team's source runs as the team's principal; its slots are counted against
+the person who started it (``actor_id``), so one busy member doesn't hold up
+the whole team (STEP1_PLAN D14). One nobody started (a scheduled sync with no
+payer named) counts against the team.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from celery.exceptions import Retry
 
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +141,21 @@ def _keep_progress_alive(source_id: Optional[str]) -> None:
         logger.debug("Could not bump the progress of deferred ingest %s", source_id, exc_info=True)
 
 
+def slot_holder(user: Any, actor_id: Any) -> Any:
+    """Whose slots an ingest counts against: its owner, or for a team's source the person who started it.
+
+    Args:
+        user: The task's ``user`` (the source's owner).
+        actor_id: The task's ``actor_id``, if it takes one.
+
+    Returns:
+        ``actor_id`` when ``user`` is a team's principal and ``actor_id`` names a person; ``user`` otherwise.
+    """
+    if is_principal_id(user) and isinstance(actor_id, str) and actor_id and not is_principal_id(actor_id):
+        return actor_id
+    return user
+
+
 def _gated_call(fn: Callable[..., Any], self: Any, args: tuple, kwargs: dict) -> Optional[tuple]:
     """The user and task id to gate a call on, or ``None`` when it runs ungated."""
     cap = int(settings.INGEST_MAX_CONCURRENT_PER_USER)
@@ -146,7 +167,7 @@ def _gated_call(fn: Callable[..., Any], self: Any, args: tuple, kwargs: dict) ->
         bound = inspect.signature(fn).bind_partial(self, *args, **kwargs).arguments
     except TypeError:
         return None
-    user = bound.get("user")
+    user = slot_holder(bound.get("user"), bound.get("actor_id"))
     if not isinstance(holder, str) or not holder or not isinstance(user, str) or not user:
         return None
     return user, holder, cap, bound.get("source_id") or bound.get("doc_id")
