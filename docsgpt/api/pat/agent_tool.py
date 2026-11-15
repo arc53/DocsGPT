@@ -15,7 +15,7 @@ so a new endpoint is given to agents, or kept from them, on purpose.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 from docsgpt.api.pat.rules import RULES
@@ -691,6 +691,8 @@ CATALOG: tuple[Action, ...] = (
            {"agent_id": _req(_AGENT_ID)}),
     # --- Teams ---
     Action("list_teams", "GET", "/api/teams", "List the teams this account belongs to, with its role in each."),
+    Action("list_workspaces", "GET", "/api/workspaces",
+           "List the workspaces this account works in: Personal, then each team with its role there."),
     Action("get_team", "GET", "/api/teams/<string:team_id>", "Read one team with its members.",
            {"team_id": _req("The team's id, from list_teams.")}),
     Action("list_team_members", "GET", "/api/teams/<string:team_id>/members", "List or search the members of a team.",
@@ -719,6 +721,22 @@ CATALOG: tuple[Action, ...] = (
         },
         active=False,
     ),
+)
+
+#: Actions that list or create in one workspace. An API tool can't set the workspace header, so each takes
+#: the ``workspace`` query parameter instead; the route checks the token's person is in that team, as for
+#: the header. Left empty, the action works in Personal.
+WORKSPACE_ACTIONS = frozenset({
+    "list_agents", "create_agent", "list_agent_folders", "create_agent_folder", "list_schedules",
+    "list_sources", "search_sources_list", "create_wiki_source", "list_folders", "create_folder",
+    "file_in_folder", "list_prompts", "create_prompt", "list_tools", "create_tool", "list_artifacts",
+    "list_conversations", "search_conversations",
+})
+_WORKSPACE = "A team id from list_workspaces to work in that team. Leave empty for Personal."
+CATALOG = tuple(
+    replace(entry, query={**entry.query, "workspace": _param(_WORKSPACE)}) if entry.name in WORKSPACE_ACTIONS
+    else entry
+    for entry in CATALOG
 )
 
 #: Token routes that are not actions, by reason. Every route in ``RULES`` is here or in ``CATALOG``.

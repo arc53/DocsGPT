@@ -572,56 +572,92 @@ class TestListingFilter:
 
 @pytest.mark.unit
 class TestFolderRules:
-    """``/api/folders`` holds a token to the scope family of the folder type, as the agent-folder rules did."""
+    """``/api/folders`` is one tree holding agents, sources, tools and prompts.
+
+    Any of the four families' scopes reaches the tree; a request that names a
+    kind (a list's ``type``, a filing's ``type``) also needs that kind's own
+    scope. A token restricted on any kind may list and file its allowed items,
+    but not create, rename, move or delete a folder: a folder is on no allowlist.
+    """
+
+    KINDS = {"agent": "agents", "source": "sources", "tool": "tools", "prompt": "prompts"}
+    FOLDER = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+    ALLOWED = "11111111-1111-1111-1111-111111111111"
+    OTHER = "22222222-2222-2222-2222-222222222222"
 
     @staticmethod
     def _no_db():
-        # A request the rules let through reaches no database: the view answers 500.
+        # A request the checks let through reaches no database: the view answers 500.
         return patch("docsgpt.api.user.folders.routes.db_session", side_effect=RuntimeError("no database here"))
 
-    def test_the_route_checks_the_types_own_scope(self, client):
-        claims = _claims(["sources:read"])
-        with patch("docsgpt.api.user.folders.routes.db_readonly", side_effect=RuntimeError("no database here")):
-            agent = _call(client, "GET", "/api/folders?type=agent", claims)
-            source = _call(client, "GET", "/api/folders?type=source", claims)
-        assert _denied(agent) == "insufficient_scope"
-        assert json.loads(agent.data)["required_scope"] == "agents:read"
-        assert _denied(source) is None
-        with self._no_db():
-            write = _call(client, "POST", "/api/folders", claims, json={"type": "source", "name": "x"})
-        assert _denied(write) == "insufficient_scope"
+    @staticmethod
+    def _no_read_db():
+        return patch("docsgpt.api.user.folders.routes.db_readonly", side_effect=RuntimeError("no database here"))
 
-    def test_a_token_with_neither_family_is_refused_by_the_table(self, client):
-        response = _call(client, "GET", "/api/folders?type=agent", _claims(["prompts:read"]))
-        assert _denied(response) == "insufficient_scope"
+    @pytest.mark.parametrize("kind", ["agent", "source", "tool", "prompt"])
+    def test_a_named_kind_needs_its_own_scope(self, client, kind):
+        family = self.KINDS[kind]
+        claims = _claims([f"{family}:read"])
+        with self._no_read_db():
+            own = _call(client, "GET", f"/api/folders?type={kind}", claims)
+            whole_tree = _call(client, "GET", "/api/folders", claims)
+            others = {other: _call(client, "GET", f"/api/folders?type={other}", claims) for other in self.KINDS
+                      if other != kind}
+        assert _denied(own) is None
+        assert _denied(whole_tree) is None
+        for other, response in others.items():
+            assert _denied(response) == "insufficient_scope", (kind, other)
+            assert json.loads(response.data)["required_scope"] == f"{self.KINDS[other]}:read"
 
-    def test_restricted_token_lists_and_files_but_cannot_change_folders(self, client):
-        claims = _claims(["sources:write"], {"sources": [SOURCE_A]})
+    @pytest.mark.parametrize("kind", ["agent", "source", "tool", "prompt"])
+    def test_filing_needs_the_kinds_write_scope(self, client, kind):
+        family = self.KINDS[kind]
+        other = next(k for k in self.KINDS if k != kind)
+        claims = _claims([f"{family}:write"])
+        body = {"folder_id": None, "ids": [self.ALLOWED]}
         with self._no_db():
-            create = _call(client, "POST", "/api/folders", claims, json={"type": "source", "name": "x"})
+            own = _call(client, "POST", "/api/folders/items", claims, json={"type": kind, **body})
+            theirs = _call(client, "POST", "/api/folders/items", claims, json={"type": other, **body})
+            create = _call(client, "POST", "/api/folders", claims, json={"name": "x"})
+        assert _denied(own) is None
+        assert _denied(theirs) == "insufficient_scope"
+        assert _denied(create) is None
+
+    def test_a_token_with_no_folder_family_is_refused_by_the_table(self, client):
+        claims = _claims(["conversations:read", "chat:run"])
+        assert _denied(_call(client, "GET", "/api/folders", claims)) == "insufficient_scope"
+        assert _denied(_call(client, "POST", "/api/folders", claims, json={"name": "x"})) == "insufficient_scope"
+
+    @pytest.mark.parametrize("kind", ["agent", "source", "tool", "prompt"])
+    def test_a_restricted_token_lists_and_files_its_items_but_cannot_change_folders(self, client, kind):
+        family = self.KINDS[kind]
+        claims = _claims([f"{family}:write"], {family: [self.ALLOWED]})
+        with self._no_db():
+            create = _call(client, "POST", "/api/folders", claims, json={"name": "x"})
             ok = _call(client, "POST", "/api/folders/items", claims,
-                       json={"type": "source", "folder_id": None, "ids": [SOURCE_A]})
+                       json={"type": kind, "folder_id": None, "ids": [self.ALLOWED]})
             bad = _call(client, "POST", "/api/folders/items", claims,
-                        json={"type": "source", "folder_id": None, "ids": [SOURCE_A, SOURCE_B]})
+                        json={"type": kind, "folder_id": None, "ids": [self.ALLOWED, self.OTHER]})
         assert _denied(create) == "resource_not_allowed"
         assert _denied(ok) is None
         assert _denied(bad) == "resource_not_allowed"
-        with patch("docsgpt.api.user.folders.routes.db_readonly", side_effect=RuntimeError("no database here")):
-            assert _denied(_call(client, "GET", "/api/folders?type=source", claims)) is None
+        with self._no_read_db():
+            assert _denied(_call(client, "GET", f"/api/folders?type={kind}", claims)) is None
 
-    def test_a_folder_id_route_refuses_a_token_restricted_on_any_folder_family(self, client):
-        # A folder holds every kind (one tree), so it has no single family; ``?type=`` can't pick one either.
-        folder = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-        for restriction in ({"sources": [SOURCE_A]}, {"agents": [AGENT_A]}):
-            claims = _claims(["sources:write", "agents:write"], restriction)
-            for query in ("", "?type=agent", "?type=source"):
-                with self._no_db():
-                    rename = _call(client, "PUT", f"/api/folders/{folder}{query}", claims, json={"name": "y"})
-                    delete = _call(client, "DELETE", f"/api/folders/{folder}{query}", claims)
-                assert _denied(rename) == "resource_not_allowed", (restriction, query)
-                assert _denied(delete) == "resource_not_allowed", (restriction, query)
+    @pytest.mark.parametrize("family", ["agents", "sources", "tools", "prompts"])
+    def test_a_folder_id_route_refuses_a_token_restricted_on_any_kind(self, client, family):
+        # A folder holds every kind, so it has no single family; ``?type=`` can't pick one either.
+        claims = _claims([f"{f}:write" for f in self.KINDS.values()], {family: [self.ALLOWED]})
+        for query in ("", *(f"?type={kind}" for kind in self.KINDS)):
+            with self._no_db():
+                rename = _call(client, "PUT", f"/api/folders/{self.FOLDER}{query}", claims, json={"name": "y"})
+                delete = _call(client, "DELETE", f"/api/folders/{self.FOLDER}{query}", claims)
+            assert _denied(rename) == "resource_not_allowed", query
+            assert _denied(delete) == "resource_not_allowed", query
+
+    def test_an_unrestricted_token_may_change_folders(self, client):
         with self._no_db():
-            free = _call(client, "PUT", f"/api/folders/{folder}", _claims(["sources:write"]), json={"name": "y"})
+            free = _call(client, "PUT", f"/api/folders/{self.FOLDER}", _claims(["tools:write"]), json={"name": "y"})
         assert _denied(free) is None
 
 
