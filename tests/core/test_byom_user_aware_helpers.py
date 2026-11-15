@@ -706,6 +706,7 @@ class TestSharedAgentResolvesOwnerBYOM:
             sp.agent_id = None
             sp.agent_key = "agent-key"
             sp._agent_data = None
+            sp.conversation_id = None
 
             agent_record = {
                 "_id": "agent-uuid",

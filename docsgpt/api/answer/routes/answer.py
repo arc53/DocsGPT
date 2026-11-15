@@ -20,6 +20,7 @@ from docsgpt.api.answer.services.continuation_service import (
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.owner_pause import AgentPausedError
 from docsgpt.api.answer.services.stream_processor import (
+    ChatWorkspaceError,
     StreamProcessor,
     UnfinishedWorkflowError,
     flush_trace_after_request,
@@ -196,6 +197,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     request_id=processor.request_id,
                     trace=processor.trace,
                     passthrough=processor.passthrough,
+                    workspace_team_id=processor.workspace_team_id,
                 )
 
             stream_result = self.process_response_stream(stream)
@@ -236,6 +238,9 @@ class AnswerResource(Resource, BaseAnswerResource):
         except AgentPausedError as e:
             # The agent's owner is deactivated: its link and key are paused. Nothing ran.
             return make_response({"error": e.message, "code": e.code}, 403)
+        except ChatWorkspaceError as e:
+            # A team the caller is not in, or an agent from another workspace. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, e.status)
         except ContinuationNotPendingError:
             # A decision for a pause that is over (decided, moved past by a new
             # turn, or expired). Nothing ran.

@@ -159,6 +159,44 @@ def _find_reusable_share_agent(
     return mapping
 
 
+def _team_chat_share_refusal(conn, conversation: dict, user: str, is_promptable: bool):
+    """The 403 for sharing a team chat in a way D13 doesn't allow, or None.
+
+    Args:
+        conn: Open connection.
+        conversation: The conversation row (the caller's own).
+        user: The caller.
+        is_promptable: A promptable link was asked for.
+
+    Returns:
+        A Flask response, or None when the share may go ahead.
+    """
+    from docsgpt.workspaces.roles import role_at_least, team_role_for
+
+    team_id = conversation.get("team_id")
+    if not team_id:
+        return None
+    if is_promptable:
+        return make_response(
+            jsonify({
+                "success": False,
+                "error": "promptable_share_personal_only",
+                "message": "A chat in a team workspace can only be shared as a read-only link.",
+            }),
+            403,
+        )
+    if not role_at_least(team_role_for(conn, user, str(team_id)), "admin"):
+        return make_response(
+            jsonify({
+                "success": False,
+                "error": "workspace_role_required",
+                "message": "Only the team's admins can share a chat from its workspace.",
+            }),
+            403,
+        )
+    return None
+
+
 @sharing_ns.route("/share")
 class ShareConversation(Resource):
     share_conversation_model = api.model(
@@ -210,6 +248,11 @@ class ShareConversation(Resource):
                         404,
                     )
                 conv_pg_id = str(conversation["id"])
+                # Outward exposure belongs to the team (D13): a team chat's
+                # link is a read-only snapshot an Admin makes; the promptable
+                # link, which mints an agent and key, stays Personal.
+                if refusal := _team_chat_share_refusal(conn, conversation, user, is_promptable):
+                    return refusal
                 current_n_queries = conv_repo.message_count(conv_pg_id)
 
                 if is_promptable:

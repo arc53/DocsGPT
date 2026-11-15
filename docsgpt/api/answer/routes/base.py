@@ -633,6 +633,7 @@ class BaseAnswerResource:
         request_id: Optional[str] = None,
         trace: Optional["tracing.Trace"] = None,
         passthrough: Optional[Dict[str, Any]] = None,
+        workspace_team_id: Optional[str] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -666,6 +667,9 @@ class BaseAnswerResource:
                 omitted.
             passthrough: The request's passthrough values bounded for
                 storage; kept on the conversation and the Logs row.
+            workspace_team_id: The team workspace a new conversation lives
+                in (``StreamProcessor.workspace_team_id``). None leaves it to
+                the agent's workspace, else Personal.
             finalize_tool_pause_as_complete: Stateless-tool-round mode for
                 the OpenAI-compatible ``/v1/chat/completions`` endpoint.
                 OpenAI clients resume a tool call by re-POSTing the full
@@ -767,10 +771,13 @@ class BaseAnswerResource:
                     "Input guardrail scan failed; persisting the question unredacted"
                 )
 
+        # The workspace a new conversation is created in (D8); without it the agent's applies.
+        team_kwargs: Dict[str, Any] = {"team_id": workspace_team_id} if workspace_team_id else {}
         wal_eligible = should_persist and not _continuation
         if wal_eligible:
             try:
                 reservation = self.conversation_service.save_user_question(
+                    **team_kwargs,
                     conversation_id=conversation_id,
                     question=question,
                     decoded_token=decoded_token,
@@ -1458,6 +1465,7 @@ class BaseAnswerResource:
                                     is_shared_usage=is_shared_usage,
                                     shared_token=shared_token,
                                     visibility=visibility,
+                                    **team_kwargs,
                                 )
                             )
                         except Exception as e:
@@ -1731,6 +1739,7 @@ class BaseAnswerResource:
                         metadata=query_metadata if query_metadata else None,
                         visibility=visibility,
                         status="failed" if errored_empty else "complete",
+                        **team_kwargs,
                     )
                 # Persist compression metadata/summary if it exists and wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
@@ -1917,6 +1926,7 @@ class BaseAnswerResource:
                             attachment_ids=attachment_ids,
                             metadata=query_metadata if query_metadata else None,
                             visibility=visibility,
+                            **team_kwargs,
                         )
                         # No journal row to gate, but flag the save as
                         # successful for symmetry with the WAL path.

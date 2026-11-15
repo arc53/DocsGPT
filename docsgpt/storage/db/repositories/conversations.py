@@ -59,6 +59,46 @@ class HeartbeatState(str, Enum):
     MISSING = "missing"
 
 
+def team_visible_sql(alias: str = "", user_param: str = "user_id") -> str:
+    """SQL that holds when a conversation's workspace is still the user's to see.
+
+    A Personal chat (``team_id`` NULL) always passes. A team chat passes for a
+    current member or owner of that team, and for the team's own principal (an
+    API-key or widget chat runs as it). Someone who left the team stops
+    seeing their chats there, and sees them again if re-added (T13).
+
+    Args:
+        alias: The ``conversations`` table alias in the query, or "" when unaliased.
+        user_param: The name of the bound parameter holding the user id.
+
+    Returns:
+        str: A parenthesized boolean SQL expression.
+    """
+    col = f"{alias}." if alias else ""
+    user = f":{user_param}"
+    return (
+        f"({col}team_id IS NULL"
+        f" OR {user} = '__team__' || {col}team_id::text"
+        f" OR EXISTS (SELECT 1 FROM teams ws_t WHERE ws_t.id = {col}team_id AND ws_t.owner_id = {user})"
+        f" OR EXISTS (SELECT 1 FROM team_members ws_m WHERE ws_m.team_id = {col}team_id AND ws_m.user_id = {user}))"
+    )
+
+
+def conversation_workspace(row: Optional[dict]) -> dict:
+    """The ``workspace`` field of a conversation payload: ``{kind, team_id}``.
+
+    Args:
+        row: A ``conversations`` row.
+
+    Returns:
+        dict: ``{"kind": "team", "team_id": ...}`` for a team chat, else Personal.
+    """
+    team_id = (row or {}).get("team_id")
+    if team_id:
+        return {"kind": "team", "team_id": str(team_id)}
+    return {"kind": "personal", "team_id": None}
+
+
 def _message_row_to_dict(row) -> dict:
     """Like ``row_to_dict`` but renames the DB column ``message_metadata``
     back to the public API key ``metadata`` so callers keep the Mongo-era
@@ -170,6 +210,7 @@ class ConversationsRepository:
         visibility: str = "listed",
         legacy_mongo_id: str | None = None,
         passthrough: dict | None = None,
+        team_id: str | None = None,
     ) -> dict:
         """Create a new conversation.
 
@@ -178,6 +219,9 @@ class ConversationsRepository:
         the Mongo ``_id`` as a lookup key. Subsequent appends/updates
         can then resolve the PG row by that id via
         :meth:`get_by_legacy_id`.
+
+        ``team_id`` is the team workspace the chat lives in (None for
+        Personal). It is set here and never changes afterwards.
         """
         values: dict = {
             "user_id": user_id,
@@ -199,6 +243,8 @@ class ConversationsRepository:
             values["legacy_mongo_id"] = legacy_mongo_id
         if passthrough:
             values["passthrough"] = passthrough
+        if team_id:
+            values["team_id"] = str(team_id)
 
         stmt = pg_insert(conversations_table).values(**values).returning(conversations_table)
         result = self._conn.execute(stmt)
@@ -219,7 +265,8 @@ class ConversationsRepository:
             result = self._conn.execute(
                 text(
                     "SELECT * FROM conversations "
-                    "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+                    "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id "
+                    f"AND {team_visible_sql()}"
                 ),
                 {"legacy_id": legacy_mongo_id, "user_id": user_id},
             )
@@ -234,12 +281,17 @@ class ConversationsRepository:
         return row_to_dict(row) if row is not None else None
 
     def get(self, conversation_id: str, user_id: str) -> Optional[dict]:
-        """Fetch a conversation the user owns or has shared access to."""
+        """Fetch a conversation the user owns or has shared access to.
+
+        A team chat also needs the user's current membership in its team
+        (:func:`team_visible_sql`): an ex-member gets None.
+        """
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversations "
                 "WHERE id = CAST(:id AS uuid) "
-                "AND (user_id = :user_id OR :user_id = ANY(shared_with))"
+                "AND (user_id = :user_id OR :user_id = ANY(shared_with)) "
+                f"AND {team_visible_sql()}"
             ),
             {"id": conversation_id, "user_id": user_id},
         )
@@ -258,16 +310,34 @@ class ConversationsRepository:
         return self.get_by_legacy_id(conversation_id, user_id)
 
     def get_owned(self, conversation_id: str, user_id: str) -> Optional[dict]:
-        """Fetch a conversation owned by the user (no shared access)."""
+        """Fetch a conversation owned by the user (no shared access), while its workspace is still theirs."""
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversations "
-                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id "
+                f"AND {team_visible_sql()}"
             ),
             {"id": conversation_id, "user_id": user_id},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def team_id_of(self, conversation_id: str) -> Optional[str]:
+        """The team workspace a conversation lives in, whoever asks.
+
+        Args:
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            Optional[str]: The team id; None for a Personal chat, a missing row or a non-UUID id.
+        """
+        if not conversation_id or not looks_like_uuid(str(conversation_id)):
+            return None
+        team_id = self._conn.execute(
+            text("SELECT team_id FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": str(conversation_id)},
+        ).scalar()
+        return str(team_id) if team_id else None
 
     def list_for_user(
         self,
@@ -276,8 +346,9 @@ class ConversationsRepository:
         *,
         before: Optional[datetime] = None,
         before_id: Optional[str] = None,
+        team_id: Optional[str] = None,
     ) -> list[dict]:
-        """List a user's sidebar conversations, most recent first.
+        """List a user's sidebar conversations in one workspace, most recent first.
 
         Only ``visibility = 'listed'`` rows surface; agent/API/OpenAI-compat
         traffic persists as ``'hidden'`` and is excluded. Rows are ordered
@@ -292,11 +363,13 @@ class ConversationsRepository:
             before_id: Keyset cursor ``id`` (a UUID string). With ``before``,
                 only rows where ``(date, id) < (before, before_id)`` are
                 returned.
+            team_id: The team workspace to list; None lists Personal chats.
+                A team's chats list only while the user is still in it.
 
         Returns:
             The matching conversation rows as dicts.
         """
-        params: dict = {"user_id": user_id, "limit": limit}
+        params: dict = {"user_id": user_id, "limit": limit, "team_id": str(team_id) if team_id else None}
         cursor_sql = ""
         if before is not None and before_id is not None and looks_like_uuid(before_id):
             cursor_sql = "AND (date, id) < (:before, CAST(:before_id AS uuid)) "
@@ -307,6 +380,8 @@ class ConversationsRepository:
                 "SELECT * FROM conversations "
                 "WHERE user_id = :user_id "
                 "AND visibility = 'listed' "
+                "AND team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid) "
+                f"AND {team_visible_sql()} "
                 f"{cursor_sql}"
                 "ORDER BY date DESC, id DESC LIMIT :limit"
             ),
@@ -315,11 +390,12 @@ class ConversationsRepository:
         return [row_to_dict(r) for r in result.fetchall()]
 
     def search_for_user(
-        self, user_id: str, query: str, limit: int = 30,
+        self, user_id: str, query: str, limit: int = 30, *, team_id: Optional[str] = None,
     ) -> list[dict]:
-        """Search a user's conversations by name or message content.
+        """Search a user's conversations in one workspace by name or message content.
 
-        Same visibility filter as :meth:`list_for_user`. Matches against
+        Same visibility and workspace filter as :meth:`list_for_user`.
+        Matches against
         ``conversations.name`` or any of the conversation's messages'
         ``prompt`` / ``response`` columns (case-insensitive substring).
 
@@ -355,12 +431,15 @@ class ConversationsRepository:
                 ") mt ON TRUE "
                 "WHERE c.user_id = :user_id "
                 "AND c.visibility = 'listed' "
+                "AND c.team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid) "
+                f"AND {team_visible_sql('c')} "
                 "ORDER BY c.date DESC LIMIT :limit"
             ),
             {
                 "user_id": user_id,
                 "pattern": f"%{like_escape(query)}%",
                 "limit": limit,
+                "team_id": str(team_id) if team_id else None,
             },
         )
         return [row_to_dict(r) for r in result.fetchall()]
@@ -376,7 +455,7 @@ class ConversationsRepository:
         result = self._conn.execute(
             text(
                 "UPDATE conversations SET name = :name, updated_at = now() "
-                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                f"WHERE id = CAST(:id AS uuid) AND user_id = :user_id AND {team_visible_sql()}"
             ),
             {"id": conversation_id, "user_id": user_id, "name": name},
         )

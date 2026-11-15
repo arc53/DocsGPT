@@ -83,6 +83,8 @@ def resume(monkeypatch):
         return "agent-key", user_id != OWNER, None
 
     monkeypatch.setattr(sp_mod.StreamProcessor, "_get_agent_key", _get_agent_key)
+    # Personal chats: the workspace check (tests/api/answer/test_workspace_chat.py) reads no database here.
+    monkeypatch.setattr(sp_mod.StreamProcessor, "_resume_workspace", lambda self, conversation_id: None)
     monkeypatch.setattr(sp_mod, "db_readonly", _noop)
     monkeypatch.setattr(sp_mod, "AgentsRepository", _Agents)
     # Every owner here is active; a deactivated one is tested on its own.

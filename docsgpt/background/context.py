@@ -126,7 +126,10 @@ def auto_resume_allowed(
     owner's tools, so they are limited to conversations the owner holds
     outright: not API-key or widget traffic (``api_key``), not a shared
     agent's public link (``is_shared_usage``), not ``/v1``, and not an agent
-    somebody else owns. Those get poll-only jobs.
+    somebody else owns. Those get poll-only jobs. In a team workspace, a
+    member's own chat on that team's agent resumes while they are still in the
+    team (the member pays, the agent runs as the team); other team chats are
+    poll-only.
 
     Args:
         conn: A database connection.
@@ -141,7 +144,7 @@ def auto_resume_allowed(
         return False
     row = conn.execute(
         text(
-            "SELECT c.user_id, c.api_key, c.is_shared_usage, c.agent_id, a.user_id AS agent_owner "
+            "SELECT c.user_id, c.api_key, c.is_shared_usage, c.agent_id, c.team_id, a.user_id AS agent_owner "
             "FROM conversations c LEFT JOIN agents a ON a.id = c.agent_id "
             "WHERE c.id = CAST(:id AS uuid)"
         ),
@@ -150,7 +153,19 @@ def auto_resume_allowed(
     if row is None:
         return False
     mapping = row._mapping
-    if mapping["user_id"] != user_id or mapping["api_key"] or mapping["is_shared_usage"]:
+    if mapping["user_id"] != user_id or mapping["api_key"]:
+        return False
+    team_id = mapping.get("team_id")
+    if team_id is not None:
+        from docsgpt.workspaces.principal import principal_id
+        from docsgpt.workspaces.roles import team_role_for
+
+        # A team chat on the team's own agent, for someone still in the team. An
+        # agentless team chat stays poll-only: a continuation would run it with
+        # the member's personal tools, not the team's.
+        team_agent = mapping["agent_id"] is not None and mapping["agent_owner"] == principal_id(team_id)
+        return team_agent and team_role_for(conn, user_id, team_id) is not None
+    if mapping["is_shared_usage"]:
         return False
     if mapping["agent_id"] is not None and mapping["agent_owner"] != user_id:
         return False

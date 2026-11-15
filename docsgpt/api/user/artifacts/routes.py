@@ -12,7 +12,9 @@ from flask import (
     request,
 )
 from flask_restx import Namespace, Resource
+from sqlalchemy import text
 
+from docsgpt.activity.common import in_workspace_sql, owner_team_sql, workspace_params
 from docsgpt.api import api
 from docsgpt.api.user.artifacts.authz import (
     _shared_row_for,
@@ -27,6 +29,7 @@ from docsgpt.storage.db.repositories.conversations import ConversationsRepositor
 from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
+from docsgpt.workspaces.context import WorkspaceError, current_workspace
 
 artifacts_ns = Namespace("artifacts", description="Artifact operations", path="/api")
 
@@ -67,6 +70,40 @@ def _version_summary(version: dict, *, include_spec: bool = False) -> dict:
     return out
 
 
+def _in_workspace(conn, rows: list, team_id) -> list:
+    """The artifact rows of one workspace: their chat's, else their workflow run's workflow's.
+
+    Args:
+        conn: Open connection.
+        rows: Artifact rows.
+        team_id: The workspace's team, None for Personal (which shows no team's).
+
+    Returns:
+        list: The rows that belong there, in order.
+    """
+    ids = [str(r["id"]) for r in rows if r.get("id")]
+    if not ids:
+        return []
+    team = (
+        "CASE WHEN c.id IS NOT NULL THEN c.team_id::text "
+        f"WHEN w.id IS NOT NULL THEN {owner_team_sql('w.user_id')} END"
+    )
+    kept = {
+        str(r[0])
+        for r in conn.execute(
+            text(
+                "SELECT a.id FROM artifacts a "
+                "LEFT JOIN conversations c ON c.id = a.conversation_id "
+                "LEFT JOIN workflow_runs r ON r.id = a.workflow_run_id "
+                "LEFT JOIN workflows w ON w.id = r.workflow_id "
+                f"WHERE a.id = ANY(CAST(:ids AS uuid[])) AND {in_workspace_sql(team)}"
+            ),
+            {"ids": ids, **workspace_params(team_id)},
+        ).fetchall()
+    }
+    return [r for r in rows if str(r.get("id")) in kept]
+
+
 def _iso(value):
     """ISO-format a datetime, passing through other values unchanged."""
     return value.isoformat() if hasattr(value, "isoformat") else value
@@ -74,7 +111,12 @@ def _iso(value):
 
 @artifacts_ns.route("/artifacts")
 class ListArtifacts(Resource):
-    @api.doc(description="List artifacts for a conversation, workflow run, or the caller")
+    @api.doc(
+        description=(
+            "List artifacts for a conversation, workflow run, or the caller. The caller's own list is "
+            "per workspace (the X-DocsGPT-Workspace header; Personal without it)."
+        )
+    )
     def get(self):
         principal = resolve_principal()
         user_id = principal.user_id
@@ -137,7 +179,11 @@ class ListArtifacts(Resource):
                             jsonify({"success": False, "message": "Authentication required"}),
                             401,
                         )
-                    rows = repo.list_artifacts(user_id=user_id)
+                    try:
+                        workspace = current_workspace(conn)
+                    except WorkspaceError as err:
+                        return err.response()
+                    rows = _in_workspace(conn, repo.list_artifacts(user_id=user_id), workspace.team_id)
 
             return make_response(
                 jsonify({"success": True, "artifacts": [_artifact_summary(r) for r in rows]}),

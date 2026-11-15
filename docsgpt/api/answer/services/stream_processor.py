@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar
 
-from flask import after_this_request
+from flask import after_this_request, has_request_context, request
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
@@ -56,7 +56,7 @@ from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_t
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
+from docsgpt.api.user.resource_access import resolve, resource_owner
 from docsgpt.api.user.team_sharing import can_access
 from docsgpt.api.owner_pause import AgentPausedError, refuse_if_owner_deactivated
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -69,8 +69,43 @@ from docsgpt.utils import (
     calculate_doc_token_budget,
     limit_chat_history,
 )
+from docsgpt.workspaces.context import WORKSPACE_HEADER, WORKSPACE_PARAM, parse_workspace_ref
+from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
+from docsgpt.workspaces.roles import team_role_for
 
 logger = logging.getLogger(__name__)
+
+
+class ChatWorkspaceError(Exception):
+    """A chat refused for its workspace (D8): an HTTP status, a stable code and a message.
+
+    ``workspace_not_found`` (404): the request names a team the caller is not in.
+    ``workspace_mismatch`` (409): the agent lives in another workspace than the chat.
+    """
+
+    def __init__(self, status: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+def item_in_chat_workspace(owner: Optional[str], team_id: Optional[str]) -> bool:
+    """Whether an item owned by ``owner`` belongs to a chat in workspace ``team_id`` (D8).
+
+    A team chat takes only that team's items (owned by its principal); a
+    Personal chat takes no team's items.
+
+    Args:
+        owner: The item's ``user_id``.
+        team_id: The chat's team, or None for Personal.
+
+    Returns:
+        bool: True when the item may be used in the chat.
+    """
+    if team_id:
+        return bool(owner) and owner == principal_id(team_id)
+    return not is_principal_id(owner)
 
 
 def is_external_api_caller(data: Dict[str, Any], decoded_token: Optional[Dict], owner: Optional[str]) -> bool:
@@ -590,6 +625,12 @@ class StreamProcessor:
         self.agent_id = self.data.get("agent_id")
         # Set by _get_agent_key once access checks pass; read for keyless runs.
         self._authorized_agent_row: Optional[Dict[str, Any]] = None
+        # The team workspace the chat lives in (``conversations.team_id``),
+        # None for Personal; set by _configure_agent (D8).
+        self.workspace_team_id: Optional[str] = None
+        # Set by _get_agent_key: the team whose agent this is, when the caller
+        # reaches it as a member or as the team's own principal.
+        self._agent_team_id: Optional[str] = None
         self.agent_key = None
         self.model_id: Optional[str] = None
         # BYOM-resolution scope, set by _validate_and_set_model.
@@ -1350,22 +1391,29 @@ class StreamProcessor:
                 agent_owner = agent.get("user_id")
                 is_owner = agent_owner == user_id
 
-                # Team-shared agents are runnable by any member with a grant
-                # (viewer is enough to run). Resolved live against team_members
-                # on the SAME connection so a revoked grant/membership denies on
-                # the next call; resolution failure fails closed. Checked on a
-                # public agent too: a teammate there is not a link user.
+                # A team grant (a personal agent) or the caller's role in the
+                # agent's team (a team agent) lets them chat with it: ``use``,
+                # which a viewer has. Resolved live on the SAME connection so a
+                # revoked grant or membership denies on the next call;
+                # resolution failure fails closed. Checked on a public agent
+                # too: a teammate there is not a link user.
                 is_team_shared = False
+                via_team_role = False
                 if not is_owner and user_id:
                     try:
-                        is_team_shared = TeamScopeRepository(conn).can_read(
-                            user_id, "agent", str(agent["id"])
-                        )
+                        ra = resolve(conn, "agent", str(agent["id"]), user_id)
+                        is_team_shared = ra is not None and ra.can("use")
+                        via_team_role = is_team_shared and ra.is_team_item
                     except Exception:
                         logger.error(
                             "team access check failed for agent run", exc_info=True
                         )
                         is_team_shared = False
+                # The team's chat (D8): a member, or the team's own principal
+                # (an API-key or /v1 run). A link user's chat stays theirs.
+                self._agent_team_id = (
+                    team_of_principal(agent_owner) if (is_owner or via_team_role) else None
+                )
 
                 # Anyone else needs the agent's link or its key: knowing the
                 # id is not enough.
@@ -1601,14 +1649,21 @@ class StreamProcessor:
         if not owner or not active_folders:
             return []
         folders = active_folders if isinstance(active_folders, list) else [active_folders]
+        # A team chat reads the team's own folders (its one tree); a Personal
+        # chat the caller's, without any team's sources filed there (D8).
+        team_id = getattr(self, "workspace_team_id", None)
+        folder_owner = principal_id(team_id) if team_id else owner
         try:
             with db_readonly() as conn:
-                source_ids = caller_folder_source_ids(conn, folders, owner)
+                source_ids = caller_folder_source_ids(conn, folders, folder_owner)
                 rows = SourcesRepository(conn).list_by_ids(source_ids) if source_ids else []
         except Exception:
             logger.warning("Could not read the request's knowledge folders; dropping them.", exc_info=True)
             return []
-        configs = {str(row["id"]).lower(): row.get("config") for row in rows}
+        kept = [row for row in rows if item_in_chat_workspace(row.get("user_id"), team_id)]
+        if len(kept) < len(rows):
+            logger.warning("Dropping %d folder source(s) from another workspace.", len(rows) - len(kept))
+        configs = {str(row["id"]).lower(): row.get("config") for row in kept}
         return [
             {"id": sid, "retrieval": SourceConfig.parse(configs.get(sid)).retrieval}
             for sid in source_ids
@@ -1647,6 +1702,13 @@ class StreamProcessor:
             try:
                 with db_readonly() as conn:
                     permitted = can_access(conn, "source", str(sid), owner)
+                    # The chat's workspace (D8): a team chat searches only that
+                    # team's sources, a Personal chat no team's.
+                    if permitted and not item_in_chat_workspace(
+                        resource_owner(conn, "source", str(sid)), getattr(self, "workspace_team_id", None)
+                    ):
+                        logger.warning("Dropping source %s from request: it is not in this chat's workspace.", sid)
+                        continue
             except Exception:
                 # Fail closed: a check we could not complete is not permission
                 # to read someone's documents.
@@ -1697,13 +1759,7 @@ class StreamProcessor:
         if not self.conversation_id or not self.initial_user_id:
             return None
 
-        try:
-            conversation = self.conversation_service.get_conversation(
-                self.conversation_id, self.initial_user_id
-            )
-        except Exception:
-            return None
-
+        conversation = self._existing_conversation(self.initial_user_id)
         if not conversation:
             return None
 
@@ -1713,12 +1769,155 @@ class StreamProcessor:
 
         return None
 
+    def _existing_conversation(self, identity: Optional[str]) -> Optional[Dict[str, Any]]:
+        """The request's conversation as ``identity`` may read it, or None (looked up once per identity)."""
+        if not self.conversation_id or not identity:
+            return None
+        cache = self.__dict__.setdefault("_conversation_reads", {})
+        if identity not in cache:
+            try:
+                cache[identity] = self.conversation_service.get_conversation(self.conversation_id, identity)
+            except Exception:
+                cache[identity] = None
+        return cache[identity]
+
+    def _named_workspace(self, caller: Optional[str]) -> Tuple[bool, Optional[str]]:
+        """Whether the request names a workspace, and the team it names (checked against membership).
+
+        The header ``X-DocsGPT-Workspace`` wins over the ``workspace`` query
+        parameter; ``personal`` names Personal. A request outside Flask (a
+        test, a worker) names none.
+
+        Args:
+            caller: The signed-in person.
+
+        Returns:
+            Tuple[bool, Optional[str]]: ``(named, team_id)``; ``team_id`` None for Personal.
+
+        Raises:
+            ChatWorkspaceError: 404 ``workspace_not_found`` for a team the caller is not in.
+        """
+        if not has_request_context():
+            return False, None
+        raw = request.headers.get(WORKSPACE_HEADER)
+        if raw is None or not raw.strip():
+            raw = request.args.get(WORKSPACE_PARAM)
+        if raw is None or not raw.strip():
+            return False, None
+        ref = parse_workspace_ref(request)
+        if ref is None:
+            return True, None
+        team_id = canonical_team_id(ref)
+        role = None
+        if team_id and caller and not is_principal_id(caller):
+            with db_readonly() as conn:
+                role = team_role_for(conn, caller, team_id)
+        if role is None:
+            raise ChatWorkspaceError(404, "workspace_not_found", "Workspace not found")
+        return True, team_id
+
+    def _chat_workspace(
+        self, caller: Optional[str], *, has_agent: bool, agent_team: Optional[str] = None
+    ) -> Optional[str]:
+        """The team workspace this chat lives in, None for Personal (D8).
+
+        A conversation that exists keeps the workspace it was created in. A
+        new one takes the agent's workspace when there is an agent (for a
+        member, or a run as the team), else the workspace the request names.
+        An agent from another workspace than the chat's is refused, as is a
+        request naming a different workspace than a new chat's agent. API-key
+        runs ignore what the request names.
+
+        Args:
+            caller: Who asked (before an API key swaps the identity).
+            has_agent: The chat runs an agent.
+            agent_team: That agent's team as this caller reaches it, else None.
+
+        Returns:
+            Optional[str]: The team id, or None.
+
+        Raises:
+            ChatWorkspaceError: 404 ``workspace_not_found``; 409 ``workspace_mismatch``.
+        """
+        mismatch = ChatWorkspaceError(
+            409, "workspace_mismatch", "This agent belongs to another workspace than this chat"
+        )
+        by_key = bool(self.data.get("api_key"))
+        identity = caller
+        if by_key and self._agent_data:
+            identity = self._agent_data.get("user") or caller
+        existing = self._existing_conversation(identity)
+        if existing is not None:
+            existing_team = str(existing["team_id"]) if existing.get("team_id") else None
+            if has_agent and existing_team != agent_team:
+                raise mismatch
+            return existing_team
+        if has_agent:
+            if not by_key:
+                named, team_id = self._named_workspace(caller)
+                if named and team_id != agent_team:
+                    raise mismatch
+            return agent_team
+        _, team_id = self._named_workspace(caller)
+        return team_id
+
+    def _workspace_prompt_id(self, prompt_id: Any) -> Any:
+        """An agentless request's ``prompt_id`` if it belongs to the chat's workspace, else ``"default"``.
+
+        Presets pass through. A custom prompt must be the team's in a team
+        chat and must not be a team's in a Personal one (D8); access is then
+        checked as before by :func:`authorized_prompt_id`.
+        """
+        if prompt_id is None or prompt_id == "":
+            return prompt_id
+        pid = str(prompt_id)
+        if is_composed_preset(pid) or pid in _PROMPT_PRESETS_WITHOUT_ROW or not looks_like_uuid(pid):
+            return prompt_id
+        team_id = getattr(self, "workspace_team_id", None)
+        try:
+            with db_readonly() as conn:
+                owner = resource_owner(conn, "prompt", pid)
+        except Exception:
+            logger.warning("Could not read the owner of prompt %s; using the default prompt.", pid)
+            return "default"
+        if owner is not None and not item_in_chat_workspace(owner, team_id):
+            logger.warning("Dropping prompt %s: it is not in this chat's workspace.", pid)
+            return "default"
+        return prompt_id
+
+    def _resume_workspace(self, conversation_id: Optional[str]) -> Optional[str]:
+        """The team of the conversation a resume carries on, refusing someone no longer in it.
+
+        Args:
+            conversation_id: The conversation being resumed.
+
+        Returns:
+            Optional[str]: Its team id, or None for a Personal (or unknown) chat.
+
+        Raises:
+            ValueError: A team chat the resuming identity may no longer read.
+        """
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        if not conversation_id:
+            return None
+        with db_readonly() as conn:
+            repo = ConversationsRepository(conn)
+            team_id = repo.team_id_of(str(conversation_id))
+            if team_id and (
+                not self.initial_user_id or repo.get_any(str(conversation_id), self.initial_user_id) is None
+            ):
+                raise ValueError("Conversation not found or unauthorized")
+        return team_id
+
     def _configure_agent(self):
         """Configure the agent based on request data.
 
         Unified flow: resolve the effective API key, then extract config once.
         """
         agent_id = self._resolve_agent_id()
+        # Who asked, before an API key swaps the identity to the agent's owner.
+        caller = self.initial_user_id
 
         self.agent_key, self.is_shared_usage, self.shared_token = self._get_agent_key(
             agent_id, self.initial_user_id
@@ -1750,6 +1949,13 @@ class StreamProcessor:
                     self._agent_data = self._agent_run_data(conn, draft_row)
             if self._agent_data.get("_id"):
                 self.agent_id = str(self._agent_data.get("_id"))
+            # An API key runs as the agent's owner, so its chat is the agent's
+            # workspace whatever the request names (D5, D8).
+            if self.data.get("api_key"):
+                agent_team = team_of_principal(self._agent_data.get("user"))
+            else:
+                agent_team = getattr(self, "_agent_team_id", None)
+            self.workspace_team_id = self._chat_workspace(caller, has_agent=True, agent_team=agent_team)
 
             self.agent_config.update(
                 {
@@ -1824,10 +2030,12 @@ class StreamProcessor:
                 if preview_workflow_id:
                     self.agent_config["workflow_id"] = str(preview_workflow_id)
 
+            self.workspace_team_id = self._chat_workspace(caller, has_agent=False)
             caller = self.decoded_token.get("sub") if isinstance(self.decoded_token, dict) else None
+            prompt_id = self._workspace_prompt_id(self.data.get("prompt_id", "default"))
             self.agent_config.update(
                 {
-                    "prompt_id": authorized_prompt_id(self.data.get("prompt_id", "default"), caller),
+                    "prompt_id": authorized_prompt_id(prompt_id, caller),
                     "agent_type": agent_type,
                     "user_api_key": None,
                     "json_schema": None,
@@ -2222,12 +2430,15 @@ class StreamProcessor:
         from docsgpt.agents.tool_executor import ToolExecutor
 
         user = self.decoded_token.get("sub") if self.decoded_token else None
-        return ToolExecutor(
+        executor = ToolExecutor(
             user_api_key=self.agent_config.get("user_api_key"),
             user=user,
             decoded_token=self.decoded_token,
             agent_id=self.agent_id,
         )
+        # In-chat tools come from the chat's workspace (D8; read by ToolExecutor).
+        executor.workspace_team_id = getattr(self, "workspace_team_id", None)
+        return executor
 
     def _enabled_tool_names(self) -> Optional[set]:
         """Resolve the tool names enabled for this turn, for ``tools.enabled`` gating.
@@ -2490,6 +2701,10 @@ class StreamProcessor:
             self.initial_user_id = key_owner
             self.decoded_token = {"sub": key_owner}
 
+        # A team chat carries on only for someone still in its team (T13); its
+        # in-chat tools stay the team's.
+        self.workspace_team_id = self._resume_workspace(conversation_id)
+
         cont_service = ContinuationService()
         state = claimed_state or cont_service.claim_state(
             conversation_id, self.initial_user_id, call_ids=answered_call_ids(tool_actions)
@@ -2607,6 +2822,8 @@ class StreamProcessor:
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
+        # In-chat tools come from the chat's workspace (D8; read by ToolExecutor).
+        tool_executor.workspace_team_id = getattr(self, "workspace_team_id", None)
         # A turn that offered questions still does after its resume when the
         # resuming client draws forms too; one that asked already can't again.
         if offered_questions(agent_config.get("questions")):
@@ -2950,6 +3167,8 @@ class StreamProcessor:
             api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
+        # In-chat tools come from the chat's workspace (D8; read by ToolExecutor).
+        tool_executor.workspace_team_id = getattr(self, "workspace_team_id", None)
         # A chat agent can ask the user clarifying questions only when the
         # client draws them as forms (the web app); every other caller gets
         # the turn without ``ask_user``, as before questions existed.

@@ -1,6 +1,9 @@
 """Activity REST API.
 
 ``GET /api/activity/now`` is what the Now page and the sidebar marks read.
+Now, planned and history are per workspace: the ``X-DocsGPT-Workspace``
+header (or ``?workspace=``) picks it, Personal without one, and a team the
+caller is not in answers 404 ``workspace_not_found``.
 ``POST /api/messages/<id>/cancel`` stops a chat answer from outside its chat:
 a stream otherwise ends only when its connection closes.
 """
@@ -21,6 +24,7 @@ from docsgpt.activity.planned import WindowError, build_planned, parse_window, p
 from docsgpt.api import api
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.context import WorkspaceError, current_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +63,10 @@ class ActivityNow(Resource):
             return _err("Unauthorized", 401)
         try:
             with db_readonly() as conn:
-                snapshot = build_now(conn, user_id)
+                workspace = current_workspace(conn)
+                snapshot = build_now(conn, user_id, workspace=workspace)
+        except WorkspaceError as err:
+            return err.response()
         except Exception:
             logger.exception("activity: building the Now snapshot failed")
             return _err("Failed to load activity", 500)
@@ -100,7 +107,10 @@ class ActivityPlanned(Resource):
             return _err(str(exc), 400)
         try:
             with db_readonly() as conn:
-                window = build_planned(conn, user_id, start, end, tz=tz)
+                workspace = current_workspace(conn)
+                window = build_planned(conn, user_id, start, end, tz=tz, workspace=workspace)
+        except WorkspaceError as err:
+            return err.response()
         except Exception:
             logger.exception("activity: building the calendar failed")
             return _err("Failed to load the calendar", 500)
@@ -143,9 +153,11 @@ class ActivityHistory(Resource):
             return _err("Unauthorized", 401)
         try:
             with db_readonly() as conn:
+                workspace = current_workspace(conn)
                 page = list_history(
                     conn,
                     user_id,
+                    team_id=workspace.team_id,
                     kind=request.args.get("kind") or None,
                     status=request.args.get("status") or None,
                     query=request.args.get("q") or None,
@@ -153,6 +165,8 @@ class ActivityHistory(Resource):
                     limit=_int_arg("limit", 50),
                     offset=_int_arg("offset", 0),
                 )
+        except WorkspaceError as err:
+            return err.response()
         except ValueError as exc:
             return _err(str(exc), 400)
         except Exception:
