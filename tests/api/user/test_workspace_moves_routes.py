@@ -117,6 +117,28 @@ class TestMoveRoutes:
         status, out = _plan(app, pg_conn, "olga", body(tid, [("agent", agent(pg_conn, "olga"))]))
         assert (status, out["error"]) == (404, "workspace_not_found")
 
+    def test_an_editor_bringing_outside_access_is_403(self, app, pg_conn):
+        tid, _ = team(pg_conn)
+        ag = agent(pg_conn, "eddie", "Public", key="k-route-pub", status="published")
+        status, out = _plan(app, pg_conn, "eddie", body(tid, [("agent", ag)]))
+        assert status == 200 and out["plan"]["needs_admin"] == [{"id": ag, "name": "Public"}]
+        status, out = _apply(app, pg_conn, "eddie", body(tid, [("agent", ag)], fingerprint=out["plan"]["fingerprint"]))
+        assert (status, out["error"], out["agents"]) == (403, "move_needs_admin", [{"id": ag, "name": "Public"}])
+        assert owner_of(pg_conn, "agent", ag) == "eddie"
+
+    def test_a_secret_that_fails_at_apply_is_409_not_500(self, app, pg_conn):
+        from docsgpt.security.encryption import CredentialDecryptionError, encrypt_credentials
+        from tests.workspaces.move_support import tool
+
+        tid, _ = team(pg_conn)
+        tl = tool(pg_conn, "eddie", "brave", config={"encrypted_credentials": encrypt_credentials({"k": "v"}, "eddie")})
+        status, out = _plan(app, pg_conn, "eddie", body(tid, [("tool", tl)]))
+        with patch("docsgpt.security.encryption.reseal_for_owner", side_effect=CredentialDecryptionError("boom")):
+            status, out = _apply(app, pg_conn, "eddie", body(tid, [("tool", tl)],
+                                                             fingerprint=out["plan"]["fingerprint"]))
+        assert (status, out["error"], [t["id"] for t in out["tools"]]) == (409, "credentials_unreadable", [tl])
+        assert owner_of(pg_conn, "tool", tl) == "eddie"
+
     def test_bad_body_is_400(self, app, pg_conn):
         assert _plan(app, pg_conn, "eddie", {"items": "nope"})[0] == 400
 

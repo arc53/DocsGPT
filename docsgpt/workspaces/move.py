@@ -14,24 +14,31 @@ What a move takes along, and what it can't:
 
 - An agent takes what it uses that the same owner holds: its sources, tools
   and prompt, the folders it reads live, its workflow and every other agent of
-  that owner on the same workflow. A folder takes its sub-folders and the items
-  its owner filed there.
+  that owner on the same workflow. A folder the mover drags takes its
+  sub-folders and the items its owner filed there; a folder that comes only as
+  an agent's knowledge takes its sub-folders and sources, and the agents, tools
+  and prompts filed in it stay where they are, unfiled.
 - Anything the agent uses that the owner doesn't hold (a teammate's tool, a
   shared source), or that can't live in a team (a tool on someone's connected
   account or paired device, a connector-synced source, a personal custom
-  model), is removed from the agent and listed. A dragged item the mover
-  doesn't own is listed and never re-owned.
+  model, a tool whose saved secret no longer opens), is removed from the agent
+  and listed. A dragged item the mover doesn't own is listed and never re-owned.
 - Grants and share switches on moved items are deleted, sponsors cleared, and
   stored secrets re-sealed for the new owner. Someone else's personal filing of
   a moved item is deleted; the mover's own filing goes to the chosen folder.
 - Members' chats with a moved agent follow it to the team. Schedules keep the
   person who set them (they pay), and outside access (key, link, webhook)
   keeps running on the mover as its payer. ``created_by`` is kept.
-- A move that would leave a published personal agent using a moved item (it
-  would borrow a team item) is refused with 409 ``move_would_borrow`` naming
-  the agent; the client may add that agent to the move. Moving out, a team
-  agent left behind can't use a personal item at all, so any such agent
-  refuses the move.
+- A move in that would leave any agent with outside access (whoever owns it)
+  using a moved item is refused with 409 ``move_would_borrow``: its key, link
+  or webhook would serve a team's item. The agents the mover can open are
+  named, the rest only counted; the client may add the mover's own to the move.
+  Moving out, a team agent left behind can't use a personal item at all, so
+  any team agent that uses a moved item, or reads one through a folder it
+  stays in, refuses the move.
+- Publishing in a team is an Admin's call, so bringing in an agent with
+  outside access takes a team Admin (403 ``move_needs_admin``); an Editor
+  turns its outside access off first, or asks an Admin.
 """
 
 from __future__ import annotations
@@ -66,7 +73,6 @@ from docsgpt.api.user.resource_access import (
     resolve,
     resource_owner,
 )
-from docsgpt.api.user.resource_usage import used_by_many
 from docsgpt.connectors import service as connector_service
 from docsgpt.connectors.permissions import holds_owner_credentials
 from docsgpt.security import encryption
@@ -79,7 +85,7 @@ from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.workspaces.context import PERSONAL, Workspace, WorkspaceError, require_workspace_role
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
-from docsgpt.workspaces.roles import from_stored_role, role_rank, team_role_for
+from docsgpt.workspaces.roles import from_stored_role, role_at_least, role_rank, team_role_for
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +106,8 @@ CANT_CONNECTOR = "connector_synced"
 CANT_CUSTOM_MODEL = "custom_model"
 CANT_DEVICE = "remote_device"
 CANT_NOT_YOURS = "not_yours"
+CANT_IN_KNOWLEDGE = "in_knowledge_folder"
+CANT_UNREADABLE = "credentials_unreadable"
 
 #: What happens to it (``cannot_move[].effect``): taken off the moved agents, or just left where it is.
 EFFECT_REMOVED = "removed_from_holder"
@@ -109,6 +117,8 @@ EFFECT_STAYS = "stays"
 CODE_PLAN_CHANGED = "move_plan_changed"
 CODE_WOULD_BORROW = "move_would_borrow"
 CODE_NOTHING_TO_MOVE = "nothing_to_move"
+CODE_NEEDS_ADMIN = "move_needs_admin"
+CODE_UNREADABLE = "credentials_unreadable"
 
 #: Audit events, by direction.
 ITEM_EVENTS = {"in": "team.item_moved_in", "out": "team.item_moved_out"}
@@ -127,6 +137,26 @@ _NAME_SQL = {
     "tool": "COALESCE(NULLIF(custom_name, ''), NULLIF(display_name, ''), name)",
 }
 _LIVE_SCHEDULES = ("active", "paused")
+
+#: Where a stored secret lives in a tool's config.
+_SECRET_KEYS = ("encrypted_credentials", API_TOOL_SECRETS_KEY)
+
+# An agent's own columns that name a resource, read for every agent whoever owns it.
+_AGENT_USE_SQL = {
+    "source": "a.source_id = ANY(CAST(:ids AS uuid[])) OR a.extra_source_ids && CAST(:ids AS uuid[])",
+    "tool": "jsonb_typeof(a.tools) = 'array' AND a.tools ?| CAST(:ids AS text[])",
+    "prompt": "a.prompt_id = ANY(CAST(:ids AS uuid[]))",
+    "folder": "a.knowledge_folder_ids && CAST(:ids AS uuid[])",
+}
+# The agent-node key of each kind in a workflow's current graph; prompts have none.
+_NODE_KEYS = {"source": "sources", "tool": "tools", "folder": "folders"}
+_NODE_USE_SQL = """
+    SELECT DISTINCT a.id::text FROM workflow_nodes n
+    JOIN workflows w ON w.id = n.workflow_id AND n.graph_version = w.current_graph_version
+    JOIN agents a ON a.workflow_id = w.id
+    WHERE a.agent_type = 'workflow' AND n.node_type = 'agent'
+      AND workflow_node_refs(n.config, '{key}') && CAST(:ids AS text[])
+"""
 
 
 class MoveError(Exception):
@@ -245,7 +275,8 @@ class MovePlan:
         roots: Moved folders whose parent stays behind: ``id -> (new parent, new name)``.
         stays: Items filed in a moved folder that stay behind (their filing there is deleted).
         members: Everyone in the team (the owner included).
-        blocking: Agents left behind that refuse the move (``borrowing_agents`` entries).
+        blocking: Agents left behind that refuse the move (``borrowing_agents`` entries the mover can open).
+        blocking_hidden: How many more refuse it that the mover can't open.
     """
 
     body: dict
@@ -262,6 +293,7 @@ class MovePlan:
     stays: list = field(default_factory=list)
     members: list = field(default_factory=list)
     blocking: list = field(default_factory=list)
+    blocking_hidden: int = 0
 
     def ids(self, kind: str) -> list[str]:
         """The ids of one kind that move, in plan order."""
@@ -322,6 +354,59 @@ def _node_refs(config: Any) -> tuple[list[tuple[str, str]], list[str]]:
     return refs, [model] if isinstance(model, str) and model.strip() else []
 
 
+def _agents_using(conn: Connection, kind: str, ids: list[str]) -> set[str]:
+    """Every agent, whoever owns it, that names one of ``ids`` itself or in a node of its workflow.
+
+    Args:
+        conn: Open connection.
+        kind: ``source``, ``tool``, ``prompt`` or ``folder`` (a folder it reads live).
+        ids: Lower-case resource ids.
+
+    Returns:
+        set[str]: Agent ids.
+    """
+    ids = sorted({i for i in ids if looks_like_uuid(i)})
+    if not ids:
+        return set()
+    text_ids = list(ids)
+    if kind in ("source", "tool"):
+        # Installs migrated from Mongo may still name a tool or source by its old id.
+        table = _TABLES[kind]
+        for (legacy,) in conn.execute(
+            text(f"SELECT legacy_mongo_id FROM {table} WHERE id = ANY(CAST(:ids AS uuid[])) "
+                 "AND legacy_mongo_id IS NOT NULL"),
+            {"ids": ids},
+        ):
+            value = str(legacy).strip()
+            if value:
+                text_ids.extend({value, value.lower()})
+    params = {"ids": text_ids if kind == "tool" else ids}
+    found = {r[0] for r in conn.execute(
+        text(f"SELECT a.id::text FROM agents a WHERE {_AGENT_USE_SQL[kind]}"), params
+    )}
+    if kind in _NODE_KEYS:
+        found.update(r[0] for r in conn.execute(
+            text(_NODE_USE_SQL.format(key=_NODE_KEYS[kind])), {"ids": text_ids}
+        ))
+    return found
+
+
+def _secret_readable(blob: Any, owner: str) -> bool:
+    """Whether a stored secret opens for its owner (so a move can re-seal it)."""
+    if not blob:
+        return True
+    if not isinstance(blob, str):
+        return False
+    if encryption.envelope_key_id(blob) is not None:
+        try:
+            encryption.decrypt_json(blob, owner)
+        except encryption.CredentialDecryptionError:
+            return False
+        return True
+    # A v1 blob is never written for empty credentials, so empty means it didn't open.
+    return bool(encryption.decrypt_credentials(blob, owner))
+
+
 class _Planner:
     """Works out one plan; see :func:`plan_move`."""
 
@@ -335,6 +420,8 @@ class _Planner:
         self.workflows: dict[str, dict] = {}
         self.stays: list[tuple[str, str]] = []
         self.dragged: list[tuple[str, str]] = []
+        # Folders that take every item filed in them: the dragged ones and their sub-folders.
+        self.whole_folders: set[str] = set()
         self._queue: list[tuple[str, str]] = []
 
     # --- sides --------------------------------------------------------------
@@ -391,6 +478,11 @@ class _Planner:
 
     def _classify(self, kind: str, row: dict) -> Optional[str]:
         """Why an item its owner holds can't come along, or None when it can."""
+        if kind == "tool":
+            config = row.get("config") if isinstance(row.get("config"), dict) else {}
+            if not all(_secret_readable(config.get(key), row.get("user_id")) for key in _SECRET_KEYS):
+                # It couldn't be re-sealed for the new owner; apply must never meet it.
+                return CANT_UNREADABLE
         if self.direction == "out":
             return None
         if kind == "source":
@@ -482,6 +574,8 @@ class _Planner:
             if key not in self.moving:
                 self.dragged.append(key)
             self._add(kind, key[1], row, None, None)
+            if kind == "folder":
+                self.whole_folders.update(FoldersRepository(self.conn).subtree_levels(key[1], self.old_owner))
 
     def _dependency(self, kind: str, item_id: str, via: tuple[str, str]) -> None:
         key = (kind, item_id)
@@ -560,6 +654,7 @@ class _Planner:
             ),
             {"owner": self.old_owner, "f": entry.id},
         ).fetchall()
+        whole = entry.id in self.whole_folders
         for kind, item_id in filings:
             key = (kind, item_id)
             if key in self.moving:
@@ -571,6 +666,12 @@ class _Planner:
             elif reason:
                 self._cannot(key, reason, _Entry(kind, item_id, row).name)
                 self.stays.append(key)
+            elif kind != "source" and not whole:
+                # Reached only as an agent's knowledge: the folder brings what it feeds (its
+                # sources), not the agents, tools and prompts filed there. They stay, unfiled,
+                # unless something else in the move takes them.
+                self._cannot(key, CANT_IN_KNOWLEDGE, _Entry(kind, item_id, row).name)
+                self.stays.append(key)
             else:
                 self._add(kind, item_id, row, via, REASON_IN_FOLDER)
 
@@ -581,6 +682,10 @@ class _Planner:
                 self._expand_agent(entry)
             elif entry.kind == "folder":
                 self._expand_folder(entry)
+        # An item left behind by a knowledge folder may still come another way (an agent uses it).
+        for key in [k for k in self.cannot if k in self.moving]:
+            del self.cannot[key]
+        self.stays = [k for k in self.stays if k not in self.moving]
 
     # --- folders -----------------------------------------------------------------
 
@@ -677,21 +782,79 @@ class _Planner:
             "outside_access": {**outside, "paid_by": person(self.mover) if any(outside.values()) else None},
         }
 
-    def _borrowing(self) -> list[dict]:
-        """The old owner's agents left behind that use a moving item."""
-        kinds = ("source", "tool", "folder") if self.direction == "in" else ("source", "tool", "prompt", "folder")
+    def _folder_fed(self) -> list[str]:
+        """The folders staying behind that feed a moving source today: each one it is filed in, and those above."""
+        sources = self.ids("source")
+        if not sources:
+            return []
+        repo = FoldersRepository(self.conn)
+        chain: set[str] = set()
+        for (folder_id,) in self.conn.execute(
+            text(
+                "SELECT DISTINCT folder_id::text FROM folder_items WHERE user_id = :old AND resource_type = 'source' "
+                "AND resource_id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"old": self.old_owner, "ids": sources},
+        ):
+            chain.update(repo.ancestors(folder_id, self.old_owner))
+        return sorted(chain - set(self.ids("folder")))
+
+    def _borrowing(self) -> tuple[list[dict], list[dict], int]:
+        """Agents left behind that use a moving item.
+
+        Moving in, any agent with outside access refuses the move, whoever owns
+        it: its key, link or webhook would serve a team's item. The old owner's
+        other agents are listed too. Moving out, every team agent left behind
+        refuses, including one that reads a moved source through a folder it is
+        filed in.
+
+        Returns:
+            tuple: ``(listed, blocking, hidden)``: the ``borrowing_agents`` entries the mover can open,
+            those of them that refuse the move, and how many refusing agents the mover can't open.
+        """
+        conn = self.conn
         users: set[str] = set()
-        for kind in kinds:
-            ids = [i for k, i in self.moving if k == kind]
-            if not ids:
+        for kind in ("source", "tool", "prompt", "folder"):
+            users |= _agents_using(conn, kind, self.ids(kind))
+        if self.direction == "out":
+            users |= _agents_using(conn, "folder", self._folder_fed())
+        users -= set(self.ids("agent"))
+        rows = [row_to_dict(r) for r in conn.execute(
+            text("SELECT * FROM agents WHERE id = ANY(CAST(:ids AS uuid[]))"), {"ids": sorted(users)}
+        ).fetchall()] if users else []
+        listed: list[dict] = []
+        blocking: list[dict] = []
+        hidden = 0
+        for row in rows:
+            agent_id, owner, published = str(row["id"]), row.get("user_id"), has_outside_access(row)
+            if self.direction == "out":
+                if owner != self.old_owner:
+                    continue
+                blocks = True
+            else:
+                blocks = published
+                if owner != self.old_owner and not blocks:
+                    continue
+            if owner != self.mover and resolve(conn, "agent", agent_id, self.mover) is None:
+                # Not the mover's to see: counted, never named.
+                hidden += int(blocks)
                 continue
-            usage = used_by_many(self.conn, self.mover, kind, ids, deletable_ids=[])
-            for used in usage.values():
-                users.update(a["id"] for a in used["agents"])
-        users -= {i for k, i in self.moving if k == "agent"}
-        rows = [r for r in AgentsRepository(self.conn).list_by_ids(sorted(users)) if r.get("user_id") == self.old_owner]
-        out = [{"id": str(r["id"]), "name": r.get("name"), "published": has_outside_access(r)} for r in rows]
-        return sorted(out, key=lambda a: (a["name"] or "", a["id"]))
+            entry = {"id": agent_id, "name": row.get("name"), "published": published}
+            listed.append(entry)
+            if blocks:
+                blocking.append(entry)
+        listed.sort(key=lambda a: (a["name"] or "", a["id"]))
+        blocking.sort(key=lambda a: (a["name"] or "", a["id"]))
+        return listed, blocking, hidden
+
+    def _needs_admin(self) -> list[dict]:
+        """Moving agents with outside access, when the mover isn't an Admin of the target team."""
+        if self.direction != "in" or role_at_least(self.role, "admin"):
+            return []
+        return [
+            {"id": e.id, "name": e.name} for e in self.moving.values()
+            if e.kind == "agent" and has_outside_access(e.row)
+        ]
 
     def _chats(self, members: Iterable[str]) -> int:
         agents = self.ids("agent")
@@ -716,8 +879,7 @@ class _Planner:
         team = TeamsRepository(self.conn).get(self.team_id) or {}
         team_name = team.get("name") or ""
         members = _team_members(self.conn, self.team_id)
-        borrowing = self._borrowing()
-        blocking = [a for a in borrowing if a["published"] or self.direction == "out"]
+        borrowing, blocking, hidden = self._borrowing()
         if self.direction == "in":
             workspace = {"kind": "team", "team_id": self.team_id, "name": team_name}
         else:
@@ -740,6 +902,8 @@ class _Planner:
             "access": self._access(members, team_name),
             "kept": self._kept(),
             "borrowing_agents": borrowing,
+            "borrowing_others": hidden,
+            "needs_admin": self._needs_admin(),
             "conversations_switched": self._chats(members),
             "renames": renames,
         }
@@ -761,6 +925,7 @@ class _Planner:
             stays=self.stays,
             members=sorted(members),
             blocking=blocking,
+            blocking_hidden=hidden,
         )
 
 
@@ -784,13 +949,18 @@ def plan_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
     return _Planner(conn, mover, request).run()
 
 
-def _borrow_message(agents: list[dict], direction: str) -> str:
+def _borrow_message(agents: list[dict], hidden: int, direction: str) -> str:
     names = ", ".join(f'"{a["name"]}"' for a in agents)
     if direction == "out":
         return (f"The team's agent {names} uses what this move takes out of the team. "
                 "Move it too, or remove those items from it first.")
-    return (f"Your published agent {names} uses what this move puts in the team, and a published agent can't "
-            "use a team's items. Move it too, or remove those items from it first.")
+    parts = [f"The agent {names}"] if agents else []
+    if hidden:
+        parts.append(f"{hidden} agent{'s' if hidden != 1 else ''} you can't open")
+    who = " and ".join(parts)
+    return (f"{who} can be reached from outside (a key, public link or webhook) and use what this move puts in "
+            "the team, which outside access must not serve. Move it too, turn its outside access off, or remove "
+            "those items from it first.")
 
 
 def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
@@ -806,8 +976,10 @@ def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
 
     Raises:
         MoveError: Everything :func:`plan_move` raises; 400 ``fingerprint_required`` or ``nothing_to_move``;
-            409 ``move_plan_changed`` (with ``plan``, the fresh one) or ``move_would_borrow`` (with
-            ``agents``). Any other error rolls the whole move back and propagates.
+            403 ``move_needs_admin`` (with ``agents``: moving agents with outside access, the mover below
+            Admin); 409 ``move_plan_changed`` (with ``plan``, the fresh one), ``move_would_borrow`` (with
+            ``agents`` and ``others``, a count of those the mover can't open) or ``credentials_unreadable``
+            (with ``tools``). Any other error rolls the whole move back and propagates.
     """
     if not request.fingerprint:
         raise MoveError(400, "fingerprint_required", "Send the fingerprint of the plan you agreed to")
@@ -816,9 +988,17 @@ def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
         if plan.body["fingerprint"] != request.fingerprint:
             raise MoveError(409, CODE_PLAN_CHANGED, "Something changed since the plan was made. Check the new plan.",
                             plan=plan.body)
-        if plan.blocking:
-            raise MoveError(409, CODE_WOULD_BORROW, _borrow_message(plan.blocking, plan.direction),
-                            agents=plan.blocking)
+        needs_admin = plan.body.get("needs_admin") or []
+        if needs_admin:
+            names = ", ".join(f'"{a["name"]}"' for a in needs_admin)
+            raise MoveError(403, CODE_NEEDS_ADMIN,
+                            f"{names} can be reached from outside (a key, public link or webhook), and only a "
+                            "team Admin brings outside access into a team. Turn it off first, or ask an Admin.",
+                            agents=needs_admin)
+        if plan.blocking or plan.blocking_hidden:
+            raise MoveError(409, CODE_WOULD_BORROW,
+                            _borrow_message(plan.blocking, plan.blocking_hidden, plan.direction),
+                            agents=plan.blocking, others=plan.blocking_hidden)
         if not plan.moving:
             raise MoveError(400, CODE_NOTHING_TO_MOVE, "None of these items can move")
         _Executor(conn, plan).run()
@@ -867,7 +1047,7 @@ class _Executor:
         self._folders(folders)
         self._reown("sources", plan.ids("source"))
         self._reown("prompts", plan.ids("prompt"))
-        self._reown("workflows", list(plan.workflows), ", updated_at = now()")
+        self._reown("workflows", list(plan.workflows), ", resource_sponsors = '{}'::jsonb, updated_at = now()")
         old_slugs = self._agents()
         self._tools()
         self._slugs(old_slugs)
@@ -952,11 +1132,25 @@ class _Executor:
         sessions = ConnectorSessionsRepository(self.conn)
         mover = self.plan.mover
         for tool_id in self.plan.ids("tool"):
-            row = self.plan.moving[("tool", tool_id)].row
+            # The row as it is now, locked: a secret saved since the plan read it is the one re-sealed.
+            current = self.conn.execute(
+                text("SELECT * FROM user_tools WHERE id = CAST(:i AS uuid) AND user_id = :old FOR UPDATE"),
+                {"i": tool_id, "old": self.old},
+            ).fetchone()
+            if current is None:
+                raise MoveError(409, CODE_PLAN_CHANGED, "Something changed while moving. Plan the move again.")
+            row = row_to_dict(current)
             config = copy.deepcopy(row.get("config") or {})
-            for key in ("encrypted_credentials", API_TOOL_SECRETS_KEY):
+            for key in _SECRET_KEYS:
                 if config.get(key):
-                    config[key] = encryption.reseal_for_owner(config[key], self.old, self.new)
+                    try:
+                        config[key] = encryption.reseal_for_owner(config[key], self.old, self.new)
+                    except encryption.CredentialDecryptionError as err:
+                        name = _Entry("tool", tool_id, row).name
+                        raise MoveError(409, CODE_UNREADABLE,
+                                        f'The saved secret of "{name}" can\'t be read, so it can\'t move. '
+                                        "Save it again, or leave the tool out, then move again.",
+                                        tools=[{"id": tool_id, "name": name}]) from err
             connection_id = row.get("connection_id")
             if connection_id and row.get("name") == "mcp_tool" and row.get("credential_mode") != "member":
                 session = sessions.get(str(connection_id))

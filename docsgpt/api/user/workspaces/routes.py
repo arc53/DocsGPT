@@ -122,8 +122,10 @@ class WorkspaceMoves(Resource):
     @api.doc(
         description=(
             "Apply a planned move in one transaction. Answers 409 move_plan_changed with the fresh plan when "
-            "the fingerprint no longer matches, and 409 move_would_borrow naming a published agent that "
-            "would use a moved item."
+            "the fingerprint no longer matches, 409 move_would_borrow naming the agents with outside access "
+            "that would use a moved item (and counting those the caller can't open), 403 move_needs_admin "
+            "when a moving agent has outside access and the caller isn't a team Admin, and 409 "
+            "credentials_unreadable naming a tool whose saved secret can't be re-sealed."
         )
     )
     def post(self):

@@ -160,12 +160,13 @@ class TestMoveIn:
 
     def test_schedules_keep_their_payer_and_outside_access_bills_the_mover(self, pg_conn):
         tid, _ = team(pg_conn)
-        ag = agent(pg_conn, "eddie", key="k-move-1", status="published")
+        # Bringing outside access into a team takes an Admin.
+        ag = agent(pg_conn, "adam", key="k-move-1", status="published")
         sched = SchedulesRepository(pg_conn).create("vera", ag, "recurring", "Ping", cron="0 9 * * *")
-        apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        apply(pg_conn, "adam", body(tid, [("agent", ag)]))
         assert _row(pg_conn, "schedules", str(sched["id"]))["user_id"] == "vera"
         row = _row(pg_conn, "agents", ag)
-        assert row["access_payer_id"] == "eddie" and row["key"] == "k-move-1"
+        assert row["access_payer_id"] == "adam" and row["key"] == "k-move-1"
 
     def test_what_cant_move_is_removed_from_the_holder(self, pg_conn):
         tid, _ = team(pg_conn)
@@ -221,18 +222,18 @@ class TestRefusals:
 
     def test_a_published_agent_that_would_borrow_refuses(self, pg_conn):
         tid, _ = team(pg_conn)
-        src = source(pg_conn, "eddie")
-        moving = agent(pg_conn, "eddie", "Moving", source_id=src)
-        staying = agent(pg_conn, "eddie", "Staying", source_id=src, key="key-st", status="published")
+        src = source(pg_conn, "adam")
+        moving = agent(pg_conn, "adam", "Moving", source_id=src)
+        staying = agent(pg_conn, "adam", "Staying", source_id=src, key="key-st", status="published")
         with pytest.raises(MoveError) as err:
-            apply(pg_conn, "eddie", body(tid, [("agent", moving)]))
+            apply(pg_conn, "adam", body(tid, [("agent", moving)]))
         assert (err.value.status, err.value.code) == (409, "move_would_borrow")
         assert err.value.extra["agents"] == [{"id": staying, "name": "Staying", "published": True}]
         assert "Staying" in err.value.message
-        assert owner_of(pg_conn, "source", src) == "eddie"
-        # Taking the published agent along is the way through.
-        apply(pg_conn, "eddie", body(tid, [("agent", moving), ("agent", staying)]))
-        assert owner_of(pg_conn, "source", src) != "eddie"
+        assert owner_of(pg_conn, "source", src) == "adam"
+        # Taking the published agent along is the way through (an Admin may bring outside access in).
+        apply(pg_conn, "adam", body(tid, [("agent", moving), ("agent", staying)]))
+        assert owner_of(pg_conn, "source", src) != "adam"
 
     def test_a_dragged_item_not_owned_by_the_mover_is_never_reowned(self, pg_conn):
         tid, _ = team(pg_conn)
