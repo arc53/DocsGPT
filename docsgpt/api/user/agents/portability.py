@@ -198,23 +198,19 @@ def _custom_model_code() -> str:
 def _team_tool_refusal(tool_type: str, config: Optional[dict]) -> Optional[str]:
     """Why a team can't hold a tool of this kind (a ``*_personal_only`` code), or None.
 
-    A paired device runs on one person's machine, and a connected service or a
-    server you sign in to needs a connection a team can't hold yet.
-    """
-    from docsgpt.api.user.tools.routes import (
-        CODE_CONNECTOR_PERSONAL_ONLY,
-        CODE_OAUTH_PERSONAL_ONLY,
-        CODE_REMOTE_DEVICE_PERSONAL_ONLY,
-    )
-    from docsgpt.connectors.catalog import definition_for_tool
+    The tools routes own the rule. Imported lazily, like the other route
+    helpers here, so loading the agents package never pulls in the tools routes.
 
-    if tool_type == "remote_device":
-        return CODE_REMOTE_DEVICE_PERSONAL_ONLY
-    if definition_for_tool(tool_type) is not None:
-        return CODE_CONNECTOR_PERSONAL_ONLY
-    if tool_type == "mcp_tool" and (config or {}).get("auth_type") == "oauth":
-        return CODE_OAUTH_PERSONAL_ONLY
-    return None
+    Args:
+        tool_type: The tool's catalog name.
+        config: The tool's config.
+
+    Returns:
+        Optional[str]: The refusal code, or None.
+    """
+    from docsgpt.api.user.tools.routes import team_tool_refusal
+
+    return team_tool_refusal(tool_type, config)
 
 
 def _not_here(owner: str) -> str:
