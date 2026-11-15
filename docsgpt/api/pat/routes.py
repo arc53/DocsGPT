@@ -37,6 +37,7 @@ from docsgpt.storage.db.repositories.personal_access_tokens import (
     PersonalAccessTokensRepository,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 pat_ns = Namespace("tokens", description="Personal access tokens", path="/api")
 
@@ -133,6 +134,9 @@ class PersonalAccessTokens(Resource):
             return _error("Authentication required", 401)
         if not auth_type_supports_pats():
             return _error("Personal access tokens are not available on this server", 403)
+        if is_principal_id(user_id):
+            # Auth already refuses such a session; a token would outlive that check.
+            return _error("A team cannot hold a personal access token", 403)
 
         body = request.get_json(silent=True)
         if body is None:
@@ -358,7 +362,9 @@ class PersonalAccessTokenTool(Resource):
 class AdminUserTokens(Resource):
     @admin_required
     def get(self, user_id):
-        """List a user's tokens, revoked ones included."""
+        """List a user's tokens, revoked ones included. A team principal has none, so it is not found."""
+        if is_principal_id(user_id):
+            return _error("User not found", 404)
         with db_readonly() as conn:
             rows = PersonalAccessTokensRepository(conn).list_for_user(user_id, include_revoked=True)
         return make_response(

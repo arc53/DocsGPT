@@ -206,6 +206,27 @@ class UsersRepository:
         )
         return {row[0]: row[1] for row in result.fetchall()}
 
+    def principal_labels(self, user_ids: Iterable[str]) -> dict[str, str]:
+        """Map each given team principal id to ``"Team <name>"``.
+
+        Args:
+            user_ids: Any ids; only those with the principal prefix are looked up.
+
+        Returns:
+            ``{principal_id: "Team <name>"}`` for principals whose team exists.
+        """
+        ids = sorted({uid for uid in user_ids if is_principal_id(uid)})
+        if not ids:
+            return {}
+        result = self._conn.execute(
+            text(
+                "SELECT u.user_id, t.name FROM users u JOIN teams t ON t.id = u.team_id "
+                "WHERE u.user_id = ANY(:ids) AND u.kind = 'team'"
+            ),
+            {"ids": ids},
+        )
+        return {row[0]: f"Team {row[1]}" for row in result.fetchall()}
+
     def add_pinned(self, user_id: str, agent_id: str) -> None:
         """Idempotently append ``agent_id`` to ``agent_preferences.pinned``.
 
@@ -463,19 +484,26 @@ class UsersRepository:
         return row_to_dict(row) if row is not None else None
 
     def get_by_pk(self, pk: str) -> Optional[dict]:
-        """Return the user row by primary-key ``id``, or ``None`` (including malformed UUIDs)."""
+        """Return the person row by primary-key ``id``, or ``None``.
+
+        SCIM is its only caller, so a row that is not a person (a team
+        principal, ``__system__``) reads as missing, and so do malformed UUIDs.
+        """
         canonical = _canonical_uuid(pk)
         if canonical is None:
             return None
         result = self._conn.execute(
-            text("SELECT * FROM users WHERE id = CAST(:pk AS uuid)"),
+            text("SELECT * FROM users WHERE id = CAST(:pk AS uuid) AND kind = 'user'"),
             {"pk": canonical},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
     def set_active(self, pk: str, active: bool) -> Optional[dict]:
-        """Set ``active`` on the row with primary-key ``id`` and return the updated row."""
+        """Set ``active`` on the person row with primary-key ``id`` and return the updated row.
+
+        A row that is not a person is left alone and ``None`` is returned.
+        """
         canonical = _canonical_uuid(pk)
         if canonical is None:
             return None
@@ -484,7 +512,7 @@ class UsersRepository:
                 """
                 UPDATE users
                 SET active = :active, updated_at = now()
-                WHERE id = CAST(:pk AS uuid)
+                WHERE id = CAST(:pk AS uuid) AND kind = 'user'
                 RETURNING *
                 """
             ),
@@ -539,13 +567,16 @@ class UsersRepository:
     def list_paginated(
         self, user_name: Optional[str], offset: int, limit: int
     ) -> tuple[int, list[dict]]:
-        """Return ``(total, page)`` ordered by ``created_at, id``; optional exact ``user_id`` filter."""
-        where = ""
+        """Return ``(total, page)`` of person rows ordered by ``created_at, id``; optional exact ``user_id`` filter.
+
+        SCIM is its only caller: team principals and ``__system__`` are never listed.
+        """
+        where = "WHERE kind = 'user'"
         filter_params: dict = {}
         if user_name is not None:
             # SCIM userName is case-insensitive (caseExact=false); match on
             # lower(user_id) so the IdP finds the account regardless of casing.
-            where = "WHERE lower(user_id) = lower(:user_name)"
+            where += " AND lower(user_id) = lower(:user_name)"
             filter_params = {"user_name": user_name}
         total = self._conn.execute(
             text(f"SELECT count(*) FROM users {where}"), filter_params

@@ -320,6 +320,16 @@ class TestCreateUser:
         response = client.post("/scim/v2/Users", headers=AUTH, json={"userName": "alice@example.com"})
         assert response.status_code == 201
 
+    @pytest.mark.parametrize("user_name", ["__team__3f1f2bd6-8a87-4f7e-9c2b-2f76c1a4f0d3", "__TEAM__anything"])
+    def test_a_team_principal_username_is_refused(self, client, scim_settings, scim_mocks, user_name):
+        # userName is case-insensitive, so the reserved prefix is too.
+        scim_mocks.users.create.return_value = _user_row(user_id=user_name)
+        response = client.post("/scim/v2/Users", headers=AUTH, json={"userName": user_name})
+        assert response.status_code == 409
+        assert response.get_json()["scimType"] == "uniqueness"
+        scim_mocks.users.create.assert_not_called()
+        scim_mocks.audit.insert.assert_not_called()
+
 
 @pytest.mark.unit
 class TestGetUser:

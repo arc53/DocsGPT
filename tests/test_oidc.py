@@ -1692,3 +1692,88 @@ class TestRefreshRoute:
 
         assert response.status_code == 401
         assert response.get_json() == {"error": "account_disabled"}
+
+
+PRINCIPAL = "__team__3f1f2bd6-8a87-4f7e-9c2b-2f76c1a4f0d3"
+
+
+@pytest.mark.unit
+class TestTeamPrincipalIsNotALogin:
+    """A claim that names a team principal (or a row that is not a person) never signs in (plan WP2, R1)."""
+
+    @pytest.fixture(autouse=True)
+    def _db(self, db_mocks):
+        self.db = db_mocks
+
+    def _callback(self, client, fake_redis, sub):
+        state, nonce = _seed_state(client, fake_redis)
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
+            mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
+            mock_requests.post.return_value = _signed_token_response(id_token_claims(sub=sub, nonce=nonce))
+            return client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
+
+    def test_a_principal_claim_is_denied_and_audited(self, client, fake_redis):
+        self.db.users.get.return_value = {"user_id": PRINCIPAL, "kind": "team", "active": True}
+        response = self._callback(client, fake_redis, PRINCIPAL)
+
+        assert response.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=not_authorized"
+        assert not any(key.startswith("oidc:handoff:") for key in fake_redis.store)
+        self.db.users.upsert.assert_not_called()
+        self.db.users.set_email.assert_not_called()
+        call = self.db.events.insert.call_args
+        assert call.args == (PRINCIPAL, "oidc_login_denied")
+        assert call.kwargs["metadata"] == {"reason": "account_not_a_person"}
+
+    def test_a_principal_claim_is_denied_during_a_db_outage(self, client, fake_redis):
+        with patch("docsgpt.api.oidc.routes.db_session", side_effect=RuntimeError("db down")):
+            response = self._callback(client, fake_redis, PRINCIPAL)
+        assert response.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=not_authorized"
+
+    def test_a_claim_mapping_to_a_non_person_row_is_denied(self, client, fake_redis):
+        self.db.users.get.return_value = {"user_id": "__system__", "kind": "system", "active": True}
+        response = self._callback(client, fake_redis, "__system__")
+
+        assert response.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=not_authorized"
+        self.db.users.set_email.assert_not_called()
+        call = self.db.events.insert.call_args
+        assert call.args == ("__system__", "oidc_login_denied")
+        assert call.kwargs["metadata"] == {"reason": "account_not_a_person"}
+
+    def _refresh(self, client, session_sub, id_sub):
+        token = make_session_token(sub=session_sub)
+        id_claims = id_token_claims(sub=id_sub)
+        del id_claims["nonce"]
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests, patch(
+            "docsgpt.api.oidc.routes.denylist"
+        ) as deny:
+            deny.is_denied.return_value = False
+            mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
+            mock_requests.post.return_value = Mock(
+                status_code=200,
+                json=Mock(
+                    return_value={
+                        "access_token": "at-2",
+                        "refresh_token": "rt-new",
+                        "id_token": sign_id_token(id_claims),
+                    }
+                ),
+            )
+            return client.post("/api/auth/oidc/refresh", headers={"Authorization": f"Bearer {token}"})
+
+    def test_refresh_remapped_to_a_principal_is_refused(self, client, fake_redis):
+        fake_redis.store["oidc:refresh:jti-1"] = b"rt-old"
+        response = self._refresh(client, "oidc-user-1", PRINCIPAL)
+
+        assert response.status_code == 401
+        assert response.get_json() == {"error": "not_authorized"}
+        events = [(call.args, call.kwargs.get("metadata")) for call in self.db.events.insert.call_args_list]
+        assert ((PRINCIPAL, "oidc_login_denied"), {"reason": "account_not_a_person", "via": "refresh"}) in events
+        assert not any(args[1] == "oidc_refresh" for args, _ in events)
+
+    def test_refresh_of_a_principal_session_is_refused(self, client, fake_redis):
+        fake_redis.store["oidc:refresh:jti-1"] = b"rt-old"
+        response = self._refresh(client, PRINCIPAL, PRINCIPAL)
+
+        assert response.status_code == 401
+        # The refresh token is not spent on a session that should never have existed.
+        assert fake_redis.store["oidc:refresh:jti-1"] == b"rt-old"

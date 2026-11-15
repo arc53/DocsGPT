@@ -7,7 +7,7 @@ import jwt
 from flask import Flask, Response, jsonify, redirect, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from docsgpt.auth import handle_auth
+from docsgpt.auth import handle_auth, principal_refusal
 
 from docsgpt.core import log_context
 from docsgpt.core.paths import env_file
@@ -405,6 +405,10 @@ def authenticate_request():
         request.decoded_token = None
         return None
     decoded_token = handle_auth(request)
+    # Checked again here, whatever the decoder: nobody acts as a team principal.
+    refusal = principal_refusal(decoded_token)
+    if refusal is not None:
+        return jsonify(refusal), 401
     if not decoded_token:
         request.decoded_token = None
     elif "error" in decoded_token:
