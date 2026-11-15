@@ -132,6 +132,16 @@ class TestMoveIn:
         assert row["image"] == copied
         assert copy.call_args.args[:2] == ("inputs/eddie/attachments/a_face.png", principal)
 
+    def test_moved_slugs_are_the_ones_the_plan_listed(self, pg_conn):
+        tid, principal = team(pg_conn)
+        agent(pg_conn, principal, "Theirs", slug="helper")
+        first = agent(pg_conn, "eddie", slug="helper")
+        second = agent(pg_conn, "eddie", "Two", slug="helper-2")
+        out = apply(pg_conn, "eddie", body(tid, [("agent", first), ("agent", second)]))
+        for rename in out["renames"]:
+            assert _row(pg_conn, "agents", rename["id"])["slug"] == rename["to"]
+        assert {r["id"] for r in out["renames"]} == {first, second}
+
     def test_filings_follow_the_move(self, pg_conn):
         tid, principal = team(pg_conn)
         other = other_team(pg_conn)
@@ -273,6 +283,60 @@ class TestRefusals:
         assert decrypt_credentials(_row(pg_conn, "user_tools", tl)["config"]["encrypted_credentials"], "eddie") == {
             "k": "v"
         }
+
+
+    def test_a_failed_move_removes_the_avatar_it_copied(self, pg_conn):
+        tid, principal = team(pg_conn)
+        tl = tool(pg_conn, "eddie", "brave", config={"encrypted_credentials": encrypt_credentials({"k": "v"}, "eddie")})
+        ag = agent(pg_conn, "eddie", tools=[tl], image="inputs/eddie/attachments/a_face.png")
+        request = body(tid, [("agent", ag)])
+        fp = plan(pg_conn, "eddie", request)["fingerprint"]
+        copied = f"inputs/{principal}/attachments/b_face.png"
+        with patch("docsgpt.workspaces.move.copy_agent_image_for_user", return_value=copied), patch(
+            "docsgpt.workspaces.move.storage"
+        ) as store, patch("docsgpt.security.encryption.reseal_for_owner",
+                          side_effect=CredentialDecryptionError("boom")):
+            with pytest.raises(MoveError):
+                apply_move(pg_conn, "eddie", parse_move_request({**request, "fingerprint": fp}))
+        store.delete_file.assert_called_once_with(copied)
+        assert _row(pg_conn, "agents", ag)["image"] == "inputs/eddie/attachments/a_face.png"
+
+    def test_a_move_keeps_the_original_avatar_and_its_copy(self, pg_conn):
+        tid, principal = team(pg_conn)
+        ag = agent(pg_conn, "eddie", image="inputs/eddie/attachments/a_face.png")
+        copied = f"inputs/{principal}/attachments/b_face.png"
+        with patch("docsgpt.workspaces.move.copy_agent_image_for_user", return_value=copied), patch(
+            "docsgpt.workspaces.move.storage"
+        ) as store:
+            apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        store.delete_file.assert_not_called()
+
+    def test_a_failed_commit_removes_the_avatar_the_move_copied(self, pg_conn):
+        from flask import Flask, request
+
+        from docsgpt.api.user.workspaces.routes import WorkspaceMoves
+
+        tid, principal = team(pg_conn)
+        ag = agent(pg_conn, "eddie", image="inputs/eddie/attachments/a_face.png")
+        fp = plan(pg_conn, "eddie", body(tid, [("agent", ag)]))["fingerprint"]
+        copied = f"inputs/{principal}/attachments/b_face.png"
+
+        class _Session:
+            def __enter__(self):
+                return pg_conn
+
+            def __exit__(self, *exc):
+                raise RuntimeError("commit failed")
+
+        with patch("docsgpt.workspaces.move.copy_agent_image_for_user", return_value=copied), patch(
+            "docsgpt.workspaces.move.storage"
+        ) as store, patch("docsgpt.api.user.workspaces.routes.db_session", lambda: _Session()), Flask(
+            __name__
+        ).test_request_context("/api/workspace_moves", method="POST", json=body(tid, [("agent", ag)], fingerprint=fp)):
+            request.decoded_token = {"sub": "eddie"}
+            resp = WorkspaceMoves().post()
+        assert resp.status_code == 500
+        store.delete_file.assert_called_once_with(copied)
 
 
 class TestFolders:

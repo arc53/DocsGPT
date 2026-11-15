@@ -273,6 +273,8 @@ class MovePlan:
         moving: Every item re-owned, dragged items first: ``(type, id) -> entry``.
         workflows: The workflows that move with their agents, by id.
         roots: Moved folders whose parent stays behind: ``id -> (new parent, new name)``.
+        slugs: The slug each moved agent that had one takes: ``agent id -> slug``.
+        copied_images: Avatar copies the apply step wrote, removed again when the move doesn't commit.
         stays: Items filed in a moved folder that stay behind (their filing there is deleted).
         members: Everyone in the team (the owner included).
         blocking: Agents left behind that refuse the move (``borrowing_agents`` entries the mover can open).
@@ -290,6 +292,8 @@ class MovePlan:
     moving: dict = field(default_factory=dict)
     workflows: dict = field(default_factory=dict)
     roots: dict = field(default_factory=dict)
+    slugs: dict = field(default_factory=dict)
+    copied_images: list = field(default_factory=list)
     stays: list = field(default_factory=list)
     members: list = field(default_factory=list)
     blocking: list = field(default_factory=list)
@@ -717,6 +721,35 @@ class _Planner:
                 renames.append({"type": "folder", "id": item_id, "from": name, "to": candidate})
         return roots, renames
 
+    def _slugs(self) -> tuple[dict[str, str], list[dict]]:
+        """The slug each moving agent takes in the new owner's agents, and the ones a clash changed.
+
+        An agent keeps its slug when the new owner has no agent with it (case
+        ignored), else takes the first free ``-n`` form; agents moving together
+        never take the same one.
+        """
+        # Lazy: the import/export module imports much of the agents API.
+        from docsgpt.api.user.agents.portability import slugify
+
+        repo = AgentsRepository(self.conn)
+        slugs: dict[str, str] = {}
+        renames: list[dict] = []
+        taken: set[str] = set()
+        for agent_id in self.ids("agent"):
+            old = self.moving[("agent", agent_id)].row.get("slug")
+            if not old:
+                continue
+            base = slugify(str(old))
+            candidate, n = base, 2
+            while candidate.lower() in taken or repo.find_by_slug(self.new_owner, candidate) is not None:
+                candidate = f"{base}-{n}"
+                n += 1
+            taken.add(candidate.lower())
+            slugs[agent_id] = candidate
+            if candidate != str(old):
+                renames.append({"type": "agent", "id": agent_id, "field": "slug", "from": str(old), "to": candidate})
+        return slugs, renames
+
     # --- who and what -------------------------------------------------------------
 
     def _access(self, members: dict[str, str], team_name: str) -> dict:
@@ -876,6 +909,8 @@ class _Planner:
         self._drag()
         self._close()
         roots, renames = self._roots(target)
+        slugs, slug_renames = self._slugs()
+        renames += slug_renames
         team = TeamsRepository(self.conn).get(self.team_id) or {}
         team_name = team.get("name") or ""
         members = _team_members(self.conn, self.team_id)
@@ -922,6 +957,7 @@ class _Planner:
             moving=self.moving,
             workflows=self.workflows,
             roots=roots,
+            slugs=slugs,
             stays=self.stays,
             members=sorted(members),
             blocking=blocking,
@@ -1001,8 +1037,29 @@ def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
                             agents=plan.blocking, others=plan.blocking_hidden)
         if not plan.moving:
             raise MoveError(400, CODE_NOTHING_TO_MOVE, "None of these items can move")
-        _Executor(conn, plan).run()
+        try:
+            _Executor(conn, plan).run()
+        except BaseException:
+            # The savepoint rolls back, so no row points at the avatar copies any more.
+            discard_copied_images(plan)
+            raise
     return plan
+
+
+def discard_copied_images(plan: MovePlan) -> None:
+    """Delete the avatar copies a move wrote, once the move is known not to commit.
+
+    Best effort: a copy left behind is an orphan file, never a broken agent.
+
+    Args:
+        plan: The plan whose apply step copied them.
+    """
+    for path in plan.copied_images:
+        try:
+            storage.delete_file(path)
+        except Exception:
+            logger.warning("Could not remove avatar copy %s of a failed move", path, exc_info=True)
+    plan.copied_images.clear()
 
 
 class _Executor:
@@ -1048,9 +1105,9 @@ class _Executor:
         self._reown("sources", plan.ids("source"))
         self._reown("prompts", plan.ids("prompt"))
         self._reown("workflows", list(plan.workflows), ", resource_sponsors = '{}'::jsonb, updated_at = now()")
-        old_slugs = self._agents()
+        self._agents()
         self._tools()
-        self._slugs(old_slugs)
+        self._slugs()
         self._strip_agents()
         self._strip_nodes()
         self._refile(in_moving_folder)
@@ -1104,28 +1161,27 @@ class _Executor:
             )
         self._reown("folders", [f for f in folders if f not in roots], ", updated_at = now()")
 
-    def _agents(self) -> dict[str, str]:
-        """Re-own the agents; returns ``agent_id -> slug`` of those that had one (re-assigned after)."""
-        old_slugs: dict[str, str] = {}
+    def _agents(self) -> None:
+        """Re-own the agents with their slugs cleared (the planned ones are set once all have moved)."""
         for agent_id in self.plan.ids("agent"):
             row = self.plan.moving[("agent", agent_id)].row
             image = row.get("image")
             if image:
                 # Avatars live under their owner's upload directory.
-                image = copy_agent_image_for_user(image, self.new, storage)
+                copied = copy_agent_image_for_user(image, self.new, storage)
+                if copied and copied != image:
+                    self.plan.copied_images.append(copied)
+                image = copied
             payer = None
             if self.plan.direction == "in" and has_outside_access(row):
                 ra = build_team("agent", agent_id, self.new, self.plan.role)
                 payer = access_payer_fields(ra, row, self.plan.mover, turning_on=True).get("access_payer_id")
-            if row.get("slug"):
-                old_slugs[agent_id] = str(row["slug"])
             self._reown(
                 "agents", [agent_id],
                 ", slug = NULL, resource_sponsors = '{}'::jsonb, image = :image, access_payer_id = :payer, "
                 "updated_at = now()",
                 {"image": image, "payer": payer},
             )
-        return old_slugs
 
     def _tools(self) -> None:
         prefs = UserToolPreferencesRepository(self.conn)
@@ -1183,15 +1239,13 @@ class _Executor:
                 {"config": json.dumps(config), "cid": str(connection_id) if connection_id else None, "status": status},
             )
 
-    def _slugs(self, old_slugs: dict[str, str]) -> None:
-        if not old_slugs:
-            return
-        # Lazy: the import/export module imports much of the agents API.
-        from docsgpt.api.user.agents.portability import ensure_agent_slug
-
-        for agent_id, slug in old_slugs.items():
-            # The old slug when it is free in the new owner's agents, else the first free "-n" form.
-            ensure_agent_slug(self.conn, {"id": agent_id, "slug": None, "name": slug}, self.new)
+    def _slugs(self) -> None:
+        # The slugs the plan listed (its fingerprint covers them), set once every moved agent's old one is cleared.
+        for agent_id, slug in self.plan.slugs.items():
+            self.conn.execute(
+                text("UPDATE agents SET slug = :slug WHERE id = CAST(:i AS uuid) AND user_id = :new"),
+                {"slug": slug, "i": agent_id, "new": self.new},
+            )
 
     def _kept(self, kind: str, item_id: Any) -> bool:
         """Whether an agent may keep a reference: the new owner's, or nobody's (a preset, a builtin tool)."""

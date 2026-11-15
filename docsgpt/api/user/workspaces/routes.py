@@ -132,6 +132,7 @@ class WorkspaceMoves(Resource):
         user = _user()
         if not user:
             return _unauthorized()
+        plan = None
         try:
             move = move_service.parse_move_request(request.get_json(silent=True))
             with db_session() as conn:
@@ -139,6 +140,9 @@ class WorkspaceMoves(Resource):
         except move_service.MoveError as err:
             return err.response()
         except Exception as err:
+            if plan is not None:
+                # The move was written but its commit failed: nothing points at its avatar copies.
+                move_service.discard_copied_images(plan)
             current_app.logger.error("Workspace move failed: %s", err, exc_info=True)
             return make_response(
                 jsonify({"success": False, "error": "move_failed", "message": "The move failed; nothing changed"}),

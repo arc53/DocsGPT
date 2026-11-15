@@ -156,6 +156,32 @@ class TestFolders:
         out = plan(pg_conn, "eddie", body(tid, [("folder", top)]))
         assert out["renames"] == [{"type": "folder", "id": top, "from": "project", "to": "project (2)"}]
 
+    def test_a_slug_clash_in_the_team_is_listed(self, pg_conn):
+        tid, principal = team(pg_conn)
+        agent(pg_conn, principal, "Theirs", slug="helper")
+        clashing = agent(pg_conn, "eddie", slug="helper")
+        free = agent(pg_conn, "eddie", "Other", slug="other")
+        out = plan(pg_conn, "eddie", body(tid, [("agent", clashing), ("agent", free)]))
+        assert out["renames"] == [{"type": "agent", "id": clashing, "field": "slug", "from": "helper", "to": "helper-2"}]
+
+    def test_two_moving_agents_never_take_the_same_slug(self, pg_conn):
+        tid, principal = team(pg_conn)
+        agent(pg_conn, principal, "Theirs", slug="helper")
+        first = agent(pg_conn, "eddie", slug="helper")
+        second = agent(pg_conn, "eddie", "Two", slug="helper-2")
+        out = plan(pg_conn, "eddie", body(tid, [("agent", first), ("agent", second)]))
+        to = {r["id"]: r["to"] for r in out["renames"]}
+        assert to[first] == "helper-2"
+        assert to[second] not in ("helper", "helper-2")
+
+    def test_the_fingerprint_covers_a_slug_rename(self, pg_conn):
+        tid, principal = team(pg_conn)
+        ag = agent(pg_conn, "eddie", slug="helper")
+        before = plan(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        assert before["renames"] == []
+        agent(pg_conn, principal, "Theirs", slug="helper")
+        assert plan(pg_conn, "eddie", body(tid, [("agent", ag)]))["fingerprint"] != before["fingerprint"]
+
     def test_into_a_team_folder(self, pg_conn):
         tid, principal = team(pg_conn)
         target = folder(pg_conn, principal, "Shared")
