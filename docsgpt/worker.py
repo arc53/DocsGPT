@@ -4621,9 +4621,9 @@ def _file_new_source(user: str, source_id: str, folder_id: Optional[str]) -> Non
     deleted meanwhile) is logged, not raised.
 
     Args:
-        user: The uploader, the source's owner.
+        user: The source's owner: the uploader in Personal, the team's principal for a team upload.
         source_id: The new source.
-        folder_id: The uploader's source folder, or None.
+        folder_id: A folder of the owner's tree, or None.
     """
     if not folder_id:
         return
