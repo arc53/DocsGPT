@@ -4741,6 +4741,7 @@
           "viewer": "Betrachter"
         },
         "addPlaceholder": "Personen oder Teams hinzufügen…",
+        "addedByYou": "Von dir hinzugefügt",
         "allSummary": "{{name}} · Teams: {{teams}} · Personen: {{people}}",
         "andMore_one": "und {{formatted}} weitere",
         "andMore_other": "und {{formatted}} weitere",
@@ -4755,6 +4756,9 @@
         "loadError": "Aktuelle Freigaben konnten nicht geladen werden.",
         "noMatches": "Keine Personen oder Teams gefunden.",
         "noTeams": "Du bist noch kein Mitglied eines Teams. Erstelle eins unter Einstellungen → Teams.",
+        "notOwnedByTeam": "Geteilt, nicht im Besitz des Teams",
+        "ownOfferBody": "Es bliebe beim Team, wenn du gehst.",
+        "ownOfferTitle": "Soll {{team}} das besitzen?",
         "owner": "Eigentümer",
         "peopleGroup": "Personen",
         "peopleWithAccess": "Personen mit Zugriff",
@@ -5114,7 +5118,127 @@
       "moveToTeam": "In ein Team verschieben…"
     },
     "move": {
-      "planChanged": "Etwas hat sich geändert; bitte erneut prüfen"
+      "access": {
+        "gainsDetail": "Bearbeiter und Admins in {{team}} können es ändern. Betrachter können es nutzen.",
+        "gainsNone": "Niemand sonst erhält Zugriff",
+        "gains_one": "{{count}} Person erhält Zugriff",
+        "gains_other": "{{count}} Personen erhalten Zugriff",
+        "loseTeamNone": "Sonst verliert niemand den Zugriff",
+        "loseTeam_one": "{{count}} Person in {{team}} verliert den Zugriff",
+        "loseTeam_other": "{{count}} Personen in {{team}} verlieren den Zugriff",
+        "losesShared_one": "{{count}} Person, mit der du es außerhalb von {{team}} geteilt hast, verliert den Zugriff: {{names}}.",
+        "losesShared_other": "{{count}} Personen, mit denen du es außerhalb von {{team}} geteilt hast, verlieren den Zugriff: {{names}}.",
+        "onlyYou": "Nur du hast es, bis du es teilst."
+      },
+      "borrow": {
+        "in_one": "{{names}} ist von außerhalb des Teams erreichbar und nutzt, was dieser Umzug ins Team bringt, und das darf Zugriff von außen nicht bedienen. Verschiebe ihn mit, schalte seinen Zugriff von außen aus oder entferne diese Elemente zuerst daraus.",
+        "in_other": "{{names}} sind von außerhalb des Teams erreichbar und nutzen, was dieser Umzug ins Team bringt, und das darf Zugriff von außen nicht bedienen. Verschiebe sie mit, schalte ihren Zugriff von außen aus oder entferne diese Elemente zuerst daraus.",
+        "keeps_one": "Dein Agent {{names}} nutzt, was verschoben wird. Er kann es weiter aus dem Team nutzen, aber solange nicht veröffentlicht werden.",
+        "keeps_other": "Deine Agenten {{names}} nutzen, was verschoben wird. Sie können es weiter aus dem Team nutzen, aber solange nicht veröffentlicht werden.",
+        "out_one": "{{names}} bleibt in {{team}} und nutzt, was dieser Umzug herausnimmt. Verschiebe ihn mit oder entferne diese Elemente zuerst daraus.",
+        "out_other": "{{names}} bleiben in {{team}} und nutzen, was dieser Umzug herausnimmt. Verschiebe sie mit oder entferne diese Elemente zuerst daraus."
+      },
+      "cannotTitle": "Kann nicht verschoben werden",
+      "chats": {
+        "in_one": "{{count}} Chat damit wandert zu {{team}}.",
+        "in_other": "{{count}} Chats damit wandern zu {{team}}.",
+        "out_one": "{{count}} deiner Chats damit wandert nach Persönlich.",
+        "out_other": "{{count}} deiner Chats damit wandern nach Persönlich."
+      },
+      "comesAlong": "Kommt mit",
+      "comesWith": "Kommt mit \"{{name}}\" mit",
+      "done": {
+        "personal": "\"{{name}}\" liegt jetzt in deinem persönlichen Bereich.",
+        "team": "\"{{name}}\" gehört jetzt {{team}}."
+      },
+      "doneButton": "Fertig",
+      "effects": {
+        "removed_from_holder": "Es wird aus dem entfernt, was es nutzt.",
+        "stays": "Es bleibt, wo es ist."
+      },
+      "errors": {
+        "already_in_workspace": "Es liegt bereits dort.",
+        "credentials_unavailable": "Ein gespeicherter Schlüssel kann gerade nicht verschoben werden. Versuche es später erneut.",
+        "credentials_unreadable_one": "Das gespeicherte Geheimnis von {{names}} ist nicht lesbar, daher kann es nicht verschoben werden. Gib es zuerst neu ein.",
+        "credentials_unreadable_other": "Die gespeicherten Geheimnisse von {{names}} sind nicht lesbar, daher können sie nicht verschoben werden. Gib sie zuerst neu ein.",
+        "fingerprint_required": "Prüfe den Plan erneut und verschiebe dann.",
+        "folder_not_found": "Dieser Ordner ist nicht mehr da.",
+        "folder_too_deep": "Dieser Ordner liegt dafür zu tief: Ordner lassen sich höchstens 3 Ebenen tief verschachteln.",
+        "invalid_request": "Dieser Umzug ist nicht möglich.",
+        "move_failed": "Das Verschieben ist fehlgeschlagen; nichts wurde geändert.",
+        "move_needs_admin": "Nur ein Team-Admin kann einen Agenten hereinbringen, der von außerhalb des Teams erreichbar ist.",
+        "move_plan_changed": "Etwas hat sich geändert; bitte erneut prüfen",
+        "move_would_borrow": "Ein Agent, der von außerhalb des Teams erreichbar ist, nutzt, was dieser Umzug mitnimmt.",
+        "not_a_person": "Nur eine Person kann Elemente verschieben.",
+        "not_found": "Es ist nicht mehr da.",
+        "nothing_to_move": "Keines dieser Elemente kann verschoben werden.",
+        "workspace_not_found": "Dieses Team ist nicht mehr verfügbar.",
+        "workspace_role_required": "Deine Rolle dort erlaubt diesen Umzug nicht."
+      },
+      "folderLabel": "Ordner",
+      "foldersFailed": "Die Ordner dort konnten nicht geladen werden, daher landet es auf oberster Ebene.",
+      "kinds": {
+        "agent": "Agent",
+        "folder": "Ordner",
+        "model": "Modell",
+        "prompt": "Prompt",
+        "source": "Quelle",
+        "tool": "Werkzeug"
+      },
+      "listSeparator": ", ",
+      "needsAdmin_one": "{{names}} ist von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und nur ein Admin von {{team}} darf das hereinbringen. Schalte den Zugriff von außen zuerst aus oder frage einen Admin.",
+      "needsAdmin_other": "{{names}} sind von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und nur ein Admin von {{team}} darf sie hereinbringen. Schalte ihren Zugriff von außen zuerst aus oder frage einen Admin.",
+      "noFolder": "Kein Ordner",
+      "openIn": "{{name}} öffnen",
+      "othersYouCantOpen_one": "{{count}} Agent, den du nicht öffnen kannst",
+      "othersYouCantOpen_other": "{{count}} Agenten, die du nicht öffnen kannst",
+      "outside": {
+        "apiKey": "API-Schlüssel und Widget",
+        "publicLink": "öffentlicher Link",
+        "webhook": "Webhook"
+      },
+      "owner": {
+        "team": "{{team}} wird Eigentümer",
+        "teamDetail": "Es bleibt beim Team, wenn du gehst. Du bleibst als die Person genannt, die es hinzugefügt hat.",
+        "you": "Du wirst Eigentümer",
+        "youDetail": "Es verlässt {{team}} und kommt in deinen persönlichen Bereich."
+      },
+      "payerYou": "dir",
+      "pays": {
+        "chats": "Jede Person zahlt für ihre eigenen Chats.",
+        "outside": "Der Zugriff von außen ({{list}}) läuft weiter, bezahlt von {{name}}.",
+        "schedules_one": "{{count}} Zeitplan läuft weiter, bezahlt von {{names}}.",
+        "schedules_other": "{{count}} Zeitpläne laufen weiter, bezahlt von {{names}}.",
+        "title": "An der Bezahlung ändert sich nichts"
+      },
+      "planChanged": "Etwas hat sich geändert; bitte erneut prüfen",
+      "quoted": "\"{{name}}\"",
+      "reasons": {
+        "connection_account": "Mit einem Konto angemeldet, das persönlich bleibt.",
+        "connector_synced": "Aus einem verbundenen Dienst synchronisiert, der persönlich bleibt.",
+        "credentials_unreadable": "Sein gespeichertes Geheimnis ist nicht mehr lesbar.",
+        "custom_model": "Ein persönliches eigenes Modell.",
+        "in_knowledge_folder": "Liegt in einem Ordner, den der Agent liest; nur dessen Quellen kommen mit.",
+        "not_yours": "Gehört jemand anderem, daher kannst du es nicht verschieben.",
+        "remote_device": "Läuft auf einem gekoppelten Gerät."
+      },
+      "renames": {
+        "folder": "Ordner \"{{from}}\" wird zu \"{{to}}\"",
+        "other": "\"{{from}}\" wird zu \"{{to}}\"",
+        "slug": "Die Adresse des Agenten \"{{from}}\" wird zu \"{{to}}\"",
+        "title": "Umbenannt, um gleiche Namen zu vermeiden"
+      },
+      "someone": "jemandem",
+      "submit": "Nach {{name}} verschieben",
+      "teamLabel": "Team",
+      "titleToPersonal": "\"{{name}}\" nach Persönlich verschieben",
+      "titleToTeam": "\"{{name}}\" in ein Team verschieben",
+      "unnamed": "Ein Element, das du nicht öffnen kannst",
+      "withReasons": {
+        "in_folder": "Im Ordner",
+        "same_workflow": "Im selben Workflow",
+        "used_by_agent": "Vom Agenten genutzt"
+      }
     },
     "notices": {
       "lost": "Du bist nicht mehr in {{name}}; zu Persönlich gewechselt",
@@ -5134,7 +5258,25 @@
       "thisTeam": "Dieses Team"
     },
     "share": {
-      "everyoneInTeam": "Alle in {{team}}"
+      "access": "Zugriff",
+      "adminsOnly": "Nur Admins ändern das, auf der Seite des Agenten.",
+      "apiKey": "API-Schlüssel und Widget",
+      "belongsTo": "Es gehört {{team}}. Der Zugriff folgt der Team-Mitgliedschaft.",
+      "everyoneInTeam": "Alle in {{team}}",
+      "fromTeam": "Über das Team",
+      "manageMembers": "Mitglieder verwalten",
+      "members_one": "{{count}} Person, nach ihrer Team-Rolle",
+      "members_other": "{{count}} Personen, nach ihrer Team-Rolle",
+      "off": "Aus",
+      "on": "An",
+      "onPaidBy": "An · bezahlt von {{name}}",
+      "outside": "Außerhalb des Teams",
+      "payerYou": "dir",
+      "publicLink": "Öffentlicher Link",
+      "teamTitle": "Wer \"{{name}}\" nutzen kann",
+      "teamTitleGeneric": "Wer dieses Element ({{type}}) nutzen kann",
+      "webhook": "Webhook",
+      "yourRole": "{{role}} in {{team}}"
     },
     "switcher": {
       "onlyYou": "Nur du",

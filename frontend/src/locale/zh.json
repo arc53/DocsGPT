@@ -4705,6 +4705,7 @@
           "viewer": "查看者"
         },
         "addPlaceholder": "添加人员或团队…",
+        "addedByYou": "由您添加",
         "allSummary": "{{name}} · 团队：{{teams}} · 人员：{{people}}",
         "andMore_one": "还有 {{formatted}} 个",
         "andMore_other": "还有 {{formatted}} 个",
@@ -4719,6 +4720,9 @@
         "loadError": "无法加载当前共享情况。",
         "noMatches": "未找到人员或团队。",
         "noTeams": "您还不是任何团队的成员。请在 设置 → 团队 中创建一个。",
+        "notOwnedByTeam": "已共享，不归团队所有",
+        "ownOfferBody": "即使您离开，它也会留在团队中。",
+        "ownOfferTitle": "要让 {{team}} 拥有它吗？",
         "owner": "所有者",
         "peopleGroup": "人员",
         "peopleWithAccess": "有权访问的人员",
@@ -5078,7 +5082,127 @@
       "moveToTeam": "移至团队…"
     },
     "move": {
-      "planChanged": "内容有变化，请再检查一次"
+      "access": {
+        "gainsDetail": "{{team}} 中的编辑者和管理员可以修改它，查看者可以使用它。",
+        "gainsNone": "没有其他人获得访问权限",
+        "gains_one": "{{count}} 人将获得访问权限",
+        "gains_other": "{{count}} 人将获得访问权限",
+        "loseTeamNone": "没有其他人失去访问权限",
+        "loseTeam_one": "{{team}} 中的 {{count}} 人将失去访问权限",
+        "loseTeam_other": "{{team}} 中的 {{count}} 人将失去访问权限",
+        "losesShared_one": "您在 {{team}} 之外共享过的 {{count}} 人将失去访问权限：{{names}}。",
+        "losesShared_other": "您在 {{team}} 之外共享过的 {{count}} 人将失去访问权限：{{names}}。",
+        "onlyYou": "在您共享之前，只有您可以使用。"
+      },
+      "borrow": {
+        "in_one": "{{names}} 可从团队外部访问，并且使用了此次移动带入团队的内容，而外部访问不得提供这些内容。请将其一并移动、关闭其外部访问，或先从中移除这些项目。",
+        "in_other": "{{names}} 可从团队外部访问，并且使用了此次移动带入团队的内容，而外部访问不得提供这些内容。请将其一并移动、关闭其外部访问，或先从中移除这些项目。",
+        "keeps_one": "您的智能体 {{names}} 使用了要移动的内容。它可以继续从团队使用这些内容，但在此期间无法发布。",
+        "keeps_other": "您的智能体 {{names}} 使用了要移动的内容。它们可以继续从团队使用这些内容，但在此期间无法发布。",
+        "out_one": "{{names}} 留在 {{team}} 中，并使用了此次移动带走的内容。请将其一并移动，或先从中移除这些项目。",
+        "out_other": "{{names}} 留在 {{team}} 中，并使用了此次移动带走的内容。请将其一并移动，或先从中移除这些项目。"
+      },
+      "cannotTitle": "无法移动",
+      "chats": {
+        "in_one": "使用它的 {{count}} 个聊天将移至 {{team}}。",
+        "in_other": "使用它的 {{count}} 个聊天将移至 {{team}}。",
+        "out_one": "您使用它的 {{count}} 个聊天将移至个人。",
+        "out_other": "您使用它的 {{count}} 个聊天将移至个人。"
+      },
+      "comesAlong": "一起移动",
+      "comesWith": "随“{{name}}”一起移动",
+      "done": {
+        "personal": "“{{name}}”现在位于您的个人空间。",
+        "team": "“{{name}}”现在归 {{team}} 所有。"
+      },
+      "doneButton": "完成",
+      "effects": {
+        "removed_from_holder": "它将从使用它的地方移除。",
+        "stays": "它会留在原处。"
+      },
+      "errors": {
+        "already_in_workspace": "它已经在那里了。",
+        "credentials_unavailable": "保存的密钥暂时无法移动。请稍后再试。",
+        "credentials_unreadable_one": "无法读取 {{names}} 保存的密钥，因此无法移动。请先重新输入。",
+        "credentials_unreadable_other": "无法读取 {{names}} 保存的密钥，因此无法移动。请先重新输入。",
+        "fingerprint_required": "请再次检查计划，然后再移动。",
+        "folder_not_found": "该文件夹已不存在。",
+        "folder_too_deep": "该文件夹层级太深：文件夹最多嵌套 3 层。",
+        "invalid_request": "无法进行此次移动。",
+        "move_failed": "移动失败，未做任何更改。",
+        "move_needs_admin": "只有团队管理员才能移入可从团队外部访问的智能体。",
+        "move_plan_changed": "内容有变化，请再检查一次",
+        "move_would_borrow": "一个可从团队外部访问的智能体使用了此次移动带走的内容。",
+        "not_a_person": "只有人员才能移动项目。",
+        "not_found": "它已不存在。",
+        "nothing_to_move": "这些项目都无法移动。",
+        "workspace_not_found": "该团队已不可用。",
+        "workspace_role_required": "您在那里的角色不允许此次移动。"
+      },
+      "folderLabel": "文件夹",
+      "foldersFailed": "无法加载那里的文件夹，因此它将放在顶层。",
+      "kinds": {
+        "agent": "智能体",
+        "folder": "文件夹",
+        "model": "模型",
+        "prompt": "提示词",
+        "source": "来源",
+        "tool": "工具"
+      },
+      "listSeparator": "、",
+      "needsAdmin_one": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），只有 {{team}} 的管理员才能将其移入。请先关闭其外部访问，或请管理员处理。",
+      "needsAdmin_other": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），只有 {{team}} 的管理员才能将其移入。请先关闭其外部访问，或请管理员处理。",
+      "noFolder": "无文件夹",
+      "openIn": "打开 {{name}}",
+      "othersYouCantOpen_one": "{{count}} 个您无法打开的智能体",
+      "othersYouCantOpen_other": "{{count}} 个您无法打开的智能体",
+      "outside": {
+        "apiKey": "API 密钥和小组件",
+        "publicLink": "公开链接",
+        "webhook": "Webhook"
+      },
+      "owner": {
+        "team": "{{team}} 将拥有它",
+        "teamDetail": "即使您离开，它也会留在团队中。您仍会显示为添加它的人。",
+        "you": "您将拥有它",
+        "youDetail": "它将离开 {{team}}，进入您的个人空间。"
+      },
+      "payerYou": "您",
+      "pays": {
+        "chats": "每个人为自己的聊天付费。",
+        "outside": "外部访问（{{list}}）继续运行，由 {{name}} 付费。",
+        "schedules_one": "{{count}} 个计划任务继续运行，由 {{names}} 付费。",
+        "schedules_other": "{{count}} 个计划任务继续运行，由 {{names}} 付费。",
+        "title": "付费方不变"
+      },
+      "planChanged": "内容有变化，请再检查一次",
+      "quoted": "“{{name}}”",
+      "reasons": {
+        "connection_account": "使用保持个人所有的账号登录。",
+        "connector_synced": "从保持个人所有的已连接服务同步。",
+        "credentials_unreadable": "其保存的密钥已无法读取。",
+        "custom_model": "个人自定义模型。",
+        "in_knowledge_folder": "位于智能体读取的文件夹中；只有其中的来源会一起移动。",
+        "not_yours": "属于其他人，您无法移动。",
+        "remote_device": "在已配对的设备上运行。"
+      },
+      "renames": {
+        "folder": "文件夹“{{from}}”将变为“{{to}}”",
+        "other": "“{{from}}”将变为“{{to}}”",
+        "slug": "智能体地址“{{from}}”将变为“{{to}}”",
+        "title": "为避免重名而重命名"
+      },
+      "someone": "某人",
+      "submit": "移至 {{name}}",
+      "teamLabel": "团队",
+      "titleToPersonal": "将“{{name}}”移至个人",
+      "titleToTeam": "将“{{name}}”移至团队",
+      "unnamed": "您无法打开的项目",
+      "withReasons": {
+        "in_folder": "在文件夹中",
+        "same_workflow": "在同一工作流中",
+        "used_by_agent": "由智能体使用"
+      }
     },
     "notices": {
       "lost": "您已不在 {{name}} 中，已切换到个人",
@@ -5098,7 +5222,25 @@
       "thisTeam": "此团队"
     },
     "share": {
-      "everyoneInTeam": "{{team}} 中的所有人"
+      "access": "访问权限",
+      "adminsOnly": "只有管理员可以在智能体页面上更改这些设置。",
+      "apiKey": "API 密钥和小组件",
+      "belongsTo": "它属于 {{team}}。访问权限取决于团队成员身份。",
+      "everyoneInTeam": "{{team}} 中的所有人",
+      "fromTeam": "来自团队",
+      "manageMembers": "管理成员",
+      "members_one": "{{count}} 人，按其团队角色",
+      "members_other": "{{count}} 人，按其团队角色",
+      "off": "关闭",
+      "on": "开启",
+      "onPaidBy": "开启 · 由 {{name}} 付费",
+      "outside": "团队外部",
+      "payerYou": "您",
+      "publicLink": "公开链接",
+      "teamTitle": "谁可以使用“{{name}}”",
+      "teamTitleGeneric": "谁可以使用此{{type}}",
+      "webhook": "Webhook",
+      "yourRole": "{{team}} 的{{role}}"
     },
     "switcher": {
       "onlyYou": "仅您自己",

@@ -14,7 +14,12 @@ import teamsService, {
 import connectorsService from '../api/services/connectorsService';
 import AgentUsesSection from '../agents/components/AgentUsesSection';
 import SearchInput from '../components/SearchInput';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from '../components/ui/alert';
 import { Checkbox } from '../components/ui/checkbox';
 import { Label } from '../components/ui/label';
 import { Avatar } from '../components/ui/avatar';
@@ -24,6 +29,7 @@ import { EmptyState } from '../components/ui/empty-state';
 import { Combobox, type ComboboxOption } from '../components/ui/combobox';
 import { IconButton } from '../components/ui/icon-button';
 import { ListRow, ListRows } from '../components/ui/list-row';
+import { LoadingState } from '../components/ui/loading-state';
 import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { SectionHeader } from '../components/ui/section-header';
@@ -55,6 +61,13 @@ import {
   shownSettings,
 } from './accessSettings';
 import { loadTeams, selectTeams } from './teamsSlice';
+import MoveToWorkspaceModal from '../workspace/move/MoveToWorkspaceModal';
+import { selectMoveWorkspaces } from '../workspace/move/moveTargets';
+import { roleAtLeast } from '../workspace/workspaceSlice';
+import TeamItemAccess, {
+  isTeamItemShares,
+  type TeamItemShares,
+} from './TeamItemAccess';
 
 /** A connection-backed tool: whose account shares of it run with. */
 export type ShareCredentials = {
@@ -85,7 +98,15 @@ type Props = {
    * "What this agent uses". The caller closes this dialog for it.
    */
   onOpenAccessDetails?: () => void;
+  /**
+   * After the item moved to a team from the dialog's offer, so the page can
+   * reload its list (the dialog closes itself when the Move dialog does).
+   */
+  onMoved?: () => void;
 };
+
+// A grant as `resource_shares` lists it: the row carries who added it.
+type ShareRow = ResourceShare & { granted_by?: string | null };
 
 // A member by email, else their truncated sub (the shared person label).
 const memberLabel = (member: TeamMember): string =>
@@ -145,16 +166,26 @@ export default function ShareToTeamModal({
   credentials,
   onClose,
   onOpenAccessDetails,
+  onMoved,
 }: Props) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const teams = useSelector(selectTeams);
+  const workspaces = useSelector(selectMoveWorkspaces);
   // The caller's own OIDC sub — you're the owner, so you're excluded from the
   // "share with a specific person" suggestions (can't share with yourself).
   const currentUserId = useMemo(() => readerIdFromToken(token), [token]);
 
   const [shares, setShares] = useState<ResourceShare[]>([]);
+  // An item a team owns has no grants: the answer says where access comes
+  // from instead, and the dialog shows that.
+  const [teamItem, setTeamItem] = useState<TeamItemShares | null>(null);
+  // The first answer (or failure) is in: until then neither body shows.
+  const [sharesLoaded, setSharesLoaded] = useState(false);
+  // The team the "Should <team> own this?" offer opened the Move dialog for.
+  const [moveTeamId, setMoveTeamId] = useState<string | null>(null);
+  const [moved, setMoved] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   // The remove confirm's Alert text after a failed remove.
@@ -251,6 +282,12 @@ export default function ShareToTeamModal({
     return teamsService
       .listResourceShares(resourceType, resourceId, token)
       .then((r) => {
+        if (isTeamItemShares(r)) {
+          setTeamItem(r);
+          setShares([]);
+          return;
+        }
+        setTeamItem(null);
         const server = (r?.shares ?? []) as ResourceShare[];
         // Server state is authoritative, but a reconcile triggered by one
         // action's settle must not stomp a *different* row whose optimistic
@@ -275,7 +312,8 @@ export default function ShareToTeamModal({
         // previously known shares and surface an error rather than silently
         // rendering "no access" on a fetch failure.
         setLoadError(true);
-      });
+      })
+      .finally(() => setSharesLoaded(true));
   };
 
   useEffect(() => {
@@ -671,12 +709,16 @@ export default function ShareToTeamModal({
     const primary = isTeam
       ? name
       : memberDisplay(share.team_id, share.target_user_id!);
+    // Where the access comes from: a team the item is shared with (it stays
+    // the owner's), or a person added by the caller or through a team.
     const secondary = isTeam
-      ? t('settings.teams.share.teamLabel')
-      : t('settings.teams.share.viaTeam', {
-          interpolation: { escapeValue: false },
-          team: name,
-        });
+      ? t('settings.teams.share.notOwnedByTeam')
+      : currentUserId && (share as ShareRow).granted_by === currentUserId
+        ? t('settings.teams.share.addedByYou')
+        : t('settings.teams.share.viaTeam', {
+            interpolation: { escapeValue: false },
+            team: name,
+          });
     return (
       <ListRow
         key={shareKey(share)}
@@ -716,6 +758,19 @@ export default function ShareToTeamModal({
     : shares;
 
   const teamGrantCount = shares.filter((s) => !s.target_user_id).length;
+
+  // "Should <team> own this?": once per team the item is shared with where
+  // the caller may add items, when the caller may move it at all.
+  const ownOffers = can(settingsInfo, 'move_to_team')
+    ? Array.from(new Set(shares.map((share) => share.team_id))).flatMap(
+        (teamId) => {
+          const row = workspaces?.find((w) => w.id === teamId);
+          if (row?.kind !== 'team' || !roleAtLeast(row.role, 'editor'))
+            return [];
+          return [{ teamId, name: row.name || teamName(teamId) }];
+        },
+      )
+    : [];
   const personGrantCount = shares.length - teamGrantCount;
   const editorGrantCount = shares.filter(
     (s) => s.access_level === 'editor',
@@ -1127,6 +1182,25 @@ export default function ShareToTeamModal({
               </p>
             )}
           </section>
+
+          {ownOffers.map((offer) => (
+            <Alert key={offer.teamId} variant="info" role="note">
+              <AlertTitle>
+                {t('settings.teams.share.ownOfferTitle', {
+                  team: offer.name,
+                  interpolation: { escapeValue: false },
+                })}
+              </AlertTitle>
+              <AlertDescription>
+                <p>
+                  {t('settings.teams.share.ownOfferBody')}{' '}
+                  <AlertAction onClick={() => setMoveTeamId(offer.teamId)}>
+                    {t('workspace.menu.moveToTeam')}
+                  </AlertAction>
+                </p>
+              </AlertDescription>
+            </Alert>
+          ))}
         </>
       )}
 
@@ -1144,6 +1218,60 @@ export default function ShareToTeamModal({
       {accessSettings}
     </div>
   );
+
+  const moveDialog = moveTeamId ? (
+    <MoveToWorkspaceModal
+      subject={{
+        type: resourceType,
+        id: resourceId,
+        name: resourceName || t(`settings.teams.resourceType.${resourceType}`),
+      }}
+      from={{ kind: 'personal', team_id: null }}
+      initialTeamId={moveTeamId}
+      onClose={() => {
+        setMoveTeamId(null);
+        // The item is the team's now: this dialog's grants are gone.
+        if (moved) onClose();
+      }}
+      onMoved={() => {
+        setMoved(true);
+        onMoved?.();
+      }}
+    />
+  ) : null;
+
+  if (teamItem) {
+    return (
+      <Modal
+        open
+        onOpenChange={(open) => !open && onClose()}
+        title={
+          resourceName
+            ? t('workspace.share.teamTitle', {
+                interpolation: { escapeValue: false },
+                name: resourceName,
+              })
+            : t('workspace.share.teamTitleGeneric', {
+                type: t(
+                  `settings.teams.resourceType.${resourceType}`,
+                ).toLowerCase(),
+              })
+        }
+        footer={
+          <Button size="lg" shape="pill" onClick={onClose}>
+            {t('settings.teams.share.done')}
+          </Button>
+        }
+      >
+        <TeamItemAccess
+          resourceType={resourceType}
+          info={teamItem}
+          currentUserId={currentUserId}
+          onNavigate={onClose}
+        />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -1175,8 +1303,15 @@ export default function ShareToTeamModal({
         </Button>
       }
     >
-      {step === 'all' ? allStep : mainStep}
+      {!sharesLoaded ? (
+        <LoadingState fill="block" size="sm" />
+      ) : step === 'all' ? (
+        allStep
+      ) : (
+        mainStep
+      )}
       {removeConfirm}
+      {moveDialog}
     </Modal>
   );
 }

@@ -4707,6 +4707,7 @@
           "viewer": "閲覧者"
         },
         "addPlaceholder": "ユーザーまたはチームを追加…",
+        "addedByYou": "あなたが追加",
         "allSummary": "{{name}} · チーム: {{teams}} · ユーザー: {{people}}",
         "andMore_one": "ほか {{formatted}} 件",
         "andMore_other": "ほか {{formatted}} 件",
@@ -4721,6 +4722,9 @@
         "loadError": "現在の共有状況を読み込めませんでした。",
         "noMatches": "ユーザーまたはチームが見つかりません。",
         "noTeams": "まだどのチームにも所属していません。設定 → チームで作成してください。",
+        "notOwnedByTeam": "共有中（チームの所有ではありません）",
+        "ownOfferBody": "あなたが抜けてもチームに残ります。",
+        "ownOfferTitle": "{{team}} が所有すべきですか？",
         "owner": "所有者",
         "peopleGroup": "ユーザー",
         "peopleWithAccess": "アクセス権を持つユーザー",
@@ -5080,7 +5084,127 @@
       "moveToTeam": "チームに移動…"
     },
     "move": {
-      "planChanged": "変更がありました。もう一度確認してください"
+      "access": {
+        "gainsDetail": "{{team}} の編集者と管理者は変更でき、閲覧者は使用できます。",
+        "gainsNone": "ほかにアクセスできるようになる人はいません",
+        "gains_one": "{{count}}人がアクセスできるようになります",
+        "gains_other": "{{count}}人がアクセスできるようになります",
+        "loseTeamNone": "ほかにアクセスを失う人はいません",
+        "loseTeam_one": "{{team}} の{{count}}人がアクセスできなくなります",
+        "loseTeam_other": "{{team}} の{{count}}人がアクセスできなくなります",
+        "losesShared_one": "{{team}} の外で共有した{{count}}人がアクセスできなくなります：{{names}}。",
+        "losesShared_other": "{{team}} の外で共有した{{count}}人がアクセスできなくなります：{{names}}。",
+        "onlyYou": "共有するまで、あなただけが使えます。"
+      },
+      "borrow": {
+        "in_one": "{{names}} はチーム外から利用でき、この移動でチームに入るものを使っています。外部アクセスでそれを提供することはできません。一緒に移動するか、外部アクセスをオフにするか、先にそれらのアイテムを外してください。",
+        "in_other": "{{names}} はチーム外から利用でき、この移動でチームに入るものを使っています。外部アクセスでそれを提供することはできません。一緒に移動するか、外部アクセスをオフにするか、先にそれらのアイテムを外してください。",
+        "keeps_one": "あなたのエージェント {{names}} は移動するものを使っています。チームから引き続き使えますが、その間は公開できません。",
+        "keeps_other": "あなたのエージェント {{names}} は移動するものを使っています。チームから引き続き使えますが、その間は公開できません。",
+        "out_one": "{{names}} は {{team}} に残り、この移動で持ち出すものを使っています。一緒に移動するか、先にそれらのアイテムを外してください。",
+        "out_other": "{{names}} は {{team}} に残り、この移動で持ち出すものを使っています。一緒に移動するか、先にそれらのアイテムを外してください。"
+      },
+      "cannotTitle": "移動できません",
+      "chats": {
+        "in_one": "これを使ったチャット{{count}}件が {{team}} に移ります。",
+        "in_other": "これを使ったチャット{{count}}件が {{team}} に移ります。",
+        "out_one": "これを使ったあなたのチャット{{count}}件が個人に移ります。",
+        "out_other": "これを使ったあなたのチャット{{count}}件が個人に移ります。"
+      },
+      "comesAlong": "一緒に移動",
+      "comesWith": "「{{name}}」と一緒に移動",
+      "done": {
+        "personal": "「{{name}}」は個人ワークスペースに移動しました。",
+        "team": "「{{name}}」は {{team}} のものになりました。"
+      },
+      "doneButton": "完了",
+      "effects": {
+        "removed_from_holder": "使用している側から外されます。",
+        "stays": "そのまま残ります。"
+      },
+      "errors": {
+        "already_in_workspace": "すでにそこにあります。",
+        "credentials_unavailable": "保存されたキーを今は移動できません。後でもう一度お試しください。",
+        "credentials_unreadable_one": "{{names}} の保存されたシークレットを読み取れないため、移動できません。先に入力し直してください。",
+        "credentials_unreadable_other": "{{names}} の保存されたシークレットを読み取れないため、移動できません。先に入力し直してください。",
+        "fingerprint_required": "もう一度プランを確認してから移動してください。",
+        "folder_not_found": "そのフォルダはもう存在しません。",
+        "folder_too_deep": "そのフォルダは深すぎます。フォルダは最大3階層までです。",
+        "invalid_request": "この移動はできません。",
+        "move_failed": "移動に失敗しました。何も変更されていません。",
+        "move_needs_admin": "チーム外から利用できるエージェントを持ち込めるのはチームの管理者だけです。",
+        "move_plan_changed": "変更がありました。もう一度確認してください",
+        "move_would_borrow": "チーム外から利用できるエージェントが、この移動で持ち出すものを使っています。",
+        "not_a_person": "アイテムを移動できるのは人だけです。",
+        "not_found": "もう存在しません。",
+        "nothing_to_move": "移動できるアイテムがありません。",
+        "workspace_not_found": "そのチームは利用できなくなりました。",
+        "workspace_role_required": "そこでのあなたのロールではこの移動はできません。"
+      },
+      "folderLabel": "フォルダ",
+      "foldersFailed": "移動先のフォルダを読み込めなかったため、最上位に置かれます。",
+      "kinds": {
+        "agent": "エージェント",
+        "folder": "フォルダ",
+        "model": "モデル",
+        "prompt": "プロンプト",
+        "source": "ソース",
+        "tool": "ツール"
+      },
+      "listSeparator": "、",
+      "needsAdmin_one": "{{names}} はチーム外から利用できます（キー、公開リンク、Webhook）。これを持ち込めるのは {{team}} の管理者だけです。先に外部アクセスをオフにするか、管理者に依頼してください。",
+      "needsAdmin_other": "{{names}} はチーム外から利用できます（キー、公開リンク、Webhook）。これらを持ち込めるのは {{team}} の管理者だけです。先に外部アクセスをオフにするか、管理者に依頼してください。",
+      "noFolder": "フォルダなし",
+      "openIn": "{{name}} を開く",
+      "othersYouCantOpen_one": "あなたが開けないエージェント{{count}}件",
+      "othersYouCantOpen_other": "あなたが開けないエージェント{{count}}件",
+      "outside": {
+        "apiKey": "APIキーとウィジェット",
+        "publicLink": "公開リンク",
+        "webhook": "Webhook"
+      },
+      "owner": {
+        "team": "{{team}} が所有します",
+        "teamDetail": "あなたが抜けてもチームに残ります。追加した人としてあなたの名前は残ります。",
+        "you": "あなたが所有します",
+        "youDetail": "{{team}} から個人ワークスペースに移ります。"
+      },
+      "payerYou": "あなた",
+      "pays": {
+        "chats": "チャットは各自が支払います。",
+        "outside": "外部からのアクセス（{{list}}）は引き続き有効で、{{name}} が支払います。",
+        "schedules_one": "{{count}}件のスケジュールは引き続き実行され、{{names}} が支払います。",
+        "schedules_other": "{{count}}件のスケジュールは引き続き実行され、{{names}} が支払います。",
+        "title": "支払う人は変わりません"
+      },
+      "planChanged": "変更がありました。もう一度確認してください",
+      "quoted": "「{{name}}」",
+      "reasons": {
+        "connection_account": "個人のままのアカウントでサインインしています。",
+        "connector_synced": "個人のままの接続サービスから同期されています。",
+        "credentials_unreadable": "保存されたシークレットを読み取れなくなっています。",
+        "custom_model": "個人のカスタムモデルです。",
+        "in_knowledge_folder": "エージェントが読むフォルダに入っています。移動するのはそのソースだけです。",
+        "not_yours": "ほかの人のものなので、移動できません。",
+        "remote_device": "ペアリングしたデバイスで動作します。"
+      },
+      "renames": {
+        "folder": "フォルダ「{{from}}」は「{{to}}」になります",
+        "other": "「{{from}}」は「{{to}}」になります",
+        "slug": "エージェントのアドレス「{{from}}」は「{{to}}」になります",
+        "title": "名前の重複を避けるため変更されます"
+      },
+      "someone": "誰か",
+      "submit": "{{name}} に移動",
+      "teamLabel": "チーム",
+      "titleToPersonal": "「{{name}}」を個人に移動",
+      "titleToTeam": "「{{name}}」をチームに移動",
+      "unnamed": "開けないアイテム",
+      "withReasons": {
+        "in_folder": "フォルダ内",
+        "same_workflow": "同じワークフロー",
+        "used_by_agent": "エージェントが使用"
+      }
     },
     "notices": {
       "lost": "{{name}} のメンバーではなくなったため、個人に切り替えました",
@@ -5100,7 +5224,25 @@
       "thisTeam": "このチーム"
     },
     "share": {
-      "everyoneInTeam": "{{team}} の全員"
+      "access": "アクセス",
+      "adminsOnly": "これらを変更できるのは管理者だけで、エージェントのページで行います。",
+      "apiKey": "APIキーとウィジェット",
+      "belongsTo": "これは {{team}} のものです。アクセスはチームのメンバーシップに従います。",
+      "everyoneInTeam": "{{team}} の全員",
+      "fromTeam": "チーム経由",
+      "manageMembers": "メンバーを管理",
+      "members_one": "{{count}}人、チームでのロールに応じて",
+      "members_other": "{{count}}人、チームでのロールに応じて",
+      "off": "オフ",
+      "on": "オン",
+      "onPaidBy": "オン · {{name}} が支払い",
+      "outside": "チーム外",
+      "payerYou": "あなた",
+      "publicLink": "公開リンク",
+      "teamTitle": "「{{name}}」を使える人",
+      "teamTitleGeneric": "この{{type}}を使える人",
+      "webhook": "Webhook",
+      "yourRole": "{{team}} の{{role}}"
     },
     "switcher": {
       "onlyYou": "あなただけ",

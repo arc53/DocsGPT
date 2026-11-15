@@ -4918,6 +4918,7 @@
           "viewer": "Lector"
         },
         "addPlaceholder": "Añadir personas o equipos…",
+        "addedByYou": "Añadido por ti",
         "allSummary": "{{name}} · Equipos: {{teams}} · Personas: {{people}}",
         "andMore_many": "y {{formatted}} más",
         "andMore_one": "y {{formatted}} más",
@@ -4933,6 +4934,9 @@
         "loadError": "No se pudieron cargar los accesos actuales.",
         "noMatches": "No se encontraron personas ni equipos.",
         "noTeams": "Aún no eres miembro de ningún equipo. Crea uno en Configuración → Equipos.",
+        "notOwnedByTeam": "Compartido, no es propiedad del equipo",
+        "ownOfferBody": "Se quedaría en el equipo si te vas.",
+        "ownOfferTitle": "¿Debería {{team}} ser su propietario?",
         "owner": "Propietario",
         "peopleGroup": "Personas",
         "peopleWithAccess": "Personas con acceso",
@@ -5303,7 +5307,139 @@
       "moveToTeam": "Mover a un equipo…"
     },
     "move": {
-      "planChanged": "Algo ha cambiado; vuelve a revisarlo"
+      "access": {
+        "gainsDetail": "Los editores y administradores de {{team}} pueden cambiarlo. Los lectores pueden usarlo.",
+        "gainsNone": "Nadie más obtiene acceso",
+        "gains_many": "{{count}} personas obtienen acceso",
+        "gains_one": "{{count}} persona obtiene acceso",
+        "gains_other": "{{count}} personas obtienen acceso",
+        "loseTeamNone": "Nadie más pierde el acceso",
+        "loseTeam_many": "{{count}} personas de {{team}} pierden el acceso",
+        "loseTeam_one": "{{count}} persona de {{team}} pierde el acceso",
+        "loseTeam_other": "{{count}} personas de {{team}} pierden el acceso",
+        "losesShared_many": "{{count}} personas con las que lo compartiste fuera de {{team}} perderán el acceso: {{names}}.",
+        "losesShared_one": "{{count}} persona con la que lo compartiste fuera de {{team}} perderá el acceso: {{names}}.",
+        "losesShared_other": "{{count}} personas con las que lo compartiste fuera de {{team}} perderán el acceso: {{names}}.",
+        "onlyYou": "Solo tú lo tendrás, hasta que lo compartas."
+      },
+      "borrow": {
+        "in_many": "{{names}} son accesibles desde fuera del equipo y usan lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelos también, desactiva su acceso externo o quítales antes esos elementos.",
+        "in_one": "{{names}} es accesible desde fuera del equipo y usa lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelo también, desactiva su acceso externo o quítale antes esos elementos.",
+        "in_other": "{{names}} son accesibles desde fuera del equipo y usan lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelos también, desactiva su acceso externo o quítales antes esos elementos.",
+        "keeps_many": "Tus agentes {{names}} usan lo que se mueve. Pueden seguir usándolo desde el equipo, pero no se pueden publicar mientras lo hagan.",
+        "keeps_one": "Tu agente {{names}} usa lo que se mueve. Puede seguir usándolo desde el equipo, pero no se puede publicar mientras lo haga.",
+        "keeps_other": "Tus agentes {{names}} usan lo que se mueve. Pueden seguir usándolo desde el equipo, pero no se pueden publicar mientras lo hagan.",
+        "out_many": "{{names}} se quedan en {{team}} y usan lo que este movimiento saca. Muévelos también o quítales antes esos elementos.",
+        "out_one": "{{names}} se queda en {{team}} y usa lo que este movimiento saca. Muévelo también o quítale antes esos elementos.",
+        "out_other": "{{names}} se quedan en {{team}} y usan lo que este movimiento saca. Muévelos también o quítales antes esos elementos."
+      },
+      "cannotTitle": "No se puede mover",
+      "chats": {
+        "in_many": "{{count}} chats con él pasan a {{team}}.",
+        "in_one": "{{count}} chat con él pasa a {{team}}.",
+        "in_other": "{{count}} chats con él pasan a {{team}}.",
+        "out_many": "{{count}} de tus chats con él pasan a Personal.",
+        "out_one": "{{count}} de tus chats con él pasa a Personal.",
+        "out_other": "{{count}} de tus chats con él pasan a Personal."
+      },
+      "comesAlong": "Se mueve también",
+      "comesWith": "Se mueve con \"{{name}}\"",
+      "done": {
+        "personal": "\"{{name}}\" ya está en tu espacio Personal.",
+        "team": "\"{{name}}\" ahora pertenece a {{team}}."
+      },
+      "doneButton": "Listo",
+      "effects": {
+        "removed_from_holder": "Se quitará de lo que lo usa.",
+        "stays": "Se queda donde está."
+      },
+      "errors": {
+        "already_in_workspace": "Ya está ahí.",
+        "credentials_unavailable": "Ahora mismo no se puede mover una clave guardada. Inténtalo más tarde.",
+        "credentials_unreadable_many": "Los secretos guardados de {{names}} no se pueden leer, así que no se pueden mover. Vuelve a introducirlos primero.",
+        "credentials_unreadable_one": "El secreto guardado de {{names}} no se puede leer, así que no se puede mover. Vuelve a introducirlo primero.",
+        "credentials_unreadable_other": "Los secretos guardados de {{names}} no se pueden leer, así que no se pueden mover. Vuelve a introducirlos primero.",
+        "fingerprint_required": "Revisa el plan de nuevo y luego muévelo.",
+        "folder_not_found": "Esa carpeta ya no está ahí.",
+        "folder_too_deep": "Esa carpeta es demasiado profunda para esta: las carpetas se anidan como máximo 3 niveles.",
+        "invalid_request": "No se puede hacer este movimiento.",
+        "move_failed": "No se pudo mover; no ha cambiado nada.",
+        "move_needs_admin": "Solo un administrador del equipo puede traer un agente accesible desde fuera del equipo.",
+        "move_plan_changed": "Algo ha cambiado; vuelve a revisarlo",
+        "move_would_borrow": "Un agente accesible desde fuera del equipo usa lo que este movimiento se lleva.",
+        "not_a_person": "Solo una persona puede mover elementos.",
+        "not_found": "Ya no está ahí.",
+        "nothing_to_move": "Ninguno de estos elementos se puede mover.",
+        "workspace_not_found": "Ese equipo ya no está disponible.",
+        "workspace_role_required": "Tu rol allí no permite este movimiento."
+      },
+      "folderLabel": "Carpeta",
+      "foldersFailed": "No se pudieron cargar las carpetas de allí, así que irá al nivel superior.",
+      "kinds": {
+        "agent": "Agente",
+        "folder": "Carpeta",
+        "model": "Modelo",
+        "prompt": "Prompt",
+        "source": "Fuente",
+        "tool": "Herramienta"
+      },
+      "listSeparator": ", ",
+      "needsAdmin_many": "{{names}} son accesibles desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traerlos. Desactiva primero su acceso externo o pídeselo a un administrador.",
+      "needsAdmin_one": "{{names}} es accesible desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traer eso. Desactiva primero su acceso externo o pídeselo a un administrador.",
+      "needsAdmin_other": "{{names}} son accesibles desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traerlos. Desactiva primero su acceso externo o pídeselo a un administrador.",
+      "noFolder": "Sin carpeta",
+      "openIn": "Abrir {{name}}",
+      "othersYouCantOpen_many": "{{count}} agentes que no puedes abrir",
+      "othersYouCantOpen_one": "{{count}} agente que no puedes abrir",
+      "othersYouCantOpen_other": "{{count}} agentes que no puedes abrir",
+      "outside": {
+        "apiKey": "clave de API y widget",
+        "publicLink": "enlace público",
+        "webhook": "webhook"
+      },
+      "owner": {
+        "team": "{{team}} será el propietario",
+        "teamDetail": "Se queda en el equipo si te vas. Sigues figurando como la persona que lo añadió.",
+        "you": "Serás el propietario",
+        "youDetail": "Sale de {{team}} y pasa a tu espacio Personal."
+      },
+      "payerYou": "ti",
+      "pays": {
+        "chats": "Cada persona paga sus propios chats.",
+        "outside": "El acceso externo ({{list}}) sigue funcionando, pagado por {{name}}.",
+        "schedules_many": "{{count}} programaciones siguen en marcha, pagadas por {{names}}.",
+        "schedules_one": "{{count}} programación sigue en marcha, pagada por {{names}}.",
+        "schedules_other": "{{count}} programaciones siguen en marcha, pagadas por {{names}}.",
+        "title": "No cambia quién paga"
+      },
+      "planChanged": "Algo ha cambiado; vuelve a revisarlo",
+      "quoted": "\"{{name}}\"",
+      "reasons": {
+        "connection_account": "Conectado con una cuenta, que sigue siendo personal.",
+        "connector_synced": "Sincronizado desde un servicio conectado, que sigue siendo personal.",
+        "credentials_unreadable": "Su secreto guardado ya no se puede leer.",
+        "custom_model": "Un modelo personalizado personal.",
+        "in_knowledge_folder": "Archivado en una carpeta que lee el agente; solo vienen sus fuentes.",
+        "not_yours": "Es de otra persona, así que no puedes moverlo.",
+        "remote_device": "Se ejecuta en un dispositivo vinculado."
+      },
+      "renames": {
+        "folder": "La carpeta \"{{from}}\" pasa a ser \"{{to}}\"",
+        "other": "\"{{from}}\" pasa a ser \"{{to}}\"",
+        "slug": "La dirección del agente \"{{from}}\" pasa a ser \"{{to}}\"",
+        "title": "Renombrado para evitar un conflicto"
+      },
+      "someone": "alguien",
+      "submit": "Mover a {{name}}",
+      "teamLabel": "Equipo",
+      "titleToPersonal": "Mover \"{{name}}\" a Personal",
+      "titleToTeam": "Mover \"{{name}}\" a un equipo",
+      "unnamed": "Un elemento que no puedes abrir",
+      "withReasons": {
+        "in_folder": "En la carpeta",
+        "same_workflow": "En el mismo flujo de trabajo",
+        "used_by_agent": "Lo usa el agente"
+      }
     },
     "notices": {
       "lost": "Ya no estás en {{name}}; has pasado a Personal",
@@ -5323,7 +5459,26 @@
       "thisTeam": "Este equipo"
     },
     "share": {
-      "everyoneInTeam": "Todos en {{team}}"
+      "access": "Acceso",
+      "adminsOnly": "Solo los administradores cambian esto, en la página del agente.",
+      "apiKey": "Clave de API y widget",
+      "belongsTo": "Pertenece a {{team}}. El acceso sigue la pertenencia al equipo.",
+      "everyoneInTeam": "Todos en {{team}}",
+      "fromTeam": "Desde el equipo",
+      "manageMembers": "Gestionar miembros",
+      "members_many": "{{count}} personas, según su rol en el equipo",
+      "members_one": "{{count}} persona, según su rol en el equipo",
+      "members_other": "{{count}} personas, según su rol en el equipo",
+      "off": "Desactivado",
+      "on": "Activado",
+      "onPaidBy": "Activado · pagado por {{name}}",
+      "outside": "Fuera del equipo",
+      "payerYou": "ti",
+      "publicLink": "Enlace público",
+      "teamTitle": "Quién puede usar \"{{name}}\"",
+      "teamTitleGeneric": "Quién puede usar este elemento ({{type}})",
+      "webhook": "Webhook",
+      "yourRole": "{{role}} en {{team}}"
     },
     "switcher": {
       "onlyYou": "Solo tú",

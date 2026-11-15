@@ -4918,6 +4918,7 @@
           "viewer": "Lecteur"
         },
         "addPlaceholder": "Ajouter des personnes ou des équipes…",
+        "addedByYou": "Ajouté par vous",
         "allSummary": "{{name}} · Équipes : {{teams}} · Personnes : {{people}}",
         "andMore_many": "et {{formatted}} autres",
         "andMore_one": "et {{formatted}} autre",
@@ -4933,6 +4934,9 @@
         "loadError": "Impossible de charger les partages actuels.",
         "noMatches": "Aucune personne ni équipe trouvée.",
         "noTeams": "Vous n’êtes encore membre d’aucune équipe. Créez-en une dans Paramètres → Équipes.",
+        "notOwnedByTeam": "Partagé, n’appartient pas à l’équipe",
+        "ownOfferBody": "Il resterait à l’équipe si vous partiez.",
+        "ownOfferTitle": "{{team}} devrait-elle en être propriétaire ?",
         "owner": "Propriétaire",
         "peopleGroup": "Personnes",
         "peopleWithAccess": "Personnes ayant accès",
@@ -5303,7 +5307,139 @@
       "moveToTeam": "Déplacer vers une équipe…"
     },
     "move": {
-      "planChanged": "Quelque chose a changé ; vérifiez à nouveau"
+      "access": {
+        "gainsDetail": "Les éditeurs et administrateurs de {{team}} peuvent le modifier. Les lecteurs peuvent l’utiliser.",
+        "gainsNone": "Personne d’autre n’obtient l’accès",
+        "gains_many": "{{count}} personnes obtiennent l’accès",
+        "gains_one": "{{count}} personne obtient l’accès",
+        "gains_other": "{{count}} personnes obtiennent l’accès",
+        "loseTeamNone": "Personne d’autre ne perd l’accès",
+        "loseTeam_many": "{{count}} personnes de {{team}} perdent l’accès",
+        "loseTeam_one": "{{count}} personne de {{team}} perd l’accès",
+        "loseTeam_other": "{{count}} personnes de {{team}} perdent l’accès",
+        "losesShared_many": "{{count}} personnes avec qui vous l’avez partagé hors de {{team}} perdront l’accès : {{names}}.",
+        "losesShared_one": "{{count}} personne avec qui vous l’avez partagé hors de {{team}} perdra l’accès : {{names}}.",
+        "losesShared_other": "{{count}} personnes avec qui vous l’avez partagé hors de {{team}} perdront l’accès : {{names}}.",
+        "onlyYou": "Vous seul y aurez accès, jusqu’à ce que vous le partagiez."
+      },
+      "borrow": {
+        "in_many": "{{names}} sont accessibles depuis l’extérieur de l’équipe et utilisent ce que ce déplacement apporte à l’équipe, qu’un accès externe ne doit pas servir. Déplacez-les aussi, désactivez leur accès externe ou retirez-leur d’abord ces éléments.",
+        "in_one": "{{names}} est accessible depuis l’extérieur de l’équipe et utilise ce que ce déplacement apporte à l’équipe, qu’un accès externe ne doit pas servir. Déplacez-le aussi, désactivez son accès externe ou retirez-lui d’abord ces éléments.",
+        "in_other": "{{names}} sont accessibles depuis l’extérieur de l’équipe et utilisent ce que ce déplacement apporte à l’équipe, qu’un accès externe ne doit pas servir. Déplacez-les aussi, désactivez leur accès externe ou retirez-leur d’abord ces éléments.",
+        "keeps_many": "Vos agents {{names}} utilisent ce qui est déplacé. Ils peuvent continuer à l’utiliser depuis l’équipe, mais ne peuvent pas être publiés tant qu’ils le font.",
+        "keeps_one": "Votre agent {{names}} utilise ce qui est déplacé. Il peut continuer à l’utiliser depuis l’équipe, mais ne peut pas être publié tant qu’il le fait.",
+        "keeps_other": "Vos agents {{names}} utilisent ce qui est déplacé. Ils peuvent continuer à l’utiliser depuis l’équipe, mais ne peuvent pas être publiés tant qu’ils le font.",
+        "out_many": "{{names}} restent dans {{team}} et utilisent ce que ce déplacement retire. Déplacez-les aussi, ou retirez-leur d’abord ces éléments.",
+        "out_one": "{{names}} reste dans {{team}} et utilise ce que ce déplacement retire. Déplacez-le aussi, ou retirez-lui d’abord ces éléments.",
+        "out_other": "{{names}} restent dans {{team}} et utilisent ce que ce déplacement retire. Déplacez-les aussi, ou retirez-leur d’abord ces éléments."
+      },
+      "cannotTitle": "Ne peut pas être déplacé",
+      "chats": {
+        "in_many": "{{count}} chats avec lui passent dans {{team}}.",
+        "in_one": "{{count}} chat avec lui passe dans {{team}}.",
+        "in_other": "{{count}} chats avec lui passent dans {{team}}.",
+        "out_many": "{{count}} de vos chats avec lui passent dans Personnel.",
+        "out_one": "{{count}} de vos chats avec lui passe dans Personnel.",
+        "out_other": "{{count}} de vos chats avec lui passent dans Personnel."
+      },
+      "comesAlong": "Déplacé aussi",
+      "comesWith": "Déplacé avec « {{name}} »",
+      "done": {
+        "personal": "« {{name}} » est désormais dans votre espace Personnel.",
+        "team": "« {{name}} » appartient désormais à {{team}}."
+      },
+      "doneButton": "Terminé",
+      "effects": {
+        "removed_from_holder": "Il sera retiré de ce qui l’utilise.",
+        "stays": "Il reste où il est."
+      },
+      "errors": {
+        "already_in_workspace": "Il s’y trouve déjà.",
+        "credentials_unavailable": "Une clé enregistrée ne peut pas être déplacée pour le moment. Réessayez plus tard.",
+        "credentials_unreadable_many": "Les secrets enregistrés de {{names}} sont illisibles, ils ne peuvent donc pas être déplacés. Saisissez-les à nouveau d’abord.",
+        "credentials_unreadable_one": "Le secret enregistré de {{names}} est illisible, il ne peut donc pas être déplacé. Saisissez-le à nouveau d’abord.",
+        "credentials_unreadable_other": "Les secrets enregistrés de {{names}} sont illisibles, ils ne peuvent donc pas être déplacés. Saisissez-les à nouveau d’abord.",
+        "fingerprint_required": "Vérifiez à nouveau le plan, puis déplacez.",
+        "folder_not_found": "Ce dossier n’existe plus.",
+        "folder_too_deep": "Ce dossier est trop profond pour celui-ci : les dossiers s’imbriquent sur 3 niveaux au plus.",
+        "invalid_request": "Ce déplacement est impossible.",
+        "move_failed": "Le déplacement a échoué ; rien n’a changé.",
+        "move_needs_admin": "Seul un administrateur de l’équipe peut y faire entrer un agent accessible depuis l’extérieur.",
+        "move_plan_changed": "Quelque chose a changé ; vérifiez à nouveau",
+        "move_would_borrow": "Un agent accessible depuis l’extérieur de l’équipe utilise ce que ce déplacement emporte.",
+        "not_a_person": "Seule une personne peut déplacer des éléments.",
+        "not_found": "Il n’existe plus.",
+        "nothing_to_move": "Aucun de ces éléments ne peut être déplacé.",
+        "workspace_not_found": "Cette équipe n’est plus disponible.",
+        "workspace_role_required": "Votre rôle dans cet espace ne permet pas ce déplacement."
+      },
+      "folderLabel": "Dossier",
+      "foldersFailed": "Impossible de charger les dossiers de cet espace, l’élément ira donc au premier niveau.",
+      "kinds": {
+        "agent": "Agent",
+        "folder": "Dossier",
+        "model": "Modèle",
+        "prompt": "Prompt",
+        "source": "Source",
+        "tool": "Outil"
+      },
+      "listSeparator": ", ",
+      "needsAdmin_many": "{{names}} sont accessibles depuis l’extérieur de l’équipe (clé, lien public ou webhook), et seul un administrateur de {{team}} peut les y faire entrer. Désactivez d’abord leur accès externe, ou demandez à un administrateur.",
+      "needsAdmin_one": "{{names}} est accessible depuis l’extérieur de l’équipe (clé, lien public ou webhook), et seul un administrateur de {{team}} peut l’y faire entrer. Désactivez d’abord son accès externe, ou demandez à un administrateur.",
+      "needsAdmin_other": "{{names}} sont accessibles depuis l’extérieur de l’équipe (clé, lien public ou webhook), et seul un administrateur de {{team}} peut les y faire entrer. Désactivez d’abord leur accès externe, ou demandez à un administrateur.",
+      "noFolder": "Aucun dossier",
+      "openIn": "Ouvrir {{name}}",
+      "othersYouCantOpen_many": "{{count}} agents que vous ne pouvez pas ouvrir",
+      "othersYouCantOpen_one": "{{count}} agent que vous ne pouvez pas ouvrir",
+      "othersYouCantOpen_other": "{{count}} agents que vous ne pouvez pas ouvrir",
+      "outside": {
+        "apiKey": "clé d’API et widget",
+        "publicLink": "lien public",
+        "webhook": "webhook"
+      },
+      "owner": {
+        "team": "{{team}} en sera propriétaire",
+        "teamDetail": "Il reste à l’équipe si vous partez. Vous restez indiqué comme la personne qui l’a ajouté.",
+        "you": "Vous en serez propriétaire",
+        "youDetail": "Il quitte {{team}} pour votre espace Personnel."
+      },
+      "payerYou": "vous",
+      "pays": {
+        "chats": "Chaque personne paie ses propres chats.",
+        "outside": "L’accès externe ({{list}}) continue, payé par {{name}}.",
+        "schedules_many": "{{count}} planifications continuent, payées par {{names}}.",
+        "schedules_one": "{{count}} planification continue, payée par {{names}}.",
+        "schedules_other": "{{count}} planifications continuent, payées par {{names}}.",
+        "title": "Rien ne change pour qui paie"
+      },
+      "planChanged": "Quelque chose a changé ; vérifiez à nouveau",
+      "quoted": "« {{name}} »",
+      "reasons": {
+        "connection_account": "Connecté avec un compte, qui reste personnel.",
+        "connector_synced": "Synchronisé depuis un service connecté, qui reste personnel.",
+        "credentials_unreadable": "Son secret enregistré n’est plus lisible.",
+        "custom_model": "Un modèle personnalisé personnel.",
+        "in_knowledge_folder": "Classé dans un dossier que l’agent lit ; seules ses sources suivent.",
+        "not_yours": "Appartient à quelqu’un d’autre, vous ne pouvez donc pas le déplacer.",
+        "remote_device": "S’exécute sur un appareil associé."
+      },
+      "renames": {
+        "folder": "Le dossier « {{from}} » devient « {{to}} »",
+        "other": "« {{from}} » devient « {{to}} »",
+        "slug": "L’adresse de l’agent « {{from}} » devient « {{to}} »",
+        "title": "Renommé pour éviter un doublon"
+      },
+      "someone": "quelqu’un",
+      "submit": "Déplacer vers {{name}}",
+      "teamLabel": "Équipe",
+      "titleToPersonal": "Déplacer « {{name}} » vers Personnel",
+      "titleToTeam": "Déplacer « {{name}} » vers une équipe",
+      "unnamed": "Un élément que vous ne pouvez pas ouvrir",
+      "withReasons": {
+        "in_folder": "Dans le dossier",
+        "same_workflow": "Dans le même workflow",
+        "used_by_agent": "Utilisé par l’agent"
+      }
     },
     "notices": {
       "lost": "Vous ne faites plus partie de {{name}} ; retour à Personnel",
@@ -5323,7 +5459,26 @@
       "thisTeam": "Cette équipe"
     },
     "share": {
-      "everyoneInTeam": "Tout le monde dans {{team}}"
+      "access": "Accès",
+      "adminsOnly": "Seuls les administrateurs les modifient, sur la page de l’agent.",
+      "apiKey": "Clé d’API et widget",
+      "belongsTo": "Il appartient à {{team}}. L’accès suit l’appartenance à l’équipe.",
+      "everyoneInTeam": "Tout le monde dans {{team}}",
+      "fromTeam": "Par l’équipe",
+      "manageMembers": "Gérer les membres",
+      "members_many": "{{count}} personnes, selon leur rôle dans l’équipe",
+      "members_one": "{{count}} personne, selon son rôle dans l’équipe",
+      "members_other": "{{count}} personnes, selon leur rôle dans l’équipe",
+      "off": "Désactivé",
+      "on": "Activé",
+      "onPaidBy": "Activé · payé par {{name}}",
+      "outside": "Hors de l’équipe",
+      "payerYou": "vous",
+      "publicLink": "Lien public",
+      "teamTitle": "Qui peut utiliser « {{name}} »",
+      "teamTitleGeneric": "Qui peut utiliser cet élément ({{type}})",
+      "webhook": "Webhook",
+      "yourRole": "{{role}} dans {{team}}"
     },
     "switcher": {
       "onlyYou": "Vous seul",

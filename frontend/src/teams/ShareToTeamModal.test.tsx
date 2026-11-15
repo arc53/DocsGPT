@@ -1,13 +1,28 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 
 const mockState = {
-  preference: { token: 'tok' },
+  preference: { token: 'tok' as string | null },
   teams: {
     teams: [
       { id: 't1', name: 'Logistics', slug: 'logistics', owner_id: 'u1' },
       { id: 't2', name: 'Sales Ops', slug: 'sales', owner_id: 'u1' },
     ],
+  },
+  // The caller is an Editor in Logistics and a Viewer in Sales Ops.
+  workspace: {
+    current: 'personal',
+    workspaces: [
+      { id: 'personal', kind: 'personal', name: 'Personal' },
+      { id: 't1', kind: 'team', name: 'Logistics', role: 'editor' },
+      { id: 't2', kind: 'team', name: 'Sales Ops', role: 'viewer' },
+    ],
+    loaded: true,
+    loading: false,
+    epoch: 0,
+    lastReason: null,
+    latestRequestId: null,
   },
 };
 
@@ -59,6 +74,19 @@ vi.mock('../agents/components/AgentUsesSection', () => ({
   default: ({ agentId }: { agentId: string }) => (
     <div data-testid="agent-uses">{agentId}</div>
   ),
+}));
+
+// The Move dialog has its own tests; here only what opens it.
+const moveDialog = vi.hoisted(() => ({ props: [] as unknown[] }));
+vi.mock('../workspace/move/MoveToWorkspaceModal', () => ({
+  default: (props: { initialTeamId?: string; subject: { id: string } }) => {
+    moveDialog.props.push(props);
+    return (
+      <div data-testid="move-dialog">
+        {props.subject.id}:{props.initialTeamId}
+      </div>
+    );
+  },
 }));
 
 // Mark formatted counts so a raw number in the UI shows up in a test.
@@ -822,5 +850,145 @@ describe('ShareToTeamModal credentials', () => {
       );
       expect(picker().disabled).toBe(false);
     });
+  });
+});
+
+describe('ShareToTeamModal and workspaces', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  // A token whose subject is u1, so "Added by you" can be told apart.
+  const tokenFor = (sub: string) =>
+    `x.${btoa(JSON.stringify({ sub }))
+      .replace(/=+$/, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')}.y`;
+
+  beforeEach(() => {
+    listResourceShares.mockReset().mockResolvedValue({ shares: [] });
+    getResourceSettings.mockReset().mockResolvedValue(settingsResponse());
+    listMembers.mockReset().mockResolvedValue({ members: [] });
+    moveDialog.props = [];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    mockState.preference.token = 'tok';
+  });
+
+  const render = async (onMoved?: () => void) => {
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <ShareToTeamModal
+            resourceType="agent"
+            resourceId="a1"
+            resourceName="Carrier rate desk"
+            onClose={() => undefined}
+            onMoved={onMoved}
+          />
+        </MemoryRouter>,
+      );
+    });
+    await flush();
+  };
+
+  const OWNER_MOVE_ACTIONS = [...OWNER_ACTIONS, 'move_to_team'];
+
+  it('says how each grant reached the item', async () => {
+    mockState.preference.token = tokenFor('u1');
+    listResourceShares.mockResolvedValue({
+      shares: [
+        { team_id: 't1', team_name: 'Logistics', access_level: 'viewer' },
+        {
+          team_id: 't2',
+          team_name: 'Sales Ops',
+          access_level: 'editor',
+          target_user_id: 'u5',
+          granted_by: 'u1',
+        },
+        {
+          team_id: 't2',
+          team_name: 'Sales Ops',
+          access_level: 'viewer',
+          target_user_id: 'u6',
+          granted_by: 'u7',
+        },
+      ],
+    });
+    await render();
+    expect(text()).toContain('settings.teams.share.notOwnedByTeam');
+    expect(text()).toContain('settings.teams.share.addedByYou');
+    expect(text()).toContain('settings.teams.share.viaTeam(team=Sales Ops)');
+    expect(text()).not.toContain('settings.teams.share.teamLabel');
+  });
+
+  it('offers the move to a team the caller can add to', async () => {
+    getResourceSettings.mockResolvedValue({
+      ...settingsResponse(),
+      allowed_actions: OWNER_MOVE_ACTIONS,
+    });
+    listResourceShares.mockResolvedValue({
+      shares: [
+        { team_id: 't1', team_name: 'Logistics', access_level: 'viewer' },
+        { team_id: 't2', team_name: 'Sales Ops', access_level: 'viewer' },
+      ],
+    });
+    await render();
+    expect(text()).toContain(
+      'settings.teams.share.ownOfferTitle(team=Logistics)',
+    );
+    // A Viewer can't add to Sales Ops, so it isn't offered there.
+    expect(text()).not.toContain(
+      'settings.teams.share.ownOfferTitle(team=Sales Ops)',
+    );
+    const offer = Array.from(body().querySelectorAll('button')).find(
+      (b) => b.textContent === 'workspace.menu.moveToTeam',
+    )!;
+    await act(async () => offer.click());
+    expect(
+      body().querySelector('[data-testid="move-dialog"]')?.textContent,
+    ).toBe('a1:t1');
+  });
+
+  it('offers no move without the right to move', async () => {
+    listResourceShares.mockResolvedValue({
+      shares: [
+        { team_id: 't1', team_name: 'Logistics', access_level: 'viewer' },
+      ],
+    });
+    await render();
+    expect(text()).not.toContain('settings.teams.share.ownOfferTitle');
+  });
+
+  it("shows a team item's access instead of the people list", async () => {
+    listResourceShares.mockResolvedValue({
+      success: true,
+      shares: [],
+      workspace: { kind: 'team', team_id: 't1', name: 'Logistics' },
+      members_count: 4,
+      access: 'editor',
+      team_role: 'editor',
+      origin: 'team',
+      allowed_actions: ['use', 'edit'],
+      outside_access: {
+        api_key: false,
+        public_link: false,
+        webhook: false,
+        paid_by: null,
+      },
+    });
+    await render();
+    expect(text()).toContain(
+      'workspace.share.teamTitle(name=Carrier rate desk)',
+    );
+    expect(text()).toContain('workspace.share.everyoneInTeam(team=Logistics)');
+    expect(text()).not.toContain('settings.teams.share.peopleWithAccess');
+    expect(body().querySelector('[role="combobox"]')).toBeNull();
   });
 });

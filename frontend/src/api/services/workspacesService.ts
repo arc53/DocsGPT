@@ -14,7 +14,12 @@ export type MoveRequest = {
   fingerprint?: string;
 };
 
-type Named = { type: MoveItemType | 'model'; id: string; name: string };
+/** An item a plan names; `name` is null for one the caller can't open. */
+type Named = {
+  type: MoveItemType | 'model';
+  id: string;
+  name: string | null;
+};
 
 export type MoveWithReason = 'used_by_agent' | 'in_folder' | 'same_workflow';
 
@@ -46,7 +51,12 @@ export type MovePlan = {
       team_id: string | null;
       name: string;
     };
-    folder: { id: string; name: string; path: string } | null;
+    /** The folder in the target tree, with its trail from the top level. */
+    folder: {
+      id: string;
+      name: string;
+      path: { id: string; name: string }[];
+    } | null;
   };
   items: Named[];
   moves_with: (Named & {
@@ -65,7 +75,11 @@ export type MovePlan = {
     schedules: { id: string; agent_id: string; paid_by?: PersonRef | null }[];
     outside_access?: OutsideAccess | null;
   };
-  borrowing_agents: { id: string; name: string; published?: boolean }[];
+  /**
+   * Agents left behind that use a moving item. Moving in, a published one
+   * refuses the move; moving out, any one does.
+   */
+  borrowing_agents: { id: string; name: string | null; published?: boolean }[];
   borrowing_others?: number;
   needs_admin: { id: string; name: string }[];
   conversations_switched: number;

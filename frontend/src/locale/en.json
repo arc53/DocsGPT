@@ -4762,6 +4762,7 @@
           "viewer": "Viewer"
         },
         "addPlaceholder": "Add people or teams…",
+        "addedByYou": "Added by you",
         "allSummary": "{{name}} · Teams: {{teams}} · People: {{people}}",
         "andMore_one": "and {{formatted}} more",
         "andMore_other": "and {{formatted}} more",
@@ -4776,6 +4777,9 @@
         "loadError": "Could not load current shares.",
         "noMatches": "No people or teams found.",
         "noTeams": "You're not a member of any team yet. Create one in Settings → Teams.",
+        "notOwnedByTeam": "Shared, not owned by the team",
+        "ownOfferBody": "It would stay with the team if you leave.",
+        "ownOfferTitle": "Should {{team}} own this?",
         "owner": "Owner",
         "peopleGroup": "People",
         "peopleWithAccess": "People with access",
@@ -5135,7 +5139,127 @@
       "moveToTeam": "Move to team…"
     },
     "move": {
-      "planChanged": "Something changed; check again"
+      "access": {
+        "gainsDetail": "Editors and admins in {{team}} can change it. Viewers can use it.",
+        "gainsNone": "No one else gets access",
+        "gains_one": "{{count}} person gets access",
+        "gains_other": "{{count}} people get access",
+        "loseTeamNone": "No one else loses access",
+        "loseTeam_one": "{{count}} person in {{team}} loses access",
+        "loseTeam_other": "{{count}} people in {{team}} lose access",
+        "losesShared_one": "{{count}} person you shared this with outside {{team}} will lose access: {{names}}.",
+        "losesShared_other": "{{count}} people you shared this with outside {{team}} will lose access: {{names}}.",
+        "onlyYou": "Only you will have it, until you share it."
+      },
+      "borrow": {
+        "in_one": "{{names}} can be reached from outside the team and uses what this move brings in, which outside access must not serve. Move it too, turn its outside access off, or remove those items from it first.",
+        "in_other": "{{names}} can be reached from outside the team and use what this move brings in, which outside access must not serve. Move them too, turn their outside access off, or remove those items from them first.",
+        "keeps_one": "Your agent {{names}} uses what moves. It can keep using it from the team, but can't be published while it does.",
+        "keeps_other": "Your agents {{names}} use what moves. They can keep using it from the team, but can't be published while they do.",
+        "out_one": "{{names}} stays in {{team}} and uses what this move takes out. Move it too, or remove those items from it first.",
+        "out_other": "{{names}} stay in {{team}} and use what this move takes out. Move them too, or remove those items from them first."
+      },
+      "cannotTitle": "Can't move",
+      "chats": {
+        "in_one": "{{count}} chat with it moves to {{team}}.",
+        "in_other": "{{count}} chats with it move to {{team}}.",
+        "out_one": "{{count}} of your chats with it moves to Personal.",
+        "out_other": "{{count}} of your chats with it move to Personal."
+      },
+      "comesAlong": "Moves along",
+      "comesWith": "Moves with \"{{name}}\"",
+      "done": {
+        "personal": "\"{{name}}\" is in your Personal workspace now.",
+        "team": "\"{{name}}\" now belongs to {{team}}."
+      },
+      "doneButton": "Done",
+      "effects": {
+        "removed_from_holder": "It will be removed from what uses it.",
+        "stays": "It stays where it is."
+      },
+      "errors": {
+        "already_in_workspace": "It's already there.",
+        "credentials_unavailable": "A saved key can't be moved right now. Try again later.",
+        "credentials_unreadable_one": "The saved secret of {{names}} can't be read, so it can't move. Enter it again first.",
+        "credentials_unreadable_other": "The saved secrets of {{names}} can't be read, so they can't move. Enter them again first.",
+        "fingerprint_required": "Check the plan again, then move.",
+        "folder_not_found": "That folder isn't there any more.",
+        "folder_too_deep": "That folder is too deep for this one: folders nest at most 3 levels.",
+        "invalid_request": "This move can't be made.",
+        "move_failed": "The move failed; nothing changed.",
+        "move_needs_admin": "Only a team Admin can bring in an agent people outside the team can reach.",
+        "move_plan_changed": "Something changed; check again",
+        "move_would_borrow": "An agent people outside the team can reach uses what this move takes.",
+        "not_a_person": "Only a person can move items.",
+        "not_found": "It isn't there any more.",
+        "nothing_to_move": "None of these items can move.",
+        "workspace_not_found": "That team isn't available any more.",
+        "workspace_role_required": "Your role there doesn't allow this move."
+      },
+      "folderLabel": "Folder",
+      "foldersFailed": "Couldn't load the folders there, so it goes in at the top level.",
+      "kinds": {
+        "agent": "Agent",
+        "folder": "Folder",
+        "model": "Model",
+        "prompt": "Prompt",
+        "source": "Source",
+        "tool": "Tool"
+      },
+      "listSeparator": ", ",
+      "needsAdmin_one": "{{names}} can be reached from outside the team (a key, public link or webhook), and only an Admin of {{team}} brings that in. Turn its outside access off first, or ask an Admin.",
+      "needsAdmin_other": "{{names}} can be reached from outside the team (a key, public link or webhook), and only an Admin of {{team}} brings those in. Turn their outside access off first, or ask an Admin.",
+      "noFolder": "No folder",
+      "openIn": "Open {{name}}",
+      "othersYouCantOpen_one": "{{count}} agent you can't open",
+      "othersYouCantOpen_other": "{{count}} agents you can't open",
+      "outside": {
+        "apiKey": "API key and widget",
+        "publicLink": "public link",
+        "webhook": "webhook"
+      },
+      "owner": {
+        "team": "{{team}} will own it",
+        "teamDetail": "It stays with the team if you leave. You stay listed as the person who added it.",
+        "you": "You will own it",
+        "youDetail": "It leaves {{team}} for your Personal workspace."
+      },
+      "payerYou": "you",
+      "pays": {
+        "chats": "Each person pays for their own chats.",
+        "outside": "Outside access ({{list}}) keeps running, paid by {{name}}.",
+        "schedules_one": "{{count}} schedule keeps running, paid by {{names}}.",
+        "schedules_other": "{{count}} schedules keep running, paid by {{names}}.",
+        "title": "Nothing changes about who pays"
+      },
+      "planChanged": "Something changed; check again",
+      "quoted": "\"{{name}}\"",
+      "reasons": {
+        "connection_account": "Signed in with an account, which stays personal.",
+        "connector_synced": "Synced from a connected service, which stays personal.",
+        "credentials_unreadable": "Its saved secret can't be read any more.",
+        "custom_model": "A personal custom model.",
+        "in_knowledge_folder": "Filed in a folder the agent reads; only its sources come along.",
+        "not_yours": "Someone else's, so it isn't yours to move.",
+        "remote_device": "Runs on a paired device."
+      },
+      "renames": {
+        "folder": "Folder \"{{from}}\" becomes \"{{to}}\"",
+        "other": "\"{{from}}\" becomes \"{{to}}\"",
+        "slug": "The agent's address \"{{from}}\" becomes \"{{to}}\"",
+        "title": "Renamed to avoid a clash"
+      },
+      "someone": "someone",
+      "submit": "Move to {{name}}",
+      "teamLabel": "Team",
+      "titleToPersonal": "Move \"{{name}}\" to Personal",
+      "titleToTeam": "Move \"{{name}}\" to a team",
+      "unnamed": "An item you can't open",
+      "withReasons": {
+        "in_folder": "In the folder",
+        "same_workflow": "On the same workflow",
+        "used_by_agent": "Used by the agent"
+      }
     },
     "notices": {
       "lost": "You're no longer in {{name}}; switched to Personal",
@@ -5155,7 +5279,25 @@
       "thisTeam": "This team"
     },
     "share": {
-      "everyoneInTeam": "Everyone in {{team}}"
+      "access": "Access",
+      "adminsOnly": "Only admins change these, on the agent's own page.",
+      "apiKey": "API key and widget",
+      "belongsTo": "It belongs to {{team}}. Access follows team membership.",
+      "everyoneInTeam": "Everyone in {{team}}",
+      "fromTeam": "From the team",
+      "manageMembers": "Manage members",
+      "members_one": "{{count}} person, by their team role",
+      "members_other": "{{count}} people, by their team role",
+      "off": "Off",
+      "on": "On",
+      "onPaidBy": "On · paid by {{name}}",
+      "outside": "Outside the team",
+      "payerYou": "you",
+      "publicLink": "Public link",
+      "teamTitle": "Who can use \"{{name}}\"",
+      "teamTitleGeneric": "Who can use this {{type}}",
+      "webhook": "Webhook",
+      "yourRole": "{{role}} in {{team}}"
     },
     "switcher": {
       "onlyYou": "Only you",

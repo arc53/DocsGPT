@@ -4707,6 +4707,7 @@
           "viewer": "檢視者"
         },
         "addPlaceholder": "新增人員或團隊…",
+        "addedByYou": "由您新增",
         "allSummary": "{{name}} · 團隊：{{teams}} · 人員：{{people}}",
         "andMore_one": "還有 {{formatted}} 個",
         "andMore_other": "還有 {{formatted}} 個",
@@ -4721,6 +4722,9 @@
         "loadError": "無法載入目前的分享設定。",
         "noMatches": "找不到人員或團隊。",
         "noTeams": "您尚未加入任何團隊。請至「設定 → 團隊」建立。",
+        "notOwnedByTeam": "已分享，不歸團隊所有",
+        "ownOfferBody": "即使您離開，它也會留在團隊中。",
+        "ownOfferTitle": "要讓 {{team}} 擁有它嗎？",
         "owner": "擁有者",
         "peopleGroup": "人員",
         "peopleWithAccess": "具有存取權的人員",
@@ -5080,7 +5084,127 @@
       "moveToTeam": "移至團隊…"
     },
     "move": {
-      "planChanged": "內容有變更，請再檢查一次"
+      "access": {
+        "gainsDetail": "{{team}} 中的編輯者和管理員可以修改它，檢視者可以使用它。",
+        "gainsNone": "沒有其他人取得存取權",
+        "gains_one": "{{count}} 人將取得存取權",
+        "gains_other": "{{count}} 人將取得存取權",
+        "loseTeamNone": "沒有其他人失去存取權",
+        "loseTeam_one": "{{team}} 中的 {{count}} 人將失去存取權",
+        "loseTeam_other": "{{team}} 中的 {{count}} 人將失去存取權",
+        "losesShared_one": "您在 {{team}} 以外分享過的 {{count}} 人將失去存取權：{{names}}。",
+        "losesShared_other": "您在 {{team}} 以外分享過的 {{count}} 人將失去存取權：{{names}}。",
+        "onlyYou": "在您分享之前，只有您可以使用。"
+      },
+      "borrow": {
+        "in_one": "{{names}} 可從團隊外部存取，並使用了此次移動帶入團隊的內容，而外部存取不得提供這些內容。請將其一併移動、關閉其外部存取，或先從中移除這些項目。",
+        "in_other": "{{names}} 可從團隊外部存取，並使用了此次移動帶入團隊的內容，而外部存取不得提供這些內容。請將其一併移動、關閉其外部存取，或先從中移除這些項目。",
+        "keeps_one": "您的代理 {{names}} 使用了要移動的內容。它可以繼續從團隊使用這些內容，但在此期間無法發布。",
+        "keeps_other": "您的代理 {{names}} 使用了要移動的內容。它們可以繼續從團隊使用這些內容，但在此期間無法發布。",
+        "out_one": "{{names}} 留在 {{team}} 中，並使用了此次移動帶走的內容。請將其一併移動，或先從中移除這些項目。",
+        "out_other": "{{names}} 留在 {{team}} 中，並使用了此次移動帶走的內容。請將其一併移動，或先從中移除這些項目。"
+      },
+      "cannotTitle": "無法移動",
+      "chats": {
+        "in_one": "使用它的 {{count}} 個聊天將移至 {{team}}。",
+        "in_other": "使用它的 {{count}} 個聊天將移至 {{team}}。",
+        "out_one": "您使用它的 {{count}} 個聊天將移至個人。",
+        "out_other": "您使用它的 {{count}} 個聊天將移至個人。"
+      },
+      "comesAlong": "一起移動",
+      "comesWith": "隨「{{name}}」一起移動",
+      "done": {
+        "personal": "「{{name}}」現在位於您的個人空間。",
+        "team": "「{{name}}」現在屬於 {{team}}。"
+      },
+      "doneButton": "完成",
+      "effects": {
+        "removed_from_holder": "它將從使用它的地方移除。",
+        "stays": "它會留在原處。"
+      },
+      "errors": {
+        "already_in_workspace": "它已經在那裡了。",
+        "credentials_unavailable": "儲存的金鑰暫時無法移動。請稍後再試。",
+        "credentials_unreadable_one": "無法讀取 {{names}} 儲存的密鑰，因此無法移動。請先重新輸入。",
+        "credentials_unreadable_other": "無法讀取 {{names}} 儲存的密鑰，因此無法移動。請先重新輸入。",
+        "fingerprint_required": "請再次檢查計畫，然後再移動。",
+        "folder_not_found": "該資料夾已不存在。",
+        "folder_too_deep": "該資料夾層級太深：資料夾最多巢狀 3 層。",
+        "invalid_request": "無法進行此次移動。",
+        "move_failed": "移動失敗，未做任何變更。",
+        "move_needs_admin": "只有團隊管理員才能移入可從團隊外部存取的代理。",
+        "move_plan_changed": "內容有變更，請再檢查一次",
+        "move_would_borrow": "一個可從團隊外部存取的代理使用了此次移動帶走的內容。",
+        "not_a_person": "只有人員才能移動項目。",
+        "not_found": "它已不存在。",
+        "nothing_to_move": "這些項目都無法移動。",
+        "workspace_not_found": "該團隊已無法使用。",
+        "workspace_role_required": "您在那裡的角色不允許此次移動。"
+      },
+      "folderLabel": "資料夾",
+      "foldersFailed": "無法載入該處的資料夾，因此會放在最上層。",
+      "kinds": {
+        "agent": "代理",
+        "folder": "資料夾",
+        "model": "模型",
+        "prompt": "提示",
+        "source": "來源",
+        "tool": "工具"
+      },
+      "listSeparator": "、",
+      "needsAdmin_one": "{{names}} 可從團隊外部存取（金鑰、公開連結或 Webhook），只有 {{team}} 的管理員才能將其移入。請先關閉其外部存取，或請管理員處理。",
+      "needsAdmin_other": "{{names}} 可從團隊外部存取（金鑰、公開連結或 Webhook），只有 {{team}} 的管理員才能將其移入。請先關閉其外部存取，或請管理員處理。",
+      "noFolder": "無資料夾",
+      "openIn": "開啟 {{name}}",
+      "othersYouCantOpen_one": "{{count}} 個您無法開啟的代理",
+      "othersYouCantOpen_other": "{{count}} 個您無法開啟的代理",
+      "outside": {
+        "apiKey": "API 金鑰和小工具",
+        "publicLink": "公開連結",
+        "webhook": "Webhook"
+      },
+      "owner": {
+        "team": "{{team}} 將擁有它",
+        "teamDetail": "即使您離開，它也會留在團隊中。您仍會顯示為新增它的人。",
+        "you": "您將擁有它",
+        "youDetail": "它將離開 {{team}}，移至您的個人空間。"
+      },
+      "payerYou": "您",
+      "pays": {
+        "chats": "每個人為自己的聊天付費。",
+        "outside": "外部存取（{{list}}）會繼續運作，由 {{name}} 付費。",
+        "schedules_one": "{{count}} 個排程會繼續執行，由 {{names}} 付費。",
+        "schedules_other": "{{count}} 個排程會繼續執行，由 {{names}} 付費。",
+        "title": "付費者不變"
+      },
+      "planChanged": "內容有變更，請再檢查一次",
+      "quoted": "「{{name}}」",
+      "reasons": {
+        "connection_account": "以保持個人所有的帳號登入。",
+        "connector_synced": "從保持個人所有的已連線服務同步。",
+        "credentials_unreadable": "其儲存的密鑰已無法讀取。",
+        "custom_model": "個人自訂模型。",
+        "in_knowledge_folder": "位於代理讀取的資料夾中；只有其中的來源會一起移動。",
+        "not_yours": "屬於其他人，您無法移動。",
+        "remote_device": "在已配對的裝置上執行。"
+      },
+      "renames": {
+        "folder": "資料夾「{{from}}」將變為「{{to}}」",
+        "other": "「{{from}}」將變為「{{to}}」",
+        "slug": "代理位址「{{from}}」將變為「{{to}}」",
+        "title": "為避免重名而重新命名"
+      },
+      "someone": "某人",
+      "submit": "移至 {{name}}",
+      "teamLabel": "團隊",
+      "titleToPersonal": "將「{{name}}」移至個人",
+      "titleToTeam": "將「{{name}}」移至團隊",
+      "unnamed": "您無法開啟的項目",
+      "withReasons": {
+        "in_folder": "在資料夾中",
+        "same_workflow": "在同一工作流程中",
+        "used_by_agent": "由代理使用"
+      }
     },
     "notices": {
       "lost": "您已不在 {{name}} 中，已切換到個人",
@@ -5100,7 +5224,25 @@
       "thisTeam": "此團隊"
     },
     "share": {
-      "everyoneInTeam": "{{team}} 中的所有人"
+      "access": "存取權",
+      "adminsOnly": "只有管理員可以在代理頁面上變更這些設定。",
+      "apiKey": "API 金鑰和小工具",
+      "belongsTo": "它屬於 {{team}}。存取權取決於團隊成員資格。",
+      "everyoneInTeam": "{{team}} 中的所有人",
+      "fromTeam": "來自團隊",
+      "manageMembers": "管理成員",
+      "members_one": "{{count}} 人，依其團隊角色",
+      "members_other": "{{count}} 人，依其團隊角色",
+      "off": "關閉",
+      "on": "開啟",
+      "onPaidBy": "開啟 · 由 {{name}} 付費",
+      "outside": "團隊外部",
+      "payerYou": "您",
+      "publicLink": "公開連結",
+      "teamTitle": "誰可以使用「{{name}}」",
+      "teamTitleGeneric": "誰可以使用此{{type}}",
+      "webhook": "Webhook",
+      "yourRole": "{{team}} 的{{role}}"
     },
     "switcher": {
       "onlyYou": "僅限您本人",
