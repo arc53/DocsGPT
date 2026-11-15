@@ -9,6 +9,7 @@ from sqlalchemy import Connection
 from docsgpt.agents.tool_pins import carry_pins_between
 from docsgpt.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
 from docsgpt.api import api
+from docsgpt.api.user.folders.service import FolderError, filing_folder, filing_owner
 from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.tools.routes import (
@@ -30,6 +31,7 @@ from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
 )
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -346,6 +348,35 @@ def _existing_mcp_context(tool_id, user, config):
     return existing_doc, ra.owner_id, ra.access == "owner", moved, credentials
 
 
+def _mcp_filing(data: dict, user: str, owner_id: str):
+    """Where a save asks to file its MCP server, checked before the server is contacted.
+
+    A new server is filed in the tree it lands in (the caller's own, or the
+    team's); an existing one by the tool's own rule: a team's server in the
+    team's tree, anyone else's in the caller's own, and only by someone who
+    may move it between folders.
+
+    Args:
+        data: The request body; only a present ``folder_id`` files (``null`` unfiles an existing server).
+        user: The caller.
+        owner_id: The server's owner (the new server's, or the stored one's).
+
+    Returns:
+        ``(tree_owner, folder_id)``, or None when the body names no folder.
+
+    Raises:
+        FolderError: 404 ``folder_not_found`` when the folder isn't in that tree.
+        AccessDenied: the caller may not move the existing server between folders.
+    """
+    if "folder_id" not in data:
+        return None
+    with db_readonly() as conn:
+        if not data.get("id"):
+            return owner_id, filing_folder(conn, owner_id, data["folder_id"])
+        tree_owner = filing_owner(require(conn, "tool", data["id"], user, "move_folder"), user)
+        return tree_owner, filing_folder(conn, tree_owner, data["folder_id"])
+
+
 @tools_mcp_ns.route("/mcp_server/test")
 class TestMCPServerConfig(Resource):
     @api.expect(
@@ -470,6 +501,11 @@ class MCPServerSave(Resource):
                 "status": fields.Boolean(
                     required=False, default=True, description="Tool status"
                 ),
+                "folder_id": fields.String(
+                    required=False,
+                    description="Folder to file the server in: the workspace's tree for a new server, the "
+                    "tool's own tree for an existing one; null unfiles an existing server",
+                ),
             },
         )
     )
@@ -513,6 +549,7 @@ class MCPServerSave(Resource):
             if not isinstance(ctx, tuple):
                 return ctx
             existing_doc, owner_id, is_owner, _moved, merged_credentials = ctx
+            filing = _mcp_filing(data, user, owner_id)
             # A team's server (owned by its principal) keeps its secret on the tool,
             # sealed under the principal: a team holds no connections in v1.
             team_owned = is_principal_id(owner_id)
@@ -695,11 +732,15 @@ class MCPServerSave(Resource):
                         }
                     if team_owned and status_bool:
                         UserToolPreferencesRepository(conn).set_in_chat(user, saved_id, True)
+                if filing is not None and (existing_doc is not None or filing[1]):
+                    FolderItemsRepository(conn).file(filing[0], "tool", saved_id, filing[1])
             response_data["injection"] = description_scan
             return make_response(jsonify(response_data), 200)
         except AccessDenied as e:
             return denied_response(e)
         except WorkspaceError as e:
+            return e.response()
+        except FolderError as e:
             return e.response()
         except InvalidServerUrl as e:
             current_app.logger.warning(f"Invalid MCP server save request: {e}")

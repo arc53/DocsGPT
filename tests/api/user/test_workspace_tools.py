@@ -403,6 +403,73 @@ class TestTeamMCP:
         assert row["display_name"] == "Renamed" and row["connection_id"] is None
         assert decrypt_credentials(row["config"]["encrypted_credentials"], principal) == {"bearer_token": "tok"}
 
+    def test_a_new_team_server_is_filed_in_the_teams_folder(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        tid, principal = _team(pg_conn)
+        folder = str(FoldersRepository(pg_conn).create(principal, "Servers", resource_type="tool")["id"])
+        body = {"displayName": "M", "config": self._bearer(), "folder_id": folder}
+        resp, _cls = self._save(app, pg_conn, "eddie", body, team=tid)
+        assert resp.status_code == 200, resp.json
+        assert FolderItemsRepository(pg_conn).filing(principal, "tool", resp.json["id"]) == folder
+
+    def test_a_new_team_server_cant_go_in_the_callers_own_folder(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+        tid, principal = _team(pg_conn)
+        own = str(FoldersRepository(pg_conn).create("eddie", "Mine", resource_type="tool")["id"])
+        body = {"displayName": "M", "config": self._bearer(), "folder_id": own}
+        resp, cls = self._save(app, pg_conn, "eddie", body, team=tid)
+        assert resp.status_code == 404
+        assert resp.json["error"] == "folder_not_found"
+        assert UserToolsRepository(pg_conn).list_for_user(principal) == []
+        cls.assert_not_called()
+
+    def test_a_new_personal_server_is_filed_in_the_callers_folder(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        folder = str(FoldersRepository(pg_conn).create("eddie", "Mine", resource_type="tool")["id"])
+        body = {"displayName": "M", "config": self._bearer(), "folder_id": folder}
+        resp, _cls = self._save(app, pg_conn, "eddie", body)
+        assert resp.status_code == 200, resp.json
+        assert FolderItemsRepository(pg_conn).filing("eddie", "tool", resp.json["id"]) == folder
+
+    def test_an_update_files_and_unfiles_a_team_server_in_the_teams_tree(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        tid, principal = _team(pg_conn)
+        folder = str(FoldersRepository(pg_conn).create(principal, "Servers", resource_type="tool")["id"])
+        tool = _tool(pg_conn, principal, name="mcp_tool", config={
+            "server_url": "https://mcp.example.com/mcp", "auth_type": "bearer", "transport_type": "http",
+            "encrypted_credentials": encrypt_credentials({"bearer_token": "tok"}, principal),
+        })
+        config = {k: v for k, v in self._bearer().items() if k != "bearer_token"}
+        body = {"id": str(tool["id"]), "displayName": "M", "config": config, "folder_id": folder}
+        resp, _cls = self._save(app, pg_conn, "eddie", body)
+        assert resp.status_code == 200, resp.json
+        assert FolderItemsRepository(pg_conn).filing(principal, "tool", str(tool["id"])) == folder
+        assert FolderItemsRepository(pg_conn).filing("eddie", "tool", str(tool["id"])) is None
+
+        resp, _cls = self._save(app, pg_conn, "eddie", {**body, "folder_id": None})
+        assert resp.status_code == 200, resp.json
+        assert FolderItemsRepository(pg_conn).filing(principal, "tool", str(tool["id"])) is None
+
+    def test_an_update_cant_file_a_team_server_in_a_personal_folder(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        tid, principal = _team(pg_conn)
+        own = str(FoldersRepository(pg_conn).create("eddie", "Mine", resource_type="tool")["id"])
+        tool = _tool(pg_conn, principal, name="mcp_tool", config={
+            "server_url": "https://mcp.example.com/mcp", "auth_type": "bearer", "transport_type": "http",
+            "encrypted_credentials": encrypt_credentials({"bearer_token": "tok"}, principal),
+        })
+        config = {k: v for k, v in self._bearer().items() if k != "bearer_token"}
+        body = {"id": str(tool["id"]), "displayName": "Renamed", "config": config, "folder_id": own}
+        resp, _cls = self._save(app, pg_conn, "eddie", body)
+        assert resp.status_code == 404
+        assert FolderItemsRepository(pg_conn).filing("eddie", "tool", str(tool["id"])) is None
+        assert _row(pg_conn, tool["id"], principal)["display_name"] != "Renamed"
+
     def test_viewer_cannot_save_in_a_team(self, app, pg_conn):
         tid, principal = _team(pg_conn)
         resp, _cls = self._save(app, pg_conn, "vera", {"displayName": "M", "config": self._bearer()}, team=tid)
