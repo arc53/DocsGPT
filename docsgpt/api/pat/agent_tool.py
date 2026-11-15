@@ -95,7 +95,8 @@ _AGENT_FILTER = "The agent's id, from list_agents. Leave empty for the whole acc
 _SOURCE_ID = "The source's id, from list_sources."
 _SCHEDULE_ID = "The schedule's id, from list_schedules."
 _FOLDER_ID = "The folder's id, from list_folders."
-_FOLDER_TYPE = "agent (folders of agents) or source (Knowledge folders of sources)."
+_FOLDER_TYPE = "agent, source (Knowledge), tool or prompt: the kind of the items."
+_FOLDER_COUNT_TYPE = "agent, source, tool or prompt: the kind item_count counts. Leave empty to count every kind."
 _PERIOD = "One of last_hour, last_24_hour, last_7_days, last_15_days, last_30_days."
 _SYNC = "How often to re-fetch: never, daily, weekly or monthly."
 _WEBSITE_ENTRIES = (
@@ -239,7 +240,7 @@ CATALOG: tuple[Action, ...] = (
         },
     ),
     Action("delete_agent_folder", "DELETE", "/api/agents/folders/<string:folder_id>",
-           "Delete a folder. Its agents are kept, outside any folder.",
+           "Delete a folder. What was in it moves to its parent.",
            {"folder_id": _req("The folder's id, from list_agent_folders.")}, active=False),
     Action("move_agent_to_folder", "POST", "/api/agents/folders/move_agent", "Move one agent into a folder, or out of its folder.",
            {}, {"agent_id": _req(_AGENT_ID), "folder_id": _param("Target folder id. Leave out to take it out of its folder.")}),
@@ -452,11 +453,12 @@ CATALOG: tuple[Action, ...] = (
            {"source_id": _req(_SOURCE_ID), "node_id": _req("The node's id, from get_source_graph.")}),
     # --- Folders (agents and knowledge) ---
     Action("list_folders", "GET", "/api/folders",
-           "List this account's folders of one type; a source folder names the agents that read it.",
-           {"type": _req(_FOLDER_TYPE)}),
-    Action("create_folder", "POST", "/api/folders", "Create a folder. Folders nest up to 3 levels deep.", {},
-           {"type": _req(_FOLDER_TYPE), "name": _req("Name of the folder."),
-            "parent_id": _param("Id of the folder to put it in.")}),
+           "List this account's folders: one tree holding agents, sources, tools and prompts, with counts of each "
+           "kind; a folder names the agents that read its sources.",
+           {"type": _param(_FOLDER_COUNT_TYPE)}),
+    Action("create_folder", "POST", "/api/folders",
+           "Create a folder. Any kind of item can be filed in it. Folders nest up to 3 levels deep.", {},
+           {"name": _req("Name of the folder."), "parent_id": _param("Id of the folder to put it in.")}),
     Action("update_folder", "PUT", "/api/folders/<string:folder_id>",
            "Rename a folder or move it. Send only the fields to change.",
            {"folder_id": _req(_FOLDER_ID)},
@@ -464,8 +466,9 @@ CATALOG: tuple[Action, ...] = (
     Action("delete_folder", "DELETE", "/api/folders/<string:folder_id>",
            "Delete a folder. What was in it moves to its parent; agents reading it lose it.",
            {"folder_id": _req(_FOLDER_ID)}, active=False),
-    Action("file_in_folder", "POST", "/api/folders/items", "File agents or sources in a folder, or take them out.", {},
-           {"type": _req(_FOLDER_TYPE), "ids": _list("Ids of the agents or sources.", required=True),
+    Action("file_in_folder", "POST", "/api/folders/items",
+           "File agents, sources, tools or prompts of one kind in a folder, or take them out.", {},
+           {"type": _req(_FOLDER_TYPE), "ids": _list("Ids of the items, all of that kind.", required=True),
             "folder_id": _param("Target folder id. Leave out to take them out of their folder.")}),
     # --- Prompts ---
     Action("list_prompts", "GET", "/api/get_prompts", "List the prompts of this account with their ids and names."),

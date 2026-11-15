@@ -78,11 +78,14 @@ class TestCreate:
         status, _ = _call(app, pg_conn, "get", "/api/folders?type=source", None)
         assert status == 401
 
-    def test_type_is_required(self, app, pg_conn):
+    def test_type_is_optional_and_checked_on_a_list(self, app, pg_conn):
         status, body = _call(app, pg_conn, "get", "/api/folders")
+        assert (status, body["folders"]) == (200, [])
+        status, body = _call(app, pg_conn, "get", "/api/folders?type=widget")
         assert (status, body["error"]) == (400, "invalid_type")
-        status, body = _call(app, pg_conn, "post", "/api/folders", json={"type": "tool", "name": "x"})
-        assert (status, body["error"]) == (400, "invalid_type")
+        # A create ignores it: a folder holds every kind.
+        status, body = _call(app, pg_conn, "post", "/api/folders", json={"type": "widget", "name": "x"})
+        assert status == 201
 
     def test_creates_a_trimmed_folder(self, app, pg_conn):
         status, body = _create(app, pg_conn, "  Carriers  ")
@@ -297,7 +300,7 @@ class TestList:
         _, body = _call(app, pg_conn, "get", "/api/folders?type=agent")
         assert sorted(f["name"] for f in body["folders"]) == ["A", "K"]
         assert {f["type"] for f in body["folders"]} == {"agent"}
-        assert all(f["item_count"] == 0 and "used_by" not in f for f in body["folders"])
+        assert all(f["item_count"] == 0 for f in body["folders"])
         _, body = _call(app, pg_conn, "get", "/api/folders?type=source")
         assert {f["name"]: f["item_count"] for f in body["folders"]} == {"A": 0, "K": 1}
 

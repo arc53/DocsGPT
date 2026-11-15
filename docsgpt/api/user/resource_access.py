@@ -88,6 +88,7 @@ ACTIONS: dict[str, dict[str, str]] = {
     "tool": {
         "use": "viewer",  # see it and run it inside the owner's shared agents
         "use_in_own": "viewer",  # add it to my own agents and chats
+        "move_folder": "viewer",  # file it in my own folders (personal filing, folder_items)
         "edit": "editor",  # name, action descriptions, parameters, approval
         "edit_credentials": "editor",  # secrets, URL, auth (write-only); OAuth servers stay owner-only
         "share": "owner",
@@ -97,6 +98,7 @@ ACTIONS: dict[str, dict[str, str]] = {
     },
     "prompt": {
         "use": "viewer",  # read it and use it in my own agents
+        "move_folder": "viewer",  # file it in my own folders (personal filing, folder_items)
         "duplicate": "editor",
         "edit": "editor",
         "share": "owner",

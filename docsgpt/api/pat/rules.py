@@ -192,48 +192,39 @@ def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -
     return None
 
 
-#: The token family of each folder type (``/api/folders``).
-_FOLDER_FAMILY = {"agent": "agents", "source": "sources"}
+#: The token family of each kind a folder holds (``/api/folders``).
+_FOLDER_FAMILY = {"agent": "agents", "source": "sources", "tool": "tools", "prompt": "prompts"}
+_FOLDER_FAMILIES = tuple(_FOLDER_FAMILY.values())
 
 
-def _folder_family(request, user_id: Optional[str]) -> Optional[str]:
-    """The family of the folder type a ``/api/folders`` request names (``type``, query or JSON), or None."""
-    raw = request.args.get("type") or _json_body(request).get("type")
-    if raw:
-        return _FOLDER_FAMILY.get(str(raw).strip().lower())
+def _filing_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
+    """Hold a restricted token's filing (``POST /api/folders/items``) to its allowlist.
+
+    The kind comes from the JSON body's ``type`` only, the one the route
+    files; a query string can't name another. A token restricted on that
+    kind's family may file only ids on its allowlist. The route checks the
+    family's write scope.
+    """
+    family = _FOLDER_FAMILY.get(str(_json_body(request).get("type") or "").strip().lower())
+    if family is None or family not in resource_filter:
+        return None
+    ids = _as_ids(_json_body(request).get("ids"))
+    if not ids:
+        return f"This token is restricted to specific {family} and cannot use this endpoint"
+    if not _all_allowed(ids, resource_filter[family]):
+        return f"Token is not allowed to access this resource ({family})"
     return None
 
 
-def _folder_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
-    """Hold a restricted token to the agent-folder rules for both folder types.
-
-    Folders are not on any allowlist, so a token restricted on the type's
-    family may list folders and file items on its allowlist (``ids``), but not
-    create, rename, move or delete a folder. A route naming a folder id
-    touches a folder that can hold every kind, so a token restricted on any
-    folder family is refused there, whatever ``type`` it sends. The route
-    checks the read/write scope.
-    """
-    if request.method != "GET" and (request.view_args or {}).get("folder_id"):
-        restricted = [f for f in _FOLDER_FAMILY.values() if f in resource_filter]
-        if restricted:
-            return f"This token is restricted to specific {restricted[0]} and cannot use this endpoint"
-        return None
-    family = _folder_family(request, user_id)
-    if family is None or family not in resource_filter or request.method == "GET":
-        return None
-    if (request.url_rule.rule if request.url_rule else "").endswith("/folders/items"):
-        ids = _as_ids(_json_body(request).get("ids"))
-        if not ids:
-            return f"This token is restricted to specific {family} and cannot use this endpoint"
-        if not _all_allowed(ids, resource_filter[family]):
-            return f"Token is not allowed to access this resource ({family})"
-        return None
-    return f"This token is restricted to specific {family} and cannot use this endpoint"
-
-
-_FOLDER_READ = _rule(any_of=("agents:read", "sources:read"), check=_folder_check)
-_FOLDER_WRITE = _rule(any_of=("agents:write", "sources:write"), check=_folder_check)
+# A folder holds every kind and is on no allowlist: a token restricted on any
+# kind may list folders and file its allowed items, but not create, rename,
+# move or delete a folder (``blocked_by``, so the agent tool leaves those out
+# too). Any of the four families' scopes reaches the tree; the route also
+# checks the family's own scope where a kind is named (a list's ``type``, a
+# filing's ``type``).
+_FOLDER_READ = _rule(any_of=tuple(f"{family}:read" for family in _FOLDER_FAMILIES))
+_FOLDER_WRITE = _rule(any_of=tuple(f"{family}:write" for family in _FOLDER_FAMILIES), blocked_by=_FOLDER_FAMILIES)
+_FOLDER_FILE = _rule(any_of=tuple(f"{family}:write" for family in _FOLDER_FAMILIES), check=_filing_check)
 
 _CHAT = dict(
     family=None,
@@ -272,12 +263,12 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/analytics/topics", "GET"): _rule(
         "analytics:read", (QUERY, "agent_id"), family="agents", blocked_by=_NON_AGENT_FAMILIES
     ),
-    # Folders of both types; the route also checks the type's own scope (agents:* or sources:*).
+    # One folder tree of all four kinds; the route also checks a named kind's own scope.
     ("/api/folders", "GET"): _FOLDER_READ,
     ("/api/folders", "POST"): _FOLDER_WRITE,
     ("/api/folders/<string:folder_id>", "PUT"): _FOLDER_WRITE,
     ("/api/folders/<string:folder_id>", "DELETE"): _FOLDER_WRITE,
-    ("/api/folders/items", "POST"): _FOLDER_WRITE,
+    ("/api/folders/items", "POST"): _FOLDER_FILE,
     # Agent folders: aliases of /api/folders with type=agent.
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
@@ -292,9 +283,10 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/share_agent", "PUT"): _rule("agents:write", (JSON, "id")),
     ("/api/import_agent/plan", "POST"): _rule("agents:write", in_route=True),
     ("/api/import_agent", "POST"): _rule("agents:write", in_route=True),
-    ("/api/agents/folders/", "POST"): _rule("agents:write"),
-    ("/api/agents/folders/<string:folder_id>", "PUT"): _rule("agents:write"),
-    ("/api/agents/folders/<string:folder_id>", "DELETE"): _rule("agents:write"),
+    # The same folders as /api/folders: closed to a token restricted on any kind.
+    ("/api/agents/folders/", "POST"): _rule("agents:write", blocked_by=_FOLDER_FAMILIES),
+    ("/api/agents/folders/<string:folder_id>", "PUT"): _rule("agents:write", blocked_by=_FOLDER_FAMILIES),
+    ("/api/agents/folders/<string:folder_id>", "DELETE"): _rule("agents:write", blocked_by=_FOLDER_FAMILIES),
     ("/api/agents/folders/move_agent", "POST"): _rule("agents:write", (JSON, "agent_id")),
     ("/api/agents/folders/bulk_move", "POST"): _rule("agents:write", (JSON, "agent_ids")),
     ("/api/regenerate_agent_key/<string:agent_id>", "POST"): _rule("agents:keys", (VIEW, "agent_id")),

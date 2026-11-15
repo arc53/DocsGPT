@@ -26,6 +26,7 @@ from docsgpt.api import api
 from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.pat.tokens import is_pat, TOKEN_PREFIX
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
+from docsgpt.api.user.folders.service import FolderError, ItemFiling, filing_folder, filing_owner
 from docsgpt.api.user.resource_access import (
     _user_labels,
     AccessDenied,
@@ -48,6 +49,7 @@ from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
 from docsgpt.storage.db.repositories.todos import TodosRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import (
@@ -823,7 +825,9 @@ class GetTools(Resource):
             "Get the tools of the workspace the request names (header X-DocsGPT-Workspace, default Personal): "
             "in a team, the team's tools with the caller's team role; in Personal, the caller's own and those "
             "shared with them, never a team's. Each row carries workspace, created_by {user_id, label}, access, "
-            "allowed_actions, team_role and origin; the response echoes workspace {kind, team_id, role}"
+            "allowed_actions, team_role, origin and its filing in the workspace's folder tree (folder_id, "
+            "folder_path [{id, name}] from the top-level folder down; built-in tools have none); the response "
+            "echoes workspace {kind, team_id, role}"
         )
     )
     def get(self):
@@ -866,6 +870,8 @@ class GetTools(Resource):
                 prefs = UserToolPreferencesRepository(conn).in_chat_many(user, [*shared_ids, *team_ids])
                 shared_via = _shared_via(conn, user, shared_ids)
                 creators = creator_payloads(conn, user, [*rows, *shared_rows, *team_rows])
+                # Each tool's filing in this workspace's folder tree.
+                filing = ItemFiling(conn, workspace.owner_id, "tool")
             user_tools = []
 
             def _shape_tool(row, *, ownership="user", force_strip_secret=False):
@@ -896,6 +902,7 @@ class GetTools(Resource):
                     tool_copy["config"] = mask_api_tool_config(tool_copy.get("config") or {})
                 tool_copy["ownership"] = ownership
                 tool_copy["created_by"] = created_by_payload(row, creators)
+                tool_copy.update(filing.fields(row["id"]))
                 if str(row["id"]) in account_names:
                     tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]
                 return _stamp_action_access(tool_copy)
@@ -992,6 +999,9 @@ class CreateTool(Resource):
                 "status": fields.Boolean(
                     required=True, description="Status of the tool"
                 ),
+                "folder_id": fields.String(
+                    required=False, description="A folder of the workspace's tree to file the new tool in"
+                ),
             },
         )
     )
@@ -1030,6 +1040,12 @@ class CreateTool(Resource):
                 return personal_only_response(CODE_OAUTH_PERSONAL_ONLY)
         owner_id, created_by = workspace.owner_for_create(user)
         try:
+            with db_readonly() as conn:
+                # A folder of the tree the new tool lands in: the caller's own, or the team's.
+                folder_pg = filing_folder(conn, owner_id, data.get("folder_id"))
+        except FolderError as err:
+            return err.response()
+        try:
             if data["name"] == "mcp_tool":
                 server_url = (data.get("config", {}).get("server_url") or "").strip()
                 if server_url:
@@ -1054,7 +1070,7 @@ class CreateTool(Resource):
             return make_response(jsonify({"success": False}), 400)
         definition = definition_for_tool(data["name"])
         if definition is not None:
-            connected = _create_connected_tool(user, data, definition, tool_instance)
+            connected = _create_connected_tool(user, data, definition, tool_instance, folder_id=folder_pg)
             if connected is not None:
                 return connected
         try:
@@ -1100,6 +1116,8 @@ class CreateTool(Resource):
                 )
                 if workspace.is_team and in_chat:
                     UserToolPreferencesRepository(conn).set_in_chat(created_by, str(created["id"]), True)
+                if folder_pg:
+                    FolderItemsRepository(conn).file(owner_id, "tool", str(created["id"]), folder_pg)
             new_id = str(created["id"])
         except Exception as err:
             current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
@@ -1107,12 +1125,14 @@ class CreateTool(Resource):
         return make_response(jsonify({"id": new_id}), 200)
 
 
-def _create_connected_tool(user, data, definition, tool_instance):
+def _create_connected_tool(user, data, definition, tool_instance, folder_id: Optional[str] = None):
     """Create a service tool whose secret lives on a connection, not the tool.
 
     Uses ``connection_id`` when given, otherwise stores the pasted secret on
     a connection (reusing an identical one). Returns None to fall back to the
     legacy path when a multi-user install still runs on the default key.
+    ``folder_id`` (one of the caller's folders, already checked) files the new
+    tool there.
     """
     from docsgpt.connectors import catalog as connector_catalog
     from docsgpt.connectors import service as connection_service
@@ -1146,6 +1166,8 @@ def _create_connected_tool(user, data, definition, tool_instance):
                 config=public,
                 status=bool(data.get("status", True)),
             )
+            if folder_id:
+                FolderItemsRepository(conn).file(user, "tool", str(created["id"]), folder_id)
     except connection_service.EncryptionKeyNotConfigured:
         return None
     except connection_service.ConnectorDisabled as err:
@@ -1199,6 +1221,9 @@ class UpdateTool(Resource):
                     fields.Raw, description="Actions the tool can perform"
                 ),
                 "status": fields.Boolean(description="Status of the tool"),
+                "folder_id": fields.String(
+                    description="File the tool in this folder of its workspace's tree; null takes it out"
+                ),
             },
         )
     )
@@ -1371,12 +1396,21 @@ class UpdateTool(Resource):
                         UserToolPreferencesRepository(conn).set_in_chat(
                             user, str(tool_doc["id"]), bool(data["status"])
                         )
+                if "folder_id" in data:
+                    # A team's tool is filed in the team's tree, anyone else's in the caller's own.
+                    check_action(ra, "move_folder")
+                    tree_owner = filing_owner(ra, user)
+                    FolderItemsRepository(conn).file(
+                        tree_owner, "tool", str(tool_doc["id"]), filing_folder(conn, tree_owner, data["folder_id"]),
+                    )
                 if update_data:
                     UserToolsRepository(conn).update(
                         str(tool_doc["id"]), ra.owner_id, _api_to_update_fields(update_data),
                     )
         except AccessDenied as err:
             return denied_response(err)
+        except FolderError as err:
+            return err.response()
         except CredentialsRequired as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:

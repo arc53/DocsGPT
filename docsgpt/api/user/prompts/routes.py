@@ -8,6 +8,7 @@ from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
 from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
+from docsgpt.api.user.folders.service import FolderError, ItemFiling, filing_folder, filing_owner
 from docsgpt.api.user.resource_access import (
     _user_labels,
     AccessDenied,
@@ -22,6 +23,7 @@ from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.drafter.prompt_checks import prompt_checks
 from docsgpt.drafter.prompt_recipe import READ_MAX
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -75,6 +77,9 @@ class CreatePrompt(Resource):
                 required=True, description="Content of the prompt"
             ),
             "name": fields.String(required=True, description="Name of the prompt"),
+            "folder_id": fields.String(
+                required=False, description="A folder of the workspace's tree to file the new prompt in"
+            ),
         },
     )
 
@@ -87,7 +92,8 @@ class CreatePrompt(Resource):
         responses={
             200: "The new prompt's id and updated_at (the version a save over it sends back)",
             403: "A Viewer in the team (error workspace_role_required)",
-            404: "Not a member of the named team (error workspace_not_found)",
+            404: "Not a member of the named team (error workspace_not_found), or folder_id isn't a folder of the "
+            "workspace's tree (error folder_not_found)",
         },
     )
     def post(self):
@@ -105,9 +111,12 @@ class CreatePrompt(Resource):
                 workspace = current_workspace(conn)
                 require_workspace_role(workspace, "editor")
                 owner_id, created_by = workspace.owner_for_create(user)
+                folder_pg = filing_folder(conn, owner_id, data.get("folder_id"))
                 prompt = PromptsRepository(conn).create(owner_id, data["name"], data["content"], created_by=created_by)
+                if folder_pg:
+                    FolderItemsRepository(conn).file(owner_id, "prompt", str(prompt["id"]), folder_pg)
             new_id = str(prompt["id"])
-        except WorkspaceError as err:
+        except (WorkspaceError, FolderError) as err:
             return err.response()
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
@@ -122,7 +131,8 @@ class GetPrompts(Resource):
             "Get the prompts of the workspace the request names (header X-DocsGPT-Workspace, default Personal), "
             "after the built-in presets: in a team, the team's prompts with the caller's team role; in Personal, "
             "the caller's own and those shared with them, never a team's. Each row carries workspace, created_by "
-            "{user_id, label}, access, allowed_actions, team_role and origin"
+            "{user_id, label}, access, allowed_actions, team_role, origin and its filing in the workspace's "
+            "folder tree (folder_id, folder_path [{id, name}] from the top-level folder down; presets have none)"
         )
     )
     def get(self):
@@ -153,6 +163,8 @@ class GetPrompts(Resource):
                     conn, "prompt", [*(str(p["id"]) for p in prompts), *(str(p["id"]) for p in shared_prompts)]
                 )
                 creators = creator_payloads(conn, user, [*prompts, *shared_prompts, *team_prompts])
+                # Each prompt's filing in this workspace's folder tree.
+                filing = ItemFiling(conn, workspace.owner_id, "prompt")
             list_prompts = [{"id": name, "name": name, "type": "public"} for name in PRESET_PROMPTS]
             for prompt in prompts:
                 pid = str(prompt["id"])
@@ -164,6 +176,7 @@ class GetPrompts(Resource):
                         "preview": prompt_preview(prompt.get("content")),
                         "updated_at": _iso(prompt.get("updated_at")),
                         "created_by": created_by_payload(prompt, creators),
+                        **filing.fields(pid),
                         **payload_for("prompt", "owner", switches.get(pid)),
                     }
                 )
@@ -178,6 +191,7 @@ class GetPrompts(Resource):
                         "preview": prompt_preview(prompt.get("content")),
                         "updated_at": _iso(prompt.get("updated_at")),
                         "created_by": created_by_payload(prompt, creators),
+                        **filing.fields(pid),
                         **payload_for("prompt", team_shared.get(pid), switches.get(pid)),
                     }
                 )
@@ -193,6 +207,7 @@ class GetPrompts(Resource):
                         "preview": prompt_preview(prompt.get("content")),
                         "updated_at": _iso(prompt.get("updated_at")),
                         "created_by": created_by_payload(prompt, creators),
+                        **filing.fields(prompt["id"]),
                         **payload_for("prompt", None, None, team_id=workspace.team_id, team_role=workspace.role),
                     }
                 )
@@ -233,6 +248,7 @@ class GetSinglePrompt(Resource):
                 ra = require(conn, "prompt", prompt_id, user, "use")
                 prompt = PromptsRepository(conn).get_any(ra.resource_id, ra.owner_id)
                 creators = creator_payloads(conn, user, [prompt] if prompt else [])
+                filed = ItemFiling(conn, filing_owner(ra, user), "prompt").fields(ra.resource_id) if prompt else {}
             if not prompt:
                 return make_response(
                     jsonify({"success": False, "message": "Prompt not found"}), 404
@@ -249,6 +265,7 @@ class GetSinglePrompt(Resource):
                     "name": prompt.get("name"),
                     "updated_at": _iso(prompt.get("updated_at")),
                     "created_by": created_by_payload(prompt, creators),
+                    **filed,
                     **ra.payload(),
                 }
             ),
@@ -304,6 +321,10 @@ class UpdatePrompt(Resource):
                 description="The prompt's updated_at as last read or saved; the save is refused (409) "
                 "when someone saved it since",
             ),
+            "folder_id": fields.String(
+                required=False,
+                description="File the prompt in this folder of its workspace's tree; null takes it out",
+            ),
         },
     )
 
@@ -328,6 +349,9 @@ class UpdatePrompt(Resource):
         try:
             with db_session() as conn:
                 ra = require(conn, "prompt", data["id"], user, "edit")
+                # A team's prompt is filed in the team's tree, anyone else's in the caller's own.
+                tree_owner = filing_owner(ra, user)
+                folder_pg = filing_folder(conn, tree_owner, data["folder_id"]) if "folder_id" in data else None
                 result = PromptsRepository(conn).update_by_id(
                     ra.resource_id,
                     data["name"],
@@ -345,8 +369,12 @@ class UpdatePrompt(Resource):
                         ),
                         409,
                     )
+                if "folder_id" in data:
+                    FolderItemsRepository(conn).file(tree_owner, "prompt", ra.resource_id, folder_pg)
         except AccessDenied as err:
             return _denied(err)
+        except FolderError as err:
+            return err.response()
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

@@ -5,13 +5,19 @@ An agent (``agents.knowledge_folder_ids``), a workflow agent node
 source folders instead of, or next to, single sources. A folder stays live: a
 source filed into it later reaches every holder at its next run.
 
-A folder is personal filing, so it reads as its owner's: the sources its owner
-filed anywhere in its subtree, each one the owner may still use
+A folder reads as its tree's owner's: the sources filed anywhere in its
+subtree of that tree, each one the owner may still use
 (:func:`docsgpt.api.user.resource_access.can_use_ref`). A folder that no longer
-exists adds nothing. Only a folder's owner may attach it to something; one
+exists adds nothing. A person's folder is attached only by that person; one
 already attached stays when someone else saves the holder.
 
-On an agent or a workflow owned by someone else (a teammate attached their own
+A team's agent or workflow reads the team's one tree: any of the team's
+folders is attachable by an Editor, and it feeds every team source any Editor
+filed there (a filing in a team's tree is the team principal's, whoever made
+it). Nothing is confirmed there, since nothing runs as a person; a source
+that isn't the team's feeds nothing even when filed there.
+
+On a personal agent or workflow owned by someone else (a teammate attached their own
 folder), the folder's owner stands in like a sponsor: it feeds a source only
 when the holder's owner may use it or the folder's owner may sponsor it
 (``can_sponsor_ref``: owns or edits it), and nothing at all once the folder's
@@ -46,9 +52,10 @@ FOLDER_NOT_ACCESSIBLE = "folder_not_accessible"
 #: The ``confirm_sponsor`` key type of a knowledge folder (``folder:<id>``).
 FOLDER_KEY_TYPE = "folder"
 
-# Each requested folder (``root``) and every folder under it, with its owner's
-# filed sources. ``level`` stops a corrupt cycle; only the owner's own folders
-# count (a folder holds every kind; its sources are what an agent reads).
+# Each requested folder (``root``) and every folder under it, with the sources
+# filed in its owner's tree (a team's principal for a team folder). ``level``
+# stops a corrupt cycle; only folders of the same tree count (a folder holds
+# every kind; its sources are what an agent reads).
 _EXPAND_SQL = """
     WITH RECURSIVE tree(root, id, owner, level) AS (
         SELECT f.id, f.id, f.user_id, 1 FROM folders f
@@ -135,7 +142,7 @@ def owned_source_folders(conn: Connection, folder_ids: Iterable[Any], user: Opti
 
 
 def holder_owned_folders(conn: Connection, folder_ids: Iterable[Any], holder_owner: Optional[str]) -> list[str]:
-    """The ids among ``folder_ids`` in the holder owner's own tree, in order: the attach rule of a team holder (D7).
+    """The ids among ``folder_ids`` in the holder owner's own tree, in order: the attach rule of a team holder.
 
     A team's agent or workflow reads the team's one folder tree, so a folder
     is attachable when the team's principal owns it, whoever files into it.
@@ -414,12 +421,16 @@ def folder_details(
         return []
     rows = {r[0].lower(): (r[1], r[2]) for r in conn.execute(text(_FOLDERS_SQL), {"ids": ids}).fetchall()}
     expanded, stopped = _expand(conn, ids, holder_type, holder)
-    labels = person_labels(conn, viewer, holder, [owner for _, owner in rows.values() if owner != viewer])
+    # A team holder's own folder is the team's tree, not someone else's: it names no owner.
+    team_owner = (holder or {}).get("user_id") if is_principal_id((holder or {}).get("user_id")) else None
+    labels = person_labels(
+        conn, viewer, holder, [owner for _, owner in rows.values() if owner not in (viewer, team_owner)]
+    )
     out = []
     for fid in ids:
         name, owner = rows.get(fid, (None, None))
         entry: dict[str, Any] = {"id": fid, "name": name, "source_count": len(expanded.get(fid, []))}
-        if owner and owner != viewer and owner in labels:
+        if owner and owner not in (viewer, team_owner) and owner in labels:
             entry["owner_id"] = owner
             entry["owner_name"] = labels[owner]
         reason = REASON_DELETED if fid not in rows else stopped.get(fid)

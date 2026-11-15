@@ -431,7 +431,7 @@ class TestGrantListing:
         assert tool_row["target_user_label"] is None
         assert tool_row["caller"] == {
             "access": "viewer",
-            "allowed_actions": ["use", "use_in_own"],
+            "allowed_actions": ["move_folder", "use", "use_in_own"],
             "workspace": {"kind": "personal", "team_id": None},
             "team_role": None,
             "origin": "shared",

@@ -8,14 +8,15 @@ self-FK is ``ON DELETE SET NULL``, but the folder service moves a deleted
 folder's children and items to its parent first
 (``FoldersRepository.delete_into_parent``).
 
-``folder_items`` is filing: a user files an item they can see into one of
-their own folders, at most once per item; the composite FK keeps the filing's
-user equal to the folder's owner. Filing never touches the item's own row. A
+``folder_items`` is filing: an item is filed into one folder of a tree, at
+most once per tree owner; the composite FK keeps the filing's ``user_id``
+equal to the folder's owner, so a filing in a team's tree carries the team's
+principal whoever filed it. Filing never touches the item's own row. A
 deleted agent, source, tool or prompt loses its filings through the
 ``*_cleanup_folder_items`` triggers.
 
 The repositories trust their callers on access: the folder service checks
-that the item is visible and that the folder is the caller's. The
+the caller's place in the tree and which items may be filed there. The
 ``resource_type`` arguments that once picked a folder's type are kept for
 callers and ignored (the folder API still names a type).
 """
@@ -29,8 +30,8 @@ from sqlalchemy import Connection, func, text
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import folders_table
 
-#: The kinds of item the folder API files today (the table takes tools and prompts too).
-FOLDER_RESOURCE_TYPES = ("agent", "source")
+#: The kinds of item a folder holds.
+FOLDER_RESOURCE_TYPES = ("agent", "source", "tool", "prompt")
 
 _ALLOWED_UPDATE_COLUMNS = {"name", "description", "parent_id"}
 
@@ -74,16 +75,19 @@ class FoldersRepository:
         description: Optional[str] = None,
         parent_id: Optional[str] = None,
         legacy_mongo_id: Optional[str] = None,
+        created_by: Optional[str] = None,
     ) -> dict:
         """Insert a folder.
 
         Args:
-            user_id: Its owner.
+            user_id: Its owner: a person, or a team's principal.
             name: Its name, already validated (and free among its siblings).
             resource_type: Ignored: a folder holds every kind.
             description: Optional description (agent folders of old).
             parent_id: The parent folder, already checked to be the owner's.
             legacy_mongo_id: The Mongo ObjectId of a backfilled folder.
+            created_by: The person who made it. Left out, a person's folder records its owner; a team's
+                records nobody, so a create in a team passes it.
 
         Returns:
             dict: The new row.
@@ -92,8 +96,8 @@ class FoldersRepository:
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO folders (user_id, name, description, parent_id, legacy_mongo_id)
-                VALUES (:user_id, :name, :description, CAST(:parent_id AS uuid), :legacy_mongo_id)
+                INSERT INTO folders (user_id, name, description, parent_id, legacy_mongo_id, created_by)
+                VALUES (:user_id, :name, :description, CAST(:parent_id AS uuid), :legacy_mongo_id, :created_by)
                 RETURNING *
                 """
             ),
@@ -103,6 +107,7 @@ class FoldersRepository:
                 "description": description,
                 "parent_id": str(parent_id) if parent_id else None,
                 "legacy_mongo_id": legacy_mongo_id,
+                "created_by": created_by,
             },
         )
         return row_to_dict(result.fetchone())
@@ -281,7 +286,7 @@ class FoldersRepository:
 
 
 class FolderItemsRepository:
-    """The ``folder_items`` table: which of a user's folders holds each item they filed."""
+    """The ``folder_items`` table: which folder of one owner's tree holds each item filed there."""
 
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
