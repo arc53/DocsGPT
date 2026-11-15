@@ -171,7 +171,7 @@ class TestTeamAccessControl:
         finally:
             _stop(patches)
         assert resp.status_code == 200
-        members_repo.set_manual_role.assert_called_once()
+        members_repo.change_membership.assert_called_once()
 
     def test_add_member_by_email_resolves_to_sub(self, client):
         members_repo = Mock()
@@ -197,7 +197,7 @@ class TestTeamAccessControl:
         finally:
             _stop(patches)
         assert resp.status_code == 200
-        args, kwargs = members_repo.set_manual_role.call_args
+        args, kwargs = members_repo.change_membership.call_args
         assert "resolved-sub" in args  # resolved sub used, not the email
 
     def test_add_member_email_not_found(self, client):

@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.agents import AgentsRepository
-from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.storage.db.repositories.team_members import (
+    MembershipChangeRefused,
+    TeamMembersRepository,
+)
 from docsgpt.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
 )
@@ -126,6 +130,59 @@ class TestTeamMembers:
         assert members.is_member("alice", team["id"]) is True
         members.remove_member(team["id"], "alice")
         assert members.is_member("alice", team["id"]) is False
+
+
+class TestChangeMembership:
+    """``change_membership``: the guarded write every membership route uses."""
+
+    def _team(self, pg_conn, owner="alice", admins=("alice",), members=()):
+        team = _new_team(pg_conn, owner=owner)
+        repo = TeamMembersRepository(pg_conn)
+        for user in admins:
+            repo.add_member(team["id"], user, role="team_admin")
+        for user in members:
+            repo.add_member(team["id"], user, role="team_member")
+        return team["id"], repo
+
+    def test_owner_cannot_be_demoted(self, pg_conn):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"))
+        with pytest.raises(MembershipChangeRefused) as refused:
+            repo.change_membership(tid, "alice", "team_member", actor="bob")
+        assert refused.value.reason == MembershipChangeRefused.OWNER
+        assert refused.value.change == "demote"
+        assert refused.value.self_change is False
+        assert repo.role_for("alice", tid) == "team_admin"
+
+    def test_owner_cannot_be_removed_even_by_themselves(self, pg_conn):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"))
+        with pytest.raises(MembershipChangeRefused) as refused:
+            repo.change_membership(tid, "alice", None, actor="alice")
+        assert refused.value.reason == MembershipChangeRefused.OWNER
+        assert refused.value.change == "remove"
+        assert refused.value.self_change is True
+        assert repo.is_member("alice", tid)
+
+    def test_last_admin_cannot_be_demoted_or_removed(self, pg_conn):
+        tid, repo = self._team(pg_conn, owner="carol", admins=("bob",), members=("dave",))
+        for role in ("team_member", None):
+            with pytest.raises(MembershipChangeRefused) as refused:
+                repo.change_membership(tid, "bob", role, actor="bob")
+            assert refused.value.reason == MembershipChangeRefused.LAST_ADMIN
+        assert repo.role_for("bob", tid) == "team_admin"
+
+    def test_other_changes_go_through(self, pg_conn):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"), members=("dave",))
+        repo.change_membership(tid, "bob", "team_member", actor="alice")
+        assert repo.role_for("bob", tid) == "team_member"
+        repo.change_membership(tid, "dave", "team_admin", actor="alice")
+        assert repo.role_for("dave", tid) == "team_admin"
+        repo.change_membership(tid, "dave", None, actor="alice")
+        assert not repo.is_member("dave", tid)
+        repo.change_membership(tid, "erin", "team_member", actor="alice")
+        assert repo.role_for("erin", tid) == "team_member"
+        # Promoting the owner, or re-adding them as admin, is not a demotion.
+        repo.change_membership(tid, "alice", "team_admin", actor="alice")
+        assert repo.role_for("alice", tid) == "team_admin"
 
 
 class TestResourceGrants:

@@ -11,7 +11,10 @@ Authorization model (two planes, see ``team_authz.py``):
   ``resource_access.py``) and membership of the target team. Unsharing needs
   ``share`` (no membership required) or ``team_admin`` of the team. Sharing is
   additive visibility — the resource's owner is never changed.
-- The team owner can't be demoted or removed; they transfer ownership first.
+- The team owner can't be demoted or removed, and a team keeps at least one
+  admin, whichever route changes the membership (add/re-add, role change,
+  removal, leave): all go through ``TeamMembersRepository.change_membership``.
+  The owner transfers ownership first.
 
 ``team_id`` always comes from the URL path (never the body) — enforced by
 ``require_team_role`` and by reading ``team_id`` as a route kwarg here.
@@ -53,6 +56,7 @@ from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_members import (
     ROLE_TEAM_ADMIN,
     ROLE_TEAM_MEMBER,
+    MembershipChangeRefused,
     TeamMembersRepository,
 )
 from docsgpt.storage.db.repositories.team_resource_grants import (
@@ -110,6 +114,36 @@ def _members_query() -> tuple[str | None, int | None, int]:
 def _denied(err: AccessDenied):
     """JSON response for an :class:`AccessDenied` (404 not visible, 403 not allowed)."""
     return make_response(jsonify({"success": False, "message": err.message}), err.status)
+
+
+def _refusal(refused: MembershipChangeRefused):
+    """JSON response for a membership change the team's invariants refuse.
+
+    The owner changing themselves gets 400 telling them to transfer ownership
+    first; anyone else touching the owner gets 403; demoting or removing the
+    last admin is 409.
+
+    Args:
+        refused: The refusal raised by ``change_membership``.
+
+    Returns:
+        The ``{"success": False, "message": ...}`` response.
+    """
+    remove = refused.change == "remove"
+    if refused.reason == MembershipChangeRefused.LAST_ADMIN:
+        message = f"Cannot {'remove' if remove else 'demote'} the last team admin"
+        status = 409
+    elif refused.self_change:
+        message = (
+            "Transfer team ownership to another member before you leave the team"
+            if remove
+            else "Transfer team ownership to another member before you step down as admin"
+        )
+        status = 400
+    else:
+        message = f"The team owner can't be {'removed' if remove else 'demoted'}"
+        status = 403
+    return make_response(jsonify({"success": False, "message": message}), status)
 
 
 def _team_payload(team: dict, user: str | None) -> dict:
@@ -470,7 +504,11 @@ class TeamMembers(Resource):
 
     @team_admin_required
     def post(self, team_id):
-        """Add a member by email (preferred) or raw user_id. Requires team_admin."""
+        """Add a member by email (preferred) or raw user_id. Requires team_admin.
+
+        Re-adding an existing member sets their role, under the same owner and
+        last-admin guard as the role change.
+        """
         data = request.get_json(silent=True) or {}
         new_user = (data.get("user_id") or "").strip()
         email = (data.get("email") or "").strip()
@@ -491,9 +529,13 @@ class TeamMembers(Resource):
                             "message": "No user found with that email (they must sign in once first)",
                         }, 404
                     new_user = user_row["user_id"]
-                TeamMembersRepository(conn).set_manual_role(
-                    team_id, new_user, role, granted_by=_current_user()
-                )
+                # Re-adding an existing member is a role change: same guard.
+                try:
+                    TeamMembersRepository(conn).change_membership(
+                        team_id, new_user, role, actor=_current_user()
+                    )
+                except MembershipChangeRefused as refused:
+                    return _refusal(refused)
                 _audit(
                     conn,
                     _current_user(),
@@ -521,19 +563,12 @@ class TeamMember(Resource):
             return {"success": False, "message": "invalid role"}, 400
         try:
             with db_session() as conn:
-                if role == ROLE_TEAM_MEMBER:
-                    blocked = self._owner_guard(conn, team_id, member_id, "demote")
-                    if blocked is not None:
-                        return blocked
-                members = TeamMembersRepository(conn)
-                if role == ROLE_TEAM_MEMBER and self._would_orphan_admins(
-                    members, team_id, member_id
-                ):
-                    return {
-                        "success": False,
-                        "message": "Cannot demote the last team admin",
-                    }, 409
-                members.set_manual_role(team_id, member_id, role, granted_by=_current_user())
+                try:
+                    TeamMembersRepository(conn).change_membership(
+                        team_id, member_id, role, actor=_current_user()
+                    )
+                except MembershipChangeRefused as refused:
+                    return _refusal(refused)
                 _audit(
                     conn,
                     _current_user(),
@@ -558,16 +593,12 @@ class TeamMember(Resource):
             return {"success": False, "message": "Forbidden"}, 403
         try:
             with db_session() as conn:
-                blocked = self._owner_guard(conn, team_id, member_id, "remove")
-                if blocked is not None:
-                    return blocked
-                members = TeamMembersRepository(conn)
-                if self._would_orphan_admins(members, team_id, member_id):
-                    return {
-                        "success": False,
-                        "message": "Cannot remove the last team admin",
-                    }, 409
-                members.remove_member(team_id, member_id)
+                try:
+                    TeamMembersRepository(conn).change_membership(
+                        team_id, member_id, None, actor=user
+                    )
+                except MembershipChangeRefused as refused:
+                    return _refusal(refused)
                 _audit(
                     conn,
                     user,
@@ -580,53 +611,6 @@ class TeamMember(Resource):
         except Exception as err:
             logger.error("Remove member failed: %s", err, exc_info=True)
             return {"success": False}, 400
-
-    @staticmethod
-    def _owner_guard(conn, team_id: str, member_id: str, change: str):
-        """Refuse to demote or remove the team owner.
-
-        Another admin gets 403; the owner themselves gets 400 telling them to
-        transfer ownership first (the team would otherwise have an owner who
-        isn't an admin, or isn't a member at all).
-
-        Args:
-            conn: Open connection.
-            team_id: Team from the URL path.
-            member_id: The member being changed.
-            change: ``"demote"`` or ``"remove"`` (for the message).
-
-        Returns:
-            A response to return, or None when the change may proceed.
-        """
-        team = TeamsRepository(conn).get(team_id)
-        if not team or team.get("owner_id") != member_id:
-            return None
-        if member_id == _current_user():
-            message = (
-                "Transfer team ownership to another member before you leave the team"
-                if change == "remove"
-                else "Transfer team ownership to another member before you step down as admin"
-            )
-            return make_response(jsonify({"success": False, "message": message}), 400)
-        verb = "removed" if change == "remove" else "demoted"
-        return make_response(
-            jsonify({"success": False, "message": f"The team owner can't be {verb}"}), 403
-        )
-
-    @staticmethod
-    def _would_orphan_admins(
-        members: TeamMembersRepository, team_id: str, member_id: str
-    ) -> bool:
-        """True if removing/demoting ``member_id`` leaves the team with no admin.
-
-        Locks the admin rows (FOR UPDATE) so concurrent demote/remove calls
-        serialize — preventing two simultaneous removals of distinct admins from
-        both passing the guard and orphaning the team.
-        """
-        admins = members.lock_admins(team_id)
-        if member_id not in admins:
-            return False
-        return len(admins) <= 1
 
 
 @teams_ns.route("/teams/<string:team_id>/grants")

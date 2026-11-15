@@ -20,6 +20,29 @@ ROLE_TEAM_ADMIN = "team_admin"
 ROLE_TEAM_MEMBER = "team_member"
 
 
+class MembershipChangeRefused(Exception):
+    """A role change or removal that would break a team's invariants.
+
+    Raised by :meth:`TeamMembersRepository.change_membership` before anything is
+    written. The team owner keeps their membership and admin role until
+    ownership is transferred, and a team always keeps at least one admin.
+
+    Attributes:
+        reason: ``OWNER`` (the target owns the team) or ``LAST_ADMIN``.
+        change: ``"demote"`` or ``"remove"``.
+        self_change: True when the caller is changing their own membership.
+    """
+
+    OWNER = "owner"
+    LAST_ADMIN = "last_admin"
+
+    def __init__(self, reason: str, change: str, self_change: bool) -> None:
+        super().__init__(f"{change} refused: {reason}")
+        self.reason = reason
+        self.change = change
+        self.self_change = self_change
+
+
 class TeamMembersRepository:
     """Team membership grants keyed by the auth ``sub`` (``user_id``)."""
 
@@ -191,6 +214,60 @@ class TeamMembersRepository:
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------
+    def change_membership(
+        self,
+        team_id: str,
+        user_id: str,
+        role: Optional[str],
+        *,
+        actor: Optional[str],
+    ) -> bool:
+        """Set ``user_id``'s manual role, or remove them, keeping the team valid.
+
+        The one guarded write for membership changes: every route that adds,
+        re-adds, re-roles or removes a member goes through here. It refuses to
+        demote or remove the team owner (ownership is transferred first) and
+        to leave the team with no admin. The team row and its admin rows are
+        locked (``FOR UPDATE``) so concurrent changes, and an ownership
+        transfer, serialize instead of racing past the checks.
+
+        ``add_member`` / ``set_manual_role`` / ``remove_member`` stay
+        unguarded primitives for team creation, ownership transfer and tests.
+
+        Args:
+            team_id: Team UUID.
+            user_id: The member's auth ``sub`` (need not be a member yet).
+            role: The manual role to set, or ``None`` to remove every row the
+                user holds in the team.
+            actor: The caller's ``sub``; recorded as ``granted_by``.
+
+        Returns:
+            True. A removal that found no rows returns False.
+
+        Raises:
+            MembershipChangeRefused: The change would demote or remove the
+                owner, or leave the team with no admin.
+        """
+        if role != ROLE_TEAM_ADMIN:
+            change = "remove" if role is None else "demote"
+            owner = self._conn.execute(
+                text("SELECT owner_id FROM teams WHERE id = CAST(:team_id AS uuid) FOR UPDATE"),
+                {"team_id": team_id},
+            ).scalar()
+            if owner is not None and owner == user_id:
+                raise MembershipChangeRefused(
+                    MembershipChangeRefused.OWNER, change, actor == user_id
+                )
+            admins = self.lock_admins(team_id)
+            if user_id in admins and len(admins) <= 1:
+                raise MembershipChangeRefused(
+                    MembershipChangeRefused.LAST_ADMIN, change, actor == user_id
+                )
+        if role is None:
+            return self.remove_member(team_id, user_id)
+        self.set_manual_role(team_id, user_id, role, granted_by=actor)
+        return True
+
     def add_member(
         self,
         team_id: str,
@@ -229,7 +306,7 @@ class TeamMembersRepository:
 
         Deletes any other manual role row for the user in this team, then adds
         the target — keeping the single-manual-role invariant. IdP-sourced rows
-        are untouched.
+        are untouched. Unguarded: routes use :meth:`change_membership`.
         """
         self._conn.execute(
             text(
@@ -254,6 +331,7 @@ class TeamMembersRepository:
         When ``source`` is given only that source's rows are removed (so an IdP
         sync can't wipe a manual grant); otherwise every role/source row for the
         user in the team is removed. Returns True if anything was deleted.
+        Unguarded: routes use :meth:`change_membership`.
         """
         sql = "DELETE FROM team_members WHERE team_id = CAST(:team_id AS uuid) AND user_id = :user_id"
         params: dict = {"team_id": team_id, "user_id": user_id}

@@ -956,6 +956,29 @@ describe('Teams page', () => {
     ).toBe('Cannot remove the last admin');
   });
 
+  // Re-adding the owner as a member is refused like a demotion.
+  it("shows the server's reason when adding a member is refused", async () => {
+    addMember.mockRejectedValue(serverError("The team owner can't be demoted"));
+    await render();
+    act(() =>
+      Array.from(body().querySelectorAll('button'))
+        .find((b) => b.textContent === 'settings.teams.addMember')!
+        .click(),
+    );
+    await flush();
+    typeInto(
+      body().querySelector<HTMLInputElement>(
+        '[data-slot="modal-content"] input[type="email"]',
+      )!,
+      'owner@x.io',
+    );
+    act(() => dialogButton('settings.teams.add').click());
+    await flush();
+    expect(
+      body().querySelector('[data-slot="modal-content"]')?.textContent,
+    ).toContain("The team owner can't be demoted");
+  });
+
   it("shows the server's reason when deleting a team is refused", async () => {
     await render();
     mockUnwrap.mockImplementation(() =>
