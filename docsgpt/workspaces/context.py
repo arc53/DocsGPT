@@ -87,6 +87,10 @@ class Workspace:
         """
         return self.owner_id, caller
 
+    def payload(self) -> dict:
+        """The ``workspace`` field a list response echoes: ``{kind, team_id, role}``."""
+        return {"kind": self.kind, "team_id": self.team_id, "role": self.role}
+
 
 def parse_workspace_ref(req: Any = None) -> Optional[str]:
     """The team a request names, or None for Personal.

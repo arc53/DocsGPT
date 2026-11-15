@@ -1718,6 +1718,38 @@ def person_labels(
     return {user_id: emails.get(user_id) or user_id for user_id in named}
 
 
+def creator_payloads(conn: Connection, viewer: Optional[str], rows: Iterable[dict]) -> dict[str, dict]:
+    """Who added each item of a list, as its reader may see them named.
+
+    A team's item names who added it to every member, also after that person
+    left the team: it is the team's own record. A personal item names its
+    creator only to someone who knows them (:func:`people_named_to`).
+
+    Args:
+        conn: Open database connection.
+        viewer: The user reading the list.
+        rows: Item rows (``user_id``, ``created_by``); every row must be one the viewer can see.
+
+    Returns:
+        dict[str, dict]: ``created_by -> {user_id, label}``, both None for someone left unnamed.
+        Feed it to :func:`created_by_payload` per row.
+    """
+    rows = [row for row in rows if row.get("created_by")]
+    in_team = {row["created_by"] for row in rows if is_principal_id(row.get("user_id"))}
+    others = {row["created_by"] for row in rows} - in_team
+    labels = _user_labels(conn, in_team)
+    out = {user_id: _person(user_id, labels, True) for user_id in in_team}
+    if others:
+        known = person_labels(conn, viewer, None, others)
+        out.update({user_id: _person(user_id, known, user_id in known) for user_id in others})
+    return out
+
+
+def created_by_payload(row: dict, creators: dict[str, dict]) -> Optional[dict]:
+    """One row's ``created_by`` field from :func:`creator_payloads`, or None when the row records nobody."""
+    return creators.get(row.get("created_by")) if row.get("created_by") else None
+
+
 def _person(user_id: Optional[str], labels: dict, named: bool) -> Optional[dict]:
     """``{user_id, label}`` for someone the reader may see named, both None otherwise."""
     if not user_id:
