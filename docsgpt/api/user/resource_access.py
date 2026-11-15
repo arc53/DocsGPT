@@ -1030,13 +1030,15 @@ def ref_names(conn: Connection, refs: Iterable[tuple[str, str]]) -> dict[str, st
 
     Args:
         conn: Open database connection.
-        refs: ``(type, id)`` pairs.
+        refs: ``(type, id)`` pairs; ``folder`` names a knowledge folder a save
+            asks to confirm (``folder_knowledge.plan_folder_confirmations``).
 
     Returns:
         dict: ``"<type>:<id>" -> name`` for the ones found.
     """
     queries = {
         "source": "SELECT id, name FROM sources WHERE id = ANY(CAST(:ids AS uuid[]))",
+        "folder": "SELECT id, name FROM folders WHERE id = ANY(CAST(:ids AS uuid[])) AND resource_type = 'source'",
         "prompt": "SELECT id, name FROM prompts WHERE id = ANY(CAST(:ids AS uuid[]))",
         "tool": (
             "SELECT id, COALESCE(NULLIF(custom_name, ''), NULLIF(display_name, ''), name) "

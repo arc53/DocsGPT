@@ -15,11 +15,14 @@ On an agent or a workflow owned by someone else (a teammate attached their own
 folder), the folder's owner stands in like a sponsor: it feeds a source only
 when the holder's owner may use it or the folder's owner may sponsor it
 (``can_sponsor_ref``: owns or edits it), and nothing at all once the folder's
-owner can no longer edit the holder (``sponsor_cannot_edit_agent``).
+owner can no longer edit the holder (``sponsor_cannot_edit_agent``). So
+attaching one asks first, like a sponsored source: the save is refused (409)
+until ``confirm_sponsor`` lists ``folder:<id>`` (:func:`plan_folder_confirmations`).
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any, Iterable, Optional
 
 from sqlalchemy import Connection, text
@@ -27,6 +30,7 @@ from sqlalchemy import Connection, text
 from docsgpt.api.user.resource_access import (
     REASON_CANNOT_EDIT_HOLDER,
     REASON_DELETED,
+    SponsorPlan,
     can_sponsor_ref,
     can_use_ref,
     holder_editable_by,
@@ -37,6 +41,9 @@ from docsgpt.storage.db.session import db_readonly
 
 #: The 403 error code of a folder the caller may not attach.
 FOLDER_NOT_ACCESSIBLE = "folder_not_accessible"
+
+#: The ``confirm_sponsor`` key type of a knowledge folder (``folder:<id>``).
+FOLDER_KEY_TYPE = "folder"
 
 # Each requested source folder (``root``) and every folder under it, with its
 # owner's filed sources. ``level`` stops a corrupt cycle; only the owner's own
@@ -152,6 +159,79 @@ def unattachable_folder(
         if fid not in owned:
             return fid
     return None
+
+
+def folder_confirmations(raw: Any) -> set[str]:
+    """The folder ids a request's ``confirm_sponsor`` confirms (its ``folder:<id>`` keys).
+
+    Takes the shapes ``parse_confirmations`` takes (a list, a JSON-encoded
+    list, a comma-separated string); every other key is left to it, and it
+    drops these, so a folder key never reads as an unexpected sponsor.
+
+    Args:
+        raw: The request's ``confirm_sponsor`` value, or None.
+
+    Returns:
+        set[str]: Lower-case folder ids.
+    """
+    if raw is None or raw == "":
+        return set()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            raw = raw.split(",")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return set()
+    out: set[str] = set()
+    for item in raw:
+        key_type, _, folder_id = str(item).strip().partition(":")
+        if key_type == FOLDER_KEY_TYPE:
+            out.update(_ids([folder_id]))
+    return out
+
+
+def plan_folder_confirmations(
+    plan: SponsorPlan,
+    owner_id: Optional[str],
+    caller: Optional[str],
+    folder_ids: Optional[Iterable[Any]],
+    previous: Optional[Iterable[Any]] = (),
+    confirmed: Iterable[str] = (),
+) -> SponsorPlan:
+    """Add the folders a save would newly run as ``caller`` to ``plan.needs_confirmation``.
+
+    A folder attached to someone else's agent or workflow feeds it its
+    owner's sources, ones filed there later too, so like a sponsored source
+    it waits for the caller's confirmation: ``("folder", id)`` lands in
+    ``needs_confirmation`` until ``confirmed`` lists it, and
+    ``sponsor_refusal`` then answers 409 naming it. Nothing is stored for a
+    confirmed folder: it runs as its owner (see :func:`expand_folders`).
+    Folders already on the holder, and the holder owner's own saves, never ask.
+    Call it after :func:`unattachable_folder` passed (every new folder is the
+    caller's own).
+
+    Args:
+        plan: The holder's sponsor plan; extended in place.
+        owner_id: The holder's owner.
+        caller: The user saving.
+        folder_ids: The holder's folders after the save.
+        previous: Its folders before the save.
+        confirmed: Folder ids from :func:`folder_confirmations`.
+
+    Returns:
+        SponsorPlan: ``plan``.
+    """
+    if not caller or caller == owner_id:
+        return plan
+    before = set(_ids(previous))
+    confirmed = set(confirmed)
+    for fid in _ids(folder_ids):
+        if fid not in before and fid not in confirmed:
+            plan.needs_confirmation.append((FOLDER_KEY_TYPE, fid))
+    return plan
 
 
 def _expand(

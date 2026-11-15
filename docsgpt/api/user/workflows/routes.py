@@ -498,7 +498,13 @@ class GraphSave:
 
 
 def plan_graph_save(
-    conn, workflow: Optional[Dict], owner_id: str, caller: str, graph: Dict, confirmed: Set[str]
+    conn,
+    workflow: Optional[Dict],
+    owner_id: str,
+    caller: str,
+    graph: Dict,
+    confirmed: Set[str],
+    confirmed_folders: Set[str] = frozenset(),
 ) -> "GraphSave | AccessDenied":
     """Check a graph save without writing anything: the node ref gate, then the sponsor plan.
 
@@ -514,6 +520,8 @@ def plan_graph_save(
         caller: The user saving, owner or editor.
         graph: A graph that passed :func:`workflow_graph_errors`.
         confirmed: ``confirm_sponsor`` keys.
+        confirmed_folders: Folder ids the caller confirmed
+            (``folder_knowledge.folder_confirmations``).
 
     Returns:
         The :class:`GraphSave`, or the :class:`AccessDenied` to answer with.
@@ -548,6 +556,12 @@ def plan_graph_save(
     plan = plan_sponsors(
         conn, "workflow", workflow, owner_id, caller, _node_refs(nodes),
         previous_refs=_node_refs(previous_nodes), confirmed=confirmed,
+    )
+    # A teammate's own knowledge folder on a node: confirmed like a sponsored source.
+    from docsgpt.api.user.folder_knowledge import plan_folder_confirmations
+
+    plan_folder_confirmations(
+        plan, owner_id, caller, _node_folder_refs(nodes), _node_folder_refs(previous_nodes), confirmed_folders,
     )
     return GraphSave(workflow=workflow, graph={**graph, "nodes": nodes}, plan=plan)
 
@@ -1262,8 +1276,11 @@ class WorkflowDetail(Resource):
                     return error_response(
                         "Workflow validation failed", errors=validation_errors
                     )
+                from docsgpt.api.user.folder_knowledge import folder_confirmations
+
                 save = plan_graph_save(
                     conn, workflow, acting, user_id, graph, parse_confirmations(data.get("confirm_sponsor")),
+                    confirmed_folders=folder_confirmations(data.get("confirm_sponsor")),
                 )
                 if isinstance(save, AccessDenied):
                     return _denied(save)

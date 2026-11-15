@@ -650,6 +650,8 @@
         "confirm": "Add with my access",
         "description_one": "The agent's owner can't use this. If you add it, it runs with your access for everyone who uses this agent.",
         "description_other": "The agent's owner can't use these. If you add them, they run with your access for everyone who uses this agent.",
+        "folderLive_one": "Sources you file in this folder later also run with your access.",
+        "folderLive_other": "Sources you file in these folders later also run with your access.",
         "stopNote_one": "It stops running if you lose edit access.",
         "stopNote_other": "They stop running if you lose edit access.",
         "takeOverConfirm": "Run with my access",
@@ -657,6 +659,7 @@
         "takeOverDescription_other": "The agent's owner can't use these. They will run with your access for everyone who uses this agent.",
         "title": "Run with your access?",
         "types": {
+          "folder": "Folder",
           "prompt": "Prompt",
           "source": "Source",
           "tool": "Tool"

@@ -645,6 +645,9 @@
         "description_many": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
         "description_one": "El propietario del agente no puede usarlo. Si lo añades, se ejecuta con tu acceso para todos los que usen este agente.",
         "description_other": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
+        "folderLive_many": "Las fuentes que guardes más adelante en estas carpetas también se ejecutan con tu acceso.",
+        "folderLive_one": "Las fuentes que guardes más adelante en esta carpeta también se ejecutan con tu acceso.",
+        "folderLive_other": "Las fuentes que guardes más adelante en estas carpetas también se ejecutan con tu acceso.",
         "stopNote_many": "Dejan de ejecutarse si pierdes el acceso de edición.",
         "stopNote_one": "Deja de ejecutarse si pierdes el acceso de edición.",
         "stopNote_other": "Dejan de ejecutarse si pierdes el acceso de edición.",
@@ -654,6 +657,7 @@
         "takeOverDescription_other": "El propietario del agente no puede usarlos. Se ejecutarán con tu acceso para todos los que usen este agente.",
         "title": "¿Ejecutar con tu acceso?",
         "types": {
+          "folder": "Carpeta",
           "prompt": "Prompt",
           "source": "Fuente",
           "tool": "Herramienta"

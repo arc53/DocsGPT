@@ -629,6 +629,8 @@
         "confirm": "Mit meinem Zugriff hinzufügen",
         "description_one": "Der Eigentümer des Agenten kann dies nicht nutzen. Wenn du es hinzufügst, läuft es für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
         "description_other": "Der Eigentümer des Agenten kann diese nicht nutzen. Wenn du sie hinzufügst, laufen sie für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
+        "folderLive_one": "Auch Quellen, die du später in diesem Ordner ablegst, laufen mit deinem Zugriff.",
+        "folderLive_other": "Auch Quellen, die du später in diesen Ordnern ablegst, laufen mit deinem Zugriff.",
         "stopNote_one": "Es läuft nicht mehr, wenn du den Bearbeitungszugriff verlierst.",
         "stopNote_other": "Sie laufen nicht mehr, wenn du den Bearbeitungszugriff verlierst.",
         "takeOverConfirm": "Mit meinem Zugriff ausführen",
@@ -636,6 +638,7 @@
         "takeOverDescription_other": "Der Eigentümer des Agenten kann diese nicht nutzen. Sie laufen dann für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
         "title": "Mit deinem Zugriff ausführen?",
         "types": {
+          "folder": "Ordner",
           "prompt": "Prompt",
           "source": "Quelle",
           "tool": "Tool"

@@ -1,5 +1,6 @@
 import {
   Database,
+  Folder,
   KeyRound,
   Link2,
   ScrollText,
@@ -30,6 +31,7 @@ const TYPE_ICONS: Record<SponsorResource['type'], typeof Wrench> = {
   tool: Wrench,
   source: Database,
   prompt: ScrollText,
+  folder: Folder,
 };
 
 /**
@@ -37,7 +39,9 @@ const TYPE_ICONS: Record<SponsorResource['type'], typeof Wrench> = {
  * owner can't use run with the editor's access, and says who will reach them
  * through the agent. Confirming retries the save with `confirm_sponsor`.
  * In `takeOver` mode the items are already attached (stopped), so the copy
- * says they will run with the editor's access rather than be added.
+ * says they will run with the editor's access rather than be added. A
+ * knowledge folder of the editor's is asked about the same way, with a note
+ * that sources filed there later run with their access too.
  */
 export default function SponsorConfirmModal({
   confirmation,
@@ -50,6 +54,8 @@ export default function SponsorConfirmModal({
   const { resources, audience } = confirmation;
   const takeOver = confirmation.mode === 'takeOver';
   const count = { count: resources.length };
+  // A knowledge folder stays live: later filings run with the editor's access too.
+  const folderCount = resources.filter((item) => item.type === 'folder').length;
   const listFormat = new Intl.ListFormat(intlLocale(i18n.language), {
     type: 'conjunction',
   });
@@ -142,6 +148,13 @@ export default function SponsorConfirmModal({
             })}
           </ListRows>
         </Card>
+        {folderCount > 0 && (
+          <p className="text-muted-foreground text-sm">
+            {t('agents.form.sponsorConfirm.folderLive', {
+              count: folderCount,
+            })}
+          </p>
+        )}
         <section className="flex flex-col gap-3">
           <SectionHeader
             as="h3"

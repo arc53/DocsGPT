@@ -83,8 +83,10 @@ from docsgpt.api.user.folders.service import FolderError, resolve_folder
 from docsgpt.api.user.folder_knowledge import (
     FOLDER_NOT_ACCESSIBLE,
     FolderRefError,
+    folder_confirmations,
     owned_source_folders,
     parse_folder_refs,
+    plan_folder_confirmations,
     resolve_folder_details,
     unattachable_folder,
 )
@@ -1891,6 +1893,18 @@ class UpdateAgent(Resource):
                     previous_refs=agent_refs(existing_agent),
                     confirmed=parse_confirmations(data.get("confirm_sponsor")),
                 )
+                # A teammate's own knowledge folder feeds the agent their
+                # sources, later filings too: confirmed like a sponsored source.
+                confirmed_folders = folder_confirmations(data.get("confirm_sponsor"))
+                if "knowledge_folder_ids" in update_fields:
+                    plan_folder_confirmations(
+                        plan,
+                        owner_id,
+                        user,
+                        update_fields["knowledge_folder_ids"],
+                        existing_agent.get("knowledge_folder_ids") or [],
+                        confirmed_folders,
+                    )
                 # The inline graph: the node ref gate and the workflow's own
                 # sponsor plan, as PUT /api/workflows/<id> runs them. Nothing
                 # is written until every check has passed.
@@ -1906,6 +1920,7 @@ class UpdateAgent(Resource):
                     graph_save = plan_graph_save(
                         conn, graph_workflow, owner_id, user, inline_graph,
                         parse_confirmations(data.get("confirm_sponsor")),
+                        confirmed_folders=confirmed_folders,
                     )
                     if isinstance(graph_save, AccessDenied):
                         return _denied(graph_save)

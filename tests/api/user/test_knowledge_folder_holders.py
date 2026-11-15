@@ -3,8 +3,9 @@
 An agent stores its folders in ``agents.knowledge_folder_ids`` (request field
 ``folders``); a workflow agent node in ``config.folders``. Only a folder's
 owner may attach it; one already attached stays when someone else saves the
-holder. Folders never enter the sponsor plan: they read as their owner's.
-Uses real repositories on ``pg_conn``.
+holder. A folder reads as its owner's, so it gets no sponsor record, but a
+teammate attaching their own folder to the owner's holder confirms it like a
+sponsored source. Uses real repositories on ``pg_conn``.
 """
 
 from __future__ import annotations
@@ -149,15 +150,82 @@ class TestAgentCreate:
         assert _folders(_row(pg_conn, resp.get_json()["id"])) == []
 
 
+def _folder_resource(folder_id, name):
+    return {"key": f"folder:{folder_id}", "type": "folder", "id": folder_id, "name": name}
+
+
 class TestAgentUpdate:
-    def test_editor_attaches_their_own_folder_without_a_sponsor(self, app, pg_conn):
+    def test_editor_confirms_their_own_folder_named_like_a_sponsored_source(self, app, pg_conn):
+        # A teammate's live folder runs their sources on the owner's agent: the
+        # same explicit confirmation as attaching the sources one by one.
         agent_id, _ = _agent(pg_conn)
         mine = _folder(pg_conn, owner=EDITOR, name="Editor's")
         resp = _put(app, pg_conn, agent_id, EDITOR, {"folders": [mine]})
+        assert _status(resp) == 409, resp.get_json()
+        body = resp.get_json()
+        assert body["code"] == "sponsor_confirmation_required"
+        assert body["resources"] == [_folder_resource(mine, "Editor's")]
+        assert "audience" in body
+        assert _folders(_row(pg_conn, agent_id)) == []
+
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"folders": [mine], "confirm_sponsor": [f"folder:{mine.upper()}"]})
         assert _status(resp) == 200, resp.get_json()
         row = _row(pg_conn, agent_id)
         assert _folders(row) == [mine]
+        # A folder runs as its owner by itself: no sponsor record.
         assert not row.get("resource_sponsors")
+        # Asked once: a later save that keeps it needs nothing.
+        assert _status(_put(app, pg_conn, agent_id, EDITOR, {"folders": [mine], "name": "Renamed"})) == 200
+
+    def test_folder_and_source_are_confirmed_together(self, app, pg_conn):
+        from tests.api.user.test_resource_sponsors import _editor_resources
+
+        agent_id, _ = _agent(pg_conn)
+        _, _, source = _editor_resources(pg_conn)
+        mine = _folder(pg_conn, owner=EDITOR, name="Mine")
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"sources": [source], "folders": [mine]})
+        assert _status(resp) == 409, resp.get_json()
+        keys = [r["key"] for r in resp.get_json()["resources"]]
+        assert keys == [f"source:{source}", f"folder:{mine}"]
+        # Confirming only the source still asks about the folder.
+        resp = _put(app, pg_conn, agent_id, EDITOR,
+                    {"sources": [source], "folders": [mine], "confirm_sponsor": [f"source:{source}"]})
+        assert _status(resp) == 409
+        assert resp.get_json()["resources"] == [_folder_resource(mine, "Mine")]
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"sources": [source], "folders": [mine], "confirm_sponsor": keys})
+        assert _status(resp) == 200, resp.get_json()
+
+    def test_a_folder_refusal_waits_for_a_not_allowed_resource(self, app, pg_conn):
+        # A resource the editor may not sponsor refuses the save (403) before any confirmation.
+        from docsgpt.storage.db.repositories.sources import SourcesRepository as _Sources
+
+        agent_id, _ = _agent(pg_conn)
+        theirs = str(_Sources(pg_conn).create("other", user_id="sp-other")["id"])
+        mine = _folder(pg_conn, owner=EDITOR, name="Mine")
+        with patch("docsgpt.api.user.agents.routes.ref_attachable", return_value=True):
+            resp = _put(app, pg_conn, agent_id, EDITOR, {"sources": [theirs], "folders": [mine]})
+        assert _status(resp) == 403
+        assert resp.get_json()["code"] == "sponsor_not_allowed"
+
+    def test_folder_confirmations_read_the_confirm_sponsor_shapes(self):
+        import json
+
+        from docsgpt.api.user.folder_knowledge import folder_confirmations
+        from docsgpt.api.user.resource_access import parse_confirmations
+
+        fid = str(uuid.uuid4())
+        keys = [f"folder:{fid.upper()}", "tool:abc", "folder:not-an-id"]
+        for raw in (keys, json.dumps(keys), ",".join(keys)):
+            assert folder_confirmations(raw) == {fid}
+        assert folder_confirmations(None) == set() == folder_confirmations({"folder": fid})
+        # The sponsor parser drops folder keys, so they are never unexpected.
+        assert parse_confirmations([f"folder:{fid}"]) == set()
+
+    def test_owner_attaches_their_own_folder_without_asking(self, app, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        folder = _folder(pg_conn)
+        assert _status(_put(app, pg_conn, agent_id, OWNER, {"folders": [folder]})) == 200
+        assert _folders(_row(pg_conn, agent_id)) == [folder]
 
     def test_editor_cannot_attach_the_owners_folder(self, app, pg_conn):
         agent_id, _ = _agent(pg_conn)
@@ -171,7 +239,7 @@ class TestAgentUpdate:
         owners = _folder(pg_conn)
         agent_id, _ = _agent(pg_conn, knowledge_folder_ids=[owners])
         mine = _folder(pg_conn, owner=EDITOR, name="Mine")
-        resp = _put(app, pg_conn, agent_id, EDITOR, {"folders": [owners, mine]})
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"folders": [owners, mine], "confirm_sponsor": [f"folder:{mine}"]})
         assert _status(resp) == 200, resp.get_json()
         assert _folders(_row(pg_conn, agent_id)) == [owners, mine]
         resp = _put(app, pg_conn, agent_id, EDITOR, {"folders": []})
@@ -266,9 +334,36 @@ class TestWorkflowNodes:
         assert _status(self._put_wf(app, pg_conn, wid, EDITOR, _node_body([owners]))) == 403
         assert _status(self._put_wf(app, pg_conn, wid, OWNER, _node_body([owners]))) == 200
         mine = _folder(pg_conn, owner=EDITOR, name="Mine")
-        resp = self._put_wf(app, pg_conn, wid, EDITOR, _node_body([owners, mine]))
+        body = _node_body([owners, mine])
+        body["confirm_sponsor"] = [f"folder:{mine}"]
+        resp = self._put_wf(app, pg_conn, wid, EDITOR, body)
         assert _status(resp) == 200, resp.get_json()
         assert not (WorkflowsRepository(pg_conn).get_by_id(wid).get("resource_sponsors") or {})
+
+    def test_editor_confirms_their_own_folder_on_a_node(self, app, pg_conn):
+        wid = self._setup(pg_conn)
+        mine = _folder(pg_conn, owner=EDITOR, name="Mine")
+        resp = self._put_wf(app, pg_conn, wid, EDITOR, _node_body([mine]))
+        assert _status(resp) == 409, resp.get_json()
+        assert resp.get_json()["code"] == "sponsor_confirmation_required"
+        assert resp.get_json()["resources"] == [_folder_resource(mine, "Mine")]
+        body = _node_body([mine])
+        body["confirm_sponsor"] = [f"folder:{mine}"]
+        assert _status(self._put_wf(app, pg_conn, wid, EDITOR, body)) == 200
+        # Already on the node: later saves don't ask again.
+        assert _status(self._put_wf(app, pg_conn, wid, EDITOR, _node_body([mine]))) == 200
+
+    def test_editor_confirms_their_own_folder_through_an_inline_graph(self, app, pg_conn):
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id, _ = _agent(pg_conn, agent_type="workflow", workflow_id=str(wf["id"]))
+        mine = _folder(pg_conn, owner=EDITOR, name="Mine")
+        body = _node_body([mine])
+        graph = {"nodes": body["nodes"], "edges": body["edges"]}
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"workflow_graph": graph})
+        assert _status(resp) == 409, resp.get_json()
+        assert resp.get_json()["resources"] == [_folder_resource(mine, "Mine")]
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"workflow_graph": graph, "confirm_sponsor": [f"folder:{mine}"]})
+        assert _status(resp) == 200, resp.get_json()
 
     def test_folders_must_be_a_list_of_ids(self, app, pg_conn):
         from docsgpt.api.user.workflows.routes import workflow_graph_shape_errors

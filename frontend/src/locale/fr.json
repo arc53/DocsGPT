@@ -645,6 +645,9 @@
         "description_many": "Le propriétaire de l’agent ne peut pas utiliser ces éléments. Si vous les ajoutez, ils s’exécuteront avec vos accès pour toutes les personnes qui utilisent cet agent.",
         "description_one": "Le propriétaire de l’agent ne peut pas utiliser cet élément. Si vous l’ajoutez, il s’exécutera avec vos accès pour toutes les personnes qui utilisent cet agent.",
         "description_other": "Le propriétaire de l’agent ne peut pas utiliser ces éléments. Si vous les ajoutez, ils s’exécuteront avec vos accès pour toutes les personnes qui utilisent cet agent.",
+        "folderLive_many": "Les sources que vous classerez plus tard dans ces dossiers s’exécutent aussi avec votre accès.",
+        "folderLive_one": "Les sources que vous classerez plus tard dans ce dossier s’exécutent aussi avec votre accès.",
+        "folderLive_other": "Les sources que vous classerez plus tard dans ces dossiers s’exécutent aussi avec votre accès.",
         "stopNote_many": "Ils cessent de s’exécuter si vous perdez l’accès en modification.",
         "stopNote_one": "Il cesse de s’exécuter si vous perdez l’accès en modification.",
         "stopNote_other": "Ils cessent de s’exécuter si vous perdez l’accès en modification.",
@@ -654,6 +657,7 @@
         "takeOverDescription_other": "Le propriétaire de l’agent ne peut pas utiliser ces éléments. Ils s’exécuteront avec vos accès pour toutes les personnes qui utilisent cet agent.",
         "title": "Exécuter avec vos accès ?",
         "types": {
+          "folder": "Dossier",
           "prompt": "Prompt",
           "source": "Source",
           "tool": "Outil"
