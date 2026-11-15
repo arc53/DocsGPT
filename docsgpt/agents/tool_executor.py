@@ -2746,6 +2746,8 @@ class ToolExecutor:
                 # falls back to ``origin_conversation_id`` as the schedule's
                 # conversation home.
                 tool_config["agent_id"] = str(self.agent_id) if self.agent_id else None
+                # The chat's team: an agentless team chat makes no schedules.
+                tool_config["team_id"] = self.workspace_team_id
                 if self.external_caller:
                     # Its runs act as the owner for an API-key caller.
                     tool_config["created_via"] = "api"

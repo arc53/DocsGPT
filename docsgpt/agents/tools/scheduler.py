@@ -46,6 +46,8 @@ class SchedulerTool(Tool):
         self.user_id: Optional[str] = user_id
         self.agent_id: Optional[str] = cfg.get("agent_id")
         self.conversation_id: Optional[str] = cfg.get("conversation_id")
+        # The team an agentless chat runs in (set by the executor), else None.
+        self.team_id: Optional[str] = cfg.get("team_id") or None
         # ``api`` when an API-key caller asked (set by the executor, never the
         # model): the schedule's runs then keep that caller's write limits.
         self.created_via: str = "api" if cfg.get("created_via") == "api" else "chat"
@@ -73,6 +75,14 @@ class SchedulerTool(Tool):
                 "conversation_id (no conversation home)."
             )
         if action_name == "schedule_task":
+            if self.team_id and not self.agent_id:
+                # A team chat uses only the team's items, but an agentless
+                # schedule runs with the person's own tools; schedules come
+                # from a team agent or from Personal instead.
+                return (
+                    "Error: tasks can't be scheduled from a team chat without an agent. "
+                    "Schedule it from a chat with one of the team's agents, or from a chat in Personal."
+                )
             return self._schedule_task(
                 instruction=kwargs.get("instruction", ""),
                 delay=kwargs.get("delay"),

@@ -125,3 +125,65 @@ class TestOwnerName:
     def test_a_team_owner_is_named_by_the_team(self, use_conn):
         _tid, principal = _team(use_conn)
         assert ToolExecutor._owner_name(principal) == "Team Ops"
+
+
+# ---------------------------------------------------------------------------
+# The scheduler tool in a team chat
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def scheduler_conn(monkeypatch, use_conn):
+    import docsgpt.api.user.tools.mcp  # noqa: F401  (stable ToolManager import order)
+
+    @contextmanager
+    def _yield():
+        yield use_conn
+
+    monkeypatch.setattr("docsgpt.agents.tools.scheduler.db_session", _yield)
+    monkeypatch.setattr("docsgpt.agents.tools.scheduler.db_readonly", _yield)
+    return use_conn
+
+
+def _scheduler(executor):
+    tool_data = {"name": "scheduler", "config": {}, "id": str(uuid.uuid4())}
+    return executor._get_or_load_tool(tool_data, tool_data["id"], "schedule_task")
+
+
+def _schedules(conn, user) -> int:
+    from sqlalchemy import text
+
+    return conn.execute(text("SELECT count(*) FROM schedules WHERE user_id = :u"), {"u": user}).scalar()
+
+
+class TestSchedulerInATeamChat:
+    def _executor(self, conn, team_id=None, agent_id=None):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        chat = ConversationsRepository(conn).create("eddie", "Chat", agent_id=agent_id, team_id=team_id)
+        executor = ToolExecutor(user="eddie")
+        executor.workspace_team_id = team_id
+        executor.agent_id = agent_id
+        executor.conversation_id = str(chat["id"])
+        return executor
+
+    def test_an_agentless_team_chat_refuses_to_schedule(self, scheduler_conn):
+        tid, _ = _team(scheduler_conn)
+        out = _scheduler(self._executor(scheduler_conn, team_id=tid)).execute_action(
+            "schedule_task", instruction="Check the queue", delay="1h",
+        )
+        assert "team's agents" in out and "Personal" in out
+        assert _schedules(scheduler_conn, "eddie") == 0
+
+    def test_a_team_agents_chat_still_schedules(self, scheduler_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        tid, principal = _team(scheduler_conn)
+        agent_id = str(AgentsRepository(scheduler_conn).create(principal, "Bot", "published",
+                                                                agent_type="classic", created_by="alice")["id"])
+        out = _scheduler(self._executor(scheduler_conn, team_id=tid, agent_id=agent_id)).execute_action(
+            "schedule_task", instruction="Check the queue", delay="1h",
+        )
+        assert _schedules(scheduler_conn, "eddie") == 1, out
+
+    def test_an_agentless_personal_chat_still_schedules(self, scheduler_conn):
+        out = _scheduler(self._executor(scheduler_conn)).execute_action("schedule_task", instruction="Check the queue", delay="1h")
+        assert _schedules(scheduler_conn, "eddie") == 1, out
