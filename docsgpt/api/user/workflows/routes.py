@@ -27,7 +27,10 @@ from docsgpt.api.user.resource_access import (
     AccessDenied,
     SponsorPlan,
     best_effort,
+    borrowed_refs,
+    borrowed_refusal,
     cached_resolves,
+    holder_has_outside_access,
     named_ref_keys,
     parse_confirmations,
     plan_sponsors,
@@ -524,6 +527,21 @@ def plan_graph_save(
     denied = _new_node_ref_denied(conn, previous_nodes, nodes, caller)
     if denied is not None:
         return denied
+    # Someone else's tool or source, reached through a grant, never goes out
+    # through the key, link or webhook of an agent that runs this graph; one
+    # already on a node stays.
+    if holder_has_outside_access(conn, "workflow", workflow):
+        def _borrowed(graph_nodes: List[Dict]) -> list:
+            return borrowed_refs(
+                conn, owner_id, _node_refs(graph_nodes), _node_folder_refs(graph_nodes),
+                holder_type="workflow", holder=workflow,
+            )
+
+        before = set(_borrowed(previous_nodes))
+        added = [ref for ref in _borrowed(nodes) if ref not in before]
+        if added:
+            body, status = borrowed_refusal(conn, added, caller, workflow, attaching=True)
+            return AccessDenied(status, body["message"])
     # A node tool/source the owner can't use runs as the editor who attached
     # it (its sponsor): only someone who owns or edits it, and only once
     # ``confirm_sponsor`` lists it.

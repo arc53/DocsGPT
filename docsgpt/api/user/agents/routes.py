@@ -33,8 +33,10 @@ from docsgpt.api.user.resource_access import (
     AccessDenied,
     agent_refs,
     best_effort,
+    borrowed_refusal,
     cached_resolves,
     delete_settings,
+    has_outside_access,
     parse_confirmations,
     payload_for,
     plan_sponsors,
@@ -88,7 +90,9 @@ from docsgpt.api.user.folder_knowledge import (
 )
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.api.user.agents.graph_checks import (
+    agent_borrowed_refs as _agent_borrowed_refs,
     graph_validation_failed as _graph_validation_failed,
+    refuse_borrowed_outside_access as _refuse_borrowed_outside_access,
     runs_outside_builder as _runs_outside_builder,
     stored_graph_errors as _stored_graph_errors,
     workflow_runs_elsewhere as _workflow_runs_elsewhere,
@@ -1206,6 +1210,15 @@ class CreateAgent(Resource):
                     )
                     build_data["workflow_id"] = pg_workflow_id
 
+                # Someone else's tool or source goes out through no key: the
+                # agent is published for its owner's own chats, keyless.
+                if key and _agent_borrowed_refs(
+                    conn,
+                    {**build_data, "user_id": user},
+                    nodes=graph_save.graph["nodes"] if graph_save is not None else None,
+                ):
+                    key = ""
+                    build_data["key"] = key
                 kwargs = _build_create_kwargs(
                     build_data, image_url=image_url, agent_type=agent_type,
                 )
@@ -1896,6 +1909,27 @@ class UpdateAgent(Resource):
                     )
                     if isinstance(graph_save, AccessDenied):
                         return _denied(graph_save)
+                # Someone else's tool or source, reached through a grant, never
+                # goes out through a key, link or webhook: none is added to an
+                # agent that has one (those already on it stay), and an agent
+                # that uses one is published without a key.
+                if newly_generated_key or has_outside_access(existing_agent):
+                    outside_view = dict(after_save)
+                    for ref_field in ("knowledge_folder_ids", "agent_type", "workflow_id"):
+                        if ref_field in update_fields:
+                            outside_view[ref_field] = update_fields[ref_field]
+                    borrowed = _agent_borrowed_refs(
+                        conn, outside_view, nodes=graph_save.graph["nodes"] if graph_save is not None else None,
+                    )
+                    if borrowed and has_outside_access(existing_agent):
+                        before = set(_agent_borrowed_refs(conn, existing_agent))
+                        added = [ref for ref in borrowed if ref not in before]
+                        if added:
+                            body, status = borrowed_refusal(conn, added, user, existing_agent, attaching=True)
+                            return make_response(jsonify(body), status)
+                    if borrowed and newly_generated_key:
+                        update_fields.pop("key", None)
+                        newly_generated_key = None
                 refusal = sponsor_refusal(
                     conn,
                     "agent",
@@ -2075,6 +2109,11 @@ class RegenerateAgentKey(Resource):
                 pg_agent_id = str(existing_agent["id"])
                 old_key = existing_agent.get("key")
                 if not old_key:
+                    # An agent using someone else's tool or source gets no key
+                    # (publishing one mints none); say so rather than "publish".
+                    refusal = _refuse_borrowed_outside_access(conn, existing_agent, user)
+                    if refusal is not None:
+                        return refusal
                     # Draft agents have no key; the first key is minted on
                     # publish. Nothing to rotate.
                     return make_response(

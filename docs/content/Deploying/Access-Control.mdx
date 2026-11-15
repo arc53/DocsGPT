@@ -207,6 +207,36 @@ Some runs are limited, because nobody can approve an action for you there:
 - **Wikis.** API and widget users, and webhook runs, edit a wiki only when its owner turns on **Let API and widget users edit this wiki** in its **Settings** (the wiki's menu on the Knowledge page). Public-link users edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 - **Research agents.** A research step can't stop to ask, so it skips any action that would need approval or a connection, and any write the caller may not make on your accounts. The step is told why and carries on (see [Research Agent](/Agents/basics#3-research-agent)).
 
+### Agents that use someone else's tools or sources
+
+A tool or source someone shared with you can go into your own agents, and runs there with your access to it. It doesn't reach anyone its owner didn't share it with: an agent that uses one gets no API key (and so no website widget), no public link and no incoming webhook.
+
+- This covers the agent's tools and sources, the sources in its [Knowledge folders](/Sources/adding-knowledge#pick-a-whole-folder), and the tools, sources and folders on a workflow agent's nodes. Prompts don't count. A resource an editor [sponsors](#resources-an-editor-adds-to-someone-elses-agent) runs with their access, not the owner's, and follows the sponsor rules instead.
+- Publishing such an agent makes it available in your own chats, and your teammates' if you shared the agent with them, but creates no API key.
+- Creating a key (`POST /api/regenerate_agent_key/<agent_id>` on an agent with none), a public link (`PUT /api/share_agent`) or a webhook (`GET /api/agent_webhook`) for it is refused with `403`, as is a promptable [conversation link](/Using/sharing) on someone else's source. Replacing a key or link the agent already has still works.
+- A save that adds such a tool or source to an agent that has a key, a public link or a webhook (`PUT /api/update_agent/<agent_id>`, or `PUT /api/workflows/<id>` for a node) is refused with `403`. Tools and sources already on it stay.
+
+The refusal names each resource and whose it is:
+
+```json
+{
+  "success": false,
+  "code": "borrowed_resource",
+  "message": "This agent uses the tool \"Jira\" from dana@example.com. An agent that uses another person's tools or sources can't have an API key, public link or webhook. Remove it from the agent first.",
+  "resources": [
+    {
+      "key": "tool:<id>",
+      "type": "tool",
+      "id": "<id>",
+      "name": "Jira",
+      "owner": { "user_id": "dana", "label": "dana@example.com" }
+    }
+  ]
+}
+```
+
+`owner` is `{ "user_id": null, "label": null }` for someone you don't know (see [Sharing agents and what they use](#sharing-agents-and-what-they-use)). A workflow save returns only `message` (and `error`).
+
 ### Resources an editor adds to someone else's agent
 
 An agent (and its workflow) runs as its owner, so its tools, sources and prompts are checked against the owner's access. When a team editor adds one the owner can't use, it runs with the **editor's** access instead, for everyone who uses the agent: members of the teams it is shared with, anyone with its API key or website widget, its public link and its webhook. The editor becomes that resource's **sponsor**.

@@ -9,7 +9,7 @@ from flask_restx import Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
-from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
+from docsgpt.api.user.agents.graph_checks import refuse_borrowed_outside_access, refuse_unfinished_graph
 from docsgpt.api.user.base import require_agent
 from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.api.user.tasks import process_agent_webhook
@@ -83,12 +83,13 @@ class AgentWebhook(Resource):
                     )
                 agent = AgentsRepository(conn).get_by_id(ra.resource_id)
                 # A new token runs the agent's graph headless: a workflow
-                # agent's must be a finished one.
-                refusal = (
-                    refuse_unfinished_graph(conn, agent)
-                    if agent and not agent.get("incoming_webhook_token")
-                    else None
-                )
+                # agent's must be a finished one, and it must not use someone
+                # else's tool or source (the sender never had it shared).
+                refusal = None
+                if agent and not agent.get("incoming_webhook_token"):
+                    refusal = refuse_unfinished_graph(conn, agent)
+                    if refusal is None:
+                        refusal = refuse_borrowed_outside_access(conn, agent, user)
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404

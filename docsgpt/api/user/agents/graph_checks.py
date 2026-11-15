@@ -14,7 +14,13 @@ from typing import Optional
 from flask import jsonify, make_response
 from sqlalchemy import text
 
-from docsgpt.api.user.workflows.routes import stored_graph, validate_workflow_structure
+from docsgpt.api.user.resource_access import agent_refs, borrowed_refs, borrowed_refusal
+from docsgpt.api.user.workflows.routes import (
+    _node_folder_refs,
+    _node_refs,
+    stored_graph,
+    validate_workflow_structure,
+)
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
@@ -134,3 +140,58 @@ def refuse_unfinished_graph(conn, agent: dict) -> Optional[object]:
     """
     errors = unfinished_graph_errors(conn, agent)
     return graph_validation_failed(errors) if errors else None
+
+
+def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list:
+    """The tools and sources an agent uses that its owner reaches only through a grant.
+
+    Its own tools and sources, the sources of its knowledge folders, and for
+    a workflow agent those of its nodes (see ``resource_access.borrowed_refs``).
+    Such an agent may not get a key, a public link or a webhook.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row, or the row as a save would leave it (``user_id``
+            and the ref fields; ``id`` once it exists).
+        nodes: A workflow agent's nodes in builder shape, when the save
+            brings them; else its stored graph is read.
+
+    Returns:
+        list: The borrowed ``(type, id)`` pairs.
+    """
+    owner = agent.get("user_id")
+    holder = agent if agent.get("id") else None
+    found = borrowed_refs(
+        conn, owner, agent_refs(agent), agent.get("knowledge_folder_ids") or [],
+        holder_type="agent" if holder else None, holder=holder,
+    )
+    if agent.get("agent_type") != "workflow":
+        return found
+    workflow = WorkflowsRepository(conn).get(str(agent["workflow_id"]), owner) if agent.get("workflow_id") else None
+    if nodes is None:
+        nodes = stored_graph(conn, workflow)[0] if workflow else []
+    for ref in borrowed_refs(
+        conn, owner, _node_refs(nodes), _node_folder_refs(nodes),
+        holder_type="workflow" if workflow else None, holder=workflow,
+    ):
+        if ref not in found:
+            found.append(ref)
+    return found
+
+
+def refuse_borrowed_outside_access(conn, agent: dict, user: str) -> Optional[object]:
+    """The 403 that refuses a new key, public link or webhook to an agent using a borrowed item.
+
+    Args:
+        conn: Open database connection.
+        agent: The stored agent row.
+        user: Who asks.
+
+    Returns:
+        The error response, or None when the agent may get one.
+    """
+    borrowed = agent_borrowed_refs(conn, agent)
+    if not borrowed:
+        return None
+    body, status = borrowed_refusal(conn, borrowed, user, agent)
+    return make_response(jsonify(body), status)

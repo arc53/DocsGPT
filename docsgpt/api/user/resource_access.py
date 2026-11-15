@@ -1662,3 +1662,181 @@ def sponsor_audience(
     if not any(item.get("can_confirm") for item in [*states, *sponsors]):
         return None
     return holder_audience(conn, holder_type, holder)
+
+
+# --- Outside access -----------------------------------------------------------
+#
+# An API key (and the widget that runs on it), a public link and an incoming
+# webhook let people run an agent whom nobody shared it with. The agent runs
+# its tools and sources as its owner, so a tool or source the owner reaches
+# only through a team grant (a *borrowed* one) would reach them too, though
+# its own owner shared it with the agent's owner alone. So an agent that uses
+# a borrowed tool or source gets none of the three, and one can't be added to
+# an agent that has one. A sponsored resource (an editor's own, confirmed for
+# the agent's audience) runs as its sponsor, not the owner, and is left to the
+# sponsor rules; prompts carry no credentials and don't count.
+
+# Error code of a key, link, webhook or save refused for a borrowed resource.
+CODE_BORROWED_RESOURCE = "borrowed_resource"
+
+_BORROWED_TYPES = ("source", "tool")
+
+
+def has_outside_access(agent: Optional[dict]) -> bool:
+    """Whether people outside the agent's shares can run it: a key, a public link or a webhook.
+
+    Args:
+        agent: The agent row.
+
+    Returns:
+        bool: True when it has an API key, a live public link or an incoming
+        webhook token.
+    """
+    return bool(
+        agent
+        and (
+            agent.get("key")
+            or (agent.get("shared") and agent.get("shared_token"))
+            or agent.get("incoming_webhook_token")
+        )
+    )
+
+
+def holder_has_outside_access(conn: Connection, holder_type: str, holder: Optional[dict]) -> bool:
+    """:func:`has_outside_access` for an agent, or for any of its owner's agents that run a workflow.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row, or None (a workflow not saved yet).
+
+    Returns:
+        bool: Whether anyone outside the shares reaches the holder.
+    """
+    if not holder:
+        return False
+    if holder_type == "agent":
+        return has_outside_access(holder)
+    rows = conn.execute(
+        text(
+            "SELECT key, shared, shared_token, incoming_webhook_token FROM agents "
+            "WHERE workflow_id = CAST(:wid AS uuid) AND user_id = :owner"
+        ),
+        {"wid": str(holder["id"]), "owner": holder.get("user_id")},
+    ).mappings().all()
+    return any(has_outside_access(dict(row)) for row in rows)
+
+
+def borrowed_refs(
+    conn: Connection,
+    owner_id: Optional[str],
+    refs: Iterable[tuple[str, str]],
+    folder_ids: Iterable = (),
+    *,
+    holder_type: Optional[str] = None,
+    holder: Optional[dict] = None,
+) -> list[tuple[str, str]]:
+    """The tools and sources among ``refs`` and the folders' sources that ``owner_id`` reaches only through a grant.
+
+    Borrowed means someone else owns it and the holder's owner may use it
+    (:func:`can_use_ref`), so the holder runs it with the owner's grant. One
+    the owner can't use runs as a sponsor or not at all, and isn't borrowed.
+    Prompts, presets and builtin tools never are.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The holder's owner, whom it runs as.
+        refs: ``(type, id)`` pairs the holder references.
+        folder_ids: Knowledge folders it reads; each source a folder feeds
+            counts as referenced (``folder_knowledge.folder_source_ids``).
+        holder_type: ``agent`` or ``workflow`` for a saved holder, so a
+            teammate's folder feeds what it feeds on that holder.
+        holder: The saved holder row.
+
+    Returns:
+        list: The borrowed ``(type, id)`` pairs, ids lowercased, each once.
+    """
+    candidates = [(t, str(i).lower()) for t, i in refs if t in _BORROWED_TYPES and i]
+    folder_ids = [f for f in folder_ids or [] if f]
+    if folder_ids:
+        # Lazy: folder_knowledge imports this module.
+        from docsgpt.api.user.folder_knowledge import folder_source_ids
+
+        candidates.extend(("source", sid) for sid in folder_source_ids(conn, folder_ids, holder_type, holder))
+    pairs: list[tuple[str, str]] = []
+    for resource_type, rid in candidates:
+        if (resource_type, rid) not in pairs and _sponsorable(resource_type, rid):
+            pairs.append((resource_type, rid))
+    if not pairs or not owner_id:
+        return []
+    rows = _ref_rows(conn, pairs)
+    return [
+        (resource_type, rid)
+        for resource_type, rid in pairs
+        if (row := rows.get(sponsor_key(resource_type, rid)))
+        and row.get("user_id") != owner_id
+        and can_use_ref(conn, resource_type, rid, owner_id)
+    ]
+
+
+def _join_words(items: list[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c``."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def borrowed_refusal(
+    conn: Connection,
+    refs: list[tuple[str, str]],
+    viewer: Optional[str],
+    holder: Optional[dict] = None,
+    *,
+    attaching: bool = False,
+) -> tuple[dict, int]:
+    """The 403 body for a key, link, webhook or save that borrowed resources refuse.
+
+    The message names each resource and whose it is (by the rule of
+    :func:`people_named_to`; "someone else" otherwise) and what to do.
+
+    Args:
+        conn: Open database connection.
+        refs: The borrowed ``(type, id)`` pairs (see :func:`borrowed_refs`).
+        viewer: The user asking.
+        holder: The agent or workflow row, for naming people.
+        attaching: True when a save adds them to a holder that has outside
+            access; False when outside access is asked for a holder that uses them.
+
+    Returns:
+        ``(body, 403)``: ``success``, ``code`` (:data:`CODE_BORROWED_RESOURCE`),
+        ``message`` and ``resources`` (``{key, type, id, name, owner}``,
+        ``owner`` being ``{user_id, label}``, both None for someone the
+        viewer doesn't know).
+    """
+    rows = _ref_rows(conn, refs)
+    owners = [(rows.get(sponsor_key(t, i)) or {}).get("user_id") for t, i in refs]
+    labels = person_labels(conn, viewer, holder, owners)
+    resources, phrases = [], []
+    for (resource_type, rid), owner in zip(refs, owners):
+        name = (rows.get(sponsor_key(resource_type, rid)) or {}).get("name")
+        person = _person(owner, labels, owner in labels) or {"user_id": None, "label": None}
+        resources.append(
+            {"key": sponsor_key(resource_type, rid), "type": resource_type, "id": rid, "name": name, "owner": person}
+        )
+        what = f'the {resource_type} "{name}"' if name else f"a {resource_type}"
+        phrases.append(f"{what} from {person['label'] or 'someone else'}")
+    listed = _join_words(phrases)
+    them = "it" if len(refs) == 1 else "them"
+    rule = "an agent that uses another person's tools or sources can't have an API key, public link or webhook"
+    if attaching:
+        message = (
+            f"{listed[0].upper()}{listed[1:]} can't be added: this agent has an API key, public link or webhook, "
+            f"and {rule}. Use {them} in an agent without those."
+        )
+    else:
+        message = f"This agent uses {listed}. An{rule[2:]}. Remove {them} from the agent first."
+    return {
+        "success": False,
+        "code": CODE_BORROWED_RESOURCE,
+        "message": message,
+        "error": message,
+        "resources": resources,
+    }, 403

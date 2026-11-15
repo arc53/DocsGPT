@@ -9,6 +9,7 @@ from flask_restx import fields, inputs, Namespace, Resource
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.user.resource_access import borrowed_refs, borrowed_refusal
 from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
@@ -227,6 +228,18 @@ class ShareConversation(Resource):
                         conn, data.get("source"), user
                     )
                     retriever = data.get("retriever")
+                    # The link hands its agent's API key to every browser that
+                    # opens it: never with someone else's source.
+                    borrowed = borrowed_refs(conn, user, [("source", source_pg_id)] if source_pg_id else [])
+                    if borrowed:
+                        body, status = borrowed_refusal(conn, borrowed, user)
+                        source = body["resources"][0]
+                        owner = source["owner"]["label"] or "someone else"
+                        body["message"] = body["error"] = (
+                            f'A promptable link can\'t use the source "{source["name"]}" from {owner}: anyone '
+                            "who opens the link can search it. Share without that source, or pick one of your own."
+                        )
+                        return make_response(jsonify(body), status)
 
                     reusable = _find_reusable_share_agent(
                         conn, user,

@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
 import CopyButton from '../components/CopyButton';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import { Modal } from '../components/ui/modal';
@@ -41,6 +42,8 @@ export const ShareConversationModal = ({
 
   const [identifier, setIdentifier] = useState<null | string>(null);
   const [status, setStatus] = useState<StatusType>('idle');
+  // The server's reason for a refused link (someone else's source, say).
+  const [error, setError] = useState<string | null>(null);
   const [allowPrompt, setAllowPrompt] = useState<boolean>(false);
   const promptSwitchId = useId();
 
@@ -66,12 +69,14 @@ export const ShareConversationModal = ({
     setAllowPrompt(!allowPrompt);
     setStatus('idle');
     setIdentifier(null);
+    setError(null);
   };
 
   const shareCoversationPublicly: (isPromptable: boolean) => void = (
     isPromptable = false,
   ) => {
     setStatus('loading');
+    setError(null);
     const payload: {
       conversation_id: string;
       chunks?: string;
@@ -92,7 +97,11 @@ export const ShareConversationModal = ({
         if (data.success && data.identifier) {
           setIdentifier(data.identifier);
           setStatus('fetched');
-        } else setStatus('failed');
+        } else {
+          if (typeof data?.message === 'string' && data.message.trim())
+            setError(data.message);
+          setStatus('failed');
+        }
       })
       .catch((err) => setStatus('failed'));
   };
@@ -131,6 +140,11 @@ export const ShareConversationModal = ({
       }
     >
       <div className="flex flex-col gap-2">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
         <SettingRow
           label={t('modals.shareConv.option')}
           htmlFor={promptSwitchId}

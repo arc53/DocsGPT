@@ -9,7 +9,7 @@ from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
 from docsgpt.core.settings import settings
-from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
+from docsgpt.api.user.agents.graph_checks import refuse_borrowed_outside_access, refuse_unfinished_graph
 from docsgpt.api.user.agents.starters import stored_starters
 from docsgpt.api.user.base import resolve_tool_details
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
@@ -299,6 +299,11 @@ class ShareAgent(Resource):
                     # Anyone with the link runs the agent's graph: a workflow
                     # agent's must be a finished one.
                     refusal = refuse_unfinished_graph(conn, agent)
+                    # A new link reaches people the owner never shared with:
+                    # not for an agent using someone else's tool or source.
+                    # Replacing a link it has opens nothing new.
+                    if refusal is None and not (agent.get("shared") and agent.get("shared_token")):
+                        refusal = refuse_borrowed_outside_access(conn, agent, user)
                     if refusal is not None:
                         return refusal
                     shared_metadata = {
