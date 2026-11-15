@@ -319,16 +319,31 @@ describe('Now page', () => {
   });
 
   it('says what an ingest is doing and how long it has run', async () => {
-    await render();
-    const [embedding, reading] = Array.from(
-      container.querySelectorAll('li[data-kind="ingest"]'),
-    ) as HTMLElement[];
-    expect(embedding.textContent).toContain('activity.now.operation.sync');
-    expect(embedding.textContent).toContain('activity.now.chunks');
-    expect(reading.textContent).toContain('activity.now.operation.upload');
-    expect(reading.textContent).toContain('activity.now.reading');
-    expect(reading.textContent).toContain('1:35');
-    expect(reading.querySelector('[role="progressbar"]')).toBeNull();
+    // A pinned clock: the run time must not tick on while the test runs.
+    const now = Date.parse('2026-11-15T12:00:00Z');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      await render({
+        ...SNAPSHOT,
+        running: SNAPSHOT.running.map((item) =>
+          item.id === 's2'
+            ? { ...item, started_at: new Date(now - 95_000).toISOString() }
+            : item,
+        ),
+      });
+      const [embedding, reading] = Array.from(
+        container.querySelectorAll('li[data-kind="ingest"]'),
+      ) as HTMLElement[];
+      expect(embedding.textContent).toContain('activity.now.operation.sync');
+      expect(embedding.textContent).toContain('activity.now.chunks');
+      expect(reading.textContent).toContain('activity.now.operation.upload');
+      expect(reading.textContent).toContain('activity.now.reading');
+      expect(reading.textContent).toContain('1:35');
+      expect(reading.querySelector('[role="progressbar"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lists a knowledge sync batch in Up next', async () => {

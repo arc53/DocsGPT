@@ -104,6 +104,11 @@ export type TeamGrant = {
   created_at?: string | null;
   granted_by?: string | null;
   granted_by_label?: string | null;
+  /**
+   * Why the grant is on hold: `owner_left` while its owner is out of the
+   * team (it works again if they're added back). Null when it works.
+   */
+  paused_reason?: 'owner_left' | null;
   caller?: {
     access: 'owner' | 'editor' | 'viewer';
     allowed_actions: string[];

@@ -310,8 +310,7 @@
       "all": "全部",
       "byDocsGPT": "由DocsGPT提供",
       "byMe": "我的",
-      "shared": "與我共享",
-      "team": "團隊"
+      "shared": "與我共享"
     },
     "folders": {
       "emptyHint": "在此建立代理，或透過代理的 ⋯ 選單將其移入。"
@@ -2326,8 +2325,6 @@
       "sourceDoc": "來源文件"
     },
     "deleteConv": {
-      "confirm": "要刪除所有對話嗎？",
-      "consequence": "您帳戶中的所有對話及其訊息都會被刪除。此操作無法復原。",
       "delete": "刪除"
     },
     "importAgent": {
@@ -3609,7 +3606,6 @@
       "convHistory": "對話歷史記錄",
       "dark": "深色",
       "default": "預設",
-      "deleteAllDescription": "永久刪除您帳戶中的所有對話。此操作無法復原。",
       "deleteAllInWorkspace": "永久刪除您在 {{name}} 中開始的所有聊天。此操作無法復原。",
       "deleteAllLabel": "刪除所有對話",
       "high": "高",
@@ -4593,6 +4589,7 @@
         "open": "開啟{{type}}",
         "otherTeamsHint": "也與其他團隊共用了嗎？這些授權在「管理共用」中管理。",
         "owner": "擁有者",
+        "paused": "{{name}} 不在團隊期間，共用已暫停。若重新新增此人，共用將會恢復。",
         "removeGrant": "移除存取權",
         "shared": "共用時間",
         "sharedOnBy": "{{date}}，由 {{name}}",
@@ -4607,7 +4604,6 @@
           "viewer": "檢視者"
         }
       },
-      "editTeam": "編輯",
       "editorHint": {
         "agent": "編輯者可以修改它，包括記錄、排程和存取詳細資料。",
         "agentNoAccessDetails": "編輯者可以修改它，包括記錄和排程，但不能修改存取詳細資料。",
@@ -4664,19 +4660,17 @@
         "open": "開啟 {{name}}",
         "title": "{{name}} 仍擁有一些項目"
       },
-      "nothingShared": "尚未分享任何內容。可從代理、來源、提示或工具的選單進行分享。",
       "openTeamError": "無法載入團隊詳細資訊。",
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
       "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
       "remove": "移除",
       "removeMember": {
-        "personalItemsHint": "這些項目屬於 {{name}}，而不屬於團隊。移除前，請 {{name}} 把團隊依賴的項目移入團隊。",
+        "personalItemsPaused": "{{name}} 不在團隊期間，這些項目將停止與 {{team}} 共用；若重新新增此人，共用將會恢復。如需保留團隊依賴的項目，請先讓 {{name}} 把它們移入團隊。",
         "personalItems_one": "{{name}} 與 {{team}} 共用的 {{count}} 個個人項目",
         "personalItems_other": "{{name}} 與 {{team}} 共用的 {{count}} 個個人項目",
         "teamItemsStay": "{{name}} 新增的團隊項目會留在 {{team}}。{{name}} 將無法再存取它們；您可以隨時重新新增此人。"
       },
       "removeMemberConfirmation": "要將「{{name}}」從 {{team}} 移除嗎？",
-      "removeMemberConsequence": "對方將無法再存取與 {{team}} 共用的所有內容。您可以隨時重新加入。",
       "removeMemberError": "無法移除成員。",
       "resourceType": {
         "agent": "代理",
@@ -4737,7 +4731,6 @@
         "shareError": "無法與團隊分享。",
         "showAll": "顯示全部 {{formatted}} 個",
         "subtitle": "團隊成員可以使用；編輯者也可以修改。您仍是擁有者。",
-        "teamLabel": "團隊",
         "teamsGroup": "團隊",
         "titleGeneric": "分享此{{type}}",
         "titleNamed": "分享「{{name}}」",
@@ -4803,9 +4796,9 @@
         "noMatches": "沒有相符項目。",
         "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個資源",
         "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個資源",
+        "paused": "已暫停：{{name}} 已離開團隊",
         "search": "搜尋共用…"
       },
-      "sharedResources": "共享資源",
       "sharedWithTeam": "已與此團隊分享（{{count}}）",
       "sourceManual": "手動加入",
       "sourceScim": "透過 SCIM",
@@ -4818,7 +4811,6 @@
         "shared": "共用的個人項目",
         "usage": "用量"
       },
-      "teamActions": "團隊操作",
       "teamNamePlaceholder": "團隊名稱",
       "teamSubtitle": "管理成員以及與此團隊分享的資源。",
       "teamsHeading": "您的團隊",
@@ -4829,6 +4821,7 @@
         "description": "只有擁有者可以刪除或轉讓團隊。",
         "error": "無法轉讓團隊。",
         "memberLabel": "新擁有者",
+        "noMatches": "沒有其他相符的成員。",
         "placeholder": "選擇成員",
         "submit": "轉讓",
         "title": "轉讓擁有權"

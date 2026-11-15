@@ -217,6 +217,7 @@ export default function usePromptActions({
             setPromptToShare(null);
             onSaved();
           }}
+          onMoved={onMoved}
         />
       )}
     </>

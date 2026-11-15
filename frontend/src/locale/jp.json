@@ -310,8 +310,7 @@
       "all": "すべて",
       "byDocsGPT": "DocsGPT提供",
       "byMe": "自分の",
-      "shared": "共有された",
-      "team": "チーム"
+      "shared": "共有された"
     },
     "folders": {
       "emptyHint": "ここでエージェントを作成するか、エージェントの⋯メニューからここに移動してください。"
@@ -2326,8 +2325,6 @@
       "sourceDoc": "ソースドキュメント"
     },
     "deleteConv": {
-      "confirm": "すべての会話を削除しますか？",
-      "consequence": "アカウント内のすべての会話がメッセージごと削除されます。この操作は元に戻せません。",
       "delete": "削除"
     },
     "importAgent": {
@@ -3609,7 +3606,6 @@
       "convHistory": "会話履歴",
       "dark": "ダーク",
       "default": "デフォルト",
-      "deleteAllDescription": "アカウント内のすべての会話を完全に削除します。この操作は元に戻せません。",
       "deleteAllInWorkspace": "{{name}} で始めたすべてのチャットを完全に削除します。この操作は元に戻せません。",
       "deleteAllLabel": "すべての会話を削除",
       "high": "高",
@@ -4593,6 +4589,7 @@
         "open": "{{type}}を開く",
         "otherTeamsHint": "ほかのチームとも共有していますか？それらは「共有を管理」で管理します。",
         "owner": "所有者",
+        "paused": "{{name}} がチームにいない間、共有は一時停止されます。再び追加されると共有が再開されます。",
         "removeGrant": "アクセス権を削除",
         "shared": "共有日",
         "sharedOnBy": "{{date}}（{{name}}）",
@@ -4607,7 +4604,6 @@
           "viewer": "閲覧者"
         }
       },
-      "editTeam": "編集",
       "editorHint": {
         "agent": "編集者はログ、スケジュール、アクセス情報を含めて変更できます。",
         "agentNoAccessDetails": "編集者はログとスケジュールを含めて変更できますが、アクセス情報は変更できません。",
@@ -4664,19 +4660,17 @@
         "open": "{{name}} を開く",
         "title": "{{name}} はまだアイテムを所有しています"
       },
-      "nothingShared": "まだ何も共有されていません。エージェント、ソース、プロンプト、ツールのメニューから共有できます。",
       "openTeamError": "チームの詳細を読み込めませんでした。",
       "pageRange_one": "チーム {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件",
       "remove": "削除",
       "removeMember": {
-        "personalItemsHint": "これらはチームではなく {{name}} のものです。削除する前に、チームが必要としているものを移動するよう {{name}} に依頼してください。",
+        "personalItemsPaused": "{{name}} がチームにいない間、これらは {{team}} と共有されなくなり、再び追加されると元に戻ります。チームが必要としているものを残すには、先に {{name}} にチームへ移動するよう依頼してください。",
         "personalItems_one": "{{name}} が {{team}} と共有している個人アイテム {{count}} 件",
         "personalItems_other": "{{name}} が {{team}} と共有している個人アイテム {{count}} 件",
         "teamItemsStay": "{{name}} が追加したチームのアイテムは {{team}} に残ります。{{name}} はそれらにアクセスできなくなります。いつでも再び追加できます。"
       },
       "removeMemberConfirmation": "「{{name}}」を {{team}} から削除しますか？",
-      "removeMemberConsequence": "{{team}} と共有されたすべてにアクセスできなくなります。いつでも再度追加できます。",
       "removeMemberError": "メンバーを削除できませんでした。",
       "resourceType": {
         "agent": "エージェント",
@@ -4737,7 +4731,6 @@
         "shareError": "チームと共有できませんでした。",
         "showAll": "すべて表示（{{formatted}}）",
         "subtitle": "チームメンバーは使用でき、編集者は変更もできます。所有者はあなたのままです。",
-        "teamLabel": "チーム",
         "teamsGroup": "チーム",
         "titleGeneric": "この{{type}}を共有",
         "titleNamed": "「{{name}}」を共有",
@@ -4803,9 +4796,9 @@
         "noMatches": "一致するものはありません。",
         "pageRange_one": "リソース {{formatted}}件中 {{from}}–{{to}}件",
         "pageRange_other": "リソース {{formatted}}件中 {{from}}–{{to}}件",
+        "paused": "一時停止中：{{name}} がチームを離れました",
         "search": "共有を検索…"
       },
-      "sharedResources": "共有リソース",
       "sharedWithTeam": "このチームと共有中（{{count}}）",
       "sourceManual": "手動で追加",
       "sourceScim": "SCIM経由",
@@ -4818,7 +4811,6 @@
         "shared": "共有された個人アイテム",
         "usage": "使用状況"
       },
-      "teamActions": "チームアクション",
       "teamNamePlaceholder": "チーム名",
       "teamSubtitle": "このチームのメンバーと共有リソースを管理します。",
       "teamsHeading": "あなたのチーム",
@@ -4829,6 +4821,7 @@
         "description": "チームの削除と譲渡ができるのは所有者だけです。",
         "error": "チームを譲渡できませんでした。",
         "memberLabel": "新しい所有者",
+        "noMatches": "一致する他のメンバーはいません。",
         "placeholder": "メンバーを選択",
         "submit": "譲渡",
         "title": "所有権の譲渡"

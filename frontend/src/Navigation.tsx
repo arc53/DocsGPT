@@ -478,6 +478,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <ActivityIcon aria-hidden />
                 <ActivityNavBadge variant="rail" />
               </IconButton>
+              <SidebarTeamEntry rail onNavigate={goToLevel} />
               <IconButton
                 label={t('manageAgents')}
                 side="right"

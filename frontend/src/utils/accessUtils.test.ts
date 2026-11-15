@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { can, isOwner, roleOf } from './accessUtils';
+import { can, canOpenShare, isOwner, roleOf } from './accessUtils';
 
 describe('can', () => {
   it('reads allowed_actions from the server', () => {
@@ -52,5 +52,38 @@ describe('roleOf / isOwner', () => {
     expect(roleOf({})).toBe('owner');
     expect(isOwner({ access: 'editor' })).toBe(false);
     expect(isOwner({})).toBe(true);
+  });
+});
+
+describe('canOpenShare', () => {
+  it('follows the share action on a personal item', () => {
+    expect(
+      canOpenShare({ access: 'owner', allowed_actions: ['share', 'use'] }),
+    ).toBe(true);
+    expect(
+      canOpenShare({
+        access: 'viewer',
+        origin: 'shared',
+        allowed_actions: ['use'],
+      }),
+    ).toBe(false);
+  });
+
+  it("opens a team item's Share for any member, to see where access comes from", () => {
+    // A team role never has `share`: the dialog is read-only for them.
+    expect(
+      canOpenShare({
+        access: 'viewer',
+        origin: 'team',
+        allowed_actions: ['use'],
+      }),
+    ).toBe(true);
+    expect(
+      canOpenShare({
+        access: 'editor',
+        workspace: { kind: 'team', team_id: 't1' },
+        allowed_actions: ['use', 'edit'],
+      }),
+    ).toBe(true);
   });
 });

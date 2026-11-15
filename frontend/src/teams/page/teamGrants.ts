@@ -74,6 +74,10 @@ export function sharedBy(
 export const truncateSub = (sub: string): string =>
   sub.length > 24 ? `${sub.slice(0, 12)}…${sub.slice(-8)}` : sub;
 
+/** The item's sharing is on hold because its owner left the team. */
+export const isPaused = (r: SharedResource): boolean =>
+  r.grants.some((g) => g.paused_reason === 'owner_left');
+
 /** A grant's item name, or its shortened id when the server sent none. */
 export const grantResourceName = (g: TeamGrant): string =>
   g.resource_name || truncateSub(g.resource_id);

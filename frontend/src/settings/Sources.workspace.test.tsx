@@ -62,7 +62,16 @@ vi.mock('./components/useRetrievalAvailability', () => ({
     decision: null,
   }),
 }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+// The Share dialog's props, from its last render.
+const share = vi.hoisted(() => ({
+  props: null as null | { onMoved?: () => void },
+}));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: { onMoved?: () => void }) => {
+    share.props = props;
+    return null;
+  },
+}));
 vi.mock('../connectors/SignInAgainNotice', () => ({
   useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
 }));
@@ -341,6 +350,48 @@ describe('Knowledge in a team', () => {
       (b) => b.textContent,
     );
     expect(labels).toContain('settings.sources.addSource');
+  });
+});
+
+/** Opens a source's ⋯; returns its items. */
+const openSourceMenu = async (id: string) => {
+  const trigger = document.querySelector<HTMLButtonElement>(
+    `[data-testid="menu-button-${id}"]`,
+  )!;
+  await act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+    );
+    trigger.click();
+  });
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  );
+};
+
+describe('Share on a source', () => {
+  it("is offered on a team's source to a Viewer, to see who has access", async () => {
+    inWorkspace('t1', 'viewer');
+    const viewed = { ...teamDoc, access: 'viewer', allowed_actions: ['use'] };
+    answer({ own: page([viewed as Doc]) });
+    await mount([viewed as Doc]);
+    const labels = (await openSourceMenu('team-1')).map((i) => i.textContent);
+    expect(labels).toContain('settings.sources.shareWithTeam');
+  });
+
+  it("reloads the list when the dialog's offer moves the source", async () => {
+    // Not a plain assignment, which would narrow `props` to null below.
+    Object.assign(share, { props: null });
+    answer({ own: page([ownDoc]) });
+    await mount([ownDoc]);
+    const item = (await openSourceMenu('own-1')).find(
+      (i) => i.textContent === 'settings.sources.shareWithTeam',
+    )!;
+    await act(async () => item.click());
+    expect(share.props?.onMoved).toBeTypeOf('function');
+    const loads = fetchPage.mock.calls.length;
+    await act(async () => share.props!.onMoved!());
+    expect(fetchPage.mock.calls.length).toBeGreaterThan(loads);
   });
 });
 

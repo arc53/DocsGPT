@@ -310,8 +310,7 @@
       "all": "Alle",
       "byDocsGPT": "Von DocsGPT",
       "byMe": "Von mir",
-      "shared": "Mit mir geteilt",
-      "team": "Team"
+      "shared": "Mit mir geteilt"
     },
     "folders": {
       "emptyHint": "Erstelle hier einen Agenten oder verschiebe einen über sein ⋯-Menü hierher."
@@ -2350,8 +2349,6 @@
       "sourceDoc": "Quelldokument"
     },
     "deleteConv": {
-      "confirm": "Alle Unterhaltungen löschen?",
-      "consequence": "Alle Unterhaltungen in deinem Konto werden mitsamt ihren Nachrichten gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "delete": "Löschen"
     },
     "importAgent": {
@@ -3640,7 +3637,6 @@
       "convHistory": "Konversationsverlauf",
       "dark": "Dunkel",
       "default": "Standard",
-      "deleteAllDescription": "Löscht alle Unterhaltungen in Ihrem Konto dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "deleteAllInWorkspace": "Löscht dauerhaft alle Chats, die Sie in {{name}} begonnen haben. Dies kann nicht rückgängig gemacht werden.",
       "deleteAllLabel": "Alle Konversationen löschen",
       "high": "Hoch",
@@ -4627,6 +4623,7 @@
         "open": "{{type}} öffnen",
         "otherTeamsHint": "Auch mit anderen Teams geteilt? Diese Freigaben verwaltest du unter „Freigabe verwalten“.",
         "owner": "Eigentümer",
+        "paused": "Die Freigabe ist pausiert, solange {{name}} nicht im Team ist. Sie gilt wieder, wenn die Person erneut hinzugefügt wird.",
         "removeGrant": "Zugriff entfernen",
         "shared": "Geteilt",
         "sharedOnBy": "{{date}} von {{name}}",
@@ -4641,7 +4638,6 @@
           "viewer": "Betrachter"
         }
       },
-      "editTeam": "Bearbeiten",
       "editorHint": {
         "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugriffsdetails.",
         "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugriffsdetails.",
@@ -4698,19 +4694,17 @@
         "open": "{{name}} öffnen",
         "title": "{{name}} gehören noch Elemente"
       },
-      "nothingShared": "Noch nichts geteilt. Teile einen Agenten, eine Quelle, einen Prompt oder ein Werkzeug über dessen Menü.",
       "openTeamError": "Team-Details konnten nicht geladen werden.",
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams",
       "remove": "Entfernen",
       "removeMember": {
-        "personalItemsHint": "Sie gehören {{name}}, nicht dem Team. Bitte {{name}}, die Elemente, auf die das Team angewiesen ist, vor dem Entfernen ins Team zu verschieben.",
+        "personalItemsPaused": "Sie werden nicht mehr mit {{team}} geteilt, solange {{name}} nicht im Team ist, und kommen zurück, wenn {{name}} wieder hinzugefügt wird. Damit das Team behält, worauf es angewiesen ist, bitte {{name}}, diese Elemente vorher ins Team zu verschieben.",
         "personalItems_one": "{{count}} persönliches Element, das {{name}} mit {{team}} teilt",
         "personalItems_other": "{{count}} persönliche Elemente, die {{name}} mit {{team}} teilt",
         "teamItemsStay": "Team-Elemente, die {{name}} hinzugefügt hat, bleiben bei {{team}}. {{name}} verliert den Zugriff darauf; du kannst die Person jederzeit wieder hinzufügen."
       },
       "removeMemberConfirmation": "\"{{name}}\" aus {{team}} entfernen?",
-      "removeMemberConsequence": "Die Person verliert den Zugriff auf alles, was mit {{team}} geteilt wurde. Du kannst sie jederzeit wieder hinzufügen.",
       "removeMemberError": "Mitglied konnte nicht entfernt werden.",
       "resourceType": {
         "agent": "Agent",
@@ -4771,7 +4765,6 @@
         "shareError": "Konnte nicht mit dem Team geteilt werden.",
         "showAll": "Alle {{formatted}} anzeigen",
         "subtitle": "Teammitglieder können es verwenden; Bearbeiter können es auch ändern. Du bleibst Eigentümer.",
-        "teamLabel": "Team",
         "teamsGroup": "Teams",
         "titleGeneric": "{{type}} teilen",
         "titleNamed": "\"{{name}}\" teilen",
@@ -4837,9 +4830,9 @@
         "noMatches": "Keine Treffer.",
         "pageRange_one": "{{from}}–{{to}} von {{formatted}} Ressource",
         "pageRange_other": "{{from}}–{{to}} von {{formatted}} Ressourcen",
+        "paused": "Pausiert: {{name}} hat das Team verlassen",
         "search": "Geteilte suchen…"
       },
-      "sharedResources": "Geteilte Ressourcen",
       "sharedWithTeam": "Mit diesem Team geteilt ({{count}})",
       "sourceManual": "Manuell hinzugefügt",
       "sourceScim": "über SCIM",
@@ -4852,7 +4845,6 @@
         "shared": "Geteilte persönliche Elemente",
         "usage": "Nutzung"
       },
-      "teamActions": "Team-Aktionen",
       "teamNamePlaceholder": "Teamname",
       "teamSubtitle": "Verwalte Mitglieder und die mit diesem Team geteilten Ressourcen.",
       "teamsHeading": "Deine Teams",
@@ -4863,6 +4855,7 @@
         "description": "Nur der Eigentümer kann das Team löschen oder übertragen.",
         "error": "Das Team konnte nicht übertragen werden.",
         "memberLabel": "Neuer Eigentümer",
+        "noMatches": "Kein anderes Mitglied passt.",
         "placeholder": "Mitglied auswählen",
         "submit": "Übertragen",
         "title": "Eigentum übertragen"

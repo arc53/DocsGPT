@@ -33,7 +33,7 @@ import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
-import { can } from '../../utils/accessUtils';
+import { can, canOpenShare } from '../../utils/accessUtils';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
@@ -2483,7 +2483,7 @@ function WorkflowBuilderInner() {
                       },
                     ]
                   : []),
-                ...(canManageAgent && can(currentAgent, 'share')
+                ...(canManageAgent && canOpenShare(currentAgent)
                   ? [
                       {
                         label: t('agents.shareWithTeam'),
@@ -2785,6 +2785,8 @@ function WorkflowBuilderInner() {
             resourceId={effectiveAgentId}
             resourceName={workflowName}
             onClose={() => setShareModalOpen(false)}
+            // Moved to a team, it is that workspace's: back to the list.
+            onMoved={() => navigate(agentsListPath())}
             onOpenAccessDetails={
               canManageAgent && can(currentAgent, 'manage_access_details')
                 ? () => {

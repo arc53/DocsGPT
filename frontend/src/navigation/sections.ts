@@ -66,6 +66,8 @@ export type SectionItem = {
   leavesSection?: boolean;
   /** Hidden when the backend reports this feature off (`/api/config`). */
   feature?: 'connectors' | 'analytics';
+  /** Hidden in a team workspace (nothing is shared into a team). */
+  personalOnly?: boolean;
 };
 
 /** Items sharing a heading in the nav. */
@@ -371,16 +373,20 @@ export const AGENTS_SECTION: Section = {
           icon: User,
         },
         {
-          key: 'team',
-          path: agentsFilterPath('team'),
-          labelKey: 'agents.filters.team',
+          key: 'sharedWithYou',
+          path: agentsFilterPath('sharedWithYou'),
+          // The old Team section's address lands here in Personal.
+          aliases: [agentsFilterPath('team')],
+          labelKey: 'workspace.page.sharedWithYou',
           icon: Users,
+          personalOnly: true,
         },
         {
           key: 'shared',
           path: agentsFilterPath('shared'),
           labelKey: 'agents.filters.shared',
           icon: Globe,
+          personalOnly: true,
         },
       ],
     },
@@ -546,15 +552,20 @@ export function getSectionItems(
     .filter((item) => !item.adminOnly || isAdmin);
 }
 
-/** Groups with admin-only entries removed, dropping any group left empty. */
+/**
+ * Groups with admin-only entries removed (and, in a team, Personal-only
+ * ones), dropping any group left empty.
+ */
 export function getVisibleGroups(
   section: Section,
   {
     isAdmin = true,
     features = {},
+    inTeam = false,
   }: {
     isAdmin?: boolean;
     features?: Partial<Record<NonNullable<SectionItem['feature']>, boolean>>;
+    inTeam?: boolean;
   } = {},
 ): SectionGroup[] {
   return section.groups
@@ -563,7 +574,8 @@ export function getVisibleGroups(
       items: group.items.filter(
         (item) =>
           (!item.adminOnly || isAdmin) &&
-          (!item.feature || features[item.feature] !== false),
+          (!item.feature || features[item.feature] !== false) &&
+          (!item.personalOnly || !inTeam),
       ),
     }))
     .filter((group) => group.items.length > 0);

@@ -101,7 +101,16 @@ vi.mock('../modals/AddToolModal', () => ({
   },
 }));
 vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+// The Share dialog's props, from its last render.
+const share = vi.hoisted(() => ({
+  props: null as null | { onMoved?: () => void },
+}));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: { onMoved?: () => void }) => {
+    share.props = props;
+    return null;
+  },
+}));
 vi.mock('../api/services/devicesService', () => ({ default: {} }));
 vi.mock('../connectors/SignInAgainNotice', () => ({
   useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
@@ -385,6 +394,37 @@ describe('Tools page in a workspace', () => {
     expect(labels('Rate lookup')).toContain('folders.moveToFolder');
     expect(labels('Rate lookup')).toContain('workspace.menu.moveToTeam');
     expect(moveToWorkspace.kinds).toContain('tool');
+  });
+
+  const menuLabels = (name: string) =>
+    Array.from(tile(name).querySelectorAll('[data-testid="menu"] button')).map(
+      (b) => b.textContent,
+    );
+
+  it("offers Share on a team's tool to a Viewer, to see who has access", async () => {
+    setWorkspace('viewer');
+    await render([
+      { ...teamTool, access: 'viewer', allowed_actions: ['use', 'use_in_own'] },
+    ]);
+    expect(menuLabels('Lane pricing')).toContain(
+      'settings.tools.shareWithTeam',
+    );
+  });
+
+  it("reloads the list when the Share dialog's offer moves the tool", async () => {
+    // Not a plain assignment, which would narrow `props` to null below.
+    Object.assign(share, { props: null });
+    await render([ownTool]);
+    const shareItem = Array.from(
+      tile('Rate lookup').querySelectorAll<HTMLButtonElement>(
+        '[data-testid="menu"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.tools.shareWithTeam')!;
+    await act(async () => shareItem.click());
+    expect(share.props?.onMoved).toBeTypeOf('function');
+    const loads = api.getUserTools.mock.calls.length;
+    await act(async () => share.props!.onMoved!());
+    expect(api.getUserTools.mock.calls.length).toBeGreaterThan(loads);
   });
 });
 

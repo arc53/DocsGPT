@@ -69,7 +69,13 @@ import type { AppDispatch } from '../store';
 import ShareToTeamModal, {
   type ShareCredentials,
 } from '../teams/ShareToTeamModal';
-import { can, isOwner, roleOf, type AccessFields } from '../utils/accessUtils';
+import {
+  can,
+  canOpenShare,
+  isOwner,
+  roleOf,
+  type AccessFields,
+} from '../utils/accessUtils';
 import { formatCount } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
 import {
@@ -370,7 +376,7 @@ export default function Tools() {
           { onMoved: () => getUserTools() },
         );
     if (moveOut) options.push(moveOut);
-    if (can(tool, 'share')) {
+    if (canOpenShare(tool)) {
       options.push({
         icon: Users,
         label: t('settings.tools.shareWithTeam'),
@@ -1144,6 +1150,7 @@ export default function Tools() {
             setToolToShare(null);
             getUserTools();
           }}
+          onMoved={() => getUserTools()}
         />
       )}
     </div>

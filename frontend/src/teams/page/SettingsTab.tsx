@@ -17,17 +17,12 @@ import {
   AlertTitle,
 } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
+import { Combobox } from '../../components/ui/combobox';
 import { FormField } from '../../components/ui/form-field';
 import { Input } from '../../components/ui/input';
 import { SectionHeader } from '../../components/ui/section-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../components/ui/select';
 import { Textarea } from '../../components/ui/textarea';
+import { useDebouncedValue } from '../../hooks';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
@@ -57,8 +52,15 @@ const ITEM_KINDS = [
   'folder',
 ] as const;
 
-/** The most members the transfer picker lists (the server's page limit). */
+/**
+ * The most members one answer of the transfer picker lists (the server's
+ * page limit); the picker searches the server for the rest.
+ */
 const TRANSFER_PAGE_SIZE = 100;
+
+/** Whom the team can go to: anyone but its owner (the caller). */
+const isTransferCandidate = (m: TeamMember, me?: string): boolean =>
+  memberTeamRole(m) !== 'owner' && m.user_id !== me;
 
 type SettingsTabProps = {
   team: Team;
@@ -84,7 +86,12 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [members, setMembers] = useState<TeamMember[]>([]);
-  const [newOwner, setNewOwner] = useState('');
+  const [membersLoading, setMembersLoading] = useState(false);
+  // Whether the team has anyone to hand it to, from the unsearched list.
+  const [hasCandidates, setHasCandidates] = useState(false);
+  const [memberQuery, setMemberQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(memberQuery.trim(), 250);
+  const [newOwnerRow, setNewOwnerRow] = useState<TeamMember | null>(null);
   const [transferState, setTransferState] = useState<ActiveState>('INACTIVE');
 
   const [deleteState, setDeleteState] = useState<ActiveState>('INACTIVE');
@@ -108,29 +115,44 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
     setDescription(team.description ?? '');
   }, [team.id, team.name, team.description]);
 
-  // Only the owner transfers, so only they need the member list.
+  // Only the owner transfers, so only they need the member list. The server
+  // searches it, so a member past the first page is found by name.
   useEffect(() => {
     if (!isOwner) return;
     let cancelled = false;
+    setMembersLoading(true);
     teamsService
-      .listMembers(team.id, token, { page: 1, pageSize: TRANSFER_PAGE_SIZE })
+      .listMembers(team.id, token, {
+        q: debouncedQuery || undefined,
+        page: 1,
+        pageSize: TRANSFER_PAGE_SIZE,
+      })
       .then((r) => {
-        if (!cancelled) setMembers(r?.members ?? []);
+        if (cancelled) return;
+        const rows: TeamMember[] = r?.members ?? [];
+        setMembers(rows);
+        if (!debouncedQuery)
+          setHasCandidates(
+            rows.some((m) => isTransferCandidate(m, currentUserId)),
+          );
       })
       .catch(() => {
         // The picker stays empty; Transfer stays off.
+        if (!cancelled) setMembers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMembersLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isOwner, team.id, token]);
+  }, [isOwner, team.id, token, debouncedQuery, currentUserId]);
 
   const memberLabel = (m: TeamMember): string =>
     m.email?.trim() || truncateSub(m.user_id);
-  const candidates = members.filter(
-    (m) => memberTeamRole(m) !== 'owner' && m.user_id !== currentUserId,
+  const candidates = members.filter((m) =>
+    isTransferCandidate(m, currentUserId),
   );
-  const newOwnerRow = candidates.find((m) => m.user_id === newOwner);
 
   const refreshTeams = () => {
     dispatch(loadTeams({ token }));
@@ -166,8 +188,9 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
   };
 
   const confirmTransfer = async () => {
-    await teamsService.transferOwner(team.id, newOwner, token);
-    setNewOwner('');
+    if (!newOwnerRow) return;
+    await teamsService.transferOwner(team.id, newOwnerRow.user_id, token);
+    setNewOwnerRow(null);
     refreshTeams();
   };
 
@@ -262,24 +285,37 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
             description={t('settings.teams.transfer.description')}
           />
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={newOwner} onValueChange={setNewOwner}>
-              <SelectTrigger
-                className="w-full sm:w-72"
-                aria-label={t('settings.teams.transfer.memberLabel')}
-                disabled={candidates.length === 0}
-              >
-                <SelectValue
-                  placeholder={t('settings.teams.transfer.placeholder')}
-                />
-              </SelectTrigger>
-              <SelectContent capped>
-                {candidates.map((m) => (
-                  <SelectItem key={m.user_id} value={m.user_id}>
-                    {memberLabel(m)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              options={candidates.map((m) => ({
+                value: m.user_id,
+                label: memberLabel(m),
+              }))}
+              value={newOwnerRow?.user_id ?? null}
+              valueOption={
+                newOwnerRow
+                  ? {
+                      value: newOwnerRow.user_id,
+                      label: memberLabel(newOwnerRow),
+                    }
+                  : undefined
+              }
+              onValueChange={(id) =>
+                setNewOwnerRow(candidates.find((m) => m.user_id === id) ?? null)
+              }
+              shouldFilter={false}
+              search={memberQuery}
+              onSearchChange={setMemberQuery}
+              placeholder={t('settings.teams.transfer.placeholder')}
+              searchPlaceholder={t('settings.teams.searchMembers')}
+              emptyText={
+                membersLoading
+                  ? t('loading')
+                  : t('settings.teams.transfer.noMatches')
+              }
+              aria-label={t('settings.teams.transfer.memberLabel')}
+              disabled={!hasCandidates}
+              className="w-full sm:w-72"
+            />
             <Button
               variant="outline"
               size="field"

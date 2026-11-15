@@ -22,6 +22,7 @@ vi.mock('./api/client', async (importOriginal) => ({
 import { MemoryRouter } from 'react-router-dom';
 
 import type { Agent } from './agents/types';
+import { TooltipProvider } from './components/ui/tooltip';
 import SidebarTeamEntry from './navigation/SidebarTeamEntry';
 import useRecentAgents from './navigation/useRecentAgents';
 import {
@@ -288,5 +289,35 @@ describe('the sidebar Team row', () => {
   it('is not there in Personal', () => {
     render(makeStore('personal'));
     expect(container.querySelector('a')).toBeNull();
+  });
+
+  const renderRail = (store: ReturnType<typeof makeStore>, go = vi.fn()) => {
+    act(() => {
+      root.render(
+        <Provider store={store}>
+          <MemoryRouter>
+            <TooltipProvider>
+              <SidebarTeamEntry rail onNavigate={go} />
+            </TooltipProvider>
+          </MemoryRouter>
+        </Provider>,
+      );
+    });
+    return go;
+  };
+
+  it('shows in the collapsed rail as an icon, like the rows beside it', () => {
+    const go = renderRail(makeStore('t1'));
+    const button = container.querySelector<HTMLButtonElement>('button');
+    expect(container.querySelector('a')).toBeNull();
+    expect(button?.getAttribute('aria-label')).toBeTruthy();
+    expect(button?.querySelector('svg')).not.toBeNull();
+    act(() => button?.click());
+    expect(go).toHaveBeenCalledWith(expect.stringContaining('/teams/t1'));
+  });
+
+  it('is not in the rail in Personal', () => {
+    renderRail(makeStore('personal'));
+    expect(container.querySelector('button')).toBeNull();
   });
 });

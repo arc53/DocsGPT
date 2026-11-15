@@ -25,6 +25,7 @@ import teamsService, {
 } from '../../api/services/teamsService';
 import { agentChatPath, agentEditPath } from '../../agents/paths';
 import SearchInput from '../../components/SearchInput';
+import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Avatar } from '../../components/ui/avatar';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -66,11 +67,17 @@ import ShareToTeamModal from '../ShareToTeamModal';
 import type { Team } from '../teamsSlice';
 import { can } from '../../utils/accessUtils';
 import { formatCount, formatDateOnly } from '../../utils/dateTimeUtils';
+import { PERSONAL_WORKSPACE } from '../../workspace/requestWorkspace';
+import {
+  selectWorkspaceId,
+  switchWorkspace,
+} from '../../workspace/workspaceSlice';
 import {
   grantKey,
   grantResourceName,
   groupGrants,
   initialOf,
+  isPaused,
   type SharedResource,
   truncateSub,
 } from './teamGrants';
@@ -116,6 +123,7 @@ export default function SharedItemsTab({
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
+  const workspaceId = useSelector(selectWorkspaceId);
   const isAdmin = canManageTeam(role);
 
   const [resourceFilter, setResourceFilter] = useState<ResourceFilter>('all');
@@ -408,11 +416,18 @@ export default function SharedItemsTab({
                       title={
                         <span title={resourceName(r)}>{resourceName(r)}</span>
                       }
-                      description={t('settings.teams.sharedList.meta', {
-                        interpolation: { escapeValue: false },
-                        type: resourceTypeLabel(r.type),
-                        owner: ownerLabel(r),
-                      })}
+                      description={
+                        isPaused(r)
+                          ? t('settings.teams.sharedList.paused', {
+                              interpolation: { escapeValue: false },
+                              name: ownerLabel(r),
+                            })
+                          : t('settings.teams.sharedList.meta', {
+                              interpolation: { escapeValue: false },
+                              type: resourceTypeLabel(r.type),
+                              owner: ownerLabel(r),
+                            })
+                      }
                       trailing={
                         <>
                           <Badge variant="neutral" className="shrink-0">
@@ -483,6 +498,12 @@ export default function SharedItemsTab({
                   onClick={() => {
                     const path = openAssetPath(openResource);
                     closeDrawer();
+                    // A member's personal item lives in Personal for
+                    // everyone it's shared with, the viewer included.
+                    if (workspaceId !== PERSONAL_WORKSPACE)
+                      dispatch(
+                        switchWorkspace(PERSONAL_WORKSPACE, { reason: 'link' }),
+                      );
                     navigate(path);
                   }}
                 >
@@ -509,6 +530,16 @@ export default function SharedItemsTab({
               </div>
             </PanelHeader>
             <PanelBody>
+              {isPaused(openResource) && (
+                <Alert variant="warning">
+                  <AlertDescription>
+                    {t('settings.teams.drawer.paused', {
+                      interpolation: { escapeValue: false },
+                      name: ownerLabel(openResource),
+                    })}
+                  </AlertDescription>
+                </Alert>
+              )}
               <DescriptionList size="sm">
                 <DescriptionItem label={t('settings.teams.drawer.owner')}>
                   {ownerLabel(openResource)}
@@ -714,6 +745,7 @@ export default function SharedItemsTab({
             setDrawerOpen(true);
             onGrantsChanged();
           }}
+          onMoved={() => void onGrantsChanged()}
         />
       )}
     </div>

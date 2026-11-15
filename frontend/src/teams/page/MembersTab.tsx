@@ -453,9 +453,10 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
               ))}
             </ListRows>
             <p className="text-muted-foreground text-xs">
-              {t('settings.teams.removeMember.personalItemsHint', {
+              {t('settings.teams.removeMember.personalItemsPaused', {
                 interpolation: { escapeValue: false },
                 name: removeName,
+                team: team.name,
               })}
             </p>
           </div>

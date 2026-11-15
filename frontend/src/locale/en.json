@@ -331,8 +331,7 @@
       "all": "All",
       "byDocsGPT": "Templates",
       "byMe": "My agents",
-      "shared": "Discovered",
-      "team": "Team"
+      "shared": "Discovered"
     },
     "folders": {
       "emptyHint": "Create an agent here, or move one in from its ⋯ menu."
@@ -2371,8 +2370,6 @@
       "sourceDoc": "Source document"
     },
     "deleteConv": {
-      "confirm": "Delete all conversations?",
-      "consequence": "Every conversation in your account is deleted, with its messages. This can't be undone.",
       "delete": "Delete"
     },
     "importAgent": {
@@ -3661,7 +3658,6 @@
       "convHistory": "Conversation History",
       "dark": "Dark",
       "default": "Default",
-      "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
       "deleteAllInWorkspace": "Permanently deletes every chat you started in {{name}}. This can't be undone.",
       "deleteAllLabel": "Delete all conversations",
       "high": "High",
@@ -4648,6 +4644,7 @@
         "open": "Open {{type}}",
         "otherTeamsHint": "Shared with other teams too? Those grants are managed in “Manage sharing”.",
         "owner": "Owner",
+        "paused": "Sharing is paused while {{name}} is out of the team. It comes back if they're added again.",
         "removeGrant": "Remove access",
         "shared": "Shared",
         "sharedOnBy": "{{date}} by {{name}}",
@@ -4662,7 +4659,6 @@
           "viewer": "Viewer"
         }
       },
-      "editTeam": "Edit",
       "editorHint": {
         "agent": "Editors can change it, including logs, schedules and access details.",
         "agentNoAccessDetails": "Editors can change it, including logs and schedules, but not access details.",
@@ -4719,19 +4715,17 @@
         "open": "Open {{name}}",
         "title": "{{name}} still owns items"
       },
-      "nothingShared": "Nothing shared yet. Share an agent, source, prompt, or tool from its menu.",
       "openTeamError": "Could not load team details.",
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams",
       "remove": "Remove",
       "removeMember": {
-        "personalItemsHint": "They belong to {{name}}, not to the team. Ask {{name}} to move the ones the team depends on before you remove them.",
+        "personalItemsPaused": "They stop being shared with {{team}} while {{name}} is out of the team, and come back if {{name}} is added again. To keep the ones the team depends on, ask {{name}} to move them to the team first.",
         "personalItems_one": "{{count}} personal item {{name}} shares with {{team}}",
         "personalItems_other": "{{count}} personal items {{name}} shares with {{team}}",
         "teamItemsStay": "Team items {{name}} added stay with {{team}}. {{name}} loses access to them; you can add them again at any time."
       },
       "removeMemberConfirmation": "Remove \"{{name}}\" from {{team}}?",
-      "removeMemberConsequence": "They lose access to everything shared with {{team}}. You can add them again at any time.",
       "removeMemberError": "Could not remove member.",
       "resourceType": {
         "agent": "Agent",
@@ -4792,7 +4786,6 @@
         "shareError": "Could not share with the team.",
         "showAll": "Show all {{formatted}}",
         "subtitle": "Team members can use it; editors can also modify it. You stay the owner.",
-        "teamLabel": "Team",
         "teamsGroup": "Teams",
         "titleGeneric": "Share this {{type}}",
         "titleNamed": "Share \"{{name}}\"",
@@ -4858,9 +4851,9 @@
         "noMatches": "Nothing matches.",
         "pageRange_one": "{{from}}–{{to}} of {{formatted}} resource",
         "pageRange_other": "{{from}}–{{to}} of {{formatted}} resources",
+        "paused": "Paused: {{name}} left the team",
         "search": "Search shared…"
       },
-      "sharedResources": "Shared resources",
       "sharedWithTeam": "Shared with this team ({{count}})",
       "sourceManual": "Added manually",
       "sourceScim": "via SCIM",
@@ -4873,7 +4866,6 @@
         "shared": "Personal items shared",
         "usage": "Usage"
       },
-      "teamActions": "Team actions",
       "teamNamePlaceholder": "Team name",
       "teamSubtitle": "Manage members and the resources shared with this team.",
       "teamsHeading": "Your teams",
@@ -4884,6 +4876,7 @@
         "description": "Only the owner can delete the team or transfer it.",
         "error": "Could not transfer the team.",
         "memberLabel": "New owner",
+        "noMatches": "No other member matches.",
         "placeholder": "Choose a member",
         "submit": "Transfer",
         "title": "Transfer ownership"

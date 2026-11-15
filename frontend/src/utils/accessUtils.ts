@@ -92,3 +92,20 @@ export function can(
   const role = roleOf(item);
   return role === 'owner' || ROLE_DEFAULTS[role].has(action);
 }
+
+/**
+ * Whether the item's ⋯ offers Share. A personal item follows `share`; a
+ * team's item offers it to every member, read-only for most, since the
+ * dialog then says where its access comes from rather than changing it.
+ *
+ * Args:
+ *   item: The item, with its access and workspace fields.
+ *
+ * Returns:
+ *   True when Share belongs in the item's menu.
+ */
+export function canOpenShare(item: AccessFields | null | undefined): boolean {
+  if (!item) return false;
+  if (item.origin === 'team' || item.workspace?.kind === 'team') return true;
+  return can(item, 'share');
+}

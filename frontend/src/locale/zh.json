@@ -310,8 +310,7 @@
       "all": "全部",
       "byDocsGPT": "由DocsGPT提供",
       "byMe": "我的",
-      "shared": "与我共享",
-      "team": "团队"
+      "shared": "与我共享"
     },
     "folders": {
       "emptyHint": "在此创建智能体，或通过智能体的 ⋯ 菜单将其移入。"
@@ -2325,8 +2324,6 @@
       "sourceDoc": "源文档"
     },
     "deleteConv": {
-      "confirm": "删除所有对话？",
-      "consequence": "您账户中的所有对话及其消息都会被删除。此操作无法撤销。",
       "delete": "删除"
     },
     "importAgent": {
@@ -3607,7 +3604,6 @@
       "convHistory": "对话历史",
       "dark": "暗色",
       "default": "默认",
-      "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
       "deleteAllInWorkspace": "永久删除您在 {{name}} 中开始的所有聊天。此操作无法撤销。",
       "deleteAllLabel": "删除所有对话",
       "high": "高",
@@ -4591,6 +4587,7 @@
         "open": "打开{{type}}",
         "otherTeamsHint": "也与其他团队共享了？这些授权在“管理共享”中管理。",
         "owner": "所有者",
+        "paused": "{{name}} 不在团队期间，共享已暂停。若重新添加此人，共享将恢复。",
         "removeGrant": "移除访问权限",
         "shared": "共享时间",
         "sharedOnBy": "{{date}}，由 {{name}}",
@@ -4605,7 +4602,6 @@
           "viewer": "查看者"
         }
       },
-      "editTeam": "编辑",
       "editorHint": {
         "agent": "编辑者可以修改它，包括日志、计划和访问详情。",
         "agentNoAccessDetails": "编辑者可以修改它，包括日志和计划，但不能修改访问详情。",
@@ -4662,19 +4658,17 @@
         "open": "打开 {{name}}",
         "title": "{{name}} 仍拥有一些项目"
       },
-      "nothingShared": "尚未共享任何内容。可从智能体、来源、提示词或工具的菜单中共享。",
       "openTeamError": "无法加载团队详情。",
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "remove": "移除",
       "removeMember": {
-        "personalItemsHint": "这些项目属于 {{name}}，而不属于团队。移除前，请让 {{name}} 把团队依赖的项目移入团队。",
+        "personalItemsPaused": "{{name}} 不在团队期间，这些项目将停止与 {{team}} 共享；若重新添加此人，共享将恢复。如需保留团队依赖的项目，请先让 {{name}} 把它们移入团队。",
         "personalItems_one": "{{name}} 与 {{team}} 共享的 {{count}} 个个人项目",
         "personalItems_other": "{{name}} 与 {{team}} 共享的 {{count}} 个个人项目",
         "teamItemsStay": "{{name}} 添加的团队项目会留在 {{team}}。{{name}} 将无法再访问它们；您可以随时重新添加此人。"
       },
       "removeMemberConfirmation": "将“{{name}}”从 {{team}} 移除？",
-      "removeMemberConsequence": "对方将无法再访问与 {{team}} 共享的所有内容。您可以随时重新添加。",
       "removeMemberError": "无法移除成员。",
       "resourceType": {
         "agent": "智能体",
@@ -4735,7 +4729,6 @@
         "shareError": "无法与该团队共享。",
         "showAll": "显示全部 {{formatted}} 个",
         "subtitle": "团队成员可以使用它；编辑者还可以修改它。您仍是所有者。",
-        "teamLabel": "团队",
         "teamsGroup": "团队",
         "titleGeneric": "共享此{{type}}",
         "titleNamed": "共享“{{name}}”",
@@ -4801,9 +4794,9 @@
         "noMatches": "没有匹配项。",
         "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个资源",
         "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个资源",
+        "paused": "已暂停：{{name}} 已离开团队",
         "search": "搜索共享…"
       },
-      "sharedResources": "共享资源",
       "sharedWithTeam": "已与此团队共享（{{count}}）",
       "sourceManual": "手动添加",
       "sourceScim": "通过 SCIM",
@@ -4816,7 +4809,6 @@
         "shared": "共享的个人项目",
         "usage": "用量"
       },
-      "teamActions": "团队操作",
       "teamNamePlaceholder": "团队名称",
       "teamSubtitle": "管理成员以及与此团队共享的资源。",
       "teamsHeading": "您的团队",
@@ -4827,6 +4819,7 @@
         "description": "只有所有者可以删除或转让团队。",
         "error": "无法转让团队。",
         "memberLabel": "新所有者",
+        "noMatches": "没有其他匹配的成员。",
         "placeholder": "选择成员",
         "submit": "转让",
         "title": "转让所有权"

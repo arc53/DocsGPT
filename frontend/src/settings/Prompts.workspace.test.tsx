@@ -49,7 +49,16 @@ vi.mock('../drafter/useDrafterConfig', () => ({
 vi.mock('../prompts/usePromptChecks', () => ({
   usePromptChecks: () => [],
 }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+// The Share dialog's props, from its last render.
+const share = vi.hoisted(() => ({
+  props: null as null | { onMoved?: () => void },
+}));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: { onMoved?: () => void }) => {
+    share.props = props;
+    return null;
+  },
+}));
 
 // The Move to team option, as the page's hook gives it.
 const moveToWorkspace = vi.hoisted(() => ({
@@ -422,5 +431,39 @@ describe('Prompts page in a workspace', () => {
       ),
     ).map((b) => b.textContent);
     expect(labels).not.toContain('folders.moveToFolder');
+  });
+
+  const menuLabels = (name: string) =>
+    Array.from(card(name).querySelectorAll('[data-testid="menu"] button')).map(
+      (b) => b.textContent,
+    );
+
+  it("offers Share on a team's prompt to a Viewer, to see who has access", async () => {
+    service.getPrompts.mockImplementation(() =>
+      response([
+        ...presets,
+        { ...teamPrompt, access: 'viewer', allowed_actions: ['use'] },
+      ]),
+    );
+    await render('viewer');
+    expect(menuLabels('Weekly lane report')).toContain(
+      'settings.prompts.shareWithTeam',
+    );
+  });
+
+  it("reloads the list when the Share dialog's offer moves the prompt", async () => {
+    // Not a plain assignment, which would narrow `props` to null below.
+    Object.assign(share, { props: null });
+    await render();
+    const shareItem = Array.from(
+      card('Vendor checks').querySelectorAll<HTMLButtonElement>(
+        '[data-testid="menu"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.prompts.shareWithTeam')!;
+    await act(async () => shareItem.click());
+    expect(share.props?.onMoved).toBeTypeOf('function');
+    const loads = service.getPrompts.mock.calls.length;
+    await act(async () => share.props!.onMoved!());
+    expect(service.getPrompts.mock.calls.length).toBeGreaterThan(loads);
   });
 });

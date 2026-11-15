@@ -100,7 +100,7 @@ describe('confirm dialog copy', () => {
   });
 
   it.each([
-    'modals.deleteConv.confirm',
+    'workspace.chat.deleteAll.confirm',
     'modals.chunk.deleteConfirmation',
     'agents.workflow.builder.deleteConfirmUnnamed',
   ])('%s is a short question with no warning in it', (key) => {

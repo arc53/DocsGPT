@@ -115,8 +115,15 @@ vi.mock('../modals/ConfirmationModal', async () => {
     },
   };
 });
+// The Share dialog's props, from its last render.
+const shareModal = vi.hoisted(() => ({
+  props: null as null | { onMoved?: () => void },
+}));
 vi.mock('../teams/ShareToTeamModal', () => ({
-  default: () => <div data-testid="share-modal" />,
+  default: (props: { onMoved?: () => void }) => {
+    shareModal.props = props;
+    return <div data-testid="share-modal" />;
+  },
 }));
 // Render the ⋯ menu's options inline so tests can see them.
 vi.mock('../components/ui/dropdown-menu', () => ({
@@ -668,6 +675,111 @@ describe('Teams page', () => {
     expect(body().querySelector('[data-testid="where"]')?.textContent).toBe(
       '/settings/knowledge',
     );
+  });
+
+  it('opens a shared item in Personal, where it lives for the viewer', async () => {
+    mockState.workspace.current = 't1';
+    try {
+      listGrants.mockResolvedValue({
+        team_role: 'team_member',
+        grants: [grant({ caller: VIEWER })],
+      });
+      await renderShared();
+      await openDrawer();
+      mockDispatch.mockClear();
+      const open = Array.from(
+        body().querySelectorAll<HTMLButtonElement>(
+          '[data-slot="sheet-content"] button',
+        ),
+      ).find((b) =>
+        b.textContent?.startsWith('settings.teams.drawer.open(type='),
+      )!;
+      act(() => open.click());
+      await flush();
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workspace/switched',
+          payload: { id: 'personal', reason: 'link' },
+        }),
+      );
+      expect(body().querySelector('[data-testid="where"]')?.textContent).toBe(
+        '/settings/knowledge',
+      );
+    } finally {
+      mockState.workspace.current = 'personal';
+    }
+  });
+
+  it('opens a shared item without a switch when already in Personal', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_member',
+      grants: [grant({ caller: VIEWER })],
+    });
+    await renderShared();
+    await openDrawer();
+    mockDispatch.mockClear();
+    const open = Array.from(
+      body().querySelectorAll<HTMLButtonElement>(
+        '[data-slot="sheet-content"] button',
+      ),
+    ).find((b) =>
+      b.textContent?.startsWith('settings.teams.drawer.open(type='),
+    )!;
+    act(() => open.click());
+    await flush();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/switched' }),
+    );
+  });
+
+  it('marks an item paused while its owner is out of the team', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_admin',
+      grants: [
+        grant({ paused_reason: 'owner_left' }),
+        grant({
+          resource_id: 's2',
+          resource_name: 'Carrier rates',
+          paused_reason: null,
+        }),
+      ],
+    });
+    await renderShared();
+    const [paused, live] = rowButtons().map(
+      (b) => b.closest('li')?.textContent ?? '',
+    );
+    expect(paused).toContain(
+      'settings.teams.sharedList.paused(name=Lena Fischer)',
+    );
+    expect(live).not.toContain('settings.teams.sharedList.paused');
+    await openDrawer(0);
+    expect(
+      body().querySelector('[data-slot="sheet-content"]')?.textContent,
+    ).toContain('settings.teams.drawer.paused(name=Lena Fischer)');
+  });
+
+  it('passes a move from Manage sharing on to reload the grants', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_admin',
+      grants: [grant()],
+    });
+    await renderShared();
+    await openDrawer();
+    act(() =>
+      Array.from(
+        body().querySelectorAll<HTMLButtonElement>(
+          '[data-slot="sheet-content"] button',
+        ),
+      )
+        .find((b) => b.textContent === 'settings.teams.drawer.manageSharing')!
+        .click(),
+    );
+    await flush();
+    expect(shareModal.props?.onMoved).toBeTypeOf('function');
+    const loads = listGrants.mock.calls.length;
+    await act(async () => shareModal.props!.onMoved!());
+    await flush();
+    expect(listGrants.mock.calls.length).toBeGreaterThan(loads);
   });
 
   it('sends target_user_id when removing a per-member grant', async () => {

@@ -53,6 +53,7 @@ import {
   IngestorOption,
   UPLOAD_AND_WEB_INGESTORS,
 } from '../upload/types/ingestor';
+import { selectInTeam } from '../settings/workspaceAccess';
 import { addUploadTask, updateUploadTask } from './uploadSlice';
 
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
@@ -170,7 +171,11 @@ function Upload({
   const connectorCatalog = useSelector(selectConnectorCatalog);
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
-  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const connectorsOn = useSelector(selectConnectorsEnabled);
+  const inTeam = useSelector(selectInTeam);
+  // Connections are personal: a team can't sync from one (the server
+  // refuses), so a team gets no connected services here.
+  const connectorsEnabled = connectorsOn && !inTeam;
   // Connecting a service (a "From a service" card, GitHub's private-
   // repository hand-over) goes to the connect wizard, the one flow every
   // entry point uses. This modal steps aside while it runs: a connect closes
@@ -1128,7 +1133,7 @@ function Upload({
           />
         )}
       </div>
-      {onBrowseConnectors && (
+      {onBrowseConnectors && !inTeam && (
         <Button
           type="button"
           variant="link"

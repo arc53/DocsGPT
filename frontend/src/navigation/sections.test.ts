@@ -147,6 +147,34 @@ describe('AGENTS_SECTION', () => {
       getActiveItem(AGENTS_SECTION, '/agents/manage/discovered')?.key,
     ).toBe('shared');
   });
+
+  it('lists Shared with you where the Team filter was', () => {
+    const items = getSectionItems(AGENTS_SECTION);
+    expect(items.map((i) => i.key)).toEqual([
+      'all',
+      'template',
+      'user',
+      'sharedWithYou',
+      'shared',
+    ]);
+    const shared = items.find((i) => i.key === 'sharedWithYou')!;
+    expect(shared.path).toBe('/agents/manage/shared-with-you');
+    expect(shared.labelKey).toBe('workspace.page.sharedWithYou');
+    // The old Team address reads as Shared with you in Personal.
+    expect(getActiveItem(AGENTS_SECTION, '/agents/manage/team')?.key).toBe(
+      'sharedWithYou',
+    );
+  });
+
+  it('hides Shared with you and Discovered in a team', () => {
+    const keys = (inTeam: boolean) =>
+      getVisibleGroups(AGENTS_SECTION, { inTeam }).flatMap((g) =>
+        g.items.map((i) => i.key),
+      );
+    expect(keys(false)).toContain('sharedWithYou');
+    expect(keys(false)).toContain('shared');
+    expect(keys(true)).toEqual(['all', 'template', 'user']);
+  });
 });
 
 describe('buildAgentSection', () => {

@@ -96,6 +96,12 @@ vi.mock('../../api/services/teamsService', async (importOriginal) => ({
   },
 }));
 
+// Searches answer at once here.
+vi.mock('../../hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../hooks')>()),
+  useDebouncedValue: <T,>(value: T) => value,
+}));
+
 import type { Team } from '../teamsSlice';
 import SettingsTab from './SettingsTab';
 
@@ -280,8 +286,7 @@ describe('SettingsTab', () => {
     );
   });
 
-  it('lets the owner hand the team to another member', async () => {
-    await render();
+  const openPicker = async () => {
     const trigger = body().querySelector<HTMLElement>(
       '[role="combobox"][aria-label="settings.teams.transfer.memberLabel"]',
     )!;
@@ -293,10 +298,17 @@ describe('SettingsTab', () => {
           pointerType: 'mouse',
         }),
       );
+      trigger.click();
     });
-    const options = Array.from(
-      body().querySelectorAll<HTMLElement>('[role="option"]'),
-    );
+    await flush();
+  };
+  const pickerOptions = () =>
+    Array.from(body().querySelectorAll<HTMLElement>('[role="option"]'));
+
+  it('lets the owner hand the team to another member', async () => {
+    await render();
+    await openPicker();
+    const options = pickerOptions();
     // Not yourself.
     expect(options.map((o) => o.textContent)).toEqual(['dana@x.io']);
     await act(async () => options[0].click());
@@ -309,6 +321,65 @@ describe('SettingsTab', () => {
     act(() => button('settings.teams.transfer.submit', confirm)!.click());
     await flush();
     expect(transferOwner).toHaveBeenCalledWith('t1', 'dana', TOKEN);
+  });
+
+  // A team can be larger than one page of members: the server searches.
+  it('finds any member by name, past the first page', async () => {
+    listMembers.mockImplementation(
+      (_id: string, _token: string, opts?: { q?: string }) =>
+        Promise.resolve(
+          opts?.q === 'zed'
+            ? {
+                members: [
+                  {
+                    user_id: 'zed',
+                    email: 'zed@x.io',
+                    role: 'team_member',
+                    team_role: 'viewer',
+                  },
+                ],
+                total: 1,
+              }
+            : {
+                members: [
+                  {
+                    user_id: 'dana',
+                    email: 'dana@x.io',
+                    role: 'team_member',
+                    team_role: 'editor',
+                  },
+                ],
+                total: 240,
+              },
+        ),
+    );
+    await render();
+    await openPicker();
+    const input = body().querySelector<HTMLInputElement>(
+      '[data-slot="command-input"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'zed');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+    expect(listMembers).toHaveBeenCalledWith(
+      't1',
+      TOKEN,
+      expect.objectContaining({ q: 'zed' }),
+    );
+    const options = pickerOptions();
+    expect(options.map((o) => o.textContent)).toEqual(['zed@x.io']);
+    await act(async () => options[0].click());
+    act(() => button('settings.teams.transfer.action')!.click());
+    await flush();
+    const confirm = body().querySelector('[data-testid="confirm"]')!;
+    act(() => button('settings.teams.transfer.submit', confirm)!.click());
+    await flush();
+    expect(transferOwner).toHaveBeenCalledWith('t1', 'zed', TOKEN);
   });
 
   it('gives an Admin who is not the owner no transfer or delete', async () => {

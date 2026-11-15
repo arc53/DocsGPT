@@ -14,6 +14,7 @@ import { cn, focusRing } from '@/lib/utils';
 import { selectAnalyticsEnabled } from '@/preferences/preferenceSlice';
 
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
+import { selectInTeam } from '../settings/workspaceAccess';
 import { getVisibleGroups, type Section } from './sections';
 import { useSidebarLevel } from './SidebarLevelProvider';
 
@@ -43,9 +44,11 @@ export default function SectionRail({
   const { goToLevel } = useSidebarLevel();
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
   const analyticsEnabled = useSelector(selectAnalyticsEnabled);
+  const inTeam = useSelector(selectInTeam);
   const items = getVisibleGroups(section, {
     isAdmin,
     features: { connectors: connectorsEnabled, analytics: analyticsEnabled },
+    inTeam,
   }).flatMap((group) => group.items);
 
   return (

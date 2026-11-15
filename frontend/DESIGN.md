@@ -1042,7 +1042,7 @@ filter, counts)` hides an item whose count is 0 unless it is the selected
 - **One recipe per page.** A Workspace list page's ToggleGroup is the
   _kind_, what the item is, the same split as its sections and its picker:
   Tools (Included · Added · Services · Custom), Knowledge (Files · Websites
-  · Synced · Wikis · Shared), Prompts (Included · Yours · Shared),
+  · Synced · Wikis), Prompts (Included · Yours · Shared),
   Connectors (Knowledge · Tools, by capability; `?capability=sync` is how
   Add knowledge links to it), sectioned Needs sign-in · Connected ·
   Available, with the status (Any status · Needs sign-in · Connected · Not
@@ -1054,6 +1054,14 @@ filter, counts)` hides an item whose count is 0 unless it is the selected
   the other applied, both live in the address (`?kind=`, `?usage=`), and the
   page's sections (`SectionHeader size="sm"`) carry their whole count, not the
   part on the current page.
+- **Shared with you is a section.** In Personal, every Workspace list page
+  (Agents, Knowledge, Tools, Prompts) ends with a "Shared with you" section
+  (`workspace.page.sharedWithYou`): the rows whose `origin` is `shared`
+  (`splitByOrigin`, never `ownership` or `type`), each tile naming its owner
+  (`CreatorMeta`) and the caller's role (`RoleMeta`). Knowledge has no Shared
+  kind: a shared source counts in its content kind. On Agents it is also a nav
+  item. A team has none, and hides Shared with you and Discovered in its nav
+  (`personalOnly` items): nothing is shared into a team.
 
 A picker filters by the same kinds: `usePickerKindFilter`
 (`hooks/usePickerKindFilter.tsx`) gives the xs track to pass as the picker's

@@ -323,8 +323,7 @@
       "all": "Todos",
       "byDocsGPT": "Por DocsGPT",
       "byMe": "Por mí",
-      "shared": "Compartidos conmigo",
-      "team": "Equipo"
+      "shared": "Compartidos conmigo"
     },
     "folders": {
       "emptyHint": "Crea un agente aquí o mueve uno desde su menú ⋯."
@@ -2441,8 +2440,6 @@
       "sourceDoc": "Documento Fuente"
     },
     "deleteConv": {
-      "confirm": "¿Eliminar todas las conversaciones?",
-      "consequence": "Se eliminan todas las conversaciones de tu cuenta, con sus mensajes. No se puede deshacer.",
       "delete": "Eliminar"
     },
     "importAgent": {
@@ -3768,7 +3765,6 @@
       "convHistory": "Historial de conversaciones",
       "dark": "Oscuro",
       "default": "Predeterminado",
-      "deleteAllDescription": "Elimina de forma permanente todas las conversaciones de tu cuenta. No se puede deshacer.",
       "deleteAllInWorkspace": "Elimina de forma permanente todos los chats que iniciaste en {{name}}. No se puede deshacer.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
       "high": "Alto",
@@ -4793,6 +4789,7 @@
         "open": "Abrir {{type}}",
         "otherTeamsHint": "¿También compartido con otros equipos? Esos accesos se gestionan en «Gestionar uso compartido».",
         "owner": "Propietario",
+        "paused": "El uso compartido está en pausa mientras {{name}} no esté en el equipo. Se reanuda si se le vuelve a añadir.",
         "removeGrant": "Quitar acceso",
         "shared": "Compartido",
         "sharedOnBy": "{{date}} por {{name}}",
@@ -4807,7 +4804,6 @@
           "viewer": "Lector"
         }
       },
-      "editTeam": "Editar",
       "editorHint": {
         "agent": "Los editores pueden cambiarlo, incluidos los registros, las programaciones y los datos de acceso.",
         "agentNoAccessDetails": "Los editores pueden cambiarlo, incluidos los registros y las programaciones, pero no los datos de acceso.",
@@ -4873,21 +4869,19 @@
         "open": "Abrir {{name}}",
         "title": "{{name}} todavía posee elementos"
       },
-      "nothingShared": "Aún no se ha compartido nada. Comparte un agente, fuente, prompt o herramienta desde su menú.",
       "openTeamError": "No se pudieron cargar los detalles del equipo.",
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} equipos",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} equipo",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos",
       "remove": "Quitar",
       "removeMember": {
-        "personalItemsHint": "Pertenecen a {{name}}, no al equipo. Pide a {{name}} que mueva los que necesita el equipo antes de quitarle.",
+        "personalItemsPaused": "Dejan de compartirse con {{team}} mientras {{name}} no esté en el equipo y vuelven si se le añade de nuevo. Para conservar los que necesita el equipo, pide antes a {{name}} que los mueva al equipo.",
         "personalItems_many": "{{count}} elementos personales que {{name}} comparte con {{team}}",
         "personalItems_one": "{{count}} elemento personal que {{name}} comparte con {{team}}",
         "personalItems_other": "{{count}} elementos personales que {{name}} comparte con {{team}}",
         "teamItemsStay": "Los elementos del equipo que añadió {{name}} se quedan en {{team}}. {{name}} pierde el acceso a ellos; puedes volver a añadirle cuando quieras."
       },
       "removeMemberConfirmation": "¿Quitar a \"{{name}}\" de {{team}}?",
-      "removeMemberConsequence": "Pierde el acceso a todo lo que se compartió con {{team}}. Puedes volver a añadir a esta persona en cualquier momento.",
       "removeMemberError": "No se pudo quitar al miembro.",
       "resourceType": {
         "agent": "Agente",
@@ -4949,7 +4943,6 @@
         "shareError": "No se pudo compartir con el equipo.",
         "showAll": "Ver los {{formatted}}",
         "subtitle": "Los miembros del equipo pueden usarlo; los editores también pueden modificarlo. Tú sigues siendo el propietario.",
-        "teamLabel": "Equipo",
         "teamsGroup": "Equipos",
         "titleGeneric": "Compartir {{type}}",
         "titleNamed": "Compartir \"{{name}}\"",
@@ -5018,9 +5011,9 @@
         "pageRange_many": "{{from}}–{{to}} de {{formatted}} recursos",
         "pageRange_one": "{{from}}–{{to}} de {{formatted}} recurso",
         "pageRange_other": "{{from}}–{{to}} de {{formatted}} recursos",
+        "paused": "En pausa: {{name}} dejó el equipo",
         "search": "Buscar compartidos…"
       },
-      "sharedResources": "Recursos compartidos",
       "sharedWithTeam": "Compartido con este equipo ({{count}})",
       "sourceManual": "Añadido manualmente",
       "sourceScim": "vía SCIM",
@@ -5033,7 +5026,6 @@
         "shared": "Elementos personales compartidos",
         "usage": "Uso"
       },
-      "teamActions": "Acciones del equipo",
       "teamNamePlaceholder": "Nombre del equipo",
       "teamSubtitle": "Gestiona los miembros y los recursos compartidos con este equipo.",
       "teamsHeading": "Tus equipos",
@@ -5044,6 +5036,7 @@
         "description": "Solo el propietario puede eliminar el equipo o transferirlo.",
         "error": "No se pudo transferir el equipo.",
         "memberLabel": "Nuevo propietario",
+        "noMatches": "Ningún otro miembro coincide.",
         "placeholder": "Elige un miembro",
         "submit": "Transferir",
         "title": "Transferir la propiedad"

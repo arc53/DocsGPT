@@ -22,6 +22,8 @@ const connectorsState = vi.hoisted(() => ({
   catalog: [] as Record<string, unknown>[],
   connections: [] as Record<string, unknown>[],
   enabled: true,
+  // The current workspace; none reads as Personal.
+  workspace: undefined as undefined | { current: string },
 }));
 
 vi.mock('react-redux', () => ({
@@ -36,6 +38,7 @@ vi.mock('react-redux', () => ({
         loading: false,
         failed: false,
       },
+      workspace: connectorsState.workspace,
     };
     try {
       return selector(state);
@@ -367,6 +370,7 @@ describe('Upload source-type tiles', () => {
     connectorsState.catalog = [];
     connectorsState.connections = [];
     connectorsState.enabled = true;
+    connectorsState.workspace = undefined;
   });
 
   // One view: what needs no account, then the services that sync, listed
@@ -608,6 +612,15 @@ describe('Upload source-type tiles', () => {
     expect(serviceNames()).toEqual(['modals.uploadDoc.ingestors.github.label']);
   });
 
+  // Connections are personal: a team can't sync from one.
+  it('offers no service and no Browse connectors in a team', async () => {
+    connectorsState.catalog = CATALOG;
+    connectorsState.workspace = { current: 't1' };
+    await render(vi.fn());
+    expect(serviceNames()).toEqual(['modals.uploadDoc.ingestors.github.label']);
+    expect(browseLink()).toBeUndefined();
+  });
+
   describe('GitHub', () => {
     const githubConnector = {
       key: 'github',
@@ -681,6 +694,19 @@ describe('Upload source-type tiles', () => {
 
     it('offers no hand-over when GitHub connections are off', async () => {
       connectorsState.catalog = [];
+      await render();
+      await act(async () =>
+        serviceTile('modals.uploadDoc.ingestors.github.label').click(),
+      );
+      expect(document.body.textContent).toContain(
+        'modals.uploadDoc.ingestors.github.heading',
+      );
+      expect(handOver()).toBeUndefined();
+    });
+
+    it('offers no hand-over to a private repository in a team', async () => {
+      connectorsState.catalog = [githubConnector];
+      connectorsState.workspace = { current: 't1' };
       await render();
       await act(async () =>
         serviceTile('modals.uploadDoc.ingestors.github.label').click(),

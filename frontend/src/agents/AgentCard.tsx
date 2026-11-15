@@ -53,7 +53,7 @@ import {
   agentLogsPath,
   sharedAgentPath,
 } from './paths';
-import { can } from '../utils/accessUtils';
+import { can, canOpenShare } from '../utils/accessUtils';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '../utils/browserUtils';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
@@ -159,7 +159,7 @@ export default function AgentCard({
           },
         ]
       : []),
-    ...(can(agent, 'share')
+    ...(canOpenShare(agent)
       ? [
           {
             icon: Users,
@@ -479,6 +479,7 @@ export default function AgentCard({
           resourceId={agent.id}
           resourceName={agent.name}
           onClose={() => setShareModalOpen(false)}
+          onMoved={onMovedToWorkspace}
         />
       )}
       {moveToWorkspace.dialog}

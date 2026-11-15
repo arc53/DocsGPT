@@ -30,7 +30,16 @@ vi.mock('../navigation/SidebarLevelProvider', () => ({
 vi.mock('../components/folders/MoveToFolderModal', () => ({
   default: () => null,
 }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+// The Share dialog's props, from its last render.
+const share = vi.hoisted(() => ({
+  props: null as null | { onMoved?: () => void },
+}));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: { onMoved?: () => void }) => {
+    share.props = props;
+    return null;
+  },
+}));
 vi.mock('../workspace/move/useMoveToWorkspace', () => ({
   useMoveToWorkspace: () => ({ menuOption: () => null, dialog: null }),
 }));
@@ -220,6 +229,46 @@ describe('AgentCard menu', () => {
     await render(agentWith('owner', OWNER_ACTIONS), 'user');
     expect(container.querySelector('[data-testid="role-meta"]')).toBeNull();
     expect(container.querySelector('[data-slot="card-footer"]')).toBeNull();
+  });
+
+  // A team role never has `share`; the dialog shows any member where the
+  // item's access comes from.
+  it("offers Share on a team's agent to a Viewer, to see who has access", async () => {
+    await render(
+      {
+        ...agentWith('viewer', VIEWER_ACTIONS),
+        origin: 'team',
+        workspace: { kind: 'team', team_id: 't1' },
+      } as Agent,
+      'user',
+    );
+    expect(await menuLabels()).toContain('agents.shareWithTeam');
+  });
+
+  it("reloads the list when the Share dialog's offer moves the agent", async () => {
+    const onMovedToWorkspace = vi.fn();
+    const agent = agentWith('owner', OWNER_ACTIONS);
+    // Not a plain assignment, which would narrow `props` to null below.
+    Object.assign(share, { props: null });
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AgentCard
+            agent={agent}
+            agents={[agent]}
+            section="user"
+            onMovedToWorkspace={onMovedToWorkspace}
+          />
+        </MemoryRouter>,
+      );
+    });
+    const items = await openMenu();
+    await act(async () =>
+      items.find((i) => i.textContent === 'agents.shareWithTeam')!.click(),
+    );
+    expect(share.props?.onMoved).toBeTypeOf('function');
+    act(() => share.props!.onMoved!());
+    expect(onMovedToWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it('gives a viewer Pin only', async () => {

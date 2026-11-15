@@ -11,7 +11,7 @@ import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
-import { can } from '../../utils/accessUtils';
+import { can, canOpenShare } from '../../utils/accessUtils';
 import { useMoveToWorkspace } from '../../workspace/move/useMoveToWorkspace';
 import { agentsListPath } from '../paths';
 import type { GetSavedConfig } from '../ApiWriteAllowlist';
@@ -96,13 +96,13 @@ export function useAgentMenu({
     setDetails('ACTIVE');
   };
 
+  // The agent is another workspace's once moved: off this page by default.
+  const afterMove = onMovedToWorkspace ?? (() => navigate(agentsListPath()));
   const moveOut =
     saved && agent?.id
       ? moveToWorkspace.menuOption(
           { ...agent, id: agent.id },
-          {
-            onMoved: onMovedToWorkspace ?? (() => navigate(agentsListPath())),
-          },
+          { onMoved: afterMove },
         )
       : null;
 
@@ -117,8 +117,9 @@ export function useAgentMenu({
           },
         ]
       : []),
-    // Sharing is the owner's, unless the owner lets editors share.
-    ...(offerSharing && can(agent, 'share')
+    // Sharing is the owner's, unless the owner lets editors share; a team's
+    // agent shows every member where its access comes from.
+    ...(offerSharing && canOpenShare(agent)
       ? [
           {
             label: t('agents.shareWithTeam'),
@@ -206,6 +207,7 @@ export function useAgentMenu({
             resourceId={agent.id}
             resourceName={agent.name}
             onClose={() => setShareOpen(false)}
+            onMoved={afterMove}
             onOpenAccessDetails={
               canAccessDetails
                 ? () => {

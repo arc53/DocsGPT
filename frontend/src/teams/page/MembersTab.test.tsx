@@ -346,6 +346,13 @@ describe('MembersTab', () => {
     expect(confirm.textContent).toContain('Lane pricing assistant');
     expect(confirm.textContent).toContain('Lane pricing notes');
     expect(confirm.textContent).not.toContain('Escalation reply');
+    // They pause while Dana is out and come back if she's added again.
+    expect(confirm.textContent).toContain(
+      'settings.teams.removeMember.personalItemsPaused(name=dana@x.io,team=Operations)',
+    );
+    expect(confirm.textContent).not.toContain(
+      'settings.teams.removeMember.personalItemsHint',
+    );
   });
 
   it('leaves the personal items line out when the member shares nothing', async () => {

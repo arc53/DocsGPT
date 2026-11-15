@@ -30,7 +30,7 @@ import {
   selectUploadTasks,
   updateUploadTask,
 } from '../upload/uploadSlice';
-import { can } from '../utils/accessUtils';
+import { can, canOpenShare } from '../utils/accessUtils';
 import { formatCount } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
 import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
@@ -310,8 +310,9 @@ export function useSourceActions({
       });
     }
 
-    // Owner-only unless the owner lets editors share (editors_can_share).
-    if (doc.id && can(doc, 'share')) {
+    // Owner-only unless the owner lets editors share (editors_can_share); a
+    // team's source shows every member where its access comes from.
+    if (doc.id && canOpenShare(doc)) {
       options.push({
         icon: Users,
         label: t('settings.sources.shareWithTeam'),
@@ -413,6 +414,7 @@ export function useSourceActions({
           resourceId={toShare.id}
           resourceName={toShare.name}
           onClose={() => setToShare(null)}
+          onMoved={() => onMovedToWorkspace?.(toShare)}
         />
       )}
 
