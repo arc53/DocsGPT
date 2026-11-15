@@ -188,10 +188,20 @@ class WorkflowRunsRepository:
             status: Only runs in this status.
             limit: Most rows to return.
 
+        A run of a team's workflow lists only while the user is still in
+        that team (its owner, or a member), as their chats there do.
+
         Returns:
             Run rows with ``step_count`` in place of ``steps`` and no ``result``.
         """
-        clauses = ["user_id = :user_id"]
+        clauses = [
+            "user_id = :user_id",
+            "NOT EXISTS (SELECT 1 FROM workflows w WHERE w.id = workflow_runs.workflow_id"
+            " AND left(w.user_id, 8) = '__team__'"
+            " AND NOT EXISTS (SELECT 1 FROM teams t WHERE '__team__' || t.id::text = w.user_id"
+            " AND (t.owner_id = :user_id OR EXISTS (SELECT 1 FROM team_members m"
+            " WHERE m.team_id = t.id AND m.user_id = :user_id))))",
+        ]
         params: dict = {"user_id": user_id, "limit": int(limit)}
         if agent_ids is not None:
             allowed = sorted({str(a).lower() for a in agent_ids})

@@ -7,6 +7,7 @@ from typing import Mapping, Optional
 
 from flask import request
 
+from docsgpt.api.user.workflow_runs.access import run_in_reach
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
@@ -185,7 +186,11 @@ def authorize_artifact(
         if not principal.user_id:
             return False
         run = WorkflowRunsRepository(conn).get(str(workflow_run_id))
-        return run is not None and run.get("user_id") == principal.user_id
+        # A team workflow's run closes to someone who left the team.
+        return (
+            run is not None and run.get("user_id") == principal.user_id
+            and run_in_reach(conn, run, principal.user_id)
+        )
     # No parent row reachable -> deny (e.g. deleted conversation/run).
     return False
 
@@ -211,6 +216,9 @@ def authorize_artifact_write(conn, artifact: dict, principal: Principal) -> bool
         )
     if workflow_run_id is not None:
         run = WorkflowRunsRepository(conn).get(str(workflow_run_id))
-        return run is not None and run.get("user_id") == principal.user_id
+        return (
+            run is not None and run.get("user_id") == principal.user_id
+            and run_in_reach(conn, run, principal.user_id)
+        )
     # No parent row reachable -> deny (e.g. deleted conversation/run).
     return False
