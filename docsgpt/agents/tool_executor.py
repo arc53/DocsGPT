@@ -41,6 +41,7 @@ from docsgpt.storage.db.repositories.tool_call_attempts import (
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -742,6 +743,11 @@ class ToolExecutor:
         # The workflow row a node's tools belong to: its sponsors are checked
         # live, and a dropped tool is logged with why it doesn't run.
         self.tool_holder: Optional[Dict] = None
+        # The team workspace an agentless chat runs in (STEP1_PLAN D8), set by
+        # the chat after constructing the executor; None is Personal. It picks
+        # the chat's stored tools: the team's own in a team, never a team's in
+        # Personal. Agent-bound runs ignore it (the agent's tools apply).
+        self.workspace_team_id: Optional[str] = None
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
         # (artifact_generator / code_executor) address artifacts by the
@@ -933,10 +939,26 @@ class ToolExecutor:
         )
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
-        """Resolve an agentless chat's toolset: explicit user tools plus defaults."""
+        """Resolve an agentless chat's toolset: the workspace's stored tools plus defaults.
+
+        In Personal (``workspace_team_id`` None): the user's own switched-on
+        tools and the shared ones they switched into their chats, never a
+        team's. In a team: only that team's tools the user switched on for
+        their chats (``user_tool_preferences``; a team tool's ``status`` is
+        nobody's switch) and may still use, membership checked again through
+        ``resolve`` on every call; none of the user's personal tools.
+        """
         with db_readonly() as conn:
-            user_tools = UserToolsRepository(conn).list_active_for_user(user)
-            user_tools.extend(self._shared_in_chat_tools(conn, user))
+            switched_on = self._shared_in_chat_tools(conn, user)
+            if self.workspace_team_id:
+                team_id = canonical_team_id(self.workspace_team_id)
+                team_owner = principal_id(team_id) if team_id else None
+                user_tools = [t for t in switched_on if team_owner and t.get("user_id") == team_owner]
+            else:
+                user_tools = UserToolsRepository(conn).list_active_for_user(user)
+                user_tools.extend(switched_on)
+                # A team's tool is never in a Personal chat (also when ``user`` is a principal).
+                user_tools = [t for t in user_tools if not is_principal_id(t.get("user_id"))]
             user_doc = UsersRepository(conn).get(user) if self.agent_id is None else None
         # Headless agentless runs (e.g. scheduled fire) drop chat-only
         # tools (``scheduler``) from explicit user_tools too.
@@ -1345,18 +1367,21 @@ class ToolExecutor:
         """How the chat names a connection's owner ("Ask lena@… to reconnect it").
 
         The email on record, which is what sharing already shows members;
+        a team's principal is named by its team ("Team Ops"), never by its id.
         None without one, and the card uses generic owner copy.
 
         Args:
             user_id: The connection owner's auth ``sub``.
 
         Returns:
-            The owner's email, or None.
+            The owner's email or team label, or None.
         """
         if not user_id:
             return None
         try:
             with db_readonly() as conn:
+                if is_principal_id(user_id):
+                    return UsersRepository(conn).principal_labels([user_id]).get(user_id)
                 return UsersRepository(conn).emails_for([user_id]).get(user_id)
         except Exception as exc:
             if is_budget_exhausted(exc):

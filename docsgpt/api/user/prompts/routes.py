@@ -9,7 +9,10 @@ from flask_restx import fields, Namespace, Resource
 from docsgpt.api import api
 from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.resource_access import (
+    _user_labels,
     AccessDenied,
+    created_by_payload,
+    creator_payloads,
     delete_settings,
     payload_for,
     require,
@@ -23,6 +26,8 @@ from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
+from docsgpt.workspaces.context import current_workspace, require_workspace_role, WorkspaceError
+from docsgpt.workspaces.principal import is_principal_id
 
 prompts_ns = Namespace(
     "prompts", description="Prompt management operations", path="/api"
@@ -75,8 +80,15 @@ class CreatePrompt(Resource):
 
     @api.expect(create_prompt_model)
     @api.doc(
-        description="Create a new prompt",
-        responses={200: "The new prompt's id and updated_at (the version a save over it sends back)"},
+        description=(
+            "Create a new prompt in the workspace the request names (header X-DocsGPT-Workspace, default "
+            "Personal); in a team it needs the Editor role and the team owns it"
+        ),
+        responses={
+            200: "The new prompt's id and updated_at (the version a save over it sends back)",
+            403: "A Viewer in the team (error workspace_role_required)",
+            404: "Not a member of the named team (error workspace_not_found)",
+        },
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -90,8 +102,13 @@ class CreatePrompt(Resource):
         user = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                prompt = PromptsRepository(conn).create(user, data["name"], data["content"])
+                workspace = current_workspace(conn)
+                require_workspace_role(workspace, "editor")
+                owner_id, created_by = workspace.owner_for_create(user)
+                prompt = PromptsRepository(conn).create(owner_id, data["name"], data["content"], created_by=created_by)
             new_id = str(prompt["id"])
+        except WorkspaceError as err:
+            return err.response()
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -100,7 +117,14 @@ class CreatePrompt(Resource):
 
 @prompts_ns.route("/get_prompts")
 class GetPrompts(Resource):
-    @api.doc(description="Get all prompts for the user")
+    @api.doc(
+        description=(
+            "Get the prompts of the workspace the request names (header X-DocsGPT-Workspace, default Personal), "
+            "after the built-in presets: in a team, the team's prompts with the caller's team role; in Personal, "
+            "the caller's own and those shared with them, never a team's. Each row carries workspace, created_by "
+            "{user_id, label}, access, allowed_actions, team_role and origin"
+        )
+    )
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -108,15 +132,27 @@ class GetPrompts(Resource):
         user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
+                workspace = current_workspace(conn)
                 repo = PromptsRepository(conn)
-                prompts = repo.list_for_user(user)
-                owned_ids = {str(p["id"]) for p in prompts}
-                team_shared = visible_with_access(conn, user, "prompt")
-                shared_ids = [pid for pid in team_shared if pid not in owned_ids]
-                shared_prompts = repo.list_by_ids(shared_ids)
+                if workspace.is_team:
+                    # The team's prompts only, by the caller's role; nobody's personal ones.
+                    prompts, shared_prompts, team_shared = [], [], {}
+                    team_prompts = repo.list_for_user(workspace.owner_id)
+                    team_label = _user_labels(conn, [workspace.owner_id]).get(workspace.owner_id)
+                else:
+                    team_prompts, team_label = [], None
+                    prompts = [p for p in repo.list_for_user(user) if not is_principal_id(p.get("user_id"))]
+                    owned_ids = {str(p["id"]) for p in prompts}
+                    team_shared = visible_with_access(conn, user, "prompt")
+                    shared_ids = [pid for pid in team_shared if pid not in owned_ids]
+                    # A team's prompt never shows in Personal, whatever a lookup answered.
+                    shared_prompts = [
+                        p for p in repo.list_by_ids(shared_ids) if not is_principal_id(p.get("user_id"))
+                    ]
                 switches = settings_many(
-                    conn, "prompt", [*owned_ids, *(str(p["id"]) for p in shared_prompts)]
+                    conn, "prompt", [*(str(p["id"]) for p in prompts), *(str(p["id"]) for p in shared_prompts)]
                 )
+                creators = creator_payloads(conn, user, [*prompts, *shared_prompts, *team_prompts])
             list_prompts = [{"id": name, "name": name, "type": "public"} for name in PRESET_PROMPTS]
             for prompt in prompts:
                 pid = str(prompt["id"])
@@ -127,6 +163,7 @@ class GetPrompts(Resource):
                         "type": "private",
                         "preview": prompt_preview(prompt.get("content")),
                         "updated_at": _iso(prompt.get("updated_at")),
+                        "created_by": created_by_payload(prompt, creators),
                         **payload_for("prompt", "owner", switches.get(pid)),
                     }
                 )
@@ -140,7 +177,23 @@ class GetPrompts(Resource):
                         "team_access": team_shared.get(pid),
                         "preview": prompt_preview(prompt.get("content")),
                         "updated_at": _iso(prompt.get("updated_at")),
+                        "created_by": created_by_payload(prompt, creators),
                         **payload_for("prompt", team_shared.get(pid), switches.get(pid)),
+                    }
+                )
+            for prompt in team_prompts:
+                list_prompts.append(
+                    {
+                        "id": str(prompt["id"]),
+                        "name": prompt["name"],
+                        # Compat: today's UI reads a team row like a shared one.
+                        "type": "team",
+                        "team_access": "viewer" if workspace.role in (None, "viewer") else "editor",
+                        "owner_label": team_label,
+                        "preview": prompt_preview(prompt.get("content")),
+                        "updated_at": _iso(prompt.get("updated_at")),
+                        "created_by": created_by_payload(prompt, creators),
+                        **payload_for("prompt", None, None, team_id=workspace.team_id, team_role=workspace.role),
                     }
                 )
             # Presets (default/creative/strict) have no row id and stay visible to a restricted token.
@@ -150,6 +203,8 @@ class GetPrompts(Resource):
                     conn, user, "prompt", list_prompts,
                     deletable_ids=deletable_ids_of(list_prompts), agent_allowlist=used_by_agent_allowlist(request),
                 )
+        except WorkspaceError as err:
+            return err.response()
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -177,6 +232,7 @@ class GetSinglePrompt(Resource):
             with db_readonly() as conn:
                 ra = require(conn, "prompt", prompt_id, user, "use")
                 prompt = PromptsRepository(conn).get_any(ra.resource_id, ra.owner_id)
+                creators = creator_payloads(conn, user, [prompt] if prompt else [])
             if not prompt:
                 return make_response(
                     jsonify({"success": False, "message": "Prompt not found"}), 404
@@ -192,6 +248,7 @@ class GetSinglePrompt(Resource):
                     "content": prompt["content"],
                     "name": prompt.get("name"),
                     "updated_at": _iso(prompt.get("updated_at")),
+                    "created_by": created_by_payload(prompt, creators),
                     **ra.payload(),
                 }
             ),

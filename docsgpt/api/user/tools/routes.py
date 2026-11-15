@@ -27,7 +27,10 @@ from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.pat.tokens import is_pat, TOKEN_PREFIX
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.resource_access import (
+    _user_labels,
     AccessDenied,
+    created_by_payload,
+    creator_payloads,
     delete_settings,
     payload_for,
     require,
@@ -59,6 +62,8 @@ from docsgpt.upload_limits import (
     UploadTooLargeError,
 )
 from docsgpt.utils import check_required_fields, validate_function_name
+from docsgpt.workspaces.context import current_workspace, require_workspace_role, Workspace, WorkspaceError
+from docsgpt.workspaces.principal import is_principal_id
 
 tool_config = {}
 tool_manager = ToolManager(config=tool_config)
@@ -220,6 +225,69 @@ def check_action(ra: ResourceAccess, action: str) -> None:
     """Raise a 403 :class:`AccessDenied` unless ``ra`` allows ``action``."""
     if not ra.can(action):
         raise AccessDenied(403, _FORBIDDEN_MESSAGE)
+
+
+def holds_owner_rights(ra: ResourceAccess) -> bool:
+    """Whether the caller decides what only a tool's owner decides: its fixed values and pinned parameters.
+
+    On a personal tool that is its person-owner; a grantee's ``edit_credentials``
+    is not enough, since the owner's account is behind those values. A team's
+    tool has no person-owner: the team holds it, and the roles that may change
+    its credentials (Editor and up) also set its fixed values.
+
+    Args:
+        ra: The caller's access to the tool.
+
+    Returns:
+        bool: True for the owner, or for a team role with ``edit_credentials``.
+    """
+    return ra.access == "owner" or (ra.is_team_item and ra.can("edit_credentials"))
+
+
+# What a team workspace can't hold in v1 (STEP1_PLAN §1.1): each runs on one
+# person's account or device, and a team has no connections of its own yet.
+CODE_OAUTH_PERSONAL_ONLY = "oauth_personal_only"
+CODE_REMOTE_DEVICE_PERSONAL_ONLY = "remote_device_personal_only"
+CODE_CONNECTOR_PERSONAL_ONLY = "connector_personal_only"
+_PERSONAL_ONLY_MESSAGES = {
+    CODE_OAUTH_PERSONAL_ONLY: "A server you sign in to can only be added in your Personal workspace for now",
+    CODE_REMOTE_DEVICE_PERSONAL_ONLY: "A paired device can only be added in your Personal workspace",
+    CODE_CONNECTOR_PERSONAL_ONLY: "A connected service can only be added in your Personal workspace for now",
+}
+
+
+def personal_only_response(code: str):
+    """403 ``{success: false, error: code, message}`` for something a team workspace can't hold.
+
+    Args:
+        code: One of the ``CODE_*_PERSONAL_ONLY`` codes.
+
+    Returns:
+        The Flask response.
+    """
+    return WorkspaceError(403, code, _PERSONAL_ONLY_MESSAGES[code]).response()
+
+
+def create_workspace(conn: Connection) -> Workspace:
+    """The workspace a create goes into, checked: Personal, or a team where the caller is Editor or above.
+
+    Args:
+        conn: Open connection.
+
+    Returns:
+        Workspace: Where the new item lives; ``owner_for_create`` gives its owner and creator.
+
+    Raises:
+        WorkspaceError: 404 for a team the caller isn't in, 403 ``workspace_role_required`` for a Viewer.
+    """
+    workspace = current_workspace(conn)
+    require_workspace_role(workspace, "editor")
+    return workspace
+
+
+def team_access_compat(team_role: Optional[str]) -> str:
+    """The legacy ``team_access`` of a team row (today's UI knows ``viewer`` and ``editor`` only)."""
+    return "viewer" if team_role in (None, "viewer") else "editor"
 
 
 def check_token_tool_untouched(decoded_token: Optional[dict], tool_doc: dict, owner_id: str) -> None:
@@ -507,7 +575,9 @@ def check_oauth_mcp_owner_only(
     server to OAuth, or re-ran its sign-in would be using the owner's account
     somewhere the owner never chose. Until connectors own OAuth accounts, any
     connection change on a server that is (or would become) OAuth is
-    owner-only.
+    owner-only. A team's tool has no person-owner (``access`` is never
+    ``owner`` on it), so nobody changes an OAuth server there: a team can't
+    hold one in v1 (STEP1_PLAN §4).
 
     Args:
         ra: The caller's access to the tool.
@@ -536,10 +606,10 @@ def check_api_tool_fixed_values(
         existing_config: The stored ``config``.
 
     Raises:
-        AccessDenied: 403 when a non-owner changes a fixed value (see
-            :func:`_api_tool_fixed_values_changed`).
+        AccessDenied: 403 when someone without owner rights (:func:`holds_owner_rights`) changes a fixed
+            value (see :func:`_api_tool_fixed_values_changed`).
     """
-    if ra.access != "owner" and _api_tool_fixed_values_changed(new_config or {}, existing_config or {}):
+    if not holds_owner_rights(ra) and _api_tool_fixed_values_changed(new_config or {}, existing_config or {}):
         raise AccessDenied(403, _FIXED_VALUES_OWNER_ONLY)
 
 
@@ -596,15 +666,11 @@ def _shared_via(conn: Connection, user_id: str, tool_ids: list) -> dict:
 
 
 def _owner_labels(conn: Connection, owner_ids) -> dict:
-    """``user_id -> email`` for the owners that have one on record."""
-    ids = sorted({str(o) for o in owner_ids if o})
-    if not ids:
-        return {}
-    rows = conn.execute(
-        text("SELECT user_id, email FROM users WHERE user_id = ANY(:ids) AND email IS NOT NULL"),
-        {"ids": ids},
-    ).fetchall()
-    return {r[0]: r[1] for r in rows}
+    """``user_id -> label`` for the owners that have one: a person's email, a team principal's team name.
+
+    A team's tool is named by its team, never by the principal id.
+    """
+    return _user_labels(conn, (str(o) for o in owner_ids if o))
 
 
 def _load_owned_row(conn: Connection, ra: ResourceAccess) -> Optional[dict]:
@@ -752,7 +818,14 @@ def _stamp_action_access(tool: dict) -> dict:
 
 @tools_ns.route("/get_tools")
 class GetTools(Resource):
-    @api.doc(description="Get tools created by a user")
+    @api.doc(
+        description=(
+            "Get the tools of the workspace the request names (header X-DocsGPT-Workspace, default Personal): "
+            "in a team, the team's tools with the caller's team role; in Personal, the caller's own and those "
+            "shared with them, never a team's. Each row carries workspace, created_by {user_id, label}, access, "
+            "allowed_actions, team_role and origin; the response echoes workspace {kind, team_id, role}"
+        )
+    )
     def get(self):
         try:
             decoded_token = request.decoded_token
@@ -760,22 +833,39 @@ class GetTools(Resource):
                 return make_response(jsonify({"success": False}), 401)
             user = decoded_token.get("sub")
             with db_readonly() as conn:
+                workspace = current_workspace(conn)
                 tools_repo = UserToolsRepository(conn)
-                rows = tools_repo.list_for_user(user)
                 user_doc = UsersRepository(conn).get(user)
+                if workspace.is_team:
+                    # The team's tools only, by the caller's role; nobody's personal ones.
+                    rows = []
+                    team_rows = tools_repo.list_for_user(workspace.owner_id)
+                    team_ids = [str(r["id"]) for r in team_rows]
+                    shared_rows, shared_ids, team_shared = [], [], {}
+                    owner_labels = _owner_labels(conn, [workspace.owner_id])
+                else:
+                    rows = [r for r in tools_repo.list_for_user(user) if not is_principal_id(r.get("user_id"))]
+                    team_rows, team_ids = [], []
+                    owned_ids = {str(r["id"]) for r in rows}
+                    # Tools shared with the caller's teams. Secrets are stripped
+                    # unconditionally below — a grantee never sees the owner's
+                    # credentials (they only run with the owner's creds server-side).
+                    team_shared = visible_with_access(conn, user, "tool")
+                    shared_ids = [tid for tid in team_shared if tid not in owned_ids]
+                    # A team's tool never shows in Personal, whatever a lookup answered.
+                    shared_rows = [
+                        r for r in tools_repo.list_by_ids(shared_ids) if not is_principal_id(r.get("user_id"))
+                    ]
+                    shared_ids = [str(r["id"]) for r in shared_rows]
+                    owner_labels = _owner_labels(conn, [r.get("user_id") for r in shared_rows])
                 owned_ids = {str(r["id"]) for r in rows}
-                # Tools shared with the caller's teams. Secrets are stripped
-                # unconditionally below — a grantee never sees the owner's
-                # credentials (they only run with the owner's creds server-side).
-                team_shared = visible_with_access(conn, user, "tool")
-                shared_ids = [tid for tid in team_shared if tid not in owned_ids]
-                shared_rows = tools_repo.list_by_ids(shared_ids)
                 # "Telegram · Alerts bot" when the owner has several bots.
-                account_names = account_tool_names(conn, [*rows, *shared_rows])
+                account_names = account_tool_names(conn, [*rows, *shared_rows, *team_rows])
                 switches = settings_many(conn, "tool", [*owned_ids, *shared_ids])
-                prefs = UserToolPreferencesRepository(conn).in_chat_many(user, shared_ids)
+                # A member's "In my chats" switch is theirs, for shared and team tools alike.
+                prefs = UserToolPreferencesRepository(conn).in_chat_many(user, [*shared_ids, *team_ids])
                 shared_via = _shared_via(conn, user, shared_ids)
-                owner_labels = _owner_labels(conn, [r.get("user_id") for r in shared_rows])
+                creators = creator_payloads(conn, user, [*rows, *shared_rows, *team_rows])
             user_tools = []
 
             def _shape_tool(row, *, ownership="user", force_strip_secret=False):
@@ -805,6 +895,7 @@ class GetTools(Resource):
                     # Header / query-param values are secrets for everyone.
                     tool_copy["config"] = mask_api_tool_config(tool_copy.get("config") or {})
                 tool_copy["ownership"] = ownership
+                tool_copy["created_by"] = created_by_payload(row, creators)
                 if str(row["id"]) in account_names:
                     tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]
                 return _stamp_action_access(tool_copy)
@@ -821,6 +912,16 @@ class GetTools(Resource):
                 shaped.update(payload_for("tool", team_shared.get(tid), switches.get(tid)))
                 shaped["in_chat"] = prefs.get(tid, False)
                 shaped["shared_via"] = shared_via.get(tid)
+                shaped["owner_label"] = owner_labels.get(row.get("user_id"))
+                user_tools.append(shaped)
+            for row in team_rows:
+                tid = str(row["id"])
+                # Compat: today's UI reads a team row like a shared one (secrets stripped, owner named).
+                shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
+                shaped["team_access"] = team_access_compat(workspace.role)
+                shaped.update(payload_for("tool", None, None, team_id=workspace.team_id, team_role=workspace.role))
+                # ``status`` is nobody's switch on a team tool: each member has their own.
+                shaped["in_chat"] = prefs.get(tid, False)
                 shaped["owner_label"] = owner_labels.get(row.get("user_id"))
                 user_tools.append(shaped)
 
@@ -861,10 +962,12 @@ class GetTools(Resource):
                     conn, user, "tool", user_tools,
                     deletable_ids=deletable_ids_of(user_tools), agent_allowlist=used_by_agent_allowlist(request),
                 )
+        except WorkspaceError as err:
+            return err.response()
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "tools": user_tools}), 200)
+        return make_response(jsonify({"success": True, "tools": user_tools, "workspace": workspace.payload()}), 200)
 
 
 @tools_ns.route("/create_tool")
@@ -913,6 +1016,20 @@ class CreateTool(Resource):
             # Only removing a connection notes that it was removed.
             data["config"] = carry_removed_connection(data["config"], None)
         try:
+            with db_readonly() as conn:
+                workspace = create_workspace(conn)
+        except WorkspaceError as err:
+            return err.response()
+        if workspace.is_team:
+            # Runs on one person's device, or needs a connection a team can't hold yet.
+            if data["name"] == "remote_device":
+                return personal_only_response(CODE_REMOTE_DEVICE_PERSONAL_ONLY)
+            if definition_for_tool(data["name"]) is not None:
+                return personal_only_response(CODE_CONNECTOR_PERSONAL_ONLY)
+            if data["name"] == "mcp_tool" and (data.get("config") or {}).get("auth_type") == "oauth":
+                return personal_only_response(CODE_OAUTH_PERSONAL_ONLY)
+        owner_id, created_by = workspace.owner_for_create(user)
+        try:
             if data["name"] == "mcp_tool":
                 server_url = (data.get("config", {}).get("server_url") or "").strip()
                 if server_url:
@@ -957,15 +1074,18 @@ class CreateTool(Resource):
                         ),
                         400,
                     )
+            # Secrets are sealed under the owner: the team's principal for a team tool,
+            # so every member's run decrypts them as the team.
             if data["name"] == "api_tool":
-                storage_config = _seal_api_tool_secrets(data["config"], {}, user)
+                storage_config = _seal_api_tool_secrets(data["config"], {}, owner_id)
             else:
                 storage_config = _encrypt_secret_fields(
-                    data["config"], config_requirements, user
+                    data["config"], config_requirements, owner_id
                 )
+            in_chat = bool(data.get("status", True))
             with db_session() as conn:
                 created = UserToolsRepository(conn).create(
-                    user,
+                    owner_id,
                     data["name"],
                     config=storage_config,
                     custom_name=data.get("customName", ""),
@@ -973,8 +1093,13 @@ class CreateTool(Resource):
                     description=data["description"],
                     config_requirements=config_requirements,
                     actions=transformed_actions,
-                    status=bool(data.get("status", True)),
+                    # A team tool's ``status`` stays off: each member switches it into
+                    # their own chats, the creator included.
+                    status=in_chat and workspace.is_personal,
+                    created_by=created_by,
                 )
+                if workspace.is_team and in_chat:
+                    UserToolPreferencesRepository(conn).set_in_chat(created_by, str(created["id"]), True)
             new_id = str(created["id"])
         except Exception as err:
             current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
@@ -1175,7 +1300,7 @@ class UpdateTool(Resource):
                     # the owner's (as on /api/update_tool_actions).
                     try:
                         update_data["actions"] = merge_submitted_actions(
-                            _stored_actions(tool_doc), data["actions"], may_change_pins=ra.access == "owner",
+                            _stored_actions(tool_doc), data["actions"], may_change_pins=holds_owner_rights(ra),
                         )
                     except PinChangeRefused as err:
                         return make_response(jsonify({"success": False, "message": str(err)}), 403)
@@ -1430,7 +1555,7 @@ class UpdateToolActions(Resource):
                 # a Telegram chat would redirect the owner's bot).
                 try:
                     actions = merge_submitted_actions(
-                        _stored_actions(tool_doc), data["actions"], may_change_pins=ra.access == "owner",
+                        _stored_actions(tool_doc), data["actions"], may_change_pins=holds_owner_rights(ra),
                     )
                 except PinChangeRefused as err:
                     return make_response(jsonify({"success": False, "message": str(err)}), 403)
