@@ -64,6 +64,24 @@ users_table = Table(
     Column("active", Boolean, nullable=False, server_default="true"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # ``user`` (a person), ``team`` (a team's principal, ``'__team__' || team_id``,
+    # which owns the team's items) or ``system`` (``__system__``). Migration 0065.
+    Column("kind", Text, nullable=False, server_default="user"),
+    Column("team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT")),
+    CheckConstraint("kind IN ('user', 'team', 'system')", name="users_kind_chk"),
+    CheckConstraint(
+        "((kind = 'team') = (team_id IS NOT NULL)) "
+        "AND (kind <> 'team' OR user_id = '__team__' || team_id::text) "
+        "AND (kind = 'team' OR left(user_id, 8) <> '__team__')",
+        name="users_team_principal_chk",
+    ),
+)
+
+Index(
+    "users_team_id_uidx",
+    users_table.c.team_id,
+    unique=True,
+    postgresql_where=users_table.c.team_id.isnot(None),
 )
 
 auth_events_table = Table(
@@ -133,10 +151,15 @@ team_members_table = Table(
     Column("granted_by", Text),
     Column("granted_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     PrimaryKeyConstraint("team_id", "user_id", "role", "source"),
-    CheckConstraint("role IN ('team_admin', 'team_member')", name="team_members_role_check"),
+    # The owner is ``teams.owner_id`` (with an admin row); migration 0065.
+    CheckConstraint(
+        "role IN ('team_admin', 'team_editor', 'team_viewer')", name="team_members_role_check"
+    ),
     CheckConstraint(
         "source IN ('manual', 'oidc_group', 'scim')", name="team_members_source_check"
     ),
+    # A team principal is never a member.
+    CheckConstraint("left(user_id, 8) <> '__team__'", name="team_members_person_chk"),
 )
 
 Index("team_members_user_idx", team_members_table.c.user_id)
@@ -166,6 +189,10 @@ team_resource_grants_table = Table(
     ),
     CheckConstraint(
         "access_level IN ('viewer', 'editor')", name="team_resource_grants_access_check"
+    ),
+    # A team's own items are reached by team role, never by grant (migration 0065).
+    CheckConstraint(
+        "left(owner_id, 8) <> '__team__'", name="team_resource_grants_personal_owner_chk"
     ),
 )
 
@@ -218,6 +245,8 @@ prompts_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
 )
 
 user_tools_table = Table(
@@ -241,6 +270,8 @@ user_tools_table = Table(
     ),
     # Whose account a shared resource runs with: the owner's, or each member's.
     Column("credential_mode", Text, nullable=False, server_default="owner"),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
 )
 
 # A grantee's personal "In my chats" switch for a tool shared with them
@@ -353,28 +384,46 @@ folders_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
-    # ``agent`` or ``source`` (migration 0064; ``agent_folders`` before it).
-    Column("resource_type", Text, nullable=False, server_default="agent"),
-    CheckConstraint("resource_type IN ('agent', 'source')", name="folders_resource_type_chk"),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
+    # The target of the ``folder_items`` FK: a filing sits in a folder of its own user.
+    UniqueConstraint("id", "user_id", name="folders_id_user_uniq"),
 )
 
-Index("folders_user_type_idx", folders_table.c.user_id, folders_table.c.resource_type)
+# One tree per owner (migration 0064; ``agent_folders`` before it): a folder holds
+# every kind, and sibling names are unique ignoring case.
+Index(
+    "folders_sibling_name_uidx",
+    folders_table.c.user_id,
+    func.coalesce(folders_table.c.parent_id, text("'00000000-0000-0000-0000-000000000000'::uuid")),
+    func.lower(folders_table.c.name),
+    unique=True,
+)
 
-# Personal filing: each user files an item they can see into one of their own
-# folders of the same type, once (migration 0064).
+# Filing: each user files an item into one of their own folders, once (migration 0064).
 folder_items_table = Table(
     "folder_items",
     metadata,
     Column("user_id", Text, nullable=False),
     Column("resource_type", Text, nullable=False),
     Column("resource_id", UUID(as_uuid=True), nullable=False),
-    Column("folder_id", UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=False),
+    Column("folder_id", UUID(as_uuid=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     PrimaryKeyConstraint("user_id", "resource_type", "resource_id"),
-    CheckConstraint("resource_type IN ('agent', 'source')", name="folder_items_resource_type_chk"),
+    CheckConstraint(
+        "resource_type IN ('agent', 'source', 'tool', 'prompt')", name="folder_items_resource_type_chk"
+    ),
+    ForeignKeyConstraint(
+        ["folder_id", "user_id"],
+        ["folders.id", "folders.user_id"],
+        name="folder_items_folder_fk",
+        ondelete="CASCADE",
+        onupdate="CASCADE",
+    ),
 )
 
 Index("folder_items_folder_idx", folder_items_table.c.folder_id)
+Index("folder_items_resource_idx", folder_items_table.c.resource_type, folder_items_table.c.resource_id)
 
 sources_table = Table(
     "sources",
@@ -407,6 +456,8 @@ sources_table = Table(
     Column("credential_mode", Text, nullable=False, server_default="owner"),
     # A wiki's owner lets API-key and widget runs edit it (off: read only).
     Column("wiki_outside_edits", Boolean, nullable=False, server_default="false"),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
 )
 
 agents_table = Table(
@@ -462,8 +513,17 @@ agents_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_used_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
+    # Who pays for outside traffic (key, link, webhook) on a team agent; a person,
+    # NULL meaning the owner when the owner is a person (migration 0065).
+    Column("access_payer_id", Text),
     CheckConstraint("prompt_preset IN ('creative', 'strict')", name="agents_prompt_preset_chk"),
     CheckConstraint("prompt_id IS NULL OR prompt_preset IS NULL", name="agents_prompt_preset_exclusive_chk"),
+    CheckConstraint(
+        "access_payer_id IS NULL OR left(access_payer_id, 8) <> '__team__'",
+        name="agents_access_payer_person_chk",
+    ),
 )
 
 # Per-user uniqueness of the export/import slug. Mirrors the partial unique
@@ -767,6 +827,17 @@ conversations_table = Table(
     Column("read_at", DateTime(timezone=True)),
     # The latest turn's request ``passthrough`` values. See migration 0056.
     Column("passthrough", JSONB),
+    # The team workspace it was started in; NULL is Personal. See migration 0065.
+    Column("team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE")),
+)
+
+# The sidebar query: one person's listed chats in one workspace, newest first (0065).
+Index(
+    "conversations_user_ws_listed_idx",
+    conversations_table.c.user_id,
+    conversations_table.c.team_id,
+    conversations_table.c.date.desc(),
+    postgresql_where=conversations_table.c.visibility == "listed",
 )
 
 conversation_messages_table = Table(
@@ -1189,6 +1260,8 @@ workflows_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
 )
 
 workflow_nodes_table = Table(

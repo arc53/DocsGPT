@@ -159,6 +159,26 @@ def test_cors_preflight_on_mcp_route():
 
 
 @pytest.mark.unit
+def test_cors_preflight_allows_workspace_header():
+    """The web app names the workspace in a header on every API call; the preflight must allow it."""
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.options(
+            "/api/health",
+            headers={
+                "Origin": "http://example.com",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "Authorization, X-DocsGPT-Workspace",
+            },
+        )
+    assert r.status_code in (200, 204)
+    assert "x-docsgpt-workspace" in r.headers.get("access-control-allow-headers", "").lower()
+
+
+@pytest.mark.unit
 def test_wsgi_threadpool_sized_from_settings():
     """The Flask thread pool is the app's request-capacity ceiling —
     it must be operator-tunable (prod incident 2026-07-05→07: 32 slots

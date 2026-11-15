@@ -45,17 +45,17 @@ FOLDER_NOT_ACCESSIBLE = "folder_not_accessible"
 #: The ``confirm_sponsor`` key type of a knowledge folder (``folder:<id>``).
 FOLDER_KEY_TYPE = "folder"
 
-# Each requested source folder (``root``) and every folder under it, with its
-# owner's filed sources. ``level`` stops a corrupt cycle; only the owner's own
-# folders of type ``source`` count.
+# Each requested folder (``root``) and every folder under it, with its owner's
+# filed sources. ``level`` stops a corrupt cycle; only the owner's own folders
+# count (a folder holds every kind; its sources are what an agent reads).
 _EXPAND_SQL = """
     WITH RECURSIVE tree(root, id, owner, level) AS (
         SELECT f.id, f.id, f.user_id, 1 FROM folders f
-        WHERE f.id = ANY(CAST(:ids AS uuid[])) AND f.resource_type = 'source'
+        WHERE f.id = ANY(CAST(:ids AS uuid[]))
         UNION
         SELECT t.root, c.id, t.owner, t.level + 1
         FROM folders c JOIN tree t ON c.parent_id = t.id
-        WHERE c.user_id = t.owner AND c.resource_type = 'source' AND t.level < 64
+        WHERE c.user_id = t.owner AND t.level < 64
     )
     SELECT t.root::text, t.owner, s.id::text, s.user_id, min(t.level) AS depth, lower(s.name) AS sort_name
     FROM tree t
@@ -68,7 +68,7 @@ _EXPAND_SQL = """
 
 _FOLDERS_SQL = """
     SELECT id::text, name, user_id FROM folders
-    WHERE id = ANY(CAST(:ids AS uuid[])) AND resource_type = 'source'
+    WHERE id = ANY(CAST(:ids AS uuid[]))
 """
 
 

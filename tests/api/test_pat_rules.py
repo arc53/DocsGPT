@@ -609,18 +609,20 @@ class TestFolderRules:
         with patch("docsgpt.api.user.folders.routes.db_readonly", side_effect=RuntimeError("no database here")):
             assert _denied(_call(client, "GET", "/api/folders?type=source", claims)) is None
 
-    def test_a_folder_id_route_takes_the_folders_own_type(self, client):
-        from contextlib import nullcontext
-
-        claims = _claims(["sources:write", "agents:write"], {"sources": [SOURCE_A]})
+    def test_a_folder_id_route_refuses_a_token_restricted_on_any_folder_family(self, client):
+        # A folder holds every kind (one tree), so it has no single family; ``?type=`` can't pick one either.
         folder = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-        for resource_type, refused in (("source", "resource_not_allowed"), ("agent", None)):
-            with patch("docsgpt.storage.db.session.db_readonly", return_value=nullcontext(None)), patch(
-                "docsgpt.storage.db.repositories.folders.FoldersRepository.get",
-                return_value={"resource_type": resource_type},
-            ), self._no_db():
-                response = _call(client, "PUT", f"/api/folders/{folder}", claims, json={"name": "y"})
-            assert _denied(response) == refused, resource_type
+        for restriction in ({"sources": [SOURCE_A]}, {"agents": [AGENT_A]}):
+            claims = _claims(["sources:write", "agents:write"], restriction)
+            for query in ("", "?type=agent", "?type=source"):
+                with self._no_db():
+                    rename = _call(client, "PUT", f"/api/folders/{folder}{query}", claims, json={"name": "y"})
+                    delete = _call(client, "DELETE", f"/api/folders/{folder}{query}", claims)
+                assert _denied(rename) == "resource_not_allowed", (restriction, query)
+                assert _denied(delete) == "resource_not_allowed", (restriction, query)
+        with self._no_db():
+            free = _call(client, "PUT", f"/api/folders/{folder}", _claims(["sources:write"]), json={"name": "y"})
+        assert _denied(free) is None
 
 
 @pytest.mark.unit

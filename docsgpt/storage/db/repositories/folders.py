@@ -1,17 +1,23 @@
 """Repositories for the ``folders`` and ``folder_items`` tables (migration 0064).
 
-A folder belongs to one user and holds one ``resource_type`` (``agent`` or
-``source``). Folders nest through ``parent_id``; the self-FK is
-``ON DELETE SET NULL``, but the folder service moves a deleted folder's
-children and items to its parent first (``FoldersRepository.delete_into_parent``).
+A folder belongs to one owner (a person or a team principal) and has no kind:
+each owner has one tree, and a folder can hold agents, sources, tools and
+prompts. Sibling names are unique ignoring case, across kinds
+(``folders_sibling_name_uidx``). Folders nest through ``parent_id``; the
+self-FK is ``ON DELETE SET NULL``, but the folder service moves a deleted
+folder's children and items to its parent first
+(``FoldersRepository.delete_into_parent``).
 
-``folder_items`` is personal filing: a user files an item they can see into
-one of their own folders of the same type, at most once per item. Filing
-never touches the item's own row. A deleted agent or source loses its filings
-through the ``*_cleanup_folder_items`` triggers.
+``folder_items`` is filing: a user files an item they can see into one of
+their own folders, at most once per item; the composite FK keeps the filing's
+user equal to the folder's owner. Filing never touches the item's own row. A
+deleted agent, source, tool or prompt loses its filings through the
+``*_cleanup_folder_items`` triggers.
 
 The repositories trust their callers on access: the folder service checks
-that the item is visible and that the folder is the caller's, of the item's type.
+that the item is visible and that the folder is the caller's. The
+``resource_type`` arguments that once picked a folder's type are kept for
+callers and ignored (the folder API still names a type).
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ from sqlalchemy import Connection, func, text
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import folders_table
 
-#: The kinds of item a folder can hold.
+#: The kinds of item the folder API files today (the table takes tools and prompts too).
 FOLDER_RESOURCE_TYPES = ("agent", "source")
 
 _ALLOWED_UPDATE_COLUMNS = {"name", "description", "parent_id"}
@@ -54,7 +60,7 @@ _SUBTREE_SQL = """
 
 
 class FoldersRepository:
-    """The ``folders`` table: one user's folders of one type."""
+    """The ``folders`` table: one owner's folder tree."""
 
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -73,20 +79,21 @@ class FoldersRepository:
 
         Args:
             user_id: Its owner.
-            name: Its name, already validated.
-            resource_type: ``agent`` or ``source``.
+            name: Its name, already validated (and free among its siblings).
+            resource_type: Ignored: a folder holds every kind.
             description: Optional description (agent folders of old).
-            parent_id: The parent folder, already checked to be the owner's, of the same type.
+            parent_id: The parent folder, already checked to be the owner's.
             legacy_mongo_id: The Mongo ObjectId of a backfilled folder.
 
         Returns:
             dict: The new row.
         """
+        del resource_type
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO folders (user_id, name, description, parent_id, legacy_mongo_id, resource_type)
-                VALUES (:user_id, :name, :description, CAST(:parent_id AS uuid), :legacy_mongo_id, :resource_type)
+                INSERT INTO folders (user_id, name, description, parent_id, legacy_mongo_id)
+                VALUES (:user_id, :name, :description, CAST(:parent_id AS uuid), :legacy_mongo_id)
                 RETURNING *
                 """
             ),
@@ -96,45 +103,38 @@ class FoldersRepository:
                 "description": description,
                 "parent_id": str(parent_id) if parent_id else None,
                 "legacy_mongo_id": legacy_mongo_id,
-                "resource_type": resource_type,
             },
         )
         return row_to_dict(result.fetchone())
 
     def get(self, folder_id: str, user_id: str, resource_type: Optional[str] = None) -> Optional[dict]:
-        """The user's folder by id (``None`` when it isn't theirs, or of another type)."""
+        """The user's folder by id (``None`` when it isn't theirs); ``resource_type`` is ignored."""
+        del resource_type
         if not looks_like_uuid(str(folder_id or "")):
             return None
         sql = "SELECT * FROM folders WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
         params: dict[str, Any] = {"id": str(folder_id), "user_id": user_id}
-        if resource_type is not None:
-            sql += " AND resource_type = :resource_type"
-            params["resource_type"] = resource_type
         row = self._conn.execute(text(sql), params).fetchone()
         return row_to_dict(row) if row is not None else None
 
     def get_by_legacy_id(
         self, legacy_mongo_id: str, user_id: Optional[str] = None, resource_type: Optional[str] = None
     ) -> Optional[dict]:
-        """A backfilled folder by its Mongo ObjectId, optionally scoped to its owner and type."""
+        """A backfilled folder by its Mongo ObjectId, optionally scoped to its owner (``resource_type`` ignored)."""
+        del resource_type
         sql = "SELECT * FROM folders WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, Any] = {"legacy_id": str(legacy_mongo_id)}
         if user_id is not None:
             sql += " AND user_id = :user_id"
             params["user_id"] = user_id
-        if resource_type is not None:
-            sql += " AND resource_type = :resource_type"
-            params["resource_type"] = resource_type
         row = self._conn.execute(text(sql), params).fetchone()
         return row_to_dict(row) if row is not None else None
 
     def list_for_user(self, user_id: str, resource_type: Optional[str] = "agent") -> list[dict]:
-        """Every folder the user has of one type (all types for ``None``), oldest first."""
+        """Every folder in the user's tree, oldest first (``resource_type`` is ignored: folders hold every kind)."""
+        del resource_type
         sql = "SELECT * FROM folders WHERE user_id = :user_id"
         params: dict[str, Any] = {"user_id": user_id}
-        if resource_type is not None:
-            sql += " AND resource_type = :resource_type"
-            params["resource_type"] = resource_type
         result = self._conn.execute(text(sql + " ORDER BY created_at, id"), params)
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -157,12 +157,16 @@ class FoldersRepository:
         name: str,
         exclude_id: Optional[str] = None,
     ) -> Optional[dict]:
-        """A folder under ``parent_id`` (top level for ``None``) whose name matches ``name`` ignoring case."""
+        """A folder under ``parent_id`` (top level for ``None``) whose name matches ``name`` ignoring case.
+
+        Any folder counts, whatever it holds: ``resource_type`` is ignored.
+        """
+        del resource_type
         row = self._conn.execute(
             text(
                 """
                 SELECT * FROM folders
-                WHERE user_id = :user_id AND resource_type = :resource_type
+                WHERE user_id = :user_id
                   AND parent_id IS NOT DISTINCT FROM CAST(:parent_id AS uuid)
                   AND lower(name) = lower(:name)
                   AND (CAST(:exclude_id AS uuid) IS NULL OR id <> CAST(:exclude_id AS uuid))
@@ -171,7 +175,6 @@ class FoldersRepository:
             ),
             {
                 "user_id": user_id,
-                "resource_type": resource_type,
                 "parent_id": str(parent_id) if parent_id else None,
                 "name": name,
                 "exclude_id": str(exclude_id) if exclude_id else None,
@@ -202,23 +205,56 @@ class FoldersRepository:
         stmt = t.update().where(t.c.id == folder_id).where(t.c.user_id == user_id).values(**values)
         return self._conn.execute(stmt).rowcount > 0
 
-    def delete_into_parent(self, folder: dict) -> dict[str, int]:
+    def free_sibling_name(self, user_id: str, parent_ids: Iterable[Optional[str]], name: str, exclude_id: str) -> str:
+        """``name``, or the first ``"name (n)"`` free under every one of ``parent_ids`` (ignoring case).
+
+        Args:
+            user_id: The owner.
+            parent_ids: The parents whose children the name must not clash with (``None`` is the top level).
+            name: The wanted name.
+            exclude_id: The folder being named (it doesn't clash with itself).
+
+        Returns:
+            str: A name at most 80 characters long.
+        """
+        parents = list(parent_ids)
+        candidate, k = name, 2
+        while any(self.sibling_named(user_id, None, parent, candidate, exclude_id) for parent in parents):
+            candidate = f"{name[:74]} ({k})"
+            k += 1
+        return candidate
+
+    def delete_into_parent(self, folder: dict) -> dict[str, Any]:
         """Delete a folder after moving its child folders and items to its parent.
 
         With no parent, the children become top-level folders and the items
-        are unfiled.
+        are unfiled. A child whose name is taken where it lands gets a free
+        ``" (n)"`` suffix, so the move never breaks the sibling-name rule.
 
         Args:
             folder: The folder row (its owner's).
 
         Returns:
-            dict: ``{"moved_items": n, "moved_folders": n}``.
+            dict: ``{"moved_items": n, "moved_folders": n, "renamed": [{"id", "from", "to"}]}``.
         """
         params = {
             "id": str(folder["id"]),
             "user_id": folder["user_id"],
             "parent_id": str(folder["parent_id"]) if folder.get("parent_id") else None,
         }
+        # The folder is going: its own name must not block a child moving up beside it.
+        self._conn.execute(
+            text("UPDATE folders SET name = :id WHERE id = CAST(:id AS uuid) AND user_id = :user_id"), params
+        )
+        renamed: list[dict[str, str]] = []
+        for child in self.list_children(params["id"], params["user_id"]):
+            child_id = str(child["id"])
+            name = self.free_sibling_name(
+                params["user_id"], (params["parent_id"], params["id"]), child["name"], child_id
+            )
+            if name != child["name"]:
+                self.update(child_id, params["user_id"], {"name": name})
+                renamed.append({"id": child_id, "from": child["name"], "to": name})
         moved_folders = self._conn.execute(
             text(
                 "UPDATE folders SET parent_id = CAST(:parent_id AS uuid), updated_at = now() "
@@ -241,7 +277,7 @@ class FoldersRepository:
         self._conn.execute(
             text("DELETE FROM folders WHERE id = CAST(:id AS uuid) AND user_id = :user_id"), params
         )
-        return {"moved_items": moved_items, "moved_folders": moved_folders}
+        return {"moved_items": moved_items, "moved_folders": moved_folders, "renamed": renamed}
 
 
 class FolderItemsRepository:

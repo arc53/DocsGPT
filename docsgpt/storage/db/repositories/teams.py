@@ -3,6 +3,8 @@
 A team is owned by ``owner_id`` (the creator's auth ``sub``), which is the
 durable "who can delete the team" anchor. Membership and role grants live in
 ``team_members`` ([[team_members]]); shared resources in ``team_resource_grants``.
+The team's own items are owned by its principal ``users`` row
+(``docsgpt/workspaces/principal.py``), created here with the team.
 All methods take a ``Connection`` and do not manage their own transactions.
 """
 
@@ -13,6 +15,43 @@ from typing import Optional
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import like_escape, row_to_dict
+from docsgpt.storage.db.repositories.users import UsersRepository
+from docsgpt.workspaces.principal import principal_id
+
+#: The item tables a team workspace owns, by kind (the counts of a refused delete).
+_ITEM_KINDS = {
+    "agents": "agent",
+    "sources": "source",
+    "user_tools": "tool",
+    "prompts": "prompt",
+    "workflows": "workflow",
+    "folders": "folder",
+}
+
+# Every single-column FK onto ``users(user_id)``: the tables that can hold a principal's rows, and
+# whether each row may hang off a conversation (and so goes with a principal's chat).
+_USER_FK_SQL = """
+    SELECT c.conrelid::regclass::text AS tbl, a.attname AS col,
+           EXISTS (SELECT 1 FROM pg_attribute ca WHERE ca.attrelid = c.conrelid
+                   AND ca.attname = 'conversation_id' AND NOT ca.attisdropped) AS in_chat
+    FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    WHERE c.contype = 'f' AND c.confrelid = 'users'::regclass AND array_length(c.conkey, 1) = 1
+    ORDER BY 1, 2
+"""
+
+
+class TeamNotEmpty(Exception):
+    """A team delete refused because its principal still owns rows.
+
+    Attributes:
+        counts: ``{kind: n}`` for item tables (``agent``, ``source``, ``tool``, ``prompt``, ``workflow``,
+            ``folder``) and ``{table: n}`` for any other table that holds the principal's rows.
+    """
+
+    def __init__(self, counts: dict[str, int]) -> None:
+        super().__init__(f"team still owns {counts}")
+        self.counts = counts
 
 
 class TeamsRepository:
@@ -145,6 +184,17 @@ class TeamsRepository:
         owner_id: str,
         description: Optional[str] = None,
     ) -> dict:
+        """Insert a team and its principal row, in the caller's transaction.
+
+        Args:
+            name: Display name.
+            slug: Unique slug.
+            owner_id: The creator's ``sub``.
+            description: Optional description.
+
+        Returns:
+            The team row.
+        """
         result = self._conn.execute(
             text(
                 """
@@ -155,7 +205,9 @@ class TeamsRepository:
             ),
             {"name": name, "slug": slug, "owner_id": owner_id, "description": description},
         )
-        return row_to_dict(result.fetchone())
+        team = row_to_dict(result.fetchone())
+        UsersRepository(self._conn).create_team_principal(str(team["id"]))
+        return team
 
     # Each updatable column maps to a CONSTANT SQL fragment. The SET clause is
     # assembled only from these literals (selected by whitelisted keys), so no
@@ -189,9 +241,85 @@ class TeamsRepository:
         )
         return result.rowcount > 0
 
+    def admin_ids(self, team_id: str) -> list[str]:
+        """The team's owner and every person holding ``team_admin`` (any source), sorted.
+
+        Args:
+            team_id: Team UUID.
+
+        Returns:
+            The distinct person ids; empty for an unknown team.
+        """
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT owner_id FROM teams WHERE id = CAST(:id AS uuid)
+                UNION
+                SELECT user_id FROM team_members WHERE team_id = CAST(:id AS uuid) AND role = 'team_admin'
+                """
+            ),
+            {"id": team_id},
+        ).fetchall()
+        return sorted({str(r[0]) for r in rows if r[0]})
+
+    def principal_holdings(self, team_id: str) -> dict[str, int]:
+        """What the team's principal still owns, apart from its chats (which go with the team).
+
+        Args:
+            team_id: Team UUID.
+
+        Returns:
+            ``{kind: n}`` for item tables and ``{table: n}`` for any other table, non-zero entries only.
+        """
+        principal = principal_id(team_id)
+        counts: dict[str, int] = {}
+        for table, column, in_chat in self._conn.execute(text(_USER_FK_SQL)).fetchall():
+            if table == "conversations":
+                continue
+            # Rows of the principal's own chats cascade with them.
+            not_in_its_chats = (
+                " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = t.conversation_id "
+                "AND c.user_id = :principal)"
+                if in_chat
+                else ""
+            )
+            # The table and column names come from the catalog, not from a request.
+            n = self._conn.execute(
+                text(f'SELECT count(*) FROM {table} t WHERE t."{column}" = :principal{not_in_its_chats}'),
+                {"principal": principal},
+            ).scalar()
+            if n:
+                key = _ITEM_KINDS.get(table, table)
+                counts[key] = counts.get(key, 0) + int(n)
+        return counts
+
     def delete(self, team_id: str) -> bool:
-        """Delete the team. ``team_members`` and ``team_resource_grants`` cascade;
-        shared resources revert to owner-only visibility."""
+        """Delete an empty team, its principal and its chats.
+
+        Refused while the principal owns anything (an Admin moves or deletes
+        items first). Then the principal's own chats (a deleted team agent's
+        widget or key chats) and the members' chats in the team
+        (``conversations.team_id ON DELETE CASCADE``) go with it;
+        ``team_members`` and ``team_resource_grants`` cascade, and personal
+        items shared to the team revert to owner-only visibility.
+
+        Args:
+            team_id: Team UUID.
+
+        Returns:
+            True when the team was deleted; False when it doesn't exist.
+
+        Raises:
+            TeamNotEmpty: The principal still owns rows (``counts`` says which).
+        """
+        if self.get(team_id) is None:
+            return False
+        holdings = self.principal_holdings(team_id)
+        if holdings:
+            raise TeamNotEmpty(holdings)
+        principal = principal_id(team_id)
+        self._conn.execute(text("DELETE FROM conversations WHERE user_id = :p"), {"p": principal})
+        self._conn.execute(text("DELETE FROM users WHERE user_id = :p AND kind = 'team'"), {"p": principal})
         result = self._conn.execute(
             text("DELETE FROM teams WHERE id = CAST(:id AS uuid)"),
             {"id": team_id},

@@ -29,6 +29,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.workspaces.principal import is_principal_id, principal_id, team_of_principal
 
 
 _DEFAULT_PREFERENCES = '{"pinned": [], "shared_with_me": []}'
@@ -56,6 +57,9 @@ class UsersRepository:
 
         Args:
             user_id: Auth-provider ``sub`` (opaque string).
+
+        Returns:
+            The row, with ``kind`` (``user``, ``team`` or ``system``), or ``None``.
         """
         result = self._conn.execute(
             text("SELECT * FROM users WHERE user_id = :user_id"),
@@ -63,6 +67,47 @@ class UsersRepository:
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def team_principal(self, team_id: str) -> Optional[dict]:
+        """The principal row of a team (the ``users`` row that owns its items), or ``None``.
+
+        Args:
+            team_id: The team's UUID.
+
+        Returns:
+            The ``kind = 'team'`` row, or ``None`` when the team has none or ``team_id`` is malformed.
+        """
+        try:
+            user_id = principal_id(team_id)
+        except ValueError:
+            return None
+        row = self.get(user_id)
+        return row if row is not None and row.get("kind") == "team" else None
+
+    def create_team_principal(self, team_id: str) -> dict:
+        """Insert a team's principal row if it is missing, and return it.
+
+        Called in the transaction that creates the team, so the principal exists
+        before any item could be written under it.
+
+        Args:
+            team_id: The team's UUID (the team row must exist).
+
+        Returns:
+            The principal row.
+        """
+        user_id = principal_id(team_id)
+        self._conn.execute(
+            text(
+                """
+                INSERT INTO users (user_id, kind, team_id)
+                VALUES (:user_id, 'team', CAST(:team_id AS uuid))
+                ON CONFLICT (user_id) DO NOTHING
+                """
+            ),
+            {"user_id": user_id, "team_id": team_of_principal(user_id)},
+        )
+        return self.get(user_id)
 
     # ------------------------------------------------------------------
     # Upsert
@@ -81,8 +126,18 @@ class UsersRepository:
         upserts come from request paths that don't carry the email claim).
 
         The conflict branch also updates ``user_id`` (a no-op) so ``RETURNING *``
-        fires on both the insert and conflict paths.
+        fires on both the insert and conflict paths. A row that is not a person
+        (a team principal, ``__system__``) keeps its email.
+
+        Raises:
+            ValueError: ``user_id`` is a team principal id with no row: only
+                :meth:`create_team_principal` makes those.
         """
+        if is_principal_id(user_id):
+            existing = self.get(user_id)
+            if existing is None:
+                raise ValueError("a team principal is created with its team, not upserted")
+            return existing
         result = self._conn.execute(
             text(
                 """
@@ -90,7 +145,9 @@ class UsersRepository:
                 VALUES (:user_id, :email, CAST(:default_prefs AS jsonb))
                 ON CONFLICT (user_id) DO UPDATE
                     SET user_id = EXCLUDED.user_id,
-                        email = COALESCE(EXCLUDED.email, users.email)
+                        email = CASE WHEN users.kind = 'user'
+                                     THEN COALESCE(EXCLUDED.email, users.email)
+                                     ELSE users.email END
                 RETURNING *
                 """
             ),
@@ -103,12 +160,13 @@ class UsersRepository:
 
         Used to backfill an existing user's email from the OIDC claim on login
         without re-running the upsert. No-op when ``email`` is falsy so a login
-        without the claim never wipes a stored value.
+        without the claim never wipes a stored value, and for a row that is not
+        a person.
         """
         if not email:
             return
         self._conn.execute(
-            text("UPDATE users SET email = :email WHERE user_id = :user_id"),
+            text("UPDATE users SET email = :email WHERE user_id = :user_id AND kind = 'user'"),
             {"user_id": user_id, "email": email},
         )
 
@@ -116,12 +174,12 @@ class UsersRepository:
         """Return the user row whose email matches ``email`` (case-insensitive).
 
         Used by the add-team-member-by-email flow to resolve an email to its
-        ``user_id`` (sub). Returns None when no user has that email.
+        ``user_id`` (sub). Persons only. Returns None when no user has that email.
         """
         if not email or not email.strip():
             return None
         result = self._conn.execute(
-            text("SELECT * FROM users WHERE lower(email) = lower(:email) LIMIT 1"),
+            text("SELECT * FROM users WHERE lower(email) = lower(:email) AND kind = 'user' LIMIT 1"),
             {"email": email.strip()},
         )
         row = result.fetchone()
@@ -379,8 +437,11 @@ class UsersRepository:
         differs only by case counts as a duplicate. The pre-check keeps SCIM
         from provisioning a second row for a user the OIDC login already
         created under different casing; the ``ON CONFLICT`` clause remains an
-        exact-match backstop for the concurrent-insert race.
+        exact-match backstop for the concurrent-insert race. An id with the
+        team principal prefix is refused the same way (it is reserved).
         """
+        if is_principal_id(user_id) or is_principal_id(str(user_id).lower()):
+            return None
         existing = self._conn.execute(
             text("SELECT 1 FROM users WHERE lower(user_id) = lower(:user_id)"),
             {"user_id": user_id},

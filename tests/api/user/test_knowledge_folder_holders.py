@@ -132,11 +132,10 @@ class TestAgentCreate:
         assert _status(resp) == 201, resp.get_json()
         assert _folders(_row(pg_conn, resp.get_json()["id"])) == [folder]
 
-    @pytest.mark.parametrize("kind", ["theirs", "agent_folder", "missing"])
-    def test_refuses_a_folder_that_is_not_the_callers_source_folder(self, app, pg_conn, kind):
+    @pytest.mark.parametrize("kind", ["theirs", "missing"])
+    def test_refuses_a_folder_that_is_not_the_callers(self, app, pg_conn, kind):
         folder = {
             "theirs": lambda: _folder(pg_conn, owner=EDITOR),
-            "agent_folder": lambda: _folder(pg_conn, type_="agent"),
             "missing": lambda: str(uuid.uuid4()),
         }[kind]()
         resp = _create(app, pg_conn, {"folders": [folder]})

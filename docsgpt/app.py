@@ -467,7 +467,7 @@ def after_request(response: Response) -> Response:
     """Add CORS headers for the pure Flask development entrypoint."""
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = (
-        "Content-Type, Authorization, Idempotency-Key"
+        "Content-Type, Authorization, Idempotency-Key, X-DocsGPT-Workspace"
     )
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return response

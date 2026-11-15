@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
@@ -62,7 +64,7 @@ class TestNesting:
         repo = _repo(pg_conn)
         parent = repo.create("u", "P")
         child = repo.create("u", "C", parent_id=parent["id"])
-        assert repo.delete_into_parent(parent) == {"moved_items": 0, "moved_folders": 1}
+        assert repo.delete_into_parent(parent) == {"moved_items": 0, "moved_folders": 1, "renamed": []}
         survivor = repo.get(child["id"], "u")
         assert survivor is not None
         assert survivor["parent_id"] is None
@@ -136,7 +138,7 @@ class TestDelete:
         leaf = repo.create("u", "Leaf", parent_id=mid["id"])
         agent = AgentsRepository(pg_conn).create("u", "a", "draft")
         items.file("u", "agent", agent["id"], mid["id"])
-        assert repo.delete_into_parent(mid) == {"moved_items": 1, "moved_folders": 1}
+        assert repo.delete_into_parent(mid) == {"moved_items": 1, "moved_folders": 1, "renamed": []}
         assert repo.get(mid["id"], "u") is None
         assert repo.get(leaf["id"], "u")["parent_id"] == top["id"]
         assert items.filing("u", "agent", agent["id"]) == top["id"]
@@ -147,7 +149,7 @@ class TestDelete:
         folder = repo.create("u", "F")
         agent = AgentsRepository(pg_conn).create("u", "a", "draft")
         items.file("u", "agent", agent["id"], folder["id"])
-        assert repo.delete_into_parent(folder) == {"moved_items": 1, "moved_folders": 0}
+        assert repo.delete_into_parent(folder) == {"moved_items": 1, "moved_folders": 0, "renamed": []}
         assert items.filing("u", "agent", agent["id"]) is None
 
 
@@ -172,23 +174,59 @@ class TestTree:
         assert set(repo.ancestors(a["id"], "u")) == {a["id"], b["id"]}
         assert set(repo.subtree_levels(a["id"], "u")) == {a["id"], b["id"]}
 
-    def test_sibling_named_ignores_case_type_and_parent(self, pg_conn):
+    def test_sibling_named_ignores_case_and_type_but_not_parent(self, pg_conn):
         repo = _repo(pg_conn)
         parent = repo.create("u", "P")
         child = repo.create("u", "Carriers", parent_id=parent["id"])
-        repo.create("u", "Carriers", resource_type="source")
+        top = repo.create("u", "Carriers", resource_type="source")
         assert repo.sibling_named("u", "agent", parent["id"], "carriers")["id"] == child["id"]
         assert repo.sibling_named("u", "agent", parent["id"], "carriers", exclude_id=child["id"]) is None
-        assert repo.sibling_named("u", "agent", None, "carriers") is None
-        assert repo.sibling_named("u", "source", None, "CARRIERS") is not None
+        # One tree: the type no longer separates folders.
+        assert repo.sibling_named("u", "agent", None, "carriers")["id"] == top["id"]
+        assert repo.sibling_named("u", "source", None, "CARRIERS")["id"] == top["id"]
 
-    def test_types_are_listed_apart(self, pg_conn):
+    def test_one_tree_whatever_the_type(self, pg_conn):
         repo = _repo(pg_conn)
         repo.create("u", "agents")
         source = repo.create("u", "knowledge", resource_type="source")
-        assert [f["name"] for f in repo.list_for_user("u", "source")] == ["knowledge"]
-        assert [f["name"] for f in repo.list_for_user("u")] == ["agents"]
-        assert repo.get(source["id"], "u", "agent") is None
+        assert sorted(f["name"] for f in repo.list_for_user("u", "source")) == ["agents", "knowledge"]
+        assert sorted(f["name"] for f in repo.list_for_user("u")) == ["agents", "knowledge"]
+        assert repo.get(source["id"], "u", "agent")["id"] == source["id"]
+        assert "resource_type" not in source
+
+    def test_names_are_unique_across_kinds(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "Shared")
+        with pytest.raises(IntegrityError), pg_conn.begin_nested():
+            repo.create("u", "shared", resource_type="source")
+
+
+class TestDeleteKeepsNamesUnique:
+    def test_a_child_whose_name_is_taken_above_gets_a_suffix(self, pg_conn):
+        repo = _repo(pg_conn)
+        items = FolderItemsRepository(pg_conn)
+        top = repo.create("u", "Docs")
+        project = repo.create("u", "Project")
+        clash = repo.create("u", "docs", parent_id=project["id"])
+        taken = repo.create("u", "Docs (2)", parent_id=project["id"])
+        agent = AgentsRepository(pg_conn).create("u", "x", "draft")
+        items.file("u", "agent", agent["id"], project["id"])
+        moved = repo.delete_into_parent(project)
+        assert moved == {
+            "moved_items": 1,
+            "moved_folders": 2,
+            "renamed": [{"id": clash["id"], "from": "docs", "to": "docs (3)"}],
+        }
+        names = {f["id"]: f["name"] for f in repo.list_for_user("u")}
+        assert names == {top["id"]: "Docs", clash["id"]: "docs (3)", taken["id"]: "Docs (2)"}
+
+    def test_a_child_named_like_the_deleted_folder_keeps_its_name(self, pg_conn):
+        repo = _repo(pg_conn)
+        outer = repo.create("u", "Docs")
+        inner = repo.create("u", "Docs", parent_id=outer["id"])
+        moved = repo.delete_into_parent(outer)
+        assert moved["renamed"] == []
+        assert repo.get(inner["id"], "u")["name"] == "Docs"
 
 
 class TestFolderItems:

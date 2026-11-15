@@ -197,26 +197,11 @@ _FOLDER_FAMILY = {"agent": "agents", "source": "sources"}
 
 
 def _folder_family(request, user_id: Optional[str]) -> Optional[str]:
-    """The family of the folder type a ``/api/folders`` request touches, or None when it can't tell.
-
-    The type travels as ``type`` (query or JSON); a request naming only a
-    folder id takes the folder's own type.
-    """
+    """The family of the folder type a ``/api/folders`` request names (``type``, query or JSON), or None."""
     raw = request.args.get("type") or _json_body(request).get("type")
     if raw:
         return _FOLDER_FAMILY.get(str(raw).strip().lower())
-    folder_id = (request.view_args or {}).get("folder_id")
-    if not folder_id or not user_id:
-        return None
-    from docsgpt.storage.db.repositories.folders import FoldersRepository
-    from docsgpt.storage.db.session import db_readonly
-
-    try:
-        with db_readonly() as conn:
-            folder = FoldersRepository(conn).get(str(folder_id), user_id)
-    except Exception:
-        return None
-    return _FOLDER_FAMILY.get(folder.get("resource_type")) if folder else None
+    return None
 
 
 def _folder_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
@@ -224,9 +209,16 @@ def _folder_check(request, resource_filter: dict, user_id: Optional[str]) -> Opt
 
     Folders are not on any allowlist, so a token restricted on the type's
     family may list folders and file items on its allowlist (``ids``), but not
-    create, rename, move or delete a folder. The route checks the type's
-    read/write scope.
+    create, rename, move or delete a folder. A route naming a folder id
+    touches a folder that can hold every kind, so a token restricted on any
+    folder family is refused there, whatever ``type`` it sends. The route
+    checks the read/write scope.
     """
+    if request.method != "GET" and (request.view_args or {}).get("folder_id"):
+        restricted = [f for f in _FOLDER_FAMILY.values() if f in resource_filter]
+        if restricted:
+            return f"This token is restricted to specific {restricted[0]} and cannot use this endpoint"
+        return None
     family = _folder_family(request, user_id)
     if family is None or family not in resource_filter or request.method == "GET":
         return None

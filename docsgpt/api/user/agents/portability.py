@@ -478,7 +478,7 @@ def _folder_entries(conn, folder_ids, exporter: Optional[str]) -> list[tuple[str
     rows = conn.execute(
         _sql_text(
             "SELECT id::text, user_id, name FROM folders "
-            "WHERE id = ANY(CAST(:ids AS uuid[])) AND resource_type = 'source'"
+            "WHERE id = ANY(CAST(:ids AS uuid[]))"
         ),
         {"ids": ids},
     ).fetchall()

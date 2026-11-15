@@ -170,14 +170,12 @@ class TestUploadFolder:
         assert response.status_code == 200
         assert "folder_id" not in dispatch.call_args.kwargs["kwargs"]
 
-    def test_only_the_callers_source_folder(self, app, pg_conn):
-        agent_folder = FoldersRepository(pg_conn).create(USER, "A")
+    def test_only_the_callers_folder(self, app, pg_conn):
         theirs = FoldersRepository(pg_conn).create(OTHER, "K", resource_type="source")
-        for folder_id in (agent_folder["id"], theirs["id"]):
-            response, dispatch = self._upload(app, pg_conn, folder_id)
-            assert response.status_code == 404
-            assert response.get_json()["error"] == "folder_not_found"
-            dispatch.assert_not_called()
+        response, dispatch = self._upload(app, pg_conn, theirs["id"])
+        assert response.status_code == 404
+        assert response.get_json()["error"] == "folder_not_found"
+        dispatch.assert_not_called()
 
 
 class TestRemoteFolder:

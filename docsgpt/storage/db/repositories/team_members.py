@@ -3,9 +3,11 @@
 Field-for-field on ``user_roles``: grants are keyed by
 ``(team_id, user_id, role, source)`` so a manual grant and a future IdP-derived
 grant for the same user coexist and revoke independently. ``user_id`` is the
-auth ``sub``. The ``team_member`` role is NOT implicit — every member has at
-least one row (unlike the global ``user`` role). All methods take a
-``Connection`` and do not manage their own transactions.
+auth ``sub``. Membership is NOT implicit — every member has at least one row
+(unlike the global ``user`` role). The stored roles are ``team_admin``,
+``team_editor`` and ``team_viewer`` (migration 0065); the old ``team_member``
+is still accepted on writes, as a viewer. All methods take a ``Connection``
+and do not manage their own transactions.
 """
 
 from __future__ import annotations
@@ -17,7 +19,16 @@ from sqlalchemy import Connection, text
 from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 
 ROLE_TEAM_ADMIN = "team_admin"
+ROLE_TEAM_EDITOR = "team_editor"
+ROLE_TEAM_VIEWER = "team_viewer"
+#: The pre-workspace name of a non-admin member: still accepted on writes (stored as a viewer) and
+#: still what :meth:`TeamMembersRepository.role_for` answers for editors and viewers, for today's callers.
 ROLE_TEAM_MEMBER = "team_member"
+
+
+def _stored_role(role: str) -> str:
+    """The stored role for ``role``: the legacy ``team_member`` is a viewer; the rest pass through."""
+    return ROLE_TEAM_VIEWER if role == ROLE_TEAM_MEMBER else role
 
 
 class MembershipChangeRefused(Exception):
@@ -55,8 +66,9 @@ class TeamMembersRepository:
     def role_for(self, user_id: str, team_id: str) -> Optional[str]:
         """Strongest role ``user_id`` holds in ``team_id`` (any source), or None.
 
-        ``team_admin`` outranks ``team_member``. Returns None when the user is
-        not a member — the caller treats that as "no team access".
+        Answers in the pre-workspace names: ``team_admin``, or ``team_member``
+        for editors and viewers. Returns None when the user is not a member —
+        the caller treats that as "no team access".
         """
         if not user_id or not team_id:
             return None
@@ -248,6 +260,8 @@ class TeamMembersRepository:
             MembershipChangeRefused: The change would demote or remove the
                 owner, or leave the team with no admin.
         """
+        if role is not None:
+            role = _stored_role(role)
         if role != ROLE_TEAM_ADMIN:
             change = "remove" if role is None else "demote"
             owner = self._conn.execute(
@@ -272,11 +286,12 @@ class TeamMembersRepository:
         self,
         team_id: str,
         user_id: str,
-        role: str = ROLE_TEAM_MEMBER,
+        role: str = ROLE_TEAM_VIEWER,
         source: str = "manual",
         granted_by: Optional[str] = None,
     ) -> bool:
         """Idempotently add a membership grant. Returns True if a row was inserted."""
+        role = _stored_role(role)
         result = self._conn.execute(
             text(
                 """
@@ -308,6 +323,7 @@ class TeamMembersRepository:
         the target — keeping the single-manual-role invariant. IdP-sourced rows
         are untouched. Unguarded: routes use :meth:`change_membership`.
         """
+        role = _stored_role(role)
         self._conn.execute(
             text(
                 """

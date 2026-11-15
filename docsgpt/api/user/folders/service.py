@@ -1,8 +1,10 @@
 """The folder rules every folder route goes through: names, depth, cycles, filing and delete.
 
 Folders are personal: a user files any agent or source they can see (their
-own and team-shared ones) into their own folders of the same type, one folder
-per item. The routes (``/api/folders``, the ``/api/agents/folders`` aliases,
+own and team-shared ones) into their own folders, one folder per item. Each
+user has one folder tree (a folder can hold every kind, and sibling names are
+unique across kinds); the ``type`` the API takes picks which items are filed
+and counted. The routes (``/api/folders``, the ``/api/agents/folders`` aliases,
 the agent and source APIs) call these functions on an open connection and turn
 a :class:`FolderError` into ``{"success": false, "error": code, "message"}``.
 """
@@ -109,13 +111,13 @@ def resolve_folder(conn: Connection, folder_id: Any, user: str, resource_type: O
         conn: Open connection.
         folder_id: The requested id.
         user: The caller.
-        resource_type: The type it must hold, or ``None`` for any.
+        resource_type: Kept for callers; any of the caller's folders matches (folders hold every kind).
 
     Returns:
         dict: The folder row.
 
     Raises:
-        FolderError: 404 ``folder_not_found`` when it isn't the caller's (or is of another type).
+        FolderError: 404 ``folder_not_found`` when it isn't the caller's.
     """
     repo = FoldersRepository(conn)
     folder = None
@@ -158,7 +160,7 @@ def create_folder(
         user: The caller (the new folder's owner).
         resource_type: ``agent`` or ``source``.
         name: The requested name.
-        parent_id: The parent folder (the caller's, of the same type), or None for the top level.
+        parent_id: The parent folder (the caller's), or None for the top level.
         description: Optional description.
 
     Returns:
@@ -174,9 +176,11 @@ def create_folder(
     if _depth(conn, parent_pg, user) + 1 > MAX_FOLDER_DEPTH:
         raise FolderError(400, "folder_too_deep", f"Folders nest at most {MAX_FOLDER_DEPTH} levels deep")
     _check_name_free(conn, user, resource_type, parent_pg, clean, None)
-    return FoldersRepository(conn).create(
+    folder = FoldersRepository(conn).create(
         user, clean, resource_type=resource_type, description=description, parent_id=parent_pg,
     )
+    # The row has no type; echo the requested one so the response keeps today's ``type``.
+    return {**folder, "resource_type": resource_type}
 
 
 def update_folder(
@@ -190,7 +194,7 @@ def update_folder(
 ) -> dict:
     """Rename and/or move one of the caller's folders.
 
-    A move checks the target is the caller's folder of the same type, is not
+    A move checks the target is one of the caller's folders, is not
     the folder or one of its descendants, and keeps every folder it carries
     within :data:`MAX_FOLDER_DEPTH`. Folders already deeper than that keep
     working; only the move is checked.
@@ -240,7 +244,7 @@ def update_folder(
     return repo.get(folder_pg, user) or folder
 
 
-def delete_folder(conn: Connection, folder: dict) -> dict[str, int]:
+def delete_folder(conn: Connection, folder: dict) -> dict[str, Any]:
     """Delete a folder; its folders and items move to its parent (top level and unfiled without one).
 
     Agents that read the folder live lose it (the ``folders_cleanup_agent_knowledge_refs`` trigger).
@@ -250,7 +254,8 @@ def delete_folder(conn: Connection, folder: dict) -> dict[str, int]:
         folder: The caller's folder row.
 
     Returns:
-        dict: ``{"moved_items": n, "moved_folders": n}``.
+        dict: ``{"moved_items": n, "moved_folders": n, "renamed": [{"id", "from", "to"}]}`` (child folders
+        renamed so their names stay unique where they land).
     """
     return FoldersRepository(conn).delete_into_parent(folder)
 
@@ -286,14 +291,14 @@ def file_items(
         conn: Open connection.
         user: The caller.
         resource_type: ``agent`` or ``source``.
-        folder_id: The target folder (the caller's, of this type), or None to unfile.
+        folder_id: The target folder (the caller's), or None to unfile.
         ids: The items, as the request sent them.
 
     Returns:
         tuple: ``(moved, skipped)``, each the ids as sent; skipped ones are not visible to the caller.
 
     Raises:
-        FolderError: 404 ``folder_not_found`` when the folder isn't the caller's of this type.
+        FolderError: 404 ``folder_not_found`` when the folder isn't the caller's.
     """
     folder_pg = str(resolve_folder(conn, folder_id, user, resource_type)["id"]) if folder_id else None
     items = FolderItemsRepository(conn)
@@ -313,13 +318,22 @@ def _iso(value: Any) -> Any:
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
-def serialize_folder(folder: dict) -> dict:
-    """The outward shape of a folder row (without counts)."""
+def serialize_folder(folder: dict, resource_type: Optional[str] = None) -> dict:
+    """The outward shape of a folder row (without counts).
+
+    Args:
+        folder: The row.
+        resource_type: The type the request named; ``type`` falls back to ``agent`` (a folder has no type of
+            its own any more, and today's UI reads one).
+
+    Returns:
+        dict: ``id``, ``name``, ``parent_id``, ``type``, ``created_at``, ``updated_at``.
+    """
     return {
         "id": str(folder["id"]),
         "name": folder.get("name"),
         "parent_id": str(folder["parent_id"]) if folder.get("parent_id") else None,
-        "type": folder.get("resource_type") or "agent",
+        "type": resource_type or folder.get("resource_type") or "agent",
         "created_at": _iso(folder.get("created_at")),
         "updated_at": _iso(folder.get("updated_at")),
     }
@@ -348,7 +362,7 @@ def visible_item_counts(conn: Connection, user: str, resource_type: str) -> dict
 
 
 def list_folders(conn: Connection, user: str, resource_type: str) -> list[dict]:
-    """The caller's folders of one type, each with ``item_count`` and ``folder_count`` (direct children).
+    """The caller's folder tree, each with ``item_count`` (items of one type) and ``folder_count`` (children).
 
     Args:
         conn: Open connection.
@@ -368,7 +382,13 @@ def list_folders(conn: Connection, user: str, resource_type: str) -> list[dict]:
     out = []
     for folder in folders:
         fid = str(folder["id"])
-        out.append({**serialize_folder(folder), "item_count": counts.get(fid, 0), "folder_count": children.get(fid, 0)})
+        out.append(
+            {
+                **serialize_folder(folder, resource_type),
+                "item_count": counts.get(fid, 0),
+                "folder_count": children.get(fid, 0),
+            }
+        )
     return out
 
 

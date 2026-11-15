@@ -105,11 +105,23 @@ class TestTeamMembers:
         members = TeamMembersRepository(pg_conn)
         team = _new_team(pg_conn)
         members.add_member(team["id"], "alice", role="team_admin")
+        # The legacy member role is stored as a viewer; role_for still answers the legacy name.
         members.set_manual_role(team["id"], "alice", "team_member")
         assert members.role_for("alice", team["id"]) == "team_member"
         # Exactly one manual row remains.
         rows = [m for m in members.list_members(team["id"]) if m["source"] == "manual"]
-        assert len(rows) == 1 and rows[0]["role"] == "team_member"
+        assert len(rows) == 1 and rows[0]["role"] == "team_viewer"
+
+    def test_new_roles_and_the_viewer_default(self, pg_conn):
+        members = TeamMembersRepository(pg_conn)
+        team = _new_team(pg_conn)
+        members.add_member(team["id"], "bob")
+        members.add_member(team["id"], "carol", role="team_editor")
+        stored = {m["user_id"]: m["role"] for m in members.list_members(team["id"])}
+        assert stored == {"bob": "team_viewer", "carol": "team_editor"}
+        assert members.role_for("carol", team["id"]) == "team_member"
+        members.change_membership(team["id"], "bob", "team_member", actor="alice")
+        assert {m["role"] for m in members.list_members(team["id"]) if m["user_id"] == "bob"} == {"team_viewer"}
 
     def test_count_admins_and_last_admin_guard_data(self, pg_conn):
         members = TeamMembersRepository(pg_conn)

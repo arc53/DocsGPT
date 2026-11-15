@@ -143,8 +143,8 @@ class TestClassic:
         folder = _folder(pg_conn, OWNER, "Carriers")
         agent = _classic(pg_conn, knowledge_folder_ids=[folder])
         doc = _round_trip(pg_conn, agent)
-        # An agent folder of the same name is not a knowledge folder.
-        FoldersRepository(pg_conn).create(IMPORTER, "Carriers", resource_type="agent")
+        # A folder of another name is no match.
+        FoldersRepository(pg_conn).create(IMPORTER, "Shippers", resource_type="agent")
         plan = plan_import(pg_conn, IMPORTER, doc)
         assert [s for s in plan["sources"] if s["type"] == "folder"] == [
             {"name": "Carriers", "type": "folder", "status": "missing", "target_id": None}

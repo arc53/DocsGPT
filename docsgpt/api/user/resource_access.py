@@ -1038,7 +1038,7 @@ def ref_names(conn: Connection, refs: Iterable[tuple[str, str]]) -> dict[str, st
     """
     queries = {
         "source": "SELECT id, name FROM sources WHERE id = ANY(CAST(:ids AS uuid[]))",
-        "folder": "SELECT id, name FROM folders WHERE id = ANY(CAST(:ids AS uuid[])) AND resource_type = 'source'",
+        "folder": "SELECT id, name FROM folders WHERE id = ANY(CAST(:ids AS uuid[]))",
         "prompt": "SELECT id, name FROM prompts WHERE id = ANY(CAST(:ids AS uuid[]))",
         "tool": (
             "SELECT id, COALESCE(NULLIF(custom_name, ''), NULLIF(display_name, ''), name) "

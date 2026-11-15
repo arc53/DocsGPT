@@ -217,9 +217,15 @@ class TestGetAgents:
         assert _status(resp) == 201
         new_id = _json(resp)["id"]
         assert FolderItemsRepository(pg_conn).filing(OWNER, "agent", new_id) == str(folder["id"])
+        # One tree: a folder made from the sources page holds agents too; another person's doesn't.
         source_folder = FoldersRepository(pg_conn).create(OWNER, "K", resource_type="source")
         resp = _call(app, pg_conn, CreateAgent, "post", "/api/create_agent", OWNER,
-                     json={**body, "folder_id": str(source_folder["id"])})
+                     json={**body, "name": "Bot 2", "folder_id": str(source_folder["id"])})
+        assert _status(resp) == 201
+        assert FolderItemsRepository(pg_conn).filing(OWNER, "agent", _json(resp)["id"]) == str(source_folder["id"])
+        theirs = FoldersRepository(pg_conn).create(VIEWER, "Theirs")
+        resp = _call(app, pg_conn, CreateAgent, "post", "/api/create_agent", OWNER,
+                     json={**body, "name": "Bot 3", "folder_id": str(theirs["id"])})
         assert _status(resp) == 404
 
 

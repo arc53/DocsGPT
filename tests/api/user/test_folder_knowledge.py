@@ -101,10 +101,11 @@ class TestExpansion:
         _file(pg_conn, revoked, folder, user=MATE)
         assert expand_folders(pg_conn, [folder]) == {folder: [shared]}
 
-    def test_missing_folders_and_agent_folders_are_skipped(self, pg_conn):
+    def test_missing_folders_are_skipped(self, pg_conn):
+        # One tree: a folder made from the agents page reads like any other (no sources filed: empty).
         agent_folder = _folder(pg_conn, "Agents", type_="agent")
         gone = str(uuid.uuid4())
-        assert expand_folders(pg_conn, [gone, agent_folder, "junk"]) == {}
+        assert expand_folders(pg_conn, [gone, agent_folder, "junk"]) == {agent_folder: []}
         assert folder_source_ids(pg_conn, [gone]) == []
 
     def test_deduped_across_folders_ignoring_case(self, pg_conn):
@@ -135,14 +136,17 @@ class TestExpansion:
 
 
 class TestAttachGate:
-    def test_only_the_owners_source_folders(self, pg_conn):
+    def test_only_the_owners_folders(self, pg_conn):
         mine = _folder(pg_conn, "Mine")
+        # One tree: a folder made from the agents page is a knowledge folder too.
         agent_folder = _folder(pg_conn, "Agents", type_="agent")
         theirs = _folder(pg_conn, "Theirs", owner=MATE)
-        assert owned_source_folders(pg_conn, [mine, agent_folder, theirs], OWNER) == [mine]
+        assert sorted(owned_source_folders(pg_conn, [mine, agent_folder, theirs], OWNER)) == sorted(
+            [mine, agent_folder]
+        )
         assert unattachable_folder(pg_conn, [mine], OWNER) is None
         assert unattachable_folder(pg_conn, [mine, theirs], OWNER) == theirs
-        assert unattachable_folder(pg_conn, [agent_folder], OWNER) == agent_folder
+        assert unattachable_folder(pg_conn, [agent_folder], OWNER) is None
         assert unattachable_folder(pg_conn, [str(uuid.uuid4())], OWNER) is not None
 
     def test_folders_already_attached_stay(self, pg_conn):

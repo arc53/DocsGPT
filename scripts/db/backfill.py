@@ -559,23 +559,69 @@ def _backfill_token_usage(
 # ---------------------------------------------------------------------------
 
 
+#: Pass 1's name prefix for a folder not yet placed (unique by its legacy id).
+_FOLDER_PLACEHOLDER = "\u2063backfill:"
+
+
+def _dedupe_folder_names(conn: Connection, rows: list[dict]) -> None:
+    """Give each backfilled folder a name free among its siblings (ignoring case), in place.
+
+    A blank name becomes "Folder"; a repeat (oldest first keeps the name) gets the first free
+    " (n)". Names already taken under the parent by folders outside ``rows`` count too.
+
+    Args:
+        conn: Open connection.
+        rows: Pass 2 rows with ``user_id``, ``parent_key``, ``legacy_id``, ``name`` and ``created_at``.
+    """
+    ours = {r["legacy_id"] for r in rows}
+    taken: dict[tuple, set] = {}
+    existing = conn.execute(
+        text(
+            "SELECT user_id, parent_id::text, lower(name), legacy_mongo_id FROM folders "
+            "WHERE user_id = ANY(:users)"
+        ),
+        {"users": sorted({r["user_id"] for r in rows})},
+    ).fetchall()
+    for user_id, parent_id, lowered, legacy_id in existing:
+        if legacy_id not in ours:
+            taken.setdefault((user_id, parent_id), set()).add(lowered)
+
+    def order(row: dict) -> tuple:
+        created = row.get("created_at")
+        return (created is None, str(created) if created is not None else "", row["legacy_id"])
+
+    for row in sorted(rows, key=order):
+        siblings = taken.setdefault((row["user_id"], row["parent_key"]), set())
+        base = (row["name"] or "").strip() or "Folder"
+        name, k = base, 2
+        while name.lower() in siblings:
+            name = f"{base[:74]} ({k})"
+            k += 1
+        siblings.add(name.lower())
+        row["name"] = name
+
+
 def _backfill_agent_folders(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Backfill the Mongo ``agent_folders`` into ``folders`` (agent folders) in two passes.
+    """Backfill the Mongo ``agent_folders`` into ``folders`` in two passes.
 
     Folders are self-referential via ``parent_id``. Pass 1 inserts every
-    folder with ``parent_id = NULL`` so legacy_mongo_ids are present in PG.
-    Pass 2 issues ``UPDATE`` statements that resolve the Mongo parent
-    ObjectId to the corresponding Postgres UUID via ``legacy_mongo_id``.
+    folder with ``parent_id = NULL`` under a placeholder name unique by its
+    legacy id, so legacy_mongo_ids are present in PG without tripping the
+    sibling-name rule while every folder still sits at the top level. Pass 2
+    sets each folder's parent (the Mongo parent ObjectId resolved via
+    ``legacy_mongo_id``) and its real name. Mongo allowed blank and repeated
+    sibling names; the PG tree doesn't (``folders_sibling_name_uidx``), so a
+    blank name becomes "Folder" and a repeat gets " (2)", " (3)" ...
     """
     insert_sql = text(
         """
         INSERT INTO folders (
-            user_id, name, description, resource_type, created_at, updated_at, legacy_mongo_id
+            user_id, name, description, created_at, updated_at, legacy_mongo_id
         )
         VALUES (
-            :user_id, :name, :description, 'agent',
+            :user_id, :placeholder, :description,
             COALESCE(:created_at, now()),
             COALESCE(:updated_at, now()),
             :legacy_mongo_id
@@ -590,7 +636,7 @@ def _backfill_agent_folders(
     update_parent_sql = text(
         """
         UPDATE folders
-        SET parent_id = CAST(:parent_pg_id AS uuid)
+        SET parent_id = CAST(:parent_pg_id AS uuid), name = :name
         WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id
         """
     )
@@ -609,18 +655,19 @@ def _backfill_agent_folders(
             legacy_id = str(doc["_id"])
             batch.append({
                 "user_id": user_id,
-                "name": doc.get("name", ""),
+                "placeholder": f"{_FOLDER_PLACEHOLDER}{legacy_id}",
                 "description": doc.get("description"),
                 "created_at": doc.get("created_at"),
                 "updated_at": doc.get("updated_at"),
                 "legacy_mongo_id": legacy_id,
             })
-            if doc.get("parent_id"):
-                parent_links.append({
-                    "user_id": user_id,
-                    "legacy_id": legacy_id,
-                    "parent_legacy_id": str(doc["parent_id"]),
-                })
+            parent_links.append({
+                "user_id": user_id,
+                "legacy_id": legacy_id,
+                "parent_legacy_id": str(doc["parent_id"]) if doc.get("parent_id") else None,
+                "name": doc.get("name") or "",
+                "created_at": doc.get("created_at"),
+            })
             if len(batch) >= batch_size:
                 if not dry_run:
                     conn.execute(insert_sql, batch)
@@ -633,23 +680,24 @@ def _backfill_agent_folders(
     finally:
         cursor.close()
 
-    # Pass 2 — resolve parent_id once every folder row has a legacy_mongo_id
+    # Pass 2 — resolve parent_id once every folder row has a legacy_mongo_id, and set the real names
     parent_links_resolved = 0
     if parent_links and not dry_run:
         folders_id_map = _build_legacy_id_map(conn, "folders")
         update_batch: list[dict] = []
         for link in parent_links:
-            parent_pg_id = folders_id_map.get(link["parent_legacy_id"])
-            if not parent_pg_id:
-                continue
+            parent_pg_id = folders_id_map.get(link["parent_legacy_id"]) if link["parent_legacy_id"] else None
             update_batch.append({
                 "user_id": link["user_id"],
                 "legacy_id": link["legacy_id"],
                 "parent_pg_id": parent_pg_id,
+                "parent_key": parent_pg_id,
+                "name": link["name"],
+                "created_at": link["created_at"],
             })
-        if update_batch:
-            conn.execute(update_parent_sql, update_batch)
-            parent_links_resolved = len(update_batch)
+            parent_links_resolved += 1 if parent_pg_id else 0
+        _dedupe_folder_names(conn, update_batch)
+        conn.execute(update_parent_sql, update_batch)
 
     return {
         "seen": seen,
@@ -1110,7 +1158,7 @@ def _backfill_agents(
         INSERT INTO folder_items (user_id, resource_type, resource_id, folder_id)
         SELECT a.user_id, 'agent', a.id, f.id
         FROM agents a
-        JOIN folders f ON f.id = CAST(:folder_id AS uuid) AND f.user_id = a.user_id AND f.resource_type = 'agent'
+        JOIN folders f ON f.id = CAST(:folder_id AS uuid) AND f.user_id = a.user_id
         WHERE a.legacy_mongo_id = :legacy_mongo_id
         ON CONFLICT (user_id, resource_type, resource_id) DO UPDATE SET folder_id = EXCLUDED.folder_id
         """

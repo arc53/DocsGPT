@@ -70,6 +70,16 @@ def _scope_refusal(resource_type: str, write: bool) -> Optional[Response]:
     return make_response(jsonify(refusal[0]), refusal[1]) if refusal else None
 
 
+def _any_scope_refusal(write: bool) -> Optional[Response]:
+    """A token's 403 when it lacks the scope of every folder type: a folder holds every kind now."""
+    refusal = None
+    for resource_type in TYPE_FAMILY:
+        refusal = _scope_refusal(resource_type, write)
+        if refusal is None:
+            return None
+    return refusal
+
+
 def _body() -> dict:
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
@@ -183,7 +193,7 @@ class FolderResource(Resource):
             data = _body()
             with db_session() as conn:
                 folder = resolve_folder(conn, folder_id, user)
-                if (refusal := _scope_refusal(folder.get("resource_type") or "agent", write=True)) is not None:
+                if (refusal := _any_scope_refusal(write=True)) is not None:
                     return refusal
                 kwargs = {key: data[key] for key in ("name", "parent_id") if key in data}
                 folder = update_folder(conn, user, folder, **kwargs)
@@ -206,7 +216,7 @@ class FolderResource(Resource):
         try:
             with db_session() as conn:
                 folder = resolve_folder(conn, folder_id, user)
-                if (refusal := _scope_refusal(folder.get("resource_type") or "agent", write=True)) is not None:
+                if (refusal := _any_scope_refusal(write=True)) is not None:
                     return refusal
                 moved = delete_folder(conn, folder)
         except FolderError as err:

@@ -102,9 +102,9 @@ class TestCreate:
         _, parent = _create(app, pg_conn, "Carriers")
         assert _create(app, pg_conn, "carriers")[1]["error"] == "folder_name_taken"
         assert _create(app, pg_conn, "CARRIERS")[0] == 409
-        # Another parent, another type or another user is fine.
+        # One tree: another type clashes too. Another parent or another user is fine.
+        assert _create(app, pg_conn, "Carriers", type_="agent")[1]["error"] == "folder_name_taken"
         assert _create(app, pg_conn, "Carriers", parent=parent["id"])[0] == 201
-        assert _create(app, pg_conn, "Carriers", type_="agent")[0] == 201
         assert _create(app, pg_conn, "Carriers", user=OTHER)[0] == 201
 
     def test_three_levels_deep_at_most(self, app, pg_conn):
@@ -115,12 +115,14 @@ class TestCreate:
         status, body = _create(app, pg_conn, "4", parent=three["id"])
         assert (status, body["error"]) == (400, "folder_too_deep")
 
-    def test_parent_must_be_the_callers_folder_of_the_type(self, app, pg_conn):
+    def test_parent_must_be_the_callers_folder(self, app, pg_conn):
         _, agent_folder = _create(app, pg_conn, "Agents", type_="agent")
         _, theirs = _create(app, pg_conn, "Theirs", user=OTHER)
-        for parent in (agent_folder["id"], theirs["id"], "not-a-folder"):
+        for parent in (theirs["id"], "not-a-folder"):
             status, body = _create(app, pg_conn, "x", parent=parent)
             assert (status, body["error"]) == (404, "folder_not_found")
+        # One tree: a folder made from the agents page holds sources too.
+        assert _create(app, pg_conn, "x", parent=agent_folder["id"])[0] == 201
 
 
 class TestUpdate:
@@ -196,7 +198,7 @@ class TestDelete:
         FolderItemsRepository(pg_conn).file(USER, "source", source, mid["id"])
         status, body = self._delete(app, pg_conn, mid["id"])
         assert status == 200
-        assert body == {"success": True, "moved_items": 1, "moved_folders": 1}
+        assert body == {"success": True, "moved_items": 1, "moved_folders": 1, "renamed": []}
         assert FoldersRepository(pg_conn).get(leaf["id"], USER)["parent_id"] == top["id"]
         assert FolderItemsRepository(pg_conn).filing(USER, "source", source) == top["id"]
 
@@ -244,13 +246,15 @@ class TestFileItems:
         assert (status, body["moved"]) == (200, [own])
         assert FolderItemsRepository(pg_conn).filings(USER, "source") == {}
 
-    def test_only_into_the_callers_folder_of_the_items_type(self, app, pg_conn):
+    def test_only_into_the_callers_folder(self, app, pg_conn):
         _, agent_folder = _create(app, pg_conn, "Agents", type_="agent")
         _, theirs = _create(app, pg_conn, "Theirs", user=OTHER)
         own = _source(pg_conn)
-        for folder_id in (agent_folder["id"], theirs["id"]):
-            status, body = self._file(app, pg_conn, {"type": "source", "folder_id": folder_id, "ids": [own]})
-            assert (status, body["error"]) == (404, "folder_not_found")
+        status, body = self._file(app, pg_conn, {"type": "source", "folder_id": theirs["id"], "ids": [own]})
+        assert (status, body["error"]) == (404, "folder_not_found")
+        # One tree: any of the caller's folders holds every kind.
+        status, body = self._file(app, pg_conn, {"type": "source", "folder_id": agent_folder["id"], "ids": [own]})
+        assert (status, body["moved"]) == (200, [own])
 
     @pytest.mark.parametrize("ids", [None, [], "x", [str(i) for i in range(501)]])
     def test_ids_must_be_a_short_list(self, app, pg_conn, ids):
@@ -285,13 +289,17 @@ class TestList:
         assert (by_name["Child"]["item_count"], by_name["Child"]["folder_count"]) == (1, 0)
         assert by_name["Child"]["parent_id"] == top["id"]
 
-    def test_lists_one_type_of_the_callers_folders(self, app, pg_conn):
-        _create(app, pg_conn, "K")
+    def test_lists_the_callers_one_tree_counting_the_type(self, app, pg_conn):
+        _, k = _create(app, pg_conn, "K")
         _create(app, pg_conn, "A", type_="agent")
         _create(app, pg_conn, "Theirs", user=OTHER)
+        FolderItemsRepository(pg_conn).file(USER, "source", _source(pg_conn), k["id"])
         _, body = _call(app, pg_conn, "get", "/api/folders?type=agent")
-        assert [f["name"] for f in body["folders"]] == ["A"]
-        assert "used_by" not in body["folders"][0]
+        assert sorted(f["name"] for f in body["folders"]) == ["A", "K"]
+        assert {f["type"] for f in body["folders"]} == {"agent"}
+        assert all(f["item_count"] == 0 and "used_by" not in f for f in body["folders"])
+        _, body = _call(app, pg_conn, "get", "/api/folders?type=source")
+        assert {f["name"]: f["item_count"] for f in body["folders"]} == {"A": 0, "K": 1}
 
     def test_source_folders_name_the_agents_reading_them(self, app, pg_conn):
         _, folder = _create(app, pg_conn, "Live")

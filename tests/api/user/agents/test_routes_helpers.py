@@ -161,15 +161,18 @@ class TestResolveFolderId:
         assert pg_id == str(folder["id"])
         assert err is None
 
-    def test_a_source_folder_is_not_an_agent_folder(self, pg_conn, app):
+    def test_any_of_the_callers_folders_holds_agents(self, pg_conn, app):
+        # One tree: a folder made from the sources page holds agents too.
         from docsgpt.api.user.agents.routes import _resolve_folder_id
         from docsgpt.storage.db.repositories.folders import FoldersRepository
 
         folder = FoldersRepository(pg_conn).create("u", "K", resource_type="source")
         with app.app_context():
             pg_id, err = _resolve_folder_id(pg_conn, str(folder["id"]), "u")
-        assert pg_id is None
-        assert err.status_code == 404
+            theirs, refused = _resolve_folder_id(pg_conn, str(folder["id"]), "v")
+        assert (pg_id, err) == (str(folder["id"]), None)
+        assert theirs is None
+        assert refused.status_code == 404
 
 
 class TestFormatAgentOutput:

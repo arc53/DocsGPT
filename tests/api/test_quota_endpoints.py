@@ -68,7 +68,7 @@ def _team(conn, slug="q-team", member=None, name=None):
     )
     if member:
         conn.execute(
-            text("INSERT INTO team_members (team_id, user_id, role) VALUES (CAST(:t AS uuid), :u, 'team_member')"),
+            text("INSERT INTO team_members (team_id, user_id, role) VALUES (CAST(:t AS uuid), :u, 'team_viewer')"),
             {"t": team_id, "u": member},
         )
     return team_id

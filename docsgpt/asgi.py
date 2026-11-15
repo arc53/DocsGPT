@@ -94,6 +94,8 @@ asgi_app = Starlette(
                 "Authorization",
                 "Mcp-Session-Id",
                 "Idempotency-Key",
+                # The workspace a list or create works in (docsgpt/workspaces/context.py).
+                "X-DocsGPT-Workspace",
             ],
             expose_headers=["Mcp-Session-Id"],
         ),
