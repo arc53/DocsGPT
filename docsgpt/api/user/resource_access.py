@@ -109,7 +109,8 @@ SWITCHES: dict[str, tuple[Switch, ...]] = {
     "agent": (
         Switch("editors_can_share", False, "share", "editor", "owner"),
         Switch("editors_can_delete", False, "delete", "editor", "owner"),
-        Switch("editors_can_manage_access_details", True, "manage_access_details", "editor", "owner"),
+        # Off by default: a key, link or webhook reaches people the owner never shared with.
+        Switch("editors_can_manage_access_details", False, "manage_access_details", "editor", "owner"),
         Switch("viewers_can_see_logs", False, "view_logs", "viewer", "editor"),
     ),
     "source": (
@@ -225,6 +226,9 @@ def set_settings(
 ) -> dict[str, bool]:
     """Merge ``changes`` into the resource's switches and return the result.
 
+    Only switches someone set are stored; the rest follow their default, so
+    a later change of a default reaches every resource nobody set it on.
+
     Raises:
         ValueError: an unknown key or a non-boolean value.
     """
@@ -234,7 +238,15 @@ def set_settings(
             raise ValueError(f"Unknown setting: {key}")
         if not isinstance(value, bool):
             raise ValueError(f"Setting {key} must be true or false")
-    merged = {**settings_for(conn, resource_type, resource_id), **changes}
+    row = conn.execute(
+        text(
+            "SELECT settings FROM resource_share_settings "
+            "WHERE resource_type = :t AND resource_id = CAST(:id AS uuid)"
+        ),
+        {"t": resource_type, "id": resource_id},
+    ).first()
+    stored = {k: v for k, v in ((row[0] if row else None) or {}).items() if k in known and isinstance(v, bool)}
+    explicit = {**stored, **changes}
     conn.execute(
         text(
             """
@@ -245,9 +257,9 @@ def set_settings(
                           updated_at = now()
             """
         ),
-        {"t": resource_type, "id": resource_id, "s": json.dumps(merged), "by": updated_by},
+        {"t": resource_type, "id": resource_id, "s": json.dumps(explicit), "by": updated_by},
     )
-    return merged
+    return _merge(resource_type, explicit)
 
 
 def delete_settings(conn: Connection, resource_type: str, resource_id: str) -> None:

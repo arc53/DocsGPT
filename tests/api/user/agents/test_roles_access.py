@@ -141,6 +141,8 @@ class TestGetAgent:
 
     def test_editor_gets_editor_access_and_masked_key(self, app, pg_conn):
         agent_id = _agent(pg_conn, config={"guardrails": {"enabled": True}})
+        set_settings(pg_conn, "agent", agent_id,
+                     {"editors_can_manage_access_details": True}, OWNER)
         resp = self._get(app, pg_conn, agent_id, EDITOR)
         assert _status(resp) == 200
         data = _json(resp)
@@ -153,9 +155,8 @@ class TestGetAgent:
         assert data["ownership"] == "team"
 
     def test_editor_without_access_details_gets_no_key(self, app, pg_conn):
+        # Off by default: editors don't see or mint keys, links and webhooks.
         agent_id = _agent(pg_conn)
-        set_settings(pg_conn, "agent", agent_id,
-                     {"editors_can_manage_access_details": False}, OWNER)
         data = _json(self._get(app, pg_conn, agent_id, EDITOR))
         assert "key" not in data or data["key"] == ""
         assert data["shared_token"] == ""
@@ -261,14 +262,15 @@ class TestUpdateAgent:
 
     def test_editor_publish_mints_key_and_returns_it(self, app, pg_conn):
         agent_id = _agent(pg_conn, status="draft", key="")
+        set_settings(pg_conn, "agent", agent_id,
+                     {"editors_can_manage_access_details": True}, OWNER)
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"status": "published"})
         assert _status(resp) == 200
         assert _json(resp).get("key")
 
     def test_key_withheld_when_access_details_switch_off(self, app, pg_conn):
+        # The switch is off by default.
         agent_id = _agent(pg_conn, status="draft", key="")
-        set_settings(pg_conn, "agent", agent_id,
-                     {"editors_can_manage_access_details": False}, OWNER)
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"status": "published"})
         assert _status(resp) == 200
         assert "key" not in _json(resp)
@@ -401,6 +403,9 @@ class TestAccessDetails:
         agent_id = _agent(pg_conn)
         assert _status(self._regen(app, pg_conn, agent_id, STRANGER)) == 404
         assert _status(self._regen(app, pg_conn, agent_id, VIEWER)) == 403
+        assert _status(self._regen(app, pg_conn, agent_id, EDITOR)) == 403
+        set_settings(pg_conn, "agent", agent_id,
+                     {"editors_can_manage_access_details": True}, OWNER)
         resp = self._regen(app, pg_conn, agent_id, EDITOR)
         assert _status(resp) == 200
         assert _row(pg_conn, agent_id)["key"] == _json(resp)["key"]
@@ -415,6 +420,9 @@ class TestAccessDetails:
         path = f"/api/agent_webhook?id={agent_id}"
         assert _status(_call(app, pg_conn, AgentWebhook, "get", path, VIEWER)) == 403
         assert _status(_call(app, pg_conn, AgentWebhook, "get", path, STRANGER)) == 404
+        assert _status(_call(app, pg_conn, AgentWebhook, "get", path, EDITOR)) == 403
+        set_settings(pg_conn, "agent", agent_id,
+                     {"editors_can_manage_access_details": True}, OWNER)
         resp = _call(app, pg_conn, AgentWebhook, "get", path, EDITOR)
         assert _status(resp) == 200
         assert _row(pg_conn, agent_id)["incoming_webhook_token"]
@@ -428,6 +436,10 @@ class TestAccessDetails:
                              VIEWER, json=body)) == 403
         assert _status(_call(app, pg_conn, ShareAgent, "put", "/api/share_agent",
                              STRANGER, json=body)) == 404
+        assert _status(_call(app, pg_conn, ShareAgent, "put", "/api/share_agent",
+                             EDITOR, json=body)) == 403
+        set_settings(pg_conn, "agent", agent_id,
+                     {"editors_can_manage_access_details": True}, OWNER)
         resp = _call(app, pg_conn, ShareAgent, "put", "/api/share_agent", EDITOR, json=body)
         assert _status(resp) == 200
         assert _row(pg_conn, agent_id)["shared"] is True

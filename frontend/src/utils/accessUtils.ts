@@ -32,7 +32,8 @@ export function isOwner(item: AccessFields): boolean {
  * `allowed_actions` (an API older than this frontend). Mirrors the defaults
  * of `ACTIONS` in `docsgpt/api/user/resource_access.py`; action names don't
  * collide across resource types, so one table covers all four. Owner-only
- * actions (share, delete, move, settings) are never in it.
+ * actions (share, delete, move, settings) are never in it, nor
+ * `manage_access_details`, which an agent's owner must switch on for editors.
  */
 const VIEWER_DEFAULTS = [
   'use',
@@ -52,7 +53,6 @@ const ROLE_DEFAULTS: Record<Exclude<Access, 'owner'>, ReadonlySet<string>> = {
     'view_logs',
     'manage_schedules',
     'export',
-    'manage_access_details',
     'edit_credentials',
   ]),
 };

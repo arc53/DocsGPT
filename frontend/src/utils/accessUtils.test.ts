@@ -34,6 +34,8 @@ describe('can', () => {
     expect(can(editor, 'delete')).toBe(false);
     expect(can(editor, 'share')).toBe(false);
     expect(can(editor, 'manage_settings')).toBe(false);
+    // Keys, public links and webhooks wait for the owner's switch.
+    expect(can(editor, 'manage_access_details')).toBe(false);
   });
 
   it('denies a missing item', () => {

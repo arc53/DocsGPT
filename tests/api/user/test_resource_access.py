@@ -47,8 +47,13 @@ class TestAllowedActions:
     def test_agent_editor_defaults(self):
         actions = allowed_actions("agent", "editor", {})
         assert {"use", "edit", "publish", "view_logs", "manage_schedules", "export",
-                "manage_access_details", "edit_policy"} <= actions
-        assert not {"delete", "share", "manage_settings"} & actions
+                "edit_policy"} <= actions
+        # Keys, public links and webhooks reach people the owner never shared
+        # with: editors mint them only once the owner allows it.
+        assert not {"delete", "share", "manage_settings", "manage_access_details"} & actions
+        assert "manage_access_details" in allowed_actions(
+            "agent", "editor", {"editors_can_manage_access_details": True}
+        )
 
     def test_agent_viewer_defaults(self):
         actions = allowed_actions("agent", "viewer", {})
@@ -104,7 +109,7 @@ class TestSettings:
         assert settings_for(pg_conn, "agent", aid) == {
             "editors_can_share": False,
             "editors_can_delete": False,
-            "editors_can_manage_access_details": True,
+            "editors_can_manage_access_details": False,
             "viewers_can_see_logs": False,
         }
 
@@ -117,6 +122,20 @@ class TestSettings:
         merged = settings_for(pg_conn, "agent", aid)
         assert merged["viewers_can_see_logs"] is True
         assert merged["editors_can_share"] is True
+
+    def test_only_switches_set_explicitly_are_stored(self, pg_conn):
+        # A switch nobody set follows its default, so a later change of the
+        # default reaches it; one the owner saved keeps the saved value.
+        from sqlalchemy import text
+
+        aid = _agent(pg_conn)
+        set_settings(pg_conn, "agent", aid, {"viewers_can_see_logs": True}, "alice")
+        set_settings(pg_conn, "agent", aid, {"editors_can_manage_access_details": True}, "alice")
+        stored = pg_conn.execute(
+            text("SELECT settings FROM resource_share_settings WHERE resource_id = CAST(:id AS uuid)"),
+            {"id": aid},
+        ).scalar()
+        assert stored == {"viewers_can_see_logs": True, "editors_can_manage_access_details": True}
 
     def test_unknown_key_rejected(self, pg_conn):
         aid = _agent(pg_conn)

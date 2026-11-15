@@ -84,7 +84,7 @@ const settingsResponse = (
   settings: [
     { key: 'editors_can_share', default: false },
     { key: 'editors_can_delete', default: false },
-    { key: 'editors_can_manage_access_details', default: true },
+    { key: 'editors_can_manage_access_details', default: false },
     { key: 'viewers_can_see_logs', default: false },
   ].map((s) => ({ ...s, value: values[s.key] ?? s.default })),
   access,
@@ -305,7 +305,10 @@ describe('ShareToTeamModal', () => {
     it('describes the default editor rights', async () => {
       await render();
       const hint = body().querySelector('[data-testid="share-editor-hint"]');
-      expect(hint?.textContent).toContain('settings.teams.editorHint.agent');
+      // Editors don't manage the key, link or webhook until the owner allows it.
+      expect(hint?.textContent).toContain(
+        'settings.teams.editorHint.agentNoAccessDetails',
+      );
       expect(hint?.textContent).toContain(
         'settings.teams.editorHint.noShareNoDelete',
       );

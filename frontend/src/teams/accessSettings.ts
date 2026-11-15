@@ -19,7 +19,7 @@ export const SWITCH_DEFAULTS: Record<
   agent: [
     { key: 'editors_can_share', default: false },
     { key: 'editors_can_delete', default: false },
-    { key: 'editors_can_manage_access_details', default: true },
+    { key: 'editors_can_manage_access_details', default: false },
     { key: 'viewers_can_see_logs', default: false },
   ],
   source: [
