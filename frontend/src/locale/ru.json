@@ -5485,7 +5485,10 @@
       "sharedWithYou": "Доступно вам"
     },
     "pickers": {
-      "inAgentFolder": "В {{folder}}, папке этого агента"
+      "inAgentFolder": "В {{folder}}, папке этого агента",
+      "inWorkflowFolder": "В {{folder}}, папке этого рабочего процесса",
+      "otherFolders": "В других папках",
+      "thisTeam": "Эта команда"
     },
     "share": {
       "everyoneInTeam": "Все в {{team}}"

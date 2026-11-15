@@ -84,6 +84,11 @@ import {
 } from '../components/folders/pickedFolders';
 import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
 import {
+  holderFolderOf,
+  type ItemWorkspace,
+  usePickerScope,
+} from '../components/pickerScope';
+import {
   selectSelectedAgent,
   selectSourceDocs,
   selectToken,
@@ -189,23 +194,33 @@ import {
 } from './agentDraft';
 import { useAgentBuild } from './useAgentBuild';
 import { useAgentPromptView } from './useAgentPromptView';
+import {
+  type PickerPrompt,
+  PROMPT_KINDS,
+  promptOfKind,
+  promptPickerGroups,
+} from './promptPickerGroups';
 import { useAgentProposals } from './useAgentProposals';
 import { useAgentGaps } from './useAgentGaps';
 import { IMPROVE_PARAMS, readImproveHandoff } from './improveLink';
 import AgentGapCards from './AgentGapCards';
 
 import type { Model } from '../models/types';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import {
+  selectCurrentWorkspace,
+  type WorkspaceState,
+} from '../workspace/workspaceSlice';
 
-/** The Prompt picker's kinds (the Prompts page's sections) and their `type`. */
-const PROMPT_KIND_TYPES = {
-  included: 'public',
-  yours: 'private',
-  shared: 'team',
-} as const;
-const PROMPT_KINDS = ['all', 'included', 'yours', 'shared'] as const;
-type PromptKind = (typeof PROMPT_KINDS)[number];
-const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
-  kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
+/**
+ * The team's name when the app is in a team, else null (Personal, or a
+ * store without the workspace slice).
+ */
+const selectTeamName = (state: { workspace?: WorkspaceState }) =>
+  state.workspace && state.workspace.current !== PERSONAL_WORKSPACE
+    ? selectCurrentWorkspace(state as { workspace: WorkspaceState }).name
+    : null;
+
 const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
   safety: ShieldCheck,
   knowledge: BookOpen,
@@ -369,6 +384,34 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Whole knowledge folders on the agent, read live on every answer.
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const { tree: sourceFolderTree } = useSourceFolderTree();
+  // The pickers list the current workspace's items only; for an agent that
+  // lives in another workspace (before the page follows it there), none.
+  const pickerScope = usePickerScope(
+    (agent as { workspace?: ItemWorkspace }).workspace,
+  );
+  const teamName = useSelector(selectTeamName);
+  // The agent's folder (a new one's, from the address it was started in):
+  // the pickers list what is filed there first.
+  const holderFolder = pickerScope.holderElsewhere
+    ? null
+    : holderFolderOf(
+        t,
+        sourceFolderTree,
+        agent.folder_id ?? validatedFolderId,
+        'agent',
+      );
+  const pickerDocs = useMemo(
+    () => pickerScope.scope(sourceDocs),
+    [pickerScope, sourceDocs],
+  );
+  const pickerTools = useMemo(
+    () => pickerScope.scope(rawUserTools),
+    [pickerScope, rawUserTools],
+  );
+  const pickerPrompts = useMemo(
+    () => pickerScope.scope(prompts as PickerPrompt[]),
+    [pickerScope, prompts],
+  );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   // Tools on the agent when it loaded: the owner's private ones don't come
   // back in the caller's own tool list, so the picker adds a row for each.
@@ -558,8 +601,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     ? addedByLabel('prompt', agent.prompt_id)
     : null;
 
+  // In a team its prompts are the team's, named by the team, not "Yours".
+  const teamLabel =
+    teamName === null ? null : teamName || t('workspace.pickers.thisTeam');
   // The prompt picker's kind filter, back on All each time it opens.
-  const promptKinds = usePickerKindFilter(prompts, isPromptPickerOpen, {
+  const promptKinds = usePickerKindFilter(pickerPrompts, isPromptPickerOpen, {
     kinds: PROMPT_KINDS,
     matches: promptOfKind,
     labelOf: (kind) =>
@@ -567,30 +613,39 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ? t('settings.prompts.filters.all')
         : kind === 'shared'
           ? t('settings.prompts.kinds.shared')
-          : t(`settings.prompts.sections.${kind}`),
+          : kind === 'yours' && teamLabel !== null
+            ? teamLabel
+            : t(`settings.prompts.sections.${kind}`),
     ariaLabel: t('settings.prompts.kindFilterLabel'),
   });
+  // The prompt picker's search: while one is typed the folder groups give
+  // way to the kinds, each row naming its folder. Each open starts empty.
+  const [promptSearch, setPromptSearch] = useState('');
+  const [promptPickerWasOpen, setPromptPickerWasOpen] =
+    useState(isPromptPickerOpen);
+  if (promptPickerWasOpen !== isPromptPickerOpen) {
+    setPromptPickerWasOpen(isPromptPickerOpen);
+    if (isPromptPickerOpen) setPromptSearch('');
+  }
   // A row's line, as its Prompts page card says it: a preset's purpose, else
   // the start of the prompt (the list names no sharer for a teammate's).
   const promptLine = (prompt: Prompt): string | undefined =>
     PRESET_PROMPT_IDS.includes(prompt.id) && prompt.type === 'public'
       ? t(`settings.prompts.presets.${prompt.id}`)
       : prompt.preview || undefined;
-  // The prompt picker's groups, as the Prompts page has them.
-  const promptGroups: ComboboxGroup[] = PROMPT_KINDS.filter(
-    (kind) => kind !== 'all',
-  )
-    .map((kind) => ({
-      heading: t(`settings.prompts.sections.${kind}`),
-      options: promptKinds.items
-        .filter((prompt) => prompt.type === PROMPT_KIND_TYPES[kind])
-        .map((prompt) => ({
-          value: prompt.id,
-          label: prompt.name,
-          description: promptLine(prompt),
-        })),
-    }))
-    .filter((group) => group.options.length > 0);
+  // The prompt picker's groups: the agent's folder first, then other
+  // folders, then the kinds as the Prompts page has them.
+  const promptGroups: ComboboxGroup[] = promptPickerGroups({
+    prompts: promptKinds.items,
+    headingOf: (kind) =>
+      kind === 'yours' && teamLabel !== null
+        ? teamLabel
+        : t(`settings.prompts.sections.${kind}`),
+    lineOf: promptLine,
+    holderFolder,
+    otherFoldersHeading: t('workspace.pickers.otherFolders'),
+    searching: promptSearch.trim() !== '',
+  });
   // The picked prompt's name for the trigger, from the full list, so a kind
   // filter that hides it never shows another; else, for the prompt the agent
   // was loaded with, its name from the agent (a teammate's agent names the
@@ -2477,7 +2532,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       <KnowledgePicker
                         open={isSourcePopupOpen}
                         onOpenChange={setIsSourcePopupOpen}
-                        docs={sourceDocs ?? []}
+                        docs={pickerDocs}
+                        holderFolder={holderFolder}
+                        foldersOffered={!pickerScope.holderElsewhere}
                         pick={{
                           sources: Array.from(selectedSourceIds),
                           folders: selectedFolderIds,
@@ -2546,7 +2603,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       <ToolsPicker
                         open={isToolsPopupOpen}
                         onOpenChange={setIsToolsPopupOpen}
-                        tools={rawUserTools}
+                        tools={pickerTools}
+                        holderFolder={holderFolder}
                         filter={isAgentPickerToolVisible}
                         // What was on the agent when it loaded or last saved: the
                         // owner's private tools don't come back in the caller's list.
@@ -2630,6 +2688,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                             title={t('agents.form.sections.prompt')}
                             mobileSheet
                             filters={promptKinds.filters}
+                            search={promptSearch}
+                            onSearchChange={setPromptSearch}
                             groups={promptGroups}
                             value={agent.prompt_id || 'default'}
                             valueOption={promptValueOption}
@@ -2751,7 +2811,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         );
                         const builtin: MultiSelectPopoverItem[] = [];
                         const user: MultiSelectPopoverItem[] = [];
+                        // Custom models are the person's own: none for an
+                        // agent that lives in another workspace than the list.
                         availableModels.forEach((model) => {
+                          if (
+                            pickerScope.holderElsewhere &&
+                            model.source === 'user'
+                          )
+                            return;
                           const opt: MultiSelectPopoverItem = {
                             id: model.id,
                             label: model.display_name,

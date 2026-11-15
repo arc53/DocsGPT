@@ -61,6 +61,12 @@ export type MultiSelectPopoverItem = {
    * as the picker opened: a source filed in a folder, at the picker's root.
    */
   pinnedOnly?: boolean;
+  /**
+   * The folder the item is filed in ("Carriers › Rates"): a search matches
+   * it, and while one is typed it leads the row's line, so each match says
+   * where it is.
+   */
+  folderTrail?: string;
 };
 
 // The key of the Selected group; no caller's group key starts with a NUL.
@@ -171,11 +177,17 @@ export function MultiSelectPopover({
   const [snapshot, setSnapshot] = React.useState<Set<string> | null>(() =>
     isOpen ? new Set(selectedIds) : null,
   );
+  // The search when the caller doesn't own it: rows read it to name their
+  // folder while one is typed. Each open starts empty.
+  const [ownSearch, setOwnSearch] = React.useState('');
   const [snapshotOpen, setSnapshotOpen] = React.useState(isOpen);
   if (snapshotOpen !== isOpen) {
     setSnapshotOpen(isOpen);
     setSnapshot(isOpen ? new Set(selectedIds) : null);
+    if (isOpen) setOwnSearch('');
   }
+  const searchText = onSearchChange ? (search ?? '') : ownSearch;
+  const searching = searchText.trim() !== '';
   const pinned = selectedFirst ? snapshot : null;
 
   const grouped = React.useMemo(() => {
@@ -224,14 +236,21 @@ export function MultiSelectPopover({
   const renderItem = (item: MultiSelectPopoverItem) => {
     const isSelected = selectedSet.has(item.id);
     const boxChecked = item.checked ?? isSelected;
+    const trail = searching ? item.folderTrail : undefined;
+    const description =
+      trail && !item.descriptionNode
+        ? [trail, item.description].filter(Boolean).join(' · ')
+        : item.description;
     return (
       <CommandItem
         key={item.id}
         value={`${item.label} ${item.id}`}
-        // The row's line is searched too (a host, an account, a sharer).
+        // The row's line is searched too (a host, an account, a sharer),
+        // and its folder.
         keywords={[
           ...(item.description ? [item.description] : []),
           ...(item.keywords ?? []),
+          ...(item.folderTrail ? [item.folderTrail] : []),
         ]}
         disabled={item.disabled}
         onSelect={() => {
@@ -254,10 +273,17 @@ export function MultiSelectPopover({
               {item.label}
             </p>
             {item.descriptionNode ? (
-              <div className="overflow-hidden">{item.descriptionNode}</div>
-            ) : item.description ? (
+              <div className="overflow-hidden">
+                {trail ? (
+                  <p className="text-muted-foreground overflow-hidden text-xs text-ellipsis whitespace-nowrap">
+                    {trail}
+                  </p>
+                ) : null}
+                {item.descriptionNode}
+              </div>
+            ) : description ? (
               <p className="text-muted-foreground overflow-hidden text-xs text-ellipsis whitespace-nowrap">
-                {item.description}
+                {description}
               </p>
             ) : null}
           </div>
@@ -337,7 +363,7 @@ export function MultiSelectPopover({
             placeholder={effectivePlaceholder}
             {...(onSearchChange
               ? { value: search ?? '', onValueChange: onSearchChange }
-              : {})}
+              : { value: ownSearch, onValueChange: setOwnSearch })}
           />
         </div>
       )}

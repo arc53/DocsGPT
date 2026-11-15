@@ -5071,7 +5071,10 @@
       "sharedWithYou": "与您共享"
     },
     "pickers": {
-      "inAgentFolder": "在 {{folder}}（此智能体的文件夹）中"
+      "inAgentFolder": "在 {{folder}}（此智能体的文件夹）中",
+      "inWorkflowFolder": "在 {{folder}}（此工作流的文件夹）中",
+      "otherFolders": "在其他文件夹中",
+      "thisTeam": "此团队"
     },
     "share": {
       "everyoneInTeam": "{{team}} 中的所有人"

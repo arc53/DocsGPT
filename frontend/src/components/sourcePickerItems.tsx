@@ -13,7 +13,14 @@ import {
 } from '../settings/sourceDetails';
 import { sourceKindOf } from '../settings/sourceKinds';
 import { sourceItemId } from '../utils/sourceUtils';
+import {
+  docFolderId,
+  type KnowledgePick,
+  sourceIncludedBy,
+} from './folders/folderPick';
+import type { FolderTree } from './folders/folderTree';
 import type { MultiSelectPopoverItem } from './MultiSelectPopover';
+import type { HolderFolder } from './pickerScope';
 import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -149,4 +156,70 @@ export function toSourcePickerItem(
       </div>
     ),
   };
+}
+
+/** The key of the holder's folder group; no other group key starts so. */
+const HOLDER_GROUP = 'folder:holder';
+
+type HolderFolderFirstOptions = {
+  t: TFunction;
+  /** The folder of the agent or workflow being edited, or null for none. */
+  holderFolder: HolderFolder | null | undefined;
+  tree: FolderTree;
+  /** Every source the picker lists. */
+  docs: Doc[];
+  pick: KnowledgePick;
+  /** A source's row, as the picker draws it (`toSourcePickerItem`). */
+  sourceRow: (doc: Doc, linePrefix: string | null) => MultiSelectPopoverItem;
+};
+
+/**
+ * A knowledge picker's root rows with the holder's folder first: opened
+ * from an agent or workflow filed in a folder, the sources filed in that
+ * folder lead under "In Carriers, this agent's folder", then the folders
+ * and the rest as they were. A source a picked folder brings in keeps its
+ * muted, ticked box; a row it replaces (a picked source's Selected-only
+ * row) goes, so each source is listed once.
+ *
+ * Args:
+ *   items: The root rows (`buildKnowledgeRows` at the root).
+ *   options: The holder's folder, the tree, the sources, the pick and how
+ *     to draw a source row.
+ *
+ * Returns:
+ *   The rows, the holder's folder's sources first; `items` itself when the
+ *   holder is in no folder or the folder holds no source.
+ */
+export function withHolderFolderFirst(
+  items: MultiSelectPopoverItem[],
+  { t, holderFolder, tree, docs, pick, sourceRow }: HolderFolderFirstOptions,
+): MultiSelectPopoverItem[] {
+  if (!holderFolder) return items;
+  const inFolder = docs.filter(
+    (doc) => docFolderId(tree, doc) === holderFolder.id,
+  );
+  if (inFolder.length === 0) return items;
+  const lead = inFolder.map((doc): MultiSelectPopoverItem => {
+    const cover = sourceIncludedBy(tree, doc, pick);
+    const row = sourceRow(
+      doc,
+      cover
+        ? t('folders.picker.includedWith', {
+            name: cover.name,
+            interpolation: { escapeValue: false },
+          })
+        : null,
+    );
+    return {
+      ...row,
+      group: HOLDER_GROUP,
+      groupHeading: holderFolder.heading,
+      checked: cover ? true : undefined,
+      muted: Boolean(cover),
+      disabled: Boolean(cover) || row.disabled,
+      pinnedOnly: false,
+    };
+  });
+  const leadIds = new Set(lead.map((row) => row.id));
+  return [...lead, ...items.filter((row) => !leadIds.has(row.id))];
 }

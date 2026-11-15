@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './components/ui/select';
+import { selectFolderWorkspaceId } from './components/folders/folderWorkspace';
 import HeroSuggestions from './hero/HeroSuggestions';
 import { useDarkTheme } from './hooks';
 import {
@@ -24,29 +25,40 @@ import {
   setModelsLoading,
   setSelectedModel,
 } from './preferences/preferenceSlice';
+import { captureWorkspace } from './workspace/requestWorkspace';
 
 import type { Model } from './models/types';
 
-function HeroModelSelect() {
+/**
+ * The model picker of the empty chat. The list is the workspace's (a team
+ * offers no one's own custom models): it loads again after a sign-in or a
+ * switch, and an answer from before a switch is dropped.
+ */
+export function HeroModelSelect() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const selectedModel = useSelector(selectSelectedModel);
   const availableModels = useSelector(selectAvailableModels);
   const token = useSelector(selectToken);
-  // Tracks which token the cached availableModels were loaded for.
-  // Without this, the early-return below pins the anonymous/built-in
+  const workspaceId = useSelector(selectFolderWorkspaceId);
+  // Tracks which token and workspace the cached availableModels were loaded
+  // for. Without this, the early-return below pins the anonymous/built-in
   // list forever once it's populated — login/logout never refetches
-  // and a user's BYOM models stay invisible.
-  const lastLoadedTokenRef = useRef<string | null | undefined>(undefined);
+  // and a user's BYOM models stay invisible; a switch would keep the old
+  // workspace's list.
+  const [loadedFor, setLoadedFor] = useState<{
+    token: string | null;
+    workspace: string;
+  } | null>(null);
+  const listIsCurrent =
+    loadedFor?.token === token && loadedFor?.workspace === workspaceId;
 
   useEffect(() => {
     const loadModels = async () => {
-      if (
-        (availableModels?.length ?? 0) > 0 &&
-        lastLoadedTokenRef.current === token
-      ) {
+      if ((availableModels?.length ?? 0) > 0 && listIsCurrent) {
         return;
       }
+      const workspace = captureWorkspace();
       dispatch(setModelsLoading(true));
       try {
         const response = await modelService.getModels(token);
@@ -54,11 +66,13 @@ function HeroModelSelect() {
           throw new Error(`API error: ${response.status}`);
         }
         const data = await response.json();
+        // Switched meanwhile: the list is the old workspace's.
+        if (!workspace.isCurrent()) return;
         const models = data.models || [];
         const transformed = modelService.transformModels(models);
 
         dispatch(setAvailableModels(transformed));
-        lastLoadedTokenRef.current = token;
+        setLoadedFor({ token, workspace: workspace.id });
         if (!selectedModel && transformed.length > 0) {
           const defaultModel =
             transformed.find((m: Model) => m.id === data.default_model_id) ||
@@ -83,15 +97,24 @@ function HeroModelSelect() {
     };
 
     loadModels();
-  }, [availableModels?.length, dispatch, selectedModel, token]);
+  }, [
+    availableModels?.length,
+    dispatch,
+    listIsCurrent,
+    selectedModel,
+    token,
+    workspaceId,
+  ]);
 
   const hasModels = availableModels && (availableModels?.length ?? 0) > 0;
   const builtinModels = (availableModels ?? []).filter(
     (m: Model) => m.source !== 'user',
   );
-  const userModels = (availableModels ?? []).filter(
-    (m: Model) => m.source === 'user',
-  );
+  // Until the list is this workspace's, custom models (a person's own) wait:
+  // the old list may hold Personal's in a team.
+  const userModels = listIsCurrent
+    ? (availableModels ?? []).filter((m: Model) => m.source === 'user')
+    : [];
   const modelItems = (models: Model[]) =>
     models.map((model) => (
       <SelectItem key={model.id} value={model.id}>

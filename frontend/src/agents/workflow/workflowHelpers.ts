@@ -43,6 +43,10 @@ export interface UserTool {
   ownership?: AccessFields['ownership'];
   /** A paired device's tool names its device here. */
   config?: { device_id?: string } & Record<string, unknown>;
+  /** Where the tool lives, and its folder in that workspace's tree. */
+  workspace?: AccessFields['workspace'];
+  folder_id?: string | null;
+  folder_path?: { id: string; name: string }[];
 }
 
 /**

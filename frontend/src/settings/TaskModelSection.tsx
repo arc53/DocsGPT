@@ -12,6 +12,10 @@ import { SettingRows } from '../components/ui/setting-row';
 import type { Model } from '../models/types';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
+import {
+  PERSONAL_WORKSPACE,
+  workspaceHeader,
+} from '../workspace/requestWorkspace';
 import TaskModelRow, {
   refusedModel,
   TASK_MODEL_UNAVAILABLE as UNAVAILABLE,
@@ -70,7 +74,9 @@ export default function TaskModelSection() {
     let cancelled = false;
     Promise.all([
       userService.getPreferences(token),
-      modelService.getModels(token),
+      // The task model is the person's own setting, their custom models
+      // included, whatever workspace the app is in: Personal's list.
+      modelService.getModels(token, workspaceHeader(PERSONAL_WORKSPACE)),
     ])
       .then(async ([prefsRes, modelsRes]) => {
         if (!prefsRes?.ok || !modelsRes?.ok) throw new Error('load failed');

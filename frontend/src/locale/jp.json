@@ -5073,7 +5073,10 @@
       "sharedWithYou": "あなたと共有"
     },
     "pickers": {
-      "inAgentFolder": "{{folder}}（このエージェントのフォルダー）"
+      "inAgentFolder": "{{folder}}（このエージェントのフォルダー）",
+      "inWorkflowFolder": "{{folder}}（このワークフローのフォルダー）",
+      "otherFolders": "ほかのフォルダー",
+      "thisTeam": "このチーム"
     },
     "share": {
       "everyoneInTeam": "{{team}} の全員"

@@ -6,8 +6,16 @@ import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../../components/MultiSelectPopover';
+import type { HolderFolder } from '../../components/pickerScope';
+import {
+  toSourcePickerItem,
+  withHolderFolderFirst,
+} from '../../components/sourcePickerItems';
 import SourcesPopoverFooter from '../../components/SourcesPopoverFooter';
-import type { KnowledgePick } from '../../components/folders/folderPick';
+import {
+  folderIdOfRow,
+  type KnowledgePick,
+} from '../../components/folders/folderPick';
 import type { UnlistedFolderRow } from '../../components/folders/knowledgeFolderRows';
 import { useKnowledgeFolderPicker } from '../../components/folders/useKnowledgeFolderPicker';
 import type { Connection } from '../../connectors/types';
@@ -40,6 +48,17 @@ export type KnowledgePickerProps = {
   unlistedFolder?: (id: string) => Omit<UnlistedFolderRow, 'id'>;
   /** Who added a listed source ("Added by Lena"), joined to its row's line. */
   addedBy?: (id: string) => string | null;
+  /**
+   * The folder the agent or workflow is filed in: at the root its sources
+   * come first, under the folder's heading.
+   */
+  holderFolder?: HolderFolder | null;
+  /**
+   * Off while the agent or workflow lives in another workspace than the
+   * folder tree (before the page follows it there): only the folders
+   * picked on it are listed, so they can be taken off.
+   */
+  foldersOffered?: boolean;
   /** The picker's trigger. */
   trigger: ReactNode;
   /**
@@ -63,7 +82,8 @@ export type KnowledgePickerProps = {
  * reader's folders and sources (`useKnowledgeFolderPicker`: a folder picks
  * whole, its chevron opens it) with a kind track, a remove-only row for each
  * picked source or folder they can't list, who added a source, and a footer
- * to Knowledge and to Upload (with Browse connectors).
+ * to Knowledge and to Upload (with Browse connectors). Opened from an agent
+ * or workflow filed in a folder, that folder's sources lead the root.
  */
 export default function KnowledgePicker({
   open,
@@ -76,6 +96,8 @@ export default function KnowledgePicker({
   unlistedLine,
   unlistedFolder,
   addedBy,
+  holderFolder,
+  foldersOffered = true,
   trigger,
   onNavigate,
   onUploaded,
@@ -100,17 +122,62 @@ export default function KnowledgePicker({
       }));
   }, [docs, pick.sources, unlistedLabel, unlistedLine]);
 
-  const { popoverProps } = useKnowledgeFolderPicker({
+  // Who added a source joins its line, so the row keeps one line.
+  const lineSuffix = useMemo(
+    () => (addedBy ? (doc: Doc) => addedBy(sourceItemId(doc)) : undefined),
+    [addedBy],
+  );
+  const { popoverProps, tree } = useKnowledgeFolderPicker({
     open,
     docs,
     pick,
     onPickChange,
     connections,
-    // Who added a source joins its line, so the row keeps one line.
-    lineSuffix: addedBy ? (doc) => addedBy(sourceItemId(doc)) : undefined,
+    lineSuffix,
     extraSources,
     unlistedFolder,
   });
+  // The root before a search or a kind narrows it (`selectedFirst` says so
+  // when there are folders): the holder's folder leads.
+  const atRoot = Boolean(popoverProps.selectedFirst) && !popoverProps.header;
+  const items = useMemo(() => {
+    if (!foldersOffered)
+      return popoverProps.items.filter((row) => {
+        const folderId = folderIdOfRow(row.id);
+        return folderId === null || pick.folders.includes(folderId);
+      });
+    return atRoot
+      ? withHolderFolderFirst(popoverProps.items, {
+          t,
+          holderFolder,
+          tree,
+          docs,
+          pick,
+          sourceRow: (doc, linePrefix) =>
+            toSourcePickerItem(doc, {
+              t,
+              labels: {
+                own: t('conversation.sources.groupOwn'),
+                team: t('conversation.sources.groupTeam'),
+              },
+              connections,
+              lineSuffix,
+              linePrefix,
+            }),
+        })
+      : popoverProps.items;
+  }, [
+    foldersOffered,
+    atRoot,
+    popoverProps.items,
+    t,
+    holderFolder,
+    tree,
+    docs,
+    pick,
+    connections,
+    lineSuffix,
+  ]);
 
   return (
     <>
@@ -121,6 +188,7 @@ export default function KnowledgePicker({
         // What is picked when it opens comes first (at the root), folders
         // open in place, and a search lists every level.
         {...popoverProps}
+        items={items}
         // Knowledge is always grouped (Folders · Sources or Yours, then
         // Shared with team).
         loneGroupHeading={false}

@@ -10,23 +10,29 @@ import { groupTools } from '../settings/toolGroups';
 import { type AccessFields, isOwner } from '../utils/accessUtils';
 import { getToolDisplayName } from '../utils/toolUtils';
 import type { MultiSelectPopoverItem } from './MultiSelectPopover';
+import {
+  type FiledItem,
+  folderTrailOf,
+  type HolderFolder,
+} from './pickerScope';
 import ToolIcon from './ToolIcon';
 import { Badge } from './ui/badge';
 
 /** A tool as the pickers list it: a `/api/get_tools` row or an agent's tool summary. */
-export type PickerTool = AccessFields & {
-  id: string;
-  name: string;
-  displayName?: string | null;
-  display_name?: string | null;
-  customName?: string | null;
-  description?: string | null;
-  connection_id?: string | null;
-  config?: unknown;
-  default?: boolean;
-  builtin?: boolean;
-  shared_via?: string | null;
-};
+export type PickerTool = AccessFields &
+  FiledItem & {
+    id: string;
+    name: string;
+    displayName?: string | null;
+    display_name?: string | null;
+    customName?: string | null;
+    description?: string | null;
+    connection_id?: string | null;
+    config?: unknown;
+    default?: boolean;
+    builtin?: boolean;
+    shared_via?: string | null;
+  };
 
 type ToolPickerOptions<T extends PickerTool> = {
   t: TFunction;
@@ -46,13 +52,29 @@ type ToolPickerOptions<T extends PickerTool> = {
    * the agent builder), so the row keeps one line.
    */
   lineSuffix?: (tool: T) => string | null | undefined;
+  /**
+   * The folder of the agent or workflow the picker is opened from: its
+   * tools come first under the folder's heading, then the tools filed in
+   * other folders (under `otherFoldersHeading`, each line led by its
+   * folder), then the rest in their groups. Left out while a search is
+   * typed, so the matches keep their groups.
+   */
+  holderFolder?: HolderFolder | null;
+  /** The heading of the tools filed in other folders. */
+  otherFoldersHeading?: string;
 };
+
+const HOLDER_GROUP = 'folder:holder';
+const OTHER_FOLDERS_GROUP = 'folder:other';
 
 /**
  * The rows of a tool picker (the chat's and the agent builder's), in the
  * groups the Tools page uses. Each row has one line that tells it apart:
  * who shared it, else the account it uses, else the catalog text, with the
  * status badges (Reconnect, a device's Online or Offline) above that line.
+ * A filed tool carries its folder (`folderTrail`), which a search matches
+ * and names. Opened from an agent or workflow in a folder, that folder's
+ * tools come first (`holderFolder`).
  *
  * Args:
  *   tools: The tools.
@@ -71,11 +93,23 @@ export function toolPickerItems<T extends PickerTool>(
     deviceOnline,
     lineFor,
     lineSuffix,
+    holderFolder,
+    otherFoldersHeading,
   }: ToolPickerOptions<T>,
 ): MultiSelectPopoverItem[] {
-  return groupTools(tools, connections, catalog).flatMap((group) => {
+  const holderId = holderFolder?.id ?? null;
+  // Where a row goes: the holder's folder, another folder, or its group.
+  const placementOf = (tool: T) =>
+    !holderId || !tool.folder_id
+      ? 'group'
+      : tool.folder_id === holderId
+        ? 'holder'
+        : 'other';
+  const rows = groupTools(tools, connections, catalog).flatMap((group) => {
     const groupHeading = toolGroupTitle(t, group, 'size-3.5');
     return group.tools.map((tool) => {
+      const placement = placementOf(tool);
+      const folderTrail = folderTrailOf(tool) ?? undefined;
       const service = toolServiceOf(tool, connections, catalog);
       const connection = service?.connection;
       const name = getToolDisplayName(tool);
@@ -99,6 +133,8 @@ export function toolPickerItems<T extends PickerTool>(
           : undefined;
       const line =
         [
+          // Under "In other folders" each row says which one.
+          placement === 'other' ? folderTrail : undefined,
           lineFor?.(tool) ??
             sharedBy ??
             (connection ? accountLine(t, connection) : undefined) ??
@@ -142,8 +178,12 @@ export function toolPickerItems<T extends PickerTool>(
         ) : (
           <ToolIcon name={tool.name} className="size-5" />
         ),
-        group: group.key,
-        groupHeading,
+        ...(placement === 'holder'
+          ? { group: HOLDER_GROUP, groupHeading: holderFolder?.heading }
+          : placement === 'other'
+            ? { group: OTHER_FOLDERS_GROUP, groupHeading: otherFoldersHeading }
+            : { group: group.key, groupHeading }),
+        folderTrail,
       };
       if (badges.length === 0) return { ...item, description: line };
       return {
@@ -165,4 +205,12 @@ export function toolPickerItems<T extends PickerTool>(
       };
     });
   });
+  if (!holderId) return rows;
+  return [
+    ...rows.filter((row) => row.group === HOLDER_GROUP),
+    ...rows.filter((row) => row.group === OTHER_FOLDERS_GROUP),
+    ...rows.filter(
+      (row) => row.group !== HOLDER_GROUP && row.group !== OTHER_FOLDERS_GROUP,
+    ),
+  ];
 }

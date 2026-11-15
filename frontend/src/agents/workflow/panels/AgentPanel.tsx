@@ -47,6 +47,11 @@ import {
   unlistedFolderRow,
 } from '../../../components/folders/pickedFolders';
 import { useSourceFolderTree } from '../../../components/folders/useKnowledgeFolderPicker';
+import {
+  holderFolderOf,
+  type ItemWorkspace,
+  usePickerScope,
+} from '../../../components/pickerScope';
 import type { Connection } from '../../../connectors/types';
 import type { LeaveTo } from '../../../hooks/useLeaveGuard';
 import KnowledgePicker from '../../components/KnowledgePicker';
@@ -126,6 +131,13 @@ interface AgentPanelProps extends NodePanelBodyProps {
   onLeaveTo?: LeaveTo;
   /** Signs a broken connection behind the caller's tools in again. */
   onReconnect?: (connection: Connection, mcpToolId?: string) => void;
+  /**
+   * Where the workflow lives: its pickers list nothing of another
+   * workspace's (until the page follows it there). Left out for a new one.
+   */
+  holderWorkspace?: ItemWorkspace;
+  /** The workflow's folder: the pickers list what is filed there first. */
+  holderFolderId?: string | null;
 }
 
 /** A picked id added when missing, removed when present. */
@@ -195,6 +207,8 @@ export default function AgentPanel({
   onNavigateAway,
   onLeaveTo,
   onReconnect,
+  holderWorkspace,
+  holderFolderId = null,
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
@@ -224,6 +238,20 @@ export default function AgentPanel({
     ? config.folders
     : [];
   const { tree: folderTree } = useSourceFolderTree();
+  // What the pickers list: the current workspace's items only, the
+  // workflow's folder first.
+  const pickerScope = usePickerScope(holderWorkspace);
+  const pickerDocs = useMemo(
+    () => pickerScope.scope(sourceDocs),
+    [pickerScope, sourceDocs],
+  );
+  const pickerTools = useMemo(
+    () => pickerScope.scope(availableTools),
+    [pickerScope, availableTools],
+  );
+  const holderFolder = pickerScope.holderElsewhere
+    ? null
+    : holderFolderOf(t, folderTree, holderFolderId, 'workflow');
   const nodeFolders = useMemo(
     () =>
       pickedFolders(folderTree, sourceDocs, pickedFolderIds, attachedFolders),
@@ -276,7 +304,11 @@ export default function AgentPanel({
   };
 
   const builtinModels = availableModels.filter((m) => m.source !== 'user');
-  const userModels = availableModels.filter((m) => m.source === 'user');
+  // Custom models are the person's own: none for a workflow that lives in
+  // another workspace than the list.
+  const userModels = pickerScope.holderElsewhere
+    ? []
+    : availableModels.filter((m) => m.source === 'user');
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
   // Marks a row only in the list; its chip keeps the plain name.
   const attachedDescription = t('agents.form.sponsors.addedByOther');
@@ -450,7 +482,9 @@ export default function AgentPanel({
           <KnowledgePicker
             open={sourcesOpen}
             onOpenChange={openPicker(setSourcesOpen)}
-            docs={sourceDocs}
+            docs={pickerDocs}
+            holderFolder={holderFolder}
+            foldersOffered={!pickerScope.holderElsewhere}
             pick={{ sources: pickedSources, folders: pickedFolderIds }}
             onPickChange={(next) =>
               updateConfig({ sources: next.sources, folders: next.folders })
@@ -492,7 +526,8 @@ export default function AgentPanel({
           <ToolsPicker
             open={toolsOpen}
             onOpenChange={openPicker(setToolsOpen)}
-            tools={availableTools}
+            tools={pickerTools}
+            holderFolder={holderFolder}
             filter={isWorkflowNodeToolVisible}
             attached={attachedOnNode}
             attachedLine={attachedDescription}

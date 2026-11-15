@@ -30,6 +30,7 @@ import {
 } from '../prompts/PromptViewChrome';
 import { usePromptDetail } from '../prompts/usePromptDetail';
 import { can } from '../utils/accessUtils';
+import { captureWorkspace } from '../workspace/requestWorkspace';
 import type {
   AgentDraftField,
   AgentDraftForm,
@@ -102,15 +103,22 @@ export function useAgentPromptView({
   const navigate = useNavigate();
   const token = useSelector(selectToken);
 
-  /** Load the prompts the pickers read again (after a prompt is saved). */
-  const reloadPrompts = () =>
-    userService
+  /**
+   * Load the prompts the pickers read again (after a prompt is saved). An
+   * answer from before a workspace switch is dropped: it lists the old
+   * workspace's prompts.
+   */
+  const reloadPrompts = () => {
+    const workspace = captureWorkspace();
+    return userService
       .getPrompts(token)
       .then((response: Response) => (response.ok ? response.json() : null))
       .then((list: Prompt[] | null) => {
-        if (Array.isArray(list)) dispatch(setPrompts(list));
+        if (Array.isArray(list) && workspace.isCurrent())
+          dispatch(setPrompts(list));
       })
       .catch((error: unknown) => console.error(error));
+  };
 
   const location = useLocation();
   const [promptOrigin, setPromptOrigin] = useState<'drafter' | 'picker'>(

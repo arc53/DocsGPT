@@ -5107,7 +5107,10 @@
       "sharedWithYou": "Mit dir geteilt"
     },
     "pickers": {
-      "inAgentFolder": "In {{folder}}, dem Ordner dieses Agenten"
+      "inAgentFolder": "In {{folder}}, dem Ordner dieses Agenten",
+      "inWorkflowFolder": "In {{folder}}, dem Ordner dieses Workflows",
+      "otherFolders": "In anderen Ordnern",
+      "thisTeam": "Dieses Team"
     },
     "share": {
       "everyoneInTeam": "Alle in {{team}}"

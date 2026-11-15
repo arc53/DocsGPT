@@ -5073,7 +5073,10 @@
       "sharedWithYou": "與您分享"
     },
     "pickers": {
-      "inAgentFolder": "在 {{folder}}（此代理程式的資料夾）中"
+      "inAgentFolder": "在 {{folder}}（此代理程式的資料夾）中",
+      "inWorkflowFolder": "在 {{folder}}（此工作流程的資料夾）中",
+      "otherFolders": "在其他資料夾中",
+      "thisTeam": "此團隊"
     },
     "share": {
       "everyoneInTeam": "{{team}} 中的所有人"

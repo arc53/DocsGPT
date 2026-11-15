@@ -97,6 +97,7 @@ import CanvasControls from './CanvasControls';
 import NodePalette from './NodePalette';
 import NodePanel from './panels/NodePanel';
 import { WorkflowModelsContext } from './WorkflowModelsContext';
+import type { ItemWorkspace } from '../../components/pickerScope';
 import AgentPanel from './panels/AgentPanel';
 import CodePanel from './panels/CodePanel';
 import ConditionPanel from './panels/ConditionPanel';
@@ -2646,6 +2647,10 @@ function WorkflowBuilderInner() {
                   onReconnect={(connection, mcpToolId) =>
                     signInAgain.reconnect(connection, mcpToolId)
                   }
+                  holderWorkspace={
+                    (currentAgent as { workspace?: ItemWorkspace }).workspace
+                  }
+                  holderFolderId={currentAgent.folder_id ?? folderId}
                 />
               )}
               {selectedNode.type === 'note' && (
