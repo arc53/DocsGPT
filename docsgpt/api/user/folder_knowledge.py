@@ -38,6 +38,7 @@ from docsgpt.api.user.resource_access import (
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.principal import is_principal_id
 
 #: The 403 error code of a folder the caller may not attach.
 FOLDER_NOT_ACCESSIBLE = "folder_not_accessible"
@@ -133,19 +134,45 @@ def owned_source_folders(conn: Connection, folder_ids: Iterable[Any], user: Opti
     return [fid for fid in ids if fid in owned]
 
 
+def holder_owned_folders(conn: Connection, folder_ids: Iterable[Any], holder_owner: Optional[str]) -> list[str]:
+    """The ids among ``folder_ids`` in the holder owner's own tree, in order: the attach rule of a team holder (D7).
+
+    A team's agent or workflow reads the team's one folder tree, so a folder
+    is attachable when the team's principal owns it, whoever files into it.
+    The route has already checked the caller is an Editor or above there.
+
+    Args:
+        conn: Open connection.
+        folder_ids: Folder ids.
+        holder_owner: The holder's owner (a team's principal).
+
+    Returns:
+        list[str]: Lower-case ids.
+    """
+    return owned_source_folders(conn, folder_ids, holder_owner)
+
+
 def unattachable_folder(
-    conn: Connection, folder_ids: Iterable[Any], caller: Optional[str], existing: Iterable[Any] = ()
+    conn: Connection,
+    folder_ids: Iterable[Any],
+    caller: Optional[str],
+    existing: Iterable[Any] = (),
+    *,
+    holder_owner: Optional[str] = None,
 ) -> Optional[str]:
     """The first folder ``caller`` newly attaches but may not, or ``None``.
 
     A folder is attached by its owner only (the caller's own source folder).
-    Folders already on the holder (``existing``) stay whoever saves it.
+    On a team holder it must be the team's own folder instead
+    (:func:`holder_owned_folders`). Folders already on the holder
+    (``existing``) stay whoever saves it.
 
     Args:
         conn: Open connection.
         folder_ids: The holder's folders after the save.
         caller: The user saving.
         existing: The holder's folders before the save.
+        holder_owner: The holder's owner; a team's principal switches to the team rule.
 
     Returns:
         Optional[str]: The refused folder id.
@@ -154,7 +181,10 @@ def unattachable_folder(
     new = [fid for fid in _ids(folder_ids) if fid not in before]
     if not new:
         return None
-    owned = set(owned_source_folders(conn, new, caller))
+    if is_principal_id(holder_owner):
+        owned = set(holder_owned_folders(conn, new, holder_owner))
+    else:
+        owned = set(owned_source_folders(conn, new, caller))
     for fid in new:
         if fid not in owned:
             return fid
@@ -224,7 +254,8 @@ def plan_folder_confirmations(
     Returns:
         SponsorPlan: ``plan``.
     """
-    if not caller or caller == owner_id:
+    if not caller or caller == owner_id or is_principal_id(owner_id):
+        # A team holder reads only the team's own folders: nothing runs as the caller.
         return plan
     before = set(_ids(previous))
     confirmed = set(confirmed)

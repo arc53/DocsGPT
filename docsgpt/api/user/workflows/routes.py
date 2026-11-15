@@ -47,6 +47,9 @@ from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesReposito
 from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+from docsgpt.workspaces.roles import team_role_for
 from docsgpt.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
@@ -107,6 +110,17 @@ def _workflow_access(conn, workflow_id: str, user_id: str, action: str):
     workflow = repo.get_by_id(str(workflow_id))
     if workflow is None:
         raise AccessDenied(404, "Workflow not found")
+    if is_principal_id(workflow.get("user_id")):
+        # A team's workflow, with or without an agent on it, answers from the
+        # caller's team role, the same as the team's agents.
+        role = None if is_principal_id(user_id) else team_role_for(
+            conn, user_id, team_of_principal(workflow["user_id"])
+        )
+        if role is None:
+            raise AccessDenied(404, "Workflow not found")
+        if action not in resource_access.workspace_allowed_actions("agent", role):
+            raise AccessDenied(403, "Your access to this item doesn't allow that")
+        return workflow, workflow["user_id"]
     agent_ids = conn.execute(
         sql_text(
             "SELECT id FROM agents WHERE workflow_id = CAST(:wid AS uuid) AND user_id = :owner"
@@ -233,7 +247,7 @@ def _node_ref_details(
 
 
 def _new_node_ref_denied(
-    conn, previous_nodes: List[Dict], new_nodes: List[Dict], caller: str
+    conn, previous_nodes: List[Dict], new_nodes: List[Dict], caller: str, owner_id: Optional[str] = None
 ) -> Optional[AccessDenied]:
     """403 for the first node tool/source ``caller`` newly adds but can't use.
 
@@ -250,6 +264,7 @@ def _new_node_ref_denied(
             when creating the workflow).
         new_nodes: The nodes being saved.
         caller: The user saving, owner or editor.
+        owner_id: The workflow's owner; a team's principal attaches the team's own folders.
 
     Returns:
         An :class:`AccessDenied` to return, or None when every new ref is fine.
@@ -263,13 +278,61 @@ def _new_node_ref_denied(
     # A knowledge folder reads as its owner's filing: only its owner attaches it.
     from docsgpt.api.user.folder_knowledge import unattachable_folder
 
-    if unattachable_folder(conn, _node_folder_refs(new_nodes), caller, _node_folder_refs(previous_nodes)):
+    if unattachable_folder(
+        conn, _node_folder_refs(new_nodes), caller, _node_folder_refs(previous_nodes), holder_owner=owner_id,
+    ):
         return AccessDenied(403, "Folder not accessible")
     return None
 
 
+class GraphRefused(AccessDenied):
+    """A refused graph save that answers with its own JSON body (a workspace mismatch, D7)."""
+
+    def __init__(self, body: Dict, status: int) -> None:
+        super().__init__(status, body["message"])
+        self.body = body
+
+
+def workspace_graph_refusal(
+    conn, owner_id: Optional[str], previous_nodes: List[Dict], new_nodes: List[Dict], caller: str
+) -> Optional[GraphRefused]:
+    """400 ``workspace_mismatch`` for node refs a team's workflow may not hold, or None.
+
+    A team's workflow runs as the team's principal, so a node may name only the
+    team's own sources, tools and folders (builtin tools always pass). Only
+    refs the save adds are judged, as for the other node checks; a personal
+    workflow is never judged here.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The workflow's owner.
+        previous_nodes: The stored graph's nodes (empty when creating it).
+        new_nodes: The nodes being saved.
+        caller: The user saving (names in the refusal follow what they can reach).
+
+    Returns:
+        The refusal, or None.
+    """
+    if not is_principal_id(owner_id):
+        return None
+    before = set(_node_refs(previous_nodes)) | {("folder", f) for f in _node_folder_refs(previous_nodes)}
+    added = [
+        ref for ref in _node_refs(new_nodes) + [("folder", f) for f in _node_folder_refs(new_nodes)]
+        if ref not in before
+    ]
+    bad = resource_access.workspace_mismatches(conn, owner_id, added)
+    if not bad:
+        return None
+    body, status = resource_access.workspace_mismatch_refusal(conn, bad, caller)
+    return GraphRefused(body, status)
+
+
 def _denied(err: AccessDenied):
-    """403/404 in this module's ``error`` shape, plus the shared ``message`` key."""
+    """403/404 in this module's ``error`` shape, plus the shared ``message`` key; a :class:`GraphRefused` keeps its
+    own body."""
+    body = getattr(err, "body", None)
+    if body is not None:
+        return make_response(jsonify(body), err.status)
     return make_response(
         jsonify({"success": False, "error": err.message, "message": err.message}), err.status
     )
@@ -530,9 +593,13 @@ def plan_graph_save(
         workflow = WorkflowsRepository(conn).get_for_update(str(workflow["id"])) or workflow
     nodes = normalize_agent_node_json_schemas(graph["nodes"])
     previous_nodes = stored_graph(conn, workflow)[0] if workflow is not None else []
+    # A team's workflow holds only the team's own items (D7).
+    mismatch = workspace_graph_refusal(conn, owner_id, previous_nodes, nodes, caller)
+    if mismatch is not None:
+        return mismatch
     # Every newly referenced node tool or source must be one the caller may
     # use, the owner included.
-    denied = _new_node_ref_denied(conn, previous_nodes, nodes, caller)
+    denied = _new_node_ref_denied(conn, previous_nodes, nodes, caller, owner_id)
     if denied is not None:
         return denied
     # Someone else's tool or source, reached through a grant, never goes out
@@ -566,7 +633,9 @@ def plan_graph_save(
     return GraphSave(workflow=workflow, graph={**graph, "nodes": nodes}, plan=plan)
 
 
-def write_graph_save(conn, save: GraphSave, owner_id: str, name: str, description: Optional[str]) -> str:
+def write_graph_save(
+    conn, save: GraphSave, owner_id: str, name: str, description: Optional[str], created_by: Optional[str] = None,
+) -> str:
     """Write a checked graph save: a new workflow at version 1, or the next version of the stored one.
 
     Args:
@@ -575,6 +644,7 @@ def write_graph_save(conn, save: GraphSave, owner_id: str, name: str, descriptio
         owner_id: The workflow's owner.
         name: The workflow's name.
         description: Its description.
+        created_by: Who adds a new workflow (needed when ``owner_id`` is a team's principal).
 
     Returns:
         str: The workflow id.
@@ -582,7 +652,9 @@ def write_graph_save(conn, save: GraphSave, owner_id: str, name: str, descriptio
     graph = save.graph
     repo = WorkflowsRepository(conn)
     if save.workflow is None:
-        workflow = repo.create(owner_id, name, description=description, retry_defaults=graph.get("retry_defaults"))
+        workflow = repo.create(
+            owner_id, name, description=description, retry_defaults=graph.get("retry_defaults"), created_by=created_by,
+        )
         workflow_id = str(workflow["id"])
         _write_graph(conn, workflow_id, 1, graph["nodes"], graph["edges"])
         if save.plan.sponsors:
@@ -1159,7 +1231,16 @@ class WorkflowList(Resource):
         retry_defaults = data.get("retry_defaults")
 
         graph = {"nodes": nodes_data, "edges": edges_data, "retry_defaults": retry_defaults}
-        validation_errors = workflow_graph_errors(graph, draft=False, user_id=user_id)
+        # Created in the current workspace: a team's needs its Editor role and
+        # is owned by the team's principal.
+        try:
+            with db_readonly() as conn:
+                workspace = current_workspace(conn)
+            require_workspace_role(workspace, "editor")
+        except WorkspaceError as err:
+            return err.response()
+        owner_id, created_by = workspace.owner_for_create(user_id)
+        validation_errors = workflow_graph_errors(graph, draft=False, user_id=owner_id, editor_id=user_id)
         if validation_errors:
             return error_response(
                 "Workflow validation failed", errors=validation_errors
@@ -1167,10 +1248,10 @@ class WorkflowList(Resource):
 
         try:
             with db_session() as conn:
-                save = plan_graph_save(conn, None, user_id, user_id, graph, set())
+                save = plan_graph_save(conn, None, owner_id, user_id, graph, set())
                 if isinstance(save, AccessDenied):
                     return _denied(save)
-                pg_workflow_id = write_graph_save(conn, save, user_id, name, description)
+                pg_workflow_id = write_graph_save(conn, save, owner_id, name, description, created_by=created_by)
         except Exception as err:
             return _workflow_error_response("Failed to create workflow", err)
 

@@ -139,17 +139,21 @@ class SchedulesRepository:
     def list_for_agent(
         self,
         agent_id: str,
-        user_id: str,
+        user_id: Optional[str],
         *,
         statuses: Optional[Iterable[str]] = None,
         trigger_type: Optional[str] = None,
     ) -> list[dict]:
-        """Owned schedules for an agent, newest-created first."""
-        sql = (
-            "SELECT * FROM schedules "
-            "WHERE agent_id = CAST(:agent_id AS uuid) AND user_id = :user_id"
-        )
-        params: dict[str, Any] = {"agent_id": str(agent_id), "user_id": user_id}
+        """Owned schedules for an agent, newest-created first.
+
+        ``user_id`` None lists every user's schedule on the agent: a team
+        agent's schedules are stored under the members who set them.
+        """
+        sql = "SELECT * FROM schedules WHERE agent_id = CAST(:agent_id AS uuid)"
+        params: dict[str, Any] = {"agent_id": str(agent_id)}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
         if statuses is not None:
             status_list = [str(s) for s in statuses]
             if not status_list:
@@ -289,6 +293,41 @@ class SchedulesRepository:
             ),
             {"ids": ids, "limit": int(limit)},
         ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
+    def list_for_owner_agents_with_context(
+        self, owner_id: str, viewer: str, *, setter: Optional[str] = None, limit: int = 500,
+    ) -> list[dict]:
+        """Schedules on every agent ``owner_id`` owns (a team's), shaped like ``list_owned_with_context``.
+
+        A team's agents carry schedules set by its members, each stored under
+        whoever set it. ``origin_conversation_name`` is filled only on the
+        viewer's own rows: the chat a schedule came from stays with its setter.
+
+        Args:
+            owner_id: The agents' owner (a team's principal).
+            viewer: The member reading the list.
+            setter: Only schedules this person set; None for everyone's.
+            limit: Maximum rows returned.
+
+        Returns:
+            Schedule rows with the extra keys, live ones first, then newest first.
+        """
+        sql = """
+            SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                   a.user_id AS agent_user_id,
+                   CASE WHEN s.user_id = :viewer THEN c.name END AS origin_conversation_name
+            FROM schedules s
+            JOIN agents a ON a.id = s.agent_id AND a.user_id = :owner
+            LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+            WHERE s.trigger_type <> 'monitor'
+        """
+        params: dict[str, Any] = {"owner": owner_id, "viewer": viewer, "limit": int(limit)}
+        if setter is not None:
+            sql += " AND s.user_id = :setter"
+            params["setter"] = setter
+        sql += " ORDER BY s.status IN ('active', 'paused') DESC, s.created_at DESC LIMIT :limit"
+        rows = self._conn.execute(text(sql), params).fetchall()
         return [row_to_dict(r) for r in rows]
 
     def count_active_for_user(self, user_id: str) -> int:

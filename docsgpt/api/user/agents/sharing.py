@@ -12,12 +12,13 @@ from docsgpt.core.settings import settings
 from docsgpt.api.user.agents.graph_checks import refuse_borrowed_outside_access, refuse_unfinished_graph
 from docsgpt.api.user.agents.starters import stored_starters
 from docsgpt.api.user.base import resolve_tool_details
-from docsgpt.api.user.resource_access import AccessDenied, require, resolve
+from docsgpt.api.user.resource_access import AccessDenied, ResourceAccess, require, resolve
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository, expose_prompt_preset
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
+from docsgpt.workspaces.principal import is_principal_id
 
 agents_sharing_ns = Namespace(
     "agents", description="Agent management operations", path="/api"
@@ -27,6 +28,30 @@ agents_sharing_ns = Namespace(
 # A caller who reached an agent only through its public link may chat with it
 # and pin it; a team grant, when there is one, gives more.
 LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
+
+
+def access_payer_fields(ra: ResourceAccess, agent: dict, user: str, *, turning_on: bool) -> dict:
+    """The ``access_payer_id`` write that goes with outside access a team Admin sets up (D9).
+
+    A team has no credit, so whoever turns on a team agent's key, public link
+    or webhook pays for the traffic that comes in through it. Rotating
+    something already on, or any other save, keeps the payer; it is filled in
+    only when none is recorded. A personal agent records none: its owner pays.
+
+    Args:
+        ra: The caller's access to the agent (from ``require(..., "manage_access_details")``).
+        agent: The agent row before the write.
+        user: The caller.
+        turning_on: True when this write turns outside access on (a new key, link or webhook).
+
+    Returns:
+        dict: ``{"access_payer_id": user}`` to merge into the agent update, or ``{}``.
+    """
+    if not ra.is_team_item or is_principal_id(user):
+        return {}
+    if turning_on or not agent.get("access_payer_id"):
+        return {"access_payer_id": user}
+    return {}
 
 
 def _link_access(conn, agent_id: str, user_id) -> dict:
@@ -313,12 +338,15 @@ class ShareAgent(Resource):
                         ).isoformat(),
                     }
                     shared_token = secrets.token_urlsafe(32)
+                    # A team Admin who turns the link on pays for its traffic.
+                    already_on = bool(agent.get("shared") and agent.get("shared_token"))
                     repo.update(
                         str(agent["id"]), owner_id,
                         {
                             "shared": True,
                             "shared_token": shared_token,
                             "shared_metadata": shared_metadata,
+                            **access_payer_fields(ra, agent, user, turning_on=not already_on),
                         },
                     )
                 else:

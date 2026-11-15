@@ -10,6 +10,7 @@ from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.user.agents.graph_checks import refuse_borrowed_outside_access, refuse_unfinished_graph
+from docsgpt.api.user.agents.sharing import access_payer_fields
 from docsgpt.api.user.base import require_agent
 from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.api.user.tasks import process_agent_webhook
@@ -102,7 +103,9 @@ class AgentWebhook(Resource):
                 with db_session() as conn:
                     AgentsRepository(conn).update(
                         str(agent["id"]), ra.owner_id,
-                        {"incoming_webhook_token": webhook_token},
+                        # A team Admin who turns the webhook on pays for its runs.
+                        {"incoming_webhook_token": webhook_token,
+                         **access_payer_fields(ra, agent, user, turning_on=True)},
                     )
             base_url = settings.API_URL.rstrip("/")
             full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"

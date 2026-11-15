@@ -17,9 +17,10 @@ A source folder (kind ``folder``) is used by the classic agents that read it
 live (``agents.knowledge_folder_ids``) and by workflow agent nodes naming it in
 ``folders``.
 
-Only agents the caller can open are listed: their own and the ones a team
-shares with them (narrowed further by a token's agent allowlist; a token
-without ``agents:read`` lists none). Each listed agent says whether the caller
+Only agents the caller can open are listed: their own, the ones a team
+shares with them, and the agents of every team workspace they belong to
+(narrowed further by a token's agent allowlist; a token without
+``agents:read`` lists none). Each listed agent says whether the caller
 may open its editor (``can_edit``, the agent action ``view``) and its
 ``status`` (``draft`` or ``published``). For a resource
 the caller may delete (the owner, or an editor the owner let delete), the
@@ -35,10 +36,13 @@ from typing import Iterable, Literal, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.api.user.resource_access import allowed_actions, settings_many
+from docsgpt.api.user.resource_access import allowed_actions, settings_many, workspace_allowed_actions
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
+from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.workspaces.principal import PRINCIPAL_PREFIX, is_principal_id, principal_id
+from docsgpt.workspaces.roles import from_stored_role
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +60,13 @@ PROMPT_PRESETS = frozenset({DEFAULT_PROMPT, *STORED_PROMPT_PRESETS})
 # A classic agent is anything but a workflow agent.
 _CLASSIC = "a.agent_type IS DISTINCT FROM 'workflow'"
 
-# Agents the caller can open: their own and the ones a team shares with them.
-_VISIBLE = "(a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])))"
+# Agents the caller can open: their own, the ones a team shares with them, and
+# their teams' own agents (owned by each team's principal).
+_VISIBLE = (
+    "(a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])) "
+    f"OR a.user_id IN (SELECT '{PRINCIPAL_PREFIX}' || m.team_id::text FROM team_members m "
+    "WHERE m.user_id = :user_id))"
+)
 
 # Each query reads every agent that uses a resource the caller may delete
 # (``:full``: hidden ones are counted in ``others``), but only the agents the
@@ -309,6 +318,7 @@ def _usage_rows(
     ``scoped_ids`` and ``presets``. ``legacy`` (ObjectId -> UUID) adds the
     ObjectIds of the ids to the text matches (tool lists and workflow node
     refs), each read as widely as its UUID; the uuid source columns never hold one.
+    The agents of the caller's teams (owned by each team's principal) count as ones they can open.
     """
     params = {
         "full": full_ids,
@@ -375,11 +385,24 @@ def _collect(
 
     team_access = visible_with_access(conn, user_id, "agent")
     team_agents = sorted(team_access)
+    # A team's own agents open by the caller's role in that team (D4), not by a
+    # grant; read only once a team's agent turns up, so a Personal list costs nothing more.
+    roles_box: list[dict[str, Optional[str]]] = []
+
+    def _team_role(owner: str) -> Optional[str]:
+        if not is_principal_id(owner):
+            return None
+        if not roles_box:
+            roles_box.append({
+                principal_id(team_id): from_stored_role(role)
+                for team_id, role in TeamMembersRepository(conn).roles_by_team(user_id).items()
+            })
+        return roles_box[0].get(owner)
 
     def _can_open(agent_id: str, owner: str) -> bool:
         if agent_allowlist is not None and agent_id not in agent_allowlist:
             return False
-        return owner == user_id or agent_id in team_access
+        return owner == user_id or agent_id in team_access or _team_role(owner) is not None
 
     shared_listed: set[str] = set()
     full_ids = [k for k in uuid_ids if k in deletable]
@@ -392,8 +415,10 @@ def _collect(
         if ref_key not in wanted:
             continue
         if _can_open(agent_id, owner):
-            listed[ref_key][agent_id] = (name, agent_type or "classic", owner == user_id, status)
-            if owner != user_id:
+            role = _team_role(owner)
+            can_edit = owner == user_id or "view" in workspace_allowed_actions("agent", role)
+            listed[ref_key][agent_id] = (name, agent_type or "classic", can_edit, status)
+            if owner != user_id and role is None:
                 shared_listed.add(agent_id)
         elif ref_key in deletable:
             hidden[ref_key].add(agent_id)

@@ -5,6 +5,12 @@ under the owner's ``user_id`` whoever creates it, and managing it needs
 ``manage_schedules`` on the agent (owner and team editors). A schedule the
 caller made themselves (e.g. via the chat scheduler tool on a shared agent)
 stays theirs to manage.
+
+A team's agent is the exception (D9): a team pays for nothing, so a schedule
+on it is stored under the member who set it, who pays for its runs (the run
+still acts as the team's principal). Its Editors and up manage every such
+schedule, and the list is per workspace: a team's agents' schedules show in
+that team only.
 """
 
 from __future__ import annotations
@@ -31,8 +37,11 @@ from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     allowed_actions,
+    created_by_payload,
+    creator_payloads,
     require,
     settings_many,
+    workspace_allowed_actions,
 )
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
@@ -45,6 +54,8 @@ from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
+from docsgpt.workspaces.context import WorkspaceError, current_workspace
+from docsgpt.workspaces.principal import is_principal_id
 
 
 logger = logging.getLogger(__name__)
@@ -153,14 +164,15 @@ def _format_run(row: Dict[str, Any], caller: Optional[str] = None) -> Dict[str, 
 
 
 def _agent_for_schedules(agent_id: str, user_id: str) -> tuple[Dict[str, Any], str]:
-    """The agent row and the id its schedules live under.
+    """The agent row and the id a new schedule on it is stored under.
 
     Args:
         agent_id: Agent id from the URL.
         user_id: The caller.
 
     Returns:
-        ``(agent, owner_id)``.
+        ``(agent, owner_id)``: the agent's owner, or the caller on a team's
+        agent (the setter pays, never the team's principal).
 
     Raises:
         AccessDenied: 404 when the agent isn't visible, 403 without
@@ -178,7 +190,7 @@ def _agent_for_schedules(agent_id: str, user_id: str) -> tuple[Dict[str, Any], s
         agent = AgentsRepository(conn).get_by_id(ra.resource_id)
     if agent is None:
         raise AccessDenied(404, "agent not found")
-    return agent, ra.owner_id
+    return agent, (user_id if ra.is_team_item else ra.owner_id)
 
 
 def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any], str]:
@@ -195,6 +207,9 @@ def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any],
 
     Returns:
         ``(schedule, acting_user_id)``.
+
+    On a team's agent every member's schedule is reachable by the team's
+    Editors and up, and acted on as the member who set it (they still pay).
 
     Raises:
         AccessDenied: 404 when not visible, 403 when the role can't manage it.
@@ -214,6 +229,8 @@ def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any],
         if denied.status == 404:
             raise AccessDenied(404, "schedule not found")
         raise
+    if ra.is_team_item and not is_principal_id(row.get("user_id")):
+        return row, row["user_id"]
     if row.get("user_id") != ra.owner_id:
         raise AccessDenied(404, "schedule not found")
     return row, ra.owner_id
@@ -309,6 +326,25 @@ def _publish_schedule_event(
         )
 
 
+def _mark_paid_by(conn, viewer: str, rows: list[Dict[str, Any]], agent_owners: list[Optional[str]]) -> None:
+    """Set ``paid_by`` (``{user_id, label}``) on each schedule row, in place: the person it is stored under.
+
+    A team's agent names its schedules' setters to every member, as its own
+    record; a personal agent names someone only to a reader who knows them
+    (``resource_access.creator_payloads``).
+
+    Args:
+        conn: Open database connection.
+        viewer: The caller.
+        rows: Schedule rows (need ``user_id``).
+        agent_owners: The owner of each row's agent, None when agentless.
+    """
+    pairs = [{"user_id": owner, "created_by": row.get("user_id")} for row, owner in zip(rows, agent_owners)]
+    payers = creator_payloads(conn, viewer, pairs)
+    for row, pair in zip(rows, pairs):
+        row["paid_by"] = created_by_payload(pair, payers)
+
+
 def _team_schedule_agents(conn, user_id: str) -> list[str]:
     """Agents shared to the caller's teams on which their role may manage schedules.
 
@@ -334,34 +370,53 @@ def _team_schedule_agents(conn, user_id: str) -> list[str]:
 class UserSchedules(Resource):
     @api.doc(
         description=(
-            "List the caller's schedules across every agent: their own, agentless ones created in "
-            "chat, and those of teammates' agents they manage through a team (team: true). "
+            "List the schedules of the current workspace (X-DocsGPT-Workspace). Personal: the caller's own "
+            "across every personal agent, agentless ones created in chat, and those of teammates' agents they "
+            "manage through a team (team: true). A team: the schedules on the team's agents, every member's "
+            "for an Editor and up, the caller's own for a Viewer. Each row names who pays for it (paid_by). "
             "Monitors are not included."
         ),
     )
     @_safe_route
     def get(self):
-        """Return the caller's schedules with agent and origin-chat names.
+        """Return the workspace's schedules with agent and origin-chat names.
 
         Returns:
-            A Flask response with ``schedules``: schedule rows plus
-            ``agent_name``, ``agent_image`` (a signed URL, never a storage
-            path), ``origin_conversation_name`` and ``team`` (a schedule of a
-            teammate's agent the caller manages through a team).
+            A Flask response with ``workspace`` (``{kind, team_id, role}``) and
+            ``schedules``: schedule rows plus ``agent_name``, ``agent_image``
+            (a signed URL, never a storage path), ``origin_conversation_name``,
+            ``team`` (someone else's schedule the caller manages through a
+            team) and ``paid_by``.
         """
         user_id = _user_id()
         if not user_id:
             return _err("unauthorized", 401)
         with db_readonly() as conn:
+            try:
+                workspace = current_workspace(conn)
+            except WorkspaceError as err:
+                return err.response()
             repo = SchedulesRepository(conn)
-            own = repo.list_owned_with_context(user_id)
-            team = repo.list_for_agents_with_context(_team_schedule_agents(conn, user_id))
-            seen = {str(row["id"]) for row in own}
-            rows = [{**row, "team": False} for row in own] + [
-                {**row, "team": True} for row in team if str(row["id"]) not in seen
-            ]
+            if workspace.is_team:
+                manages = "manage_schedules" in workspace_allowed_actions("agent", workspace.role)
+                found = repo.list_for_owner_agents_with_context(
+                    workspace.owner_id, user_id, setter=None if manages else user_id,
+                )
+                rows = [{**row, "team": row.get("user_id") != user_id} for row in found]
+            else:
+                # A schedule on a team's agent lists in that team, not here.
+                own = [
+                    row for row in repo.list_owned_with_context(user_id)
+                    if not is_principal_id(row.get("agent_user_id"))
+                ]
+                team = repo.list_for_agents_with_context(_team_schedule_agents(conn, user_id))
+                seen = {str(row["id"]) for row in own}
+                rows = [{**row, "team": False} for row in own] + [
+                    {**row, "team": True} for row in team if str(row["id"]) not in seen
+                ]
             agent_owners = [row.pop("agent_user_id", None) for row in rows]
             _mark_owner_inactive(conn, rows, agent_owners)
+            _mark_paid_by(conn, user_id, rows, agent_owners)
         out = []
         for row, agent_owner in zip(rows, agent_owners):
             image = row.get("agent_image")
@@ -373,7 +428,7 @@ class UserSchedules(Resource):
                 else None
             )
             out.append(_format_schedule(row))
-        return _ok({"schedules": out})
+        return _ok({"schedules": out, "workspace": workspace.payload()})
 
 
 @schedules_ns.route("/agents/<string:agent_id>/schedules")
@@ -390,10 +445,13 @@ class AgentSchedules(Resource):
             return _err(denied.message, denied.status)
         try:
             with db_readonly() as conn:
+                # A team agent's schedules are stored under the members who set
+                # them, and its Editors manage every one.
                 rows = SchedulesRepository(conn).list_for_agent(
-                    str(agent["id"]), owner_id,
+                    str(agent["id"]), None if is_principal_id(agent.get("user_id")) else owner_id,
                 )
                 _mark_owner_inactive(conn, rows, [agent.get("user_id")] * len(rows))
+                _mark_paid_by(conn, user_id, rows, [agent.get("user_id")] * len(rows))
         except Exception as exc:
             current_app.logger.error("list schedules failed: %s", exc, exc_info=True)
             return _err("internal error", 500)

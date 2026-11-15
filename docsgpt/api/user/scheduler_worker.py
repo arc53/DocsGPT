@@ -29,6 +29,7 @@ from docsgpt.storage.db.repositories.schedule_runs import (
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +321,12 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
     that they opened — so revoking a grant stops their schedules on the next
     tick.
 
+    On a team's agent the schedule's user is the person who set it and pays
+    for it: it runs only while they still hold ``manage_schedules`` there
+    (Editor and up), so leaving the team or a demotion to Viewer stops it. A
+    schedule stored under a team's principal never runs: a principal pays for
+    nothing.
+
     Args:
         schedule: The schedule row.
         agent_config: The agent row (or the agentless ephemeral config).
@@ -329,10 +336,16 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
     """
     user_id = schedule.get("user_id")
     agent_id = agent_config.get("id")
+    if is_principal_id(user_id):
+        return False
     if not agent_id or not user_id or agent_config.get("user_id") == user_id:
         return True
     from docsgpt.api.user.resource_access import resolve
 
+    if is_principal_id(agent_config.get("user_id")):
+        with get_engine().connect() as conn:
+            ra = resolve(conn, "agent", str(agent_id), user_id)
+        return ra is not None and ra.can("manage_schedules")
     with get_engine().connect() as conn:
         # A link user needs the link on and the record that they opened it;
         # the agent being link-shared is not enough on its own.
@@ -364,8 +377,8 @@ def _skip_paused(run: Dict[str, Any]) -> Dict[str, Any]:
 
     A pause, not a failure: it neither counts toward auto-pause nor notifies,
     and the schedule keeps its cadence, so runs carry on by themselves once the
-    account is reactivated. ``error`` holds the reason for the run log, since
-    no ``error_type`` value names it.
+    account is reactivated. ``error_type`` names the reason (the UI reads it);
+    ``error`` repeats it for the run log.
 
     Args:
         run: The pending run.
@@ -376,7 +389,12 @@ def _skip_paused(run: Dict[str, Any]) -> Dict[str, Any]:
     with get_engine().begin() as conn:
         ScheduleRunsRepository(conn).update(
             str(run["id"]),
-            {"status": "skipped", "finished_at": datetime.now(timezone.utc), "error": OWNER_INACTIVE},
+            {
+                "status": "skipped",
+                "finished_at": datetime.now(timezone.utc),
+                "error_type": OWNER_INACTIVE,
+                "error": OWNER_INACTIVE,
+            },
         )
     return {"status": "skipped", "reason": OWNER_INACTIVE}
 

@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import agents_table
+from docsgpt.workspaces.principal import PRINCIPAL_PREFIX
 
 #: The prompt presets an agent stores in ``prompt_preset``. ``default`` is
 #: stored as NULL in both prompt columns.
@@ -38,7 +39,7 @@ STORED_PROMPT_PRESETS = ("creative", "strict")
 #: skips the same columns. Folder filing is not on the agent row at all.
 BOOKKEEPING_COLUMNS = frozenset({
     "last_used_at", "key", "incoming_webhook_token", "shared", "shared_token", "shared_metadata",
-    "slug",
+    "slug", "access_payer_id",
 })
 
 
@@ -128,7 +129,7 @@ class AgentsRepository:
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
             "tools", "json_schema", "models", "config", "resource_sponsors", "starters", "legacy_mongo_id",
-            "created_at", "updated_at", "last_used_at",
+            "created_at", "updated_at", "last_used_at", "created_by", "access_payer_id",
         }
 
         for col, val in kwargs.items():
@@ -315,14 +316,27 @@ class AgentsRepository:
         row = result.fetchone()
         return agent_row_to_dict(row)
 
-    def list_by_ids(self, agent_ids) -> list[dict]:
-        """Fetch agents whose id is in ``agent_ids`` (team-shared listing path)."""
+    def list_by_ids(self, agent_ids, *, personal_only: bool = False) -> list[dict]:
+        """Fetch agents whose id is in ``agent_ids`` (team-shared listing path).
+
+        Args:
+            agent_ids: Agent ids; non-UUIDs are skipped.
+            personal_only: Leave out agents a team workspace owns. A Personal
+                list asks for this, so a stale or forced grant row can never
+                bring a team's agent into it.
+
+        Returns:
+            list[dict]: The rows, newest first.
+        """
         ids = [str(a) for a in agent_ids if looks_like_uuid(str(a))]
         if not ids:
             return []
+        sql = "SELECT * FROM agents WHERE id = ANY(CAST(:ids AS uuid[]))"
+        if personal_only:
+            sql += " AND left(user_id, 8) <> :prefix"
         result = self._conn.execute(
-            text("SELECT * FROM agents WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
-            {"ids": ids},
+            text(sql + " ORDER BY created_at DESC"),
+            {"ids": ids, "prefix": PRINCIPAL_PREFIX},
         )
         return [agent_row_to_dict(r) for r in result.fetchall()]
 
@@ -348,7 +362,7 @@ class AgentsRepository:
             "limited_request_mode", "request_limit",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
-            "incoming_webhook_token", "last_used_at",
+            "incoming_webhook_token", "last_used_at", "access_payer_id",
         }
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
@@ -426,7 +440,7 @@ class AgentsRepository:
             "limited_request_mode", "request_limit",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
-            "incoming_webhook_token", "last_used_at",
+            "incoming_webhook_token", "last_used_at", "access_payer_id",
         }
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
