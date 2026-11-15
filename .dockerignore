@@ -9,6 +9,10 @@
 # The web UI's source and the script that builds it (the `ui` stage).
 !frontend/
 !scripts/build_frontend.sh
+# The ClusterFuzzLite image (.clusterfuzzlite/Dockerfile) builds from the root
+# as well and needs its harnesses; the docsgpt image never copies these.
+!.clusterfuzzlite/
+!tests/fuzz/
 
 # Inside the package: caches, local runtime data and secrets never ship.
 **/__pycache__/

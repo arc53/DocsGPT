@@ -85,7 +85,7 @@ _CLASSIC_SOURCES_SQL = f"""
 # Uses ``agents_source_id_idx`` and the GIN index on ``agents.extra_source_ids`` (migration 0060).
 _CLASSIC_SOURCES_MATCH = "(a.source_id = ANY(CAST({ids} AS uuid[])) OR a.extra_source_ids && CAST({ids} AS uuid[]))"
 
-# A source folder an agent reads live (``agents.knowledge_folder_ids``, migration 0063).
+# A source folder an agent reads live (``agents.knowledge_folder_ids``, migration 0064).
 _CLASSIC_FOLDERS_SQL = f"""
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, f.fid::text AS ref
     FROM agents a
@@ -93,7 +93,7 @@ _CLASSIC_FOLDERS_SQL = f"""
     WHERE {_CLASSIC} AND ({{match}})
       AND f.fid = ANY(CAST(:ids AS uuid[]))
 """
-# Uses the GIN index on ``agents.knowledge_folder_ids`` (migration 0063).
+# Uses the GIN index on ``agents.knowledge_folder_ids`` (migration 0064).
 _CLASSIC_FOLDERS_MATCH = "a.knowledge_folder_ids && CAST({ids} AS uuid[])"
 
 _CLASSIC_PROMPTS_SQL = f"""

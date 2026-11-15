@@ -1,7 +1,7 @@
 /**
  * Tier-B · folders for agents and knowledge: CRUD, nesting, filing, aliases
  *
- * Covers B10 on the shared folder model (migration 0063): one `folders`
+ * Covers B10 on the shared folder model (migration 0064): one `folders`
  * table with a `resource_type` (`agent` | `source`) and personal filing in
  * `folder_items` (one filing per item per user, never touching the item's
  * row). API-only — the DB row shape is the load-bearing contract.

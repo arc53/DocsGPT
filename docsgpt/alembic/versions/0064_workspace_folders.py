@@ -1,4 +1,4 @@
-"""0063 workspace folders — one folder system for agents and knowledge, filed per user.
+"""0064 workspace folders — one folder system for agents and knowledge, filed per user.
 
 * ``agent_folders`` becomes ``folders`` (indexes, constraints and triggers
   renamed with it) and gains ``resource_type`` (``agent`` or ``source``,
@@ -20,14 +20,14 @@ Idempotent both ways. Downgrade puts each owner's filing of their own agent
 back on ``agents.folder_id`` (other users' filings of it are lost), deletes
 source folders and the filings, and renames the table back.
 
-Revision ID: 0063_workspace_folders
-Revises: 0062_ingest_resume
+Revision ID: 0064_workspace_folders
+Revises: 0063_run_cannot_complete
 """
 
 from alembic import op
 
-revision = "0063_workspace_folders"
-down_revision = "0062_ingest_resume"
+revision = "0064_workspace_folders"
+down_revision = "0063_run_cannot_complete"
 branch_labels = None
 depends_on = None
 

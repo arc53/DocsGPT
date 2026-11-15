@@ -95,7 +95,15 @@ class TestPreferences:
         assert _chat_prompt(app, pg_conn) == "strict"
 
     @pytest.mark.parametrize(
-        "body", [None, {}, {"chat_prompt_id": ""}, {"chat_prompt_id": 5}, {"chat_prompt_id": "agentic_default"}]
+        "body",
+        [
+            None,
+            {},
+            {"only_if_unset": True},
+            {"chat_prompt_id": ""},
+            {"chat_prompt_id": 5},
+            {"chat_prompt_id": "agentic_default"},
+        ],
     )
     def test_bad_values_are_400(self, app, pg_conn, body):
         assert _call(app, pg_conn, "put", json=body).status_code == 400
@@ -116,7 +124,8 @@ class TestPreferences:
     # A browser's pre-upgrade choice moves to the server only when nothing
     # was ever stored; a deliberate default (or a gone prompt) is a choice.
     def test_says_whether_a_chat_prompt_was_ever_stored(self, app, pg_conn):
-        assert _call(app, pg_conn, "get").json == {
+        body = _call(app, pg_conn, "get").json
+        assert {k: body[k] for k in ("success", "chat_prompt_id", "chat_prompt_set")} == {
             "success": True,
             "chat_prompt_id": "default",
             "chat_prompt_set": False,
@@ -206,3 +215,208 @@ class TestSetChatPromptIdRepository:
         assert repo.set_chat_prompt_id(ALICE, "strict") is True
         assert repo.set_chat_prompt_id(ALICE, "creative") is True
         assert repo.get(ALICE)["tool_preferences"]["chat_prompt_id"] == "creative"
+
+
+def _registry(default="gpt-default"):
+    """A catalog of two built-ins plus a disabled one, and Alice's own custom model."""
+    from types import SimpleNamespace
+
+    def get_model(model_id, user_id=None):
+        if user_id == ALICE and model_id == "byom-alice":
+            return SimpleNamespace(id=model_id, enabled=True)
+        if model_id == "gpt-off":
+            return SimpleNamespace(id=model_id, enabled=False)
+        if model_id in ("gpt-a", "gpt-b", default):
+            return SimpleNamespace(id=model_id, enabled=True)
+        return None
+
+    return SimpleNamespace(
+        get_model=get_model,
+        model_exists=lambda model_id, user_id=None: get_model(model_id, user_id) is not None,
+        default_model_id=default,
+    )
+
+
+class TestTaskModel:
+    """``task_model_id``: the model the caller's DocsGPT jobs run on; null uses the instance's."""
+
+    @pytest.fixture(autouse=True)
+    def catalog(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        registry = _registry()
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        monkeypatch.setattr(settings, "TASK_MODEL_ID", None)
+
+    def test_nothing_set_reads_null_and_the_instance_default(self, app, pg_conn):
+        body = _call(app, pg_conn, "get").json
+        assert body["task_model_id"] is None
+        assert body["instance_task_model_id"] == "gpt-default"
+
+    def test_the_instance_default_follows_the_admin_then_the_env(self, app, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db import model_defaults
+
+        monkeypatch.setattr(settings, "TASK_MODEL_ID", "gpt-a")
+        assert _call(app, pg_conn, "get").json["instance_task_model_id"] == "gpt-a"
+        model_defaults.save_task_model(pg_conn, "gpt-b")
+        assert _call(app, pg_conn, "get").json["instance_task_model_id"] == "gpt-b"
+
+    @pytest.mark.parametrize("model_id", ["gpt-a", "byom-alice"])
+    def test_round_trip(self, app, pg_conn, model_id):
+        resp = _call(app, pg_conn, "put", json={"task_model_id": model_id})
+        assert resp.status_code == 200
+        assert resp.json == {"success": True, "task_model_id": model_id}
+        assert _call(app, pg_conn, "get").json["task_model_id"] == model_id
+
+    @pytest.mark.parametrize("cleared", [None, "", "   "])
+    def test_null_goes_back_to_the_instance_default(self, app, pg_conn, cleared):
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        resp = _call(app, pg_conn, "put", json={"task_model_id": cleared})
+        assert resp.status_code == 200 and resp.json["task_model_id"] is None
+        assert "task_model_id" not in UsersRepository(pg_conn).get(ALICE)["tool_preferences"]
+
+    @pytest.mark.parametrize(
+        "value", ["gone-model", "gpt-off", 5, ["gpt-a"], pytest.param("x" * 300, id="too-long")]
+    )
+    def test_unknown_models_are_400_and_not_stored(self, app, pg_conn, value):
+        resp = _call(app, pg_conn, "put", json={"task_model_id": value})
+        assert resp.status_code == 400
+        assert resp.json["code"] == "invalid_model"
+        assert (UsersRepository(pg_conn).get(ALICE) or {}).get("tool_preferences") in (None, {})
+
+    def test_someone_elses_custom_model_is_400(self, app, pg_conn):
+        resp = _call(app, pg_conn, "put", user=BOB, json={"task_model_id": "byom-alice"})
+        assert resp.status_code == 400
+
+    def test_surrounding_whitespace_is_stripped(self, app, pg_conn):
+        resp = _call(app, pg_conn, "put", json={"task_model_id": " gpt-a "})
+        assert resp.status_code == 200 and resp.json["task_model_id"] == "gpt-a"
+
+    def test_a_disabled_default_model_is_no_instance_model(self, app, pg_conn, monkeypatch):
+        registry = _registry(default="gpt-off")
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        assert _call(app, pg_conn, "get").json["instance_task_model_id"] is None
+
+    @pytest.mark.parametrize("stale", ["gone-model", "gpt-off"])
+    def test_a_stale_choice_reads_as_null_and_unavailable(self, app, pg_conn, stale):
+        UsersRepository(pg_conn).set_task_model_id(ALICE, stale)
+        body = _call(app, pg_conn, "get").json
+        assert body["task_model_id"] is None
+        assert body["task_model_unavailable"] is True
+
+    def test_a_usable_or_unset_choice_is_not_unavailable(self, app, pg_conn):
+        assert _call(app, pg_conn, "get").json["task_model_unavailable"] is False
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        assert _call(app, pg_conn, "get").json["task_model_unavailable"] is False
+
+    def test_null_clears_a_stale_choice(self, app, pg_conn):
+        UsersRepository(pg_conn).set_task_model_id(ALICE, "gpt-off")
+        resp = _call(app, pg_conn, "put", json={"task_model_id": None})
+        assert resp.status_code == 200
+        assert "task_model_id" not in UsersRepository(pg_conn).get(ALICE)["tool_preferences"]
+        assert _call(app, pg_conn, "get").json["task_model_unavailable"] is False
+
+    @pytest.fixture
+    def failures(self, monkeypatch):
+        from tests.activity.conftest import FakeRedis
+
+        fake = FakeRedis()
+        monkeypatch.setattr("docsgpt.drafter.service._turn_store", lambda: fake)
+        return fake
+
+    def test_a_refused_key_of_the_running_task_model_is_reported(self, app, pg_conn, failures):
+        from docsgpt.drafter.service import record_model_failure
+
+        assert _call(app, pg_conn, "get").json["task_model_error"] is None
+        record_model_failure(ALICE, "gpt-default", "model_auth")
+        error = _call(app, pg_conn, "get").json["task_model_error"]
+        assert error["model_id"] == "gpt-default" and error["code"] == "model_auth" and error["at"]
+        assert _call(app, pg_conn, "get", user=BOB).json["task_model_error"] is None
+
+    def test_changing_the_task_model_clears_the_failure(self, app, pg_conn, failures):
+        from docsgpt.drafter.service import record_model_failure
+
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        record_model_failure(ALICE, "gpt-a", "model_auth")
+        assert _call(app, pg_conn, "get").json["task_model_error"]["model_id"] == "gpt-a"
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-b"})
+        assert _call(app, pg_conn, "get").json["task_model_error"] is None
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        assert _call(app, pg_conn, "get").json["task_model_error"] is None, "forgotten, not hidden"
+
+    def test_keeps_the_chat_prompt(self, app, pg_conn):
+        _call(app, pg_conn, "put", json={"chat_prompt_id": "strict"})
+        _call(app, pg_conn, "put", json={"task_model_id": "gpt-a"})
+        body = _call(app, pg_conn, "get").json
+        assert body["chat_prompt_id"] == "strict" and body["task_model_id"] == "gpt-a"
+
+    def test_both_in_one_request(self, app, pg_conn):
+        resp = _call(app, pg_conn, "put", json={"chat_prompt_id": "creative", "task_model_id": "gpt-b"})
+        assert resp.json == {"success": True, "chat_prompt_id": "creative", "applied": True, "task_model_id": "gpt-b"}
+
+    def test_a_bad_task_model_stores_neither(self, app, pg_conn):
+        resp = _call(app, pg_conn, "put", json={"chat_prompt_id": "creative", "task_model_id": "gone-model"})
+        assert resp.status_code == 400
+        assert _chat_prompt(app, pg_conn) == "default"
+
+    def test_a_token_needs_models_write(self, app, pg_conn):
+        from docsgpt.api.pat.tokens import AUTH_METHOD_PAT
+
+        token = {"sub": ALICE, "auth_method": AUTH_METHOD_PAT, "scopes": ["prompts:write"]}
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/user/preferences", method="PUT", json={"task_model_id": "gpt-a"}
+        ):
+            from flask import request
+
+            from docsgpt.api.user.me.routes import PreferencesResource
+
+            request.decoded_token = token
+            resp = PreferencesResource().put()
+        assert resp.status_code == 403 and resp.json["required_scope"] == "models:write"
+
+    @staticmethod
+    def _get_as_token(app, conn, scopes, resource_filter=None):
+        from docsgpt.api.pat.tokens import AUTH_METHOD_PAT
+
+        token = {
+            "sub": ALICE,
+            "auth_method": AUTH_METHOD_PAT,
+            "scopes": scopes,
+            "resource_filter": resource_filter or {},
+        }
+        with _patch_db(conn), app.test_request_context("/api/user/preferences", method="GET"):
+            from flask import request
+
+            from docsgpt.api.user.me.routes import PreferencesResource
+
+            request.decoded_token = token
+            return PreferencesResource().get()
+
+    def test_a_token_reads_only_the_parts_its_scopes_cover(self, app, pg_conn):
+        _call(app, pg_conn, "put", json={"chat_prompt_id": "strict", "task_model_id": "gpt-a"})
+        models_only = self._get_as_token(app, pg_conn, ["models:read"]).json
+        assert models_only == {
+            "success": True,
+            "task_model_id": "gpt-a",
+            "task_model_unavailable": False,
+            "task_model_error": None,
+            "instance_task_model_id": "gpt-default",
+        }
+        prompts_only = self._get_as_token(app, pg_conn, ["prompts:read"]).json
+        assert prompts_only == {"success": True, "chat_prompt_id": "strict", "chat_prompt_set": True}
+        both = self._get_as_token(app, pg_conn, ["models:read", "prompts:read"]).json
+        assert both["chat_prompt_id"] == "strict" and both["task_model_id"] == "gpt-a"
+
+    def test_a_prompt_restricted_token_never_reads_the_chat_prompt(self, app, pg_conn):
+        _call(app, pg_conn, "put", json={"chat_prompt_id": "strict", "task_model_id": "gpt-a"})
+        body = self._get_as_token(
+            app, pg_conn, ["models:read", "prompts:read"], {"prompts": [str(uuid.uuid4())]}
+        ).json
+        assert body == {
+            "success": True,
+            "task_model_id": "gpt-a",
+            "task_model_unavailable": False,
+            "task_model_error": None,
+            "instance_task_model_id": "gpt-default",
+        }

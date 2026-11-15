@@ -1,3 +1,9 @@
+# The suite runs as three shards (.github/workflows/pytest.yml), each uploading its own report.
+# Wait for all three before reporting, so a pull request never shows one shard's partial coverage.
+codecov:
+  notify:
+    after_n_builds: 3
+
 ignore:
   - "*/tests/*"
   # Release clients copied from the model repo and checked by hash; their onnxruntime paths run only in

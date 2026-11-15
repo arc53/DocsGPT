@@ -116,13 +116,75 @@ class PromptsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """The user's prompts and the ``extra_ids`` ones, as ``{id, user_id}`` only, newest first.
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any prompt's
+        text.
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' prompts (team-shared) to list too; ids that are not uuids are skipped.
+
+        Returns:
+            ``{"id", "user_id"}`` dicts with string ids.
+        """
+        extra = [str(p) for p in extra_ids or [] if looks_like_uuid(str(p))]
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id FROM prompts "
+                "WHERE user_id = :user_id OR id = ANY(CAST(:extra AS uuid[])) "
+                "ORDER BY created_at DESC, id DESC"
+            ),
+            {"user_id": user_id, "extra": extra},
+        )
+        return [{"id": str(row.id), "user_id": row.user_id} for row in result]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The names of the prompts ``ids`` names, never their text, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Prompt ids.
+
+        Returns:
+            ``{"id", "user_id", "name"}`` dicts with string ids.
+        """
+        uuids = [str(p) for p in ids if looks_like_uuid(str(p))]
+        if not uuids:
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id, name FROM prompts WHERE id = ANY(CAST(:ids AS uuid[])) "
+                "ORDER BY created_at DESC, id DESC"
+            ),
+            {"ids": uuids},
+        )
+        return [{"id": str(row.id), "user_id": row.user_id, "name": row.name} for row in result]
+
     def update_by_id(
-        self, prompt_id: str, name: str, content: str, expected_updated_at=None
-    ) -> Optional[bool]:
+        self, prompt_id: str, name: str, content: str, expected_updated_at: Optional[str] = None
+    ) -> Optional[str | bool]:
         """Update a prompt by id WITHOUT user scoping (team ``editor`` write path).
 
-        Caller must have verified an ``editor`` grant first. Returns None on an
-        optimistic-lock version mismatch so the route can answer 409.
+        Caller must have verified an ``editor`` grant first. The new version
+        comes back with the write, so a client saves at it next without
+        reading it again (a read could see a later save by someone else).
+
+        Args:
+            prompt_id: The prompt's id.
+            name: Its new name.
+            content: Its new text.
+            expected_updated_at: The version the caller read; the write only
+                goes through while the prompt is still at it. None writes
+                unconditionally.
+
+        Returns:
+            The new ``updated_at`` (ISO-8601) when it was written, None on a
+            version mismatch (the route answers 409), False when there is no
+            such prompt.
         """
         sql = (
             "UPDATE prompts SET name = :name, content = :content, updated_at = now() "
@@ -132,9 +194,9 @@ class PromptsRepository:
         if expected_updated_at is not None:
             sql += " AND updated_at = CAST(:expected AS timestamptz)"
             params["expected"] = expected_updated_at
-        result = self._conn.execute(text(sql), params)
-        if result.rowcount > 0:
-            return True
+        row = self._conn.execute(text(sql + " RETURNING updated_at"), params).fetchone()
+        if row is not None:
+            return row_to_dict(row)["updated_at"]
         if expected_updated_at is not None and self.get_for_rendering(str(prompt_id)) is not None:
             return None
         return False

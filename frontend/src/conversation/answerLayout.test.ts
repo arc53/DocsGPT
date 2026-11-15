@@ -179,3 +179,44 @@ describe('isNarration', () => {
     expect(isNarration('   ')).toBe(false);
   });
 });
+
+describe('layoutAnswer, clarifying questions', () => {
+  const ask = (overrides: Partial<ToolCallsType> = {}) =>
+    call('ask', {
+      tool_name: 'ask_user',
+      action_name: 'ask_user',
+      status: 'success',
+      arguments: {
+        message: 'Which one?',
+        questions: [{ id: 'q1', text: 'Which quarter?', options: [] }],
+      },
+      ...overrides,
+    });
+  const steps = ['a', 'b', 'c', 'd'].map((id) => call(id));
+
+  it('keeps an ask_user call out of a step group, waiting or answered', () => {
+    for (const status of ['awaiting_answer', 'success', 'skipped'] as const) {
+      const items = layout(
+        [tool('a'), tool('b'), tool('ask'), tool('c'), tool('d')],
+        [...steps, ask({ status })],
+      );
+      expect(shape(items)).toEqual(['call', 'call', 'call', 'call', 'call']);
+      expect(items[2]).toMatchObject({
+        kind: 'call',
+        call: { call_id: 'ask' },
+      });
+    }
+  });
+
+  it('hides a question round the server refused', () => {
+    const refused = ask({ status: 'error', error_type: 'questions_not_asked' });
+    expect(
+      shape(
+        layout(
+          [tool('a'), tool('ask'), tool('b'), tool('c'), text('Done.')],
+          [...steps, refused],
+        ),
+      ),
+    ).toEqual(['group(call,call,call)', 'text']);
+  });
+});

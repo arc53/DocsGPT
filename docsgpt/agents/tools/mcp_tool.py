@@ -4,21 +4,29 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import re
 import secrets
 import threading
 import time
 import weakref
+from collections.abc import Mapping
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
+from http import HTTPStatus
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
+from fastmcp.client.transports.base import TransportOptions
 from fastmcp.client.transports import (
     SSETransport,
     StdioTransport,
     StreamableHttpTransport,
 )
 import httpx2
+from mcp import ClientSession
 from mcp.client import advertise
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.auth.utils import (
@@ -30,6 +38,8 @@ from mcp.client.auth.utils import (
     issuers_match,
     validate_metadata_issuer,
 )
+from mcp.shared.dispatcher import CallOptions
+from mcp.shared.jsonrpc_dispatcher import JSONRPCDispatcher
 from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
 from mcp.shared.inbound import (
     MCP_PARAM_HEADER_PREFIX,
@@ -39,7 +49,7 @@ from mcp.shared.inbound import (
     x_mcp_header_map,
 )
 from mcp.shared.exceptions import MCPError
-from mcp.types import HEADER_MISMATCH
+from mcp.types import HEADER_MISMATCH, RequestId
 from mcp.shared.auth import (
     AuthorizationCodeResult,
     OAuthClientInformationFull,
@@ -75,6 +85,89 @@ _ui_resource_cache: Dict[tuple, tuple] = {}
 _ui_resource_cache_guard = threading.Lock()
 UI_RESOURCE_TTL = 600
 UI_RESOURCE_CACHE_SIZE = 32
+
+
+def _is_http_401_error(error_msg: str) -> bool:
+    """Return whether an error message explicitly reports HTTP 401."""
+    return bool(
+        re.search(
+            r"\b(?:HTTP(?:/\d+(?:\.\d+)?)?\s+|status(?:\s+code)?\s*[:=]?\s*)401\b"
+            r"|\b401\s+Unauthorized\b",
+            error_msg,
+            re.IGNORECASE,
+        )
+    )
+
+
+@dataclass
+class _MCPRequestStatus:
+    status_code: int | None = None
+
+
+_mcp_request_status: ContextVar[_MCPRequestStatus | None] = ContextVar("_mcp_request_status", default=None)
+
+
+async def _capture_mcp_http_status(response: httpx2.Response) -> None:
+    """Record the HTTP status for the RPC that sent this POST."""
+    status = _mcp_request_status.get()
+    if status is None or response.request.method != "POST":
+        return
+    try:
+        payload = json.loads(response.request.content)
+    except (ValueError, httpx2.RequestNotRead):
+        return
+    if not isinstance(payload, dict):
+        return
+    if not isinstance(payload.get("id"), (str, int)):
+        return
+
+    # An auth retry can produce a later response for this same RPC.
+    status.status_code = response.status_code
+
+
+class _MCPHTTPDispatcher(JSONRPCDispatcher):
+    async def send_raw_request(
+        self,
+        method: str,
+        params: Mapping[str, Any] | None,
+        opts: CallOptions | None = None,
+        *,
+        _related_request_id: RequestId | None = None,
+    ) -> dict[str, Any]:
+        status = _MCPRequestStatus()
+        token = _mcp_request_status.set(status)
+        try:
+            return await super().send_raw_request(method, params, opts, _related_request_id=_related_request_id)
+        except MCPError as exc:
+            if status.status_code == HTTPStatus.UNAUTHORIZED:
+                exc.docsgpt_http_status = status.status_code
+            raise
+        finally:
+            _mcp_request_status.reset(token)
+
+
+class _MCPHTTPSession(ClientSession):
+    def __init__(self, read_stream, write_stream, **session_kwargs):
+        super().__init__(
+            dispatcher=_MCPHTTPDispatcher(read_stream, write_stream),
+            **session_kwargs,
+        )
+
+
+class _MCPStreamableHTTPTransport(StreamableHttpTransport):
+    @asynccontextmanager
+    async def connect_session(
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs,
+    ):
+        options = replace(
+            transport_options or TransportOptions(),
+            session_class=_MCPHTTPSession,
+        )
+        async with super().connect_session(transport_options=options, **session_kwargs) as session:
+            yield session
 
 
 def _mcp_http_client(
@@ -478,7 +571,7 @@ class MCPTool(Tool):
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
         elif transport_type == "http":
-            return StreamableHttpTransport(
+            return _MCPStreamableHTTPTransport(
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
         elif transport_type == "stdio":
@@ -487,7 +580,7 @@ class MCPTool(Tool):
             env = self.auth_credentials if self.auth_credentials else None
             return StdioTransport(command=command, args=args, env=env)
         else:
-            return StreamableHttpTransport(
+            return _MCPStreamableHTTPTransport(
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
 
@@ -503,6 +596,7 @@ class MCPTool(Tool):
         ):
             client = _mcp_http_client(headers=headers, timeout=timeout, auth=auth)
             client.event_hooks.setdefault("request", []).append(_param_header_hook(header_maps))
+            client.event_hooks.setdefault("response", []).append(_capture_mcp_http_status)
             return client
 
         return factory
@@ -554,29 +648,36 @@ class MCPTool(Tool):
 
     async def _execute_on(self, client: Client, operation: str, /, *args, **kwargs):
         """Run ``operation`` in a session of its own on ``client``."""
-        async with client:
-            if operation == "ping":
-                return await client.ping()
-            elif operation == "list_tools":
-                tools_response = await client.list_tools()
-                self.available_tools = self._format_tools(tools_response)
-                self._refresh_param_headers(self.available_tools)
-                return self.available_tools
-            elif operation == "call_tool":
-                tool_name = args[0]
-                tool_args = kwargs
-                return await client.call_tool(tool_name, tool_args)
-            elif operation == "call_tool_raw":
-                # An MCP App's own call: a failed tool comes back as its result, not an exception.
-                return await client.call_tool(args[0], args[1], raise_on_error=False)
-            elif operation == "read_resource":
-                return await client.read_resource(args[0])
-            elif operation == "list_resources":
-                return await client.list_resources()
-            elif operation == "list_prompts":
-                return await client.list_prompts()
-            else:
-                raise Exception(f"Unknown operation: {operation}")
+        try:
+            async with client:
+                if operation == "ping":
+                    return await client.ping()
+                elif operation == "list_tools":
+                    tools_response = await client.list_tools()
+                    self.available_tools = self._format_tools(tools_response)
+                    self._refresh_param_headers(self.available_tools)
+                    return self.available_tools
+                elif operation == "call_tool":
+                    tool_name = args[0]
+                    tool_args = kwargs
+                    return await client.call_tool(tool_name, tool_args)
+                elif operation == "call_tool_raw":
+                    # An MCP App's own call: a failed tool comes back as its result, not an exception.
+                    return await client.call_tool(
+                        args[0], args[1], raise_on_error=False
+                    )
+                elif operation == "read_resource":
+                    return await client.read_resource(args[0])
+                elif operation == "list_resources":
+                    return await client.list_resources()
+                elif operation == "list_prompts":
+                    return await client.list_prompts()
+                else:
+                    raise Exception(f"Unknown operation: {operation}")
+        except MCPError as exc:
+            if getattr(exc, "docsgpt_http_status", None) == HTTPStatus.UNAUTHORIZED:
+                raise Exception("HTTP 401 Unauthorized") from exc
+            raise
 
     _ERROR_MAP = [
         (concurrent.futures.TimeoutError, lambda op, t, _: f"Timed out after {t}s"),
@@ -585,7 +686,6 @@ class MCPTool(Tool):
 
     _ERROR_PATTERNS = {
         ("403", "Forbidden"): "Access denied (403 Forbidden)",
-        ("401", "Unauthorized"): "Authentication failed (401 Unauthorized)",
         ("ECONNREFUSED",): "Connection refused",
         ("SSL", "certificate"): "SSL/TLS error",
     }
@@ -646,6 +746,8 @@ class MCPTool(Tool):
             if isinstance(exc, exc_type):
                 return Exception(msg_fn(operation, self.timeout, exc))
         error_msg = str(exc)
+        if _is_http_401_error(error_msg):
+            return Exception("Authentication failed (401 Unauthorized)")
         for patterns, friendly in self._ERROR_PATTERNS.items():
             if any(p.lower() in error_msg.lower() for p in patterns):
                 return Exception(friendly)
@@ -696,8 +798,9 @@ class MCPTool(Tool):
             if _is_header_mismatch(e):
                 return self._retry_with_listed_schemas(action_name, cleaned_kwargs, e)
             lower_msg = error_msg.lower()
+            is_http_401 = _is_http_401_error(error_msg)
             is_auth_error = (
-                "401" in error_msg
+                is_http_401
                 or "unauthorized" in lower_msg
                 or "session expired" in lower_msg
                 or "re-authorize" in lower_msg

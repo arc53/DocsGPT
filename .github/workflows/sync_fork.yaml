@@ -1,18 +1,19 @@
 name: Upstream Sync
 
-permissions:
-  contents: write
-
 on:
   schedule:
     - cron: "0 0 * * *" # every hour
   workflow_dispatch:
+
+permissions: {}
 
 jobs:
   sync_latest_from_upstream:
     name: Sync latest commits from upstream repo
     runs-on: ubuntu-latest
     if: ${{ github.event.repository.fork }}
+    permissions:
+      contents: write
 
     steps:
       # Step 1: run a standard checkout action

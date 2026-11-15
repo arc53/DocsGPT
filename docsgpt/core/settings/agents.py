@@ -26,7 +26,8 @@ class AgentSettings(SettingsGroup):
             "dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add "
             "code_executor and artifact_generator once a sandbox runner is configured; both execute through "
             "it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): "
-            "every turn that can hand calls off to a background job gets it. monitor is offered only while "
+            "every turn that can hand calls off to a background job gets it; nor is ask_user, which every "
+            "interactive chat turn from a client that draws question forms gets. monitor is offered only while "
             "MONITORS_ENABLED is on."
         ),
     )
@@ -171,4 +172,61 @@ class AgentSettings(SettingsGroup):
     ARTIFACT_MAX_COUNT_PER_USER: int = Field(default=5000, description="Cap on artifacts a user may own (0 disables).")
     ARTIFACT_MAX_TOTAL_BYTES_PER_USER: int = Field(
         default=5 * 1024 * 1024 * 1024, description="Cap on a user's total stored artifact bytes (0 disables)."
+    )
+
+    # Draft with DocsGPT (the drafter): fills the agent form from a description; saves only a prompt it wrote.
+    DRAFTER_ENABLED: bool = Field(
+        default=True,
+        description=(
+            'Offer "Draft with DocsGPT", which fills the agent form from a description. It never publishes or '
+            'deletes anything and saves only a prompt it wrote, when the user picks "Use this prompt"; the agent '
+            "is saved only by the user. It runs on the task model; with no model to run on it is hidden even "
+            "while this is on."
+        ),
+    )
+    DRAFTER_RATE_LIMIT_PER_MINUTE: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "Drafts one user may start per minute (0 disables the limit). Counted in Redis; without Redis nothing "
+            "is limited. Drafter calls also count against the user's usage quota."
+        ),
+    )
+    DRAFTER_MAX_RUNNING_TURNS: int = Field(
+        default=4,
+        ge=0,
+        description=(
+            "Draft turns one user may have running at once (0 disables the limit); a turn past it is refused as "
+            "rate-limited. Counted in Redis; without Redis nothing is limited. A turn that never ended (a crashed "
+            "worker) stops counting once its turn deadline has passed."
+        ),
+    )
+    DRAFTER_CALL_TIMEOUT_SECONDS: float = Field(
+        default=0.0,
+        ge=0,
+        description=(
+            "Longest one drafter model call may take, retries included, before the turn ends with a retryable "
+            "error the panel offers to try again (0, the default: no limit of its own, so only the turn deadline "
+            "applies). Off by default because a slow model's single call can take several minutes. A Stop ends "
+            "a waiting call at once either way."
+        ),
+    )
+    DRAFTER_TURN_TIMEOUT_SECONDS: float = Field(
+        default=300.0,
+        ge=0,
+        description=(
+            "Longest one draft turn may take across all its model calls (reading included) before it ends with "
+            "a retryable error the panel offers to try again (0: no limit)."
+        ),
+    )
+    DRAFTER_MODEL_RETRIES: int = Field(
+        default=1,
+        ge=0,
+        description=(
+            "Retries of one drafter model call that failed before it answered with an error another try may fix "
+            "(a 5xx, 429, timeout or dropped connection). A retry waits what the provider's Retry-After asks, up "
+            "to 10 seconds, and starts only with at least 30 seconds of the deadline left; otherwise the turn "
+            "ends at once with an error the panel offers to try again. A call that failed partway is never "
+            "retried, and the provider SDK makes no retries of its own."
+        ),
     )

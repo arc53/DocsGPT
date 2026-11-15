@@ -1,10 +1,11 @@
 name: Docs site
 
-# Builds the documentation site on every change to docs/, checks that
-# public/llms.txt matches the sidebar and that every page has a valid
-# lastUpdated date, and checks every internal link and #anchor in the built
-# pages, offline. A weekly job checks the external links
-# in the docs and the top-level Markdown files; it reports and never fails.
+# Builds the documentation site on every change to docs/, checks that every
+# page has a valid lastUpdated date, and checks every internal link and #anchor
+# in the built pages, offline. A pull request must also leave alone the files
+# and dates that the "Generated docs" workflow owns (generated-docs.yml). A
+# weekly job checks the external links in the docs and the top-level Markdown
+# files; it reports and never fails.
 
 on:
   pull_request:
@@ -40,7 +41,7 @@ jobs:
         with:
           persist-credentials: false
           # On a pull request HEAD is the merge commit; its first parent is the
-          # base branch, which the lastUpdated check compares against.
+          # base branch, which the date and generated-file checks compare against.
           fetch-depth: 2
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -52,14 +53,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check that llms.txt is up to date
-        run: npm run llms:check
+      - name: Test the docs scripts
+        run: npm test
+
+      # The generated files change only in the "Generated docs" workflow's own
+      # pull request, which comes from the generated-docs branch of this repository.
+      - name: Check no generated file was changed
+        if: github.event_name == 'pull_request' && !(github.head_ref == 'generated-docs' && github.event.pull_request.head.repo.full_name == github.repository)
+        run: npm run generated:check -- --base HEAD^1
+
+      # The date check reads the subject line of each of the pull request's
+      # commits that changes a page, and fetch-depth 2 reaches only the newest.
+      # Deepening by the pull request's commit count brings in the rest. The
+      # repository is public, so the fetch needs no credentials; it names the
+      # checked-out merge commit, not the pull ref, which a new push can move.
+      - name: Fetch the pull request's commits
+        if: github.event_name == 'pull_request' && !(github.head_ref == 'generated-docs' && github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          COMMITS: ${{ github.event.pull_request.commits }}
+        run: git fetch --no-tags --quiet --deepen="$COMMITS" origin "$GITHUB_SHA"
 
       # Fails on a missing, malformed or future lastUpdated date. On a pull
-      # request it also warns (never fails) about pages whose content changed
-      # while their date did not.
+      # request it also fails when an existing page's date was changed: pages
+      # are dated on main after the merge. For a page whose text changed it
+      # prints a notice, never a failure, that the page will be dated with the
+      # merge day unless [keep-date] is in the pull request title or in the
+      # subject line of every commit that changes the page.
       - name: Check lastUpdated dates
-        run: npm run dates:check -- ${{ github.event_name == 'pull_request' && '--base HEAD^1' || '' }}
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && !(github.head_ref == 'generated-docs' && github.event.pull_request.head.repo.full_name == github.repository) && '--base HEAD^1' || '' }}
+          # Through the environment, never into the script: the title is the author's text.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        # shellcheck disable=SC2086 # BASE is empty or two words
+        run: npm run dates:check -- $BASE
 
       - name: Build the site
         run: npm run build

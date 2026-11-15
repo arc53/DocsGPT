@@ -16,6 +16,7 @@ import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import PageToolbar from '../components/PageToolbar';
 import { useDarkTheme } from '../hooks';
 import { setModalStateDeleteConv } from '../preferences/preferenceSlice';
+import TaskModelSection from './TaskModelSection';
 
 export default function General() {
   const {
@@ -128,6 +129,7 @@ export default function General() {
             </SettingRow>
           </SettingRows>
         </section>
+        <TaskModelSection />
         <Card
           tone="destructive"
           padding="lg"

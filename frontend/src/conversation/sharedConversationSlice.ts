@@ -123,17 +123,18 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
           attachmentIds,
         );
         if (answer) {
-          let sourcesPrepped = [];
-          sourcesPrepped = answer.sources.map((source: { title: string }) => {
-            if (source && source.title) {
-              const titleParts = source.title.split('/');
-              return {
-                ...source,
-                title: titleParts[titleParts.length - 1],
-              };
-            }
-            return source;
-          });
+          const sourcesPrepped = answer.sources.map(
+            (source: { title: string }) => {
+              if (source && source.title) {
+                const titleParts = source.title.split('/');
+                return {
+                  ...source,
+                  title: titleParts[titleParts.length - 1],
+                };
+              }
+              return source;
+            },
+          );
 
           dispatch(
             updateQuery({

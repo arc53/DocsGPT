@@ -29,14 +29,16 @@ export default function PageToolbar({
   const introInRow = !search && intro;
 
   return (
-    <div data-slot="page-toolbar">
+    // A container: the row stacks by its own width, so it also stacks when a
+    // docked side panel narrows the page on a wide screen.
+    <div data-slot="page-toolbar" className="@container">
       {intro && !introInRow ? (
         <p className="text-muted-foreground mb-5 text-sm leading-6">{intro}</p>
       ) : null}
       <div
         className={
           stack
-            ? 'mb-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between'
+            ? 'mb-6 flex flex-col items-start gap-3 @2xl:flex-row @2xl:items-center @2xl:justify-between'
             : 'mb-6 flex min-h-9.5 items-center justify-between gap-3'
         }
       >
@@ -47,10 +49,10 @@ export default function PageToolbar({
         ) : search ? (
           <div className="w-full max-w-md">{search}</div>
         ) : null}
-        {/* Spans the stacked row on a phone, so a caller can stretch its
-            main button; hugs its buttons from sm. */}
+        {/* Spans the stacked row on a narrow page, so a caller can stretch
+            its main button; hugs its buttons once the row fits. */}
         {action ? (
-          <div className={stack ? 'w-full shrink-0 sm:w-auto' : 'shrink-0'}>
+          <div className={stack ? 'w-full shrink-0 @2xl:w-auto' : 'shrink-0'}>
             {action}
           </div>
         ) : null}

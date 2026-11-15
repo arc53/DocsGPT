@@ -27,6 +27,7 @@ from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversation_labels import (
     GAP_GROUPS,
     LOG_LABELS,
+    MIN_GROUP_GAPS,
     TAG_PREFIX,
     TOPIC_PREFIX,
     ConversationLabelsRepository,
@@ -1098,8 +1099,6 @@ _MAX_GAP_GROUPS = 50
 _DEFAULT_GAP_GROUPS = 25
 #: Example questions per docs-gap group.
 _GAP_EXAMPLES = 5
-#: Groups with fewer expected gaps are left out: they would show as 0.
-_MIN_GROUP_GAPS = 0.5
 
 
 @analytics_ns.route("/get_docs_gaps")
@@ -1181,7 +1180,7 @@ class GetDocsGaps(Resource):
                 previous_start = _previous_start(start_date, end_date)
                 groups = repo.gap_groups(
                     group_by, scope, schema_hash, start_date, end_date,
-                    previous_start, limit, _MIN_GROUP_GAPS,
+                    previous_start, limit, MIN_GROUP_GAPS,
                 )
                 result["previous_labelled"] = repo.gap_labelled(
                     scope, schema_hash, previous_start, start_date

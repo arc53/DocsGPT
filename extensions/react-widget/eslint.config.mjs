@@ -5,6 +5,10 @@ import react from 'eslint-plugin-react'
 import unusedImports from 'eslint-plugin-unused-imports'
 import prettier from 'eslint-plugin-prettier'
 import globals from 'globals'
+import { createRequire } from 'node:module'
+
+// eslint-plugin-react's 'detect' calls context.getFilename(), which ESLint 10 removed.
+const reactVersion = createRequire(import.meta.url)('react/package.json').version
 
 export default [
   {
@@ -64,7 +68,7 @@ export default [
     },
     settings: {
       react: {
-        version: 'detect',
+        version: reactVersion,
       },
     },
   },

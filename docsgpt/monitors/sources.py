@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 #: machinery itself, turn-scoped tools, and sandbox code (out of scope).
 EXCLUDED_SOURCE_TOOLS = frozenset(
     {
-        "monitor", "scheduler", "check_job", "view_image", "attachments",
+        "monitor", "scheduler", "check_job", "view_image", "attachments", "ask_user",
         "code_executor", "artifact_generator", "read_document",
     }
 )

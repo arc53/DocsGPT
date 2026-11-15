@@ -25,8 +25,9 @@ jobs:
           version: 0.16.7
 
   requirements-in-sync:
-    # application/requirements*.txt are exported from uv.lock; fail when a
-    # change to pyproject.toml or uv.lock was not re-exported.
+    # docsgpt/requirements*.txt and tests/requirements.txt are exported from
+    # uv.lock, and deployment/sandbox/requirements.lock is resolved from the
+    # sandbox pins; fail when a change was not re-exported.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,7 +41,7 @@ jobs:
           uv lock --check
           bash scripts/export_requirements.sh
           git diff --exit-code -- docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requirements-milvus.txt \
-            docsgpt/requirements-decisions-torch.txt
+            docsgpt/requirements-decisions-torch.txt tests/requirements.txt deployment/sandbox/requirements.lock
 
       # deployment/sandbox/{requirements.txt,install-system.sh,sandbox.env,manifest.json}
       # are generated from docsgpt/sandbox/manifest.py (stdlib only, no install needed).

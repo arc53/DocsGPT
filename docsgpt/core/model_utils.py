@@ -1,6 +1,9 @@
-from typing import Any, Dict, Optional
+import logging
+from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.core.model_registry import ModelRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def get_api_key_for_provider(provider: Optional[str]) -> Optional[str]:
@@ -122,6 +125,106 @@ def get_default_model_id() -> str:
     """Get the system default model ID"""
     registry = ModelRegistry.get_instance()
     return registry.default_model_id
+
+
+def model_is_usable(model_id: Optional[str], user_id: Optional[str] = None) -> bool:
+    """Whether ``model_id`` names an enabled model ``user_id`` can run.
+
+    Stricter than :func:`validate_model_id`, which also accepts a disabled
+    model. Without ``user_id`` only built-in catalog models count, so a
+    custom (BYOM) model, which resolves for its owner alone, is never usable.
+
+    Args:
+        model_id: The model id to check.
+        user_id: The user whose custom models count too.
+
+    Returns:
+        True when the registry resolves it for that user and it is enabled.
+    """
+    if not isinstance(model_id, str) or not model_id.strip():
+        return False
+    model = ModelRegistry.get_instance().get_model(model_id, user_id=user_id)
+    return model is not None and bool(getattr(model, "enabled", True))
+
+
+def _stored_task_models(user_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """The user's and the instance's stored task model; ``(None, None)`` when the database can't answer.
+
+    A job never fails on this read: a database error leaves the choice to
+    ``TASK_MODEL_ID`` and the default model.
+    """
+    try:
+        from docsgpt.storage.db import model_defaults
+        from docsgpt.storage.db.session import db_readonly
+
+        with db_readonly() as conn:
+            return model_defaults.stored_task_models(conn, user_id)
+    except Exception:
+        logger.warning("Could not read the stored task model; using TASK_MODEL_ID or the default", exc_info=True)
+        return None, None
+
+
+#: ``TASK_MODEL_ID`` values already warned about, so a misconfigured one logs once, not on every job.
+_warned_task_model_ids: set[str] = set()
+
+
+def resolve_task_model_id(
+    user_id: Optional[str],
+    user_choice: Optional[str],
+    instance_choice: Optional[str],
+) -> Optional[str]:
+    """The task model from stored choices: the user's, the instance's, ``TASK_MODEL_ID``, the default model.
+
+    Each choice must name a model that can run (:func:`model_is_usable`), or
+    it is skipped without an error: a model removed from the catalog, a
+    disabled or deleted custom model. The default model is held to the same
+    rule. The user's may be one of their own custom models; the instance's
+    and ``TASK_MODEL_ID`` are built-in only. A ``TASK_MODEL_ID`` that can't
+    run is logged once per value.
+
+    Args:
+        user_id: The user the job runs as; ``None`` skips ``user_choice``.
+        user_choice: The user's stored ``task_model_id``.
+        instance_choice: The admin's stored instance task model.
+
+    Returns:
+        A model id, or ``None`` when no step names a model that can run.
+    """
+    from docsgpt.core.settings import settings
+
+    if user_id and model_is_usable(user_choice, user_id):
+        return user_choice.strip()
+    if model_is_usable(instance_choice):
+        return instance_choice.strip()
+    configured = (settings.TASK_MODEL_ID or "").strip()
+    if configured:
+        if model_is_usable(configured):
+            return configured
+        if configured not in _warned_task_model_ids:
+            _warned_task_model_ids.add(configured)
+            logger.warning("TASK_MODEL_ID %r is not an enabled built-in model; using the default model", configured)
+    default = get_default_model_id()
+    return default if model_is_usable(default) else None
+
+
+def get_task_model_id(user_id: Optional[str]) -> Optional[str]:
+    """The model DocsGPT's own jobs run on for ``user_id``: the drafter, graph extraction, the monitor judge.
+
+    In order: the user's choice in Settings > General (their own custom
+    models included, since they pay with their own key), the instance's in
+    Admin > Defaults, ``TASK_MODEL_ID``, then the default model. A stored
+    admin choice wins over the environment, as stored instance settings do
+    elsewhere (the guardrails floor). Chats keep the agent's model.
+
+    Args:
+        user_id: The user the job runs as (a graph build's source owner, a
+            monitor's owner); ``None`` for the instance's task model.
+
+    Returns:
+        A model id, or ``None`` when no step names a model that can run.
+    """
+    user_choice, instance_choice = _stored_task_models(user_id)
+    return resolve_task_model_id(user_id, user_choice, instance_choice)
 
 
 def get_provider_from_model_id(

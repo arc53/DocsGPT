@@ -1,0 +1,10 @@
+key: mcp:sentry
+rank: 40
+name: Sentry
+description: Look up Sentry issues, events and releases.
+icon: sentry
+category: dev
+mcp_url: https://mcp.sentry.dev/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://docs.sentry.io/product/sentry-mcp/

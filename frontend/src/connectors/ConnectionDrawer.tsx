@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -1077,22 +1077,16 @@ function ServiceSection({
             with room to say what happened at any width. */}
         {shown && connectionNeedsSignIn(shown) && (
           <Alert variant="warning">
-            {/* The provider's own message stays on hover, for debugging. */}
+            {/* The provider's own message stays on hover, for debugging.
+                Reconnect fixes it: a link at the end of the text. */}
             <AlertDescription title={shown.last_error ?? undefined}>
-              {problem(shown)}
+              <p>
+                {problem(shown)}{' '}
+                <AlertAction onClick={() => handlers.onReconnect(shown)}>
+                  {t('settings.connectors.status.reconnect')}
+                </AlertAction>
+              </p>
             </AlertDescription>
-            <div className="mt-2">
-              <Button
-                type="button"
-                size="sm"
-                shape="pill"
-                variant="outline"
-                onClick={() => handlers.onReconnect(shown)}
-              >
-                <RefreshCw />
-                {t('settings.connectors.status.reconnect')}
-              </Button>
-            </div>
           </Alert>
         )}
       </div>

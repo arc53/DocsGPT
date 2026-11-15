@@ -44,6 +44,24 @@ type Payload = {
   body?: string;
   url?: string;
   conversation_id?: string | null;
+  schedule_id?: string | null;
+};
+
+/**
+ * Schedule events after which a notice about that schedule (it paused
+ * itself, or started failing) is out of date: it was resumed, a run went
+ * fine, or it was deleted.
+ */
+const SCHEDULE_SETTLED: ReadonlySet<string> = new Set([
+  'schedule.resumed',
+  'schedule.run.completed',
+  'schedule.cancelled',
+]);
+
+const scheduleIdOf = (event: SSEEvent): string | null => {
+  const id = (event.payload as { schedule_id?: unknown } | undefined)
+    ?.schedule_id;
+  return typeof id === 'string' && id ? id : null;
 };
 
 function clip(text: string | undefined, limit: number): string {
@@ -123,6 +141,8 @@ function NotificationCard({
  * screen is skipped anyway, in case presence lagged. Once the user is looking
  * at that conversation (visible, window focused) its cards are seen and
  * dismissed, so they don't surface later when the user moves to another chat.
+ * A notice about a schedule (it paused itself) opens the schedule, and is
+ * dismissed once a later event shows the schedule resumed, ran fine or gone.
  */
 export default function ConversationNotificationToast() {
   const dispatch = useDispatch<AppDispatch>();
@@ -160,9 +180,21 @@ export default function ConversationNotificationToast() {
   const now = Date.now();
   const shown: SSEEvent[] = [];
   const seen: string[] = [];
+  // Newest first: a schedule settled here is settled for every older notice about it.
+  const settled = new Set<string>();
   for (const event of events) {
+    if (SCHEDULE_SETTLED.has(event.type)) {
+      const scheduleId = scheduleIdOf(event);
+      if (scheduleId) settled.add(scheduleId);
+      continue;
+    }
     if (event.type !== 'notification.created' || !event.id) continue;
     if (dismissedIds.has(event.id)) continue;
+    const scheduleId = scheduleIdOf(event);
+    if (scheduleId && settled.has(scheduleId)) {
+      seen.push(event.id);
+      continue;
+    }
     if (event.ts) {
       const age = now - Date.parse(event.ts);
       if (Number.isFinite(age) && age > NOTIFICATION_MAX_AGE_MS) continue;

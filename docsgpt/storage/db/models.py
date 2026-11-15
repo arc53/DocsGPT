@@ -353,7 +353,7 @@ folders_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
-    # ``agent`` or ``source`` (migration 0063; ``agent_folders`` before it).
+    # ``agent`` or ``source`` (migration 0064; ``agent_folders`` before it).
     Column("resource_type", Text, nullable=False, server_default="agent"),
     CheckConstraint("resource_type IN ('agent', 'source')", name="folders_resource_type_chk"),
 )
@@ -361,7 +361,7 @@ folders_table = Table(
 Index("folders_user_type_idx", folders_table.c.user_id, folders_table.c.resource_type)
 
 # Personal filing: each user files an item they can see into one of their own
-# folders of the same type, once (migration 0063).
+# folders of the same type, once (migration 0064).
 folder_items_table = Table(
     "folder_items",
     metadata,
@@ -446,7 +446,7 @@ agents_table = Table(
     # Up to four questions a new chat with the agent offers (migration 0061).
     Column("starters", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("default_model_id", Text),
-    # Source folders the agent reads live (migration 0063); a deleted folder drops out.
+    # Source folders the agent reads live (migration 0064); a deleted folder drops out.
     Column("knowledge_folder_ids", ARRAY(UUID(as_uuid=True)), nullable=False, server_default="{}"),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
     Column("limited_token_mode", Boolean, nullable=False, server_default="false"),

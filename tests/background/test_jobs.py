@@ -90,6 +90,19 @@ class TestCreate:
         assert row["auto_resume"] is True
         assert published and published[0]["id"] == row["id"]
 
+    def test_a_job_started_by_a_continuation_turn_says_so(self, bg_db, conversation, monkeypatch):
+        monkeypatch.setattr(jobs, "publish_job_updated", lambda row: None)
+        conversation_id, message_id = conversation
+        context = _context(conversation_id, message_id)
+        plain, _ = jobs.create_job(context, tool_name="t", action_name="a", journal_key="k1", arguments={})
+        assert "started_by_continuation" not in plain["external"]
+
+        context.continuation = True
+        woken, _ = jobs.create_job(
+            context, tool_name="t", action_name="a", journal_key="k2", arguments={}, external={"handle": "h"}
+        )
+        assert woken["external"] == {"handle": "h", "started_by_continuation": True}
+
     def test_caps(self, bg_db, conversation, monkeypatch):
         conversation_id, message_id = conversation
         context = _context(conversation_id, message_id)
@@ -158,6 +171,23 @@ class TestFinalize:
         value = {"status": "ok", "session": "new", "environment": "banner", "stdout_tail": "done"}
         done = jobs.complete_from_tool(row["id"], tool=_Code(), action_name="run_code", parameters={}, value=value)
         assert json.loads(done["result"]["text"]) == {"status": "ok", "stdout_tail": "done"}
+
+    def test_a_code_runs_own_exception_is_kept_on_the_job(self, bg_db, conversation, monkeypatch):
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        conversation_id, message_id = conversation
+        row, _ = jobs.create_job(
+            _context(conversation_id, message_id), tool_name="code_executor", action_name="run_code",
+            journal_key="k", arguments={},
+        )
+
+        class _Code(_Tool):
+            def job_script_error(self):
+                return "AttributeError"
+
+        value = {"status": "error", "error": "AttributeError: 'str' object has no attribute 'save'"}
+        done = jobs.complete_from_tool(row["id"], tool=_Code(), action_name="run_code", parameters={}, value=value)
+        assert done["status"] == "failed"
+        assert done["result"]["script_error"] == "AttributeError"
 
     def test_in_band_error_fails_the_job(self, bg_db, conversation, monkeypatch):
         monkeypatch.setattr(jobs, "_deliver", lambda row: None)

@@ -628,7 +628,27 @@ def _wake_metadata(wakes: List[Dict[str, Any]]) -> Dict[str, Any]:
     metadata: Dict[str, Any] = {"wake": entries[0], "continuation": True}
     if len(entries) > 1:
         metadata["wakes"] = entries
+    files = _job_artifacts(wakes, jobs_by_id)
+    if files:
+        metadata["job_artifacts"] = files
     return metadata
+
+
+def _job_artifacts(wakes: List[Dict[str, Any]], jobs_by_id: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The files the batch's finished jobs wrote, once each, so the reply shows them under it.
+
+    Metadata, not a tool-call entry: the chat renders it, and it is never replayed to the model.
+    """
+    files: List[Dict[str, Any]] = []
+    seen = set()
+    for event in wakes:
+        if not is_final_job_event(event):
+            continue
+        for entry in wake.job_files(jobs_by_id.get(str(event["ref_id"])) or {}):
+            if entry["id"] not in seen:
+                seen.add(entry["id"])
+                files.append(entry)
+    return files
 
 
 #: Keys of a turn's agent metadata a continuation message keeps (as a chat turn stores them).

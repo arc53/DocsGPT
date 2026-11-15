@@ -1,0 +1,12 @@
+# Runtime packages the fuzz harnesses import, held to the versions in
+# docsgpt/requirements.txt. Regenerate requirements.txt with the command in
+# tests/fuzz/README.md. atheris itself comes with the OSS-Fuzz base image.
+anyio
+dataclasses-json
+flask
+httpx2
+pydantic-settings
+pyyaml
+requests
+tiktoken
+urllib3

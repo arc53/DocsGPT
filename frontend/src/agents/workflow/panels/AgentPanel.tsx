@@ -81,6 +81,8 @@ interface AgentPanelProps extends NodePanelBodyProps {
   nodes: Node[];
   edges: Edge[];
   availableModels: Model[];
+  /** The custom models are the workflow owner's (a team editor's picker). */
+  modelsFromOwner?: boolean;
   availableTools: UserTool[];
   /**
    * Names of the tools and sources the workflow's nodes reference, whoever
@@ -178,6 +180,7 @@ export default function AgentPanel({
   nodes,
   edges,
   availableModels,
+  modelsFromOwner = false,
   availableTools,
   attachedTools = [],
   attachedSources = [],
@@ -373,7 +376,9 @@ export default function AgentPanel({
                 {userModels.length > 0 && (
                   <SelectGroup>
                     <SelectLabel>
-                      {t('settings.customModels.modelsGroup.user')}
+                      {modelsFromOwner
+                        ? t('settings.customModels.modelsGroup.owner')
+                        : t('settings.customModels.modelsGroup.user')}
                     </SelectLabel>
                     {userModels.map((model) => (
                       <SelectItem key={model.id} value={model.id}>

@@ -94,6 +94,38 @@ describe('RunLog', () => {
     expect(onSelect).toHaveBeenCalledWith(runs[0]);
   });
 
+  it('names a failure by its label, with the reason when the agent could not do the task', async () => {
+    store.runs = [
+      {
+        ...runs[0],
+        id: 'cc',
+        status: 'failed',
+        error_type: 'cannot_complete',
+        error: 'Step 1 (open the site): no browser tool',
+      },
+      {
+        ...runs[0],
+        id: 'ae',
+        status: 'failed',
+        error_type: 'agent_error',
+        error: 'boom',
+      },
+    ];
+    await act(async () => root.render(<RunLog scheduleId="s1" />));
+    const [cannot, failed] = Array.from(container.querySelectorAll('tbody tr'));
+    expect(cannot.textContent).toContain(
+      '(activity.now.errorType.cannot_complete)',
+    );
+    const reason = cannot.querySelector('p')!;
+    expect(reason.textContent).toBe('Step 1 (open the site): no browser tool');
+    expect(reason.title).toBe('Step 1 (open the site): no browser tool');
+    expect(failed.textContent).toContain(
+      '(activity.now.errorType.agent_error)',
+    );
+    // Other errors keep their detail for the run's sheet.
+    expect(failed.querySelector('p')).toBeNull();
+  });
+
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => ({ ...runs[0], id: `r${i}` }));
   const flush = async () => {

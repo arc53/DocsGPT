@@ -22,7 +22,7 @@ import ConnectorIcon from '../connectors/ConnectorIcon';
 import { formatCount } from '../utils/dateTimeUtils';
 import { formatBytes } from '../utils/stringUtils';
 import ConnectorAuth from './ConnectorAuth';
-import { Alert, AlertDescription } from './ui/alert';
+import { Alert, AlertAction, AlertDescription } from './ui/alert';
 import { Avatar } from './ui/avatar';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -387,15 +387,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
             {error === 'expired' && onReconnect ? (
               <>
                 {' '}
-                <Button
-                  type="button"
-                  variant="link"
-                  size="text"
-                  tone="current"
-                  onClick={onReconnect}
-                >
+                <AlertAction onClick={onReconnect}>
                   {t('settings.connectors.status.reconnect')}
-                </Button>
+                </AlertAction>
               </>
             ) : null}
           </AlertDescription>

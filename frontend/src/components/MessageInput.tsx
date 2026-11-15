@@ -363,6 +363,8 @@ type MessageInputProps = {
   // Typing stays open but nothing sends: the chat it would go to is still
   // loading. Unlike ``loading`` it shows no stop control.
   sendBlocked?: boolean;
+  /** Replaces the empty field's prompt ("Or type your answer…"). */
+  placeholder?: string;
 };
 
 export default function MessageInput({
@@ -375,6 +377,7 @@ export default function MessageInput({
   queuedQuestion = null,
   onQueuedQuestionConsumed,
   sendBlocked = false,
+  placeholder,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -1205,7 +1208,7 @@ export default function MessageInput({
       return;
     }
 
-    let stream: MediaStream | null = null;
+    let stream: MediaStream;
     try {
       setVoiceError(null);
       stream = await getUserMediaStream({ audio: true });
@@ -1723,7 +1726,7 @@ export default function MessageInput({
               recordingState === 'recording' ||
               recordingState === 'transcribing'
             }
-            placeholder={t('inputPlaceholder')}
+            placeholder={placeholder ?? t('inputPlaceholder')}
             className="text-foreground placeholder:text-muted-foreground w-full resize-none overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}

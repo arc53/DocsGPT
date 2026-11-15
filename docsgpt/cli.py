@@ -144,6 +144,8 @@ def _api(args: argparse.Namespace) -> int:
             # An open tab holds the event and resume streams for minutes, and uvicorn waits for every
             # connection before restarting: without a limit a reload hangs and the API stops answering.
             timeout_graceful_shutdown=RELOAD_SHUTDOWN_TIMEOUT if args.reload else None,
+            # The app resolves forwarded headers itself (TRUSTED_PROXIES).
+            proxy_headers=False,
         )
         return 0
 

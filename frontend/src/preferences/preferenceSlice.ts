@@ -9,6 +9,7 @@ import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
 import { loadFolders } from '../components/folders/foldersSlice';
 import { Agent } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
+import { presetPrompts } from '../prompts/promptAccess';
 import { RootState } from '../store';
 import {
   getLocalRecentDocs,
@@ -94,11 +95,7 @@ export interface Preference {
 const initialState: Preference = {
   apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
-  prompts: [
-    { name: 'default', id: 'default', type: 'public' },
-    { name: 'creative', id: 'creative', type: 'public' },
-    { name: 'strict', id: 'strict', type: 'public' },
-  ],
+  prompts: presetPrompts(),
   chunks: '6',
   selectedDocs: [],
   selectedFolders: [],

@@ -20,6 +20,7 @@ from .attachments import attachments_ns
 from .background_jobs import background_jobs_ns
 from .conversations import conversations_ns
 from .folders import folders_ns
+from .drafter import drafter_ns
 from .mcp_apps import mcp_apps_ns
 from .me import me_ns
 from .models import models_ns
@@ -62,6 +63,8 @@ api.add_namespace(conversations_ns)
 
 # Folders (agents and knowledge; /api/agents/folders/* are agent-only aliases)
 api.add_namespace(folders_ns)
+# Draft with DocsGPT (fills a form from a description; session-only)
+api.add_namespace(drafter_ns)
 
 # Current user (identity + roles)
 api.add_namespace(me_ns)

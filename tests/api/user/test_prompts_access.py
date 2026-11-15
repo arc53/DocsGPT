@@ -116,6 +116,19 @@ class TestUpdatePromptAccess:
         assert resp.status_code == 403 and resp.json["success"] is False
         assert _call(app, pg_conn, UpdatePrompt, "eve", json=body).status_code == 404
 
+    def test_returns_the_version_it_saved(self, app, pg_conn):
+        from docsgpt.api.user.prompts.routes import UpdatePrompt
+
+        prompt = _prompt(pg_conn)
+        pid = str(prompt["id"])
+        body = {"id": pid, "name": "N", "content": "x", "expected_updated_at": prompt["updated_at"]}
+        resp = _call(app, pg_conn, UpdatePrompt, OWNER, json=body)
+        assert resp.status_code == 200 and resp.json["success"] is True
+        assert resp.json["updated_at"] == PromptsRepository(pg_conn).get(pid, OWNER)["updated_at"]
+        # The next save at that version goes through.
+        body = {**body, "content": "y", "expected_updated_at": resp.json["updated_at"]}
+        assert _call(app, pg_conn, UpdatePrompt, OWNER, json=body).status_code == 200
+
     def test_stale_write_is_409_for_owner_too(self, app, pg_conn):
         from docsgpt.api.user.prompts.routes import UpdatePrompt
 

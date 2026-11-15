@@ -1,4 +1,4 @@
-"""Repositories for the ``folders`` and ``folder_items`` tables (migration 0063).
+"""Repositories for the ``folders`` and ``folder_items`` tables (migration 0064).
 
 A folder belongs to one user and holds one ``resource_type`` (``agent`` or
 ``source``). Folders nest through ``parent_id``; the self-FK is

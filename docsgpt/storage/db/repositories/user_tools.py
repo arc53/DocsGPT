@@ -173,6 +173,58 @@ class UserToolsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """The user's tools and the ``extra_ids`` ones, as ``{id, user_id, name}`` only, newest first.
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any tool's
+        JSONB columns. ``name`` is the tool's type (``api_tool``, ``mcp_tool``).
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' tools (team-shared) to list too; ids that are not uuids are skipped.
+
+        Returns:
+            ``{"id", "user_id", "name"}`` dicts with string ids.
+        """
+        extra = [str(t) for t in extra_ids or [] if looks_like_uuid(str(t))]
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id, name FROM user_tools "
+                "WHERE user_id = :user_id OR id = ANY(CAST(:extra AS uuid[])) "
+                "ORDER BY created_at DESC, id DESC"
+            ),
+            {"user_id": user_id, "extra": extra},
+        )
+        return [{"id": str(row.id), "user_id": row.user_id, "name": row.name} for row in result]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The names and descriptions of the tools ``ids`` names, never a config or an action, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Tool ids.
+
+        Returns:
+            ``{"id", "user_id", "name", "custom_name", "display_name", "description"}`` dicts with string ids.
+        """
+        uuids = [str(t) for t in ids if looks_like_uuid(str(t))]
+        if not uuids:
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id, name, custom_name, display_name, description FROM user_tools "
+                "WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC, id DESC"
+            ),
+            {"ids": uuids},
+        )
+        return [
+            {"id": str(row.id), "user_id": row.user_id, "name": row.name, "custom_name": row.custom_name,
+             "display_name": row.display_name, "description": row.description}
+            for row in result
+        ]
+
     def list_active_for_user(self, user_id: str) -> list[dict]:
         """Return only tools with ``status = true`` — matches the legacy
         ``find({"user": user, "status": True})`` used by the answer pipeline."""

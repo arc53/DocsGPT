@@ -11,7 +11,7 @@
 #   dev        the Vite dev server with hot reload, for docker-compose.yaml's
 #              bind-mounted frontend (build: target: dev)
 
-FROM node:22-alpine AS deps
+FROM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS deps
 
 WORKDIR /app
 COPY package*.json ./
@@ -40,7 +40,7 @@ RUN cp .env.development .env.production.local && \
     sed -i 's|<head>|<head><script src="/config.js"></script>|' dist/index.html
 
 
-FROM nginx:1.27-alpine
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
 
 LABEL org.opencontainers.image.source="https://github.com/arc53/DocsGPT" \
       org.opencontainers.image.title="DocsGPT frontend" \

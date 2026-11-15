@@ -34,7 +34,7 @@ STORED_PROMPT_PRESETS = ("creative", "strict")
 #: ``updated_at`` back as their stale-write token, so it tracks content only:
 #: an owner's chat (``last_used_at``), a regenerated key, the webhook token,
 #: the share link and the slug an export assigns don't make a builder's open
-#: copy stale. The ``agents_set_updated_at`` trigger (migrations 0060, 0063)
+#: copy stale. The ``agents_set_updated_at`` trigger (migrations 0060, 0064)
 #: skips the same columns. Folder filing is not on the agent row at all.
 BOOKKEEPING_COLUMNS = frozenset({
     "last_used_at", "key", "incoming_webhook_token", "shared", "shared_token", "shared_metadata",

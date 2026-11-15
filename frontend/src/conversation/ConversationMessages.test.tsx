@@ -627,6 +627,33 @@ describe('ConversationMessages', () => {
     });
   });
 
+  // A resume the server refused (a 429, no connection) leaves the turn's
+  // questions waiting: they stay in view to answer again, and Retry, which
+  // would send the prompt as a new turn, is not offered.
+  it('keeps waiting questions in view beside a refused resume error', () => {
+    render([
+      {
+        prompt: 'write the QBR deck',
+        error: 'Too many requests',
+        tool_calls: [
+          {
+            call_id: 'ask-1',
+            tool_name: 'ask_user',
+            action_name: 'ask_user',
+            arguments: {},
+            status: 'awaiting_answer',
+            questions: [{ id: 'q1', text: 'Which quarter?', options: [] }],
+          },
+        ],
+      },
+    ]);
+    expect(container.textContent).toContain('ask-1');
+    expect(container.textContent).toContain('Too many requests');
+    expect(
+      container.querySelector('[aria-label="conversation.retry"]'),
+    ).toBeNull();
+  });
+
   it('keeps a timed-out message partial answer visible beside its error', () => {
     render([
       {
