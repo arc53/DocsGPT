@@ -5,6 +5,16 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 // The store's slices the page reads; each test sets the connections it needs.
 const reduxState = {
   preference: { token: 'token' },
+  // Personal.
+  workspace: {
+    current: 'personal',
+    workspaces: [{ id: 'personal', kind: 'personal', name: 'Personal' }],
+    loaded: true,
+    loading: false,
+    epoch: 0,
+    lastReason: null,
+    latestRequestId: null,
+  },
   connectors: {
     enabled: true,
     catalog: [] as unknown[],
@@ -736,7 +746,7 @@ describe('Tools page connections', () => {
 
   // A connected tool is managed on the Connectors page; its card keeps
   // what acts on the tool itself.
-  it('gives the owner of a connected tool Manage in Connectors first, then Share and Delete', async () => {
+  it('gives the owner of a connected tool Manage in Connectors first, then Move to folder, Share and Delete', async () => {
     await renderTools(root);
     expect(
       Array.from(
@@ -744,6 +754,7 @@ describe('Tools page connections', () => {
       ).map((b) => b.textContent),
     ).toEqual([
       'settings.tools.manageInConnectors',
+      'folders.moveToFolder',
       'settings.tools.shareWithTeam',
       'settings.tools.delete',
     ]);

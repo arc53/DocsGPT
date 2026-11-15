@@ -35,6 +35,8 @@ import useConnectorLauncher, {
 import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
+import PersonalOnlyNotice from './PersonalOnlyNotice';
+import { selectInTeam } from './workspaceAccess';
 
 // The kind track is what a service does (the Knowledge / Tools split the
 // Add knowledge and Tools pages link to with ?capability=); the status
@@ -63,7 +65,23 @@ const hasBroken = (connector: ConnectorDefinition, accounts: Connection[]) =>
     (c) => connectionNeedsSignIn(c) || c.status === 'disconnected',
   ) || connector.state === 'reconnect';
 
+/**
+ * Settings › Connectors. Connections are personal, so in a team workspace
+ * the page says so (with Switch to Personal) instead of loading them.
+ */
 export default function Connectors() {
+  const { t } = useTranslation();
+  const inTeam = useSelector(selectInTeam);
+  if (inTeam)
+    return (
+      <PersonalOnlyNotice
+        message={t('settings.connectors.personalOnly.connections')}
+      />
+    );
+  return <ConnectorsPage />;
+}
+
+function ConnectorsPage() {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);

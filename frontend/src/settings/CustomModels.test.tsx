@@ -3,7 +3,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('react-redux', () => ({
-  useSelector: () => 'token',
+  // Personal: no workspace slice.
+  useSelector: (selector: (state: unknown) => unknown) =>
+    selector({ preference: { token: 'token' } }),
   useDispatch: () => vi.fn(),
 }));
 

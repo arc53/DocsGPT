@@ -1,5 +1,8 @@
 import {
   Eye,
+  Folder as FolderIcon,
+  FolderInput,
+  FolderOpen,
   Pencil,
   Plug,
   RefreshCw,
@@ -19,7 +22,14 @@ import PageToolbar from '../components/PageToolbar';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
-import RoleMeta from '../components/RoleMeta';
+import RoleMeta, { showsRole } from '../components/RoleMeta';
+import { folderCountLine } from '../components/folders/folderCopy';
+import FolderCrumbRow from '../components/folders/FolderCrumbRow';
+import { canMoveToFolder } from '../components/folders/folderFiling';
+import { canCreateIn } from '../components/folders/folderTree';
+import MoveToFolderModal from '../components/folders/MoveToFolderModal';
+import NewFolderButton from '../components/folders/NewFolderButton';
+import { useFolderActions } from '../components/folders/useFolderActions';
 import { MetaItem, MetaLine } from '../components/ui/meta-line';
 import {
   Tooltip,
@@ -59,7 +69,7 @@ import type { AppDispatch } from '../store';
 import ShareToTeamModal, {
   type ShareCredentials,
 } from '../teams/ShareToTeamModal';
-import { can, isOwner, roleOf } from '../utils/accessUtils';
+import { can, isOwner, roleOf, type AccessFields } from '../utils/accessUtils';
 import { formatCount } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
 import {
@@ -68,6 +78,17 @@ import {
   isSharedOAuthMcp,
   toolInChat,
 } from '../utils/toolUtils';
+import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
+import WorkspaceLine from '../workspace/WorkspaceLine';
+import {
+  type FiledItem,
+  filedAt,
+  folderLabelOf,
+  itemsWithin,
+  listedFolders,
+} from './folderListing';
+import FolderSection from './FolderSection';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { toolGroupTitle } from './toolGroupTitle';
@@ -80,6 +101,14 @@ import {
 } from './toolGroups';
 import { APIToolType, UserToolType } from './types';
 import UsedByAgents from './UsedByAgents';
+import { useFolderPage } from './useFolderPage';
+import { selectCanCreateHere, selectInTeam } from './workspaceAccess';
+
+/** A tool as the list carries it: its workspace fields and its filing. */
+type ListedTool = UserToolType & AccessFields & FiledItem;
+
+const GRID =
+  'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
 
 const USAGE_FILTERS = ['all', 'inUse', 'unused'] as const;
 type UsageFilter = (typeof USAGE_FILTERS)[number];
@@ -88,12 +117,22 @@ type UsageFilter = (typeof USAGE_FILTERS)[number];
 const isToolInUse = (tool: UserToolType): boolean =>
   agentUseCount(tool.used_by) > 0 || toolInChat(tool);
 
+/**
+ * Settings › Tools in the current workspace: the line saying whose they are,
+ * the workspace's folders, its tools grouped by kind and, in Personal, the
+ * ones shared with the caller. A folder opens in place (`?folder=`) with its
+ * crumb row; a search or a filter lists everything in reach, each tool
+ * naming its folder. A tool added inside a folder is filed there. Opening a
+ * tool shows its editor in place of the list.
+ */
 export default function Tools() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
   const connections = useSelector(selectConnections);
   const catalog = useSelector(selectConnectorCatalog);
+  const inTeam = useSelector(selectInTeam);
+  const canCreate = useSelector(selectCanCreateHere);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -104,7 +143,7 @@ export default function Tools() {
   const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, { name: 'usage' });
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
-  const [userTools, setUserTools] = React.useState<UserToolType[]>([]);
+  const [userTools, setUserTools] = React.useState<ListedTool[]>([]);
   const [selectedTool, setSelectedTool] = React.useState<
     UserToolType | APIToolType | null
   >(null);
@@ -130,6 +169,16 @@ export default function Tools() {
   const [toolToShare, setToolToShare] = React.useState<UserToolType | null>(
     null,
   );
+  const [toolToFile, setToolToFile] = React.useState<ListedTool | null>(null);
+  const page = useFolderPage('tool', () => getUserTools());
+  const { folderId, folder, tree } = page;
+  const inFolder = folderId !== null;
+  const folderActions = useFolderActions('tool');
+  const moveToWorkspace = useMoveToWorkspace('tool');
+  // Opening a folder (or leaving one) starts a fresh search there.
+  React.useEffect(() => {
+    setSearchTerm('');
+  }, [folderId]);
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
@@ -235,7 +284,7 @@ export default function Tools() {
   };
 
   // `detail`: the open tool's own ⋯, which leaves out Edit / View.
-  const getMenuOptions = (tool: UserToolType, detail = false): MenuOption[] => {
+  const getMenuOptions = (tool: ListedTool, detail = false): MenuOption[] => {
     const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
     const options: MenuOption[] = [];
     const connection = connectionOf(tool);
@@ -303,6 +352,24 @@ export default function Tools() {
         variant: 'default',
       });
     }
+    // A default chat tool has no row to file or move.
+    if (!tool.default && canCreate && canMoveToFolder(tool, inTeam))
+      options.push({
+        icon: FolderInput,
+        label: t('folders.moveToFolder'),
+        onClick: () => setToolToFile(tool),
+        variant: 'default',
+      });
+    const moveOut = tool.default
+      ? null
+      : moveToWorkspace.menuOption(
+          {
+            ...tool,
+            name: tool.customName || tool.displayName,
+          },
+          { onMoved: () => getUserTools() },
+        );
+    if (moveOut) options.push(moveOut);
     if (can(tool, 'share')) {
       options.push({
         icon: Users,
@@ -356,7 +423,7 @@ export default function Tools() {
         // registered tools (``scheduler``: builtin + default) stay visible
         // here so the user can toggle the default off in agentless chats.
         // Server-attached tools (check_job) are not the user's to toggle.
-        const filtered = (data.tools || []).filter((tool: UserToolType) =>
+        const filtered = (data.tools || []).filter((tool: ListedTool) =>
           isChatToolVisible(tool),
         );
         setUserTools(filtered);
@@ -451,10 +518,29 @@ export default function Tools() {
   };
 
   // New tools from Add tool, whatever made them: the list reloads, and a
-  // lone new tool opens so its actions can be set up.
+  // lone new tool opens so its actions can be set up. Inside a folder they
+  // are filed there first, however they were made (a built-in, a form, a
+  // connection, a paired device).
   const handleToolsCreated = (toolIds: string[]) => {
-    getUserTools();
-    if (toolIds.length === 1) handleToolAdded(toolIds[0]);
+    const show = () => {
+      getUserTools();
+      if (toolIds.length === 1) handleToolAdded(toolIds[0]);
+    };
+    if (!folderId || toolIds.length === 0) {
+      show();
+      return;
+    }
+    folderActions
+      .fileItems(toolIds, folderId)
+      .catch(() =>
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('settings.tools.fileFailed'),
+          }),
+        ),
+      )
+      .finally(show);
   };
 
   React.useEffect(() => {
@@ -510,7 +596,12 @@ export default function Tools() {
     (tool.customName || tool.displayName)
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
-  const searchedTools = userTools.filter(matchesSearch);
+  const query = searchTerm.trim();
+  // A search or a filter lists everything in reach, folders' contents too;
+  // otherwise the level shows what is filed right here.
+  const flat = query !== '' || kind !== 'all' || usage !== 'all';
+  const inReach = itemsWithin(tree, userTools, folderId);
+  const searchedTools = inReach.filter(matchesSearch);
   // Each filter counts with the other one and the search applied, as
   // Knowledge's do, so a pill never leads to "No tools found".
   const kindCounts = Object.fromEntries(
@@ -532,27 +623,52 @@ export default function Tools() {
   // No pill leads to an empty list; with only All left there is no track.
   const kinds = shownFilters(TOOL_KINDS, kind, kindCounts);
 
-  const filteredTools = searchedTools.filter(
-    (tool) => matchesKind(tool, kind) && matchesUsage(tool, usage),
-  );
+  const filteredTools = flat
+    ? searchedTools.filter(
+        (tool) => matchesKind(tool, kind) && matchesUsage(tool, usage),
+      )
+    : searchedTools.filter((tool) => filedAt(tree, tool, folderId));
+  // The workspace's own tools in their groups; in Personal, the ones shared
+  // with the caller in a section of their own after them.
+  const isShared = (tool: ListedTool) => tool.origin === 'shared';
+  const ownTools = filteredTools.filter((tool) => !isShared(tool));
+  const sharedTools = filteredTools.filter(isShared);
   // A section's count is its whole group, not the part on this page.
   const groupSizes = new Map(
-    groupTools(filteredTools, connections, catalog).map((group) => [
+    groupTools(ownTools, connections, catalog).map((group) => [
       group.key,
       group.tools.length,
     ]),
   );
   // Grouped like the pickers. Paged in group order, so a group that runs
   // past a page carries on (under its header) on the next one.
-  const orderedTools = groupTools(filteredTools, connections, catalog).flatMap(
-    (group) => group.tools,
-  );
+  const orderedTools = [
+    ...groupTools(ownTools, connections, catalog).flatMap(
+      (group) => group.tools,
+    ),
+    ...sharedTools,
+  ];
   const {
     page: toolsPage,
     setPage: setToolsPage,
     pageItems: pageTools,
-  } = useClientPage(orderedTools, SHORT_LIST_PAGE_SIZE, filterKey);
-  const pageGroups = groupTools(pageTools, connections, catalog);
+  } = useClientPage(
+    orderedTools,
+    SHORT_LIST_PAGE_SIZE,
+    `${filterKey}|${folderId}`,
+  );
+  const pageGroups = groupTools(
+    pageTools.filter((tool) => !isShared(tool)),
+    connections,
+    catalog,
+  );
+  const pageShared = pageTools.filter(isShared);
+  // The level's folders, on the first page; a filter alone lists tools
+  // only, a search also finds folders.
+  const folders =
+    toolsPage !== 1 || (flat && !query)
+      ? []
+      : listedFolders(tree, 'tool', folderId, query);
 
   // The state leads the badge row: the caller's own connection needing a
   // sign-in, or a custom MCP server's sign-in. "Configured" is not a
@@ -578,7 +694,7 @@ export default function Tools() {
     return null;
   };
 
-  const renderTile = (tool: UserToolType) => {
+  const renderTile = (tool: ListedTool) => {
     const connection = connectionOf(tool);
     const service = toolServiceOf(tool, connections, catalog);
     const connector = service?.connector;
@@ -596,23 +712,37 @@ export default function Tools() {
         ? connectorDescription(t, connector)
         : tool.description;
     const account = connection ? accountLine(t, connection) : null;
-    // The meta line: the account, the reader's role, then the agents that
-    // use it. Whether it is in the reader's chats is the switch's to say.
+    // Where a tool a search or filter found is filed.
+    const folderLabel = flat ? folderLabelOf(tree, tool, folderId) : null;
+    // The meta line: where it is filed, the account, who added it (a team's)
+    // or owns it (shared with the caller) and the caller's role on a shared
+    // one, then the agents that use it. Whether it is in the reader's chats
+    // is the switch's to say.
     const meta = (
       <MetaLine>
+        {folderLabel ? (
+          <MetaItem icon={<FolderIcon />} title={folderLabel}>
+            {folderLabel}
+          </MetaItem>
+        ) : null}
         {account ? (
           <MetaItem icon={<UserRound />} title={account}>
             {account}
           </MetaItem>
         ) : null}
-        {isOwner(tool) ? null : <RoleMeta item={tool} />}
+        {showsCreator(tool) ? <CreatorMeta item={tool} /> : null}
+        {showsRole(tool) ? <RoleMeta item={tool} /> : null}
         {agentUseCount(tool.used_by) > 0 ? (
           <UsedByAgents usage={tool.used_by} />
         ) : null}
       </MetaLine>
     );
     const hasMeta =
-      !!account || !isOwner(tool) || agentUseCount(tool.used_by) > 0;
+      !!folderLabel ||
+      !!account ||
+      showsCreator(tool) ||
+      showsRole(tool) ||
+      agentUseCount(tool.used_by) > 0;
     return (
       <ConnectorTile
         key={tool.id}
@@ -686,10 +816,25 @@ export default function Tools() {
     );
   };
 
+  // The open folder before the tree has loaded: wait for it (or say it
+  // failed) rather than draw a folder with no name.
+  const folderPending = inFolder && !folder;
+  const foldersFailed = page.list.failed && !page.list.loaded;
+  const addToolButton = (
+    <Button
+      type="button"
+      size="field"
+      shape="pill"
+      onClick={() => setAddToolModalState('ACTIVE')}
+    >
+      {t('settings.tools.addTool')}
+    </Button>
+  );
+
   // The open tool's ⋯ (none for a draft without an id, or with no items).
   const detailMenuOptions =
     selectedTool && 'id' in selectedTool && selectedTool.id
-      ? getMenuOptions(selectedTool as UserToolType, true)
+      ? getMenuOptions(selectedTool as ListedTool, true)
       : [];
 
   return (
@@ -720,35 +865,70 @@ export default function Tools() {
       ) : (
         <div>
           <div className="relative flex flex-col">
+            {/* Inside a folder its crumb row stands where the intro was: the
+                trail, its count line, what else it holds, and its ⋯ last. */}
+            {folder ? (
+              <div className="mb-5">
+                <FolderCrumbRow
+                  kind="tool"
+                  trail={page.trail}
+                  onNavigate={page.openFolder}
+                  meta={folderCountLine(t, folder, 'tool')}
+                  menu={
+                    <ActionMenu
+                      size="toolbar"
+                      options={page.folderMenu.menuOptions(folder)}
+                      triggerLabel={t('folders.menuLabel', {
+                        name: folder.name,
+                        interpolation: { escapeValue: false },
+                      })}
+                    />
+                  }
+                />
+              </div>
+            ) : inFolder ? null : (
+              <div className="mb-5">
+                <p className="text-muted-foreground text-sm leading-6">
+                  {t('settings.tools.subtitle')}
+                </p>
+                <WorkspaceLine kind="tools" />
+              </div>
+            )}
             <PageToolbar
-              intro={t('settings.tools.subtitle')}
               search={
                 <SearchInput
                   maxLength={256}
-                  label={t('settings.tools.searchPlaceholder')}
+                  label={
+                    folder
+                      ? t('folders.searchIn', {
+                          name: folder.name,
+                          interpolation: { escapeValue: false },
+                        })
+                      : t('settings.tools.searchPlaceholder')
+                  }
                   name="Document-search-input"
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               }
+              // Below Editor in a team nothing can be added here.
               action={
-                <Button
-                  type="button"
-                  size="field"
-                  shape="pill"
-                  onClick={() => {
-                    setAddToolModalState('ACTIVE');
-                  }}
-                >
-                  {t('settings.tools.addTool')}
-                </Button>
+                canCreate ? (
+                  <div className="flex w-full items-center gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
+                    <NewFolderButton
+                      atDepthLimit={!canCreateIn(tree, folderId)}
+                      onClick={page.newFolder}
+                    />
+                    {addToolButton}
+                  </div>
+                ) : undefined
               }
               divider
             >
               {/* A picked filter stays drawn while the search empties the
                   list, so it can still be seen and changed. */}
-              {!loading && !loadFailed && userTools.length > 0 ? (
+              {!loading && !loadFailed && inReach.length > 0 ? (
                 <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
                   {kinds.length > 0 ? (
                     <ToggleGroup
@@ -781,8 +961,16 @@ export default function Tools() {
                 </div>
               ) : null}
             </PageToolbar>
-            {loading ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {folderPending && foldersFailed ? (
+              <FolderSection
+                kind="tool"
+                page={page}
+                folders={[]}
+                query=""
+                title=""
+              />
+            ) : loading || folderPending ? (
+              <div className={GRID}>
                 <SkeletonLoader component="toolCards" count={6} />
               </div>
             ) : loadFailed ? (
@@ -792,40 +980,67 @@ export default function Tools() {
                 title={t('settings.tools.loadError')}
                 onRetry={() => getUserTools()}
               />
-            ) : userTools.length === 0 ? (
+            ) : !inFolder &&
+              userTools.length === 0 &&
+              folders.length === 0 &&
+              !foldersFailed ? (
               <EmptyState
                 title={t('settings.tools.noToolsYet')}
                 action={
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button
-                      type="button"
-                      shape="pill"
-                      onClick={() => setAddToolModalState('ACTIVE')}
-                    >
-                      {t('settings.tools.addTool')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      shape="pill"
-                      onClick={() =>
-                        navigate('/settings/connectors?capability=tools')
-                      }
-                    >
-                      {t('settings.tools.connectService')}
-                    </Button>
-                  </div>
+                  canCreate ? (
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button
+                        type="button"
+                        shape="pill"
+                        onClick={() => setAddToolModalState('ACTIVE')}
+                      >
+                        {t('settings.tools.addTool')}
+                      </Button>
+                      {/* Connections are personal: a team adds none. */}
+                      {inTeam ? null : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          shape="pill"
+                          onClick={() =>
+                            navigate('/settings/connectors?capability=tools')
+                          }
+                        >
+                          {t('settings.tools.connectService')}
+                        </Button>
+                      )}
+                    </div>
+                  ) : undefined
                 }
               />
-            ) : filteredTools.length === 0 ? (
-              <EmptyState
-                size="xs"
-                illustration="none"
-                title={t('settings.tools.noToolsFound')}
-              />
+            ) : filteredTools.length === 0 &&
+              folders.length === 0 &&
+              !foldersFailed ? (
+              folder && !flat ? (
+                <EmptyState
+                  size="sm"
+                  icon={FolderOpen}
+                  title={t('folders.emptyTitle')}
+                  description={t('settings.tools.folders.emptyHint')}
+                  action={canCreate ? addToolButton : undefined}
+                />
+              ) : (
+                <EmptyState
+                  size="xs"
+                  illustration="none"
+                  title={t('settings.tools.noToolsFound')}
+                />
+              )
             ) : (
               <>
                 <div className="flex flex-col gap-8">
+                  <FolderSection
+                    kind="tool"
+                    page={page}
+                    folders={folders}
+                    query={query}
+                    title={t('settings.tools.sections.folders')}
+                  />
                   {pageGroups.map((group) => (
                     <section key={group.key} className="flex flex-col gap-3">
                       <SectionHeader
@@ -833,11 +1048,19 @@ export default function Tools() {
                         title={toolGroupTitle(t, group)}
                         count={groupSizes.get(group.key)}
                       />
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {group.tools.map(renderTile)}
-                      </div>
+                      <div className={GRID}>{group.tools.map(renderTile)}</div>
                     </section>
                   ))}
+                  {pageShared.length > 0 ? (
+                    <section className="flex flex-col gap-3">
+                      <SectionHeader
+                        size="sm"
+                        title={t('workspace.page.sharedWithYou')}
+                        count={sharedTools.length}
+                      />
+                      <div className={GRID}>{pageShared.map(renderTile)}</div>
+                    </section>
+                  ) : null}
                 </div>
                 <Pagination
                   page={toolsPage}
@@ -860,6 +1083,7 @@ export default function Tools() {
           />
         </div>
       )}
+      {page.dialogs}
       {/* The tool's dialogs serve its tile and its open page alike. */}
       <ConfirmationModal
         message={t('settings.tools.deleteWarning', {
@@ -892,6 +1116,24 @@ export default function Tools() {
           fetchMcpStatuses();
         }}
       />
+      {toolToFile ? (
+        <MoveToFolderModal
+          open
+          onOpenChange={(open) => !open && setToolToFile(null)}
+          kind="tool"
+          subject={{
+            kind: 'items',
+            ids: [toolToFile.id],
+            name: toolToFile.customName || toolToFile.displayName,
+            folderId: toolToFile.folder_id ?? null,
+          }}
+          onMoved={() => {
+            setToolToFile(null);
+            getUserTools();
+          }}
+        />
+      ) : null}
+      {moveToWorkspace.dialog}
       {toolToShare && (
         <ShareToTeamModal
           resourceType="tool"

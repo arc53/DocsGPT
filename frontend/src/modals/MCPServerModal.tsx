@@ -24,6 +24,7 @@ import { selectRecentEvents } from '../notifications/notificationsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { formatCount } from '../utils/dateTimeUtils';
+import { selectInTeam } from '../settings/workspaceAccess';
 
 /**
  * A test result, or the OAuth handshake's progress: `waiting` while the
@@ -80,11 +81,18 @@ export default function MCPServerModal({
   const token = useSelector(selectToken);
   const recentEvents = useSelector(selectRecentEvents);
 
+  // A team holds no sign-ins yet: a server you sign in to is Personal only,
+  // so a new one (or a switch to OAuth) isn't offered there. A server that
+  // already signs in keeps its value shown.
+  const inTeam = useSelector(selectInTeam);
+  const offerOAuth = !inTeam || server?.auth_type === 'oauth';
   const authTypes = [
     { label: t('settings.tools.mcp.authTypes.none'), value: 'none' },
     { label: t('settings.tools.mcp.authTypes.apiKey'), value: 'api_key' },
     { label: t('settings.tools.mcp.authTypes.bearer'), value: 'bearer' },
-    { label: t('settings.tools.mcp.authTypes.oauth'), value: 'oauth' },
+    ...(offerOAuth
+      ? [{ label: t('settings.tools.mcp.authTypes.oauth'), value: 'oauth' }]
+      : []),
     // { label: t('settings.tools.mcp.authTypes.basic'), value: 'basic' },
   ];
 
@@ -723,7 +731,12 @@ export default function MCPServerModal({
           </Alert>
         )}
 
-        <FormField label={t('settings.tools.mcp.authType')}>
+        <FormField
+          label={t('settings.tools.mcp.authType')}
+          hint={
+            offerOAuth ? undefined : t('settings.tools.mcp.oauthPersonalOnly')
+          }
+        >
           <Select
             value={formData.auth_type}
             onValueChange={(v) => handleInputChange('auth_type', v)}

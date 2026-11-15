@@ -3338,6 +3338,10 @@
         "off": "オフ",
         "saveFailed": "権限を保存できませんでした。もう一度お試しください。"
       },
+      "personalOnly": {
+        "connections": "接続は個人用です。管理するには個人に切り替えてください。",
+        "switch": "個人に切り替える"
+      },
       "publisher": {
         "built_in": "組み込み",
         "custom": "カスタム",
@@ -3526,6 +3530,7 @@
       },
       "pageRange_one": "モデル {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "モデル {{formatted}}件中 {{from}}–{{to}}件",
+      "personalOnly": "カスタムモデルは個人用です。管理するには個人に切り替えてください。",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "既存のキーを保持する場合は空欄のまま",
@@ -3852,6 +3857,9 @@
       "filters": {
         "all": "すべて"
       },
+      "folders": {
+        "emptyHint": "ここでプロンプトを追加するか、プロンプトの⋯メニューからここに移動してください。"
+      },
       "kindFilterLabel": "種類で絞り込む",
       "kinds": {
         "shared": "共有"
@@ -3878,12 +3886,14 @@
       "saveFailed": "このプロンプトを保存できませんでした。",
       "searchPlaceholder": "プロンプトを検索…",
       "sections": {
+        "folders": "フォルダー",
         "included": "標準搭載",
-        "shared": "チームと共有",
+        "shared": "あなたと共有",
+        "team": "プロンプト",
         "yours": "あなたのもの"
       },
       "select": "プロンプトを選択",
-      "shareWithTeam": "チームと共有",
+      "shareWithTeam": "共有",
       "subtitle": "システムプロンプトは、モデルの回答方法を指示します。選んだプロンプトはエージェントを使わないチャットで使われ、エージェントはそれぞれ独自のものを選びます。",
       "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
       "useInChats": "{{name}} をチャットで使用",
@@ -4866,9 +4876,13 @@
       "fieldDescription": "フィールドの説明",
       "fieldName": "フィールド名",
       "fieldType": "フィールドタイプ",
+      "fileFailed": "ツールは追加されましたが、このフォルダーには入れられませんでした。",
       "filledBy": "入力元",
       "filters": {
         "all": "すべて"
+      },
+      "folders": {
+        "emptyHint": "ここでツールを追加するか、ツールの⋯メニューからここに移動してください。"
       },
       "groupAdded": "追加済み",
       "groupBuiltIn": "組み込み",
@@ -4922,6 +4936,7 @@
         "headerName": "ヘッダー名",
         "oauthCompleted": "OAuth サインインが完了しました",
         "oauthInProgress": "OAuth サインインの完了を待っています…",
+        "oauthPersonalOnly": "サインインが必要なサーバー（OAuth）は、現在は個人ワークスペースでのみ追加できます。",
         "oauthPopupBlocked": "ブラウザがサインインウィンドウをブロックしました。続行するには認証ページを開いてください。",
         "openAuthPage": "認証ページを開く",
         "password": "パスワード",
@@ -4964,9 +4979,12 @@
       "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力",
       "searchActions": "アクションを検索...",
       "searchPlaceholder": "ツールを検索…",
+      "sections": {
+        "folders": "フォルダー"
+      },
       "selectToolSetup": "ツールを追加",
       "settingsIconAlt": "設定アイコン",
-      "shareWithTeam": "チームと共有",
+      "shareWithTeam": "共有",
       "sharedBy": "{{team}} が共有",
       "statusUpdateFailed": "このツールをチャットで使うかどうかを変更できませんでした。",
       "subtitle": "エージェントが実行できる操作です。標準搭載のツールはDocsGPTに付属しています。接続したサービスのツールは、そのサービスの下にまとめて表示されます。",

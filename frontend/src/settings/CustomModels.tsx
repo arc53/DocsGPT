@@ -25,6 +25,8 @@ import {
 } from '../preferences/preferenceSlice';
 
 import type { CustomModel } from '../models/types';
+import PersonalOnlyNotice from './PersonalOnlyNotice';
+import { selectInTeam } from './workspaceAccess';
 
 const formatBaseUrlHost = (baseUrl: string): string => {
   if (!baseUrl) return '';
@@ -38,7 +40,22 @@ const formatBaseUrlHost = (baseUrl: string): string => {
   }
 };
 
+/**
+ * Settings › Custom models. A custom model is personal, so in a team
+ * workspace the page says so (with Switch to Personal) instead of loading
+ * them.
+ */
 export default function CustomModels() {
+  const { t } = useTranslation();
+  const inTeam = useSelector(selectInTeam);
+  if (inTeam)
+    return (
+      <PersonalOnlyNotice message={t('settings.customModels.personalOnly')} />
+    );
+  return <CustomModelsPage />;
+}
+
+function CustomModelsPage() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);

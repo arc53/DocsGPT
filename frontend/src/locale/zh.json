@@ -3336,6 +3336,10 @@
         "off": "关闭",
         "saveFailed": "无法保存权限。请重试。"
       },
+      "personalOnly": {
+        "connections": "连接是个人的。切换到个人即可管理。",
+        "switch": "切换到个人"
+      },
       "publisher": {
         "built_in": "内置",
         "custom": "自定义",
@@ -3524,6 +3528,7 @@
       },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型",
+      "personalOnly": "自定义模型是个人的。切换到个人即可管理。",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "留空则保留原密钥",
@@ -3850,6 +3855,9 @@
       "filters": {
         "all": "全部"
       },
+      "folders": {
+        "emptyHint": "在此添加提示词，或通过提示词的 ⋯ 菜单将其移入。"
+      },
       "kindFilterLabel": "按类型筛选",
       "kinds": {
         "shared": "共享"
@@ -3876,12 +3884,14 @@
       "saveFailed": "无法保存此提示词。",
       "searchPlaceholder": "搜索提示词…",
       "sections": {
+        "folders": "文件夹",
         "included": "自带",
-        "shared": "团队共享",
+        "shared": "与您共享",
+        "team": "提示词",
         "yours": "你的"
       },
       "select": "选择提示词",
-      "shareWithTeam": "与团队共享",
+      "shareWithTeam": "共享",
       "subtitle": "系统提示词决定模型如何回答。你选择的提示词用于不使用智能体的聊天；智能体使用各自的提示词。",
       "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
       "useInChats": "在聊天中使用 {{name}}",
@@ -4864,9 +4874,13 @@
       "fieldDescription": "字段描述",
       "fieldName": "字段名称",
       "fieldType": "字段类型",
+      "fileFailed": "工具已添加，但无法放入此文件夹。",
       "filledBy": "填写方式",
       "filters": {
         "all": "全部"
+      },
+      "folders": {
+        "emptyHint": "在此添加工具，或通过工具的 ⋯ 菜单将其移入。"
       },
       "groupAdded": "已添加",
       "groupBuiltIn": "内置",
@@ -4920,6 +4934,7 @@
         "headerName": "请求头名称",
         "oauthCompleted": "OAuth 登录已完成",
         "oauthInProgress": "正在等待 OAuth 登录完成…",
+        "oauthPersonalOnly": "需要登录的服务器（OAuth）目前只能在个人工作区中添加。",
         "oauthPopupBlocked": "浏览器拦截了登录窗口。打开授权页面以继续。",
         "openAuthPage": "打开授权页面",
         "password": "密码",
@@ -4962,9 +4977,12 @@
       "savedSecretPlaceholder": "已保存 · 输入新值以替换",
       "searchActions": "搜索操作...",
       "searchPlaceholder": "搜索工具…",
+      "sections": {
+        "folders": "文件夹"
+      },
       "selectToolSetup": "添加工具",
       "settingsIconAlt": "设置图标",
-      "shareWithTeam": "与团队共享",
+      "shareWithTeam": "共享",
       "sharedBy": "由 {{team}} 共享",
       "statusUpdateFailed": "无法更改此工具是否用于你的聊天。",
       "subtitle": "智能体可以执行的操作。自带工具随 DocsGPT 提供。已连接服务提供的工具归在该服务下。",

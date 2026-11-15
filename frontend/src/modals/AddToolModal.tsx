@@ -25,6 +25,7 @@ import { connectorDescription, connectorName } from '../connectors/i18n';
 import type { ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import PairDeviceModal from '../settings/PairDeviceModal';
+import { selectInTeam } from '../settings/workspaceAccess';
 import type { AppDispatch } from '../store';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -66,6 +67,7 @@ export default function AddToolModal({
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
   const catalog = useSelector(selectConnectorCatalog);
+  const inTeam = useSelector(selectInTeam);
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: onToolsCreated,
     onNavigate,
@@ -104,8 +106,10 @@ export default function AddToolModal({
 
   // Services come from the connector catalog (tool connectors and MCP
   // presets): they are added by connecting the service, first in the list.
+  // A connection is personal, so a team workspace lists none.
   const services = catalog.filter(
     (connector) =>
+      !inTeam &&
       connector.publisher !== 'custom' &&
       connector.available &&
       connector.capabilities.some((c) => c === 'read' || c === 'write'),
@@ -324,28 +328,31 @@ export default function AddToolModal({
               )}
             </>
           )}
-          <Button variant="link" size="inline" className="self-start" asChild>
-            <Link
-              to="/settings/connectors"
-              onClick={(event) => {
-                close();
-                // A new tab leaves the opener where it is.
-                if (
-                  !onNavigate ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.button !== 0
-                )
-                  return;
-                event.preventDefault();
-                onNavigate('/settings/connectors');
-              }}
-            >
-              {t('settings.connectors.browseAll')}
-              <ArrowRight />
-            </Link>
-          </Button>
+          {/* Connectors are personal: the link would only say so. */}
+          {inTeam ? null : (
+            <Button variant="link" size="inline" className="self-start" asChild>
+              <Link
+                to="/settings/connectors"
+                onClick={(event) => {
+                  close();
+                  // A new tab leaves the opener where it is.
+                  if (
+                    !onNavigate ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.button !== 0
+                  )
+                    return;
+                  event.preventDefault();
+                  onNavigate('/settings/connectors');
+                }}
+              >
+                {t('settings.connectors.browseAll')}
+                <ArrowRight />
+              </Link>
+            </Button>
+          )}
         </div>
       </Modal>
       <ConnectionDrawer

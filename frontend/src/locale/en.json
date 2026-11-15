@@ -3388,6 +3388,10 @@
         "off": "Off",
         "saveFailed": "Could not save the permission. Try again."
       },
+      "personalOnly": {
+        "connections": "Connections are personal. Switch to Personal to manage them.",
+        "switch": "Switch to Personal"
+      },
       "publisher": {
         "built_in": "Built in",
         "custom": "Custom",
@@ -3578,6 +3582,7 @@
       },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} model",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} models",
+      "personalOnly": "Custom models are personal. Switch to Personal to manage them.",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "Leave blank to keep existing",
@@ -3905,6 +3910,9 @@
       "filters": {
         "all": "All"
       },
+      "folders": {
+        "emptyHint": "Add a prompt here, or move one in from its ⋯ menu."
+      },
       "kindFilterLabel": "Filter by kind",
       "kinds": {
         "shared": "Shared"
@@ -3931,12 +3939,14 @@
       "saveFailed": "Couldn't save this prompt.",
       "searchPlaceholder": "Search prompts…",
       "sections": {
+        "folders": "Folders",
         "included": "Included",
-        "shared": "Shared with team",
+        "shared": "Shared with you",
+        "team": "Prompts",
         "yours": "Yours"
       },
       "select": "Select a prompt",
-      "shareWithTeam": "Share with team",
+      "shareWithTeam": "Share",
       "subtitle": "System prompts tell the model how to answer. The one you pick is used in chats without an agent; agents choose their own.",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "useInChats": "Use {{name}} in chats",
@@ -4921,9 +4931,13 @@
       "fieldDescription": "Field description",
       "fieldName": "Field Name",
       "fieldType": "Field Type",
+      "fileFailed": "The tool was added, but it couldn't go in this folder.",
       "filledBy": "Filled in by",
       "filters": {
         "all": "All"
+      },
+      "folders": {
+        "emptyHint": "Add a tool here, or move one in from its ⋯ menu."
       },
       "groupAdded": "Added",
       "groupBuiltIn": "Built-in",
@@ -4977,6 +4991,7 @@
         "headerName": "Header name",
         "oauthCompleted": "OAuth sign-in completed",
         "oauthInProgress": "Waiting for the OAuth sign-in to finish…",
+        "oauthPersonalOnly": "A server you sign in to (OAuth) can only be added in your Personal workspace for now.",
         "oauthPopupBlocked": "The browser blocked the sign-in window. Open the authorization page to continue.",
         "openAuthPage": "Open authorization page",
         "password": "Password",
@@ -5019,9 +5034,12 @@
       "savedSecretPlaceholder": "Saved · enter a new value to replace",
       "searchActions": "Search actions...",
       "searchPlaceholder": "Search tools…",
+      "sections": {
+        "folders": "Folders"
+      },
       "selectToolSetup": "Add a tool",
       "settingsIconAlt": "Settings icon",
-      "shareWithTeam": "Share with team",
+      "shareWithTeam": "Share",
       "sharedBy": "Shared by {{team}}",
       "statusUpdateFailed": "Couldn't change whether this tool is in your chats.",
       "subtitle": "Actions your agents can take. Included tools come with DocsGPT. Tools from a connected service are grouped under that service.",

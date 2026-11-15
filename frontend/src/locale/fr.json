@@ -3490,6 +3490,10 @@
         "off": "Désactivé",
         "saveFailed": "Impossible d’enregistrer l’autorisation. Réessayez."
       },
+      "personalOnly": {
+        "connections": "Les connexions sont personnelles. Passez à Personnel pour les gérer.",
+        "switch": "Passer à Personnel"
+      },
       "publisher": {
         "built_in": "Intégré",
         "custom": "Personnalisé",
@@ -3685,6 +3689,7 @@
       "pageRange_many": "{{from}}–{{to}} sur {{formatted}} modèles",
       "pageRange_one": "{{from}}–{{to}} sur {{formatted}} modèle",
       "pageRange_other": "{{from}}–{{to}} sur {{formatted}} modèles",
+      "personalOnly": "Les modèles personnalisés sont personnels. Passez à Personnel pour les gérer.",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "Laissez vide pour conserver la valeur actuelle",
@@ -4022,6 +4027,9 @@
       "filters": {
         "all": "Tous"
       },
+      "folders": {
+        "emptyHint": "Ajoutez un prompt ici ou déplacez-en un depuis son menu ⋯."
+      },
       "kindFilterLabel": "Filtrer par type",
       "kinds": {
         "shared": "Partagés"
@@ -4048,12 +4056,14 @@
       "saveFailed": "Impossible d’enregistrer ce prompt.",
       "searchPlaceholder": "Rechercher des prompts…",
       "sections": {
+        "folders": "Dossiers",
         "included": "Inclus",
-        "shared": "Partagés avec l’équipe",
+        "shared": "Partagé avec vous",
+        "team": "Prompts",
         "yours": "Les vôtres"
       },
       "select": "Sélectionner un prompt",
-      "shareWithTeam": "Partager avec l’équipe",
+      "shareWithTeam": "Partager",
       "subtitle": "Les prompts système indiquent au modèle comment répondre. Celui que vous choisissez sert aux conversations sans agent ; les agents choisissent le leur.",
       "unsavedChanges": "Vos modifications non enregistrées seront perdues si vous quittez sans enregistrer.",
       "useInChats": "Utiliser {{name}} dans les conversations",
@@ -5082,9 +5092,13 @@
       "fieldDescription": "Description du champ",
       "fieldName": "Nom du champ",
       "fieldType": "Type du champ",
+      "fileFailed": "L’outil a été ajouté, mais il n’a pas pu être placé dans ce dossier.",
       "filledBy": "Renseigné par",
       "filters": {
         "all": "Tous"
+      },
+      "folders": {
+        "emptyHint": "Ajoutez un outil ici ou déplacez-en un depuis son menu ⋯."
       },
       "groupAdded": "Ajoutés",
       "groupBuiltIn": "Intégrés",
@@ -5139,6 +5153,7 @@
         "headerName": "Nom de l’en-tête",
         "oauthCompleted": "Connexion OAuth terminée",
         "oauthInProgress": "En attente de la fin de la connexion OAuth…",
+        "oauthPersonalOnly": "Pour l’instant, un serveur avec connexion (OAuth) ne peut être ajouté que dans votre espace Personnel.",
         "oauthPopupBlocked": "Le navigateur a bloqué la fenêtre de connexion. Ouvrez la page d’autorisation pour continuer.",
         "openAuthPage": "Ouvrir la page d’autorisation",
         "password": "Mot de passe",
@@ -5182,9 +5197,12 @@
       "savedSecretPlaceholder": "Enregistré · saisissez une nouvelle valeur pour le remplacer",
       "searchActions": "Rechercher des actions…",
       "searchPlaceholder": "Rechercher des outils…",
+      "sections": {
+        "folders": "Dossiers"
+      },
       "selectToolSetup": "Ajouter un outil",
       "settingsIconAlt": "Icône des paramètres",
-      "shareWithTeam": "Partager avec l’équipe",
+      "shareWithTeam": "Partager",
       "sharedBy": "Partagé par {{team}}",
       "statusUpdateFailed": "Impossible de modifier la présence de cet outil dans vos conversations.",
       "subtitle": "Les actions que vos agents peuvent effectuer. Les outils inclus sont fournis avec DocsGPT. Les outils d’un service connecté sont regroupés sous ce service.",
