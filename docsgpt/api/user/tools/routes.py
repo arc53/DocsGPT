@@ -51,6 +51,7 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
+from docsgpt.storage.db.repositories.team_scope import live_grant_sql
 from docsgpt.storage.db.repositories.todos import TodosRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import (
     UserToolPreferencesRepository,
@@ -674,13 +675,16 @@ def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: 
 
 
 def _shared_via(conn: Connection, user_id: str, tool_ids: list) -> dict:
-    """``tool_id -> team name`` through which a grant reaches ``user_id``."""
+    """``tool_id -> team name`` through which a grant reaches ``user_id``.
+
+    Only a grant that gives access counts: one whose owner left that team is paused.
+    """
     ids = [str(t) for t in tool_ids if looks_like_uuid(str(t))]
     if not ids:
         return {}
     rows = conn.execute(
         text(
-            """
+            f"""
             SELECT DISTINCT ON (g.resource_id) g.resource_id, t.name
             FROM team_resource_grants g
             JOIN team_members m ON m.team_id = g.team_id
@@ -688,6 +692,7 @@ def _shared_via(conn: Connection, user_id: str, tool_ids: list) -> dict:
             WHERE m.user_id = :user_id AND g.resource_type = 'tool'
               AND g.resource_id = ANY(CAST(:ids AS uuid[]))
               AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
+              AND {live_grant_sql("tool")}
             ORDER BY g.resource_id, (g.access_level = 'editor') DESC, t.name
             """
         ),

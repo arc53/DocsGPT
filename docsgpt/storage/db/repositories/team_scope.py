@@ -5,7 +5,9 @@ resources of type X can ``user_id`` see via their team memberships?" and "what
 access level does ``user_id`` effectively have on resource R?". Membership is
 JOINed LIVE against ``team_members`` on every call — never cached, never read
 from the JWT — so revoking a membership or a grant drops access on the very next
-request (closes the revocation race by construction). All methods take a
+request (closes the revocation race by construction). The item owner's
+membership of the grant's team is JOINed the same way (:func:`live_grant_sql`):
+a grant pauses while its owner is out of that team. All methods take a
 ``Connection``.
 """
 
@@ -21,22 +23,42 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 _TABLES = {"agent": "agents", "source": "sources", "prompt": "prompts", "tool": "user_tools"}
 
 
-def _personal_only(resource_type: str) -> str:
-    """SQL that keeps grants on personal items only.
+def live_grant_sql(resource_type: str, alias: str = "g") -> str:
+    """SQL condition that keeps only the grants that give access right now.
 
-    A grant never answers for an item a team workspace owns (its owner is a
-    ``__team__`` principal): access there comes from the team role alone
-    (``resource_access.resolve``). The 0065 CHECK keeps principal owners off
-    ``team_resource_grants``; this also drops a grant left on an item that
-    moved to a team after it was granted. An unknown kind matches nothing.
+    A grant gives access only while the item's owner is in the grant's team,
+    so a member's shares to a team pause while they are out of it (removed or
+    left: their ``team_members`` rows are gone) and work again once they are
+    re-added; the grant row itself is never touched. Being in the team reads
+    as ``team_role_for`` does: any membership row, manual or from the identity
+    provider, or being the team's owner. Deactivation keeps the rows, so it
+    pauses nothing here. Grants also count on personal items only: an item a
+    team workspace owns (moved there after it was granted) is never reached
+    through a grant; access there comes from the team role alone
+    (``resource_access.resolve``). A grant whose item is gone, or of an
+    unknown kind, matches nothing.
+
+    Args:
+        resource_type: ``agent``, ``source``, ``prompt`` or ``tool``.
+        alias: The ``team_resource_grants`` alias in the surrounding query.
+
+    Returns:
+        str: A condition to AND into the query.
     """
     table = _TABLES.get(resource_type)
     if table is None:
-        return " AND FALSE"
+        return "FALSE"
     return (
-        f" AND NOT EXISTS (SELECT 1 FROM {table} r WHERE r.id = g.resource_id"
-        " AND left(r.user_id, 8) = '__team__')"
+        f"EXISTS (SELECT 1 FROM {table} r WHERE r.id = {alias}.resource_id"
+        " AND left(r.user_id, 8) <> '__team__'"
+        f" AND (EXISTS (SELECT 1 FROM team_members om WHERE om.team_id = {alias}.team_id"
+        " AND om.user_id = r.user_id)"
+        f" OR EXISTS (SELECT 1 FROM teams ot WHERE ot.id = {alias}.team_id AND ot.owner_id = r.user_id)))"
     )
+
+
+def _live(resource_type: str) -> str:
+    return " AND " + live_grant_sql(resource_type)
 
 
 class TeamScopeRepository:
@@ -62,7 +84,7 @@ class TeamScopeRepository:
                 WHERE m.user_id = :user_id AND g.resource_type = :resource_type
                   AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
                 """
-                + _personal_only(resource_type)
+                + _live(resource_type)
             ),
             {"user_id": user_id, "resource_type": resource_type},
         )
@@ -87,7 +109,7 @@ class TeamScopeRepository:
                 WHERE m.user_id = :user_id AND g.resource_type = :resource_type
                   AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
                 """
-                + _personal_only(resource_type)
+                + _live(resource_type)
                 + " GROUP BY g.resource_id"
             ),
             {"user_id": user_id, "resource_type": resource_type},
@@ -122,7 +144,7 @@ class TeamScopeRepository:
                   AND g.resource_id = CAST(:resource_id AS uuid)
                   AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
                 """
-                + _personal_only(resource_type)
+                + _live(resource_type)
                 + " HAVING count(*) > 0"
             ),
             {"user_id": user_id, "resource_type": resource_type, "resource_id": resource_id},

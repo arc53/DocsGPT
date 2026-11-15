@@ -267,6 +267,47 @@ def _caller_access(
     return out
 
 
+# Why a grant on the team's grants list gives no access right now.
+PAUSED_OWNER_LEFT = "owner_left"
+
+
+def _members_among(conn, team_id: str, user_ids: set[str]) -> set[str]:
+    """The ids in ``user_ids`` that are in the team now, in one query.
+
+    Read as ``team_role_for`` reads it: any membership row, or the team's owner.
+
+    Args:
+        conn: Open connection.
+        team_id: Team UUID.
+        user_ids: Candidate ids.
+
+    Returns:
+        set[str]: Those in the team.
+    """
+    ids = sorted(u for u in user_ids if u)
+    if not ids:
+        return set()
+    rows = conn.execute(
+        text(
+            "SELECT user_id FROM team_members "
+            "WHERE team_id = CAST(:team_id AS uuid) AND user_id = ANY(:ids) "
+            "UNION SELECT owner_id FROM teams WHERE id = CAST(:team_id AS uuid) AND owner_id = ANY(:ids)"
+        ),
+        {"team_id": team_id, "ids": ids},
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _paused_reason(owner_id: str | None, members: set[str]) -> str | None:
+    """Why a grant is paused: its owner, a person, is no longer in the team; None while it works.
+
+    The grant gives access again once the owner is re-added.
+    """
+    if owner_id and not is_principal_id(owner_id) and owner_id not in members:
+        return PAUSED_OWNER_LEFT
+    return None
+
+
 def _user_labels(conn, user_ids: set[str]) -> dict[str, str]:
     """``user_id -> email`` for the users on file with an email."""
     ids = [u for u in user_ids if u]
@@ -734,7 +775,9 @@ class TeamGrants(Resource):
         (``personal_shared``: grants are only ever on members' personal
         items). A Viewer or Editor sees whole-team grants and grants aimed at
         them; an Admin, the Owner, or someone with ``share`` on the resource,
-        sees every grant. The envelope gives the caller's ``role``
+        sees every grant. ``paused_reason`` is ``owner_left`` on a grant whose
+        item's owner is no longer in the team (it gives no access until they
+        are re-added), else null. The envelope gives the caller's ``role``
         (``owner|admin|editor|viewer``) and ``team_role`` in today's names.
         """
         user = _current_user()
@@ -763,6 +806,9 @@ class TeamGrants(Resource):
                     # Every grant is on a member's personal item ("Personal, shared by members").
                     g["origin"] = "personal_shared"
                     visible.append(g)
+                present = _members_among(conn, team_id, {g.get("owner_id") for g in visible})
+                for g in visible:
+                    g["paused_reason"] = _paused_reason(g.get("owner_id"), present)
                 labels = _user_labels(
                     conn,
                     {

@@ -288,7 +288,8 @@ class TestTeamScope:
         grants = TeamResourceGrantsRepository(pg_conn)
         scope = TeamScopeRepository(pg_conn)
         members.add_member(team["id"], "bob", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        rid = str(AgentsRepository(pg_conn).create("alice", "a", "published")["id"])
         grants.grant(team["id"], "agent", rid, owner_id="alice", granted_by="alice")
         assert scope.visible_resource_ids("bob", "agent") == {rid}
         # A non-member sees nothing.
@@ -317,7 +318,10 @@ class TestTeamScope:
         scope = TeamScopeRepository(pg_conn)
         members.add_member(t1["id"], "bob", role="team_member")
         members.add_member(t2["id"], "bob", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        rid = str(UserToolsRepository(pg_conn).create("alice", "api_tool")["id"])
         grants.grant(t1["id"], "tool", rid, owner_id="alice", granted_by="alice")  # viewer
         grants.grant(
             t2["id"], "tool", rid, owner_id="alice", granted_by="alice", access_level="editor"
@@ -338,7 +342,8 @@ class TestPerMemberSharing:
         scope = TeamScopeRepository(pg_conn)
         members.add_member(team["id"], "bob", role="team_member")
         members.add_member(team["id"], "carol", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        rid = str(AgentsRepository(pg_conn).create("alice", "a", "published")["id"])
         grants.grant(
             team["id"], "agent", rid, owner_id="alice", granted_by="alice", target_user_id="bob"
         )
@@ -355,7 +360,8 @@ class TestPerMemberSharing:
         scope = TeamScopeRepository(pg_conn)
         members.add_member(team["id"], "bob", role="team_member")
         members.add_member(team["id"], "carol", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        rid = str(AgentsRepository(pg_conn).create("alice", "a", "published")["id"])
         grants.grant(team["id"], "agent", rid, owner_id="alice", granted_by="alice")  # whole team
         grants.grant(
             team["id"], "agent", rid, owner_id="alice", granted_by="alice",
