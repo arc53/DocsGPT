@@ -1,4 +1,4 @@
-"""Celery tasks on a team's sources (STEP1_PLAN D14; WP4b).
+"""Celery tasks on a team's sources.
 
 A team's source runs as the team's principal, so its ingest slots are keyed
 by the person who started it (one busy member doesn't block the team), and a

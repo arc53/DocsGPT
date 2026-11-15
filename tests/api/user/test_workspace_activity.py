@@ -1,4 +1,4 @@
-"""Activity and artifact lists by workspace (STEP1_PLAN D6, R2, R5; WP6).
+"""Activity and artifact lists by workspace.
 
 Now, planned and history show one workspace: the header picks it, Personal shows
 nothing of any team, and someone who left a team sees none of its things.

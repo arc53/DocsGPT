@@ -1,4 +1,4 @@
-"""An agentless chat's tools per workspace (STEP1_PLAN D8), and how the executor names a team owner."""
+"""An agentless chat's tools per workspace, and how the executor names a team owner."""
 
 from __future__ import annotations
 

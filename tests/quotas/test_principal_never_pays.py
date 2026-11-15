@@ -1,4 +1,4 @@
-"""A team principal is never a payer: every run on a team agent bills a person (STEP1_PLAN D9, risk R4).
+"""A team principal is never a payer: every run on a team agent bills a person.
 
 A team's agent runs as the team's principal (its sources, tools, prompt and model), but ``token_usage.user_id``
 is always a person: the member chatting, the person who set a schedule, or whoever pays for the agent's

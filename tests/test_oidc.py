@@ -1699,7 +1699,7 @@ PRINCIPAL = "__team__3f1f2bd6-8a87-4f7e-9c2b-2f76c1a4f0d3"
 
 @pytest.mark.unit
 class TestTeamPrincipalIsNotALogin:
-    """A claim that names a team principal (or a row that is not a person) never signs in (plan WP2, R1)."""
+    """A claim that names a team principal (or a row that is not a person) never signs in."""
 
     @pytest.fixture(autouse=True)
     def _db(self, db_mocks):

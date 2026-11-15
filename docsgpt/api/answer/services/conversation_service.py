@@ -52,7 +52,7 @@ _FROM_AGENT: Any = object()
 def agent_chat_team_id(
     conn: Any, *, agent_id: Optional[str], api_key: Optional[str], chatter: Optional[str]
 ) -> Optional[str]:
-    """The team workspace a new chat with an agent lives in, for this chatter (D8).
+    """The team workspace a new chat with an agent lives in, for this chatter.
 
     A team agent's chat lives in its team when the chatter is a member or the
     team's own principal (an API-key, widget or ``/v1`` run). Anyone else

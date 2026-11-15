@@ -1,4 +1,4 @@
-"""Prompts per workspace (STEP1_PLAN D5, D6, WP4c)."""
+"""Prompts per workspace: a list shows one workspace, a create lands in the one the request names."""
 
 from __future__ import annotations
 

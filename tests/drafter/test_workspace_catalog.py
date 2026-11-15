@@ -1,4 +1,4 @@
-"""The drafter's catalogue follows the workspace (STEP1_PLAN WP4a, D6/D7).
+"""The drafter's catalogue follows the workspace.
 
 Personal never offers a team's items; a team offers the team's own and nothing personal, since a team agent may
 reference only its team's items. An agent being edited decides the workspace by itself.

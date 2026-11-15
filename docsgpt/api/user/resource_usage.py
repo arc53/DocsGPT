@@ -385,7 +385,7 @@ def _collect(
 
     team_access = visible_with_access(conn, user_id, "agent")
     team_agents = sorted(team_access)
-    # A team's own agents open by the caller's role in that team (D4), not by a
+    # A team's own agents open by the caller's role in that team, not by a
     # grant; read only once a team's agent turns up, so a Personal list costs nothing more.
     roles_box: list[dict[str, Optional[str]]] = []
 

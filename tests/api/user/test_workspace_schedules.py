@@ -1,4 +1,4 @@
-"""Schedules on a team's agents (STEP1_PLAN WP4a, D9).
+"""Schedules on a team's agents.
 
 A schedule on a team agent is stored under the person who set it, who pays for its runs; the run still acts as
 the team's principal. Editors and up manage the team agent's schedules, the list is per workspace, and a run goes

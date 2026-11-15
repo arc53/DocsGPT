@@ -283,7 +283,7 @@ def extract_graph_for_source(
             other pending chunks are left as they are. ``None`` for a build.
         payer: The person every extraction call bills (``billed_to``), when
             not the owner: whoever added the knowledge, since a team's
-            principal never pays (STEP1_PLAN D10).
+            principal never pays.
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,

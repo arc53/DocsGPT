@@ -31,7 +31,7 @@ LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
 
 
 def access_payer_fields(ra: ResourceAccess, agent: dict, user: str, *, turning_on: bool) -> dict:
-    """The ``access_payer_id`` write that goes with outside access a team Admin sets up (D9).
+    """The ``access_payer_id`` write that goes with outside access a team Admin sets up: that Admin pays for it.
 
     A team has no credit, so whoever turns on a team agent's key, public link
     or webhook pays for the traffic that comes in through it. Rotating

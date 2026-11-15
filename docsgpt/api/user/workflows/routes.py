@@ -286,7 +286,7 @@ def _new_node_ref_denied(
 
 
 class GraphRefused(AccessDenied):
-    """A refused graph save that answers with its own JSON body (a workspace mismatch, D7)."""
+    """A refused graph save that answers with its own JSON body (a workspace mismatch)."""
 
     def __init__(self, body: Dict, status: int) -> None:
         super().__init__(status, body["message"])
@@ -593,7 +593,7 @@ def plan_graph_save(
         workflow = WorkflowsRepository(conn).get_for_update(str(workflow["id"])) or workflow
     nodes = normalize_agent_node_json_schemas(graph["nodes"])
     previous_nodes = stored_graph(conn, workflow)[0] if workflow is not None else []
-    # A team's workflow holds only the team's own items (D7).
+    # A team's workflow holds only the team's own items.
     mismatch = workspace_graph_refusal(conn, owner_id, previous_nodes, nodes, caller)
     if mismatch is not None:
         return mismatch

@@ -246,7 +246,7 @@ def holds_owner_rights(ra: ResourceAccess) -> bool:
     return ra.access == "owner" or (ra.is_team_item and ra.can("edit_credentials"))
 
 
-# What a team workspace can't hold in v1 (STEP1_PLAN §1.1): each runs on one
+# What a team workspace can't hold in v1: each runs on one
 # person's account or device, and a team has no connections of its own yet.
 CODE_OAUTH_PERSONAL_ONLY = "oauth_personal_only"
 CODE_REMOTE_DEVICE_PERSONAL_ONLY = "remote_device_personal_only"
@@ -579,7 +579,7 @@ def check_oauth_mcp_owner_only(
     connection change on a server that is (or would become) OAuth is
     owner-only. A team's tool has no person-owner (``access`` is never
     ``owner`` on it), so nobody changes an OAuth server there: a team can't
-    hold one in v1 (STEP1_PLAN §4).
+    hold one in v1.
 
     Args:
         ra: The caller's access to the tool.

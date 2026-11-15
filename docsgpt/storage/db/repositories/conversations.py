@@ -65,7 +65,7 @@ def team_visible_sql(alias: str = "", user_param: str = "user_id") -> str:
     A Personal chat (``team_id`` NULL) always passes. A team chat passes for a
     current member or owner of that team, and for the team's own principal (an
     API-key or widget chat runs as it). Someone who left the team stops
-    seeing their chats there, and sees them again if re-added (T13).
+    seeing their chats there, and sees them again if re-added.
 
     Args:
         alias: The ``conversations`` table alias in the query, or "" when unaliased.

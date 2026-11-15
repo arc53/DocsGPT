@@ -1,4 +1,4 @@
-"""Chat in a team workspace (STEP1_PLAN D8, WP6).
+"""Chat in a team workspace.
 
 A member chats with a team agent as themselves (they own and pay for the chat)
 while the agent runs as its owner, the team's principal. A chat lives in one
@@ -310,7 +310,7 @@ class TestExMemberLosesTheChat:
         proc = _processor({"question": "q", "conversation_id": cid}, "vera")
         with pytest.raises(ValueError, match="not found"):
             proc._load_conversation_history()
-        # Re-added, the chat is theirs again (T13).
+        # Re-added, the chat is theirs again.
         TeamMembersRepository(use_conn).add_member(tid, "vera")
         assert ConversationService().get_conversation(cid, "vera") is not None
 

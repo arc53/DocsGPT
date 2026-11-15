@@ -1,4 +1,4 @@
-"""``used_by`` on a team's items lists the team's agents to its members (STEP1_PLAN WP4a).
+"""``used_by`` on a team's items lists the team's agents to its members.
 
 A team's agents are reached by team role, not by a grant, so a member sees which of them use a team item, and
 may open the editor of each from the Editor role up. Someone outside the team learns nothing about them.

@@ -17,7 +17,7 @@ the wait for a stall and queue it again.
 
 A team's source runs as the team's principal; its slots are counted against
 the person who started it (``actor_id``), so one busy member doesn't hold up
-the whole team (STEP1_PLAN D14). One nobody started (a scheduled sync with no
+the whole team. One nobody started (a scheduled sync with no
 payer named) counts against the team.
 """
 

@@ -1,4 +1,4 @@
-"""Tools per workspace (STEP1_PLAN D5, D6, §4 owner sites, WP4c).
+"""Tools per workspace, and what a team's tool allows where a personal one asks for its owner.
 
 A team's tools are owned by its principal and reached by team role only; Personal never lists them.
 """
@@ -264,7 +264,7 @@ class TestPersonalCreate:
 
 
 # ---------------------------------------------------------------------------
-# Edits by id and the §4 owner sites
+# Edits by id, and the places a personal tool asks for its owner
 # ---------------------------------------------------------------------------
 def _pinned_actions():
     return [{

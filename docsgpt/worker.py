@@ -1694,7 +1694,7 @@ def _team_payer(conn: Any, owner: str, created_by: Optional[str]) -> Optional[st
 
 
 def _knowledge_payer(conn: Any, owner: str, actor_id: Optional[str], created_by: Optional[str]) -> Optional[str]:
-    """Who pays for model use a source's knowledge needs (graph extraction), STEP1_PLAN D10.
+    """Who pays for model use a source's knowledge needs (graph extraction): a person, never a team.
 
     The person who started it; with nobody (a scheduled sync, a task queued
     before ``actor_id`` existed), a person's source bills its owner and a
@@ -2395,7 +2395,7 @@ SYNC_NO_PAYER = "sync_no_payer"
 
 
 def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any) -> Optional[str]:
-    """Who a team source's scheduled sync bills, flagging the source when nobody can (STEP1_PLAN D10).
+    """Who a team source's scheduled sync bills, flagging the source when nobody can.
 
     The person who added the source pays while they are still an Editor or
     above in the team. Otherwise the sync is skipped and the source carries
@@ -6761,7 +6761,7 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False, acto
             to the new chunk ids by content first (``sync_graph_to_chunks``)
             and only new text is extracted.
         actor_id: Who added the knowledge; the extraction's model calls bill
-            them and its events reach them (STEP1_PLAN D10).
+            them and its events reach them; a team never pays.
 
     Returns:
         ``{"status": "unavailable"}`` when GraphRAG is off;

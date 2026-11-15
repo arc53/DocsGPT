@@ -817,7 +817,7 @@ class TeamGrants(Resource):
                     ra = require(conn, resource_type, resource_id, user, "share")
                 except AccessDenied as denied:
                     # A team's own item has no ``share``: its members reach it by their
-                    # team role and it has no per-item people (T6). Said only to someone
+                    # team role and it has no per-item people. Said only to someone
                     # who can see it (a 403, never a 404).
                     if denied.status == 403 and is_principal_id(resource_owner(conn, resource_type, resource_id)):
                         return make_response(

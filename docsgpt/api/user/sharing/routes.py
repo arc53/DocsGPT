@@ -160,7 +160,7 @@ def _find_reusable_share_agent(
 
 
 def _team_chat_share_refusal(conn, conversation: dict, user: str, is_promptable: bool):
-    """The 403 for sharing a team chat in a way D13 doesn't allow, or None.
+    """The 403 for sharing a team chat other than as an Admin's read-only snapshot, or None.
 
     Args:
         conn: Open connection.
@@ -248,7 +248,7 @@ class ShareConversation(Resource):
                         404,
                     )
                 conv_pg_id = str(conversation["id"])
-                # Outward exposure belongs to the team (D13): a team chat's
+                # Outward exposure belongs to the team: a team chat's
                 # link is a read-only snapshot an Admin makes; the promptable
                 # link, which mints an agent and key, stays Personal.
                 if refusal := _team_chat_share_refusal(conn, conversation, user, is_promptable):

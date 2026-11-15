@@ -743,7 +743,7 @@ class ToolExecutor:
         # The workflow row a node's tools belong to: its sponsors are checked
         # live, and a dropped tool is logged with why it doesn't run.
         self.tool_holder: Optional[Dict] = None
-        # The team workspace an agentless chat runs in (STEP1_PLAN D8), set by
+        # The team workspace an agentless chat runs in (a chat uses only its own workspace's items), set by
         # the chat after constructing the executor; None is Personal. It picks
         # the chat's stored tools: the team's own in a team, never a team's in
         # Personal. Agent-bound runs ignore it (the agent's tools apply).

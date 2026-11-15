@@ -1,4 +1,4 @@
-"""Ingest of a team's sources (STEP1_PLAN D10, D14, D15; WP4b).
+"""Ingest of a team's sources.
 
 A team's source is owned by the team's principal, whose event stream nobody
 reads. The job runs as the principal (paths, rows) and names the person who

@@ -1,6 +1,6 @@
 """The workspace branch of ``resource_access``: team-owned items resolve from the caller's team role only.
 
-The expected action table below is copied from STEP1_PLAN §4 on purpose, not imported, so a change to
+The expected action table below is the decided one, copied on purpose, not imported, so a change to
 ``WORKSPACE_ACTIONS`` that drifts from the decided table fails here.
 """
 
@@ -44,7 +44,7 @@ from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.workspaces.principal import principal_id
 
-# STEP1_PLAN §4, WORKSPACE_ACTIONS: the weakest team role per action on a team-owned item.
+# WORKSPACE_ACTIONS as decided: the weakest team role per action on a team-owned item.
 EXPECTED = {
     "agent": {
         "viewer": {"use", "pin"},

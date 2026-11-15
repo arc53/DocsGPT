@@ -1929,7 +1929,7 @@ class EnableSourceGraphRAG(Resource):
                 idempotency_key=graph_extraction_key(
                     resolved_source_id, _source_updated_at(updated)
                 ),
-                # The extraction's model calls bill whoever turned it on (STEP1_PLAN D10).
+                # The extraction's model calls bill whoever turned it on, never a team.
                 actor_id=user,
             )
         except Exception as err:

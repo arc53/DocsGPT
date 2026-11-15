@@ -315,7 +315,7 @@ def _folder_not_accessible():
 
 
 def _mismatch_response(conn, owner_id: Optional[str], refs: list, user: str):
-    """400 ``workspace_mismatch`` for refs a team agent may not hold (D7), or None.
+    """400 ``workspace_mismatch`` for refs a team agent may not hold (only the team's own items), or None.
 
     Args:
         conn: Open database connection.
@@ -929,7 +929,7 @@ class GetAgents(Resource):
                 )
                 agents_repo = AgentsRepository(conn)
                 if workspace.is_team:
-                    # The team's own agents, each with the caller's team role (D6).
+                    # The team's own agents, each with the caller's team role; a list shows one workspace.
                     agents = agents_repo.list_for_user(workspace.owner_id)
                     team_shared: dict = {}
                     shared_agents: list = []
@@ -1239,7 +1239,7 @@ class CreateAgent(Resource):
             key = str(uuid.uuid4()) if is_published else ""
             with db_session() as conn:
                 # The agent lands in the current workspace: in a team it needs
-                # the Editor role and is owned by the team's principal (D5).
+                # the Editor role and is owned by the team's principal.
                 try:
                     workspace = current_workspace(conn)
                     require_workspace_role(workspace, "editor")
@@ -1312,7 +1312,7 @@ class CreateAgent(Resource):
                 ) + extra_source_ids
                 if agent_type == "workflow":
                     folder_refs = []
-                # A team agent holds the team's own items only (D7).
+                # A team agent holds the team's own items only.
                 prompt_ref = data.get("prompt_id")
                 mismatch = _mismatch_response(
                     conn,
@@ -1413,7 +1413,7 @@ class CreateAgent(Resource):
                 )
                 kwargs["created_by"] = created_by
                 if key and workspace.is_team:
-                    # The Admin who publishes it with a key pays for that traffic (D9).
+                    # The Admin who publishes it with a key pays for that traffic.
                     kwargs["access_payer_id"] = user
                 agent_row = AgentsRepository(conn).create(
                     owner_id,
@@ -2023,7 +2023,7 @@ class UpdateAgent(Resource):
                     ([update_fields["source_id"]] if update_fields.get("source_id") else [])
                     + (update_fields.get("extra_source_ids") or [])
                 )
-                # A team agent takes on only the team's own items (D7); refs
+                # A team agent takes on only the team's own items; refs
                 # already on it stay, like the other gates here.
                 if ra.is_team_item:
                     existing_refs = {(t, str(i).lower()) for t, i in agent_refs(existing_agent)}
@@ -2168,7 +2168,7 @@ class UpdateAgent(Resource):
                         update_fields.pop("key", None)
                         newly_generated_key = None
                 if newly_generated_key:
-                    # The Admin who publishes a team agent with a key pays for it (D9).
+                    # The Admin who publishes a team agent with a key pays for it.
                     update_fields.update(access_payer_fields(ra, existing_agent, user, turning_on=True))
                 refusal = sponsor_refusal(
                     conn,
@@ -2831,7 +2831,7 @@ class AdoptAgent(Resource):
                     if val not in (None, ""):
                         create_kwargs[col] = val
                 if workspace.is_team:
-                    # A team agent holds the team's own items only (D7): the
+                    # A team agent holds the team's own items only: the
                     # template's sources and stored prompt don't come along.
                     for col, kind in (("source_id", "source"), ("prompt_id", "prompt")):
                         if create_kwargs.get(col) and workspace_mismatches(

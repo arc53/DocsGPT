@@ -108,9 +108,9 @@ ACTIONS: dict[str, dict[str, str]] = {
     },
 }
 
-# Weakest *team* role per action on an item a team workspace owns (STEP1_PLAN §4, the T4 table).
+# Weakest *team* role per action on an item a team workspace owns.
 # The Owner ranks above Admin and so has every row. There are no switches here, and no ``share``
-# or ``manage_settings``: a team item has no per-item people (T6). ``folder`` is the team's one
+# or ``manage_settings``: a team item has no per-item people. ``folder`` is the team's one
 # folder tree (``docsgpt/api/user/folders``); ``resolve`` doesn't serve it.
 WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
     "agent": {
@@ -287,7 +287,7 @@ def workspace_allowed_actions(resource_type: str, team_role: Optional[str]) -> s
 def _access_payload(
     access: Optional[str], actions: Iterable[str], team_id: Optional[str], team_role: Optional[str]
 ) -> dict:
-    """The access fields of an item payload (STEP1_PLAN §6)."""
+    """The access fields of an item payload."""
     if team_id:
         origin = "team"
     elif access == "owner":
@@ -805,7 +805,7 @@ def sponsor_state(
         With no usable record both are None.
     """
     if not holder or not resource_id or is_principal_id(holder.get("user_id")):
-        # A team holder never runs anything as a sponsor (D7), whatever is recorded.
+        # A team holder never runs anything as a sponsor, whatever is recorded.
         return None, None
     recorded = holder.get("resource_sponsors") or {}
     sponsor = recorded.get(sponsor_key(resource_type, str(resource_id))) or recorded.get(
@@ -1190,7 +1190,7 @@ def plan_sponsors(
     Removed refs drop out. A confirmed key that names none of the refs the
     caller could sponsor lands in ``unexpected``.
 
-    A team holder (``owner_id`` a principal) takes no sponsors (D7): a newly
+    A team holder (``owner_id`` a principal) takes no sponsors: a newly
     attached resource the team can't use goes to ``not_allowed``, one already
     attached stays stopped, and every confirmed key is ``unexpected``. The
     routes refuse such refs first with :func:`workspace_mismatch_refusal`.
@@ -2165,7 +2165,7 @@ def borrowed_refusal(
 # --- Workspace references -------------------------------------------------------
 #
 # A team agent or workflow runs as the team's principal, so everything it
-# references must be the team's own (D7): a member's personal source or tool
+# references must be the team's own: a member's personal source or tool
 # would otherwise run for the whole team (and for its outside traffic) with no
 # sponsor to answer for it. Presets and builtin tools belong to no one and
 # always pass. A personal holder may still reference a team item its owner can

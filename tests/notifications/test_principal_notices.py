@@ -1,4 +1,4 @@
-"""Notices addressed to a team principal are rerouted to a person (STEP1_PLAN WP7, risk R11).
+"""Notices addressed to a team principal are rerouted to a person, never lost.
 
 A team's items are owned by its principal, whose event stream nobody reads. A notice to it goes to the person who
 started the work; with nobody, a failure goes to the team's admins and owner, and anything else is dropped. Nothing

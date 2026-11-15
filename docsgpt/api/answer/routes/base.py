@@ -771,7 +771,7 @@ class BaseAnswerResource:
                     "Input guardrail scan failed; persisting the question unredacted"
                 )
 
-        # The workspace a new conversation is created in (D8); without it the agent's applies.
+        # The workspace a new conversation is created in; without it the agent's applies.
         team_kwargs: Dict[str, Any] = {"team_id": workspace_team_id} if workspace_team_id else {}
         wal_eligible = should_persist and not _continuation
         if wal_eligible:

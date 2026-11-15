@@ -205,7 +205,7 @@ def test_round_trip_moves_owner_filings_onto_the_agent_column_and_back(pg_conn):
 
 
 def test_upgrade_converts_a_database_stamped_at_the_earlier_draft(pg_conn):
-    """The draft gave folders a kind; re-running the upgrade over it keeps folders and filings (R9)."""
+    """The draft gave folders a kind; re-running the upgrade over it keeps folders and filings."""
     with _ops(pg_conn) as migration:
         # Put the draft's shape back: a kind on folders, two kinds of filing, a plain folder FK.
         pg_conn.execute(text("DROP INDEX folders_sibling_name_uidx"))

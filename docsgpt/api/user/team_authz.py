@@ -17,7 +17,7 @@ Key differences from the global resolver, all deliberate:
   would grant team access during an outage).
 
 Team roles rank Viewer < Editor < Admin (``docsgpt.workspaces.roles``); a
-route asks for the weakest stored role it needs. ``team_member`` means "any
+route asks for the weakest stored role it needs; ``team_viewer`` means "any
 member". This plane guards team management (members, team settings, grants
 lists); access to a team's *items* never comes from here, and the instance
 admin short-circuit does not reach them (``resource_access.resolve``).
@@ -34,7 +34,7 @@ from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.storage.db.repositories.team_members import (
     ROLE_TEAM_ADMIN,
     ROLE_TEAM_EDITOR,
-    ROLE_TEAM_MEMBER,
+    ROLE_TEAM_VIEWER,
     TeamMembersRepository,
 )
 from docsgpt.storage.db.session import db_readonly
@@ -75,8 +75,9 @@ def has_team_role(token: dict | None, team_id: str | None, name: str) -> bool:
 
     A global ``admin`` satisfies any team role for team management
     (superuser over all teams' membership, not over their items).
-    ``team_member`` asks for any membership; the other names rank
-    ``team_viewer`` < ``team_editor`` < ``team_admin``. An unknown ``name``
+    The stored names rank ``team_viewer`` < ``team_editor`` < ``team_admin``,
+    so ``team_viewer`` asks for any membership (the legacy ``team_member`` reads
+    as a viewer). An unknown ``name``
     or stored role never passes.
 
     Args:
@@ -128,4 +129,4 @@ def require_team_role(name: str):
 
 team_admin_required = require_team_role(ROLE_TEAM_ADMIN)
 team_editor_required = require_team_role(ROLE_TEAM_EDITOR)
-team_member_required = require_team_role(ROLE_TEAM_MEMBER)
+team_member_required = require_team_role(ROLE_TEAM_VIEWER)

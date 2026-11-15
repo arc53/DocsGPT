@@ -6,7 +6,7 @@ under the owner's ``user_id`` whoever creates it, and managing it needs
 caller made themselves (e.g. via the chat scheduler tool on a shared agent)
 stays theirs to manage.
 
-A team's agent is the exception (D9): a team pays for nothing, so a schedule
+A team's agent is the exception: a team pays for nothing, so a schedule
 on it is stored under the member who set it, who pays for its runs (the run
 still acts as the team's principal). Its Editors and up manage every such
 schedule, and the list is per workspace: a team's agents' schedules show in

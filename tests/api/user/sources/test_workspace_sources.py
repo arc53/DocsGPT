@@ -1,4 +1,4 @@
-"""Sources in a team workspace (STEP1_PLAN D5, D6, D15, WP4b).
+"""Sources in a team workspace.
 
 A team's sources are owned by the team's principal and name who added them
 (``created_by``). Lists and creates follow the ``X-DocsGPT-Workspace`` header;

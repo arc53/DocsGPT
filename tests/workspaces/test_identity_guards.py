@@ -1,4 +1,4 @@
-"""A team principal is never a person: nobody signs in, gets a token or is administered as one (plan WP2, R1).
+"""A team principal is never a person: nobody signs in, gets a token or is administered as one.
 
 The principal (``users.kind = 'team'``, ``user_id = '__team__' || team_id``)
 owns a team's items, so an identity that resolves to it would own every one of

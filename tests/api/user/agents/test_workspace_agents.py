@@ -1,4 +1,4 @@
-"""Agents and workflows in a team workspace (STEP1_PLAN WP4a: D5, D6, D7, D9, D15).
+"""Agents and workflows in a team workspace.
 
 A team's agents are owned by the team's principal and reached by team role only. Creates in a team need the
 Editor role and record who added the item; a team agent references the team's own items only; outward exposure

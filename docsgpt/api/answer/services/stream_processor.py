@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatWorkspaceError(Exception):
-    """A chat refused for its workspace (D8): an HTTP status, a stable code and a message.
+    """A chat refused for its workspace: an HTTP status, a stable code and a message.
 
     ``workspace_not_found`` (404): the request names a team the caller is not in.
     ``workspace_mismatch`` (409): the agent lives in another workspace than the chat.
@@ -91,7 +91,7 @@ class ChatWorkspaceError(Exception):
 
 
 def item_in_chat_workspace(owner: Optional[str], team_id: Optional[str]) -> bool:
-    """Whether an item owned by ``owner`` belongs to a chat in workspace ``team_id`` (D8).
+    """Whether an item owned by ``owner`` belongs to a chat in workspace ``team_id``.
 
     A team chat takes only that team's items (owned by its principal); a
     Personal chat takes no team's items.
@@ -626,7 +626,7 @@ class StreamProcessor:
         # Set by _get_agent_key once access checks pass; read for keyless runs.
         self._authorized_agent_row: Optional[Dict[str, Any]] = None
         # The team workspace the chat lives in (``conversations.team_id``),
-        # None for Personal; set by _configure_agent (D8).
+        # None for Personal; set by _configure_agent.
         self.workspace_team_id: Optional[str] = None
         # Set by _get_agent_key: the team whose agent this is, when the caller
         # reaches it as a member or as the team's own principal.
@@ -1409,7 +1409,7 @@ class StreamProcessor:
                             "team access check failed for agent run", exc_info=True
                         )
                         is_team_shared = False
-                # The team's chat (D8): a member, or the team's own principal
+                # The team's chat: a member, or the team's own principal
                 # (an API-key or /v1 run). A link user's chat stays theirs.
                 self._agent_team_id = (
                     team_of_principal(agent_owner) if (is_owner or via_team_role) else None
@@ -1650,7 +1650,7 @@ class StreamProcessor:
             return []
         folders = active_folders if isinstance(active_folders, list) else [active_folders]
         # A team chat reads the team's own folders (its one tree); a Personal
-        # chat the caller's, without any team's sources filed there (D8).
+        # chat the caller's, without any team's sources filed there.
         team_id = getattr(self, "workspace_team_id", None)
         folder_owner = principal_id(team_id) if team_id else owner
         try:
@@ -1702,7 +1702,7 @@ class StreamProcessor:
             try:
                 with db_readonly() as conn:
                     permitted = can_access(conn, "source", str(sid), owner)
-                    # The chat's workspace (D8): a team chat searches only that
+                    # The chat's workspace: a team chat searches only that
                     # team's sources, a Personal chat no team's.
                     if permitted and not item_in_chat_workspace(
                         resource_owner(conn, "source", str(sid)), getattr(self, "workspace_team_id", None)
@@ -1819,7 +1819,7 @@ class StreamProcessor:
     def _chat_workspace(
         self, caller: Optional[str], *, has_agent: bool, agent_team: Optional[str] = None
     ) -> Optional[str]:
-        """The team workspace this chat lives in, None for Personal (D8).
+        """The team workspace this chat lives in, None for Personal.
 
         A conversation that exists keeps the workspace it was created in. A
         new one takes the agent's workspace when there is an agent (for a
@@ -1865,7 +1865,7 @@ class StreamProcessor:
         """An agentless request's ``prompt_id`` if it belongs to the chat's workspace, else ``"default"``.
 
         Presets pass through. A custom prompt must be the team's in a team
-        chat and must not be a team's in a Personal one (D8); access is then
+        chat and must not be a team's in a Personal one; access is then
         checked as before by :func:`authorized_prompt_id`.
         """
         if prompt_id is None or prompt_id == "":
@@ -1950,7 +1950,7 @@ class StreamProcessor:
             if self._agent_data.get("_id"):
                 self.agent_id = str(self._agent_data.get("_id"))
             # An API key runs as the agent's owner, so its chat is the agent's
-            # workspace whatever the request names (D5, D8).
+            # workspace whatever the request names.
             if self.data.get("api_key"):
                 agent_team = team_of_principal(self._agent_data.get("user"))
             else:
@@ -2436,7 +2436,7 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             agent_id=self.agent_id,
         )
-        # In-chat tools come from the chat's workspace (D8; read by ToolExecutor).
+        # In-chat tools come from the chat's workspace (read by ToolExecutor).
         executor.workspace_team_id = getattr(self, "workspace_team_id", None)
         return executor
 
@@ -2701,7 +2701,7 @@ class StreamProcessor:
             self.initial_user_id = key_owner
             self.decoded_token = {"sub": key_owner}
 
-        # A team chat carries on only for someone still in its team (T13); its
+        # A team chat carries on only for someone still in its team; its
         # in-chat tools stay the team's.
         self.workspace_team_id = self._resume_workspace(conversation_id)
 
@@ -2822,7 +2822,7 @@ class StreamProcessor:
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
-        # In-chat tools come from the chat's workspace (D8; read by ToolExecutor).
+        # In-chat tools come from the chat's workspace (read by ToolExecutor).
         tool_executor.workspace_team_id = getattr(self, "workspace_team_id", None)
         # A turn that offered questions still does after its resume when the
         # resuming client draws forms too; one that asked already can't again.
@@ -3167,7 +3167,7 @@ class StreamProcessor:
             api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
-        # In-chat tools come from the chat's workspace (D8; read by ToolExecutor).
+        # In-chat tools come from the chat's workspace (read by ToolExecutor).
         tool_executor.workspace_team_id = getattr(self, "workspace_team_id", None)
         # A chat agent can ask the user clarifying questions only when the
         # client draws them as forms (the web app); every other caller gets

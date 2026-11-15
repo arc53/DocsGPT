@@ -1,8 +1,8 @@
-"""Conversations by workspace (STEP1_PLAN D5, D6, D8, D13, R2, R5; WP6).
+"""Conversations by workspace.
 
 Lists and search show one workspace's chats: the header picks it, Personal shows
 chats with no team. A team chat is readable only while its owner is still in the
-team; it comes back if they are re-added (T13). A team chat's share link is a
+team; it comes back if they are re-added. A team chat's share link is a
 read-only snapshot an Admin makes.
 """
 

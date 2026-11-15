@@ -6,7 +6,7 @@ own agents (``use`` on a source or prompt, ``use_in_own`` on a tool), the same
 rule ``ref_attachable`` applies when an agent is saved. That is Personal; in a
 team workspace (the agent being edited is a team's, or the request names the
 team) they are the team's own items only, since a team agent may hold nothing
-else (D7), and Personal never offers a team's items. Default and builtin
+else, and Personal never offers a team's items. Default and builtin
 tools are offered as the agent picker offers them. Nothing here writes: the
 list routes are not called because some of them have side effects (the agents
 listing upserts the user row).
