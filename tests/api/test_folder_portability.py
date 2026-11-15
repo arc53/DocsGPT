@@ -1,9 +1,10 @@
 """Knowledge folders in agent YAML export/import (docsgpt.api.user.agents.portability).
 
-A folder travels by name (and its path) as a ``spec.sources`` entry with
-``type: folder``. Import matches the importer's own source folders, by path
-first, then by name; an unmatched one is dropped with a warning, which the
-plan shows too. Real SQL on ``pg_conn``.
+A folder travels by name as a ``spec.sources`` entry with ``type: folder``
+and a ``key`` (``folder-N``, how a workflow node names it); the exporter's own
+folder also carries its path, anyone else's its name alone. Import matches the
+importer's own source folders, by path first, then by name; an unmatched one is
+dropped with a warning, which the plan shows too. Real SQL on ``pg_conn``.
 """
 
 from __future__ import annotations
@@ -84,8 +85,31 @@ class TestClassic:
         sources = serialize_agent(pg_conn, agent, OWNER)["spec"]["sources"]
         assert sources == [
             {"name": "KB", "type": "file", "ref": str(src["id"])},
-            {"name": "EU", "type": "folder", "path": ["Carriers", "EU"], "ref": eu},
+            {"name": "EU", "type": "folder", "key": "folder-0", "path": ["Carriers", "EU"], "ref": eu},
         ]
+
+    def test_another_users_export_carries_the_folder_name_only(self, pg_conn):
+        # An editor (or the agent's owner, for a teammate's folder) exporting
+        # someone else's folder learns nothing of its owner's tree.
+        top = _folder(pg_conn, OWNER, "Private clients")
+        eu = _folder(pg_conn, OWNER, "EU", parent=top)
+        agent = _classic(pg_conn, knowledge_folder_ids=[eu])
+        sources = serialize_agent(pg_conn, agent, OWNER, exporter=IMPORTER)["spec"]["sources"]
+        assert sources == [{"name": "EU", "type": "folder", "key": "folder-0"}]
+        assert "Private clients" not in agent_to_yaml(serialize_agent(pg_conn, agent, OWNER, exporter=IMPORTER))
+
+    def test_a_name_only_entry_imports_by_name(self, pg_conn):
+        top = _folder(pg_conn, OWNER, "Private clients")
+        eu = _folder(pg_conn, OWNER, "EU", parent=top)
+        agent = _classic(pg_conn, knowledge_folder_ids=[eu])
+        doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, OWNER, exporter=IMPORTER)))
+        theirs = _folder(pg_conn, IMPORTER, "eu")
+        plan = plan_import(pg_conn, IMPORTER, doc)
+        assert [s for s in plan["sources"] if s["type"] == "folder"] == [
+            {"name": "EU", "type": "folder", "status": "matched", "target_id": theirs}
+        ]
+        result = apply_import(pg_conn, IMPORTER, doc)
+        assert _folders(pg_conn, result["agent_id"], IMPORTER) == [theirs]
 
     def test_round_trip_keeps_the_folders(self, pg_conn):
         folder = _folder(pg_conn, OWNER, "Carriers")
@@ -142,18 +166,51 @@ class TestClassic:
 
 
 class TestWorkflow:
-    def test_node_folders_travel_by_name(self, pg_conn):
+    def test_node_folders_travel_by_key(self, pg_conn):
         folder = _folder(pg_conn, OWNER, "Carriers")
         agent, wf = _workflow_agent(pg_conn, [folder])
         export = serialize_agent(pg_conn, agent, OWNER)
         node = next(n for n in export["spec"]["workflow"]["nodes"] if n["id"] == "agent-1")
-        assert node["config"]["folders"] == ["Carriers"]
-        assert {"name": "Carriers", "type": "folder", "path": ["Carriers"], "ref": folder} in export["spec"]["sources"]
+        assert node["config"]["folders"] == ["folder-0"]
+        assert {"name": "Carriers", "type": "folder", "key": "folder-0", "path": ["Carriers"], "ref": folder} in (
+            export["spec"]["sources"]
+        )
         doc = parse_agent_yaml(agent_to_yaml(export))
         apply_import(pg_conn, OWNER, doc)
         assert _node_folders(pg_conn, wf["id"], OWNER) == [folder]
         # The agent row of a workflow agent keeps none.
         assert _folders(pg_conn, str(agent["id"]), OWNER) == []
+
+    def test_same_named_folders_keep_apart_on_each_node(self, pg_conn):
+        clients = _folder(pg_conn, OWNER, "Clients")
+        vendors = _folder(pg_conn, OWNER, "Vendors")
+        a = _folder(pg_conn, OWNER, "Archive", parent=clients)
+        b = _folder(pg_conn, OWNER, "Archive", parent=vendors)
+        agent, wf = _workflow_agent(pg_conn, [a])
+        # A second agent node reads the other "Archive".
+        nodes_repo = WorkflowNodesRepository(pg_conn)
+        node = next(n for n in nodes_repo.find_by_version(str(wf["id"]), 1) if n["node_id"] == "agent-1")
+        nodes_repo.bulk_create(
+            str(wf["id"]), 1,
+            [{"node_id": "agent-2", "node_type": "agent", "title": "Other",
+              "config": {**node["config"], "folders": [b]}}],
+        )
+        doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, OWNER)))
+        apply_import(pg_conn, OWNER, doc)
+        wf_row = WorkflowsRepository(pg_conn).get(str(wf["id"]), OWNER)
+        stored = WorkflowNodesRepository(pg_conn).find_by_version(str(wf_row["id"]), int(wf_row["current_graph_version"]))
+        by_node = {n["node_id"]: n["config"].get("folders") for n in stored if n["node_type"] == "agent"}
+        assert by_node == {"agent-1": [a], "agent-2": [b]}
+
+    def test_an_older_file_naming_node_folders_still_imports(self, pg_conn):
+        folder = _folder(pg_conn, OWNER, "Carriers")
+        agent, wf = _workflow_agent(pg_conn, [folder])
+        doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, OWNER)))
+        for entry in doc["spec"]["sources"]:
+            entry.pop("key", None)
+        next(n for n in doc["spec"]["workflow"]["nodes"] if n["id"] == "agent-1")["config"]["folders"] = ["Carriers"]
+        apply_import(pg_conn, OWNER, doc)
+        assert _node_folders(pg_conn, wf["id"], OWNER) == [folder]
 
     def test_an_importer_without_the_folder_gets_none(self, pg_conn):
         folder = _folder(pg_conn, OWNER, "Carriers")

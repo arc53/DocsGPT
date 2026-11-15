@@ -12,7 +12,8 @@ prompts by ``(name, content)``, custom models by
 applied twice updates rather than duplicating.
 
 Knowledge folders an agent (or a workflow agent node) reads live travel as
-``spec.sources`` entries with ``type: folder``, by name and path; import
+``spec.sources`` entries with ``type: folder``: by name, plus the path for the
+exporter's own folder only (another person's folder tree never leaves); import
 matches the importer's own source folders and drops the rest with a warning.
 
 Workflow agents additionally carry their graph under ``spec.workflow``.
@@ -459,20 +460,13 @@ def _is_folder_entry(entry: Any) -> bool:
     return isinstance(entry, dict) and entry.get("type") == FOLDER_ENTRY_TYPE
 
 
-def _serialize_folders(conn, folder_ids) -> list:
-    """Knowledge folders as ``spec.sources`` entries: ``{name, type: folder, path, ref}``.
+def _folder_key(index: int) -> str:
+    """A folder entry's ``key``: how a workflow node names it (``folder-N``)."""
+    return f"folder-{index}"
 
-    Exported whoever owns them (a teammate may have attached theirs): only
-    the name and the names on its path leave, and import matches the
-    importer's own folders by them. Folders that no longer exist are left out.
 
-    Args:
-        conn: Open database connection.
-        folder_ids: The holder's folder ids, in order.
-
-    Returns:
-        list: One entry per existing source folder.
-    """
+def _folder_entries(conn, folder_ids, exporter: Optional[str]) -> list[tuple[str, dict]]:
+    """``(folder_id, entry)`` per existing source folder, in order; see :func:`_serialize_folders`."""
     from sqlalchemy import text as _sql_text
 
     from docsgpt.api.user.folders.service import folder_paths
@@ -483,31 +477,50 @@ def _serialize_folders(conn, folder_ids) -> list:
         return []
     rows = conn.execute(
         _sql_text(
-            "SELECT id::text, user_id FROM folders WHERE id = ANY(CAST(:ids AS uuid[])) AND resource_type = 'source'"
+            "SELECT id::text, user_id, name FROM folders "
+            "WHERE id = ANY(CAST(:ids AS uuid[])) AND resource_type = 'source'"
         ),
         {"ids": ids},
     ).fetchall()
-    owner_of = {r[0].lower(): r[1] for r in rows}
-    paths: dict[str, dict] = {}
-    out = []
+    row_of = {r[0].lower(): (r[1], r[2]) for r in rows}
+    exporter_paths: Optional[dict] = None
+    out: list[tuple[str, dict]] = []
     for fid in dict.fromkeys(ids):
-        owner = owner_of.get(fid)
-        if owner is None:
+        if fid not in row_of:
             continue
-        if owner not in paths:
-            paths[owner] = folder_paths(FoldersRepository(conn).list_for_user(owner, "source"))
-        path = paths[owner].get(fid) or []
-        if not path:
-            continue
-        out.append(
-            {
-                "name": path[-1]["name"] or "",
-                "type": FOLDER_ENTRY_TYPE,
-                "path": [p["name"] or "" for p in path],
-                "ref": fid,
-            }
-        )
+        owner, name = row_of[fid]
+        entry: dict = {"name": name or "", "type": FOLDER_ENTRY_TYPE, "key": _folder_key(len(out))}
+        if exporter and owner == exporter:
+            if exporter_paths is None:
+                exporter_paths = folder_paths(FoldersRepository(conn).list_for_user(exporter, "source"))
+            path = exporter_paths.get(fid) or []
+            if path:
+                entry["path"] = [p["name"] or "" for p in path]
+            entry["ref"] = fid
+        out.append((fid, entry))
     return out
+
+
+def _serialize_folders(conn, folder_ids, exporter: Optional[str]) -> list:
+    """Knowledge folders as ``spec.sources`` entries: ``{name, type: folder, key[, path, ref]}``.
+
+    Exported whoever owns them (a teammate may have attached theirs), and
+    import matches the importer's own folders by path, then by name. Only
+    the exporter's own folder carries its ``path`` (the names down to it)
+    and ``ref``; anyone else's carries its name alone, so an export never
+    shows another person's folder tree. ``key`` (``folder-N``) is how a
+    workflow node names the entry. Folders that no longer exist are left out.
+
+    Args:
+        conn: Open database connection.
+        folder_ids: The holder's folder ids, in order.
+        exporter: Who exports (not the holder's owner, whom everything
+            else serializes as).
+
+    Returns:
+        list: One entry per existing source folder.
+    """
+    return [entry for _, entry in _folder_entries(conn, folder_ids, exporter)]
 
 
 def _serialize_tools(conn, agent: dict, user: str) -> list:
@@ -617,15 +630,18 @@ def _strip_shadowed_ref_keys(config: dict) -> None:
             config.pop(key, None)
 
 
-def _serialize_workflow(conn, agent: dict, user: str):
+def _serialize_workflow(conn, agent: dict, user: str, exporter: Optional[str] = None):
     """Build the portable ``spec.workflow`` block plus its reference sections.
 
-    Agent nodes hold raw tool/source/model ids; those are collected (deduped,
-    in first-appearance order) into the same top-level ``tools`` / ``sources``
-    / ``model`` sections a classic export uses, and the node configs are
-    rewritten to portable keys: ``tool-N``, the source's name, a custom
-    model's display name. Returns ``(workflow_block, tools, sources, model)``;
-    the block is None when the agent has no resolvable workflow.
+    Agent nodes hold raw tool/source/folder/model ids; those are collected
+    (deduped, in first-appearance order) into the same top-level ``tools`` /
+    ``sources`` / ``model`` sections a classic export uses, and the node
+    configs are rewritten to portable keys: ``tool-N``, the source's name, a
+    folder entry's ``folder-N`` key (two folders may share a name), a custom
+    model's display name. ``exporter`` decides how much of each folder leaves
+    (see :func:`_serialize_folders`); it defaults to ``user``. Returns
+    ``(workflow_block, tools, sources, model)``; the block is None when the
+    agent has no resolvable workflow.
     """
     empty_model = {"default": "", "available": []}
     workflow_id = agent.get("workflow_id")
@@ -679,9 +695,9 @@ def _serialize_workflow(conn, agent: dict, user: str):
     for entry in _serialize_sources(conn, {"extra_source_ids": source_ids}, user):
         source_name_by_id[str(entry["ref"])] = entry["name"]
         sources.append(entry)
-    folder_name_by_id: dict[str, str] = {}
-    for entry in _serialize_folders(conn, folder_ids):
-        folder_name_by_id[str(entry["ref"])] = entry["name"]
+    folder_key_by_id: dict[str, str] = {}
+    for fid, entry in _folder_entries(conn, folder_ids, exporter or user):
+        folder_key_by_id[fid] = entry["key"]
         sources.append(entry)
 
     model = _serialize_models(conn, {"models": model_ids, "default_model_id": ""}, user)
@@ -726,9 +742,9 @@ def _serialize_workflow(conn, agent: dict, user: str):
             if "folders" in cfg:
                 folders = cfg.get("folders") or []
                 cfg["folders"] = [
-                    folder_name_by_id[str(f).lower()]
+                    folder_key_by_id[str(f).lower()]
                     for f in (folders if isinstance(folders, list) else [folders])
-                    if str(f).lower() in folder_name_by_id
+                    if str(f).lower() in folder_key_by_id
                 ]
             if cfg.get("model_id"):
                 cfg["model_id"] = model_name_by_id.get(str(cfg["model_id"]))
@@ -846,19 +862,31 @@ def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     return _valid_parts(kept)
 
 
-def serialize_agent(conn, agent: dict, user: str) -> dict:
-    """Build the portable export document for an agent row."""
+def serialize_agent(conn, agent: dict, user: str, exporter: Optional[str] = None) -> dict:
+    """Build the portable export document for an agent row.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row.
+        user: Whom its references resolve as (the agent's owner).
+        exporter: Who exports; only their own knowledge folders carry a path
+            (see :func:`_serialize_folders`). Defaults to ``user``.
+
+    Returns:
+        dict: The export document.
+    """
+    exporter = exporter or user
     is_workflow = (agent.get("agent_type") or "") == "workflow"
     if is_workflow:
         # A workflow agent's behavior lives in its graph: the agent-level
         # prompt/source/tool/model slots are unused, so the top-level sections
         # instead carry the references collected from the graph's agent nodes.
-        workflow_block, tools, sources, model = _serialize_workflow(conn, agent, user)
+        workflow_block, tools, sources, model = _serialize_workflow(conn, agent, user, exporter)
         prompt = "default"
     else:
         tools = _serialize_tools(conn, agent, user)
         sources = _serialize_sources(conn, agent, user) + _serialize_folders(
-            conn, agent.get("knowledge_folder_ids")
+            conn, agent.get("knowledge_folder_ids"), exporter
         )
         model = _serialize_models(conn, agent, user)
         prompt = _serialize_prompt(conn, agent, user)
@@ -1344,11 +1372,14 @@ class _FolderFinder:
 
 
 def _apply_folders(conn, user: str, spec: dict, resolution: dict, warnings: list):
-    """Resolve the file's knowledge folders against the importer's own; returns ``(ids, id_by_name)``.
+    """Resolve the file's knowledge folders against the importer's own; returns ``(ids, id_by_ref)``.
 
     A ``resolution["folders"]`` entry (name -> folder id) picks a folder by
     hand; it must be one of the importer's source folders. An entry left
-    unmatched is dropped with a warning.
+    unmatched is dropped with a warning. ``id_by_ref`` maps each entry's
+    ``key`` (``folder-N``, how a workflow node names it) to its folder, and
+    each name to the first folder of that name, for older files whose nodes
+    name folders.
     """
     from docsgpt.api.user.folder_knowledge import owned_source_folders
 
@@ -1358,11 +1389,16 @@ def _apply_folders(conn, user: str, spec: dict, resolution: dict, warnings: list
     finder = _FolderFinder(conn, user)
     resolved: list[str] = []
     id_by_name: dict[str, Optional[str]] = {}
+    id_by_key: dict[str, Optional[str]] = {}
     for entry in spec.get("sources") or []:
         if not _is_folder_entry(entry):
             continue
         name = entry.get("name") or ""
         id_by_name.setdefault(name, None)
+        key = entry.get("key")
+        key = key if isinstance(key, str) and key else None
+        if key:
+            id_by_key[key] = None
         mapped = mapping.get(name)
         folder_id = None
         if mapped:
@@ -1378,9 +1414,11 @@ def _apply_folders(conn, user: str, spec: dict, resolution: dict, warnings: list
             continue
         folder_id = folder_id.lower()
         id_by_name[name] = id_by_name[name] or folder_id
+        if key:
+            id_by_key[key] = folder_id
         if folder_id not in resolved:
             resolved.append(folder_id)
-    return resolved, id_by_name
+    return resolved, {**id_by_name, **id_by_key}
 
 
 def _validate_tool_urls(tool_type: str, config: dict) -> Optional[str]:
@@ -1627,7 +1665,8 @@ def _rewrite_node_refs(
 ) -> None:
     """Resolve an agent node's portable references back to the importer's ids.
 
-    Export writes ``tool-N`` keys / source names / model display names, and a
+    Export writes ``tool-N`` keys / source names / ``folder-N`` keys (an
+    older file names its folders) / model display names, and a
     hand-edited file may also carry raw ids — those are accepted only when
     they are a builtin synthetic id or ownership-check against the importing
     user (IDOR guard). Anything unresolvable is dropped with a warning so the
@@ -2133,11 +2172,13 @@ class ExportAgent(Resource):
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
             # Serialized as the owner: the agent's prompt, sources, tools and
-            # workflow are the owner's (secrets are never exported).
+            # workflow are the owner's (secrets are never exported). Knowledge
+            # folders are personal filing: only the exporter's own carry their
+            # path, anyone else's its name alone.
             owner_id = ra.owner_id
             agent["slug"] = ensure_agent_slug(conn, agent, owner_id)
             try:
-                export = serialize_agent(conn, agent, owner_id)
+                export = serialize_agent(conn, agent, owner_id, exporter=user)
             except AgentExportError as exc:
                 return make_response(
                     jsonify({"success": False, "message": str(exc)}), 400

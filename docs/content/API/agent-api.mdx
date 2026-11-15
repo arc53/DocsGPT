@@ -642,7 +642,7 @@ On an update the file is authoritative: fields it sets are written even when tha
 | Part | Statuses |
 | --- | --- |
 | `target` | `action`: `create`, or `update` with the `agent_id` it matched and `matched_by` (`id` or `slug`) |
-| `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached). A Knowledge folder the agent uses is an entry with `"type": "folder"`, matched to one of your own folders by its path, then by its name |
+| `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached). A Knowledge folder the agent uses is an entry with `"type": "folder"` and a `key` (`folder-0`, `folder-1`, ...), matched to one of your own folders by its path, then by its name. The path is exported only for the exporter's own folder: someone else's folder, such as the owner's folder when an editor exports, or a teammate's folder on your agent, carries its name alone |
 | `tools` | `builtin`, `reuse` (one of your tools matches its type and name), `create` (a new tool is created; `requires_secrets` lists what you must supply) or `unavailable` |
 | `prompt` | `reuse`, `create` or `default` |
 | `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`) |
@@ -676,7 +676,7 @@ Ids you pass must belong to you; any other id is ignored with a warning. Prompts
 
 ### Workflow agents
 
-A workflow agent exports its graph under `spec.workflow`, and import checks its shape (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. The full [graph rules](/Agents/nodes#graph-rules) apply when the agent it updates is published or can otherwise run, as for a builder save; a new agent lands as a draft, so an unfinished workflow exported from a draft imports again. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
+A workflow agent exports its graph under `spec.workflow`, and import checks its shape (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. The full [graph rules](/Agents/nodes#graph-rules) apply when the agent it updates is published or can otherwise run, as for a builder save; a new agent lands as a draft, so an unfinished workflow exported from a draft imports again. Tools, sources, Knowledge folders and custom models used inside the nodes are resolved like the agent's own. A node names a folder by its entry's `key`, so two folders with the same name stay apart; a file exported before folders had keys names them, and each name resolves to the first folder of that name.
 
 Leaving `workflow` out of a file changes nothing. An explicit `workflow: null` imported over a draft workflow agent **deletes** its workflow, with its run history and artifacts; the plan's `workflow` block shows `"action": "delete"` first. A published workflow agent keeps its workflow.
 

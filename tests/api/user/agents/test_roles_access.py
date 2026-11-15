@@ -487,6 +487,30 @@ class TestExportAgent:
         assert _status(_call(app, pg_conn, ExportAgent, "get", path, STRANGER)) == 404
         assert _status(_call(app, pg_conn, ExportAgent, "get", path, EDITOR)) == 200
 
+    def test_an_editors_export_names_the_owners_folder_only(self, app, pg_conn):
+        import yaml
+
+        from docsgpt.api.user.agents.portability import ExportAgent
+        from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+        folders = FoldersRepository(pg_conn)
+        private = str(folders.create(OWNER, "Private clients", resource_type="source")["id"])
+        eu = str(folders.create(OWNER, "EU", resource_type="source", parent_id=private)["id"])
+        agent_id = _agent(pg_conn, knowledge_folder_ids=[eu])
+        path = f"/api/export_agent?id={agent_id}"
+
+        def _folder_entries(user):
+            resp = _call(app, pg_conn, ExportAgent, "get", path, user)
+            assert _status(resp) == 200
+            doc = yaml.safe_load(resp.get_data(as_text=True))
+            return [s for s in doc["spec"]["sources"] if s.get("type") == "folder"]
+
+        assert _folder_entries(EDITOR) == [{"name": "EU", "type": "folder", "key": "folder-0"}]
+        # The folder's owner still gets its path.
+        assert _folder_entries(OWNER) == [
+            {"name": "EU", "type": "folder", "key": "folder-0", "path": ["Private clients", "EU"], "ref": eu}
+        ]
+
 
 class TestFolderMoves:
     def test_anyone_who_sees_the_agent_files_it(self, app, pg_conn):
