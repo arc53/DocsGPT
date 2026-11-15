@@ -12,6 +12,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { PanelBody, PanelHeader, SidePanel } from '@/components/ui/side-panel';
 import { formatTimestamp } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
+import { OWNER_INACTIVE, runReason } from './runReason';
 import ScheduleStatusBadge from './StatusBadge';
 
 export type RunDetailDrawerProps = {
@@ -26,6 +27,7 @@ export default function RunDetailDrawer({
 }: RunDetailDrawerProps) {
   const { t } = useTranslation();
   if (!run) return null;
+  const reason = runReason(run);
   return (
     <SidePanel
       open
@@ -76,18 +78,21 @@ export default function RunDetailDrawer({
               size="xs"
               tone="destructive"
               title={
-                run.error_type
+                reason
                   ? t('agents.schedules.runDetails.errorWithType', {
                       // A label with an apostrophe; React escapes on render.
                       interpolation: { escapeValue: false },
-                      type: t(`activity.now.errorType.${run.error_type}`, {
-                        defaultValue: run.error_type,
+                      type: t(`activity.now.errorType.${reason}`, {
+                        defaultValue: reason,
                       }),
                     })
                   : t('agents.schedules.runDetails.error')
               }
             />
-            <CodeBlock maxHeight="sm">{run.error}</CodeBlock>
+            {/* A pause has no text beyond its reason. */}
+            {run.error !== OWNER_INACTIVE && (
+              <CodeBlock maxHeight="sm">{run.error}</CodeBlock>
+            )}
           </section>
         )}
         {run.output && (

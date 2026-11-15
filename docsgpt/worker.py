@@ -4205,8 +4205,15 @@ def agent_webhook_worker(self, agent_id, payload):
                 agent_config = agent_row_to_dict(result.fetchone())
             if agent_config is None:
                 agent_config = repo.get_by_legacy_id(str(agent_id))
+            from docsgpt.api.owner_pause import OWNER_INACTIVE, PAUSED_MESSAGE, any_deactivated
+
+            # Queued before the owner was deactivated: it pauses like the route.
+            paused = bool(agent_config) and any_deactivated(conn, agent_config.get("user_id"))
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
+        if paused:
+            logging.info("Webhook skipped for agent %s: its owner is deactivated", agent_id)
+            return {"status": OWNER_INACTIVE, "error": PAUSED_MESSAGE}
         # Unescaped, so the model (and a prompt-injection check) reads non-ASCII text as written.
         input_data = json.dumps(payload, ensure_ascii=False)
     except Exception as e:

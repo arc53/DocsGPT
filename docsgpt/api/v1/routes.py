@@ -33,6 +33,7 @@ from docsgpt.api.answer.services.stream_processor import (
     flush_trace_after_request,
 )
 from docsgpt.agents.context_overflow import ContextOverflowError
+from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE, any_deactivated
 from docsgpt.api.v1 import idempotency as v1_idempotency
 from docsgpt.api.v1.attachments import NOT_STORED, InlineIngest, start_inline_files
 from docsgpt.api.v1.session_store import (
@@ -82,6 +83,24 @@ def _lookup_agent(api_key: str) -> Optional[Dict]:
     except Exception:
         logger.warning("Failed to look up agent for API key", exc_info=True)
         return None
+
+
+def _owner_paused(agent: Dict) -> bool:
+    """Whether the key's agent is paused because its owner is deactivated.
+
+    Args:
+        agent: The agent the key resolved to.
+
+    Returns:
+        True when the owner's account is deactivated. A failed read is not a
+        pause: the run's own check repeats it.
+    """
+    try:
+        with db_readonly() as conn:
+            return any_deactivated(conn, agent.get("user_id") or agent.get("user"))
+    except Exception:
+        logger.warning("Failed to read the agent owner's account state", exc_info=True)
+        return False
 
 
 def _get_model_name(agent: Optional[Dict], api_key: str) -> str:
@@ -332,6 +351,11 @@ def chat_completions():
         return make_response(
             jsonify({"error": {"message": "Invalid API key", "type": "auth_error"}}),
             401,
+        )
+    if _owner_paused(agent_doc):
+        return make_response(
+            jsonify({"error": {"message": PAUSED_MESSAGE, "type": "permission_error", "code": PAUSED_CODE}}),
+            403,
         )
     options_error = _validate_request_options(data, agent_doc)
     if options_error is not None:

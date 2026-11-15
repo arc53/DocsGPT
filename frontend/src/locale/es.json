@@ -202,6 +202,7 @@
         "internal": "un error interno",
         "missed": "se perdió su hora",
         "overlap": "la ejecución anterior seguía en curso",
+        "owner_inactive": "en pausa: la cuenta del propietario está desactivada",
         "stream_error": "se cortó la respuesta",
         "timeout": "se agotó el tiempo",
         "tool_not_allowed": "una herramienta no estaba permitida"

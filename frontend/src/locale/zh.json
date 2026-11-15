@@ -194,6 +194,7 @@
         "internal": "内部错误",
         "missed": "错过了运行时间",
         "overlap": "上一次运行仍在进行",
+        "owner_inactive": "已暂停：所有者的账户已被禁用",
         "stream_error": "回答流中断",
         "timeout": "超时",
         "tool_not_allowed": "工具未被允许"

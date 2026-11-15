@@ -23,6 +23,7 @@ import {
 import type { AppDispatch, RootState } from '../../store';
 import { formatTimestamp } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
+import { runReason } from './runReason';
 import ScheduleStatusBadge from './StatusBadge';
 import {
   loadRunsForSchedule,
@@ -145,11 +146,11 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
                 <TableCell>
                   <div className="flex items-center gap-1.5">
                     <ScheduleStatusBadge status={run.status} />
-                    {run.error_type && (
+                    {runReason(run) && (
                       <span className="text-muted-foreground text-xs">
                         (
-                        {t(`activity.now.errorType.${run.error_type}`, {
-                          defaultValue: run.error_type,
+                        {t(`activity.now.errorType.${runReason(run)}`, {
+                          defaultValue: runReason(run),
                         })}
                         )
                       </span>

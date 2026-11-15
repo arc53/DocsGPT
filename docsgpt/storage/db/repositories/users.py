@@ -432,6 +432,49 @@ class UsersRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def has_shared(self, user_id: str, agent_id: str) -> bool:
+        """Whether ``agent_id`` is in ``user_id``'s ``agent_preferences.shared_with_me``.
+
+        The entry is written when the user opens the agent's share link.
+
+        Args:
+            user_id: Auth-provider ``sub``.
+            agent_id: The agent's id.
+
+        Returns:
+            True when the user opened that agent's share link.
+        """
+        if not user_id or not agent_id:
+            return False
+        row = self._conn.execute(
+            text(
+                "SELECT 1 FROM users WHERE user_id = :user_id "
+                "AND COALESCE(agent_preferences->'shared_with_me', '[]'::jsonb) @> to_jsonb(CAST(:agent_id AS text))"
+            ),
+            {"user_id": user_id, "agent_id": str(agent_id).lower()},
+        ).first()
+        return row is not None
+
+    def deactivated_among(self, user_ids: Iterable[str]) -> set[str]:
+        """Return the ids in ``user_ids`` whose account is deactivated.
+
+        An id with no row counts as active, as for personal access tokens.
+
+        Args:
+            user_ids: Auth-provider ``sub`` values.
+
+        Returns:
+            The subset with ``active = false``.
+        """
+        ids = sorted({str(user_id) for user_id in user_ids if user_id})
+        if not ids:
+            return set()
+        rows = self._conn.execute(
+            text("SELECT user_id FROM users WHERE user_id = ANY(:ids) AND active = false"),
+            {"ids": ids},
+        ).fetchall()
+        return {row[0] for row in rows}
+
     def list_paginated(
         self, user_name: Optional[str], offset: int, limit: int
     ) -> tuple[int, list[dict]]:

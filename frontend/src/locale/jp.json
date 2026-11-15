@@ -194,6 +194,7 @@
         "internal": "内部エラー",
         "missed": "実行時刻を逃した",
         "overlap": "前回の実行が継続中",
+        "owner_inactive": "一時停止中：所有者のアカウントが無効化されています",
         "stream_error": "回答のストリームが途切れた",
         "timeout": "タイムアウト",
         "tool_not_allowed": "許可されていないツール"

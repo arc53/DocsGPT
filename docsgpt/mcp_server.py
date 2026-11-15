@@ -21,6 +21,7 @@ from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 
 from docsgpt.api.agent_origins import origin_refusal
+from docsgpt.api.owner_pause import AgentPausedError
 from docsgpt.services.search_service import (
     InvalidAPIKey,
     SearchFailed,
@@ -59,6 +60,8 @@ async def search_docs(query: str, chunks: int = 5) -> list[dict]:
         raise PermissionError(message) if status == 403 else RuntimeError(message)
     try:
         return await asyncio.to_thread(search, api_key, query, chunks, source="mcp")
+    except AgentPausedError as exc:
+        raise PermissionError(exc.message) from exc
     except InvalidAPIKey as exc:
         raise PermissionError("Invalid API key") from exc
     except SearchFailed:

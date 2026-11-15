@@ -194,6 +194,7 @@
         "internal": "ein interner Fehler",
         "missed": "Zeitpunkt verpasst",
         "overlap": "die vorherige Ausführung lief noch",
+        "owner_inactive": "pausiert: das Konto des Eigentümers ist deaktiviert",
         "stream_error": "der Antwortstrom brach ab",
         "timeout": "Zeitüberschreitung",
         "tool_not_allowed": "ein Werkzeug war nicht erlaubt"

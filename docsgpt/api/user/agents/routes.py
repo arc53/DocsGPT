@@ -744,6 +744,7 @@ class GetAgent(Resource):
             states: list = []
             audience = None
             folder_id = None
+            owner_inactive = False
             with db_readonly() as conn, cached_resolves():
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
@@ -752,6 +753,7 @@ class GetAgent(Resource):
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
                 if agent:
                     folder_id = FolderItemsRepository(conn).filing(user, "agent", str(agent["id"]))
+                    owner_inactive = bool(UsersRepository(conn).deactivated_among([agent.get("user_id")]))
                 # Edit-page detail: who vouches for resources the owner can't
                 # use, and which attached resources stopped running and why,
                 # with their names. Only for people who may edit the agent:
@@ -781,6 +783,8 @@ class GetAgent(Resource):
             )
             data["resource_sponsors"] = sponsored
             data["resource_states"] = states
+            # Its key, link, webhook and schedules pause while the owner is deactivated.
+            data["owner_inactive"] = owner_inactive
             if audience is not None:
                 data["sponsor_audience"] = audience
             return make_response(jsonify(data), 200)
@@ -818,6 +822,8 @@ class GetAgents(Resource):
                 )
                 # The caller's own filing of each agent, theirs or a team's.
                 filings = FolderItemsRepository(conn).filings(user, "agent")
+                # Whose account is deactivated: their agents' outside access pauses.
+                inactive_owners = users_repo.deactivated_among(a.get("user_id") for a in agents + shared_agents)
 
             # Every agent is listed: one with no source skips retrieval and
             # answers from the model and its tools, so it is still runnable.
@@ -844,6 +850,8 @@ class GetAgents(Resource):
                 )
                 for agent in shared_agents
             ]
+            for out, agent in zip(list_agents, agents + shared_agents):
+                out["owner_inactive"] = agent.get("user_id") in inactive_owners
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

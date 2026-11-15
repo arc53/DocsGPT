@@ -122,6 +122,7 @@ class TestPublicLinkDetection:
 
         return str(AgentsRepository(conn).create(
             "alice", "A", "published", key=f"k-{uuid.uuid4().hex}", shared=shared,
+            shared_token=f"t-{uuid.uuid4().hex}" if shared else None,
         )["id"])
 
     def _run(self, conn, agent_id: str, caller: str):
@@ -134,7 +135,14 @@ class TestPublicLinkDetection:
 
     @pytest.mark.parametrize(("caller", "public"), [("alice", False), ("stranger", True)])
     def test_only_a_link_user_is_a_public_caller(self, pg_conn, caller, public):
-        processor = self._run(pg_conn, self._agent(pg_conn), caller)
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        agent_id = self._agent(pg_conn)
+        if public:
+            # Opening the link is what makes someone its user: the id alone runs nothing.
+            UsersRepository(pg_conn).upsert(caller)
+            UsersRepository(pg_conn).add_shared(caller, agent_id)
+        processor = self._run(pg_conn, agent_id, caller)
         assert processor.agent_config["public_link_caller"] is public
 
     def test_teammate_of_a_public_agent_is_not_a_link_user(self, pg_conn):

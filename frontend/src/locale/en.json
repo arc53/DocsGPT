@@ -194,6 +194,7 @@
         "internal": "an internal error",
         "missed": "missed its time",
         "overlap": "the previous run was still going",
+        "owner_inactive": "paused: the owner's account is deactivated",
         "stream_error": "the answer stream broke",
         "timeout": "timed out",
         "tool_not_allowed": "a tool was not allowed"

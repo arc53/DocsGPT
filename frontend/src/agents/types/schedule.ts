@@ -40,6 +40,8 @@ export type Schedule = {
   origin_conversation_id?: string | null;
   created_via: 'chat' | 'ui' | 'api';
   consecutive_failure_count: number;
+  // Its runs are skipped while the agent's owner or its user is deactivated.
+  owner_inactive?: boolean;
   created_at: string;
   updated_at: string;
 };

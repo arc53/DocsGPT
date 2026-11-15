@@ -65,6 +65,9 @@ def resume(monkeypatch):
         def find_by_key(self, key):
             return agents.get(key)
 
+        def get_by_id(self, agent_id):
+            return {"id": agent_id, "user_id": OWNER}
+
     live = {"allowed": False}
 
     class _Sources:
@@ -82,6 +85,8 @@ def resume(monkeypatch):
     monkeypatch.setattr(sp_mod.StreamProcessor, "_get_agent_key", _get_agent_key)
     monkeypatch.setattr(sp_mod, "db_readonly", _noop)
     monkeypatch.setattr(sp_mod, "AgentsRepository", _Agents)
+    # Every owner here is active; a deactivated one is tested on its own.
+    monkeypatch.setattr(sp_mod, "refuse_if_owner_deactivated", lambda conn, agent: None)
     monkeypatch.setattr("docsgpt.agents.tools.wiki.db_readonly", _noop)
     monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Sources)
     monkeypatch.setattr(llm_creator_mod.LLMCreator, "create_llm", lambda *a, **kw: MagicMock())
@@ -199,3 +204,32 @@ class TestResumePublicLink:
         assert all(
             a.get("require_approval") for a in tools["wiki"]["actions"] if a["name"] != "wiki_view"
         )
+
+
+class TestResumeWhileTheOwnerIsDeactivated:
+    """A turn an outside caller paused stays paused while the agent's owner is deactivated."""
+
+    @pytest.fixture
+    def owner_deactivated(self, monkeypatch):
+        from docsgpt.api.answer.services import stream_processor as sp_mod
+        from docsgpt.api.owner_pause import AgentPausedError
+
+        def _refuse(conn, agent):
+            if agent:
+                raise AgentPausedError()
+
+        monkeypatch.setattr(sp_mod, "refuse_if_owner_deactivated", _refuse)
+
+    def test_the_key_cannot_resume(self, resume, owner_deactivated):
+        from docsgpt.api.owner_pause import AgentPausedError
+
+        with pytest.raises(AgentPausedError):
+            resume(_state(), {"api_key": "agent-key"}, None)
+
+    def test_a_link_users_paused_turn_waits_and_its_claim_goes_back(self, resume, owner_deactivated, monkeypatch):
+        from docsgpt.api.answer.services import continuation_service as cont_mod
+        from docsgpt.api.owner_pause import AgentPausedError
+
+        with pytest.raises(AgentPausedError):
+            resume(_state(public_link_caller=True), {}, {"sub": "visitor"})
+        cont_mod.ContinuationService().release_claim.assert_called_once()

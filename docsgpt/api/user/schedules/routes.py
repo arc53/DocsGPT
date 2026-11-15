@@ -42,6 +42,7 @@ from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
 
@@ -103,6 +104,24 @@ def _format_schedule(row: Dict[str, Any]) -> Dict[str, Any]:
             out[key] = str(out[key])
     out.pop("_id", None)  # drop dual-id legacy mirror
     return out
+
+
+def _mark_owner_inactive(conn, rows: list[Dict[str, Any]], agent_owners: list[Optional[str]]) -> None:
+    """Set ``owner_inactive`` on each schedule row, in place.
+
+    A schedule pauses while the owner of its agent, or the user it is stored
+    under, is deactivated: its runs are skipped with that reason.
+
+    Args:
+        conn: Open database connection.
+        rows: Schedule rows (need ``user_id``).
+        agent_owners: The owner of each row's agent, None when agentless.
+    """
+    inactive = UsersRepository(conn).deactivated_among(
+        [row.get("user_id") for row in rows] + list(agent_owners)
+    )
+    for row, agent_owner in zip(rows, agent_owners):
+        row["owner_inactive"] = row.get("user_id") in inactive or agent_owner in inactive
 
 
 def _format_run(row: Dict[str, Any], caller: Optional[str] = None) -> Dict[str, Any]:
@@ -337,14 +356,15 @@ class UserSchedules(Resource):
             repo = SchedulesRepository(conn)
             own = repo.list_owned_with_context(user_id)
             team = repo.list_for_agents_with_context(_team_schedule_agents(conn, user_id))
-        seen = {str(row["id"]) for row in own}
-        rows = [{**row, "team": False} for row in own] + [
-            {**row, "team": True} for row in team if str(row["id"]) not in seen
-        ]
+            seen = {str(row["id"]) for row in own}
+            rows = [{**row, "team": False} for row in own] + [
+                {**row, "team": True} for row in team if str(row["id"]) not in seen
+            ]
+            agent_owners = [row.pop("agent_user_id", None) for row in rows]
+            _mark_owner_inactive(conn, rows, agent_owners)
         out = []
-        for row in rows:
+        for row, agent_owner in zip(rows, agent_owners):
             image = row.get("agent_image")
-            agent_owner = row.pop("agent_user_id", None)
             # A storage path never leaves the server: sign it as the agents
             # API does, or drop it.
             row["agent_image"] = (
@@ -373,6 +393,7 @@ class AgentSchedules(Resource):
                 rows = SchedulesRepository(conn).list_for_agent(
                     str(agent["id"]), owner_id,
                 )
+                _mark_owner_inactive(conn, rows, [agent.get("user_id")] * len(rows))
         except Exception as exc:
             current_app.logger.error("list schedules failed: %s", exc, exc_info=True)
             return _err("internal error", 500)
@@ -603,6 +624,9 @@ class ScheduleResource(Resource):
                 row, _acting = _schedule_for(conn, schedule_id, user_id)
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
+            agent = AgentsRepository(conn).get_by_id(str(row["agent_id"])) if row.get("agent_id") else None
+            row = dict(row)
+            _mark_owner_inactive(conn, [row], [(agent or {}).get("user_id")])
         return _ok({"schedule": _format_schedule(row)})
 
     @api.doc(description="Edit a schedule's editable fields.")

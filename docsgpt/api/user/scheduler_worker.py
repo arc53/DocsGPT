@@ -15,6 +15,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text as sql_text
 
 from docsgpt.agents.headless_runner import run_agent_headless
+from docsgpt.api.owner_pause import OWNER_INACTIVE, any_deactivated
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.quotas.service import QuotaExceededError
@@ -27,6 +28,7 @@ from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 logger = logging.getLogger(__name__)
 
@@ -314,8 +316,9 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
 
     The run always executes as the agent's owner. A schedule stored under
     someone else (set from chat on a shared agent) needs that user to still
-    see the agent — a live team grant, or a public link that is still on —
-    so revoking a grant stops their schedules on the next tick.
+    see the agent — a live team grant, or a public link that is still on and
+    that they opened — so revoking a grant stops their schedules on the next
+    tick.
 
     Args:
         schedule: The schedule row.
@@ -328,12 +331,54 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
     agent_id = agent_config.get("id")
     if not agent_id or not user_id or agent_config.get("user_id") == user_id:
         return True
-    if agent_config.get("shared"):
-        return True
     from docsgpt.api.user.resource_access import resolve
 
     with get_engine().connect() as conn:
+        # A link user needs the link on and the record that they opened it;
+        # the agent being link-shared is not enough on its own.
+        if (
+            agent_config.get("shared")
+            and agent_config.get("shared_token")
+            and UsersRepository(conn).has_shared(user_id, str(agent_id))
+        ):
+            return True
         return resolve(conn, "agent", str(agent_id), user_id) is not None
+
+
+def _paused_by_deactivation(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> bool:
+    """Whether the run pauses because the agent's owner or the schedule's user is deactivated.
+
+    Args:
+        schedule: The schedule row.
+        agent_config: The agent row (or the agentless ephemeral config).
+
+    Returns:
+        True when either account is deactivated.
+    """
+    with get_engine().connect() as conn:
+        return any_deactivated(conn, agent_config.get("user_id"), schedule.get("user_id"))
+
+
+def _skip_paused(run: Dict[str, Any]) -> Dict[str, Any]:
+    """Record a run skipped while an account it runs on is deactivated.
+
+    A pause, not a failure: it neither counts toward auto-pause nor notifies,
+    and the schedule keeps its cadence, so runs carry on by themselves once the
+    account is reactivated. ``error`` holds the reason for the run log, since
+    no ``error_type`` value names it.
+
+    Args:
+        run: The pending run.
+
+    Returns:
+        The task's result dict.
+    """
+    with get_engine().begin() as conn:
+        ScheduleRunsRepository(conn).update(
+            str(run["id"]),
+            {"status": "skipped", "finished_at": datetime.now(timezone.utc), "error": OWNER_INACTIVE},
+        )
+    return {"status": "skipped", "reason": OWNER_INACTIVE}
 
 
 def _schedule_caller_rules(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> Dict[str, bool]:
@@ -421,6 +466,9 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
     agent_config = _agent_config_for_schedule(schedule)
     if agent_config is None:
         return _fail_before_start(run, schedule, "agent missing")
+
+    if _paused_by_deactivation(schedule, agent_config):
+        return _skip_paused(run)
 
     if not _scheduler_still_allowed(schedule, agent_config):
         return _fail_before_start(run, schedule, "agent access revoked")

@@ -1,5 +1,6 @@
 import datetime
 import functools
+import hmac
 import json
 import logging
 import uuid
@@ -57,6 +58,8 @@ from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.api.user.team_sharing import can_access
+from docsgpt.api.owner_pause import AgentPausedError, refuse_if_owner_deactivated
+from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.retriever.base import SearchOutcome, search_outcome_of
@@ -1346,7 +1349,6 @@ class StreamProcessor:
                     raise Exception("Agent not found")
                 agent_owner = agent.get("user_id")
                 is_owner = agent_owner == user_id
-                is_shared_with_user = bool(agent.get("shared", False))
 
                 # Team-shared agents are runnable by any member with a grant
                 # (viewer is enough to run). Resolved live against team_members
@@ -1365,9 +1367,19 @@ class StreamProcessor:
                         )
                         is_team_shared = False
 
-            if not (is_owner or is_shared_with_user or is_team_shared):
-                raise Exception("Unauthorized access to the agent")
-            self.public_link_usage = not (is_owner or is_team_shared)
+                # Anyone else needs the agent's link or its key: knowing the
+                # id is not enough.
+                is_outside = not (is_owner or is_team_shared)
+                if is_outside and not (
+                    self._holds_agent_key(agent) or self._holds_share_link(conn, agent, user_id)
+                ):
+                    raise Exception("Unauthorized access to the agent")
+                # The link and the key pause while the owner is deactivated;
+                # a team grant does not.
+                if is_outside:
+                    refuse_if_owner_deactivated(conn, agent)
+
+            self.public_link_usage = is_outside
             # Authorized. Keep the row so _configure_agent can run a draft
             # agent, which has key = NULL, from it.
             self._authorized_agent_row = agent
@@ -1389,16 +1401,66 @@ class StreamProcessor:
                 not is_owner,
                 agent.get("shared_token"),
             )
+        except AgentPausedError:
+            raise
         except Exception as e:
             logger.error(f"Error in get_agent_key: {str(e)}", exc_info=True)
             raise
 
-    def _get_data_from_api_key(self, api_key: str) -> Dict[str, Any]:
-        """Resolve agent metadata + the unioned source set for the given key."""
+    def _holds_agent_key(self, agent: Dict[str, Any]) -> bool:
+        """Whether the request carries ``agent``'s own API key.
+
+        Args:
+            agent: The agent row.
+
+        Returns:
+            True when the request's ``api_key`` is the agent's key.
+        """
+        presented, key = self.data.get("api_key"), agent.get("key")
+        return bool(presented and key) and hmac.compare_digest(str(presented), str(key))
+
+    def _holds_share_link(self, conn: Any, agent: Dict[str, Any], user_id: Optional[str]) -> bool:
+        """Whether the caller reaches ``agent`` through its live public link.
+
+        The link counts while it is on, and only when the request presents its
+        token (``shared_token``) or the caller opened it before: opening the
+        shared-agent page as a signed-in user records the agent in their
+        ``agent_preferences.shared_with_me`` (the record that also lists it
+        under their shared agents and lets them pin it).
+
+        Args:
+            conn: Open database connection.
+            agent: The agent row.
+            user_id: The caller, or None.
+
+        Returns:
+            True when the caller holds the link.
+        """
+        token = agent.get("shared_token")
+        if not agent.get("shared") or not token:
+            return False
+        presented = self.data.get("shared_token")
+        if presented and hmac.compare_digest(str(presented), str(token)):
+            return True
+        return bool(user_id) and UsersRepository(conn).has_shared(user_id, str(agent["id"]))
+
+    def _get_data_from_api_key(self, api_key: str, *, outside: bool = False) -> Dict[str, Any]:
+        """Resolve agent metadata + the unioned source set for the given key.
+
+        Args:
+            api_key: The agent's key.
+            outside: The key came with the request (an API or widget caller),
+                not from an access check that already passed.
+
+        Raises:
+            AgentPausedError: ``outside`` and the owner is deactivated.
+        """
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
                 raise Exception("Invalid API Key, please generate a new key", 401)
+            if outside:
+                refuse_if_owner_deactivated(conn, agent)
             return self._agent_run_data(conn, agent)
 
     def _agent_run_data(self, conn: Any, agent: Dict[str, Any]) -> Dict[str, Any]:
@@ -1675,7 +1737,9 @@ class StreamProcessor:
 
         if effective_key or draft_row:
             if effective_key:
-                self._agent_data = self._get_data_from_api_key(effective_key)
+                self._agent_data = self._get_data_from_api_key(
+                    effective_key, outside=bool(self.data.get("api_key"))
+                )
             else:
                 with db_readonly() as conn:
                     if draft_row.get("agent_type") == "workflow":
@@ -2399,6 +2463,8 @@ class StreamProcessor:
         if request_key:
             with db_readonly() as conn:
                 key_agent = AgentsRepository(conn).find_by_key(request_key)
+                # The key pauses while its owner is deactivated.
+                refuse_if_owner_deactivated(conn, key_agent)
         key_owner = (
             (key_agent.get("user_id") or key_agent.get("user")) if key_agent else None
         )
@@ -2410,6 +2476,8 @@ class StreamProcessor:
         if named_agent and not request_key:
             try:
                 self._get_agent_key(str(named_agent), self.initial_user_id)
+            except AgentPausedError:
+                raise
             except Exception as exc:
                 raise ValueError("This conversation can't be resumed with that agent") from exc
             request_public_link = bool(getattr(self, "public_link_usage", False))
@@ -2444,6 +2512,22 @@ class StreamProcessor:
             except Exception:
                 logger.warning("Failed to release a refused resume claim", exc_info=True)
             raise ValueError("This conversation belongs to a different agent")
+
+        # A turn an outside caller (key or link) paused stays paused while the
+        # agent's owner is deactivated; the claim goes back for later.
+        saved_config = state.get("agent_config") or {}
+        if saved_agent and (
+            saved_config.get("public_link_caller") or saved_config.get("external_api_caller")
+        ):
+            try:
+                with db_readonly() as conn:
+                    refuse_if_owner_deactivated(conn, AgentsRepository(conn).get_by_id(saved_agent))
+            except AgentPausedError:
+                try:
+                    cont_service.release_claim(conversation_id, self.initial_user_id)
+                except Exception:
+                    logger.warning("Failed to release a refused resume claim", exc_info=True)
+                raise
 
         # The actions must answer the calls this pause waits on. A stale tab
         # deciding a call its pause no longer has would otherwise resolve the

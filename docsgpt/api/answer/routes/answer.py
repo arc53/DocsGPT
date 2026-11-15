@@ -18,6 +18,7 @@ from docsgpt.api.answer.services.continuation_service import (
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
+from docsgpt.api.owner_pause import AgentPausedError
 from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
     UnfinishedWorkflowError,
@@ -232,6 +233,9 @@ class AnswerResource(Resource, BaseAnswerResource):
         except UnfinishedWorkflowError as e:
             # A draft workflow agent whose stored graph isn't finished. Nothing ran.
             return make_response({"error": e.message, "code": e.code}, 400)
+        except AgentPausedError as e:
+            # The agent's owner is deactivated: its link and key are paused. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, 403)
         except ContinuationNotPendingError:
             # A decision for a pause that is over (decided, moved past by a new
             # turn, or expired). Nothing ran.
