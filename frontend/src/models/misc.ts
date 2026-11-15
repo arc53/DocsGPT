@@ -110,6 +110,11 @@ export type Doc = {
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;
   allowed_actions?: string[];
+  // Where it lives, how it reached this list (own, the team's, or shared
+  // with the caller) and who added it (sources API).
+  workspace?: { kind: 'personal' | 'team'; team_id?: string | null } | null;
+  origin?: 'own' | 'team' | 'shared' | null;
+  created_by?: { user_id?: string | null; label?: string | null } | null;
   // The agents that use it (both lists; absent from an older backend).
   used_by?: ResourceUsage;
   // The caller's own filing: the source folder it is in (null: none) and that

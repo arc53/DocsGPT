@@ -26,6 +26,19 @@ export async function getDocs(token: string | null): Promise<Doc[] | null> {
   }
 }
 
+/** Whose sources a Knowledge listing asks for; left out, both. */
+export type SourceOrigin = 'own' | 'shared';
+
+/** A Knowledge page, with how many sources each origin holds. */
+export type PaginatedDocs = GetDocsResponse & {
+  /**
+   * The workspace's own sources and the ones shared with the caller, each
+   * with the search, kind, usage and folder applied but not the origin; in a
+   * team `shared` is always 0. Absent from an older backend.
+   */
+  originCounts?: Record<SourceOrigin, number>;
+};
+
 export async function getDocsWithPagination(
   sort = 'date',
   order = 'desc',
@@ -37,8 +50,14 @@ export async function getDocsWithPagination(
     kind = 'all',
     usage = 'all',
     scope,
-  }: { kind?: string; usage?: string; scope?: SourceListScope } = {},
-): Promise<GetDocsResponse | null> {
+    origin,
+  }: {
+    kind?: string;
+    usage?: string;
+    scope?: SourceListScope;
+    origin?: SourceOrigin;
+  } = {},
+): Promise<PaginatedDocs | null> {
   try {
     // The kind and usage filters are sent only when set, and the folder
     // scope only when given.
@@ -47,7 +66,11 @@ export async function getDocsWithPagination(
       ? `&folder=${encodeURIComponent(scope.folder)}&direct=${scope.direct}`
       : '';
     const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${encodeURIComponent(searchTerm)}${filters}${folder}`;
-    const response = await userService.getDocsWithPagination(query, token);
+    const response = await userService.getDocsWithPagination(
+      query,
+      token,
+      origin,
+    );
     if (!response.ok)
       throw new Error(`Failed to load sources (${response.status})`);
     const data = await response.json();
@@ -65,6 +88,7 @@ export async function getDocsWithPagination(
       kindCounts: data.kind_counts,
       usageCounts: data.usage_counts,
       subtreeTotal: data.subtree_total,
+      originCounts: data.origin_counts,
     };
   } catch (error) {
     console.log(error);

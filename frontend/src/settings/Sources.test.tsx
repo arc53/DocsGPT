@@ -113,6 +113,16 @@ vi.mock('react-redux', () => ({
         startedSyncs: connectors.startedSyncs,
       },
       notifications: { recentEvents: connectors.events },
+      // Personal: the page's workspace line and create buttons read it.
+      workspace: {
+        current: 'personal',
+        workspaces: [{ id: 'personal', kind: 'personal', name: 'Personal' }],
+        loaded: true,
+        loading: false,
+        epoch: 0,
+        lastReason: null,
+        latestRequestId: null,
+      },
       folders: folderState.items
         ? {
             tree: {
@@ -1755,6 +1765,7 @@ describe('Sources filters and usage', () => {
     expect(fetchPage.mock.calls[0][6]).toEqual({
       kind: 'websites',
       usage: 'in_use',
+      origin: 'own',
     });
   });
 
@@ -1771,7 +1782,6 @@ describe('Sources filters and usage', () => {
       ['settings.sources.kinds.files', '4'],
       ['settings.sources.kinds.websites', '2'],
       ['settings.sources.kinds.wikis', '1'],
-      ['settings.sources.kinds.shared', '1'],
     ]);
     // The page toolbar's size.
     expect(
@@ -1792,6 +1802,7 @@ describe('Sources filters and usage', () => {
     expect(fetchPage.mock.calls[0][6]).toEqual({
       kind: 'websites',
       usage: 'all',
+      origin: 'own',
     });
   });
 
@@ -2218,6 +2229,7 @@ describe('Sources folders', () => {
       kind: 'all',
       usage: 'all',
       scope: { folder: 'root', direct: true },
+      origin: 'own',
     });
     // Top-level folders only, by name; the loose sources under Sources.
     expect(folderTiles()).toEqual(['Carriers', 'Customs']);
@@ -2337,14 +2349,18 @@ describe('Sources folders', () => {
     ).toBe('tariff');
     const [, , , , search, , options] = fetchPage.mock.lastCall!;
     expect(search).toBe('tariff');
-    expect(options).toEqual({ kind: 'all', usage: 'all' });
+    expect(options).toEqual({ kind: 'all', usage: 'all', origin: 'own' });
   });
 
   it('searches every folder from the root: matching folders first, each source with its folder', async () => {
     answer([sheet, loose]);
     await mount(root, [sheet, loose]);
     await typeSearch('rate');
-    expect(fetchPage.mock.lastCall![6]).toEqual({ kind: 'all', usage: 'all' });
+    expect(fetchPage.mock.lastCall![6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      origin: 'own',
+    });
     expect(folderTiles()).toEqual(['Rate archive']);
     expect(
       container.querySelector('[data-folder-tile="f-rate"]')!.textContent,
@@ -2355,7 +2371,11 @@ describe('Sources folders', () => {
 
   it('goes flat under a filter at the root, with no folder tiles', async () => {
     await mount(root, [sheet], { entry: '/settings/knowledge?kind=files' });
-    expect(fetchPage.mock.calls[0][6]).toEqual({ kind: 'files', usage: 'all' });
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'files',
+      usage: 'all',
+      origin: 'own',
+    });
     expect(folderTiles()).toEqual([]);
     expect(folderMetaOf('Rate sheet')).toBe('Carriers › Rate archive');
   });

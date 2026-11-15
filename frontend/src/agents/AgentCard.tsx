@@ -17,7 +17,13 @@ import {
 } from 'lucide-react';
 
 import userService from '../api/services/userService';
-import RoleMeta from '../components/RoleMeta';
+import RoleMeta, { showsRole } from '../components/RoleMeta';
+import { canMoveToFolder } from '../components/folders/folderFiling';
+// Safe on a store without the workspace slice (read as Personal).
+import {
+  selectCanEditFolders as selectCanCreate,
+  selectFoldersInTeam as selectInTeam,
+} from '../components/folders/folderWorkspace';
 import MoveToFolderModal from '../components/folders/MoveToFolderModal';
 import { MetaItem, MetaLine } from '../components/ui/meta-line';
 import { Avatar } from '../components/ui/avatar';
@@ -47,9 +53,11 @@ import {
   agentLogsPath,
   sharedAgentPath,
 } from './paths';
-import { can, isOwner } from '../utils/accessUtils';
+import { can } from '../utils/accessUtils';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '../utils/browserUtils';
+import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
 import { canAgent } from './agentAccess';
 import { Agent } from './types';
 
@@ -57,20 +65,30 @@ type AgentCardProps = {
   agent: Agent;
   agents: Agent[];
   updateAgents?: (agents: Agent[]) => void;
+  /** The list section it is in (`agents.config`). */
   section: string;
   /**
    * The caller's folder trail for the agent ("Customer-facing › EU"), shown
    * as a meta item where the list is flat (a search across folders).
    */
   folderLabel?: string;
+  /** The agent moved to another workspace: reload the list it left. */
+  onMovedToWorkspace?: () => void;
 };
 
+/**
+ * An agent's tile in the agent list: its avatar, name and description, a
+ * meta line (its folder in a flat list; who added a team agent or owns a
+ * shared one; the reader's role on a shared one) and its ⋯, built from what
+ * the reader's role allows.
+ */
 export default function AgentCard({
   agent,
   agents,
   updateAgents,
   section,
   folderLabel,
+  onMovedToWorkspace,
 }: AgentCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -81,6 +99,9 @@ export default function AgentCard({
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const userAgents = useSelector(selectAgents);
+  const canCreate = useSelector(selectCanCreate);
+  const inTeam = useSelector(selectInTeam);
+  const moveToWorkspace = useMoveToWorkspace('agent');
 
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
@@ -102,6 +123,14 @@ export default function AgentCard({
     label: agent.pinned ? t('agents.card.unpin') : t('agents.card.pin'),
     onClick: () => togglePin(),
   };
+
+  // Move to team… / Move to Personal…, when the agent may move.
+  const moveOut = agent.id
+    ? moveToWorkspace.menuOption(
+        { ...agent, id: agent.id },
+        { onMoved: onMovedToWorkspace },
+      )
+    : null;
 
   const ownedMenu: MenuOption[] = [
     ...(canAgent(agent, 'view_logs')
@@ -140,7 +169,8 @@ export default function AgentCard({
         ]
       : []),
     ...(canAgent(agent, 'pin') ? [pinOption] : []),
-    ...(can(agent, 'move_folder')
+    // A team's agent is filed only in the team's folders, never in yours.
+    ...(can(agent, 'move_folder') && canMoveToFolder(agent, inTeam)
       ? [
           {
             icon: FolderInput,
@@ -149,6 +179,7 @@ export default function AgentCard({
           },
         ]
       : []),
+    ...(moveOut ? [moveOut] : []),
     ...(can(agent, 'delete')
       ? [
           {
@@ -163,19 +194,24 @@ export default function AgentCard({
   ];
 
   const menuOptionsConfig: Record<string, MenuOption[]> = {
-    template: [
-      {
-        icon: Copy,
-        label: t('modals.prompts.duplicate'),
-        onClick: () => handleDuplicate(),
-      },
-    ],
-    // My agents and the Team section share one menu, built from what the
-    // caller's role allows on this agent (`allowed_actions` from the API).
-    // Editors get Logs, Edit, Export and Pin; viewers only Pin. Share, Move
-    // and Delete stay with the owner unless the owner's switches widen them.
+    // Duplicating a template creates an agent here: Personal, or Editor and
+    // up in a team.
+    template: canCreate
+      ? [
+          {
+            icon: Copy,
+            label: t('modals.prompts.duplicate'),
+            onClick: () => handleDuplicate(),
+          },
+        ]
+      : [],
+    // The workspace's agents and Shared with you share one menu, built from
+    // what the caller's role allows on this agent (`allowed_actions` from the
+    // API). Editors get Logs, Edit, Export and Pin; viewers only Pin. Share,
+    // Move and Delete stay with the owner unless the owner's switches widen
+    // them.
     user: ownedMenu,
-    team: ownedMenu,
+    sharedWithYou: ownedMenu,
     // Discovered (link-opened) agents: the card itself opens the agent.
     shared: [
       pinOption,
@@ -190,9 +226,9 @@ export default function AgentCard({
   const menuOptions = menuOptionsConfig[section] || [];
 
   const handleClick = () => {
-    // Team-shared agents open/run exactly like the user's own published
-    // agents (the run + GetAgent routes authorize team grantees server-side).
-    if (section === 'user' || section === 'team') {
+    // Shared agents open and run like the caller's own published ones (the
+    // run and GetAgent routes authorize them server-side).
+    if (section === 'user' || section === 'sharedWithYou') {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
         navigate(agent.id ? agentChatPath(agent.id) : '/c/new');
@@ -306,14 +342,17 @@ export default function AgentCard({
     });
     updateAgents?.(updatedAgents);
   };
-  // Same rule as handleClick: a Discovered card always opens, an own or team
-  // agent once it's published.
+  // Same rule as handleClick: a Discovered card always opens, the
+  // workspace's or a shared agent once it's published.
   const canOpen =
     section === 'shared' ||
-    ((section === 'user' || section === 'team') &&
+    ((section === 'user' || section === 'sharedWithYou') &&
       agent.status === 'published');
-  const shared = !isOwner(agent);
-  const hasMeta = shared || Boolean(folderLabel);
+  // Who added a team agent or owns a shared one, and the reader's role on a
+  // shared one; nothing on the caller's own.
+  const creator = showsCreator(agent);
+  const role = showsRole(agent);
+  const hasMeta = creator || role || Boolean(folderLabel);
   const title = (
     <CardTitle title={agent.name} className="truncate">
       {agent.name}
@@ -355,22 +394,23 @@ export default function AgentCard({
       )}
       <CardDescription
         size="xs"
-        // A meta line (a shared agent's role, its folder) takes the third line.
+        // A meta line (its folder, who added it, a role) takes the third line.
         className={cn('mx-1', hasMeta ? 'line-clamp-2' : 'line-clamp-3')}
       >
         {agent.description}
       </CardDescription>
-      {/* The reader's role and the agent's folder are facts about it: the
-          meta line, not pills. */}
+      {/* The agent's folder, who added it and the reader's role are facts
+          about it: the meta line, not pills. */}
       {hasMeta ? (
         <CardFooter className="mx-1 mt-auto">
           <MetaLine>
-            {shared ? <RoleMeta item={agent} /> : null}
             {folderLabel ? (
               <MetaItem icon={<Folder />} title={folderLabel}>
                 {folderLabel}
               </MetaItem>
             ) : null}
+            {creator ? <CreatorMeta item={agent} /> : null}
+            {role ? <RoleMeta item={agent} /> : null}
           </MetaLine>
         </CardFooter>
       ) : null}
@@ -423,7 +463,7 @@ export default function AgentCard({
         <MoveToFolderModal
           open
           onOpenChange={setMoveOpen}
-          type="agent"
+          kind="agent"
           subject={{
             kind: 'items',
             ids: [agent.id],
@@ -441,6 +481,7 @@ export default function AgentCard({
           onClose={() => setShareModalOpen(false)}
         />
       )}
+      {moveToWorkspace.dialog}
     </Card>
   );
 }

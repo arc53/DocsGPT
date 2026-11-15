@@ -925,10 +925,14 @@
         "emptyState": "未找到共享代理。",
         "title": "與我共享"
       },
+      "sharedWithYou": {
+        "description": "其他人與您分享的代理",
+        "emptyState": "還沒有人與您分享代理。"
+      },
       "team": {
-        "description": "團隊成員與您分享的代理",
-        "emptyState": "尚未有代理與您的團隊分享。",
-        "title": "團隊"
+        "description": "團隊擁有的代理，團隊中的每個人都可以使用。",
+        "emptyState": "此團隊還沒有代理。",
+        "title": "代理"
       },
       "template": {
         "description": "DocsGPT提供的代理",
@@ -941,7 +945,7 @@
         "title": "我的代理"
       }
     },
-    "shareWithTeam": "與團隊分享",
+    "shareWithTeam": "分享",
     "shared": {
       "connectedTools": "已連接的工具",
       "loadError": "無法載入此代理。",
@@ -4077,7 +4081,6 @@
       "kinds": {
         "all": "全部",
         "files": "檔案",
-        "shared": "共享",
         "synced": "已同步",
         "websites": "網站",
         "wikis": "Wiki"
@@ -4215,7 +4218,7 @@
         "folders": "資料夾",
         "sources": "來源"
       },
-      "shareWithTeam": "與團隊分享",
+      "shareWithTeam": "分享",
       "size": "大小",
       "subtitle": "DocsGPT 可以搜尋和引用的內容：上傳的檔案、網站、Wiki，以及從連線同步的內容。",
       "syncConfirmation": "要同步「{{sourceName}}」嗎？",

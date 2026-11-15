@@ -22,6 +22,7 @@ import {
   canCreateIn,
   childFolders,
   folderPath,
+  folderShowsOn,
   matchingFolders,
   subtreeIds,
 } from '../components/folders/folderTree';
@@ -30,10 +31,16 @@ import type { Folder } from '../components/folders/types';
 import { useFolderActions } from '../components/folders/useFolderActions';
 import { useFolderMenu } from '../components/folders/useFolderMenu';
 import { useFolderParam } from '../components/folders/useFolderParam';
+// Safe on a store without the workspace slice (read as Personal): Personal,
+// or Editor and up in a team, may create; whether the workspace is a team.
+import {
+  selectCanEditFolders as selectCanCreate,
+  selectFoldersInTeam as selectInTeam,
+} from '../components/folders/folderWorkspace';
 import type { Crumb } from '../components/tree/PathHeader';
 import { SourceFolderTrail } from '../components/tree/folderTrail';
 import PageToolbar from '../components/PageToolbar';
-import RoleMeta from '../components/RoleMeta';
+import RoleMeta, { showsRole } from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
@@ -69,7 +76,11 @@ import {
   type UsageFilter,
 } from '../models/misc';
 import type { SSEEvent } from '../notifications/notificationsSlice';
-import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import {
+  getDocs,
+  getDocsWithPagination,
+  type PaginatedDocs,
+} from '../preferences/preferenceApi';
 import {
   selectSourceDocs,
   selectToken,
@@ -83,9 +94,12 @@ import {
   readKnowledgeLink,
 } from './knowledgeLink';
 import { cn } from '../lib/utils';
-import { can, isOwner } from '../utils/accessUtils';
+import { can } from '../utils/accessUtils';
 import { formatRelative } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
+import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import { captureWorkspace } from '../workspace/requestWorkspace';
+import WorkspaceLine from '../workspace/WorkspaceLine';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -173,6 +187,41 @@ const USAGE_LABELS: Record<UsageFilter, string> = {
   unused: 'settings.usage.filters.unused',
 };
 
+/** Adds two count records key by key (the own and the shared listing's). */
+function sumCounts<K extends string>(
+  own: Record<K, number> | null,
+  shared: Record<K, number> | null | undefined,
+): Record<K, number> | null {
+  if (!own || !shared) return own;
+  const sum = { ...own };
+  (Object.keys(own) as K[]).forEach((key) => {
+    sum[key] = (own[key] ?? 0) + (shared[key] ?? 0);
+  });
+  return sum;
+}
+
+/** The sources shared with the caller, listed apart under the own ones. */
+type SharedList = {
+  docs: Doc[];
+  total: number;
+  page: number;
+  /** What it was asked with, for its next page. */
+  query: ListQuery;
+  kindCounts: PaginatedDocs['kindCounts'];
+  usageCounts: PaginatedDocs['usageCounts'];
+};
+
+/** What a page of sources is asked with, less its page number. */
+type ListQuery = {
+  sort: 'date' | 'tokens';
+  order: 'asc' | 'desc';
+  rows: number;
+  term: string;
+  kind: SourceKindFilter;
+  usage: UsageFilter;
+  scope?: SourceListScope;
+};
+
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
 
@@ -191,6 +240,8 @@ export default function Sources({
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
+  const canCreate = useSelector(selectCanCreate);
+  const inTeam = useSelector(selectInTeam);
   const connections = useSelector(selectConnections);
   // Signing in again reloads the connections, which lifts the pause.
   const { reconnect, modals: signInModals } = useSignInAgain();
@@ -208,7 +259,10 @@ export default function Sources({
   useEffect(() => {
     if (!folderList.loaded && !folderList.loading) void folderActions.reload();
   }, []);
-  const hasFolders = folderList.items.length > 0;
+  // This page lists the folders that hold sources, or nothing yet.
+  const hasFolders = folderList.items.some((item) =>
+    folderShowsOn(tree, item, 'source'),
+  );
   const inFolder = folderId !== null;
 
   // A search belongs to the folder it was typed in: opening another folder
@@ -269,6 +323,11 @@ export default function Sources({
     UsageFilter,
     number
   > | null>(null);
+  // Personal's root lists the caller's own sources; the ones people shared
+  // with them come in a listing of their own, read only when the own one
+  // counts any, and show as Shared with you.
+  const [shared, setShared] = useState<SharedList | null>(null);
+  const latestShared = useRef(0);
 
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
@@ -419,6 +478,59 @@ export default function Sources({
     : flat
       ? undefined
       : { folder: 'root', direct: true };
+  // The root asks for the workspace's own sources (shared ones are a section
+  // of their own); a folder lists everything filed in it, shared included.
+  const listOrigin = folderId ? undefined : ('own' as const);
+
+  /**
+   * Reads one page of the sources shared with the caller, or forgets them.
+   *
+   * Args:
+   *   query: The own listing's search, filters and sort; null to clear.
+   *   page: The page of shared sources to read.
+   */
+  const loadShared = useCallback(
+    (query: ListQuery | null, page = 1) => {
+      const request = ++latestShared.current;
+      if (!query) {
+        setShared(null);
+        return;
+      }
+      const workspace = captureWorkspace();
+      getDocsWithPagination(
+        query.sort,
+        query.order,
+        page,
+        query.rows,
+        query.term,
+        token,
+        {
+          kind: query.kind,
+          usage: query.usage,
+          origin: 'shared',
+          ...(query.scope ? { scope: query.scope } : {}),
+        },
+      )
+        .then((data) => {
+          if (request !== latestShared.current || !workspace.isCurrent())
+            return;
+          setShared(
+            data
+              ? {
+                  docs: data.docs,
+                  total: data.totalDocuments,
+                  page: data.currentPage,
+                  query,
+                  kindCounts: data.kindCounts,
+                  usageCounts: data.usageCounts,
+                }
+              : null,
+          );
+        })
+        .catch((error) => console.error(error));
+    },
+    [token],
+  );
 
   // Each page request's number: only the latest one's answer is shown, so a
   // filter, search or page clicked while one loads isn't overwritten by it.
@@ -446,7 +558,10 @@ export default function Sources({
       }
 
       const request = ++latestRequest.current;
-      const isLatest = () => request === latestRequest.current;
+      // An answer from before a workspace switch belongs to another list.
+      const workspace = captureWorkspace();
+      const isLatest = () =>
+        request === latestRequest.current && workspace.isCurrent();
       setLoading(true);
       getDocsWithPagination(
         newSortField,
@@ -455,11 +570,35 @@ export default function Sources({
         rowsPerPg,
         debouncedSearchTerm,
         token,
-        { kind, usage, ...(listScope ? { scope: listScope } : {}) },
+        {
+          kind,
+          usage,
+          ...(listScope ? { scope: listScope } : {}),
+          ...(listOrigin ? { origin: listOrigin } : {}),
+        },
       )
         .then((data) => {
           if (!isLatest()) return;
           setLoadFailed(data === null);
+          // Only Personal's root has a Shared with you; a team never does.
+          const sharedHere =
+            !!data &&
+            !inTeam &&
+            !folderId &&
+            (data.originCounts?.shared ?? 0) > 0;
+          loadShared(
+            sharedHere
+              ? {
+                  sort: newSortField,
+                  order: newSortOrder,
+                  rows: rowsPerPg,
+                  term: debouncedSearchTerm,
+                  kind,
+                  usage,
+                  scope: listScope,
+                }
+              : null,
+          );
           if (data === null) return;
           dispatch(setPaginatedDocuments(data.docs));
           setTotalDocuments(data.totalDocuments);
@@ -484,6 +623,10 @@ export default function Sources({
       usage,
       listScope?.folder,
       listScope?.direct,
+      listOrigin,
+      inTeam,
+      folderId,
+      loadShared,
       setCurrentPage,
     ],
   );
@@ -544,6 +687,12 @@ export default function Sources({
         })),
       });
       refreshDocs();
+    },
+    // Another workspace's now: it leaves this list and the app's.
+    onMovedToWorkspace: (doc) => {
+      if (documentToView?.id === doc.id) closeDocument();
+      refreshDocs();
+      void reloadKnowledge();
     },
     onSyncStarted: (doc, sync) =>
       doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
@@ -776,14 +925,30 @@ export default function Sources({
     (doc) => !attentionIds.has(doc.id),
   );
   const showAttention = attentionDocs.length > 0;
-  // Only the root's own (in no folder) are part of its listed total.
-  const attentionListed = attentionDocs.filter(
+  // Only the root's unfiled ones are part of its listed totals: the own
+  // ones of Sources, the shared ones of Shared with you.
+  const unfiledAttention = attentionDocs.filter(
     (doc) => !doc.folder_id || !tree.byId.has(doc.folder_id),
+  );
+  const attentionListed = unfiledAttention.filter(
+    (doc) => doc.origin !== 'shared',
   ).length;
+  // Shared with you follows the own list's page 1, as the folders do.
+  const sharedDocs =
+    shared && !inFolder && currentPage === 1
+      ? shared.docs.filter((doc) => !attentionIds.has(doc.id))
+      : [];
+  const sharedCount = shared
+    ? Math.max(0, shared.total - (unfiledAttention.length - attentionListed))
+    : 0;
+  // The kinds and usage count both listings.
+  const shownKindCounts = sumCounts(kindCounts, shared?.kindCounts);
+  const shownUsageCounts = sumCounts(usageCounts, shared?.usageCounts);
 
   // The folders on page 1: the level's own, or for a search the matching
-  // ones from every level below (a filter alone lists sources only).
-  const shownFolders: Folder[] =
+  // ones from every level below (a filter alone lists sources only); only
+  // those holding sources, or nothing yet.
+  const shownFolders: Folder[] = (
     currentPage !== 1
       ? []
       : searching
@@ -796,7 +961,8 @@ export default function Sources({
           )
         : filtered
           ? []
-          : childFolders(tree, folderId);
+          : childFolders(tree, folderId)
+  ).filter((shown) => folderShowsOn(tree, shown, 'source'));
   /** Where a folder found by a search sits, when not right here. */
   const parentNameOf = (found: Folder): string | undefined => {
     if (!searching) return undefined;
@@ -1020,13 +1186,16 @@ export default function Sources({
                 {folderLabel}
               </MetaItem>
             ) : null}
-            {isOwner(document) ? null : <RoleMeta item={document} />}
             {agentUseCount(document.used_by) > 0 ? (
               // A sibling above the stretched button, so its popover opens.
               <span className="relative z-10">
                 <UsedByAgents usage={document.used_by} />
               </span>
             ) : null}
+            {/* Who added a team source, or owns one shared with the reader,
+                then the reader's role on a shared one. */}
+            {showsCreator(document) ? <CreatorMeta item={document} /> : null}
+            {showsRole(document) ? <RoleMeta item={document} /> : null}
           </MetaLine>
           {/* The reader's own connection (only theirs are loaded): sign in
               again right here, without opening the source. */}
@@ -1059,9 +1228,15 @@ export default function Sources({
 
   const GRID =
     'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+  // Add knowledge, wherever it shows: Personal, or Editor and up in a team.
+  const addButton = canCreate ? (
+    <Button type="button" shape="pill" onClick={() => setModalState('ACTIVE')}>
+      {t('settings.sources.addSource')}
+    </Button>
+  ) : undefined;
   // New folder and Add knowledge, here or inside the open folder; on a
-  // phone the two share the row.
-  const toolbarAction = (
+  // phone the two share the row. Neither is drawn below Editor in a team.
+  const toolbarAction = canCreate ? (
     <div className="flex w-full items-center gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
       <NewFolderButton
         atDepthLimit={!canCreateIn(tree, folderId)}
@@ -1076,7 +1251,7 @@ export default function Sources({
         {t('settings.sources.addSource')}
       </Button>
     </div>
-  );
+  ) : undefined;
   const folderMenuButton = folder ? (
     <ActionMenu
       size="toolbar"
@@ -1110,12 +1285,17 @@ export default function Sources({
   // The root with no folders keeps one unheaded grid, as before folders;
   // with folders (or inside one) every group has its heading.
   const sectioned =
-    showAttention || inFolder || hasFolders || shownFolders.length > 0;
+    showAttention ||
+    inFolder ||
+    hasFolders ||
+    shownFolders.length > 0 ||
+    sharedDocs.length > 0;
   const nothingListed =
     !currentDocuments.length &&
     !showAttention &&
     pendingSyncs.length === 0 &&
-    shownFolders.length === 0;
+    shownFolders.length === 0 &&
+    sharedDocs.length === 0;
 
   return documentToView ? (
     <SourceFolderTrail.Provider value={folderCrumbs}>
@@ -1206,7 +1386,7 @@ export default function Sources({
         {folder ? (
           <div className="mb-5">
             <FolderCrumbRow
-              type="source"
+              kind="source"
               trail={trail}
               onNavigate={openFolder}
               meta={folderCountLine(t, folder, 'source')}
@@ -1214,8 +1394,16 @@ export default function Sources({
             />
           </div>
         ) : null}
+        {/* At the root the intro, then whose sources these are. */}
+        {inFolder ? null : (
+          <div className="mb-5">
+            <p className="text-muted-foreground text-sm leading-6">
+              {t('settings.sources.subtitle')}
+            </p>
+            <WorkspaceLine kind="knowledge" />
+          </div>
+        )}
         <PageToolbar
-          intro={inFolder ? undefined : t('settings.sources.subtitle')}
           search={
             <SearchInput
               maxLength={256}
@@ -1238,21 +1426,21 @@ export default function Sources({
         >
           {/* One recipe per page: the kind is the pill track, usage the
               FilterSelect beside it. */}
-          {!loadFailed && (kindCounts || usageCounts) ? (
+          {!loadFailed && (shownKindCounts || shownUsageCounts) ? (
             <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
-              {kindCounts && (
+              {shownKindCounts && (
                 <SourceKindToggle
                   value={kind}
                   onValueChange={setKind}
-                  counts={kindCounts}
+                  counts={shownKindCounts}
                 />
               )}
-              {usageCounts && (
+              {shownUsageCounts && (
                 <FilterSelect
                   value={usage}
                   onValueChange={setUsage}
                   values={USAGE_FILTERS}
-                  counts={usageCounts}
+                  counts={shownUsageCounts}
                   labelOf={(value) => t(USAGE_LABELS[value])}
                   ariaLabel={t('settings.usage.filterLabel')}
                 />
@@ -1309,16 +1497,12 @@ export default function Sources({
                 size="sm"
                 icon={FolderOpen}
                 title={t('folders.emptyTitle')}
-                description={t('settings.sources.folders.emptyHint')}
-                action={
-                  <Button
-                    type="button"
-                    shape="pill"
-                    onClick={() => setModalState('ACTIVE')}
-                  >
-                    {t('settings.sources.addSource')}
-                  </Button>
+                description={
+                  canCreate
+                    ? t('settings.sources.folders.emptyHint')
+                    : undefined
                 }
+                action={addButton}
               />
             ) : foldersFailed && !flat && currentPage === 1 ? (
               foldersError
@@ -1333,16 +1517,10 @@ export default function Sources({
               // section connects a service too.
               <EmptyState
                 title={t('settings.sources.noData')}
-                description={t('settings.sources.emptyHint')}
-                action={
-                  <Button
-                    type="button"
-                    shape="pill"
-                    onClick={() => setModalState('ACTIVE')}
-                  >
-                    {t('settings.sources.addSource')}
-                  </Button>
+                description={
+                  canCreate ? t('settings.sources.emptyHint') : undefined
                 }
+                action={addButton}
               />
             )
           ) : sectioned ? (
@@ -1371,7 +1549,7 @@ export default function Sources({
                       <FolderTile
                         key={shown.id}
                         folder={shown}
-                        type="source"
+                        kind="source"
                         onOpen={(opened) => openFolder(opened.id)}
                         menuOptions={folderMenu.menuOptions(shown)}
                         parentName={parentNameOf(shown)}
@@ -1393,6 +1571,32 @@ export default function Sources({
                     {pendingSyncs.map(renderPendingSync)}
                     {gridDocuments.map((doc) => renderSourceCard(doc, flat))}
                   </div>
+                </section>
+              ) : null}
+              {sharedDocs.length > 0 && shared ? (
+                <section
+                  className="flex flex-col gap-3"
+                  data-section="shared-with-you"
+                >
+                  <SectionHeader
+                    size="sm"
+                    title={t('workspace.page.sharedWithYou')}
+                    count={sharedCount}
+                  />
+                  <div className={GRID}>
+                    {sharedDocs.map((doc) => renderSourceCard(doc, flat))}
+                  </div>
+                  {shared.total > shared.query.rows ? (
+                    <Pagination
+                      page={shared.page}
+                      pageSize={shared.query.rows}
+                      total={shared.total}
+                      rangeLabel={(range) =>
+                        t('settings.sources.pageRange', pageRangeParams(range))
+                      }
+                      onPageChange={(next) => loadShared(shared.query, next)}
+                    />
+                  ) : null}
                 </section>
               ) : null}
             </div>
@@ -1454,7 +1658,7 @@ export default function Sources({
       <FolderNameModal
         open={newFolderOpen}
         onOpenChange={setNewFolderOpen}
-        type="source"
+        kind="source"
         mode="create"
         parentId={folderId}
       />

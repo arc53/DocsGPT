@@ -926,10 +926,14 @@
         "emptyState": "Keine geteilten Agenten gefunden.",
         "title": "Mit mir geteilt"
       },
+      "sharedWithYou": {
+        "description": "Agenten, die andere mit dir geteilt haben",
+        "emptyState": "Noch hat niemand einen Agenten mit dir geteilt."
+      },
       "team": {
-        "description": "Agenten, die deine Teamkollegen mit dir geteilt haben",
-        "emptyState": "Mit deinem Team wurden noch keine Agenten geteilt.",
-        "title": "Team"
+        "description": "Agenten, die dem Team gehören. Alle im Team können sie nutzen.",
+        "emptyState": "Dieses Team hat noch keine Agenten.",
+        "title": "Agenten"
       },
       "template": {
         "description": "Von DocsGPT bereitgestellte Agenten",
@@ -942,7 +946,7 @@
         "title": "Von mir"
       }
     },
-    "shareWithTeam": "Mit Team teilen",
+    "shareWithTeam": "Teilen",
     "shared": {
       "connectedTools": "Verbundene Tools",
       "loadError": "Dieser Agent konnte nicht geladen werden.",
@@ -4109,7 +4113,6 @@
       "kinds": {
         "all": "Alle",
         "files": "Dateien",
-        "shared": "Geteilt",
         "synced": "Synchronisiert",
         "websites": "Websites",
         "wikis": "Wikis"
@@ -4247,7 +4250,7 @@
         "folders": "Ordner",
         "sources": "Quellen"
       },
-      "shareWithTeam": "Mit Team teilen",
+      "shareWithTeam": "Teilen",
       "size": "Größe",
       "subtitle": "Inhalte, die DocsGPT durchsuchen und zitieren kann: Uploads, Websites, Wikis und aus deinen Verbindungen synchronisierte Inhalte.",
       "syncConfirmation": "\"{{sourceName}}\" synchronisieren?",

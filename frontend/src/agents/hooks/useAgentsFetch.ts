@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
 import { loadFolders } from '../../components/folders/foldersSlice';
+import { selectFoldersInTeam as selectInTeam } from '../../components/folders/folderWorkspace';
 import {
   selectToken,
   setAgents,
@@ -10,6 +11,7 @@ import {
   setTemplateAgents,
 } from '../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../store';
+import { captureWorkspace } from '../../workspace/requestWorkspace';
 import { AgentSectionId } from '../agents.config';
 
 interface UseAgentsFetchResult {
@@ -19,57 +21,75 @@ interface UseAgentsFetchResult {
   refetchUserAgents: () => Promise<void>;
 }
 
+/**
+ * Loads the agent list's sections: templates, the workspace's agents (with,
+ * in Personal, the ones shared with the caller) and, in Personal, the public
+ * agents opened by a link. An answer that comes back after a workspace
+ * switch is dropped, so it can't land in the other workspace's list.
+ *
+ * Returns:
+ *   Each section's loading state, and refetches for the agents and folders.
+ */
 export function useAgentsFetch(): UseAgentsFetchResult {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
+  const inTeam = useSelector(selectInTeam);
 
   const [isLoading, setIsLoading] = useState<Record<AgentSectionId, boolean>>({
     template: true,
     user: true,
-    // 'team' agents are split out of the same /api/get_agents payload, so
-    // their loading state tracks the user fetch.
-    team: true,
+    // Shared with you is split out of the same /api/get_agents payload, so
+    // its loading state tracks the user fetch.
+    sharedWithYou: true,
     shared: true,
   });
 
   const fetchTemplateAgents = useCallback(async () => {
+    const workspace = captureWorkspace();
     try {
       const response = await userService.getTemplateAgents(token);
       if (!response.ok) throw new Error('Failed to fetch template agents');
       const data = await response.json();
-      dispatch(setTemplateAgents(data));
+      if (workspace.isCurrent()) dispatch(setTemplateAgents(data));
     } catch (error) {
-      dispatch(setTemplateAgents([]));
+      if (workspace.isCurrent()) dispatch(setTemplateAgents([]));
     } finally {
       setIsLoading((prev) => ({ ...prev, template: false }));
     }
   }, [token, dispatch]);
 
   const fetchUserAgents = useCallback(async () => {
+    const workspace = captureWorkspace();
     try {
       const response = await userService.getAgents(token);
       if (!response.ok) throw new Error('Failed to fetch user agents');
       const data = await response.json();
-      dispatch(setAgents(data));
+      if (workspace.isCurrent()) dispatch(setAgents(data));
     } catch (error) {
-      dispatch(setAgents([]));
+      if (workspace.isCurrent()) dispatch(setAgents([]));
     } finally {
-      setIsLoading((prev) => ({ ...prev, user: false, team: false }));
+      setIsLoading((prev) => ({ ...prev, user: false, sharedWithYou: false }));
     }
   }, [token, dispatch]);
 
+  // Discovered is Personal's: a team lists nothing there.
   const fetchSharedAgents = useCallback(async () => {
+    if (inTeam) {
+      setIsLoading((prev) => ({ ...prev, shared: false }));
+      return;
+    }
+    const workspace = captureWorkspace();
     try {
       const response = await userService.getSharedAgents(token);
       if (!response.ok) throw new Error('Failed to fetch shared agents');
       const data = await response.json();
-      dispatch(setSharedAgents(data));
+      if (workspace.isCurrent()) dispatch(setSharedAgents(data));
     } catch (error) {
-      dispatch(setSharedAgents([]));
+      if (workspace.isCurrent()) dispatch(setSharedAgents([]));
     } finally {
       setIsLoading((prev) => ({ ...prev, shared: false }));
     }
-  }, [token, dispatch]);
+  }, [token, dispatch, inTeam]);
 
   // Agent folders live in the shared folders slice: a failed load shows as
   // an error on the page (`selectFolderList('agent').failed`), not as none.
@@ -78,7 +98,12 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   }, [token, dispatch]);
 
   useEffect(() => {
-    setIsLoading({ template: true, user: true, team: true, shared: true });
+    setIsLoading({
+      template: true,
+      user: true,
+      sharedWithYou: true,
+      shared: true,
+    });
     Promise.all([
       fetchTemplateAgents(),
       fetchUserAgents(),
@@ -90,7 +115,7 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   const isAllLoaded =
     !isLoading.template &&
     !isLoading.user &&
-    !isLoading.team &&
+    !isLoading.sharedWithYou &&
     !isLoading.shared;
 
   return {

@@ -31,6 +31,9 @@ vi.mock('../components/folders/MoveToFolderModal', () => ({
   default: () => null,
 }));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+vi.mock('../workspace/move/useMoveToWorkspace', () => ({
+  useMoveToWorkspace: () => ({ menuOption: () => null, dialog: null }),
+}));
 vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
     modalState,
@@ -168,7 +171,7 @@ describe('AgentCard menu', () => {
   });
 
   it('gives an editor Logs, Edit, Export and Pin', async () => {
-    await render(agentWith('editor', EDITOR_ACTIONS), 'team');
+    await render(agentWith('editor', EDITOR_ACTIONS), 'sharedWithYou');
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.logs',
       'agents.edit',
@@ -180,7 +183,7 @@ describe('AgentCard menu', () => {
   it('brings Share and Delete back for an editor the owner allows', async () => {
     await render(
       agentWith('editor', [...EDITOR_ACTIONS, 'share', 'delete']),
-      'team',
+      'sharedWithYou',
     );
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.logs',
@@ -193,7 +196,7 @@ describe('AgentCard menu', () => {
   });
 
   it('swaps Edit for View (Eye) when the role can open but not edit', async () => {
-    await render(agentWith('viewer', ['use', 'pin', 'view']), 'team');
+    await render(agentWith('viewer', ['use', 'pin', 'view']), 'sharedWithYou');
     const items = await openMenu();
     const view = items.find((i) => i.textContent === 'agents.view');
     expect(view).toBeDefined();
@@ -204,7 +207,7 @@ describe('AgentCard menu', () => {
   });
 
   it('shows the role on a shared tile in its meta line, not as a pill', async () => {
-    await render(agentWith('editor', EDITOR_ACTIONS), 'team');
+    await render(agentWith('editor', EDITOR_ACTIONS), 'sharedWithYou');
     const role = container.querySelector<HTMLElement>(
       '[data-testid="role-meta"]',
     );
@@ -220,12 +223,15 @@ describe('AgentCard menu', () => {
   });
 
   it('gives a viewer Pin only', async () => {
-    await render(agentWith('viewer', VIEWER_ACTIONS), 'team');
+    await render(agentWith('viewer', VIEWER_ACTIONS), 'sharedWithYou');
     expect(await menuLabels()).toEqual(['agents.card.pin']);
   });
 
   it('adds Logs for a viewer when the owner shares logs', async () => {
-    await render(agentWith('viewer', [...VIEWER_ACTIONS, 'view_logs']), 'team');
+    await render(
+      agentWith('viewer', [...VIEWER_ACTIONS, 'view_logs']),
+      'sharedWithYou',
+    );
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.logs',
       'agents.card.pin',
@@ -235,7 +241,7 @@ describe('AgentCard menu', () => {
   it('shows no menu to a viewer of a draft', async () => {
     await render(
       { ...agentWith('viewer', VIEWER_ACTIONS), status: 'draft' },
-      'team',
+      'sharedWithYou',
     );
     expect(
       container.querySelector('button[aria-label="agents.card.actions"]'),
@@ -289,7 +295,7 @@ describe('AgentCard menu', () => {
   });
 
   it('opens the chat when a viewer clicks a published card', async () => {
-    await render(agentWith('viewer', VIEWER_ACTIONS), 'team');
+    await render(agentWith('viewer', VIEWER_ACTIONS), 'sharedWithYou');
     await act(async () =>
       container
         .querySelector<HTMLElement>('[data-slot="card"] > button')!

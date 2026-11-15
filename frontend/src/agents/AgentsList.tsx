@@ -17,6 +17,7 @@ import {
   canCreateIn,
   childFolders,
   folderPath,
+  folderShowsOn,
   formatFolderPath,
   matchingFolders,
   searchParentName,
@@ -30,6 +31,12 @@ import {
   useFolderMenu,
 } from '../components/folders/useFolderMenu';
 import { useFolderParam } from '../components/folders/useFolderParam';
+// Safe on a store without the workspace slice (read as Personal): Personal,
+// or Editor and up in a team, may create; whether the workspace is a team.
+import {
+  selectCanEditFolders as selectCanCreate,
+  selectFoldersInTeam as selectInTeam,
+} from '../components/folders/folderWorkspace';
 import {
   setConversation,
   updateConversationId,
@@ -41,14 +48,23 @@ import {
   setAgents,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
+import WorkspaceLine from '../workspace/WorkspaceLine';
 import AgentCard from './AgentCard';
-import { AgentSectionId, agentSectionsConfig } from './agents.config';
+import {
+  AgentSectionId,
+  agentSectionsConfig,
+  PERSONAL_ONLY_SECTIONS,
+} from './agents.config';
 import AgentTypeModal from './components/AgentTypeModal';
 import SectionShell from '../navigation/SectionShell';
 import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
 import SectionPills from '../navigation/SectionPills';
-import { filterAgentsByQuery, useAgentSearch } from './hooks/useAgentSearch';
+import {
+  type AgentFilterTab,
+  filterAgentsByQuery,
+  useAgentSearch,
+} from './hooks/useAgentSearch';
 import { agentsFilterPath, filterFromPath } from './paths';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import { useGridColumns } from '../hooks/useGridColumns';
@@ -59,6 +75,33 @@ import { Agent } from './types';
 
 const TILE_GRID =
   'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+
+/**
+ * The filter a route asks for, as this workspace reads it: the old Team
+ * address is Shared with you in Personal and the team's agents in a team, and
+ * a team, where nothing is shared in, shows everything for Shared with you
+ * and Discovered.
+ */
+export function workspaceFilter(
+  filter: AgentFilterTab,
+  inTeam: boolean,
+): Exclude<AgentFilterTab, 'team'> {
+  if (filter === 'team') return inTeam ? 'user' : 'sharedWithYou';
+  if (inTeam && PERSONAL_ONLY_SECTIONS.includes(filter as AgentSectionId))
+    return 'all';
+  return filter;
+}
+
+/**
+ * The locale block of a section's copy: in a team the workspace's agents are
+ * the team's, so `user` reads from `team` ("Agents").
+ */
+const sectionCopy = (id: AgentSectionId, inTeam: boolean): string =>
+  id === 'user' && inTeam ? 'team' : id;
+
+/** The folders an agents list shows: those holding agents, or nothing yet. */
+const agentFolders = (tree: FolderTree, folders: Folder[]): Folder[] =>
+  folders.filter((folder) => folderShowsOn(tree, folder, 'agent'));
 
 /** "Customer-facing › EU" for an agent filed in a folder the list knows. */
 const folderLabelOf = (tree: FolderTree, agent: Agent): string | undefined =>
@@ -72,6 +115,7 @@ export default function AgentsList() {
   const location = useLocation();
   const selectedAgent = useSelector(selectSelectedAgent);
   const folderList = useSelector(selectFolderList('agent'));
+  const inTeam = useSelector(selectInTeam);
   const { folderId, folder, trail, tree, openFolder } = useFolderParam('agent');
   const [showAgentTypeModal, setShowAgentTypeModal] = useState(false);
   const [modalFolderId, setModalFolderId] = useState<string | null>(null);
@@ -82,13 +126,21 @@ export default function AgentsList() {
 
   // The list's filter is a route, so it is linkable and survives a reload;
   // the sidebar nav (and the pill row below `lg`) does the navigating.
-  const activeFilter = filterFromPath(location.pathname);
+  const activeFilter = workspaceFilter(
+    filterFromPath(location.pathname),
+    inTeam,
+  );
 
   const { isLoading, refetchFolders, refetchUserAgents } = useAgentsFetch();
-  const folderMenu = useFolderMenu('agent', () => {
-    // The folder's agents moved to its parent: their filings changed.
-    refetchUserAgents();
-  });
+  const folderMenu = useFolderMenu(
+    'agent',
+    () => {
+      // The folder's agents moved to its parent: their filings changed.
+      refetchUserAgents();
+    },
+    // Its agents went with it to the other workspace.
+    { onMovedToWorkspace: () => void refetchUserAgents() },
+  );
 
   const {
     searchQuery,
@@ -122,7 +174,12 @@ export default function AgentsList() {
 
   const inFolder = folderId !== null;
 
+  const matchedFolders = (query: string) =>
+    agentFolders(tree, matchingFolders(tree, query));
+
   const visibleSections = agentSectionsConfig.filter((config) => {
+    // Nothing is shared into a team: no Shared with you, no Discovered.
+    if (inTeam && PERSONAL_ONLY_SECTIONS.includes(config.id)) return false;
     if (activeFilter !== 'all') {
       return config.id === activeFilter;
     }
@@ -135,9 +192,7 @@ export default function AgentsList() {
     if (searchQuery) {
       // A folder whose name matches keeps My agents on screen.
       if (config.id === 'user')
-        return (
-          hasFilteredAgents || matchingFolders(tree, searchQuery).length > 0
-        );
+        return hasFilteredAgents || matchedFolders(searchQuery).length > 0;
       return hasFilteredAgents;
     }
     if (config.id === 'user') return true;
@@ -148,13 +203,14 @@ export default function AgentsList() {
     searchQuery &&
     hasAnyAgents &&
     !hasFilteredResults &&
-    matchingFolders(tree, searchQuery).length === 0 &&
+    matchedFolders(searchQuery).length === 0 &&
     activeFilter === 'all';
 
   const sectionActions = {
     onNewFolder: (parentId: string | null) => setNewFolderParent(parentId),
     onImport: () => setShowImportModal(true),
     onNewAgent: openNewAgent,
+    onAgentsMoved: () => void refetchUserAgents(),
   };
 
   return (
@@ -162,6 +218,7 @@ export default function AgentsList() {
       <p className="text-muted-foreground text-sm leading-6">
         {t('agents.description')}
       </p>
+      <WorkspaceLine kind="agents" />
 
       <SectionPills className="mt-6" />
 
@@ -211,6 +268,7 @@ export default function AgentsList() {
               totalAgentsBySection[sectionConfig.id as AgentSectionId]
             }
             searchQuery={searchQuery}
+            inTeam={inTeam}
             isFilteredView={activeFilter !== 'all'}
             isLoading={isLoading[sectionConfig.id as AgentSectionId]}
             tree={tree}
@@ -229,7 +287,7 @@ export default function AgentsList() {
       <FolderNameModal
         open={newFolderParent !== undefined}
         onOpenChange={(open) => !open && setNewFolderParent(undefined)}
-        type="agent"
+        kind="agent"
         mode="create"
         parentId={newFolderParent ?? null}
       />
@@ -277,17 +335,27 @@ type SectionActions = {
   onNewFolder: (parentId: string | null) => void;
   onImport: () => void;
   onNewAgent: (folderId: string | null) => void;
+  /** An agent moved to another workspace: reload the list it left. */
+  onAgentsMoved: () => void;
 };
 
-/** The My agents buttons: New folder · Import · New agent. */
+/**
+ * The My agents buttons: New folder · Import · New agent. Below Editor in a
+ * team none is drawn (New folder hides itself).
+ */
 function UserSectionButtons({
   folderId,
   atDepthLimit = false,
   onNewFolder,
   onImport,
   onNewAgent,
-}: SectionActions & { folderId: string | null; atDepthLimit?: boolean }) {
+}: Omit<SectionActions, 'onAgentsMoved'> & {
+  folderId: string | null;
+  atDepthLimit?: boolean;
+}) {
   const { t } = useTranslation();
+  const canCreate = useSelector(selectCanCreate);
+  if (!canCreate) return null;
   return (
     <>
       <NewFolderButton
@@ -338,7 +406,7 @@ function FolderGrid({
         <FolderTile
           key={folder.id}
           folder={folder}
-          type="agent"
+          kind="agent"
           onOpen={(f) => openFolder(f.id)}
           menuOptions={folderMenu.menuOptions(folder)}
           parentName={parentNameOf?.(folder)}
@@ -365,9 +433,9 @@ type AgentFolderViewProps = SectionActions & {
 /**
  * An open agent folder: the crumb row (My agents › … › folder, the buttons,
  * the folder's ⋯ last) and its count line, then its folders and its agents,
- * own and team-shared alike (filing is personal). Nothing else from the page
- * renders. A search covers the folder and its subfolders, flat, folders
- * first.
+ * own and shared with the caller alike (filing is the caller's). Nothing else
+ * from the page renders. A search covers the folder and its subfolders, flat,
+ * folders first.
  */
 function AgentFolderView({
   folderId,
@@ -384,16 +452,21 @@ function AgentFolderView({
   onNewFolder,
   onImport,
   onNewAgent,
+  onAgentsMoved,
 }: AgentFolderViewProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const allAgents = useSelector(selectAgents);
+  const canCreate = useSelector(selectCanCreate);
 
   const query = searchQuery.trim();
   const subtree = useMemo(() => subtreeIds(tree, folderId), [tree, folderId]);
-  const folders = query
-    ? matchingFolders(tree, query, subtree).filter((f) => f.id !== folderId)
-    : childFolders(tree, folderId);
+  const folders = agentFolders(
+    tree,
+    query
+      ? matchingFolders(tree, query, subtree).filter((f) => f.id !== folderId)
+      : childFolders(tree, folderId),
+  );
   const agents = useMemo(() => {
     const list = allAgents ?? [];
     if (query)
@@ -430,7 +503,7 @@ function AgentFolderView({
   return (
     <div className="mt-8 flex flex-col gap-4">
       <FolderCrumbRow
-        type="agent"
+        kind="agent"
         trail={trail}
         onNavigate={openFolder}
         meta={folderCountLine(t, folder, 'agent')}
@@ -463,15 +536,17 @@ function AgentFolderView({
           size="sm"
           icon={FolderOpen}
           title={t('folders.emptyTitle')}
-          description={t('agents.folders.emptyHint')}
+          description={canCreate ? t('agents.folders.emptyHint') : undefined}
           action={
-            <Button
-              type="button"
-              shape="pill"
-              onClick={() => onNewAgent(folderId)}
-            >
-              {t('agents.newAgent')}
-            </Button>
+            canCreate ? (
+              <Button
+                type="button"
+                shape="pill"
+                onClick={() => onNewAgent(folderId)}
+              >
+                {t('agents.newAgent')}
+              </Button>
+            ) : undefined
           }
         />
       ) : query && folders.length === 0 && agents.length === 0 ? (
@@ -497,8 +572,11 @@ function AgentFolderView({
                     agent={agent}
                     agents={allAgents || []}
                     updateAgents={(updated) => dispatch(setAgents(updated))}
-                    section={agent.ownership === 'team' ? 'team' : 'user'}
+                    section={
+                      agent.origin === 'shared' ? 'sharedWithYou' : 'user'
+                    }
                     folderLabel={query ? folderLabelOf(tree, agent) : undefined}
+                    onMovedToWorkspace={onAgentsMoved}
                   />
                 ))}
               </div>
@@ -524,6 +602,7 @@ type AgentSectionProps = SectionActions & {
   filteredAgents: Agent[];
   totalAgents: number;
   searchQuery: string;
+  inTeam: boolean;
   isFilteredView: boolean;
   isLoading: boolean;
   tree: FolderTree;
@@ -538,6 +617,7 @@ function AgentSection({
   filteredAgents,
   totalAgents,
   searchQuery,
+  inTeam,
   isFilteredView,
   isLoading,
   tree,
@@ -548,33 +628,45 @@ function AgentSection({
   onNewFolder,
   onImport,
   onNewAgent,
+  onAgentsMoved,
 }: AgentSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const allAgents = useSelector(config.selectData);
+  const canCreate = useSelector(selectCanCreate);
   const isUser = config.id === 'user';
+  // The agents the caller can file: theirs and the ones shared with them.
+  const fileable = isUser || config.id === 'sharedWithYou';
   const query = searchQuery.trim();
+  const copy = `agents.sections.${sectionCopy(config.id, inTeam)}`;
+  const title =
+    config.id === 'sharedWithYou'
+      ? t('workspace.page.sharedWithYou')
+      : t(`${copy}.title`);
+  const offerNewAgent = config.showNewAgentButton && canCreate;
 
   const updateAgents = (updatedAgents: Agent[]) => {
     dispatch(config.updateAction(updatedAgents));
   };
 
-  // My agents at the root: the top-level folders, then the agents in no
-  // folder (an agent filed in a folder the list doesn't know counts as in
-  // none). A search is flat: folders whose name matches, then every
-  // matching agent wherever it is filed.
+  // My agents at the root: the top-level folders that hold agents (or
+  // nothing yet), then the agents in no folder (an agent filed in a folder
+  // the list doesn't know counts as in none); Shared with you also leaves
+  // out the ones the caller filed. A search is flat: folders whose name
+  // matches, then every matching agent wherever it is filed.
   const folders = isUser
-    ? query
-      ? matchingFolders(tree, query)
-      : childFolders(tree, null)
+    ? agentFolders(
+        tree,
+        query ? matchingFolders(tree, query) : childFolders(tree, null),
+      )
     : [];
   const shownList = useMemo(() => {
-    if (!isUser || query) return filteredAgents;
+    if (!fileable || query) return filteredAgents;
     return filteredAgents.filter(
       (agent) => !agent.folder_id || !tree.byId.has(agent.folder_id),
     );
-  }, [filteredAgents, isUser, query, tree]);
+  }, [filteredAgents, fileable, query, tree]);
 
   // Must stay above the empty-state returns below: a hook after an early
   // return is skipped on the render that takes it, which React rejects with
@@ -612,9 +704,9 @@ function AgentSection({
       <EmptyState
         size="sm"
         illustration="none"
-        title={t(`agents.sections.${config.id}.emptyState`)}
+        title={t(`${copy}.emptyState`)}
         action={
-          config.showNewAgentButton ? (
+          offerNewAgent ? (
             <Button type="button" shape="pill" onClick={() => onNewAgent(null)}>
               {t('agents.newAgent')}
             </Button>
@@ -625,13 +717,11 @@ function AgentSection({
   }
 
   return (
-    <div className="mt-8 flex flex-col gap-4">
+    <div className="mt-8 flex flex-col gap-4" data-agent-section={config.id}>
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
           <div className="flex items-baseline gap-3">
-            <h2 className="text-foreground text-lg font-semibold">
-              {t(`agents.sections.${config.id}.title`)}
-            </h2>
+            <h2 className="text-foreground text-lg font-semibold">{title}</h2>
             {moreThanCap && (
               <Button
                 type="button"
@@ -648,7 +738,7 @@ function AgentSection({
             )}
           </div>
           <p className="text-muted-foreground text-sm">
-            {t(`agents.sections.${config.id}.description`)}
+            {t(`${copy}.description`)}
           </p>
         </div>
         {isUser && (
@@ -697,6 +787,7 @@ function AgentSection({
                       folderLabel={
                         query ? folderLabelOf(tree, agent) : undefined
                       }
+                      onMovedToWorkspace={onAgentsMoved}
                     />
                   ))}
                 </div>
@@ -716,9 +807,9 @@ function AgentSection({
               <EmptyState
                 size="sm"
                 illustration="none"
-                title={t(`agents.sections.${config.id}.emptyState`)}
+                title={t(`${copy}.emptyState`)}
                 action={
-                  config.showNewAgentButton ? (
+                  offerNewAgent ? (
                     <Button
                       type="button"
                       shape="pill"

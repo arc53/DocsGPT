@@ -12,6 +12,7 @@ import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can } from '../../utils/accessUtils';
+import { useMoveToWorkspace } from '../../workspace/move/useMoveToWorkspace';
 import { agentsListPath } from '../paths';
 import type { GetSavedConfig } from '../ApiWriteAllowlist';
 import type { Agent, AgentConfig } from '../types';
@@ -34,6 +35,11 @@ type UseAgentMenuOptions = {
   openAccessDetails?: (apiWrites: boolean) => void;
   /** After a delete; defaults to the agent list. */
   onDeleted?: () => void;
+  /**
+   * After the agent moved to another workspace; defaults to the agent list,
+   * since it is no longer this workspace's.
+   */
+  onMovedToWorkspace?: () => void;
   /** A key regenerated in the menu's own Access details. */
   onKeyRegenerated?: (key: string) => void;
   /**
@@ -47,8 +53,9 @@ type UseAgentMenuOptions = {
 
 /**
  * The agent's ⋯ for its pages' toolbar row (`AgentPageToolbar menu`):
- * the page's lead items, Access details and Share with team (each when the
- * role allows it), then Delete set apart by a rule, with the dialogs they open.
+ * the page's lead items, Access details, Share and Move to team… (or Move to
+ * Personal…), each when the role allows it, then Delete set apart by a rule,
+ * with the dialogs they open.
  *
  * Args:
  *   options: See UseAgentMenuOptions.
@@ -62,6 +69,7 @@ export function useAgentMenu({
   shareable,
   openAccessDetails,
   onDeleted,
+  onMovedToWorkspace,
   onKeyRegenerated,
   onConfigChange,
   getSavedConfig,
@@ -69,6 +77,7 @@ export function useAgentMenu({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const moveToWorkspace = useMoveToWorkspace('agent');
   const [details, setDetails] = useState<ActiveState>('INACTIVE');
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -86,6 +95,16 @@ export function useAgentMenu({
     setDetailsOnApiWrites(apiWrites);
     setDetails('ACTIVE');
   };
+
+  const moveOut =
+    saved && agent?.id
+      ? moveToWorkspace.menuOption(
+          { ...agent, id: agent.id },
+          {
+            onMoved: onMovedToWorkspace ?? (() => navigate(agentsListPath())),
+          },
+        )
+      : null;
 
   const options: MenuOption[] = [
     ...lead,
@@ -108,6 +127,7 @@ export function useAgentMenu({
           },
         ]
       : []),
+    ...(moveOut ? [moveOut] : []),
     ...(saved && can(agent, 'delete')
       ? [
           {
@@ -150,6 +170,7 @@ export function useAgentMenu({
   const modals =
     agent && saved ? (
       <>
+        {moveToWorkspace.dialog}
         <ConfirmationModal
           message={t('agents.deleteConfirmation', {
             interpolation: { escapeValue: false },

@@ -133,6 +133,10 @@ export type Agent = {
   /** The caller's role and the actions it allows (see `utils/accessUtils`). */
   access?: AccessFields['access'];
   allowed_actions?: AccessFields['allowed_actions'];
+  /** Where it lives, how it reached this list, and who added it. */
+  workspace?: AccessFields['workspace'];
+  origin?: AccessFields['origin'];
+  created_by?: AccessFields['created_by'];
   // Owner-agnostic display names resolved server-side (GET /api/get_agent) so a
   // team member viewing a shared agent sees the owner's prompt/source names
   // instead of a blank prompt / "External KB" (the client can only resolve

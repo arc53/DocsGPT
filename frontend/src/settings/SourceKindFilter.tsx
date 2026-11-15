@@ -20,8 +20,8 @@ type SourceKindToggleProps = {
 };
 
 /**
- * The Knowledge kind filter: All · Files · Websites · Synced · Wikis ·
- * Shared, each with its count. A kind with no sources is left out (unless
+ * The Knowledge kind filter: All · Files · Websites · Synced · Wikis, each
+ * with its count. A kind with no sources is left out (unless
  * picked), and nothing is drawn while no kind would narrow the list. The track hugs
  * its items and scrolls sideways when it outgrows its row.
  */

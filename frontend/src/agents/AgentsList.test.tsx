@@ -14,6 +14,16 @@ const state = vi.hoisted(() => ({
     templateAgents: [] as unknown[],
     sharedAgents: [] as unknown[],
   },
+  // Personal: the page's workspace line and create buttons read it.
+  workspace: {
+    current: 'personal',
+    workspaces: [{ id: 'personal', kind: 'personal', name: 'Personal' }],
+    loaded: true,
+    loading: false,
+    epoch: 0,
+    lastReason: null,
+    latestRequestId: null,
+  },
   folders: {
     tree: {
       items: [] as unknown[],
@@ -40,7 +50,7 @@ const search = vi.hoisted(() => ({ query: '', total: 0 }));
 const sections = vi.hoisted(() => ({
   template: [] as unknown[],
   user: [] as unknown[],
-  team: [] as unknown[],
+  sharedWithYou: [] as unknown[],
   shared: [] as unknown[],
 }));
 vi.mock('./hooks/useAgentSearch', async (importOriginal) => ({
@@ -52,17 +62,28 @@ vi.mock('./hooks/useAgentSearch', async (importOriginal) => ({
     totalAgentsBySection: {
       template: 0,
       user: search.total,
-      team: sections.team.length,
+      sharedWithYou: sections.sharedWithYou.length,
       shared: 0,
     },
     hasAnyAgents: search.total > 0,
-    hasFilteredResults: sections.user.length > 0 || sections.team.length > 0,
-    isDataLoaded: { template: true, user: true, team: true, shared: true },
+    hasFilteredResults:
+      sections.user.length > 0 || sections.sharedWithYou.length > 0,
+    isDataLoaded: {
+      template: true,
+      user: true,
+      sharedWithYou: true,
+      shared: true,
+    },
   }),
 }));
 vi.mock('./hooks/useAgentsFetch', () => ({
   useAgentsFetch: () => ({
-    isLoading: { template: false, user: false, team: false, shared: false },
+    isLoading: {
+      template: false,
+      user: false,
+      sharedWithYou: false,
+      shared: false,
+    },
     refetchFolders: async () => undefined,
     refetchUserAgents: async () => undefined,
   }),
@@ -106,8 +127,8 @@ function LocationProbe() {
   return null;
 }
 
-const agent = (name: string, folder_id?: string, ownership?: 'team'): Agent =>
-  ({ id: name, name, description: '', folder_id, ownership }) as Agent;
+const agent = (name: string, folder_id?: string, origin?: 'shared'): Agent =>
+  ({ id: name, name, description: '', folder_id, origin }) as Agent;
 const folder = (
   id: string,
   name: string,
@@ -130,7 +151,7 @@ beforeEach(() => {
   search.query = '';
   search.total = 0;
   sections.user = [];
-  sections.team = [];
+  sections.sharedWithYou = [];
   state.preference.agents = [];
   state.folders.tree.items = [];
   state.folders.tree.loaded = true;
@@ -226,19 +247,20 @@ describe('AgentsList folders', () => {
       folder('f3', 'EU desk', 'f1'),
     ];
     const own = [agent('Loose'), agent('Support', 'f1'), agent('HR bot', 'f2')];
-    const team = [agent('Shared helper', 'f1', 'team')];
+    const shared = [agent('Shared helper', 'f1', 'shared')];
     sections.user = own;
-    sections.team = team;
+    sections.sharedWithYou = shared;
     search.total = own.length;
-    state.preference.agents = [...own, ...team];
+    state.preference.agents = [...own, ...shared];
   };
 
   it('shows top-level folders as tiles and only unfiled agents', async () => {
     setUp();
     await render('/agents/manage');
     expect(tiles()).toEqual(['Customer-facing', 'Internal ops']);
-    // My agents keeps the loose one; the Team section lists its own.
-    expect(agentNames()).toEqual(['Loose', 'Shared helper']);
+    // My agents keeps the loose one; Shared with you leaves out the one the
+    // caller filed in a folder.
+    expect(agentNames()).toEqual(['Loose']);
     expect(buttonLabels()).toEqual(
       expect.arrayContaining([
         'folders.newFolder',
@@ -255,9 +277,9 @@ describe('AgentsList folders', () => {
     expect(crumbs?.textContent).toContain('folders.root.agent');
     expect(crumbs?.textContent).toContain('Customer-facing');
     expect(tiles()).toEqual(['EU desk']);
-    // Own and team-shared agents filed here; the Team section is gone.
+    // Own and shared agents filed here; no other section renders.
     expect(agentNames()).toEqual(['Support', 'Shared helper']);
-    expect(container.textContent).not.toContain('agents.sections.team.title');
+    expect(container.textContent).not.toContain('workspace.page.sharedWithYou');
     expect(
       container.querySelector('button[aria-label="folders.menuLabel"]'),
     ).not.toBeNull();
@@ -285,7 +307,7 @@ describe('AgentsList folders', () => {
     setUp();
     search.query = 'desk';
     sections.user = [agent('Support', 'f1')];
-    sections.team = [];
+    sections.sharedWithYou = [];
     await render('/agents/manage');
     expect(tiles()).toEqual(['EU desk']);
     const card = container.querySelector<HTMLElement>('[data-agent="Support"]');

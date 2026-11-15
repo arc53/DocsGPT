@@ -925,10 +925,14 @@
         "emptyState": "未找到共享智能体。",
         "title": "与我共享"
       },
+      "sharedWithYou": {
+        "description": "其他人与您共享的智能体",
+        "emptyState": "还没有人与您共享智能体。"
+      },
       "team": {
-        "description": "队友与您共享的智能体",
-        "emptyState": "尚未有智能体共享给您的团队。",
-        "title": "团队"
+        "description": "团队拥有的智能体，团队中的每个人都可以使用。",
+        "emptyState": "此团队还没有智能体。",
+        "title": "智能体"
       },
       "template": {
         "description": "DocsGPT提供的智能体",
@@ -941,7 +945,7 @@
         "title": "我的智能体"
       }
     },
-    "shareWithTeam": "与团队共享",
+    "shareWithTeam": "分享",
     "shared": {
       "connectedTools": "已连接的工具",
       "loadError": "无法加载此智能体。",
@@ -4075,7 +4079,6 @@
       "kinds": {
         "all": "全部",
         "files": "文件",
-        "shared": "共享",
         "synced": "已同步",
         "websites": "网站",
         "wikis": "Wiki"
@@ -4213,7 +4216,7 @@
         "folders": "文件夹",
         "sources": "来源"
       },
-      "shareWithTeam": "与团队共享",
+      "shareWithTeam": "分享",
       "size": "大小",
       "subtitle": "DocsGPT 可以搜索和引用的内容：上传的文件、网站、Wiki，以及从连接同步的内容。",
       "syncConfirmation": "同步“{{sourceName}}”？",

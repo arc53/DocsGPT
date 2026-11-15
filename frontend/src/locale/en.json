@@ -947,10 +947,14 @@
         "emptyState": "You haven't opened any public agents yet.",
         "title": "Discovered"
       },
+      "sharedWithYou": {
+        "description": "Agents people shared with you",
+        "emptyState": "No one has shared an agent with you yet."
+      },
       "team": {
-        "description": "Agents your teammates shared with you",
-        "emptyState": "No agents have been shared with your team yet.",
-        "title": "Team"
+        "description": "Agents the team owns. Everyone in it can use them.",
+        "emptyState": "This team has no agents yet.",
+        "title": "Agents"
       },
       "template": {
         "description": "Agents provided by DocsGPT",
@@ -963,7 +967,7 @@
         "title": "My agents"
       }
     },
-    "shareWithTeam": "Share with team",
+    "shareWithTeam": "Share",
     "shared": {
       "connectedTools": "Connected Tools",
       "loadError": "Could not load this agent.",
@@ -4130,7 +4134,6 @@
       "kinds": {
         "all": "All",
         "files": "Files",
-        "shared": "Shared",
         "synced": "Synced",
         "websites": "Websites",
         "wikis": "Wikis"
@@ -4268,7 +4271,7 @@
         "folders": "Folders",
         "sources": "Sources"
       },
-      "shareWithTeam": "Share with team",
+      "shareWithTeam": "Share",
       "size": "Size",
       "subtitle": "Content DocsGPT can search and cite: uploads, websites, wikis and content synced from your connections.",
       "syncConfirmation": "Sync \"{{sourceName}}\"?",

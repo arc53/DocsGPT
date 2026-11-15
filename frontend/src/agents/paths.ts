@@ -19,6 +19,9 @@ export const AGENTS_MANAGE_ROOT = '/agents/manage';
 const FILTER_SLUGS: Record<Exclude<AgentFilterTab, 'all'>, string> = {
   template: 'templates',
   user: 'mine',
+  sharedWithYou: 'shared-with-you',
+  // The old Team section's address: the list reads it as Shared with you in
+  // Personal and as the team's agents in a team.
   team: 'team',
   // Not `shared`: `/agents/shared/:token` already means "open this public
   // agent", and two different meanings under one word invites mistakes.

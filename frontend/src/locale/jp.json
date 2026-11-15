@@ -925,10 +925,14 @@
         "emptyState": "共有エージェントが見つかりません。",
         "title": "共有されたエージェント"
       },
+      "sharedWithYou": {
+        "description": "ほかの人があなたと共有したエージェント",
+        "emptyState": "まだ誰もあなたとエージェントを共有していません。"
+      },
       "team": {
-        "description": "チームメイトが共有したエージェント",
-        "emptyState": "チームと共有されたエージェントはまだありません。",
-        "title": "チーム"
+        "description": "チームが所有するエージェント。チームの全員が使えます。",
+        "emptyState": "このチームにはまだエージェントがありません。",
+        "title": "エージェント"
       },
       "template": {
         "description": "DocsGPTが提供するエージェント",
@@ -941,7 +945,7 @@
         "title": "自分のエージェント"
       }
     },
-    "shareWithTeam": "チームと共有",
+    "shareWithTeam": "共有",
     "shared": {
       "connectedTools": "接続済みツール",
       "loadError": "このエージェントを読み込めませんでした。",
@@ -4077,7 +4081,6 @@
       "kinds": {
         "all": "すべて",
         "files": "ファイル",
-        "shared": "共有",
         "synced": "同期",
         "websites": "ウェブサイト",
         "wikis": "Wiki"
@@ -4215,7 +4218,7 @@
         "folders": "フォルダー",
         "sources": "ソース"
       },
-      "shareWithTeam": "チームと共有",
+      "shareWithTeam": "共有",
       "size": "サイズ",
       "subtitle": "DocsGPT が検索・引用できるコンテンツ：アップロード、ウェブサイト、Wiki、接続から同期したコンテンツ。",
       "syncConfirmation": "「{{sourceName}}」を同期しますか？",
