@@ -4928,14 +4928,68 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "チームを切り替え",
+      "ariaLabel": "ワークスペースを切り替え",
       "createTeam": "チームを作成",
       "logoAlt": "DocsGPT ロゴ",
-      "manageTeams": "チームを管理",
-      "personal": "個人アカウント",
-      "personalSubtitle": "個人ワークスペース",
-      "roleAdmin": "管理者",
-      "roleMember": "メンバー"
+      "manageTeams": "チームを管理"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "newChatLine": "{{workspace}} · このチャットはあなただけが見られます"
+    },
+    "common": {
+      "personal": "個人",
+      "roles": {
+        "admin": "管理者",
+        "editor": "編集者",
+        "owner": "所有者",
+        "viewer": "閲覧者"
+      },
+      "you": "あなた"
+    },
+    "folders": {
+      "alsoInFolder": "このフォルダーにあるその他の項目"
+    },
+    "line": {
+      "people_one": "{{count}}人",
+      "people_other": "{{count}}人",
+      "personal": "個人",
+      "personalScope": "アイテムを共有しない限り、あなただけ",
+      "teamScope": "チームの全員がここにあるものを使えます"
+    },
+    "menu": {
+      "moveToPersonal": "個人に移動…",
+      "moveToTeam": "チームに移動…"
+    },
+    "move": {
+      "planChanged": "変更がありました。もう一度確認してください"
+    },
+    "notices": {
+      "lost": "{{name}} のメンバーではなくなったため、個人に切り替えました",
+      "lostUnnamed": "そのチームのメンバーではなくなったため、個人に切り替えました",
+      "roleChanged": "{{name}} でのあなたの役割が変わりました。ページには今できることが表示されます。",
+      "switched": "{{name}} に切り替えました"
+    },
+    "page": {
+      "sharedWithYou": "あなたと共有"
+    },
+    "pickers": {
+      "inAgentFolder": "{{folder}}（このエージェントのフォルダー）"
+    },
+    "share": {
+      "everyoneInTeam": "{{team}} の全員"
+    },
+    "switcher": {
+      "onlyYou": "あなただけ",
+      "personal": "個人",
+      "teamMeta_one": "{{count}}人 · {{role}}",
+      "teamMeta_other": "{{count}}人 · {{role}}",
+      "teamRole": "チーム · {{role}}",
+      "teams": "チーム"
+    },
+    "team": {
+      "navEntry": "チーム"
     }
   }
 }

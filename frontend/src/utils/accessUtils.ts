@@ -6,11 +6,20 @@
  * `allowed_actions` (`docsgpt/api/user/resource_access.py`). The UI only asks
  * `can(item, action)`; it never re-derives the rules from the role.
  */
-export type Access = 'owner' | 'editor' | 'viewer';
+export type Access = 'owner' | 'admin' | 'editor' | 'viewer';
 
 export type AccessFields = {
+  /** `admin` only on a team item, for the team's Owner and Admins. */
   access?: Access | null;
   allowed_actions?: string[];
+  /** Where the item lives. */
+  workspace?: { kind: 'personal' | 'team'; team_id?: string | null } | null;
+  /** How it reached this list: the caller's, the team's, or shared. */
+  origin?: 'own' | 'team' | 'shared' | null;
+  /** Who added it; on a personal item, its owner. */
+  created_by?: { user_id?: string | null; label?: string | null } | null;
+  /** The caller's role in the item's team (team items). */
+  team_role?: 'owner' | 'admin' | 'editor' | 'viewer' | null;
   /** Legacy fields, still sent: `team` marks a resource shared with you. */
   ownership?: 'user' | 'team';
   team_access?: 'viewer' | 'editor' | null;
@@ -42,18 +51,27 @@ const VIEWER_DEFAULTS = [
   'view_config',
   'duplicate',
 ];
+const EDITOR_DEFAULTS = [
+  ...VIEWER_DEFAULTS,
+  'view',
+  'edit',
+  'publish',
+  'edit_policy',
+  'view_logs',
+  'manage_schedules',
+  'export',
+  'edit_credentials',
+];
 const ROLE_DEFAULTS: Record<Exclude<Access, 'owner'>, ReadonlySet<string>> = {
   viewer: new Set(VIEWER_DEFAULTS),
-  editor: new Set([
-    ...VIEWER_DEFAULTS,
-    'view',
-    'edit',
-    'publish',
-    'edit_policy',
-    'view_logs',
-    'manage_schedules',
-    'export',
-    'edit_credentials',
+  editor: new Set(EDITOR_DEFAULTS),
+  // A team item's Admin also deletes it, moves it out and manages it.
+  admin: new Set([
+    ...EDITOR_DEFAULTS,
+    'manage_access_details',
+    'delete',
+    'move_out',
+    'reconnect',
   ]),
 };
 

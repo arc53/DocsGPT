@@ -4928,14 +4928,68 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "切換團隊",
+      "ariaLabel": "切換工作區",
       "createTeam": "建立團隊",
       "logoAlt": "DocsGPT 標誌",
-      "manageTeams": "管理團隊",
-      "personal": "個人帳戶",
-      "personalSubtitle": "個人工作區",
-      "roleAdmin": "管理員",
-      "roleMember": "成員"
+      "manageTeams": "管理團隊"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "newChatLine": "{{workspace}} · 只有您能看到此聊天"
+    },
+    "common": {
+      "personal": "個人",
+      "roles": {
+        "admin": "管理員",
+        "editor": "編輯者",
+        "owner": "擁有者",
+        "viewer": "檢視者"
+      },
+      "you": "您"
+    },
+    "folders": {
+      "alsoInFolder": "此資料夾中的其他內容"
+    },
+    "line": {
+      "people_one": "{{count}} 人",
+      "people_other": "{{count}} 人",
+      "personal": "個人",
+      "personalScope": "僅限您本人，除非您分享某個項目",
+      "teamScope": "團隊中的每個人都可以使用這裡的內容"
+    },
+    "menu": {
+      "moveToPersonal": "移至個人…",
+      "moveToTeam": "移至團隊…"
+    },
+    "move": {
+      "planChanged": "內容有變更，請再檢查一次"
+    },
+    "notices": {
+      "lost": "您已不在 {{name}} 中，已切換到個人",
+      "lostUnnamed": "您已不在該團隊中，已切換到個人",
+      "roleChanged": "您在 {{name}} 中的角色已變更。頁面現在會顯示您可以執行的操作。",
+      "switched": "已切換到 {{name}}"
+    },
+    "page": {
+      "sharedWithYou": "與您分享"
+    },
+    "pickers": {
+      "inAgentFolder": "在 {{folder}}（此代理程式的資料夾）中"
+    },
+    "share": {
+      "everyoneInTeam": "{{team}} 中的所有人"
+    },
+    "switcher": {
+      "onlyYou": "僅限您本人",
+      "personal": "個人",
+      "teamMeta_one": "{{count}} 人 · {{role}}",
+      "teamMeta_other": "{{count}} 人 · {{role}}",
+      "teamRole": "團隊 · {{role}}",
+      "teams": "團隊"
+    },
+    "team": {
+      "navEntry": "團隊"
     }
   }
 }

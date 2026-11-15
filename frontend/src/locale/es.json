@@ -5139,14 +5139,70 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Cambiar de equipo",
+      "ariaLabel": "Cambiar de espacio de trabajo",
       "createTeam": "Crear equipo",
       "logoAlt": "Logotipo de DocsGPT",
-      "manageTeams": "Gestionar equipos",
-      "personal": "Cuenta personal",
-      "personalSubtitle": "Espacio de trabajo personal",
-      "roleAdmin": "Administrador",
-      "roleMember": "Miembro"
+      "manageTeams": "Gestionar equipos"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "newChatLine": "{{workspace}} · Solo tú puedes ver este chat"
+    },
+    "common": {
+      "personal": "Personal",
+      "roles": {
+        "admin": "Administrador",
+        "editor": "Editor",
+        "owner": "Propietario",
+        "viewer": "Lector"
+      },
+      "you": "Tú"
+    },
+    "folders": {
+      "alsoInFolder": "También en esta carpeta"
+    },
+    "line": {
+      "people_many": "{{count}} personas",
+      "people_one": "{{count}} persona",
+      "people_other": "{{count}} personas",
+      "personal": "Personal",
+      "personalScope": "Solo tú, salvo que compartas un elemento",
+      "teamScope": "Todo el equipo puede usar lo que hay aquí"
+    },
+    "menu": {
+      "moveToPersonal": "Mover a Personal…",
+      "moveToTeam": "Mover a un equipo…"
+    },
+    "move": {
+      "planChanged": "Algo ha cambiado; vuelve a revisarlo"
+    },
+    "notices": {
+      "lost": "Ya no estás en {{name}}; has pasado a Personal",
+      "lostUnnamed": "Ya no estás en ese equipo; has pasado a Personal",
+      "roleChanged": "Tu rol en {{name}} ha cambiado. La página muestra ahora lo que puedes hacer.",
+      "switched": "Has pasado a {{name}}"
+    },
+    "page": {
+      "sharedWithYou": "Compartido contigo"
+    },
+    "pickers": {
+      "inAgentFolder": "En {{folder}}, la carpeta de este agente"
+    },
+    "share": {
+      "everyoneInTeam": "Todos en {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Solo tú",
+      "personal": "Personal",
+      "teamMeta_many": "{{count}} personas · {{role}}",
+      "teamMeta_one": "{{count}} persona · {{role}}",
+      "teamMeta_other": "{{count}} personas · {{role}}",
+      "teamRole": "Equipo · {{role}}",
+      "teams": "Equipos"
+    },
+    "team": {
+      "navEntry": "Equipo"
     }
   }
 }

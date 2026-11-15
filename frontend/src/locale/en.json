@@ -4983,14 +4983,68 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Switch team",
+      "ariaLabel": "Switch workspace",
       "createTeam": "Create team",
       "logoAlt": "DocsGPT logo",
-      "manageTeams": "Manage teams",
-      "personal": "Personal account",
-      "personalSubtitle": "Personal workspace",
-      "roleAdmin": "Admin",
-      "roleMember": "Member"
+      "manageTeams": "Manage teams"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "newChatLine": "{{workspace}} · Only you can see this chat"
+    },
+    "common": {
+      "personal": "Personal",
+      "roles": {
+        "admin": "Admin",
+        "editor": "Editor",
+        "owner": "Owner",
+        "viewer": "Viewer"
+      },
+      "you": "You"
+    },
+    "folders": {
+      "alsoInFolder": "Also in this folder"
+    },
+    "line": {
+      "people_one": "{{count}} person",
+      "people_other": "{{count}} people",
+      "personal": "Personal",
+      "personalScope": "Only you, unless you share an item",
+      "teamScope": "Everyone in the team can use what's here"
+    },
+    "menu": {
+      "moveToPersonal": "Move to Personal…",
+      "moveToTeam": "Move to team…"
+    },
+    "move": {
+      "planChanged": "Something changed; check again"
+    },
+    "notices": {
+      "lost": "You're no longer in {{name}}; switched to Personal",
+      "lostUnnamed": "You're no longer in that team; switched to Personal",
+      "roleChanged": "Your role in {{name}} has changed. The page now shows what you can do.",
+      "switched": "Switched to {{name}}"
+    },
+    "page": {
+      "sharedWithYou": "Shared with you"
+    },
+    "pickers": {
+      "inAgentFolder": "In {{folder}}, this agent's folder"
+    },
+    "share": {
+      "everyoneInTeam": "Everyone in {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Only you",
+      "personal": "Personal",
+      "teamMeta_one": "{{count}} person · {{role}}",
+      "teamMeta_other": "{{count}} people · {{role}}",
+      "teamRole": "Team · {{role}}",
+      "teams": "Teams"
+    },
+    "team": {
+      "navEntry": "Team"
     }
   }
 }

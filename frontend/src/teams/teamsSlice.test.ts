@@ -21,7 +21,6 @@ const makeStore = () =>
     preloadedState: {
       teams: {
         teams: [team],
-        currentTeamId: null,
         loading: false,
         error: null,
       },

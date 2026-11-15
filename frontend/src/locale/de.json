@@ -4962,14 +4962,68 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Team wechseln",
+      "ariaLabel": "Arbeitsbereich wechseln",
       "createTeam": "Team erstellen",
       "logoAlt": "DocsGPT-Logo",
-      "manageTeams": "Teams verwalten",
-      "personal": "Persönliches Konto",
-      "personalSubtitle": "Persönlicher Workspace",
-      "roleAdmin": "Admin",
-      "roleMember": "Mitglied"
+      "manageTeams": "Teams verwalten"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "newChatLine": "{{workspace}} · Nur du siehst diesen Chat"
+    },
+    "common": {
+      "personal": "Persönlich",
+      "roles": {
+        "admin": "Admin",
+        "editor": "Bearbeiter",
+        "owner": "Eigentümer",
+        "viewer": "Betrachter"
+      },
+      "you": "Du"
+    },
+    "folders": {
+      "alsoInFolder": "Auch in diesem Ordner"
+    },
+    "line": {
+      "people_one": "{{count}} Person",
+      "people_other": "{{count}} Personen",
+      "personal": "Persönlich",
+      "personalScope": "Nur du, außer du teilst ein Element",
+      "teamScope": "Alle im Team können nutzen, was hier liegt"
+    },
+    "menu": {
+      "moveToPersonal": "Nach Persönlich verschieben…",
+      "moveToTeam": "In ein Team verschieben…"
+    },
+    "move": {
+      "planChanged": "Etwas hat sich geändert; bitte erneut prüfen"
+    },
+    "notices": {
+      "lost": "Du bist nicht mehr in {{name}}; zu Persönlich gewechselt",
+      "lostUnnamed": "Du bist nicht mehr in diesem Team; zu Persönlich gewechselt",
+      "roleChanged": "Deine Rolle in {{name}} hat sich geändert. Die Seite zeigt jetzt, was du tun kannst.",
+      "switched": "Zu {{name}} gewechselt"
+    },
+    "page": {
+      "sharedWithYou": "Mit dir geteilt"
+    },
+    "pickers": {
+      "inAgentFolder": "In {{folder}}, dem Ordner dieses Agenten"
+    },
+    "share": {
+      "everyoneInTeam": "Alle in {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Nur du",
+      "personal": "Persönlich",
+      "teamMeta_one": "{{count}} Person · {{role}}",
+      "teamMeta_other": "{{count}} Personen · {{role}}",
+      "teamRole": "Team · {{role}}",
+      "teams": "Teams"
+    },
+    "team": {
+      "navEntry": "Team"
     }
   }
 }

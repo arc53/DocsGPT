@@ -11,6 +11,7 @@ import { Agent } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { presetPrompts } from '../prompts/promptAccess';
 import { RootState } from '../store';
+import { switchWorkspace } from '../workspace/workspaceSlice';
 import {
   getLocalRecentDocs,
   setLocalApiKey,
@@ -315,6 +316,23 @@ export const prefSlice = createSlice({
       state.analyticsMaxOverlapping = action.payload.maxOverlapping;
     },
   },
+  extraReducers: (builder) => {
+    // Lists and picks from the old workspace go; the next loads fill them
+    // from the new one. Templates, models and the session are the same in
+    // every workspace.
+    builder.addCase(switchWorkspace, (state) => {
+      state.agents = null;
+      state.sharedAgents = null;
+      state.selectedAgent = null;
+      state.sourceDocs = null;
+      state.sourceDocsFailed = false;
+      state.paginatedDocuments = null;
+      state.selectedDocs = [];
+      state.selectedFolders = [];
+      state.prompts = presetPrompts();
+      state.conversations = { data: null, loading: false };
+    });
+  },
 });
 
 export const {
@@ -398,6 +416,16 @@ prefListenerMiddleware.startListening({
       next.length === selectedFolders.length &&
       next.every((folder, i) => folder.name === selectedFolders[i].name);
     if (!same) listenerApi.dispatch(setSelectedFolders(next));
+  },
+});
+
+// The composer's picks were the old workspace's: a reload in the new one
+// must not bring them back.
+prefListenerMiddleware.startListening({
+  actionCreator: switchWorkspace,
+  effect: () => {
+    setLocalRecentDocs(null);
+    setStoredRecentFolders([]);
   },
 });
 

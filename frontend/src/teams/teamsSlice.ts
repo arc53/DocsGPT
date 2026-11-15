@@ -1,6 +1,8 @@
-import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 
 import teamsService, { TeamRole } from '../api/services/teamsService';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import type { WorkspaceState } from '../workspace/workspaceSlice';
 
 export type Team = {
   id: string;
@@ -17,20 +19,15 @@ export type Team = {
   shared_count?: number;
 };
 
+// The team the app is in lives in the `workspace` slice.
 export type TeamsState = {
   teams: Team[];
-  // Persisted UX-only selection (NEVER trusted for authorization — the
-  // backend resolves team roles live from team_id in the URL path).
-  currentTeamId: string | null;
   loading: boolean;
   error: string | null;
 };
 
-const STORED_CURRENT = localStorage.getItem('currentTeamId');
-
 const initialState: TeamsState = {
   teams: [],
-  currentTeamId: STORED_CURRENT || null,
   loading: false,
   error: null,
 };
@@ -77,13 +74,7 @@ export const deleteTeam = createAsyncThunk<
 const teamsSlice = createSlice({
   name: 'teams',
   initialState,
-  reducers: {
-    setCurrentTeam(state, action: PayloadAction<string | null>) {
-      state.currentTeamId = action.payload;
-      if (action.payload) localStorage.setItem('currentTeamId', action.payload);
-      else localStorage.removeItem('currentTeamId');
-    },
-  },
+  reducers: {},
   extraReducers: (builder) => {
     builder
       .addCase(loadTeams.pending, (state) => {
@@ -93,14 +84,6 @@ const teamsSlice = createSlice({
       .addCase(loadTeams.fulfilled, (state, action) => {
         state.loading = false;
         state.teams = action.payload;
-        // Drop a stale currentTeamId the user is no longer a member of.
-        if (
-          state.currentTeamId &&
-          !action.payload.some((t) => t.id === state.currentTeamId)
-        ) {
-          state.currentTeamId = null;
-          localStorage.removeItem('currentTeamId');
-        }
       })
       .addCase(loadTeams.rejected, (state, action) => {
         state.loading = false;
@@ -111,20 +94,20 @@ const teamsSlice = createSlice({
       })
       .addCase(deleteTeam.fulfilled, (state, action) => {
         state.teams = state.teams.filter((t) => t.id !== action.payload);
-        if (state.currentTeamId === action.payload) {
-          state.currentTeamId = null;
-          localStorage.removeItem('currentTeamId');
-        }
       });
   },
 });
 
-export const { setCurrentTeam } = teamsSlice.actions;
 export default teamsSlice.reducer;
 
 export const selectTeams = (state: { teams: TeamsState }) => state.teams.teams;
-export const selectCurrentTeamId = (state: { teams: TeamsState }) =>
-  state.teams.currentTeamId;
+/** The team the app is in, or null in Personal. */
+export const selectCurrentTeamId = (state: {
+  workspace: WorkspaceState;
+}): string | null =>
+  state.workspace.current === PERSONAL_WORKSPACE
+    ? null
+    : state.workspace.current;
 export const selectTeamsLoading = (state: { teams: TeamsState }) =>
   state.teams.loading;
 export const selectTeamsError = (state: { teams: TeamsState }) =>

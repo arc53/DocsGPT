@@ -23,6 +23,8 @@ import {
 } from '../preferences/preferenceSlice';
 import { analyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import type { AppDispatch } from '../store';
+import { captureWorkspace } from '../workspace/requestWorkspace';
+import { loadWorkspaces, selectWorkspaceId } from '../workspace/workspaceSlice';
 
 /**
  * useDataInitializer Hook
@@ -32,8 +34,12 @@ import type { AppDispatch } from '../store';
  * - Fetching and setting up source documents
  * - Fetching and setting up prompts, and the chat prompt the server keeps
  * - Fetching and setting up conversations
+ * - Loading the caller's workspaces (Personal and their teams)
  * - Reading which speech features the server has switched on, and whether
  *   conversation insights are, with the insights editor's limits
+ *
+ * The lists load again when the workspace switches; an answer from before a
+ * switch is dropped.
  *
  * @param isAuthLoading - Auth is still resolving; nothing loads until it is done.
  * @param authType - The server's auth mode (`none`, `simple_jwt`, …), once known.
@@ -45,6 +51,13 @@ export default function useDataInitializer(
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const conversations = useSelector(selectConversations);
+  const workspaceId = useSelector(selectWorkspaceId);
+
+  // The workspaces and the caller's role in each; checks a stored team too.
+  useEffect(() => {
+    if (isAuthLoading) return;
+    dispatch(loadWorkspaces({ token }));
+  }, [isAuthLoading, token, dispatch]);
 
   // Speech features and the attachment budget; /api/config needs no auth.
   useEffect(() => {
@@ -95,16 +108,17 @@ export default function useDataInitializer(
     }
 
     const fetchDocs = async () => {
+      const workspace = captureWorkspace();
       try {
         const data = await getDocs(token);
-        dispatch(setSourceDocs(data));
+        if (workspace.isCurrent()) dispatch(setSourceDocs(data));
       } catch (error) {
         console.error('Failed to fetch documents:', error);
       }
     };
 
     fetchDocs();
-  }, [isAuthLoading, token]);
+  }, [isAuthLoading, token, workspaceId]);
 
   // Initialize prompts and the one chats use. A mode that needs a token
   // and has none (the sign-in is still to come) asks the server nothing
@@ -128,7 +142,7 @@ export default function useDataInitializer(
     return () => {
       cancelled = true;
     };
-  }, [isAuthLoading, token, signedOut]);
+  }, [isAuthLoading, token, signedOut, workspaceId]);
 
   // Initialize conversations
   useEffect(() => {
@@ -137,15 +151,19 @@ export default function useDataInitializer(
       return;
     }
 
+    // A switch empties the list, which loads it here again.
     const fetchConversationsData = async () => {
       if (!conversations?.data) {
+        const workspace = captureWorkspace();
         dispatch(setConversationsLoading(true));
         try {
           const fetchedConversations = await getConversations(token);
-          dispatch(receiveConversations(fetchedConversations));
+          if (workspace.isCurrent())
+            dispatch(receiveConversations(fetchedConversations));
         } catch (error) {
           console.error('Failed to fetch conversations:', error);
-          dispatch(receiveConversations({ data: null, loading: false }));
+          if (workspace.isCurrent())
+            dispatch(receiveConversations({ data: null, loading: false }));
         }
       }
     };

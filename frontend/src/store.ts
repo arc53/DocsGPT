@@ -33,6 +33,11 @@ import monitorsReducer from './monitors/monitorsSlice';
 import graphBuildReducer from './settings/graphBuildSlice';
 import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
+import {
+  connectWorkspaceClient,
+  workspaceListenerMiddleware,
+} from './workspace/workspaceListener';
+import workspaceReducer from './workspace/workspaceSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
 const chunks = localStorage.getItem('DocsGPTChunks');
@@ -94,15 +99,20 @@ const store = configureStore({
     monitors: monitorsReducer,
     background: backgroundReducer,
     activity: activityReducer,
+    workspace: workspaceReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
+      // First, so requests follow a switch before any other listener fetches.
+      workspaceListenerMiddleware.middleware,
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
       backgroundListenerMiddleware.middleware,
       activityListenerMiddleware.middleware,
     ),
 });
+
+connectWorkspaceClient(store);
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;

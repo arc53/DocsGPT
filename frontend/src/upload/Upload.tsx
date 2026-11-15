@@ -71,6 +71,10 @@ import RetrievalOptions, {
 import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import { isWikiUnsupported } from '../settings/wikiConvertUtils';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
+import {
+  requestWorkspace,
+  WORKSPACE_HEADER,
+} from '../workspace/requestWorkspace';
 import WebsiteFields from './WebsiteFields';
 import useWebPageLimits, { useReseedMaxPages } from './useWebPageLimits';
 import {
@@ -691,6 +695,8 @@ function Upload({
     if (folderId) formData.append('folder_id', folderId);
 
     const apiHost = envVar('VITE_API_HOST');
+    // The source is created in the workspace the upload started in.
+    const workspace = requestWorkspace();
     const xhr = new XMLHttpRequest();
 
     dispatch(
@@ -759,6 +765,7 @@ function Upload({
 
     xhr.open('POST', `${apiHost}/api/upload`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader(WORKSPACE_HEADER, workspace);
     xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };
@@ -792,6 +799,8 @@ function Upload({
     const apiHost: string = envVar('VITE_API_HOST');
     // Local files go through uploadFile; everything else is fetched remotely.
     const endpoint = `${apiHost}/api/remote`;
+    // The source is created in the workspace the ingest started in.
+    const workspace = requestWorkspace();
 
     const xhr = new XMLHttpRequest();
 
@@ -861,6 +870,7 @@ function Upload({
 
     xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader(WORKSPACE_HEADER, workspace);
     xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };

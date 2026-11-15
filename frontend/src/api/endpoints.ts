@@ -58,6 +58,9 @@ const endpoints = {
       `/api/teams/${id}/members/${encodeURIComponent(memberId)}`,
     TEAM_GRANTS: (id: string) => `/api/teams/${id}/grants`,
     TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
+    WORKSPACES: '/api/workspaces',
+    WORKSPACE_MOVE_PLAN: '/api/workspace_moves/plan',
+    WORKSPACE_MOVES: '/api/workspace_moves',
     RESOURCE_SHARES: (resourceType: string, resourceId: string) =>
       `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
     RESOURCE_SETTINGS: '/api/resource_settings',
@@ -211,8 +214,9 @@ const endpoints = {
     MCP_SAVE_SERVER: '/api/mcp_server/save',
     MCP_OAUTH_CANCEL: '/api/mcp_server/oauth_cancel',
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
-    FOLDERS: (type: 'agent' | 'source') =>
-      `/api/folders?type=${encodeURIComponent(type)}`,
+    // The workspace's one tree; `type` narrows the counts to one kind.
+    FOLDERS: (type?: 'agent' | 'source' | 'tool' | 'prompt') =>
+      type ? `/api/folders?type=${encodeURIComponent(type)}` : '/api/folders',
     FOLDERS_CREATE: '/api/folders',
     FOLDER: (id: string) => `/api/folders/${encodeURIComponent(id)}`,
     FOLDER_ITEMS: '/api/folders/items',

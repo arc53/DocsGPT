@@ -13,6 +13,7 @@ import type {
   ScheduleUpdatePayload,
   UserSchedule,
 } from '../types/schedule';
+import { switchWorkspace } from '../../workspace/workspaceSlice';
 
 /** Runs per request; a shorter page means the log has reached its oldest run. */
 export const RUNS_PAGE_SIZE = 50;
@@ -300,6 +301,12 @@ const schedulesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // Another workspace: its schedules load next; an answer to a load sent
+      // before is dropped.
+      .addCase(switchWorkspace, () => ({
+        ...initialState,
+        allRequestId: 'reset',
+      }))
       .addCase(loadSchedulesForAgent.pending, (state, action) => {
         state.loadsByAgent[action.meta.arg.agentId] = {
           requestId: action.meta.requestId,

@@ -5139,14 +5139,70 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Changer d’équipe",
+      "ariaLabel": "Changer d’espace de travail",
       "createTeam": "Créer une équipe",
       "logoAlt": "Logo DocsGPT",
-      "manageTeams": "Gérer les équipes",
-      "personal": "Compte personnel",
-      "personalSubtitle": "Espace de travail personnel",
-      "roleAdmin": "Administrateur",
-      "roleMember": "Membre"
+      "manageTeams": "Gérer les équipes"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "newChatLine": "{{workspace}} · Vous seul voyez ce chat"
+    },
+    "common": {
+      "personal": "Personnel",
+      "roles": {
+        "admin": "Administrateur",
+        "editor": "Éditeur",
+        "owner": "Propriétaire",
+        "viewer": "Lecteur"
+      },
+      "you": "Vous"
+    },
+    "folders": {
+      "alsoInFolder": "Aussi dans ce dossier"
+    },
+    "line": {
+      "people_many": "{{count}} personnes",
+      "people_one": "{{count}} personne",
+      "people_other": "{{count}} personnes",
+      "personal": "Personnel",
+      "personalScope": "Vous seul, sauf si vous partagez un élément",
+      "teamScope": "Toute l’équipe peut utiliser ce qui se trouve ici"
+    },
+    "menu": {
+      "moveToPersonal": "Déplacer vers Personnel…",
+      "moveToTeam": "Déplacer vers une équipe…"
+    },
+    "move": {
+      "planChanged": "Quelque chose a changé ; vérifiez à nouveau"
+    },
+    "notices": {
+      "lost": "Vous ne faites plus partie de {{name}} ; retour à Personnel",
+      "lostUnnamed": "Vous ne faites plus partie de cette équipe ; retour à Personnel",
+      "roleChanged": "Votre rôle dans {{name}} a changé. La page montre désormais ce que vous pouvez faire.",
+      "switched": "Vous êtes passé à {{name}}"
+    },
+    "page": {
+      "sharedWithYou": "Partagé avec vous"
+    },
+    "pickers": {
+      "inAgentFolder": "Dans {{folder}}, le dossier de cet agent"
+    },
+    "share": {
+      "everyoneInTeam": "Tout le monde dans {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Vous seul",
+      "personal": "Personnel",
+      "teamMeta_many": "{{count}} personnes · {{role}}",
+      "teamMeta_one": "{{count}} personne · {{role}}",
+      "teamMeta_other": "{{count}} personnes · {{role}}",
+      "teamRole": "Équipe · {{role}}",
+      "teams": "Équipes"
+    },
+    "team": {
+      "navEntry": "Équipe"
     }
   }
 }

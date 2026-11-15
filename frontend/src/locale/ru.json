@@ -5316,14 +5316,72 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Сменить команду",
+      "ariaLabel": "Сменить рабочее пространство",
       "createTeam": "Создать команду",
       "logoAlt": "Логотип DocsGPT",
-      "manageTeams": "Управление командами",
-      "personal": "Личный аккаунт",
-      "personalSubtitle": "Личное рабочее пространство",
-      "roleAdmin": "Администратор",
-      "roleMember": "Участник"
+      "manageTeams": "Управление командами"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "newChatLine": "{{workspace}} · Этот чат видите только вы"
+    },
+    "common": {
+      "personal": "Личное",
+      "roles": {
+        "admin": "Администратор",
+        "editor": "Редактор",
+        "owner": "Владелец",
+        "viewer": "Читатель"
+      },
+      "you": "Вы"
+    },
+    "folders": {
+      "alsoInFolder": "Также в этой папке"
+    },
+    "line": {
+      "people_few": "{{count}} человека",
+      "people_many": "{{count}} человек",
+      "people_one": "{{count}} человек",
+      "people_other": "{{count}} человека",
+      "personal": "Личное",
+      "personalScope": "Только вы, если вы не поделитесь элементом",
+      "teamScope": "Всё, что здесь есть, доступно всей команде"
+    },
+    "menu": {
+      "moveToPersonal": "Перенести в Личное…",
+      "moveToTeam": "Перенести в команду…"
+    },
+    "move": {
+      "planChanged": "Что-то изменилось; проверьте ещё раз"
+    },
+    "notices": {
+      "lost": "Вы больше не состоите в {{name}}; открыто Личное",
+      "lostUnnamed": "Вы больше не состоите в этой команде; открыто Личное",
+      "roleChanged": "Ваша роль в {{name}} изменилась. Теперь страница показывает, что вам доступно.",
+      "switched": "Открыто пространство {{name}}"
+    },
+    "page": {
+      "sharedWithYou": "Доступно вам"
+    },
+    "pickers": {
+      "inAgentFolder": "В {{folder}}, папке этого агента"
+    },
+    "share": {
+      "everyoneInTeam": "Все в {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Только вы",
+      "personal": "Личное",
+      "teamMeta_few": "{{count}} человека · {{role}}",
+      "teamMeta_many": "{{count}} человек · {{role}}",
+      "teamMeta_one": "{{count}} человек · {{role}}",
+      "teamMeta_other": "{{count}} человека · {{role}}",
+      "teamRole": "Команда · {{role}}",
+      "teams": "Команды"
+    },
+    "team": {
+      "navEntry": "Команда"
     }
   }
 }

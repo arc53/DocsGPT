@@ -17,6 +17,7 @@ import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import { switchWorkspace } from '../workspace/workspaceSlice';
 import type { NowSnapshot } from './types';
 
 export type ActivityState = {
@@ -103,6 +104,9 @@ const activitySlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // Another workspace: as for another account, the next fetch fills it
+      // and an answer to one sent before is dropped.
+      .addCase(switchWorkspace, () => ({ ...initialState, requestId: 'reset' }))
       .addCase(loadActivityNow.pending, (state, action) => {
         state.loading = true;
         state.requestId = action.meta.requestId;

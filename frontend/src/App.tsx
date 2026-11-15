@@ -38,6 +38,8 @@ import { outletBoundaryKey } from './navigation/outletBoundaryKey';
 import { getSectionForPath } from './navigation/sections';
 import { SidebarLevelProvider } from './navigation/SidebarLevelProvider';
 import PageNotFound from './PageNotFound';
+import useWorkspaceLanding from './workspace/useWorkspaceLanding';
+import { selectWorkspaceId } from './workspace/workspaceSlice';
 
 // Dev-only style guide (see frontend/DESIGN.md). The DEV guard around the
 // import lets the bundler drop the chunk from production builds entirely.
@@ -115,6 +117,10 @@ function MainLayout() {
   const previewOpen = useSelector(selectWorkflowPreviewOpen);
   // The composers the toast stack keeps clear of (see useAvoidToasts).
   const [toastAvoid] = useState(createToastAvoidRegistry);
+  // A switch remounts the page, so every page loads its lists again from the
+  // new workspace; the sidebar stays mounted and follows the id itself.
+  const workspaceId = useSelector(selectWorkspaceId);
+  useWorkspaceLanding();
 
   return (
     <SidebarLevelProvider>
@@ -134,7 +140,7 @@ function MainLayout() {
               key={outletBoundaryKey(location.pathname)}
               resetKey={location.pathname}
             >
-              <Outlet />
+              <Outlet key={workspaceId} />
             </ErrorBoundary>
           </div>
           {/* The one toast stack (and live region) for the app. Each toast
@@ -210,7 +216,7 @@ export default function App() {
           />
           <Route path="/activity/*" element={<Activity />} />
           <Route path="/settings/*" element={<Setting />} />
-          <Route path="/teams" element={<Teams />} />
+          <Route path="/teams/*" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />
           <Route
             path="/admin/*"

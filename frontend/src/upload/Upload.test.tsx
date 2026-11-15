@@ -122,18 +122,27 @@ vi.mock('../connectors/useConnectorLauncher', () => ({
 }));
 
 import Upload from './Upload';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 /**
- * Stubs XMLHttpRequest and records each request sent: its URL and form.
+ * Stubs XMLHttpRequest and records each request sent: its URL, form and
+ * headers.
  * With `refusal`, every request is answered 400 with that body.
  */
-function stubXhr(refusal?: string): { url: string; body: FormData }[] {
-  const sent: { url: string; body: FormData }[] = [];
+function stubXhr(
+  refusal?: string,
+): { url: string; body: FormData; headers: Record<string, string> }[] {
+  const sent: {
+    url: string;
+    body: FormData;
+    headers: Record<string, string>;
+  }[] = [];
   class FakeXhr {
     upload = { addEventListener() {} };
     url = '';
+    headers: Record<string, string> = {};
     status = 0;
     statusText = '';
     responseText = '';
@@ -142,9 +151,11 @@ function stubXhr(refusal?: string): { url: string; body: FormData }[] {
     open(_method: string, url: string) {
       this.url = url;
     }
-    setRequestHeader() {}
+    setRequestHeader(name: string, value: string) {
+      this.headers[name] = value;
+    }
     send(body: FormData) {
-      sent.push({ url: this.url, body });
+      sent.push({ url: this.url, body, headers: this.headers });
       if (refusal === undefined) return;
       this.status = 400;
       this.statusText = 'BAD REQUEST';
@@ -719,6 +730,18 @@ describe('Upload source-type tiles', () => {
     await typeInto(urlInput(), 'docs.example.com/guide');
     await act(async () => trainButton().click());
     expect(sent[0].body.has('folder_id')).toBe(false);
+  });
+
+  // A remote ingest creates a source, so it goes to the workspace the
+  // upload started in.
+  it('sends the remote ingest to the current workspace', async () => {
+    setRequestWorkspace('t1', 1);
+    const sent = stubXhr();
+    await openType('website');
+    await typeInto(urlInput(), 'docs.example.com/guide');
+    await act(async () => trainButton().click());
+    expect(sent[0].headers['X-DocsGPT-Workspace']).toBe('t1');
+    setRequestWorkspace('personal', 0);
   });
 
   it('sends a whole site with its scope, synced weekly by default', async () => {
@@ -1414,6 +1437,18 @@ describe('Upload local file step', () => {
       .map((entry) => (entry as File).name);
     expect(names).toEqual(['Handbook/guide/setup.md', 'Handbook/intro.pdf']);
     expect(sent[0].body.get('name')).toBe('Handbook');
+  });
+
+  it('uploads to the workspace the upload started in', async () => {
+    setRequestWorkspace('t1', 1);
+    const sent = stubXhr();
+    await openLocalFile();
+    await pickFolder([inFolder('Handbook/intro.pdf', 'application/pdf')]);
+    await act(async () => trainButton().click());
+    expect(sent[0].url).toContain('/api/upload');
+    expect(sent[0].headers['X-DocsGPT-Workspace']).toBe('t1');
+    expect(sent[0].headers.Authorization).toBe('Bearer null');
+    setRequestWorkspace('personal', 0);
   });
 
   it('uploads into the folder it was opened in', async () => {

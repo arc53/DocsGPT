@@ -5,6 +5,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import userService from '../../api/services/userService';
+import { switchWorkspace } from '../../workspace/workspaceSlice';
 import type { Folder, FolderType } from './types';
 
 /** One type's folders and where its load stands. */
@@ -75,6 +76,12 @@ const foldersSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // Another workspace has another tree; a load still out answers into
+      // nothing (no request id matches).
+      .addCase(switchWorkspace, () => ({
+        agent: emptyList(),
+        source: emptyList(),
+      }))
       .addCase(loadFolders.pending, (state, action) => {
         const list = state[action.meta.arg.type];
         list.latestRequestId = action.meta.requestId;

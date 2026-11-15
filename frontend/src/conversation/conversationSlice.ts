@@ -29,6 +29,7 @@ import {
 } from '../upload/uploadSlice';
 import { wakeFromMetadata } from '../backgroundJobs/kinds';
 import { newIdempotencyKey } from '../utils/idempotency';
+import { switchWorkspace } from '../workspace/workspaceSlice';
 import {
   appendAnswerText,
   appendThoughtText,
@@ -1558,6 +1559,11 @@ export const conversationSlice = createSlice({
   },
   extraReducers(builder) {
     builder
+      // The open chat belongs to the old workspace: close it, as New chat
+      // does. Its answer keeps being written on the server.
+      .addCase(switchWorkspace, (state) => {
+        conversationSlice.caseReducers.resetConversation(state);
+      })
       .addCase(fetchAnswer.pending, (state) => {
         state.status = 'loading';
         // Sending a new message moves past a turn still waiting on an
