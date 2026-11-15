@@ -133,29 +133,30 @@ def _refusal(refused: MembershipChangeRefused):
 
     The owner changing themselves gets 400 telling them to transfer ownership
     first; anyone else touching the owner gets 403; demoting or removing the
-    last admin is 409.
+    last admin is 409. Each carries a stable ``error`` code the UI maps to its
+    own text: ``last_admin``, ``owner_must_transfer`` or ``owner_protected``.
 
     Args:
         refused: The refusal raised by ``change_membership``.
 
     Returns:
-        The ``{"success": False, "message": ...}`` response.
+        The ``{"success": False, "error": code, "message": ...}`` response.
     """
     remove = refused.change == "remove"
     if refused.reason == MembershipChangeRefused.LAST_ADMIN:
         message = f"Cannot {'remove' if remove else 'demote'} the last team admin"
-        status = 409
+        status, code = 409, "last_admin"
     elif refused.self_change:
         message = (
             "Transfer team ownership to another member before you leave the team"
             if remove
             else "Transfer team ownership to another member before you step down as admin"
         )
-        status = 400
+        status, code = 400, "owner_must_transfer"
     else:
         message = f"The team owner can't be {'removed' if remove else 'demoted'}"
-        status = 403
-    return make_response(jsonify({"success": False, "message": message}), status)
+        status, code = 403, "owner_protected"
+    return make_response(jsonify({"success": False, "error": code, "message": message}), status)
 
 
 def _team_payload(team: dict, user: str | None, stored_role: str | None = None) -> dict:
@@ -1001,7 +1002,9 @@ def _team_item_shares(conn, ra: ResourceAccess) -> dict:
     Returns:
         dict: ``success``, ``shares`` (always empty), ``workspace`` (``{kind, team_id, name}``),
         ``members_count``, and for an agent ``outside_access`` (``{api_key, public_link, webhook,
-        paid_by}``; ``paid_by`` is the published-access payer, None until someone publishes it).
+        paid_by}``; ``paid_by`` is the published-access payer as ``{user_id, label}``, None while the
+        agent has no outside access or nobody pays for it). The payer is named to every member, as
+        the team's own record, by their email when on file, else by their user id.
     """
     team = TeamsRepository(conn).get(ra.team_id) or {}
     members_count = conn.execute(
@@ -1017,11 +1020,14 @@ def _team_item_shares(conn, ra: ResourceAccess) -> dict:
     }
     if ra.resource_type == "agent":
         agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}
+        payer = agent.get("access_payer_id") if has_outside_access(agent) else None
         body["outside_access"] = {
             "api_key": bool(agent.get("key")),
             "public_link": bool(agent.get("shared") and agent.get("shared_token")),
             "webhook": bool(agent.get("incoming_webhook_token")),
-            "paid_by": agent.get("access_payer_id") if has_outside_access(agent) else None,
+            "paid_by": (
+                {"user_id": payer, "label": _user_labels(conn, {payer}).get(payer) or payer} if payer else None
+            ),
         }
     return body
 

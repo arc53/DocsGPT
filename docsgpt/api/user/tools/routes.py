@@ -64,7 +64,13 @@ from docsgpt.upload_limits import (
     UploadTooLargeError,
 )
 from docsgpt.utils import check_required_fields, validate_function_name
-from docsgpt.workspaces.context import current_workspace, require_workspace_role, Workspace, WorkspaceError
+from docsgpt.workspaces.context import (
+    current_workspace,
+    parse_workspace_ref,
+    require_workspace_role,
+    Workspace,
+    WorkspaceError,
+)
 from docsgpt.workspaces.principal import is_principal_id
 
 tool_config = {}
@@ -268,6 +274,29 @@ def personal_only_response(code: str):
         The Flask response.
     """
     return WorkspaceError(403, code, _PERSONAL_ONLY_MESSAGES[code]).response()
+
+
+def team_tool_refusal(tool_name: str, config: Optional[dict] = None) -> Optional[str]:
+    """Why a team workspace can't hold a tool of this kind, or None when it can.
+
+    A paired device runs on one person's machine; a connected service, or an
+    MCP server you sign in to, needs a connection a team can't hold yet.
+
+    Args:
+        tool_name: The tool's catalog name (``remote_device``, ``telegram``, ``mcp_tool``, ...).
+        config: The tool's config; only an MCP server's ``auth_type`` is read. Without it (the
+            catalog), the kind alone decides.
+
+    Returns:
+        Optional[str]: One of the ``CODE_*_PERSONAL_ONLY`` codes, or None.
+    """
+    if tool_name == "remote_device":
+        return CODE_REMOTE_DEVICE_PERSONAL_ONLY
+    if definition_for_tool(tool_name) is not None:
+        return CODE_CONNECTOR_PERSONAL_ONLY
+    if tool_name == "mcp_tool" and isinstance(config, dict) and config.get("auth_type") == "oauth":
+        return CODE_OAUTH_PERSONAL_ONLY
+    return None
 
 
 def create_workspace(conn: Connection) -> Workspace:
@@ -738,20 +767,32 @@ _CUSTOM_CONNECTOR_TOOLS = {"mcp_tool": "custom_mcp", "api_tool": "custom_openapi
 
 @tools_ns.route("/available_tools")
 class AvailableTools(Resource):
-    @api.doc(description="Get available tools for a user")
+    @api.doc(
+        description=(
+            "Get the tools the caller can add in the current workspace. A team workspace leaves out "
+            "what a team can't hold (connected services and the paired-device tool). The response "
+            "echoes ``workspace`` ({kind, team_id, role})."
+        )
+    )
     def get(self):
         if not request.decoded_token:
             return make_response(jsonify({"success": False}), 401)
         from docsgpt.connectors import service as connection_service
 
+        workspace: Optional[Workspace] = None
         try:
             with db_readonly() as conn:
+                workspace = current_workspace(conn)
                 policies = connection_service.load_policies(conn)
+        except WorkspaceError as err:
+            return err.response()
         except Exception:
             # Without the admin's switches, fall back to the defaults (a
             # connector is on when its server settings are present).
             current_app.logger.warning("Could not read connector policies", exc_info=True)
             policies = {}
+        # Unread membership must not widen a team's list: a named team still gets the team's.
+        in_team = workspace.is_team if workspace is not None else parse_workspace_ref(request) is not None
         tools_metadata = []
         for tool_name, tool_instance in tool_manager.tools.items():
             # One broken tool (a custom one without a class docstring, or one
@@ -777,6 +818,8 @@ class AvailableTools(Resource):
                     group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]
                 else:
                     group, connector_key = "built_in", None
+                if in_team and team_tool_refusal(tool_name) is not None:
+                    continue
             except Exception as err:
                 current_app.logger.error(
                     f"Skipping tool {tool_name!r} in available tools: {err}", exc_info=True
@@ -793,7 +836,16 @@ class AvailableTools(Resource):
                     "connector_key": connector_key,
                 }
             )
-        return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "data": tools_metadata,
+                    "workspace": workspace.payload() if workspace is not None else None,
+                }
+            ),
+            200,
+        )
 
 
 def _stamp_action_access(tool: dict) -> dict:
@@ -1031,13 +1083,9 @@ class CreateTool(Resource):
         except WorkspaceError as err:
             return err.response()
         if workspace.is_team:
-            # Runs on one person's device, or needs a connection a team can't hold yet.
-            if data["name"] == "remote_device":
-                return personal_only_response(CODE_REMOTE_DEVICE_PERSONAL_ONLY)
-            if definition_for_tool(data["name"]) is not None:
-                return personal_only_response(CODE_CONNECTOR_PERSONAL_ONLY)
-            if data["name"] == "mcp_tool" and (data.get("config") or {}).get("auth_type") == "oauth":
-                return personal_only_response(CODE_OAUTH_PERSONAL_ONLY)
+            refusal = team_tool_refusal(data["name"], data.get("config"))
+            if refusal is not None:
+                return personal_only_response(refusal)
         owner_id, created_by = workspace.owner_for_create(user)
         try:
             with db_readonly() as conn:

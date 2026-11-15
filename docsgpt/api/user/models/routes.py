@@ -1,7 +1,8 @@
 """Model routes.
 
 - ``GET /api/models`` — list available models for the current user.
-  Combines the built-in catalog with the user's BYOM records.
+  Combines the built-in catalog with the user's BYOM records; in a team
+  workspace, the catalog only (a team can't use a person's own models).
 - ``GET/POST/PATCH/DELETE /api/user/models[/<id>]`` — CRUD for the
   user's own OpenAI-compatible model registrations (BYOM).
 - ``POST /api/user/models/<id>/test`` — sanity-check the upstream
@@ -31,6 +32,7 @@ from docsgpt.storage.db.repositories.user_custom_models import (
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
+from docsgpt.workspaces.context import current_workspace, parse_workspace_ref, WorkspaceError
 
 
 logger = logging.getLogger(__name__)
@@ -149,13 +151,24 @@ class ModelsListResource(Resource):
         """Get list of available models with their capabilities.
 
         When the request is authenticated, the response includes the
-        user's own BYOM registrations alongside the built-in catalog.
+        user's own BYOM registrations alongside the built-in catalog. In a
+        team workspace it leaves them out: saving one on a team item is
+        refused, so a team's pickers never offer one.
         """
         try:
             user_id = None
             decoded_token = getattr(request, "decoded_token", None)
             if decoded_token:
                 user_id = decoded_token.get("sub")
+            if user_id and parse_workspace_ref(request) is not None:
+                # Only a named team is looked up; Personal needs no membership read.
+                try:
+                    with db_readonly() as conn:
+                        workspace = current_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
+                if workspace.is_team:
+                    user_id = None
 
             registry = ModelRegistry.get_instance()
             models = registry.get_enabled_models(user_id=user_id)

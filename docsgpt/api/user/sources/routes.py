@@ -221,6 +221,9 @@ SOURCE_KINDS = ("all", "files", "websites", "synced", "wikis", "shared")
 #: The ``usage`` filter of the paginated listing.
 USAGE_FILTERS = ("all", "in_use", "unused")
 
+#: The ``origin`` filter of the paginated listing: the workspace owner's sources, others shared ones, or both.
+ORIGIN_FILTERS = ("all", "own", "shared")
+
 def source_kind(row: dict) -> str:
     """Which of the content kinds a source is: ``wikis``, ``websites``, ``synced`` or ``files``.
 
@@ -407,8 +410,9 @@ class PaginatedSources(Resource):
             "(the agents using it) and the caller's filing (``folder_id``, ``folder_path`` "
             "[{id, name}] from the top-level folder down). ``kind_counts`` counts every kind with the "
             "search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search "
-            "and kind filters applied. With ``folder``, both counts and ``subtree_total`` cover the "
-            "folder's whole subtree, while ``total``/``totalPages`` describe the listed rows."
+            "and kind filters applied. Both follow ``origin``; ``origin_counts`` counts own/shared with the "
+            "search, kind and usage filters applied. With ``folder``, the counts and ``subtree_total`` cover "
+            "the folder's whole subtree, while ``total``/``totalPages`` describe the listed rows."
         ),
         params={
             "page": "Page number, from 1",
@@ -421,6 +425,10 @@ class PaginatedSources(Resource):
                 "with the caller, of any kind)"
             ),
             "usage": "all (default), in_use (some agent uses it) or unused",
+            "origin": (
+                "all (default), own (the workspace's own sources) or shared (sources a team shares with "
+                "the caller; always empty in a team workspace)"
+            ),
             "folder": (
                 "root, or one of the caller's source folders: counts cover that folder and every folder "
                 "under it (root: everything). Omitted: no folder scoping"
@@ -443,9 +451,11 @@ class PaginatedSources(Resource):
         search_term = request.args.get("search", "").strip() or None
         kind = request.args.get("kind", "all").strip() or "all"
         usage = request.args.get("usage", "all").strip() or "all"
-        if kind not in SOURCE_KINDS or usage not in USAGE_FILTERS:
+        origin = request.args.get("origin", "all").strip() or "all"
+        if kind not in SOURCE_KINDS or usage not in USAGE_FILTERS or origin not in ORIGIN_FILTERS:
             return error_response(
-                f"kind must be one of {', '.join(SOURCE_KINDS)}; usage one of {', '.join(USAGE_FILTERS)}",
+                f"kind must be one of {', '.join(SOURCE_KINDS)}; usage one of {', '.join(USAGE_FILTERS)}; "
+                f"origin one of {', '.join(ORIGIN_FILTERS)}",
                 400,
                 code="invalid_filter",
             )
@@ -499,6 +509,7 @@ class PaginatedSources(Resource):
                 )
                 kind_counts = dict.fromkeys(SOURCE_KINDS, 0)
                 usage_counts = dict.fromkeys(USAGE_FILTERS, 0)
+                origin_counts = {"own": 0, "shared": 0}
                 matching: list[str] = []
                 subtree_total = 0
                 for row in facets:
@@ -508,6 +519,11 @@ class PaginatedSources(Resource):
                     in_use = is_in_use(used_by.get(sid))
                     kind_ok = matches_kind(kind, content_kind, shared)
                     usage_ok = matches_usage(usage, in_use)
+                    if kind_ok and usage_ok:
+                        origin_counts["shared" if shared else "own"] += 1
+                    # The other counts and the rows describe the chosen origin only.
+                    if origin != "all" and shared != (origin == "shared"):
+                        continue
                     if usage_ok:
                         for name in SOURCE_KINDS:
                             kind_counts[name] += matches_kind(name, content_kind, shared)
@@ -523,7 +539,7 @@ class PaginatedSources(Resource):
                                 continue
                         matching.append(sid)
                 scoped = subtree is not None or (folder_param == "root" and direct)
-                filtered = kind != "all" or usage != "all" or scoped
+                filtered = kind != "all" or usage != "all" or origin != "all" or scoped
                 total_documents = len(matching)
                 # Prior in-Python implementation returned ``totalPages = 1``
                 # for empty result sets (``max(1, ceil(0/rows))``); we
@@ -598,6 +614,7 @@ class PaginatedSources(Resource):
                 "paginated": paginated_docs,
                 "kind_counts": kind_counts,
                 "usage_counts": usage_counts,
+                "origin_counts": origin_counts,
                 "workspace": workspace.payload(),
             }
             if folder_param:
