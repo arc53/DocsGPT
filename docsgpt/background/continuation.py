@@ -43,6 +43,7 @@ from docsgpt.background.events import publish_conversation_continued
 from docsgpt.background.live_turn import LiveTurn
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import context_window_limit_of
+from docsgpt.quotas.payer import published_access_payer
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
@@ -50,6 +51,7 @@ from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakes
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository, MessageUpdateOutcome
 from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +219,27 @@ def _agent_config(conn: Connection, conversation: Dict[str, Any], model_id: Opti
         "source_id": None,
         "default_model_id": model_id or "",
     }
+
+
+def continuation_payer(conversation: Dict[str, Any], agent_config: Dict[str, Any]) -> Optional[str]:
+    """Who a continuation turn bills: the payer of the chat it carries on.
+
+    A person's conversation bills that person (a teammate chatting with a
+    shared or team agent pays for its continuations). A conversation owned by
+    a team principal is one that the agent's key, widget or ``/v1`` traffic
+    left, so it bills whoever pays for that published access.
+
+    Args:
+        conversation: The conversation row (``user_id``).
+        agent_config: The agent the turn runs (``user_id``, ``access_payer_id``).
+
+    Returns:
+        A person's id, or None when nobody pays (the run is then refused).
+    """
+    owner = str(conversation["user_id"])
+    if not is_principal_id(owner):
+        return owner
+    return published_access_payer(agent_config)
 
 
 def _history(
@@ -536,8 +559,8 @@ def _run_turn(
             conversation_id=str(conversation["id"]),
             request_id=str(uuid.uuid4()),
             trace_user_id=user_id,
-            # It carries on the chat's run, so the person chatting pays, though it runs as the agent's owner.
-            payer=str(user_id),
+            # It carries on the chat's run, so the chat's payer pays, though it runs as the agent's owner.
+            payer=continuation_payer(conversation, agent_config),
             message_id=message_id,
             background=background,
             on_event=live.event if live is not None else None,

@@ -8,12 +8,14 @@ from datetime import datetime
 from typing import Optional
 
 from docsgpt.core.settings import settings
+from docsgpt.quotas.payer import NO_PAYER_CODE, NO_PAYER_MESSAGE
 from docsgpt.quotas.providers import default_rows, get_defaults_provider
 from docsgpt.quotas.resolver import ResolvedLimit, ResolvedLimits, resolve_limits
 from docsgpt.quotas.windows import window_bounds
 from docsgpt.storage.db.repositories.quota_policies import QuotaPoliciesRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +115,30 @@ class QuotaExceededError(Exception):
         super().__init__(exceeded.to_payload()["message"])
 
 
+class NoPayerError(QuotaExceededError):
+    """A run whose payer would be a team principal: nobody can be billed, so it never starts.
+
+    A :class:`QuotaExceededError`, so every headless caller stops the run the
+    way it stops one over the payer's allowance. ``exceeded`` is None; the
+    refusal carries :data:`~docsgpt.quotas.payer.NO_PAYER_CODE` instead.
+
+    Attributes:
+        user_id: The principal that was offered as the payer, if any.
+    """
+
+    code = NO_PAYER_CODE
+    message = NO_PAYER_MESSAGE
+
+    def __init__(self, user_id: Optional[str] = None) -> None:
+        self.user_id = user_id
+        self.exceeded = None
+        Exception.__init__(self, NO_PAYER_MESSAGE)
+
+    def to_payload(self) -> dict:
+        """Return the client-facing error body."""
+        return {"success": False, "error_code": NO_PAYER_CODE, "code": NO_PAYER_CODE, "message": NO_PAYER_MESSAGE}
+
+
 class QuotaService:
     """Resolve limits and measure usage for the current ``QUOTA_PERIOD`` window."""
 
@@ -126,7 +152,13 @@ class QuotaService:
 
         Usage is only summed for buckets that carry a limit, so a user with no
         applicable policy costs one policy lookup and no usage query.
+
+        Raises:
+            NoPayerError: ``user_id`` is a team principal, which has no allowance
+                (the defaults provider never sees one).
         """
+        if is_principal_id(user_id):
+            raise NoPayerError(user_id)
         start, resets_at = window_bounds(settings.QUOTA_PERIOD, now)
         statuses: list[BucketStatus] = []
         with db_readonly() as conn:
@@ -155,9 +187,16 @@ class QuotaService:
             user_id: The billable user. Requests with no user are not limited.
             bucket: ``direct`` for chat without an agent, ``agent`` for traffic through one.
             now: Reference instant, for tests.
+
+        Raises:
+            NoPayerError: ``user_id`` is a team principal. This fails closed,
+                before any lookup and outside the "an outage allows" rule: a
+                principal is never a payer.
         """
         if not user_id:
             return None
+        if is_principal_id(user_id):
+            raise NoPayerError(user_id)
         if bucket not in REQUEST_BUCKETS:
             raise ValueError(f"unknown request bucket: {bucket!r}")
         try:

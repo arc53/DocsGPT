@@ -43,11 +43,11 @@ def _patch_agents_repo(row):
 @pytest.fixture(autouse=True)
 def _owners_active(monkeypatch):
     """The fake read connection is None: every agent owner reads as active there."""
-    from docsgpt.api.user.attachments import routes
+    from docsgpt.api import owner_pause
 
-    real = routes.any_deactivated
+    real = owner_pause.any_deactivated
     monkeypatch.setattr(
-        routes, "any_deactivated", lambda conn, *ids: False if conn is None else real(conn, *ids)
+        owner_pause, "any_deactivated", lambda conn, *ids: False if conn is None else real(conn, *ids)
     )
 
 
@@ -567,9 +567,10 @@ class TestResolveAuthenticatedUser:
                 assert result.status_code == 401
 
     def test_refuses_the_key_of_a_deactivated_owner(self, flask_app, monkeypatch):
+        from docsgpt.api import owner_pause
         from docsgpt.api.user.attachments import routes
 
-        monkeypatch.setattr(routes, "any_deactivated", lambda conn, *ids: True)
+        monkeypatch.setattr(owner_pause, "any_deactivated", lambda conn, *ids: True)
         app = Flask(__name__)
         p1, p2 = _patch_agents_repo({"key": "valid_key", "user_id": "apikey_user"})
 

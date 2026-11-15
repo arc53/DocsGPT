@@ -33,7 +33,7 @@ from docsgpt.api.answer.services.stream_processor import (
     flush_trace_after_request,
 )
 from docsgpt.agents.context_overflow import ContextOverflowError
-from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE, any_deactivated
+from docsgpt.api.owner_pause import AgentPausedError, outside_access_refusal
 from docsgpt.api.v1 import idempotency as v1_idempotency
 from docsgpt.api.v1.attachments import NOT_STORED, InlineIngest, start_inline_files
 from docsgpt.api.v1.session_store import (
@@ -85,22 +85,22 @@ def _lookup_agent(api_key: str) -> Optional[Dict]:
         return None
 
 
-def _owner_paused(agent: Dict) -> bool:
-    """Whether the key's agent is paused because its owner is deactivated.
+def _owner_paused(agent: Dict) -> Optional[AgentPausedError]:
+    """Why the key's agent refuses outside traffic: its owner or payer is deactivated, or nobody pays.
 
     Args:
         agent: The agent the key resolved to.
 
     Returns:
-        True when the owner's account is deactivated. A failed read is not a
+        The refusal (``code``, ``message``), or None. A failed read is not a
         pause: the run's own check repeats it.
     """
     try:
         with db_readonly() as conn:
-            return any_deactivated(conn, agent.get("user_id") or agent.get("user"))
+            return outside_access_refusal(conn, agent)
     except Exception:
         logger.warning("Failed to read the agent owner's account state", exc_info=True)
-        return False
+        return None
 
 
 def _get_model_name(agent: Optional[Dict], api_key: str) -> str:
@@ -352,9 +352,10 @@ def chat_completions():
             jsonify({"error": {"message": "Invalid API key", "type": "auth_error"}}),
             401,
         )
-    if _owner_paused(agent_doc):
+    paused = _owner_paused(agent_doc)
+    if paused is not None:
         return make_response(
-            jsonify({"error": {"message": PAUSED_MESSAGE, "type": "permission_error", "code": PAUSED_CODE}}),
+            jsonify({"error": {"message": paused.message, "type": "permission_error", "code": paused.code}}),
             403,
         )
     options_error = _validate_request_options(data, agent_doc)

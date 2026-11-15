@@ -3,7 +3,9 @@
 The turn writes the job and queues it; the worker rebuilds the caller's
 ``ToolExecutor`` (same user, agent, caller rules and connections), resolves
 the tool by its row id, runs the call and finishes the job. The call was
-already approved, if it needed approval, before it got here.
+already approved, if it needed approval, before it got here. A model call
+inside it (a tool that asks one, the guardrail judge) bills the turn's payer,
+not the identity the executor is rebuilt as.
 
 At most once: the task is never retried or redelivered, because a tool call
 may have side effects. A worker that dies mid-call leaves the job's heartbeat
@@ -14,9 +16,11 @@ note.
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.background import jobs, pool
+from docsgpt.quotas.payer import billed_to, current_run_billing, payer_for
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -35,10 +39,13 @@ def worker_payload(executor: Any, tool_data: Dict[str, Any], action_name: str, a
         arguments: The model's arguments, without ``background`` / ``watch``.
 
     Returns:
-        A JSON-safe dict.
+        A JSON-safe dict. ``payer`` is the turn's payer when the turn set one
+        (``billed_to``), else None: the identity pays, as in a chat.
     """
+    billing = current_run_billing()
     return {
         "user": executor.user,
+        "payer": billing.payer if billing is not None and billing.payer else None,
         "user_api_key": executor.user_api_key,
         "agent_id": str(executor.agent_id) if executor.agent_id else None,
         "external_caller": bool(executor.external_caller),
@@ -87,7 +94,12 @@ def _resolve_tool(executor: Any, payload: Dict[str, Any]) -> Optional[Tuple[str,
 
 
 def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Run a queued background call in this worker and finish its job.
+    """Run a queued background call in this worker and finish its job, billed to the turn's payer.
+
+    The executor is rebuilt as the turn's identity (for a team agent reached
+    by its key, the team's principal), so the payer travels separately: the
+    payload's ``payer``, or for a job queued without one, whoever pays for the
+    agent's published access when the identity is a principal.
 
     Args:
         job_id: The job.
@@ -96,6 +108,20 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         A summary for the task result.
     """
+    payer = payload.get("payer")
+    if not payer:
+        try:
+            payer = payer_for(payload.get("user"), payload.get("agent_id"))
+        except Exception:
+            logger.exception("background job %s: reading its payer failed", job_id)
+            payer = None
+    billing = billed_to(payer) if payer and payer != payload.get("user") else nullcontext()
+    with billing:
+        return _run_job(job_id, payload)
+
+
+def _run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The body of :func:`run_job`."""
     from celery.exceptions import SoftTimeLimitExceeded
 
     from docsgpt.agents.tool_executor import ToolExecutor, api_tool_action_with_secrets

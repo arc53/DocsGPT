@@ -38,12 +38,13 @@ from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.agent_limits import AgentLimitExceededError, agent_limit_exceeded, has_agent_limit
 from docsgpt.quotas.payer import billed_to, published_access_payer
-from docsgpt.quotas.service import QuotaExceededError, QuotaService
+from docsgpt.quotas.service import NoPayerError, QuotaExceededError, QuotaService
 from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -224,11 +225,17 @@ def run_agent_headless(
     after each event; once it says yes the run ends, keeping what it has, and
     the outcome's ``stopped`` is True.
 
+    A team principal is never a payer: a team agent's run with no person to
+    bill (no ``payer`` given and no published-access payer) never starts.
+
     Raises:
         AgentLimitExceededError: If the agent's own 24-hour limit is used up.
         QuotaExceededError: If the payer's allowance is used up.
+        NoPayerError: If nobody but a team principal could be billed.
     """
     payer = payer or published_access_payer(agent_config)
+    if is_principal_id(payer) or (not payer and is_principal_id(_resolve_owner(agent_config))):
+        raise NoPayerError(payer or _resolve_owner(agent_config))
     trace = tracing.start_trace(
         source=endpoint,
         request_id=request_id,

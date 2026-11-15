@@ -1,3 +1,4 @@
+import contextlib
 import datetime
 import functools
 import inspect
@@ -37,8 +38,9 @@ from docsgpt.llm.deadlines import interruptible
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.agent_limits import agent_limit_exceeded
 from docsgpt.quotas.http import agent_limit_response, quota_exceeded_response
-from docsgpt.quotas.payer import published_access_payer
-from docsgpt.quotas.service import QuotaService
+from docsgpt.quotas.payer import agent_access_payer, billed_to, published_access_payer
+from docsgpt.quotas.service import NoPayerError, QuotaService
+from docsgpt.workspaces.principal import is_principal_id
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import (
     HeartbeatState,
@@ -103,6 +105,43 @@ class StreamSuperseded(Exception):
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
 
 
+def _outside_traffic_payer(arguments: Dict[str, Any]) -> Optional[str]:
+    """Who a stream bills when it is outside traffic on an agent, or None to bill the token's ``sub``.
+
+    Key, widget, ``/v1`` and public-link callers run as the agent's owner (a
+    team agent's owner is its principal), but the agent's published-access
+    payer pays for that traffic. Anything else (the person chatting) leaves
+    billing to its own token.
+
+    Args:
+        arguments: ``complete_stream``'s bound arguments.
+
+    Returns:
+        The payer, when it differs from the token's ``sub``; else None.
+    """
+    executor = getattr(arguments.get("agent"), "tool_executor", None)
+    outside = getattr(executor, "external_caller", False) is True or (
+        getattr(executor, "public_link_caller", False) is True
+    )
+    decoded_token = arguments.get("decoded_token")
+    sub = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
+    if not outside and not is_principal_id(sub):
+        return None
+    try:
+        payer = agent_access_payer(arguments.get("agent_id"), arguments.get("user_api_key"))
+    except Exception:
+        # ``check_usage`` already refused a request nobody pays for; a failed read
+        # leaves the token's identity, and the usage guard reports a principal.
+        logger.exception("Could not read the agent's published-access payer")
+        return None
+    return payer if payer and payer != sub else None
+
+
+def _no_payer_response() -> Response:
+    """The refusal for outside traffic on an agent nobody pays for (a team agent with no published-access payer)."""
+    return make_response(jsonify(NoPayerError().to_payload()), 403)
+
+
 def _traced_stream(
     method: Callable[..., Generator[str, None, None]],
 ) -> Callable[..., Generator[str, None, None]]:
@@ -114,7 +153,9 @@ def _traced_stream(
     abandoned. The request id is resolved here too so the trace and the
     stream agree on it. The turn's decision record is activated with it: the
     one the processor handed the agent (holding any decisions made during
-    setup, and a resumed turn's earlier rounds), or a new one.
+    setup, and a resumed turn's earlier rounds), or a new one. Outside traffic
+    on an agent runs billed to its published-access payer for the whole stream
+    (:func:`_outside_traffic_payer`).
     """
     signature = inspect.signature(method)
 
@@ -145,7 +186,9 @@ def _traced_stream(
         decisions = getattr(arguments.get("agent"), "decision_record", None)
         if not isinstance(decisions, decision_record.DecisionRecord):
             decisions = decision_record.DecisionRecord()
-        with tracing.activate(trace), decision_record.activate(decisions):
+        payer = _outside_traffic_payer(arguments)
+        billing = billed_to(payer, request_id) if payer else contextlib.nullcontext()
+        with tracing.activate(trace), decision_record.activate(decisions), billing:
             try:
                 yield from method(*bound.args, **bound.kwargs)
             finally:
@@ -491,7 +534,10 @@ class BaseAnswerResource:
         Traffic through an agent meets the agent's own 24h token and request
         limit first, then the payer's allowance; the first one used up is the
         one the refusal names. The payer is the person chatting (the token's
-        ``sub``); with no token, whoever pays for the agent's outside traffic.
+        ``sub``). Outside traffic (an API key or widget caller, a public-link
+        caller, no token, or a token that runs as a team principal) bills
+        whoever pays for the agent's published access; with nobody, it is
+        refused with ``no_payer`` before anything is spent.
 
         Args:
             agent_config: The config dict of agent instance
@@ -513,8 +559,21 @@ class BaseAnswerResource:
                 hit = agent_limit_exceeded(conn, agent) if agent else None
             if hit is not None:
                 return agent_limit_response(hit)
-        user_id = (decoded_token or {}).get("sub") or published_access_payer(agent_config)
-        exceeded = QuotaService.check(user_id, "agent" if api_key or agent_id else "direct")
+        sub = (decoded_token or {}).get("sub")
+        user_id = sub
+        outside = bool(agent_config.get("external_api_caller") or agent_config.get("public_link_caller"))
+        if outside or not sub or is_principal_id(sub):
+            user_id = published_access_payer(agent or agent_config)
+            # An unknown key falls through to its 401 below; a known agent, or a
+            # run as a team, with nobody to bill never starts.
+            if user_id is None and (
+                agent is not None or is_principal_id(sub) or is_principal_id(agent_config.get("user_id"))
+            ):
+                return _no_payer_response()
+        try:
+            exceeded = QuotaService.check(user_id, "agent" if api_key or agent_id else "direct")
+        except NoPayerError:
+            return _no_payer_response()
         if exceeded is not None:
             return quota_exceeded_response(exceeded)
         if api_key and not agent:

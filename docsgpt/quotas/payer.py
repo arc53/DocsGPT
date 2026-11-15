@@ -10,6 +10,11 @@ here. A run that executes as someone else (a schedule or a continuation runs
 as the agent's owner, with the owner's sources, tools and model) opens
 :func:`billed_to` with its payer for its whole length; the usage decorators
 then record the payer instead of the identity the run executes as.
+
+A team principal (the owner of a team's items) is never a payer: a team agent
+runs as it, but its outside traffic bills the agent's published-access payer
+(``agents.access_payer_id``), and with none that traffic is refused
+(:data:`NO_PAYER_CODE`).
 """
 
 from __future__ import annotations
@@ -20,7 +25,17 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Iterator, Mapping, Optional
 
+from sqlalchemy import text
+
 from docsgpt import tracing
+from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.principal import is_principal_id
+
+#: The code an outside request (key, widget, webhook, public link, ``/v1``) is refused with when the agent names
+#: nobody to pay for it: a team agent whose published access has no payer.
+NO_PAYER_CODE = "no_payer"
+NO_PAYER_MESSAGE = "This agent has nobody to pay for its use right now, so it can't answer."
 
 
 @dataclass(frozen=True)
@@ -70,13 +85,66 @@ def billed_to(payer: Optional[str], request_id: Optional[str] = None) -> Iterato
 def published_access_payer(agent: Mapping[str, Any]) -> Optional[str]:
     """Who pays for outside traffic on this agent: its API key, widget, webhook and public link.
 
-    The one place that answers it. Today it is the agent's owner; a later step
-    gives the agent a published-access payer of its own and reads it here.
+    The one place that answers it: the agent's published-access payer
+    (``access_payer_id``, set when a team Admin turns outside access on or by a
+    move), else the owner when the owner is a person. A team principal is
+    never returned: a team agent with no published-access payer has none, and
+    its outside traffic is refused.
 
     Args:
-        agent: The agent row (``user_id``) or the legacy shape (``user``).
+        agent: The agent row (``user_id``, ``access_payer_id``) or the legacy shape (``user``).
 
     Returns:
-        The payer's user id, or None when the agent names no owner.
+        The payer's user id, or None when nobody pays.
     """
-    return agent.get("user_id") or agent.get("user") or None
+    explicit = agent.get("access_payer_id")
+    if explicit and not is_principal_id(explicit):
+        return str(explicit)
+    owner = agent.get("user_id") or agent.get("user") or None
+    if owner and not is_principal_id(owner):
+        return str(owner)
+    return None
+
+
+def agent_access_payer(agent_id: Optional[str] = None, api_key: Optional[str] = None) -> Optional[str]:
+    """:func:`published_access_payer` of the agent with this id (or key), read from the database.
+
+    Args:
+        agent_id: The agent's id.
+        api_key: The agent's key, used when no id is given.
+
+    Returns:
+        The payer, or None when nobody pays or no such agent exists.
+    """
+    if agent_id and looks_like_uuid(str(agent_id)):
+        clause, params = "id = CAST(:v AS uuid)", {"v": str(agent_id)}
+    elif api_key:
+        clause, params = "key = :v", {"v": str(api_key)}
+    else:
+        return None
+    with db_readonly() as conn:
+        row = conn.execute(
+            text(f"SELECT user_id, access_payer_id FROM agents WHERE {clause}"), params
+        ).fetchone()
+    return published_access_payer(dict(row._mapping)) if row is not None else None
+
+
+def payer_for(identity: Optional[str], agent_id: Optional[str] = None) -> Optional[str]:
+    """Who pays for work that runs as ``identity`` outside any run that set a payer.
+
+    A person pays for their own work. Work that runs as a team principal (a
+    team agent reached by its key, or a conversation that traffic left) bills
+    the agent's published-access payer.
+
+    Args:
+        identity: The user id the work runs as.
+        agent_id: The agent it runs through, if any.
+
+    Returns:
+        A person's id, or None when nobody can be billed.
+    """
+    if not identity:
+        return None
+    if not is_principal_id(identity):
+        return str(identity)
+    return agent_access_payer(agent_id)

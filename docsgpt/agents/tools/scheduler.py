@@ -14,9 +14,11 @@ from docsgpt.agents.scheduler_utils import (
     parse_run_at,
 )
 from docsgpt.core.settings import settings
+from docsgpt.quotas.payer import current_run_billing
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 from .base import Tool
 
@@ -47,11 +49,19 @@ class SchedulerTool(Tool):
         # ``api`` when an API-key caller asked (set by the executor, never the
         # model): the schedule's runs then keep that caller's write limits.
         self.created_via: str = "api" if cfg.get("created_via") == "api" else "chat"
+        # The person the schedules made here belong to, and whose allowance
+        # their runs use; read per call, from the run that makes it.
+        self.schedule_user: Optional[str] = None
 
     def execute_action(self, action_name: str, **kwargs: Any) -> str:
         """Dispatch on the LLM-supplied action name."""
         if not self.user_id:
             return "Error: SchedulerTool requires a valid user_id."
+        self.schedule_user = _schedule_user(self.user_id)
+        if not self.schedule_user:
+            # The run executes as a team (a team agent reached by its key) and
+            # names no person to pay; a tool never makes a schedule the team pays for.
+            return "Error: nobody pays for this agent's runs here, so it can't schedule tasks."
         # Agent-bound: agent_id must look like a UUID. Agentless: agent_id is
         # absent; an originating conversation is then mandatory (the schedule's
         # conversation home, used for history + output append).
@@ -170,7 +180,7 @@ class SchedulerTool(Tool):
             return f"Error: {exc}"
 
         with db_readonly() as conn:
-            count = SchedulesRepository(conn).count_active_for_user(self.user_id)
+            count = SchedulesRepository(conn).count_active_for_user(self.schedule_user)
             unfinished = _unfinished_workflow(conn, self.agent_id)
         if (
             settings.SCHEDULE_MAX_PER_USER > 0
@@ -187,14 +197,14 @@ class SchedulerTool(Tool):
 
         # Chat-created tasks default to the user's non-approval tools (for the
         # agent's toolset when agent-bound, or the user's defaults+user_tools
-        # when agentless).
+        # when agentless). Read as the run's identity, which owns the agent.
         allowlist = _safe_default_allowlist(self.agent_id, self.user_id)
 
         auto_name = _name_from_instruction(instruction)
         try:
             with db_session() as conn:
                 created = SchedulesRepository(conn).create(
-                    user_id=self.user_id,
+                    user_id=self.schedule_user,
                     agent_id=self.agent_id,
                     trigger_type="once",
                     instruction=instruction.strip(),
@@ -230,13 +240,13 @@ class SchedulerTool(Tool):
             if self.agent_id:
                 rows = repo.list_for_agent(
                     self.agent_id,
-                    self.user_id,
+                    self.schedule_user,
                     statuses=["active"],
                     trigger_type="once",
                 )
             else:
                 rows = repo.list_for_conversation(
-                    self.user_id,
+                    self.schedule_user,
                     self.conversation_id,
                     statuses=["active"],
                     trigger_type="once",
@@ -264,7 +274,7 @@ class SchedulerTool(Tool):
             # Agentless: scope cancel to user + originating conversation so a
             # user can only cancel tasks they created in the current chat.
             if not self.agent_id:
-                row = repo.get(task_id, self.user_id)
+                row = repo.get(task_id, self.schedule_user)
                 if row is None or row.get("agent_id") is not None or (
                     str(row.get("origin_conversation_id") or "")
                     != str(self.conversation_id or "")
@@ -272,10 +282,29 @@ class SchedulerTool(Tool):
                     return (
                         "Error: scheduled task not found or already terminal."
                     )
-            ok = repo.cancel(task_id, self.user_id)
+            ok = repo.cancel(task_id, self.schedule_user)
         if not ok:
             return "Error: scheduled task not found or already terminal."
         return json.dumps({"task_id": str(task_id), "status": "cancelled"})
+
+
+def _schedule_user(identity: Optional[str]) -> Optional[str]:
+    """Who a schedule made by a run executing as ``identity`` belongs to (``schedules.user_id``, its payer).
+
+    A person's run makes their own schedules. A run that executes as a team
+    principal stores the run's payer (the person billed for it), or nobody.
+
+    Args:
+        identity: The user id the run executes as.
+
+    Returns:
+        A person's id, or None when the run names no person to pay.
+    """
+    if not is_principal_id(identity):
+        return identity
+    billing = current_run_billing()
+    payer = billing.payer if billing is not None else None
+    return payer if payer and not is_principal_id(payer) else None
 
 
 def _name_from_instruction(instruction: str, *, max_len: int = 80) -> str:

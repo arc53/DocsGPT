@@ -9,6 +9,7 @@ from docsgpt.tracing.llm import finish_llm_call, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import num_tokens_from_object_or_list, num_tokens_from_string
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,21 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     request_id = getattr(llm, "_request_id", None) or (run.request_id if run is not None else None)
     user_api_key = getattr(llm, "user_api_key", None)
     agent_id = getattr(llm, "agent_id", None)
+    if is_principal_id(user_id):
+        # A team principal is never a payer: every run on a team agent opens
+        # ``billed_to`` with a person. Reaching here is a bug in that run's
+        # payer, so say so loudly; the row keeps its key (the agent's own
+        # limit still counts it) but never names the principal.
+        logger.error(
+            "principal_billed: a model call would bill team principal %s",
+            user_id,
+            extra={
+                "principal": user_id,
+                "agent_id": str(agent_id) if agent_id else None,
+                "source": getattr(llm, "_token_usage_source", None) or "agent_stream",
+            },
+        )
+        user_id = None
     if not user_id and not user_api_key:
         # Repository would raise on the attribution check — log instead
         # so operators see the gap rather than crashing the stream.
