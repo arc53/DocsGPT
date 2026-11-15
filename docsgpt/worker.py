@@ -4234,6 +4234,7 @@ def agent_webhook_worker(self, agent_id, payload):
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
+        from docsgpt.quotas.payer import published_access_payer
         from docsgpt.quotas.service import QuotaExceededError
 
         outcome = run_agent_headless(
@@ -4243,6 +4244,7 @@ def agent_webhook_worker(self, agent_id, payload):
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
             request_id=run_id,
+            payer=published_access_payer(agent_config),
         )
         result = {
             "answer": outcome.get("answer", ""),

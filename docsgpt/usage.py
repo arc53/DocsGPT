@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from docsgpt.llm.tool_images import IMAGE_TOKENS
 from docsgpt.pricing import compute_cost_usd
+from docsgpt.quotas.payer import current_run_billing
 from docsgpt.tracing.llm import finish_llm_call, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
@@ -139,6 +140,10 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     stamped on the LLM lets ``count_in_range`` deduplicate the multiple
     rows produced by a single multi-tool agent run.
 
+    Inside a run with a payer of its own (:func:`docsgpt.quotas.payer.billed_to`)
+    the row bills that payer, whatever identity the LLM runs as, and a call
+    with no request id takes the run's.
+
     Args:
         llm: The LLM instance the call ran on.
         call_usage: The call's token counts.
@@ -155,6 +160,10 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     user_id = (
         decoded_token.get("sub") if isinstance(decoded_token, dict) else None
     )
+    run = current_run_billing()
+    if run is not None and run.payer:
+        user_id = run.payer
+    request_id = getattr(llm, "_request_id", None) or (run.request_id if run is not None else None)
     user_api_key = getattr(llm, "user_api_key", None)
     agent_id = getattr(llm, "agent_id", None)
     if not user_id and not user_api_key:
@@ -194,7 +203,7 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
                 source=(
                     getattr(llm, "_token_usage_source", None) or "agent_stream"
                 ),
-                request_id=getattr(llm, "_request_id", None),
+                request_id=request_id,
                 model_id=model_id,
                 duration_ms=duration_ms,
                 ttft_ms=ttft_ms,

@@ -986,6 +986,7 @@ class WorkflowEngine:
             }
 
         node_agent = WorkflowNodeAgentFactory.create(**factory_kwargs)
+        self._share_run_request_id(node_agent)
         # Attribute this node's tool calls to the run's message and, crucially,
         # namespace their durability journal keys by it: node executors are built
         # without a message_id, so providers that reuse deterministic call ids
@@ -1112,6 +1113,28 @@ class WorkflowEngine:
 
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
+
+    def _share_run_request_id(self, node_agent: Any) -> None:
+        """Give a step the request id of the run it belongs to.
+
+        A step's calls then write their usage rows under the run's request,
+        so the agent's request limit counts the run once, not once per call.
+        A headless run has no id here; its steps take the one ``billed_to``
+        holds for the run.
+
+        Args:
+            node_agent: The step's agent, just built.
+        """
+        run_request_id = getattr(self.agent, "request_id", None) or getattr(
+            getattr(self.agent, "llm", None), "_request_id", None
+        )
+        if not run_request_id:
+            return
+        if getattr(node_agent, "request_id", None) is None:
+            node_agent.request_id = run_request_id
+        node_llm = getattr(node_agent, "llm", None)
+        if node_llm is not None and not getattr(node_llm, "_request_id", None):
+            node_llm._request_id = run_request_id
 
     def _add_node_token_usage(self, node_agent: Any, node_events: Any) -> None:
         """Add an agent node's LLM tokens to the run's tally, once its stream is closed."""

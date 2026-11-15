@@ -2,8 +2,8 @@
 
 Body of the ``continue_conversation`` Celery task. It reuses the scheduled
 one-time run's machinery: ``run_agent_headless`` with the conversation's agent
-(or an agentless chat config) and model, the owner's quota and per-call token
-billing, approval-gated tools denied (headless, no allowlist), and an
+(or an agentless chat config) and model, billed to the person whose chat it is
+(their allowance, per-call token rows), approval-gated tools denied (headless, no allowlist), and an
 appended assistant message.
 
 Rules, in order:
@@ -536,6 +536,8 @@ def _run_turn(
             conversation_id=str(conversation["id"]),
             request_id=str(uuid.uuid4()),
             trace_user_id=user_id,
+            # It carries on the chat's run, so the person chatting pays, though it runs as the agent's owner.
+            payer=str(user_id),
             message_id=message_id,
             background=background,
             on_event=live.event if live is not None else None,

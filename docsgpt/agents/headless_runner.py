@@ -36,6 +36,8 @@ from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
 from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
+from docsgpt.quotas.agent_limits import AgentLimitExceededError, agent_limit_exceeded, has_agent_limit
+from docsgpt.quotas.payer import billed_to, published_access_payer
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
@@ -47,7 +49,33 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_owner(agent_config: Dict[str, Any]) -> Optional[str]:
+    """The identity the run executes as: the agent's owner, whose sources, tools, prompt and model it uses.
+
+    Not who pays for it: that is the run's ``payer`` (see ``run_agent_headless``).
+    """
     return agent_config.get("user_id") or agent_config.get("user")
+
+
+def _check_run_limits(agent_config: Dict[str, Any], payer: Optional[str], is_agent_run: bool) -> None:
+    """Refuse a run that would start over a limit: the agent's own first, then the payer's allowance.
+
+    Args:
+        agent_config: The agent row (or an agentless config, which has no agent limit).
+        payer: Who the run bills.
+        is_agent_run: The run goes through an agent (the allowance's ``agent`` bucket).
+
+    Raises:
+        AgentLimitExceededError: The agent's 24-hour token or request limit is used up.
+        QuotaExceededError: The payer's allowance is used up.
+    """
+    if is_agent_run and has_agent_limit(agent_config):
+        with db_readonly() as conn:
+            hit = agent_limit_exceeded(conn, agent_config)
+        if hit is not None:
+            raise AgentLimitExceededError(hit)
+    exceeded = QuotaService.check(payer, "agent" if is_agent_run else "direct")
+    if exceeded is not None:
+        raise QuotaExceededError(exceeded)
 
 
 def _resolve_agent_id(agent_config: Dict[str, Any]) -> Optional[str]:
@@ -149,8 +177,18 @@ def run_agent_headless(
     background: Any = None,
     on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    payer: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
+
+    The run executes as the agent's owner (their sources, tools, prompt and
+    model) and bills ``payer``, fixed here for the whole run: every model call
+    in it (workflow steps, sub-agents, compression, guardrail and fallback
+    calls) records the payer, and the run counts as one request. A schedule
+    passes the person who set it, a continuation the person whose chat it
+    carries on; None bills whoever pays for the agent's outside traffic
+    (``published_access_payer``), as for a webhook. Before the run starts the
+    agent's own limit is checked, then the payer's allowance.
 
     ``query`` is the agent's input. Its sources are searched with
     ``retrieval_query`` when one is given -- a webhook passes its payload's
@@ -187,8 +225,10 @@ def run_agent_headless(
     the outcome's ``stopped`` is True.
 
     Raises:
-        QuotaExceededError: If the agent owner's usage quota is exhausted.
+        AgentLimitExceededError: If the agent's own 24-hour limit is used up.
+        QuotaExceededError: If the payer's allowance is used up.
     """
+    payer = payer or published_access_payer(agent_config)
     trace = tracing.start_trace(
         source=endpoint,
         request_id=request_id,
@@ -197,7 +237,7 @@ def run_agent_headless(
         conversation_id=conversation_id,
     )
     status = None
-    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()):
+    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()), billed_to(payer):
         try:
             outcome = _run_agent_headless(
                 agent_config,
@@ -216,6 +256,7 @@ def run_agent_headless(
                 request_id=request_id,
                 on_event=on_event,
                 should_stop=should_stop,
+                payer=payer,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -245,6 +286,7 @@ def _run_agent_headless(
     request_id: Optional[str] = None,
     on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    payer: Optional[str] = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -257,12 +299,11 @@ def _run_agent_headless(
     owner = _resolve_owner(agent_config)
     if not owner:
         raise ValueError("Agent config is missing user_id; cannot run headless.")
+    # Runs as the owner; ``payer`` is billed (``billed_to`` around this run).
     decoded_token = {"sub": owner}
     # An agent run is agent traffic whether or not the agent has a key yet.
     is_agent_run = bool(agent_config.get("key") or _resolve_agent_id(agent_config))
-    exceeded = QuotaService.check(owner, "agent" if is_agent_run else "direct")
-    if exceeded is not None:
-        raise QuotaExceededError(exceeded)
+    _check_run_limits(agent_config, payer or owner, is_agent_run)
 
     # A row's unset retriever is None, not missing: unset means classic.
     retriever_kind = agent_config.get("retriever") or "classic"

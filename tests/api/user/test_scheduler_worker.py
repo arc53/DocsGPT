@@ -164,6 +164,48 @@ class TestExecuteScheduledRunBody:
         assert row["error_type"] == "budget_exceeded"
         assert "Usage quota reached" in row["error"]
 
+    def test_agent_limit_refusal_marks_budget_exceeded_naming_the_limit(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        from docsgpt.quotas.agent_limits import AgentLimitExceeded, AgentLimitExceededError
+
+        hit = AgentLimitExceeded(agent_id=None, dimension="requests", usage=5, limit=5)
+        with pg_engine.begin() as conn:
+            _, run, _ = _make_pending_run(conn)
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
+            side_effect=AgentLimitExceededError(hit),
+        ):
+            execute_scheduled_run_body(str(run["id"]), "celery-al")
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["error_type"] == "budget_exceeded"
+        assert "agent's request limit" in row["error"]
+
+    def test_a_teammates_schedule_bills_the_teammate(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        with pg_engine.begin() as conn:
+            agent_id = _make_agent(conn, "owner")
+            schedule = SchedulesRepository(conn).create(
+                user_id="teammate", agent_id=agent_id, trigger_type="recurring",
+                instruction="hello", cron="* * * * *", next_run_at=_now() + timedelta(minutes=5),
+            )
+            run = ScheduleRunsRepository(conn).record_pending(str(schedule["id"]), "teammate", agent_id, _now())
+        captured = {}
+
+        def _fake_run(agent_config, query, **kwargs):
+            captured.update(config=agent_config, **kwargs)
+            return {"answer": "done", "tool_calls": [], "sources": [], "thought": "", "generated_tokens": 1}
+
+        # Who may still run it is another check's business; the teammate has access here.
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", _fake_run), \
+                patch("docsgpt.api.user.scheduler_worker._scheduler_still_allowed", return_value=True):
+            execute_scheduled_run_body(str(run["id"]), "celery-tm")
+        assert captured["payer"] == "teammate"
+        # Still runs as the agent's owner.
+        assert captured["config"]["user_id"] == "owner"
+
     def test_autopause_after_threshold(
         self, pg_engine, patched_engine, stub_events,
     ):

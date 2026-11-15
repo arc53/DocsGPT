@@ -78,6 +78,8 @@ class TestAgentWebhookWorker:
         # The owner set the webhook up (its URL is a secret): the run keeps the
         # owner's rules, and headless runs still refuse approval-gated tools.
         assert not captured["kwargs"].get("external_caller")
+        # Outside traffic bills whoever pays for the agent's published access: its owner, for now.
+        assert captured["kwargs"].get("payer") == "alice"
 
     def test_passes_non_ascii_payload_text_unescaped(
         self, pg_conn, patch_worker_db, task_self, monkeypatch

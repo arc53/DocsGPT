@@ -413,6 +413,8 @@ class TestContinuationEdges:
         assert captured["endpoint"] == "continuation"
         assert captured["conversation_id"] == "c"
         assert captured["query"].rstrip().endswith("NO_REPLY.")
+        # The turn carries on the chat's run: the person chatting pays.
+        assert captured["payer"] == "u1"
 
     @pytest.mark.parametrize("agent_type, bounded", [("classic", True), ("workflow", False)])
     def test_only_agents_that_can_defer_run_under_a_round_budget(self, monkeypatch, agent_type, bounded):

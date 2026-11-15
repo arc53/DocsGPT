@@ -35,14 +35,16 @@ from docsgpt.decisions import record as decision_record
 from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
 from docsgpt.llm.deadlines import interruptible
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.quotas.http import quota_exceeded_response
+from docsgpt.quotas.agent_limits import agent_limit_exceeded
+from docsgpt.quotas.http import agent_limit_response, quota_exceeded_response
+from docsgpt.quotas.payer import published_access_payer
 from docsgpt.quotas.service import QuotaService
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import (
     HeartbeatState,
     MessageUpdateOutcome,
 )
-from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
+from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.activity.flags import clear_stop, stop_requested
@@ -486,9 +488,10 @@ class BaseAnswerResource:
     ) -> Optional[Response]:
         """Refuse the request when a usage limit is exhausted.
 
-        The billable user's quota is checked first, for every request; the
-        agent's own 24h token and request limits then apply to traffic that
-        runs through an agent.
+        Traffic through an agent meets the agent's own 24h token and request
+        limit first, then the payer's allowance; the first one used up is the
+        one the refusal names. The payer is the person chatting (the token's
+        ``sub``); with no token, whoever pays for the agent's outside traffic.
 
         Args:
             agent_config: The config dict of agent instance
@@ -502,81 +505,21 @@ class BaseAnswerResource:
 
         """
         api_key = agent_config.get("user_api_key")
-        user_id = (decoded_token or {}).get("sub") or agent_config.get("user_id")
+        agent = None
+        if api_key or (agent_id and looks_like_uuid(str(agent_id))):
+            with db_readonly() as conn:
+                repo = AgentsRepository(conn)
+                agent = repo.find_by_key(api_key) if api_key else repo.get_by_id(str(agent_id))
+                hit = agent_limit_exceeded(conn, agent) if agent else None
+            if hit is not None:
+                return agent_limit_response(hit)
+        user_id = (decoded_token or {}).get("sub") or published_access_payer(agent_config)
         exceeded = QuotaService.check(user_id, "agent" if api_key or agent_id else "direct")
         if exceeded is not None:
             return quota_exceeded_response(exceeded)
-        if not api_key:
-            return None
-        with db_readonly() as conn:
-            agent = AgentsRepository(conn).find_by_key(api_key)
-
-        if not agent:
+        if api_key and not agent:
             return make_response(
                 jsonify({"success": False, "message": "Invalid API key."}), 401
-            )
-        limited_token_mode_raw = agent.get("limited_token_mode", False)
-        limited_request_mode_raw = agent.get("limited_request_mode", False)
-
-        limited_token_mode = (
-            limited_token_mode_raw
-            if isinstance(limited_token_mode_raw, bool)
-            else limited_token_mode_raw == "True"
-        )
-        limited_request_mode = (
-            limited_request_mode_raw
-            if isinstance(limited_request_mode_raw, bool)
-            else limited_request_mode_raw == "True"
-        )
-
-        token_limit = int(
-            agent.get("token_limit") or settings.DEFAULT_AGENT_LIMITS["token_limit"]
-        )
-        request_limit = int(
-            agent.get("request_limit") or settings.DEFAULT_AGENT_LIMITS["request_limit"]
-        )
-
-        end_date = datetime.datetime.now(datetime.timezone.utc)
-        start_date = end_date - datetime.timedelta(hours=24)
-
-        if limited_token_mode or limited_request_mode:
-            with db_readonly() as conn:
-                token_repo = TokenUsageRepository(conn)
-                if limited_token_mode:
-                    daily_token_usage = token_repo.sum_tokens_in_range(
-                        start=start_date, end=end_date, api_key=api_key,
-                    )
-                else:
-                    daily_token_usage = 0
-                if limited_request_mode:
-                    daily_request_usage = token_repo.count_in_range(
-                        start=start_date, end=end_date, api_key=api_key,
-                    )
-                else:
-                    daily_request_usage = 0
-        else:
-            daily_token_usage = 0
-            daily_request_usage = 0
-        if not limited_token_mode and not limited_request_mode:
-            return None
-        token_exceeded = (
-            limited_token_mode and token_limit > 0 and daily_token_usage >= token_limit
-        )
-        request_exceeded = (
-            limited_request_mode
-            and request_limit > 0
-            and daily_request_usage >= request_limit
-        )
-
-        if token_exceeded or request_exceeded:
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Exceeding usage limit, please try again later.",
-                    }
-                ),
-                429,
             )
         return None
 

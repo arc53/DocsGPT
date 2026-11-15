@@ -83,7 +83,9 @@ class TestCheckUsage:
         _spend(db, "owner", 5, api_key="k2")
         response = _check(flask_app, {"user_api_key": "k2"}, {"sub": "owner"})
         assert response.status_code == 429
-        assert "error_code" not in json.loads(response.data)
+        # Named as the agent's limit, not the person's allowance.
+        body = json.loads(response.data)
+        assert (body["error_code"], body["limit_scope"]) == ("agent-limit-exceeded", "agent_limit")
 
     def test_agent_bucket_policy_ignores_direct_chat(self, db, flask_app):
         QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", bucket="agent", token_limit=10)

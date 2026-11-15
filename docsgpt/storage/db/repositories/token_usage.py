@@ -116,6 +116,32 @@ class TokenUsageRepository:
         )
         return result.rowcount
 
+    @staticmethod
+    def _agent_clause(api_key: Optional[str], agent_id: Optional[str], params: dict) -> Optional[str]:
+        """The filter for one agent's rows: through its key, or stamped with its id.
+
+        Chats and outside traffic stamp the key; keyless agents and workflow
+        steps carry only the id. Adds the bound values to ``params``.
+
+        Args:
+            api_key: The agent's key, or None.
+            agent_id: The agent's id (a UUID), or None.
+            params: The query's bind parameters, extended in place.
+
+        Returns:
+            The SQL condition, or None when neither is given.
+        """
+        conditions = []
+        if api_key is not None:
+            conditions.append("api_key = :api_key")
+            params["api_key"] = api_key
+        if agent_id is not None:
+            conditions.append("agent_id = CAST(:agent_id AS uuid)")
+            params["agent_id"] = agent_id
+        if not conditions:
+            return None
+        return f"({' OR '.join(conditions)})"
+
     def sum_tokens_in_range(
         self,
         *,
@@ -123,20 +149,23 @@ class TokenUsageRepository:
         end: datetime,
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> int:
         """Total (prompt + generated) tokens in the given time range.
 
         Run-level rollup rows (``ROLLUP_SOURCES``) are excluded: their tokens
-        are already counted on the run's per-call rows.
+        are already counted on the run's per-call rows. ``api_key`` and
+        ``agent_id`` together match a row carrying either (one agent, however
+        reached; see :meth:`_agent_clause`).
         """
         clauses = ["timestamp >= :start", "timestamp <= :end", "source <> ALL(:rollup_sources)"]
         params: dict = {"start": start, "end": end, "rollup_sources": list(self.ROLLUP_SOURCES)}
         if user_id is not None:
             clauses.append("user_id = :user_id")
             params["user_id"] = user_id
-        if api_key is not None:
-            clauses.append("api_key = :api_key")
-            params["api_key"] = api_key
+        agent_clause = self._agent_clause(api_key, agent_id, params)
+        if agent_clause:
+            clauses.append(agent_clause)
         where = " AND ".join(clauses)
         result = self._conn.execute(
             text(f"SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0) FROM token_usage WHERE {where}"),
@@ -359,6 +388,7 @@ class TokenUsageRepository:
         end: datetime,
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> int:
         """Count user-initiated requests in the given time range.
 
@@ -369,7 +399,8 @@ class TokenUsageRepository:
         counted one-per-row via the second branch (back-compat).
         Side-channel sources (``title`` / ``compression`` /
         ``rag_condense`` / ``fallback``) are excluded — they aren't
-        user-initiated and shouldn't tick the request limit.
+        user-initiated and shouldn't tick the request limit. ``api_key`` and
+        ``agent_id`` together match a row carrying either.
         """
         clauses = [
             "timestamp >= :start",
@@ -380,9 +411,9 @@ class TokenUsageRepository:
         if user_id is not None:
             clauses.append("user_id = :user_id")
             params["user_id"] = user_id
-        if api_key is not None:
-            clauses.append("api_key = :api_key")
-            params["api_key"] = api_key
+        agent_clause = self._agent_clause(api_key, agent_id, params)
+        if agent_clause:
+            clauses.append(agent_clause)
         where = " AND ".join(clauses)
         result = self._conn.execute(
             text(

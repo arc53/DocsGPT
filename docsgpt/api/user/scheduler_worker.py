@@ -499,6 +499,8 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             # to the user who scheduled it (not always the agent's owner).
             request_id=str(run_id),
             trace_user_id=run.get("user_id") or schedule.get("user_id"),
+            # The person who set the schedule pays; the run still executes as the agent's owner.
+            payer=schedule.get("user_id") or run.get("user_id"),
             **_schedule_caller_rules(schedule, agent_config),
         )
     except SoftTimeLimitExceeded:
@@ -507,7 +509,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         error_type = "timeout"
         error_text = "run exceeded soft time limit"
     except QuotaExceededError as exc:
-        # The owner's usage quota is spent; the run never started.
+        # The agent's limit or the setter's allowance is used up; the run never started.
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
         error_type = "budget_exceeded"
         error_text = str(exc)
