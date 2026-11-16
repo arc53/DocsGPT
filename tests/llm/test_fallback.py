@@ -445,8 +445,8 @@ class TestStreamingFallback:
         self, patch_model_utils, error
     ):
         """The providers are split across two HTTP stacks whose exception
-        classes are unrelated types: openai, anthropic and the MCP client
-        raise from httpx2, google-genai and elevenlabs still from httpx.
+        classes are unrelated types: openai, anthropic, google-genai and the
+        MCP client raise from httpx2, elevenlabs still from httpx.
         Naming one stack makes the retry silently stop firing for the other
         half.
         """

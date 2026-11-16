@@ -18,7 +18,7 @@
 # The web UI, built by the same script the Python package build runs. The API
 # serves it from docsgpt/static (docsgpt/ui.py). The output is static files, so
 # this stage runs on the build machine's platform whatever the target is.
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d AS ui
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS ui
 
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json frontend/
@@ -28,7 +28,7 @@ COPY scripts/build_frontend.sh scripts/
 RUN mkdir docsgpt && bash scripts/build_frontend.sh
 
 
-FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS builder
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -72,7 +72,7 @@ RUN find /venv/lib/python3.12/site-packages/googleapiclient/discovery_cache/docu
         -type f ! -name 'drive.v3.json' -delete
 
 
-FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS final
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS final
 
 ENV DEBIAN_FRONTEND=noninteractive
 
