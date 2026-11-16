@@ -302,14 +302,16 @@ class TestHeadlessRuns:
 
         assert _rows(db) == [("adam", "published", team)]
 
-    def test_a_continuation_of_a_link_chat_is_published_traffic(self, db, monkeypatch):
+    def test_a_continuation_of_a_grantees_chat_is_their_chat(self, db, monkeypatch):
+        # Every non-owner's chat is saved as shared usage; only an in-app chat
+        # resumes, and the person chatting pays for it as their own.
         agent = AgentsRepository(db).create("lena", "Mine", "published", key=f"k-{uuid.uuid4().hex[:8]}",
                                             default_model_id="m", agent_type="classic")
 
-        _continue(monkeypatch, agent, {"id": str(uuid.uuid4()), "user_id": "stranger",
+        _continue(monkeypatch, agent, {"id": str(uuid.uuid4()), "user_id": "dana",
                                        "agent_id": str(agent["id"]), "team_id": None, "is_shared_usage": True})
 
-        assert _rows(db) == [("stranger", "published", None)]
+        assert _rows(db) == [("dana", "chat", None)]
 
 
 class TestBackgroundJob:

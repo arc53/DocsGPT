@@ -246,16 +246,18 @@ def continuation_run_kind(conversation: Dict[str, Any]) -> str:
     """What a continuation turn is, as its usage rows record it: the kind of the chat it carries on.
 
     A conversation that a team agent's key, widget or ``/v1`` traffic left
-    (owned by the team's principal), or a public-link chat, is outside traffic
-    on a published agent; any other is a person's chat.
+    (owned by the team's principal) is outside traffic on a published agent.
+    Any other is a person's in-app chat, the only kind that resumes: a
+    teammate's or grantee's chat is saved as shared usage too, but they pay
+    for it as their own chat.
 
     Args:
-        conversation: The conversation row (``user_id``, ``is_shared_usage``).
+        conversation: The conversation row (``user_id``).
 
     Returns:
         ``published`` or ``chat``.
     """
-    if is_principal_id(conversation.get("user_id")) or conversation.get("is_shared_usage"):
+    if is_principal_id(conversation.get("user_id")):
         return "published"
     return "chat"
 
