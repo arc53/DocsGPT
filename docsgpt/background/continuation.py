@@ -401,7 +401,7 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
     except Exception as exc:
         from docsgpt.core.run_budget import is_budget_exhausted
 
-        if is_budget_exhausted(exc):
+        if is_budget_exhausted(exc) and not getattr(exc, "stops_run", False):
             outcome = live.partial_outcome() if live is not None else {}
             outcome.update({"error_type": "TimeLimit", "error": "Stopped: time limit."})
         else:
@@ -419,7 +419,11 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
 
     answer = (outcome.get("answer") or "").strip()
     stopped = bool(outcome.get("stopped")) or (live is not None and live.stopped())
-    if not stopped and outcome.get("error_type") not in (None, "TimeLimit") and not answer:
+    from docsgpt.quotas.run_limits import RUN_LIMIT_ERROR_TYPES
+
+    # A stop by a limit fails like a refusal before the run: its results wait for the next turn.
+    limit_stop = outcome.get("error_type") in RUN_LIMIT_ERROR_TYPES
+    if not stopped and outcome.get("error_type") not in (None, "TimeLimit") and (not answer or limit_stop):
         if live is not None:
             live.discard()
         _settle(wakes, "failed", job_state="pending", error=str(outcome.get("error") or "")[:500])

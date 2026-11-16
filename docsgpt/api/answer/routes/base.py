@@ -38,7 +38,8 @@ from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.agent_limits import agent_limit_exceeded
 from docsgpt.quotas.http import agent_limit_response, quota_exceeded_response
 from docsgpt.quotas.payer import agent_payer_and_team, billed_to, published_access_payer
-from docsgpt.quotas.service import NoPayerError, QuotaService
+from docsgpt.quotas.run_limits import RunLimits, limits_stop
+from docsgpt.quotas.service import NoPayerError, QuotaExceeded, QuotaService
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import (
@@ -143,6 +144,56 @@ def _no_payer_response() -> Response:
     return make_response(jsonify(NoPayerError().to_payload()), 403)
 
 
+def _outside_paused_response(exceeded: QuotaExceeded) -> Response:
+    """The 429 an outside caller gets when the agent's payer is out of allowance: only that the agent is paused.
+
+    No usage, limit or bucket, and the quota provider is not asked to
+    decorate it: those are the payer's, and an outside caller never learns
+    whose account it is or why.
+
+    Args:
+        exceeded: The payer's used-up budget; only its reset is used.
+
+    Returns:
+        The response, ``Retry-After`` set to the reset.
+    """
+    from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
+
+    body = {"success": False, "error_code": PAUSED_CODE, "code": PAUSED_CODE, "message": PAUSED_MESSAGE}
+    response = make_response(jsonify(body), 429)
+    response.headers["Retry-After"] = str(exceeded.retry_after_seconds)
+    # The reset can be weeks away; the OpenAI SDKs would otherwise retry with backoff.
+    response.headers["x-should-retry"] = "false"
+    return response
+
+
+def _stream_limits(arguments: Dict[str, Any], payer: Optional[str], run_kind: str) -> Optional[RunLimits]:
+    """The limits each model call of a stream is checked against: its payer's allowance and its agent's limit.
+
+    Args:
+        arguments: ``complete_stream``'s bound arguments.
+        payer: The stream's payer (:func:`_stream_billing`).
+        run_kind: ``chat`` or ``published`` (outside traffic, told only that the agent is paused).
+
+    Returns:
+        The limits, or None with no payer.
+
+    Raises:
+        NoPayerError: The payer is a team principal.
+    """
+    agent_id = arguments.get("agent_id")
+    agent_id = str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None
+    api_key = arguments.get("user_api_key") or None
+    return RunLimits.start(
+        payer,
+        # As ``check_usage``: traffic through an agent, by key or id, counts in the agent bucket.
+        bucket="agent" if api_key or agent_id else "direct",
+        agent_id=agent_id,
+        api_key=api_key,
+        outside=run_kind == "published",
+    )
+
+
 def _traced_stream(
     method: Callable[..., Generator[str, None, None]],
 ) -> Callable[..., Generator[str, None, None]]:
@@ -157,7 +208,10 @@ def _traced_stream(
     setup, and a resumed turn's earlier rounds), or a new one. Every stream
     runs billed to its payer for its whole length, with its run kind and
     workspace (:func:`_stream_billing`): the person chatting, or for outside
-    traffic on an agent its published-access payer.
+    traffic on an agent its published-access payer. Each model call of the
+    stream is checked against that payer's allowance and the agent's limit
+    (:func:`_stream_limits`); a stream whose payer would be a team principal
+    never starts and answers ``no_payer``.
     """
     signature = inspect.signature(method)
 
@@ -189,7 +243,14 @@ def _traced_stream(
         if not isinstance(decisions, decision_record.DecisionRecord):
             decisions = decision_record.DecisionRecord()
         payer, run_kind, team_id = _stream_billing(arguments)
-        billing = billed_to(payer, request_id, kind=run_kind, team_id=team_id)
+        try:
+            limits = _stream_limits(arguments, payer, run_kind)
+        except NoPayerError as refusal:
+            # Fails closed before anything is spent; ``check_usage`` normally refused this already.
+            tracing.discard(trace)
+            yield f"data: {sse_json({'type': 'error', 'error': refusal.message, 'code': refusal.code})}\n\n"
+            return
+        billing = billed_to(payer, request_id, kind=run_kind, team_id=team_id, limits=limits)
         with tracing.activate(trace), decision_record.activate(decisions), billing:
             try:
                 yield from method(*bound.args, **bound.kwargs)
@@ -539,7 +600,10 @@ class BaseAnswerResource:
         ``sub``). Outside traffic (an API key or widget caller, a public-link
         caller, no token, or a token that runs as a team principal) bills
         whoever pays for the agent's published access; with nobody, it is
-        refused with ``no_payer`` before anything is spent.
+        refused with ``no_payer`` before anything is spent. When that payer is
+        out of allowance the caller is told only that the agent is paused
+        (429 ``agent_paused``, no numbers, no provider decoration); the
+        agent's own limit keeps its message, which is about the agent.
 
         Args:
             agent_config: The config dict of agent instance
@@ -564,7 +628,8 @@ class BaseAnswerResource:
         sub = (decoded_token or {}).get("sub")
         user_id = sub
         outside = bool(agent_config.get("external_api_caller") or agent_config.get("public_link_caller"))
-        if outside or not sub or is_principal_id(sub):
+        outside = outside or not sub or is_principal_id(sub)
+        if outside:
             user_id = published_access_payer(agent or agent_config)
             # An unknown key falls through to its 401 below; a known agent, or a
             # run as a team, with nobody to bill never starts.
@@ -577,6 +642,9 @@ class BaseAnswerResource:
         except NoPayerError:
             return _no_payer_response()
         if exceeded is not None:
+            if outside:
+                # The publisher's allowance: the caller learns only that the agent is paused.
+                return _outside_paused_response(exceeded)
             return quota_exceeded_response(exceeded)
         if api_key and not agent:
             return make_response(
@@ -1270,7 +1338,18 @@ class BaseAnswerResource:
                         # emit it verbatim; sanitize only raw/technical errors.
                         error_text = line.get("error", "An error occurred")
                         error_extra: Dict[str, Any] = {}
-                        if not line.get("user_facing"):
+                        stop = None if line.get("guardrail") else limits_stop()
+                        if stop is not None:
+                            # A workflow step reports a call the run's limits refused as its
+                            # own error; say which limit, as a stop raised here would.
+                            public_stop = user_facing_error(stop)
+                            error_text = public_stop.message
+                            error_extra["code"] = public_stop.code
+                            query_metadata["error_code"] = public_stop.code
+                            if public_stop.params:
+                                error_extra["params"] = public_stop.params
+                                query_metadata["error_params"] = public_stop.params
+                        elif not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
                         elif line.get("code"):
                             # A curated error's code and params travel with it, so

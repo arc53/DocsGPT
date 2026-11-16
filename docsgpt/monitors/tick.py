@@ -614,6 +614,7 @@ def _judge(monitor: Dict[str, Any], evaluation: Evaluation, content: Content) ->
     """
     from docsgpt.monitors import judge
     from docsgpt.quotas.payer import billed_to, payer_for
+    from docsgpt.quotas.run_limits import RunLimits
     from docsgpt.quotas.service import QuotaService
 
     budget = int(monitor.get("token_budget") or 0)
@@ -627,8 +628,10 @@ def _judge(monitor: Dict[str, Any], evaluation: Evaluation, content: Content) ->
     if QuotaService.check(payer, "direct") is not None:
         return "quota", None
     spec = monitor.get("monitor_spec") or {}
+    # The judge's call is checked too: the payer may have run out since the check above.
+    limits = RunLimits.start(payer, bucket="direct")
     try:
-        with billed_to(payer, kind="monitor", team_id=_agent_team(owner, agent_id)):
+        with billed_to(payer, kind="monitor", team_id=_agent_team(owner, agent_id), limits=limits):
             verdict = judge.judge(
                 user_id=owner,
                 monitor_id=str(monitor["id"]),
@@ -638,6 +641,9 @@ def _judge(monitor: Dict[str, Any], evaluation: Evaluation, content: Content) ->
                 content=content.text,
             )
     except judge.JudgeError as exc:
+        if limits is not None and limits.reached is not None:
+            # The judge's call was refused for the payer's allowance: it waits, as above.
+            return "quota", None
         # A content-policy refusal won't change on a retry: the same content is refused again.
         return ("refused" if exc.refused else "error"), str(exc)
     with db_session() as conn:

@@ -20,6 +20,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.background import jobs, pool
 from docsgpt.quotas.payer import RUN_KINDS, billed_to, current_run_billing, payer_for
+from docsgpt.quotas.run_limits import RunLimits
+from docsgpt.quotas.service import NoPayerError
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -102,7 +104,9 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     by its key, the team's principal), so the payer travels separately: the
     payload's ``payer``, or for a job queued without one, whoever pays for the
     agent's published access when the identity is a principal. The job's
-    usage keeps the turn's run kind and workspace.
+    usage keeps the turn's run kind and workspace, and its model calls are
+    checked against the payer's allowance and the agent's limit, as the
+    turn's were.
 
     Args:
         job_id: The job.
@@ -120,11 +124,26 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             payer = None
     kind = payload.get("run_kind")
     team_id = payload.get("team_id")
+    agent_id, api_key = payload.get("agent_id"), payload.get("user_api_key")
+    try:
+        limits = RunLimits.start(
+            payer,
+            bucket="agent" if agent_id or api_key else "direct",
+            agent_id=agent_id,
+            api_key=api_key,
+            outside=kind == "published",
+        )
+    except NoPayerError as exc:
+        # A team principal is never a payer: the call never starts, so nothing is spent.
+        logger.error("background job %s: its payer is a team principal; the call is refused", job_id)
+        jobs.finalize(job_id, status="failed", error={"type": "NoPayerError", "message": exc.message})
+        return {"state": "no_payer"}
     billing = billed_to(
         payer,
         # A payload from an older worker may carry neither; an unknown kind is dropped, not fatal.
         kind=kind if kind in RUN_KINDS else None,
         team_id=team_id if isinstance(team_id, str) else None,
+        limits=limits,
     )
     with billing:
         return _run_job(job_id, payload)

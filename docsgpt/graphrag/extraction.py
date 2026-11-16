@@ -31,6 +31,7 @@ from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
 from docsgpt.llm.llm_creator import create_stateless_llm, ModelNotAvailableError
 from docsgpt.quotas.payer import billed_to
+from docsgpt.quotas.run_limits import RunLimits
 from docsgpt.workspaces.principal import team_of_principal
 from docsgpt.storage.db.source_config import SourceConfig
 # ``EmbeddingsSingleton`` is re-exported here so callers and tests can reach the
@@ -285,7 +286,9 @@ def extract_graph_for_source(
         payer: The person every extraction call bills (``billed_to``), when
             not the owner: whoever added the knowledge, since a team's
             principal never pays. The calls are a ``knowledge`` run in the
-            source's workspace (its owner's team, else Personal).
+            source's workspace (its owner's team, else Personal), each one
+            checked against the payer's allowance: once it is used up the
+            remaining chunks fail and stay pending for a later build.
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,
@@ -295,7 +298,8 @@ def extract_graph_for_source(
     """
     kwargs = {"config": config, "request_id": request_id, "progress_cb": progress_cb, "chunk_ids": chunk_ids}
     # Carried into the pool threads with the trace (``tracing.wrap``), so each thread's calls bill the payer too.
-    with billed_to(payer, request_id, kind="knowledge", team_id=team_of_principal(user)):
+    limits = RunLimits.start(payer, bucket="direct")
+    with billed_to(payer, request_id, kind="knowledge", team_id=team_of_principal(user), limits=limits):
         return _build_graph(source_id, user, chunks, **kwargs)
 
 

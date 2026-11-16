@@ -38,6 +38,7 @@ from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.agent_limits import AgentLimitExceededError, agent_limit_exceeded, has_agent_limit
 from docsgpt.quotas.payer import billed_to, published_access_payer
+from docsgpt.quotas.run_limits import RunLimitReached, RunLimits, limits_stop
 from docsgpt.quotas.service import NoPayerError, QuotaExceededError, QuotaService
 from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
@@ -198,7 +199,12 @@ def run_agent_headless(
     passes the person who set it, a continuation the person whose chat it
     carries on; None bills whoever pays for the agent's outside traffic
     (``published_access_payer``), as for a webhook. Before the run starts the
-    agent's own limit is checked, then the payer's allowance.
+    agent's own limit is checked, then the payer's allowance; a refusal then
+    raises. While it runs, each model call is checked against both again
+    (``RunLimits``): once one is used up the run ends there and returns its
+    partial answer and tool calls with ``error_type`` ``budget_exceeded``
+    (the agent's limit) or ``payer_out_of_allowance`` (the payer's), and the
+    message as ``error``, never as a time limit.
 
     ``query`` is the agent's input. Its sources are searched with
     ``retrieval_query`` when one is given -- a webhook passes its payload's
@@ -254,6 +260,13 @@ def run_agent_headless(
     run_kind = run_kind or _ENDPOINT_RUN_KINDS.get(endpoint)
     if team_id is _AGENT_TEAM:
         team_id = team_of_principal(_resolve_owner(agent_config))
+    # Each model call of the run is checked against these (an agent run counts in the agent bucket).
+    limits = RunLimits.start(
+        payer or _resolve_owner(agent_config),
+        bucket="agent" if (agent_config.get("key") or _resolve_agent_id(agent_config)) else "direct",
+        agent=agent_config,
+        outside=run_kind == "published",
+    )
     trace = tracing.start_trace(
         source=endpoint,
         request_id=request_id,
@@ -262,7 +275,7 @@ def run_agent_headless(
         conversation_id=conversation_id,
     )
     status = None
-    billing = billed_to(payer, kind=run_kind, team_id=team_id)
+    billing = billed_to(payer, kind=run_kind, team_id=team_id, limits=limits)
     with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()), billing:
         try:
             outcome = _run_agent_headless(
@@ -556,6 +569,8 @@ def _run_agent_headless(
     if should_stop is not None:
         events = interruptible(events, lambda: StreamCancelled() if should_stop() else None)
     budget_error = False
+    # A limit that refused one of the run's model calls: the run ends there, keeping what it did.
+    limit_stop: Optional[RunLimitReached] = None
     try:
         for event in events:
             if not isinstance(event, dict):
@@ -632,6 +647,10 @@ def _run_agent_headless(
         else:
             # A Stop can also end the agent mid-read, which it reports by returning.
             stopped = should_stop is not None and should_stop()
+    except RunLimitReached as exc:
+        # Checked before the time limit, which it would otherwise read as.
+        limit_stop = exc
+        tool_calls = merge_tool_calls(tool_calls, tool_executor.get_truncated_tool_calls())
     except Exception as exc:
         if not is_budget_exhausted(exc) or endpoint != "continuation":
             # Scheduled/webhook runs retain their existing outer time-limit handlers.
@@ -654,8 +673,15 @@ def _run_agent_headless(
         cannot_complete, answer_full = _scheduled_cannot_complete(
             agent, tool_executor, agent_type, answer_full, last_round_start
         )
+    if limit_stop is None and stream_error:
+        # A workflow step reports a refused call as its own error event; the run's limits remember the stop.
+        limit_stop = limits_stop()
     error: Optional[str] = None
-    if budget_error:
+    if limit_stop is not None:
+        # ``payer_out_of_allowance`` or ``budget_exceeded``; the partial answer and calls are kept.
+        error_type = limit_stop.error_type
+        error = str(limit_stop)[:500]
+    elif budget_error:
         error_type = "TimeLimit"
         error = stream_error
     # A refused tool is the exact cause of a run that then says it couldn't

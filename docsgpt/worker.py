@@ -4378,7 +4378,8 @@ def agent_webhook_worker(self, agent_id, payload):
 
     Raises on failure so the task ends ``FAILURE``: Celery treats a
     returned dict as success. A quota refusal and a run past
-    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``.
+    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``; a run a
+    limit stopped mid-way is ``quota_exceeded`` too, with what it did.
     """
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
@@ -4428,6 +4429,7 @@ def agent_webhook_worker(self, agent_id, payload):
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
         from docsgpt.quotas.payer import published_access_payer
+        from docsgpt.quotas.run_limits import RUN_LIMIT_ERROR_TYPES
         from docsgpt.quotas.service import QuotaExceededError
 
         outcome = run_agent_headless(
@@ -4446,6 +4448,12 @@ def agent_webhook_worker(self, agent_id, payload):
             "tool_calls": outcome.get("tool_calls", []),
             "thought": outcome.get("thought", ""),
         }
+        if outcome.get("error_type") in RUN_LIMIT_ERROR_TYPES:
+            # Stopped mid-run by the payer's allowance or the agent's limit: what it did is kept.
+            logging.warning(
+                f"Webhook run for agent {agent_id} stopped by a limit", extra={"agent_id": agent_id}
+            )
+            return {"status": "quota_exceeded", "error": outcome.get("error"), "result": result}
     except QuotaExceededError as e:
         # Returned, not raised: retrying cannot succeed before the quota resets.
         logging.warning(

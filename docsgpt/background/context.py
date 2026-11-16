@@ -122,11 +122,13 @@ def auto_resume_allowed(
 ) -> bool:
     """Whether a finished job may start a continuation turn in this conversation.
 
-    Continuation turns are billed to the conversation's owner and run with the
-    owner's tools, so they are limited to conversations the owner holds
-    outright: not API-key or widget traffic (``api_key``), not a shared
-    agent's public link (``is_shared_usage``), not ``/v1``, and not an agent
-    somebody else owns. Those get poll-only jobs. In a team workspace, a
+    Continuation turns are billed to the conversation's owner, the person
+    chatting, so they are limited to that person's own chats: not API-key or
+    widget traffic (``api_key``), not a shared agent's public link
+    (``is_shared_usage``, which its publisher pays for), and not ``/v1``.
+    Those get poll-only jobs. A chat on an agent somebody else owns resumes
+    while the chatter can still use that agent (a grant that still holds);
+    it runs as the agent's owner, as the chat does. In a team workspace, a
     member's own chat on that team's agent resumes while they are still in the
     team (the member pays, the agent runs as the team); other team chats are
     poll-only.
@@ -168,5 +170,9 @@ def auto_resume_allowed(
     if mapping["is_shared_usage"]:
         return False
     if mapping["agent_id"] is not None and mapping["agent_owner"] != user_id:
-        return False
+        from docsgpt.api.user.resource_access import resolve
+
+        # Resolved live, so a revoked grant or a left team stops it on the next wake.
+        access = resolve(conn, "agent", str(mapping["agent_id"]), user_id)
+        return access is not None and access.can("use")
     return True

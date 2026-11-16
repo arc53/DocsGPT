@@ -19,6 +19,7 @@ from docsgpt.llm.deadlines import (
     timed_stream,
 )
 from docsgpt.error import bounded_error_text, provider_failure_text
+from docsgpt.quotas.payer import current_run_billing
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
 logger = logging.getLogger(__name__)
@@ -733,6 +734,11 @@ class BaseLLM(ABC):
         """
 
         check_round()
+        # The run's limits, before the primary and before any fallback: the
+        # call that crossed a limit has completed, so this one is refused.
+        billing = current_run_billing()
+        if billing is not None and billing.limits is not None:
+            billing.limits.check_call()
 
         def decorated_method():
             method = getattr(self, method_name)
