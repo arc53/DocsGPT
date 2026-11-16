@@ -329,6 +329,23 @@ token_usage_table = Table(
     # "no first token", not 0.
     Column("duration_ms", Integer),
     Column("ttft_ms", Integer),
+    # Added in ``0065_workspaces``. The workspace the call was made in (NULL =
+    # Personal; no FK, like ``agent_id``, so a deleted team's rows keep their
+    # id) and what kind of run it was part of. NULL on rows written before.
+    Column("team_id", UUID(as_uuid=True)),
+    Column("run_kind", Text),
+    CheckConstraint(
+        "run_kind IS NULL OR run_kind IN ('chat', 'schedule', 'published', 'knowledge', 'monitor', 'drafter')",
+        name="token_usage_run_kind_chk",
+    ),
+)
+
+# A team's usage report: its rows in a window (0065).
+Index(
+    "token_usage_team_ts_idx",
+    token_usage_table.c.team_id,
+    token_usage_table.c.timestamp.desc(),
+    postgresql_where=token_usage_table.c.team_id.isnot(None),
 )
 
 user_logs_table = Table(

@@ -337,3 +337,113 @@ def test_round_trip(pg_conn):
             text("SELECT kind FROM users WHERE user_id = :p"), {"p": principal}
         ).scalar() == "team"
         assert ("erin", "team_viewer", "manual") in _roles(pg_conn, team)
+
+
+# ---------------------------------------------------------------------------
+# Usage attribution and the payer pause reasons
+# ---------------------------------------------------------------------------
+
+#: Run error types a pause for the payer records.
+_PAYER_ERRORS = ("payer_out_of_allowance", "payer_left", "no_payer")
+
+
+def _constraints(conn, table: str) -> set:
+    return {
+        r[0]
+        for r in conn.execute(
+            text("SELECT conname FROM pg_constraint WHERE conrelid = CAST(:t AS regclass)"), {"t": table}
+        )
+    }
+
+
+def _schedule(conn) -> str:
+    return str(
+        conn.execute(
+            text(
+                "INSERT INTO schedules (user_id, trigger_type, instruction, run_at) "
+                "VALUES ('alice', 'once', 'x', now()) RETURNING id"
+            )
+        ).scalar()
+    )
+
+
+def _run(conn, schedule: str, error_type: str, offset: int = 0) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO schedule_runs (schedule_id, user_id, scheduled_for, status, error_type) "
+            "VALUES (CAST(:s AS uuid), 'alice', now() + make_interval(days => :d), 'skipped', :e)"
+        ),
+        {"s": schedule, "d": offset, "e": error_type},
+    )
+
+
+def _usage(conn, **fields) -> None:
+    columns = ", ".join(["user_id", *fields])
+    values = ", ".join([":user_id", *(f":{k}" for k in fields)])
+    conn.execute(text(f"INSERT INTO token_usage ({columns}) VALUES ({values})"), {"user_id": "alice", **fields})
+
+
+def test_usage_rows_record_their_workspace_and_run_kind(pg_conn):
+    assert {"team_id", "run_kind"} <= _columns(pg_conn, "token_usage")
+    assert "token_usage_run_kind_chk" in _constraints(pg_conn, "token_usage")
+    assert "token_usage_team_ts_idx" in _indexes(pg_conn)
+    team = _team(pg_conn)
+    for kind in ("chat", "schedule", "published", "knowledge", "monitor", "drafter"):
+        _usage(pg_conn, run_kind=kind, team_id=team)
+    # Rows written before attribution existed stay unset.
+    _usage(pg_conn)
+    with pytest.raises(IntegrityError), pg_conn.begin_nested():
+        _usage(pg_conn, run_kind="made_up")
+
+
+def test_a_deleted_team_keeps_its_usage_rows(pg_conn):
+    team = _team(pg_conn)
+    _usage(pg_conn, run_kind="chat", team_id=team)
+    pg_conn.execute(text("DELETE FROM teams WHERE id = CAST(:t AS uuid)"), {"t": team})
+    assert pg_conn.execute(
+        text("SELECT count(*) FROM token_usage WHERE team_id = CAST(:t AS uuid)"), {"t": team}
+    ).scalar() == 1
+
+
+@pytest.mark.parametrize("error_type", _PAYER_ERRORS)
+def test_a_run_paused_for_its_payer_says_why(pg_conn, error_type):
+    schedule = _schedule(pg_conn)
+    _run(pg_conn, schedule, error_type)
+    assert pg_conn.execute(
+        text("SELECT error_type FROM schedule_runs WHERE schedule_id = CAST(:s AS uuid)"), {"s": schedule}
+    ).scalar() == error_type
+
+
+def test_upgrade_twice_keeps_the_attribution_and_the_reasons(pg_conn):
+    with _ops(pg_conn) as migration:
+        migration.upgrade()
+        migration.upgrade()
+    assert {"team_id", "run_kind"} <= _columns(pg_conn, "token_usage")
+    schedule = _schedule(pg_conn)
+    _run(pg_conn, schedule, "payer_left")
+    with pytest.raises(IntegrityError), pg_conn.begin_nested():
+        _usage(pg_conn, run_kind="made_up")
+
+
+def test_downgrade_clears_the_payer_reasons_and_the_attribution(pg_conn):
+    schedule = _schedule(pg_conn)
+    for offset, error_type in enumerate((*_PAYER_ERRORS, "owner_inactive", "timeout")):
+        _run(pg_conn, schedule, error_type, offset)
+    _usage(pg_conn, run_kind="chat", team_id=_team(pg_conn))
+    with _ops(pg_conn) as migration:
+        migration.downgrade()
+        migration.downgrade()
+        assert not {"team_id", "run_kind"} & _columns(pg_conn, "token_usage")
+        assert "token_usage_team_ts_idx" not in _indexes(pg_conn)
+        kept = sorted(
+            r[0] or ""
+            for r in pg_conn.execute(
+                text("SELECT error_type FROM schedule_runs WHERE schedule_id = CAST(:s AS uuid)"), {"s": schedule}
+            )
+        )
+        # Pause reasons go back to unset; a failure's type stays.
+        assert kept == ["", "", "", "", "timeout"]
+        with pytest.raises(IntegrityError), pg_conn.begin_nested():
+            _run(pg_conn, schedule, "payer_left", 10)
+        migration.upgrade()
+    _run(pg_conn, schedule, "payer_left", 11)

@@ -12,9 +12,24 @@ Covers every operation the legacy Mongo code performs on
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Iterable, Optional
 
 from sqlalchemy import Connection, text
+
+from docsgpt.storage.db.base_repository import looks_like_uuid
+
+#: Usage buckets: every row, rows through an agent (a key or an agent id), rows with neither.
+USAGE_BUCKETS = ("all", "agent", "direct")
+
+#: The row filter of each bucket (``usage_totals``).
+_BUCKET_FILTERS = {
+    "all": "TRUE",
+    "agent": "(api_key IS NOT NULL OR agent_id IS NOT NULL)",
+    "direct": "(api_key IS NULL AND agent_id IS NULL)",
+}
+
+#: Run kinds a team's report counts as chats; every other kind (and none) is a run without a person.
+_CHAT_KINDS = ("chat", "drafter")
 
 
 class TokenUsageRepository:
@@ -40,7 +55,32 @@ class TokenUsageRepository:
         cost: float = 0.0,
         duration_ms: Optional[int] = None,
         ttft_ms: Optional[int] = None,
+        team_id: Optional[str] = None,
+        run_kind: Optional[str] = None,
     ) -> None:
+        """Record one model call.
+
+        Args:
+            user_id: Who pays for it; a person.
+            api_key: The agent key it came through.
+            agent_id: The agent it ran for; a value not shaped like a UUID is stored as NULL.
+            prompt_tokens: Input tokens.
+            generated_tokens: Output tokens.
+            source: ``agent_stream`` or a side-channel source.
+            request_id: The run's request id.
+            model_id: The canonical model id.
+            timestamp: When; now by default.
+            cached_tokens: Prompt-cache reads, when the provider reported them.
+            cache_write_tokens: Prompt-cache writes, when reported.
+            cost: USD cost.
+            duration_ms: Time waiting on the provider.
+            ttft_ms: Time to the first streamed chunk.
+            team_id: The team workspace it was made in; None (or a value not shaped like a UUID) is Personal.
+            run_kind: What kind of run it was part of (``docsgpt.quotas.payer.RUN_KINDS``).
+
+        Raises:
+            ValueError: Neither ``user_id`` nor ``api_key`` is given.
+        """
         # Attribution guard: the ``token_usage_attribution_chk`` CHECK
         # constraint requires at least one of ``user_id`` / ``api_key``
         # to be non-null. Raise here for a clear error rather than
@@ -67,7 +107,8 @@ class TokenUsageRepository:
                     prompt_tokens, generated_tokens,
                     cached_tokens, cache_write_tokens, cost,
                     duration_ms, ttft_ms,
-                    source, request_id, model_id, timestamp
+                    source, request_id, model_id, timestamp,
+                    team_id, run_kind
                 )
                 VALUES (
                     :user_id, :api_key,
@@ -75,7 +116,8 @@ class TokenUsageRepository:
                     :prompt_tokens, :generated_tokens,
                     :cached_tokens, :cache_write_tokens, :cost,
                     :duration_ms, :ttft_ms,
-                    :source, :request_id, :model_id, COALESCE(:timestamp, now())
+                    :source, :request_id, :model_id, COALESCE(:timestamp, now()),
+                    CAST(:team_id AS uuid), :run_kind
                 )
                 """
             ),
@@ -94,6 +136,8 @@ class TokenUsageRepository:
                 "request_id": request_id,
                 "model_id": model_id,
                 "timestamp": timestamp,
+                "team_id": str(team_id) if team_id and looks_like_uuid(str(team_id)) else None,
+                "run_kind": run_kind,
             },
         )
 
@@ -200,6 +244,155 @@ class TokenUsageRepository:
             {"user_id": user_id, "start": start, "rollup_sources": list(self.ROLLUP_SOURCES)},
         ).one()
         return int(row[0]), float(row[1])
+
+    def usage_totals_for_buckets(
+        self, user_id: str, start: datetime, buckets: Iterable[str] = ("all",)
+    ) -> dict[str, tuple[int, float]]:
+        """Return ``(tokens, cost_usd)`` a user has consumed since ``start`` in each bucket, in one query.
+
+        Args:
+            user_id: The billable user.
+            start: Inclusive window start.
+            buckets: Any of ``all``, ``agent`` and ``direct`` (see :meth:`usage_totals`).
+
+        Returns:
+            Bucket -> ``(tokens, cost_usd)``; rollup rows are excluded.
+
+        Raises:
+            ValueError: An unknown bucket.
+        """
+        wanted = list(dict.fromkeys(buckets))
+        unknown = [bucket for bucket in wanted if bucket not in _BUCKET_FILTERS]
+        if unknown:
+            raise ValueError(f"unknown usage bucket: {unknown[0]!r}")
+        if not wanted:
+            return {}
+        # The filters are fixed SQL keyed by bucket name; nothing the caller passes reaches the text.
+        columns = ", ".join(
+            f"COALESCE(SUM(prompt_tokens + generated_tokens) FILTER (WHERE {_BUCKET_FILTERS[b]}), 0), "
+            f"COALESCE(SUM(cost) FILTER (WHERE {_BUCKET_FILTERS[b]}), 0)"
+            for b in wanted
+        )
+        row = self._conn.execute(
+            text(
+                f"SELECT {columns} FROM token_usage "
+                "WHERE user_id = :user_id AND timestamp >= :start AND source <> ALL(:rollup_sources)"
+            ),
+            {"user_id": user_id, "start": start, "rollup_sources": list(self.ROLLUP_SOURCES)},
+        ).one()
+        return {bucket: (int(row[2 * i]), float(row[2 * i + 1])) for i, bucket in enumerate(wanted)}
+
+    def usage_by_kind(self, user_id: str, start: datetime) -> dict[Optional[str], tuple[int, float]]:
+        """Return ``(tokens, cost_usd)`` a user has consumed since ``start``, by run kind.
+
+        Args:
+            user_id: The billable user.
+            start: Inclusive window start.
+
+        Returns:
+            Run kind -> ``(tokens, cost_usd)``; rows written without a kind are under None. Rollup rows
+            are excluded; a kind with no rows is absent.
+        """
+        result = self._conn.execute(
+            text(
+                "SELECT run_kind, COALESCE(SUM(prompt_tokens + generated_tokens), 0), COALESCE(SUM(cost), 0) "
+                "FROM token_usage WHERE user_id = :user_id AND timestamp >= :start "
+                "AND source <> ALL(:rollup_sources) GROUP BY run_kind"
+            ),
+            {"user_id": user_id, "start": start, "rollup_sources": list(self.ROLLUP_SOURCES)},
+        )
+        return {row[0]: (int(row[1]), float(row[2])) for row in result.fetchall()}
+
+    def team_usage(self, team_id: str, start: datetime, end: datetime, *, limit: int = 200) -> dict[str, Any]:
+        """Everything spent in a team workspace in ``[start, end)``, for its usage report.
+
+        Only rows stamped with the team count: Personal rows and another
+        team's never do, wherever the person or the agent is now. A call that
+        billed nobody (a key's row with no person) counts in the totals but
+        names no person.
+
+        Args:
+            team_id: The team.
+            start: Inclusive window start.
+            end: Exclusive window end.
+            limit: The most people and agents listed, by cost then tokens.
+
+        Returns:
+            ``{"totals": {tokens, cost, people}, "split": {"chats": {tokens, cost}, "runs": {tokens, cost}},
+            "by_person": [{user_id, tokens, cost}], "by_agent": [{agent_id, tokens, cost, requests, people}]}``.
+            Chats are the ``chat`` and ``drafter`` kinds; runs are every other kind and rows with none.
+            ``requests`` counts an agent's distinct requests as the agent limit does.
+        """
+        if not team_id or not looks_like_uuid(str(team_id)):
+            return {
+                "totals": {"tokens": 0, "cost": 0.0, "people": 0},
+                "split": {"chats": {"tokens": 0, "cost": 0.0}, "runs": {"tokens": 0, "cost": 0.0}},
+                "by_person": [],
+                "by_agent": [],
+            }
+        params = {
+            "team_id": str(team_id),
+            "start": start,
+            "end": end,
+            "rollup_sources": list(self.ROLLUP_SOURCES),
+            "chat_kinds": list(_CHAT_KINDS),
+            "limit": int(limit),
+        }
+        where = (
+            "team_id = CAST(:team_id AS uuid) AND timestamp >= :start AND timestamp < :end "
+            "AND source <> ALL(:rollup_sources)"
+        )
+        tokens = "prompt_tokens + generated_tokens"
+        is_chat = "run_kind = ANY(:chat_kinds)"
+        totals = self._conn.execute(
+            text(
+                f"""
+                SELECT COALESCE(SUM({tokens}), 0), COALESCE(SUM(cost), 0), COUNT(DISTINCT user_id),
+                       COALESCE(SUM({tokens}) FILTER (WHERE {is_chat}), 0),
+                       COALESCE(SUM(cost) FILTER (WHERE {is_chat}), 0),
+                       COALESCE(SUM({tokens}) FILTER (WHERE run_kind IS NULL OR NOT {is_chat}), 0),
+                       COALESCE(SUM(cost) FILTER (WHERE run_kind IS NULL OR NOT {is_chat}), 0)
+                FROM token_usage WHERE {where}
+                """
+            ),
+            params,
+        ).one()
+        people = self._conn.execute(
+            text(
+                f"""
+                SELECT user_id, COALESCE(SUM({tokens}), 0) AS tokens, COALESCE(SUM(cost), 0) AS cost
+                FROM token_usage WHERE {where} AND user_id IS NOT NULL
+                GROUP BY user_id ORDER BY cost DESC, tokens DESC, user_id LIMIT :limit
+                """
+            ),
+            params,
+        ).fetchall()
+        agents = self._conn.execute(
+            text(
+                f"""
+                SELECT agent_id::text, COALESCE(SUM({tokens}), 0) AS tokens, COALESCE(SUM(cost), 0) AS cost,
+                       COUNT(DISTINCT request_id) FILTER (WHERE source = 'agent_stream' AND request_id IS NOT NULL)
+                       + COUNT(*) FILTER (WHERE source = 'agent_stream' AND request_id IS NULL) AS requests,
+                       COUNT(DISTINCT user_id) AS people
+                FROM token_usage WHERE {where} AND agent_id IS NOT NULL
+                GROUP BY agent_id ORDER BY cost DESC, tokens DESC, agent_id LIMIT :limit
+                """
+            ),
+            params,
+        ).fetchall()
+        return {
+            "totals": {"tokens": int(totals[0]), "cost": float(totals[1]), "people": int(totals[2])},
+            "split": {
+                "chats": {"tokens": int(totals[3]), "cost": float(totals[4])},
+                "runs": {"tokens": int(totals[5]), "cost": float(totals[6])},
+            },
+            "by_person": [{"user_id": r[0], "tokens": int(r[1]), "cost": float(r[2])} for r in people],
+            "by_agent": [
+                {"agent_id": r[0], "tokens": int(r[1]), "cost": float(r[2]), "requests": int(r[3]),
+                 "people": int(r[4])}
+                for r in agents
+            ],
+        }
 
     def tokens_by_model(self, *, start: datetime) -> list[dict]:
         """Return ``{model_id, tokens, cost}`` per model since ``start``, busiest first."""

@@ -44,7 +44,7 @@ from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.storage.db.source_config import SourceConfig
-from docsgpt.workspaces.principal import is_principal_id
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +159,13 @@ def _scheduled_cannot_complete(
     return reason, answer[:last_round_start] + lead + drop_cannot_complete_marker(last_round)
 
 
+#: The run kind an ``endpoint`` records by default; any other endpoint names its own (``run_kind=``).
+_ENDPOINT_RUN_KINDS = {"schedule": "schedule", "webhook": "published"}
+
+#: ``team_id`` left out: the run's spend belongs to the agent's team (None for a personal agent).
+_AGENT_TEAM: Any = object()
+
+
 def run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
@@ -179,6 +186,8 @@ def run_agent_headless(
     on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
     payer: Optional[str] = None,
+    run_kind: Optional[str] = None,
+    team_id: Any = _AGENT_TEAM,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
 
@@ -228,6 +237,12 @@ def run_agent_headless(
     A team principal is never a payer: a team agent's run with no person to
     bill (no ``payer`` given and no published-access payer) never starts.
 
+    The run's usage rows record ``run_kind`` (by default ``schedule`` for the
+    ``schedule`` endpoint and ``published`` for ``webhook``; a continuation
+    passes its conversation's) and ``team_id``, the workspace the spend belongs
+    to: the agent's team unless given (a continuation passes its
+    conversation's; None is Personal).
+
     Raises:
         AgentLimitExceededError: If the agent's own 24-hour limit is used up.
         QuotaExceededError: If the payer's allowance is used up.
@@ -236,6 +251,9 @@ def run_agent_headless(
     payer = payer or published_access_payer(agent_config)
     if is_principal_id(payer) or (not payer and is_principal_id(_resolve_owner(agent_config))):
         raise NoPayerError(payer or _resolve_owner(agent_config))
+    run_kind = run_kind or _ENDPOINT_RUN_KINDS.get(endpoint)
+    if team_id is _AGENT_TEAM:
+        team_id = team_of_principal(_resolve_owner(agent_config))
     trace = tracing.start_trace(
         source=endpoint,
         request_id=request_id,
@@ -244,7 +262,8 @@ def run_agent_headless(
         conversation_id=conversation_id,
     )
     status = None
-    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()), billed_to(payer):
+    billing = billed_to(payer, kind=run_kind, team_id=team_id)
+    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()), billing:
         try:
             outcome = _run_agent_headless(
                 agent_config,

@@ -4438,6 +4438,7 @@ def agent_webhook_worker(self, agent_id, payload):
             endpoint="webhook",
             request_id=run_id,
             payer=published_access_payer(agent_config),
+            run_kind="published",
         )
         result = {
             "answer": outcome.get("answer", ""),

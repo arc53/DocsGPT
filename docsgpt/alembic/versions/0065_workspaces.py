@@ -21,7 +21,16 @@
   ``agents_set_updated_at``.
 * ``conversations.team_id`` (NULL = Personal), ``ON DELETE CASCADE``, and the
   sidebar index gains it.
-* ``schedule_runs.error_type`` also allows ``owner_inactive``.
+* ``schedule_runs.error_type`` also allows ``owner_inactive``, and the reasons
+  a run is skipped while its payer can't pay: ``payer_out_of_allowance``,
+  ``payer_left`` and ``no_payer``.
+* ``token_usage.team_id`` (the workspace a model call was made in, NULL =
+  Personal; no FK, like ``agent_id``, so a deleted team's rows keep their id)
+  and ``token_usage.run_kind`` (``chat``, ``schedule``, ``published``,
+  ``knowledge``, ``monitor`` or ``drafter``; NULL on rows written before it).
+  ``token_usage_team_ts_idx`` serves a team's usage report. The two columns
+  are metadata-only; the index is a plain CREATE INDEX, which reads the whole
+  table once and holds off writes to it while it builds.
 
 Idempotent both ways. Downgrade refuses while any row still belongs to a
 principal; otherwise it turns ``team_editor``/``team_viewer`` back into
@@ -61,6 +70,12 @@ _RUN_ERRORS = (
     "'stream_error', 'empty_output', 'cannot_complete'"
 )
 _RUN_ERRORS_WITH_OWNER = _RUN_ERRORS + ", 'owner_inactive'"
+#: The reasons a run is skipped while its payer can't pay for it.
+_PAYER_PAUSES = "'payer_out_of_allowance', 'payer_left', 'no_payer'"
+_RUN_ERRORS_WITH_PAYER = _RUN_ERRORS_WITH_OWNER + ", " + _PAYER_PAUSES
+
+#: What a model call was part of (``docsgpt/quotas/payer.py::RUN_KINDS``).
+_RUN_KINDS = "'chat', 'schedule', 'published', 'knowledge', 'monitor', 'drafter'"
 
 #: The ``ensure_user_exists`` body of 0001, and the one that leaves existing rows alone.
 _ENSURE_USER_ANY = """
@@ -123,7 +138,7 @@ def _set_updated_at_triggers(table: str, enable: bool) -> None:
 
 
 def upgrade() -> None:
-    """Add team principals and roles, provenance, the published-access payer and the chat workspace."""
+    """Add team principals and roles, provenance, the access payer, the chat workspace and usage attribution."""
     # Principals.
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'user'")
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE RESTRICT")
@@ -225,11 +240,22 @@ def upgrade() -> None:
     )
     op.execute("DROP INDEX IF EXISTS conversations_user_listed_idx")
 
-    # A run skipped because its owner or payer was deactivated says so.
+    # A run skipped because its owner or payer was deactivated, or its payer can't pay, says so.
     _add_constraint(
         "schedule_runs",
         "schedule_runs_error_type_chk",
-        f"CHECK (error_type IS NULL OR error_type IN ({_RUN_ERRORS_WITH_OWNER}))",
+        f"CHECK (error_type IS NULL OR error_type IN ({_RUN_ERRORS_WITH_PAYER}))",
+    )
+
+    # Which workspace and which kind of run each model call was made for.
+    op.execute("ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS team_id UUID")
+    op.execute("ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS run_kind TEXT")
+    _add_constraint(
+        "token_usage", "token_usage_run_kind_chk", f"CHECK (run_kind IS NULL OR run_kind IN ({_RUN_KINDS}))"
+    )
+    op.execute(
+        'CREATE INDEX IF NOT EXISTS token_usage_team_ts_idx ON token_usage (team_id, "timestamp" DESC) '
+        "WHERE team_id IS NOT NULL"
     )
 
 
@@ -269,7 +295,18 @@ def downgrade() -> None:
         """
     )
 
+    op.execute("DROP INDEX IF EXISTS token_usage_team_ts_idx")
+    op.execute("ALTER TABLE token_usage DROP CONSTRAINT IF EXISTS token_usage_run_kind_chk")
+    op.execute("ALTER TABLE token_usage DROP COLUMN IF EXISTS run_kind")
+    op.execute("ALTER TABLE token_usage DROP COLUMN IF EXISTS team_id")
+
     # A skipped run keeps its reason in ``error``; the type goes back to unset.
+    op.execute(f"UPDATE schedule_runs SET error_type = NULL WHERE error_type IN ({_PAYER_PAUSES})")
+    _add_constraint(
+        "schedule_runs",
+        "schedule_runs_error_type_chk",
+        f"CHECK (error_type IS NULL OR error_type IN ({_RUN_ERRORS_WITH_OWNER}))",
+    )
     op.execute("UPDATE schedule_runs SET error_type = NULL WHERE error_type = 'owner_inactive'")
     _add_constraint(
         "schedule_runs", "schedule_runs_error_type_chk", f"CHECK (error_type IS NULL OR error_type IN ({_RUN_ERRORS}))"

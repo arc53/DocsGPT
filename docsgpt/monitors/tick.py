@@ -579,16 +579,39 @@ def _reset_failures(monitor: Dict[str, Any], *, force: bool = False) -> None:
 # ----------------------------------------------------------------------
 
 
+def _agent_team(owner: str, agent_id: Optional[str]) -> Optional[str]:
+    """The team a monitor's spend belongs to: its agent's team, None for a personal agent or none.
+
+    Args:
+        owner: The monitor's owner; a team's principal names the team itself.
+        agent_id: The monitor's agent, if any.
+
+    Returns:
+        The team id, or None.
+    """
+    from docsgpt.quotas.payer import agent_payer_and_team
+    from docsgpt.workspaces.principal import team_of_principal
+
+    team_id = team_of_principal(owner)
+    if team_id or not agent_id:
+        return team_id
+    try:
+        return agent_payer_and_team(agent_id)[1]
+    except Exception:
+        # A report figure, never a reason to skip the judge.
+        logger.exception("monitor: could not read the team of agent %s", agent_id)
+        return None
+
+
 def _judge(monitor: Dict[str, Any], evaluation: Evaluation, content: Content) -> Tuple[str, Any]:
     """Ask the judge; returns ``("match"|"no_match", verdict)``, ``("budget", None)``, ``("quota", None)``,
     ``("no_payer", None)`` or ``("error", message)``.
 
     The judge bills the monitor's person. A monitor a team agent's outside
     traffic left (owned by the team's principal) bills whoever pays for that
-    agent's published access, and waits while nobody does.
+    agent's published access, and waits while nobody does. Its usage is a
+    ``monitor`` run in the agent's team.
     """
-    from contextlib import nullcontext
-
     from docsgpt.monitors import judge
     from docsgpt.quotas.payer import billed_to, payer_for
     from docsgpt.quotas.service import QuotaService
@@ -605,7 +628,7 @@ def _judge(monitor: Dict[str, Any], evaluation: Evaluation, content: Content) ->
         return "quota", None
     spec = monitor.get("monitor_spec") or {}
     try:
-        with billed_to(payer) if payer != owner else nullcontext():
+        with billed_to(payer, kind="monitor", team_id=_agent_team(owner, agent_id)):
             verdict = judge.judge(
                 user_id=owner,
                 monitor_id=str(monitor["id"]),

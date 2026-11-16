@@ -242,6 +242,24 @@ def continuation_payer(conversation: Dict[str, Any], agent_config: Dict[str, Any
     return published_access_payer(agent_config)
 
 
+def continuation_run_kind(conversation: Dict[str, Any]) -> str:
+    """What a continuation turn is, as its usage rows record it: the kind of the chat it carries on.
+
+    A conversation that a team agent's key, widget or ``/v1`` traffic left
+    (owned by the team's principal), or a public-link chat, is outside traffic
+    on a published agent; any other is a person's chat.
+
+    Args:
+        conversation: The conversation row (``user_id``, ``is_shared_usage``).
+
+    Returns:
+        ``published`` or ``chat``.
+    """
+    if is_principal_id(conversation.get("user_id")) or conversation.get("is_shared_usage"):
+        return "published"
+    return "chat"
+
+
 def _history(
     messages: List[Dict[str, Any]],
     model_id: Optional[str],
@@ -561,6 +579,8 @@ def _run_turn(
             trace_user_id=user_id,
             # It carries on the chat's run, so the chat's payer pays, though it runs as the agent's owner.
             payer=continuation_payer(conversation, agent_config),
+            run_kind=continuation_run_kind(conversation),
+            team_id=str(conversation["team_id"]) if conversation.get("team_id") else None,
             message_id=message_id,
             background=background,
             on_event=live.event if live is not None else None,

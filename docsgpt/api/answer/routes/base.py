@@ -1,4 +1,3 @@
-import contextlib
 import datetime
 import functools
 import inspect
@@ -8,7 +7,7 @@ import threading
 import time
 import traceback
 import uuid
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 from flask import jsonify, make_response, Response
 from flask_restx import Namespace
@@ -38,9 +37,9 @@ from docsgpt.llm.deadlines import interruptible
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.agent_limits import agent_limit_exceeded
 from docsgpt.quotas.http import agent_limit_response, quota_exceeded_response
-from docsgpt.quotas.payer import agent_access_payer, billed_to, published_access_payer
+from docsgpt.quotas.payer import agent_payer_and_team, billed_to, published_access_payer
 from docsgpt.quotas.service import NoPayerError, QuotaService
-from docsgpt.workspaces.principal import is_principal_id
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import (
     HeartbeatState,
@@ -105,19 +104,21 @@ class StreamSuperseded(Exception):
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
 
 
-def _outside_traffic_payer(arguments: Dict[str, Any]) -> Optional[str]:
-    """Who a stream bills when it is outside traffic on an agent, or None to bill the token's ``sub``.
+def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Optional[str]]:
+    """Who a stream bills, what kind of run it is, and the team workspace its spend belongs to.
 
-    Key, widget, ``/v1`` and public-link callers run as the agent's owner (a
-    team agent's owner is its principal), but the agent's published-access
-    payer pays for that traffic. Anything else (the person chatting) leaves
-    billing to its own token.
+    A person chatting pays for their own chat, in the conversation's
+    workspace. Key, widget, ``/v1`` and public-link callers run as the agent's
+    owner (a team agent's owner is its principal), but the agent's
+    published-access payer pays for that traffic, which is the agent's team's.
 
     Args:
         arguments: ``complete_stream``'s bound arguments.
 
     Returns:
-        The payer, when it differs from the token's ``sub``; else None.
+        ``(payer, run_kind, team_id)``. The payer is the token's ``sub`` for a
+        chat, and for outside traffic whose payer can't be read (``check_usage``
+        already refused traffic nobody pays for; the usage guard reports a principal).
     """
     executor = getattr(arguments.get("agent"), "tool_executor", None)
     outside = getattr(executor, "external_caller", False) is True or (
@@ -126,15 +127,15 @@ def _outside_traffic_payer(arguments: Dict[str, Any]) -> Optional[str]:
     decoded_token = arguments.get("decoded_token")
     sub = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
     if not outside and not is_principal_id(sub):
-        return None
+        # A new chat names its workspace; a resumed one carries it on its executor.
+        team_id = arguments.get("workspace_team_id") or getattr(executor, "workspace_team_id", None)
+        return sub, "chat", team_id if isinstance(team_id, str) and team_id else None
     try:
-        payer = agent_access_payer(arguments.get("agent_id"), arguments.get("user_api_key"))
+        payer, team_id = agent_payer_and_team(arguments.get("agent_id"), arguments.get("user_api_key"))
     except Exception:
-        # ``check_usage`` already refused a request nobody pays for; a failed read
-        # leaves the token's identity, and the usage guard reports a principal.
         logger.exception("Could not read the agent's published-access payer")
-        return None
-    return payer if payer and payer != sub else None
+        payer, team_id = None, None
+    return payer or sub, "published", team_id or team_of_principal(sub)
 
 
 def _no_payer_response() -> Response:
@@ -153,9 +154,10 @@ def _traced_stream(
     abandoned. The request id is resolved here too so the trace and the
     stream agree on it. The turn's decision record is activated with it: the
     one the processor handed the agent (holding any decisions made during
-    setup, and a resumed turn's earlier rounds), or a new one. Outside traffic
-    on an agent runs billed to its published-access payer for the whole stream
-    (:func:`_outside_traffic_payer`).
+    setup, and a resumed turn's earlier rounds), or a new one. Every stream
+    runs billed to its payer for its whole length, with its run kind and
+    workspace (:func:`_stream_billing`): the person chatting, or for outside
+    traffic on an agent its published-access payer.
     """
     signature = inspect.signature(method)
 
@@ -186,8 +188,8 @@ def _traced_stream(
         decisions = getattr(arguments.get("agent"), "decision_record", None)
         if not isinstance(decisions, decision_record.DecisionRecord):
             decisions = decision_record.DecisionRecord()
-        payer = _outside_traffic_payer(arguments)
-        billing = billed_to(payer, request_id) if payer else contextlib.nullcontext()
+        payer, run_kind, team_id = _stream_billing(arguments)
+        billing = billed_to(payer, request_id, kind=run_kind, team_id=team_id)
         with tracing.activate(trace), decision_record.activate(decisions), billing:
             try:
                 yield from method(*bound.args, **bound.kwargs)

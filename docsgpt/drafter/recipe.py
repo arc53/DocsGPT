@@ -62,6 +62,8 @@ class DraftRequest:
         can_correct: Whether a :class:`ProposalInvalid` from the answer being validated still gets the turn's
             corrected try (the runner keeps it current). A check that guards wording rather than the draft raises
             only while this is True, so it never costs the turn.
+        team_id: The team workspace the request was made in, which the draft's usage is recorded in; None is
+            Personal.
     """
 
     user_id: str
@@ -70,6 +72,7 @@ class DraftRequest:
     context: dict
     request_id: str
     can_correct: bool = True
+    team_id: Optional[str] = None
 
     def user_text(self) -> str:
         """Everything the user wrote in this conversation, joined (for "did they ask for X" checks)."""

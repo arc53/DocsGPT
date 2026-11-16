@@ -16,11 +16,10 @@ note.
 from __future__ import annotations
 
 import logging
-from contextlib import nullcontext
 from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.background import jobs, pool
-from docsgpt.quotas.payer import billed_to, current_run_billing, payer_for
+from docsgpt.quotas.payer import RUN_KINDS, billed_to, current_run_billing, payer_for
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -39,13 +38,16 @@ def worker_payload(executor: Any, tool_data: Dict[str, Any], action_name: str, a
         arguments: The model's arguments, without ``background`` / ``watch``.
 
     Returns:
-        A JSON-safe dict. ``payer`` is the turn's payer when the turn set one
-        (``billed_to``), else None: the identity pays, as in a chat.
+        A JSON-safe dict. ``payer``, ``run_kind`` and ``team_id`` are the
+        turn's billing (``billed_to``; every chat and run opens one), each None
+        when the turn set none: the identity then pays.
     """
     billing = current_run_billing()
     return {
         "user": executor.user,
         "payer": billing.payer if billing is not None and billing.payer else None,
+        "run_kind": billing.kind if billing is not None else None,
+        "team_id": billing.team_id if billing is not None else None,
         "user_api_key": executor.user_api_key,
         "agent_id": str(executor.agent_id) if executor.agent_id else None,
         "external_caller": bool(executor.external_caller),
@@ -99,7 +101,8 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     The executor is rebuilt as the turn's identity (for a team agent reached
     by its key, the team's principal), so the payer travels separately: the
     payload's ``payer``, or for a job queued without one, whoever pays for the
-    agent's published access when the identity is a principal.
+    agent's published access when the identity is a principal. The job's
+    usage keeps the turn's run kind and workspace.
 
     Args:
         job_id: The job.
@@ -115,7 +118,14 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             logger.exception("background job %s: reading its payer failed", job_id)
             payer = None
-    billing = billed_to(payer) if payer and payer != payload.get("user") else nullcontext()
+    kind = payload.get("run_kind")
+    team_id = payload.get("team_id")
+    billing = billed_to(
+        payer,
+        # A payload from an older worker may carry neither; an unknown kind is dropped, not fatal.
+        kind=kind if kind in RUN_KINDS else None,
+        team_id=team_id if isinstance(team_id, str) else None,
+    )
     with billing:
         return _run_job(job_id, payload)
 

@@ -31,6 +31,7 @@ from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
 from docsgpt.llm.llm_creator import create_stateless_llm, ModelNotAvailableError
 from docsgpt.quotas.payer import billed_to
+from docsgpt.workspaces.principal import team_of_principal
 from docsgpt.storage.db.source_config import SourceConfig
 # ``EmbeddingsSingleton`` is re-exported here so callers and tests can reach the
 # shared instance cache from this module.
@@ -283,7 +284,8 @@ def extract_graph_for_source(
             other pending chunks are left as they are. ``None`` for a build.
         payer: The person every extraction call bills (``billed_to``), when
             not the owner: whoever added the knowledge, since a team's
-            principal never pays.
+            principal never pays. The calls are a ``knowledge`` run in the
+            source's workspace (its owner's team, else Personal).
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,
@@ -292,10 +294,8 @@ def extract_graph_for_source(
         counts the same entity once per chunk it appears in.
     """
     kwargs = {"config": config, "request_id": request_id, "progress_cb": progress_cb, "chunk_ids": chunk_ids}
-    if payer is None:
-        return _build_graph(source_id, user, chunks, **kwargs)
     # Carried into the pool threads with the trace (``tracing.wrap``), so each thread's calls bill the payer too.
-    with billed_to(payer, request_id):
+    with billed_to(payer, request_id, kind="knowledge", team_id=team_of_principal(user)):
         return _build_graph(source_id, user, chunks, **kwargs)
 
 

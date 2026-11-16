@@ -519,6 +519,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             trace_user_id=run.get("user_id") or schedule.get("user_id"),
             # The person who set the schedule pays; the run still executes as the agent's owner.
             payer=schedule.get("user_id") or run.get("user_id"),
+            run_kind="schedule",
             **_schedule_caller_rules(schedule, agent_config),
         )
     except SoftTimeLimitExceeded:

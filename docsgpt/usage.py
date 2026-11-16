@@ -9,7 +9,7 @@ from docsgpt.tracing.llm import finish_llm_call, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import num_tokens_from_object_or_list, num_tokens_from_string
-from docsgpt.workspaces.principal import is_principal_id
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,9 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
 
     Inside a run with a payer of its own (:func:`docsgpt.quotas.payer.billed_to`)
     the row bills that payer, whatever identity the LLM runs as, and a call
-    with no request id takes the run's.
+    with no request id takes the run's. The row records the run's kind and
+    team workspace; a call that runs as a team's principal in a run that named
+    no team (or in no run) is recorded in that principal's team.
 
     Args:
         llm: The LLM instance the call ran on.
@@ -162,6 +164,10 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
         decoded_token.get("sub") if isinstance(decoded_token, dict) else None
     )
     run = current_run_billing()
+    team_id = run.team_id if run is not None else None
+    if team_id is None:
+        # Work that runs as a team (its agent, its source) is that team's spend.
+        team_id = team_of_principal(user_id)
     if run is not None and run.payer:
         user_id = run.payer
     request_id = getattr(llm, "_request_id", None) or (run.request_id if run is not None else None)
@@ -223,6 +229,8 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
                 model_id=model_id,
                 duration_ms=duration_ms,
                 ttft_ms=ttft_ms,
+                team_id=team_id,
+                run_kind=run.kind if run is not None else None,
             )
     except Exception:
         logger.exception("token_usage persist failed")

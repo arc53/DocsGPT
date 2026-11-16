@@ -419,12 +419,15 @@ class TestCeleryRunnerCarriesThePayer:
             payload = worker_payload(executor, {"id": "t", "name": "x"}, "act", {})
         assert payload["payer"] == "adam" and payload["user"] == PRINCIPAL
 
-    def test_a_chat_with_no_run_payer_leaves_it_to_the_identity(self):
+    def test_a_chat_carries_the_chatter_as_its_payer(self):
         from docsgpt.background.celery_runner import worker_payload
 
         executor = MagicMock(user="eddie", user_api_key=None, agent_id=None, external_caller=False,
                              public_link_caller=False, api_write_allowlist=[], conversation_id="c", message_id="m")
-        assert worker_payload(executor, {"id": "t", "name": "x"}, "act", {})["payer"] is None
+        # Every chat opens its billing, so the job knows its payer without re-deriving it from the identity.
+        with billed_to("eddie", kind="chat"):
+            payload = worker_payload(executor, {"id": "t", "name": "x"}, "act", {})
+        assert (payload["payer"], payload["run_kind"]) == ("eddie", "chat")
 
     def test_the_job_runs_billed_to_the_payer(self, monkeypatch):
         from docsgpt.background import celery_runner

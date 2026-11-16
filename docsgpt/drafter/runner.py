@@ -830,6 +830,8 @@ def run_draft(
     Yields:
         Event dicts.
     """
+    from docsgpt.quotas.payer import billed_to
+
     stop = should_stop or (lambda: False)
     if recipe.reads_workspace:
         yield {"type": "status", "step": "reading", "counts": ws.counts()}
@@ -842,7 +844,9 @@ def run_draft(
         return
     turn = _Turn(req, recipe, ws, llm, model["id"], tool_mode=bool(model.get("supports_tools")))
     try:
-        yield from turn.run(stop)
+        # The caller pays; the draft is recorded in the workspace the request was made in.
+        with billed_to(req.user_id, req.request_id, kind="drafter", team_id=req.team_id):
+            yield from turn.run(stop)
     finally:
         # How much context the turn cost: the workspace is resent with every model call.
         logger.info("drafter: %s turn: %d model call(s), workspace %d chars, last call %d chars", recipe.id,
