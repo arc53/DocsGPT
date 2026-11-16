@@ -23,7 +23,7 @@ from __future__ import annotations
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterator, Mapping, Optional, Tuple
 
 from sqlalchemy import text
@@ -119,6 +119,27 @@ def billed_to(
     token = _current.set(billing)
     try:
         yield billing
+    finally:
+        _current.reset(token)
+
+
+@contextmanager
+def counted_without_limits() -> Iterator[None]:
+    """Count the block's model calls to the run in progress, but never refuse them at its limits.
+
+    For a check that guards the run's own output, the guardrail judge:
+    refused at the limit, it would let the answer that crossed it out
+    unjudged, or block a paid answer with the guardrail's message instead of
+    the limit's stop. Its usage still bills the run's payer, kind and
+    workspace, as one request with the run.
+    """
+    outer = _current.get()
+    if outer is None or outer.limits is None:
+        yield
+        return
+    token = _current.set(replace(outer, limits=None))
+    try:
+        yield
     finally:
         _current.reset(token)
 

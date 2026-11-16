@@ -43,7 +43,7 @@ Team membership can change without an instance admin — team admins add members
 
 Usage is counted over a calendar window in UTC, chosen for the whole instance with [`QUOTA_PERIOD`](/Deploying/Settings-Reference#quotas): `day` (from 00:00), `week` (from Monday) or `month` (from the 1st, the default). Windows are worked out when a request arrives, so there is no reset job to run.
 
-The quota is checked before a run starts, and again before **every model call** of the run, so an agent in a long tool loop stops at the limit rather than after it. The call that crosses a limit completes; the next one is refused. A request refused before it starts gets HTTP `429`:
+The quota is checked before a run starts, and again before **every model call** of the run, so an agent in a long tool loop stops at the limit rather than after it. The call that crosses a limit completes; the next one is refused. A guardrail judge's call is the exception: it counts, but it is never refused, so the answer that crossed the limit is still checked. A request refused before it starts gets HTTP `429`:
 
 ```json
 {
