@@ -129,6 +129,44 @@ class TestNotice:
         ]
 
 
+class TestTokens:
+    """A personal access token reads the agents it pays for only as far as it may read agents."""
+
+    def _with_token(self, client, scopes, resource_filter=None):
+        from docsgpt.api.pat.tokens import expand_scopes
+
+        claims = {"sub": "dana", "auth_method": "pat", "pat_id": "t1", "pat_name": "ci",
+                  "scopes": sorted(expand_scopes(scopes)), "resource_filter": resource_filter or {}}
+        with patch("docsgpt.app.handle_auth", return_value=claims), patch(
+            "docsgpt.app.resolve_roles", return_value=["user"]
+        ):
+            resp = client.get("/api/user/quota")
+        assert resp.status_code == 200, resp.data
+        return json.loads(resp.data)["paused"]
+
+    def _two_published(self, db):
+        _limit(db, tokens=10)
+        _spend(db, 10)
+        return [
+            str(AgentsRepository(db).create("dana", name, "published", key=f"k-{uuid.uuid4().hex}")["id"])
+            for name in ("Alpha", "Beta")
+        ]
+
+    def test_without_agents_read_no_agent_is_named(self, client, db):
+        self._two_published(db)
+
+        paused = self._with_token(client, ["models:read"])
+
+        assert paused["published"] == []
+
+    def test_an_agent_allowlist_keeps_only_its_agents(self, client, db):
+        alpha, _beta = self._two_published(db)
+
+        paused = self._with_token(client, ["models:read", "agents:read"], {"agents": [alpha]})
+
+        assert [p["name"] for p in paused["published"]] == ["Alpha"]
+
+
 class TestParts:
     def test_parts_by_run_kind(self, client, db):
         _limit(db, tokens=10_000)

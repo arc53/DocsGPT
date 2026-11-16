@@ -33,7 +33,7 @@ from flask_restx import Namespace, Resource, fields
 from sqlalchemy import Connection, text
 
 from docsgpt.api import api
-from docsgpt.api.pat.rules import allowed_ids, missing_scope_response
+from docsgpt.api.pat.rules import allowed_ids, missing_scope_response, used_by_agent_allowlist
 from docsgpt.api.pat.tokens import is_pat
 from docsgpt.api.user.prompts.routes import PRESET_PROMPTS
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
@@ -226,7 +226,8 @@ class MyQuotaResource(Resource):
         ``buckets``: ``{bucket, tokens, cost, resets_at}`` each. ``notice``: see :func:`quota_notice`.
         ``parts``: see :func:`quota_parts`, only when a limit is set. ``paused``: see
         :func:`stopped_for_allowance`, only when ``notice.level`` is ``reached``. Each of the three is
-        null otherwise, and null too when it can't be worked out: the buckets still answer.
+        null otherwise, and null too when it can't be worked out: the buckets still answer. For a
+        personal access token, ``paused.published`` keeps only the agents it may read.
         """
         decoded_token = getattr(request, "decoded_token", None)
         user_id = decoded_token.get("sub") if decoded_token else None
@@ -261,6 +262,10 @@ class MyQuotaResource(Resource):
                     paused = stopped_for_allowance(conn, user_id)
             except Exception:
                 logger.exception("quota paused items failed for user %s", user_id)
+            # A token names only the agents it may read: none without ``agents:read``.
+            readable = used_by_agent_allowlist(request)
+            if paused is not None and readable is not None:
+                paused["published"] = [p for p in paused["published"] if p["agent_id"] in readable]
         return make_response(
             jsonify(
                 {
