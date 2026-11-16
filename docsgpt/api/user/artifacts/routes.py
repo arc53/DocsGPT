@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from docsgpt.activity.common import in_workspace_sql, owner_team_sql, workspace_params
 from docsgpt.api import api
+from docsgpt.api.pat.rules import allowed_ids
 from docsgpt.api.user.artifacts.authz import (
     _shared_row_for,
     authorize_artifact,
@@ -23,10 +24,10 @@ from docsgpt.api.user.artifacts.authz import (
     resolve_principal,
     user_can_access_conversation,
 )
+from docsgpt.api.user.workflow_runs.access import visible_run
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
-from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.workspaces.context import WorkspaceError, current_workspace
@@ -168,8 +169,8 @@ class ListArtifacts(Resource):
                             if r.get("message_id") is not None and str(r.get("message_id")) in snapshot_ids
                         ]
                 elif workflow_run_id:
-                    run = WorkflowRunsRepository(conn).get(workflow_run_id)
-                    if run is None or run.get("user_id") != user_id:
+                    # As the run itself reads: the runner's own, and not once they left the team it ran in.
+                    if visible_run(conn, workflow_run_id, user_id, allowed_ids(request, "agents")) is None:
                         return make_response(jsonify({"success": False, "message": "Forbidden"}), 403)
                     # The run's attached documents are the caller's own uploads; list only what it produced.
                     rows = repo.list_artifacts(workflow_run_id=workflow_run_id, include_run_inputs=False)

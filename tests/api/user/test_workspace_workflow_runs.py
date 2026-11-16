@@ -39,6 +39,7 @@ def db(pg_conn, monkeypatch):
         yield pg_conn
 
     monkeypatch.setattr("docsgpt.api.user.workflow_runs.routes.db_readonly", _use_conn)
+    monkeypatch.setattr("docsgpt.api.user.artifacts.routes.db_readonly", _use_conn)
     return pg_conn
 
 
@@ -80,6 +81,11 @@ def _list(client, user="vera"):
     return [run["id"] for run in json.loads(response.data)["runs"]]
 
 
+def _run_artifacts(client, run_id, user="vera"):
+    with patch("docsgpt.app.handle_auth", return_value={"sub": user}):
+        return client.get(f"/api/artifacts?workflow_run_id={run_id}")
+
+
 class TestExMember:
     def test_a_team_workflows_runs_close_on_leaving_and_reopen_on_return(self, client, db):
         tid, principal = _team(db)
@@ -103,3 +109,19 @@ class TestExMember:
         TeamMembersRepository(db).add_member(tid, "vera")
         assert set(_list(client)) == {team_run, own_run}
         assert visible_run(db, team_run, "vera", None) is not None
+
+    def test_an_ex_member_cannot_list_a_team_runs_artifacts(self, client, db):
+        tid, principal = _team(db)
+        team_run = _run(db, _workflow(db, principal))
+        own_run = _run(db, _workflow(db, "vera"))
+        _artifact(db, team_run)
+        _artifact(db, own_run)
+
+        listed = _run_artifacts(client, team_run)
+        assert listed.status_code == 200
+        assert len(json.loads(listed.data)["artifacts"]) == 1
+
+        TeamMembersRepository(db).remove_member(tid, "vera")
+
+        assert _run_artifacts(client, team_run).status_code == 403
+        assert _run_artifacts(client, own_run).status_code == 200
