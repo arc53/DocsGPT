@@ -50,6 +50,9 @@ from docsgpt.storage.db.repositories.reconciliation import (
 )
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------

@@ -15,6 +15,14 @@ class StreamStalledError(TimeoutError):
     """A provider missed its first-token or inter-chunk deadline; fallback is allowed."""
 
 
+class StreamNoAnswerError(StreamStalledError):
+    """A provider kept reasoning past its time-to-answer limit without starting the answer."""
+
+
+class StreamLengthNoAnswerError(StreamNoAnswerError):
+    """A provider used up its output-token limit without starting the answer."""
+
+
 class StreamAbandoned(BaseException):
     """The consumer gave up on this stream; its reader stops at the next provider event."""
 
@@ -88,12 +96,39 @@ def stream_commit() -> Iterator[None]:
         yield
 
 
-def _is_thought(chunk: Any) -> bool:
+def is_thought(chunk: Any) -> bool:
+    """Whether a stream chunk is reasoning rather than the answer."""
     return isinstance(chunk, dict) and chunk.get("type") == "thought"
 
 
-def timed_stream(factory: Callable[[], Iterator[Any]], *, first_token: float, stall: float) -> Iterator[Any]:
+def carries_answer(chunk: Any) -> bool:
+    """Whether a stream chunk delivers part of the answer: text or a tool call.
+
+    Reasoning does not, nor does the bare length-stop marker the Responses
+    path yields when the output cap cuts a response off.
+    """
+    if isinstance(chunk, str):
+        return bool(chunk)
+    if is_thought(chunk):
+        return False
+    if getattr(chunk, "finish_reason", None) == "length":
+        return bool(getattr(getattr(chunk, "delta", None), "tool_calls", None))
+    return True
+
+
+def timed_stream(
+    factory: Callable[[], Iterator[Any]],
+    *,
+    first_token: float,
+    stall: float,
+    answer_deadline: float | None = None,
+) -> Iterator[Any]:
     """Read one chunk at a time with deadlines, including stream creation.
+
+    ``answer_deadline`` bounds the time from the start of the stream to the
+    first chunk that is not reasoning. Reasoning chunks and provider events
+    keep the idle timers fresh, so without it a model that thinks forever
+    never times out. Once the answer starts only the idle timers apply.
 
     A daemon owns the blocking iterator and closes it when a pending read
     returns. It advances only on demand: timing out never starts another read
@@ -139,6 +174,8 @@ def timed_stream(factory: Callable[[], Iterator[Any]], *, first_token: float, st
     reader = Thread(target=context.run, args=(produce,), name="llm-stream-reader", daemon=True)
     reader.start()
     timeout = first_token
+    started = monotonic()
+    answering = answer_deadline is None
     try:
         while True:
             state.activity = monotonic()
@@ -151,10 +188,16 @@ def timed_stream(factory: Callable[[], Iterator[Any]], *, first_token: float, st
                 remaining = remaining_seconds()
                 if remaining is not None and remaining <= 0:
                     raise RunDeadlineExceeded("Stopped: time limit.")
-                idle_left = timeout - (monotonic() - state.activity)
+                now = monotonic()
+                idle_left = timeout - (now - state.activity)
                 if idle_left <= 0:
                     raise StreamStalledError(f"Provider stream produced no event for {timeout:g} seconds.")
                 wait = min(idle_left, remaining) if remaining is not None else idle_left
+                if not answering:
+                    answer_left = answer_deadline - (now - started)
+                    if answer_left <= 0:
+                        raise StreamNoAnswerError(f"No answer within {answer_deadline:g} seconds.")
+                    wait = min(wait, answer_left)
                 if check is not None:
                     wait = min(wait, _INTERRUPT_POLL)
                 try:
@@ -167,8 +210,10 @@ def timed_stream(factory: Callable[[], Iterator[Any]], *, first_token: float, st
                     return
                 raise value
             yield value
+            if not answering and not is_thought(value):
+                answering = True
             # A reasoning model can think silently between summary parts; that is not a stall.
-            timeout = max(first_token, stall) if _is_thought(value) else stall
+            timeout = max(first_token, stall) if is_thought(value) else stall
     finally:
         with state.lock:
             state.done.set()

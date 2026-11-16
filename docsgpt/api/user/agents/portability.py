@@ -38,6 +38,7 @@ from docsgpt.agents.default_tools import (
 )
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
+from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
 from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
@@ -45,7 +46,7 @@ from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
 from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.user_custom_models import (
@@ -412,6 +413,9 @@ def _serialize_prompt(conn, agent: dict, user: str):
     prompt_id = agent.get("prompt_id")
     if not prompt_id:
         return "default"
+    if str(prompt_id) in STORED_PROMPT_PRESETS:
+        # A preset has no row: the file carries its name.
+        return str(prompt_id)
     row = PromptsRepository(conn).get(str(prompt_id), user)
     if not row:
         return "default"
@@ -675,6 +679,8 @@ def _serialize_workflow(conn, agent: dict, user: str):
         "nodes": nodes_out,
         "edges": edges_out,
     }
+    if row.get("retry_defaults"):
+        block["retry_defaults"] = row["retry_defaults"]
     return block, tools, sources, model
 
 
@@ -777,6 +783,7 @@ def serialize_agent(conn, agent: dict, user: str) -> dict:
     spec = {
         "name": agent.get("name") or "",
         "description": agent.get("description") or "",
+        "starters": stored_starters(agent),
         "agent_type": agent.get("agent_type") or "classic",
         "retriever": agent.get("retriever") or "classic",
         "chunks": int(agent["chunks"]) if agent.get("chunks") is not None else None,
@@ -880,6 +887,11 @@ def parse_agent_yaml(text: str) -> dict:
         raise AgentImportError("spec.name is required")
     if spec.get("agent_type") == "workflow":
         _validate_workflow_shape(spec)
+    # Held to the same rules as the agent routes; a file without them has none.
+    try:
+        spec["starters"] = normalize_starters(spec.get("starters"))
+    except StartersError as exc:
+        raise AgentImportError(f"spec.starters: {exc}") from exc
     for key in ("sources", "tools"):
         value = spec.get(key)
         if isinstance(value, list) and len(value) > MAX_LIST_ITEMS:
@@ -1054,6 +1066,8 @@ def plan_import(conn, user: str, doc: dict) -> dict:
             user, prompt_spec.get("name") or "", prompt_spec.get("content") or ""
         )
         prompt = {"status": "reuse" if existing else "create", "name": prompt_spec.get("name") or ""}
+    elif prompt_spec in STORED_PROMPT_PRESETS:
+        prompt = {"status": "preset", "name": prompt_spec}
     else:
         prompt = {"status": "default"}
 
@@ -1115,7 +1129,21 @@ def plan_import(conn, user: str, doc: dict) -> dict:
 
 
 def _apply_prompt(conn, user: str, spec: dict) -> Optional[str]:
+    """The agent's ``prompt_id`` for the file's prompt.
+
+    Args:
+        conn: Open database connection.
+        user: The importing user.
+        spec: The document's ``spec``.
+
+    Returns:
+        A preset name (``creative`` / ``strict``), the id of the user's prompt
+        with the file's name and content (made when missing), or None for the
+        default and for an unknown name.
+    """
     prompt_spec = spec.get("prompt")
+    if prompt_spec in STORED_PROMPT_PRESETS:
+        return prompt_spec
     if not isinstance(prompt_spec, dict):
         return None
     row = PromptsRepository(conn).find_or_create(
@@ -1487,22 +1515,30 @@ def _apply_workflow(
 ):
     """Write the imported graph; returns the workflow id, None, or the sentinel.
 
-    The graph goes through the same validation gate as the workflow API
-    (``validate_workflow_structure``) so a hand-edited YAML can't install a
-    graph the write path would have rejected. When the matched agent already
-    owns a workflow the graph lands as a new version of it (mirroring
-    ``PUT /api/workflows/<id>``); otherwise a new workflow is created.
+    The graph goes through the same validation gate as an agent save with an
+    inline graph, so a hand-edited YAML can't install a graph the write path
+    would have rejected: the shape and the retry defaults always, and the full
+    ``validate_workflow_structure`` when the graph will run outside a builder.
+    A new agent lands as a draft and an update keeps the target's status, so
+    that is when the matched agent, or another agent on its workflow, already
+    runs outside its builder (``runs_outside_builder``). When the matched
+    agent already owns a workflow the graph lands as a new version of it,
+    read holding its row lock (mirroring ``PUT /api/workflows/<id>``);
+    otherwise a new workflow is created.
     """
     if "workflow" not in spec:
         return _WORKFLOW_UNCHANGED
     wf_spec = spec.get("workflow")
     if not isinstance(wf_spec, dict):
         return None
+    from docsgpt.api.user.agents.graph_checks import runs_outside_builder, workflow_runs_elsewhere
     from docsgpt.api.user.workflows.routes import (
         _write_graph,
         get_workflow_graph_version,
         normalize_agent_node_json_schemas,
+        retry_config_error,
         validate_workflow_structure,
+        workflow_graph_shape_errors,
     )
 
     nodes_data = []
@@ -1543,21 +1579,34 @@ def _apply_workflow(
         for edge in wf_spec.get("edges") or []
     ]
 
-    errors = validate_workflow_structure(nodes_data, edges_data, user_id=user)
-    if errors:
-        raise AgentImportError("Workflow validation failed: " + "; ".join(errors[:5]))
-    nodes_data = normalize_agent_node_json_schemas(nodes_data)
-
     wf_repo = WorkflowsRepository(conn)
-    name = wf_spec.get("name") or spec.get("name") or "Imported workflow"
-    description = wf_spec.get("description") or ""
-
+    agent_row = None
     existing = None
     if target.get("action") == "update" and target.get("agent_id"):
         agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user)
         existing_id = (agent_row or {}).get("workflow_id")
         if existing_id:
-            existing = wf_repo.get(str(existing_id), user)
+            locked = wf_repo.get_for_update(str(existing_id))
+            existing = locked if locked is not None and locked.get("user_id") == user else None
+    runs = agent_row is not None and (
+        runs_outside_builder(conn, agent_row)
+        or (existing is not None and workflow_runs_elsewhere(conn, existing["id"], str(agent_row["id"])))
+    )
+
+    errors = workflow_graph_shape_errors(nodes_data, edges_data)
+    if not errors and runs:
+        errors = validate_workflow_structure(nodes_data, edges_data, user_id=user)
+    retry_defaults = wf_spec.get("retry_defaults")
+    retry_error = retry_config_error(retry_defaults)
+    if retry_error:
+        errors.append(f"Workflow retry defaults {retry_error}")
+    if errors:
+        raise AgentImportError("Workflow validation failed: " + "; ".join(errors[:5]))
+    nodes_data = normalize_agent_node_json_schemas(nodes_data)
+
+    name = wf_spec.get("name") or spec.get("name") or "Imported workflow"
+    description = wf_spec.get("description") or ""
+
     if existing is not None:
         from docsgpt.api.user.resource_access import prune_sponsors
         from docsgpt.api.user.workflows.routes import _node_refs
@@ -1569,6 +1618,7 @@ def _apply_workflow(
             "name": name,
             "description": description,
             "current_graph_version": next_version,
+            "retry_defaults": retry_defaults,
         }
         # Sponsors of node resources the file dropped go too, so a stale
         # record can't vouch for the resource if someone adds it back.
@@ -1581,7 +1631,7 @@ def _apply_workflow(
         WorkflowEdgesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         return pg_workflow_id
 
-    created = wf_repo.create(user, name, description=description)
+    created = wf_repo.create(user, name, description=description, retry_defaults=retry_defaults)
     _write_graph(conn, str(created["id"]), 1, nodes_data, edges_data)
     return str(created["id"])
 
@@ -1656,6 +1706,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     # column defaults.
     authoritative: dict[str, Any] = {
         "description": spec.get("description") or "",
+        "starters": normalize_starters(spec.get("starters")),
         "agent_type": spec.get("agent_type") or "classic",
         "chunks": chunks_value,
         "prompt_id": prompt_id,

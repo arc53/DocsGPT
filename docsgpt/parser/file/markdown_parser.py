@@ -119,9 +119,9 @@ class MarkdownParser(BaseParser):
             open_fence = self._next_fence_state(line, open_fence)
             header_match = None if in_code_block else re.match(r"^#+\s", line)
             if header_match:
-                if current_header is not None:
-                    if current_text == "" or None:
-                        continue
+                # An empty section contributes no tuple, but the header still
+                # advances: a body after a header chain belongs to the last one.
+                if current_header is not None and current_text:
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
                 current_header = line

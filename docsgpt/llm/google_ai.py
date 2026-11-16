@@ -492,9 +492,20 @@ class GoogleLLM(BaseLLM):
         return bool(match) and int(match.group(1)) >= 3
 
     def _clean_schema(self, schema_obj):
-        """
-        Recursively remove unsupported fields from schema objects
-        and validate required properties.
+        """Convert a JSON schema to the subset Gemini's ``types.Schema`` takes.
+
+        Unsupported keywords are dropped at every depth. ``properties`` maps
+        names to schemas, so each value is cleaned and every name kept;
+        ``items`` and each ``anyOf``/``oneOf`` branch are cleaned as schemas.
+        A JSON-schema type list becomes one type, or an ``anyOf`` of types,
+        with ``"null"`` read as ``nullable``. ``required`` keeps only names
+        that are in ``properties``.
+
+        Args:
+            schema_obj: A JSON schema, or any value inside one.
+
+        Returns:
+            The cleaned schema; a non-dict value is returned unchanged.
         """
         if not isinstance(schema_obj, dict):
             return schema_obj
@@ -514,10 +525,27 @@ class GoogleLLM(BaseLLM):
 
         cleaned = {}
         for key, value in schema_obj.items():
-            if key not in allowed_fields:
+            if key in ("anyOf", "oneOf") and isinstance(value, list):
+                branches = [self._clean_schema(branch) for branch in value]
+                branches = [branch for branch in branches if branch]
+                if branches:
+                    cleaned["anyOf"] = cleaned.get("anyOf", []) + branches
+            elif key not in allowed_fields:
                 continue
             elif key == "type" and isinstance(value, str):
                 cleaned[key] = value.upper()
+            elif key == "type" and isinstance(value, list):
+                types_ = [str(t).upper() for t in value if t != "null"]
+                if "null" in value:
+                    cleaned["nullable"] = True
+                if len(types_) == 1:
+                    cleaned["type"] = types_[0]
+                elif types_:
+                    cleaned["anyOf"] = [{"type": t} for t in types_]
+            elif key == "properties" and isinstance(value, dict):
+                cleaned[key] = {name: self._clean_schema(sub) for name, sub in value.items()}
+            elif key in ("enum", "required"):
+                cleaned[key] = value
             elif isinstance(value, dict):
                 cleaned[key] = self._clean_schema(value)
             elif isinstance(value, list):
@@ -649,6 +677,13 @@ class GoogleLLM(BaseLLM):
             return bool(part.get("thought"))
         return bool(getattr(part, "thought", False))
 
+    def _apply_output_token_cap(self, config, kwargs) -> None:
+        """Send ``max_output_tokens`` when the model sets one, lowered to a smaller requested limit."""
+        if self._max_output_tokens() is None:
+            return
+        requested = kwargs.get("max_tokens") or kwargs.get("max_completion_tokens")
+        config.max_output_tokens = self._capped_output_tokens(requested)
+
     def _raw_gen(
         self,
         baseself,
@@ -669,6 +704,7 @@ class GoogleLLM(BaseLLM):
         )
         if system_instruction:
             config.system_instruction = system_instruction
+        self._apply_output_token_cap(config, kwargs)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -717,6 +753,7 @@ class GoogleLLM(BaseLLM):
         )
         if system_instruction:
             config.system_instruction = system_instruction
+        self._apply_output_token_cap(config, kwargs)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -743,6 +780,7 @@ class GoogleLLM(BaseLLM):
             has_attachments,
         )
 
+        self._last_finish_reason = None
         response = self.client.models.generate_content_stream(
             model=model,
             contents=messages,
@@ -754,6 +792,7 @@ class GoogleLLM(BaseLLM):
                 provider_event()
                 if hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:
+                        self._note_finish_reason(candidate)
                         if candidate.content and candidate.content.parts:
                             for part in candidate.content.parts:
                                 if part.function_call:
@@ -781,6 +820,13 @@ class GoogleLLM(BaseLLM):
         finally:
             if hasattr(response, "close"):
                 response.close()
+
+    def _note_finish_reason(self, candidate) -> None:
+        """Record a candidate's finish reason in the OpenAI vocabulary the rest of the code reads."""
+        finish = getattr(candidate, "finish_reason", None)
+        name = str(getattr(finish, "name", finish) or "")
+        if name:
+            self._last_finish_reason = "length" if name == "MAX_TOKENS" else "stop"
 
     def _supports_tools(self):
         """Return whether this LLM supports function calling."""

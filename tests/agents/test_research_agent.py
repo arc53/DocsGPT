@@ -1114,6 +1114,132 @@ class TestSynthesisPhase:
         answer_events = [e for e in events if isinstance(e, dict) and "answer" in e]
         assert len(answer_events) == 1
 
+    def test_the_synthesis_is_never_told_to_report(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        log_context,
+    ):
+        """It has no tools, so it could only misreport a step the research did."""
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(**agent_base_params)
+        agent.reports_cannot_complete_by_tool = True
+        agent._start_time = time.monotonic()
+        mock_llm.gen_stream = Mock(return_value=iter([]))
+
+        with patch.object(agent, "_handle_response", return_value=iter([])):
+            list(agent._synthesis_phase("check the site", [], [], {}, log_context))
+
+        system = mock_llm.gen_stream.call_args.kwargs["messages"][0]["content"]
+        assert "report_cannot_complete" not in system
+        assert "CANNOT_COMPLETE" not in system
+
+
+@pytest.mark.unit
+class TestScheduledResearchRun:
+    def test_a_scheduled_run_asks_no_clarifying_question(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        log_context,
+    ):
+        """Nobody is there to answer one: the run would end on the question and record it as its result."""
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(**agent_base_params)
+        clarify = Mock(return_value="Which site?")
+
+        with patch.object(agent, "_setup_tools", return_value={}), \
+             patch.object(agent, "_clarification_phase", clarify), \
+             patch.object(agent, "_planning_phase", return_value=([{"query": "q", "rationale": "r"}], "simple")), \
+             patch.object(agent, "_research_step", return_value="findings"), \
+             patch.object(agent, "_synthesis_phase", return_value=iter([{"answer": "report"}])), \
+             patch.object(agent, "_get_truncated_tool_calls", return_value=[]):
+            events = list(agent._gen_inner("check the site", log_context))
+
+        clarify.assert_not_called()
+        assert [e["answer"] for e in events if "answer" in e] == ["report"]
+
+    @pytest.mark.parametrize("offered", [True, False])
+    def test_only_steps_given_the_call_are_told_to_use_it(
+        self,
+        offered,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """The steps are what call tools, so they are what can find a step impossible."""
+        from docsgpt.llm.handlers.base import LLMResponse
+
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(**agent_base_params)
+        agent.reports_cannot_complete_by_tool = offered
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm.gen = Mock(return_value=Mock())
+        mock_llm_handler._parse_for_response = Mock(
+            return_value=LLMResponse(content="findings", tool_calls=[], finish_reason="stop", raw_response=None)
+        )
+
+        agent._research_step("Is the status page green?", {})
+
+        system = mock_llm.gen.call_args.kwargs["messages"][0]["content"]
+        assert ("call report_cannot_complete" in system) is offered
+        assert ("begin your answer with CANNOT_COMPLETE:" in system) is not offered
+
+    def test_a_step_without_tool_calling_reports_with_the_marker(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """Its report is noted on the executor as a tool call's would be, and the step keeps its findings."""
+        from docsgpt.llm.handlers.base import LLMResponse
+
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(**agent_base_params)
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm.gen = Mock(return_value=Mock())
+        mock_llm_handler._parse_for_response = Mock(
+            return_value=LLMResponse(
+                content="CANNOT_COMPLETE: no browser tool to open the status page\n\nNothing else found.",
+                tool_calls=[],
+                finish_reason="stop",
+                raw_response=None,
+            )
+        )
+
+        report = agent._research_step("Is the status page green?", {})
+
+        assert agent.tool_executor.cannot_complete == "no browser tool to open the status page"
+        assert report == "no browser tool to open the status page\n\nNothing else found."
+
+    def test_a_marked_summary_of_a_step_that_ran_out_of_rounds_is_noted_too(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        agent_base_params["endpoint"] = "schedule"
+        agent = ResearchAgent(max_sub_iterations=0, **agent_base_params)
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm.gen = Mock(return_value="CANNOT_COMPLETE: no email tool")
+
+        report = agent._research_step("Email the summary", {})
+
+        assert agent.tool_executor.cannot_complete == "no email tool"
+        assert report == "no email tool"
+
 
 # =====================================================================
 # _research_step and _research_step_with_executor

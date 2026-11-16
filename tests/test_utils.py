@@ -679,6 +679,24 @@ class TestConvertPdfToImages:
                 convert_pdf_to_images("/some.pdf")
 
 
+def _fastest_cleanup(text: str, limit: float = 0.5, times: int = 3) -> float:
+    """The seconds of the fastest of up to ``times`` cleanups, stopping at the first under ``limit``.
+
+    A busy machine slows one run down; the quadratic cleanup these tests
+    guard against takes several seconds on every run.
+    """
+    import time
+
+    best = float("inf")
+    for _ in range(times):
+        start = time.perf_counter()
+        clean_text_for_tts(text)
+        best = min(best, time.perf_counter() - start)
+        if best < limit:
+            break
+    return best
+
+
 class TestCleanTextForTts:
 
     @pytest.mark.unit
@@ -879,11 +897,7 @@ class TestCleanTextForTts:
     def test_unmatched_delimiters_clean_in_linear_time(self, text):
         # Each pattern used to rescan the rest of the text from every
         # opener, so malformed markdown took seconds to minutes.
-        import time
-
-        start = time.monotonic()
-        clean_text_for_tts(text)
-        elapsed = time.monotonic() - start
+        elapsed = _fastest_cleanup(text)
         assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
 
     @pytest.mark.unit
@@ -893,11 +907,8 @@ class TestCleanTextForTts:
     def test_blank_lines_clean_in_linear_time(self, text):
         # The list-marker patterns' leading whitespace crossed newlines and
         # rescanned the blank tail from every line start.
-        import time
-
-        start = time.monotonic()
         assert clean_text_for_tts(text) == ""
-        elapsed = time.monotonic() - start
+        elapsed = _fastest_cleanup(text)
         assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
 
     @pytest.mark.unit

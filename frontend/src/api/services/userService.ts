@@ -8,6 +8,29 @@ const userService = {
     apiClient.get(endpoints.USER.ME, token),
   getQuota: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.QUOTA, token),
+  /**
+   * `{success, chat_prompt_id, chat_prompt_set, task_model_id,
+   * task_model_unavailable, instance_task_model_id}`: the prompt chats
+   * without an agent use, whether one was ever stored, the model DocsGPT's
+   * own jobs run on for the caller (null: none picked, or the pick can't
+   * run, which `task_model_unavailable` tells apart) and the one that runs
+   * without a usable pick.
+   */
+  getPreferences: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.PREFERENCES, token),
+  /**
+   * 400 `invalid_prompt`; 403/404 for a prompt the caller can't read.
+   * `only_if_unset`: write only when no chat prompt was ever stored; the
+   * answer's `applied` is false and `chat_prompt_id` the stored one if not.
+   * `task_model_id`: null goes back to the instance's; 400 `invalid_model`
+   * for a model the caller can't use.
+   */
+  updatePreferences: (
+    data:
+      | { chat_prompt_id: string; only_if_unset?: boolean }
+      | { task_model_id: string | null },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.USER.PREFERENCES, data, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   // Token deliberately null: a stale Authorization header must not be able
@@ -451,6 +474,15 @@ const userService = {
   ): Promise<Response> =>
     apiClient.get(
       endpoints.USER.LIST_WORKFLOW_RUN_ARTIFACTS(workflowRunId),
+      token,
+    ),
+  getWorkflowRunStep: (
+    workflowRunId: string,
+    stepIndex: number,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.WORKFLOW_RUN_STEP(workflowRunId, stepIndex),
       token,
     ),
   downloadArtifact: (

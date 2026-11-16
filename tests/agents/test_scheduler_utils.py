@@ -102,7 +102,7 @@ class TestCronRuns:
 
     @pytest.mark.parametrize(
         "expression",
-        ["*/5 8-18 * * 1-5", "0 9 1,15 * 1", "0 0 1 * *", "45 23 * * 0", "0,30 * 3 * *"],
+        ["0 9 1,15 * 1", "0 0 1 * *", "45 23 * * 0", "0,30 * 3 * *"],
     )
     @pytest.mark.parametrize("tz_name", ["Europe/Warsaw", "America/New_York", "Australia/Lord_Howe"])
     @pytest.mark.parametrize(
@@ -112,6 +112,17 @@ class TestCronRuns:
         until = after + timedelta(days=45)
         expected = _one_at_a_time(expression, tz_name, after, until, 5000)
         assert cron_runs(expression, tz_name, after=after, until=until, limit=5000) == expected
+
+    @pytest.mark.parametrize("tz_name", ["Europe/Warsaw", "America/New_York", "Australia/Lord_Howe"])
+    @pytest.mark.parametrize(
+        "after", [_utc(2026, 3, 1, 7, 13), _utc(2026, 9, 20, 22, 59), _utc(2026, 3, 29, 1, 30)]
+    )
+    def test_matches_a_frequent_weekday_cron_over_weeks(self, tz_name, after):
+        # Over two weeks, not 45 days: the reference re-anchors at each of its
+        # ~130 runs a weekday, and two weekends already show the day filter.
+        until = after + timedelta(days=15)
+        expected = _one_at_a_time("*/5 8-18 * * 1-5", tz_name, after, until, 5000)
+        assert cron_runs("*/5 8-18 * * 1-5", tz_name, after=after, until=until, limit=5000) == expected
 
     def test_a_frequent_cron_walks_the_clock_once_per_day(self):
         # A 15-minute cron over six weeks fires 4,032 times; croniter takes

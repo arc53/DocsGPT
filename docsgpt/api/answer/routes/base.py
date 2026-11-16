@@ -23,6 +23,7 @@ from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -46,7 +47,7 @@ from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.activity.flags import clear_stop, stop_requested
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.streaming.event_replay import format_sse_event
+from docsgpt.streaming.event_replay import format_sse_event, sse_json
 from docsgpt.streaming.message_journal import (
     BatchedJournalWriter,
     record_event,
@@ -470,6 +471,10 @@ class BaseAnswerResource:
                 value = item.get(key)
                 if isinstance(value, str) and len(value) > max_chars:
                     item[key] = value[:max_chars]
+            ui = item.get("ui")
+            if isinstance(ui, dict) and "result" in ui:
+                # An MCP App view's result is the view's alone, never logged.
+                item["ui"] = {key: value for key, value in ui.items() if key != "result"}
             prepared.append(item)
         return prepared
 
@@ -686,6 +691,15 @@ class BaseAnswerResource:
         prior_tool_calls: List[Dict] = list((_continuation or {}).get("prior_tool_calls") or [])
         if prior_tool_calls:
             tool_calls = list(prior_tool_calls)
+        # The text, reasoning and order the turn streamed before its pause: the resumed answer adds to them,
+        # so the row it finalizes reads as the whole turn after a reload or on a shared page. Only when it
+        # finalizes the paused row; a resume that appends a new one (``/v1`` stateless rounds) starts clean.
+        prior_turn = (_continuation or {}).get("prior_turn") if _continuation else None
+        if isinstance(prior_turn, dict) and _continuation.get("reserved_message_id"):
+            response_full = prior_turn.get("response") if isinstance(prior_turn.get("response"), str) else ""
+            thought = prior_turn.get("thought") if isinstance(prior_turn.get("thought"), str) else ""
+        else:
+            prior_turn = None
         # Set when a workflow agent run emits its ``workflow_run`` event; persisted
         # onto the message metadata so the chat can render the run's produced
         # artifacts on reload.
@@ -697,6 +711,8 @@ class BaseAnswerResource:
         # The order text, thought and tool calls arrived in, saved under
         # ``query_metadata["segments"]`` so a reload renders the turn as it streamed.
         segments = AnswerSegments(query_metadata)
+        if prior_turn:
+            segments.restore(prior_turn.get("segments"))
         # The decision model's entries for the turn, under ``query_metadata["decisions"]``.
         decision_record.attach(query_metadata)
         paused = False
@@ -1066,7 +1082,7 @@ class BaseAnswerResource:
                 if turn_files:
                     payload = {**payload, "attachments": turn_files}
             if not reserved_message_id or journal_writer is None:
-                return f"data: {json.dumps(payload)}\n\n"
+                return f"data: {sse_json(payload)}\n\n"
             sequence_no += 1
             seq = sequence_no
             event_type = (
@@ -1204,8 +1220,10 @@ class BaseAnswerResource:
                 elif "sources" in line:
                     _mark_streaming_once()
                     truncated_sources = []
-                    source_log_docs = line["sources"]
-                    for source in line["sources"]:
+                    # Copies without the prompt-only keys: these go to the
+                    # client and the stored turn; the agent keeps its own.
+                    source_log_docs = client_sources(line["sources"])
+                    for source in source_log_docs:
                         truncated_source = source.copy()
                         if "text" in truncated_source:
                             truncated_source["text"] = (
@@ -1460,6 +1478,7 @@ class BaseAnswerResource:
                         request_id=request_id,
                         tool_calls=tool_calls,
                         passthrough=passthrough,
+                        prior_turn={"response": response_full, "thought": thought, "segments": segments.items},
                     )
 
                     # Notify the user out-of-band so they can navigate back and
@@ -2213,6 +2232,7 @@ class BaseAnswerResource:
         request_id: Optional[str],
         tool_calls: List[Dict[str, Any]],
         passthrough: Optional[Dict[str, Any]] = None,
+        prior_turn: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Save a paused turn's continuation state so a later request can resume it.
 
@@ -2233,6 +2253,8 @@ class BaseAnswerResource:
             tool_calls: Every call of the turn so far.
             passthrough: The request's stored passthrough values; the resume
                 logs the turn with them.
+            prior_turn: The turn's ``response``, ``thought`` and ``segments``
+                so far; the resume finalizes its row with them first.
 
         Returns:
             Whether the state was saved.
@@ -2293,6 +2315,9 @@ class BaseAnswerResource:
                     # Every round's calls so far, so the message
                     # the resumed turn finalizes keeps them all.
                     "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                    # The text and reasoning streamed so far, and their order with
+                    # the calls: the resumed turn's row starts from them.
+                    "prior_turn": json.loads(json.dumps(prior_turn, default=str)) if prior_turn else None,
                     "passthrough": passthrough,
                     # The turn's files (so ``F`` refs still
                     # resolve), its compression point and
@@ -2535,7 +2560,7 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": err_response}
         if code:
             payload["code"] = code
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"
 
     def curated_error_stream_generate(self, error: BaseException):
         """One SSE ``error`` event with the curated message, code and params.
@@ -2550,4 +2575,4 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": public.message, "code": public.code}
         if public.params:
             payload["params"] = public.params
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"

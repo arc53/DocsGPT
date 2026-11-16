@@ -6,6 +6,7 @@ import { useParams } from 'react-router-dom';
 import userService from '../api/services/userService';
 import ArtifactPanel from '../components/ArtifactPanel';
 import MessageInput from '../components/MessageInput';
+import { getSendReadiness } from '../components/message-input/armedSend';
 import { Avatar } from '../components/ui/avatar';
 import { SidePanel } from '../components/ui/side-panel';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -18,9 +19,15 @@ import {
   addQuery,
   fetchAnswer,
   resendQuery,
+  resumeQuestion,
   selectQueries,
   selectStatus,
 } from '../conversation/conversationSlice';
+import {
+  pendingQuestionCall,
+  type QuestionAction,
+} from '../conversation/questionCall';
+import { composerSubmitTarget } from '../conversation/turnSubmission';
 import { useArtifactDetail } from '../conversation/useArtifactDetail';
 import {
   selectConversationId,
@@ -28,6 +35,10 @@ import {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import {
+  selectAttachments,
+  toSendableAttachments,
+} from '../upload/uploadSlice';
 import SharedAgentCard from './SharedAgentCard';
 import { Agent } from './types';
 
@@ -40,6 +51,10 @@ export default function SharedAgent() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
+  const attachments = useSelector(selectAttachments);
+  // A starter that must wait for pending attachments is parked here;
+  // MessageInput consumes it into an armed composer send.
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
   // The runner owns this chat and its runs, so its artifacts open here.
   const {
     detail,
@@ -116,6 +131,11 @@ export default function SharedAgent() {
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
+      } else if (getSendReadiness(attachments).state !== 'ready') {
+        // A starter bypasses MessageInput's submit gate: with files still
+        // uploading/parsing, sending now would leave them behind. Route the
+        // question into the composer, where the armed-send banner takes over.
+        setQueuedQuestion(trimmedQuestion);
       } else {
         if (!isRetry) {
           const newQuery: Query = { prompt: trimmedQuestion };
@@ -124,8 +144,19 @@ export default function SharedAgent() {
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, attachments],
   );
+
+  // The visitor's own token resumes the turn their message paused (a shared
+  // agent runs as its caller), as in the chat.
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      dispatch(resumeQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them.
+  const waitingQuestion = pendingQuestionCall(queries);
 
   const handleQuestionSubmission = (
     question?: string,
@@ -140,7 +171,17 @@ export default function SharedAgent() {
       });
     } else if (question && status !== 'loading') {
       const currentInput = question.trim();
-      if (lastQueryReturnedErr && queries.length > 0) {
+      const target = composerSubmitTarget({
+        question,
+        queries,
+        lastQueryReturnedErr,
+        composerFileCount: toSendableAttachments(attachments).length,
+      });
+      if (target.kind === 'answer') {
+        // What is typed answers the questions; it resumes the paused turn
+        // instead of starting a new one.
+        handleQuestionAction(target.callId, { answer: currentInput });
+      } else if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
           question: currentInput,
@@ -204,6 +245,8 @@ export default function SharedAgent() {
               queries={queries}
               status={status}
               showHeroOnEmpty={false}
+              starters={sharedAgent.starters}
+              onQuestionAction={handleQuestionAction}
               onOpenArtifact={openArtifact}
               headerContent={
                 <div className="flex w-full items-center justify-center py-4">
@@ -217,7 +260,12 @@ export default function SharedAgent() {
           <div className="w-full px-2">
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}
+              queuedQuestion={queuedQuestion}
+              onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
               loading={status === 'loading'}
+              placeholder={
+                waitingQuestion ? t('questions.typeAnswer') : undefined
+              }
               showSourceButton={sharedAgent ? false : true}
               showToolButton={sharedAgent ? false : true}
               autoFocus={false}

@@ -211,7 +211,13 @@ def _clip(value: Any, limit: int) -> str:
 
 
 def build_payload(
-    *, kind: str, title: str, body: str, url: str, conversation_id: Optional[str]
+    *,
+    kind: str,
+    title: str,
+    body: str,
+    url: str,
+    conversation_id: Optional[str],
+    schedule_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """The JSON the service worker turns into a notification, bounded to fit Web Push.
 
@@ -219,14 +225,20 @@ def build_payload(
     """
     safe_url = url if isinstance(url, str) and url.startswith("/") and not url.startswith("//") else "/"
     shown_title, shown_body = push_text(kind, title, body)
+    # One notification per conversation (or schedule): a newer one replaces it on the device.
+    if conversation_id:
+        tag = f"docsgpt:{conversation_id}"
+    elif schedule_id:
+        tag = f"docsgpt:schedule:{schedule_id}"
+    else:
+        tag = f"docsgpt:{kind}"
     return {
         "kind": kind,
         "title": _clip(shown_title, TITLE_MAX_CHARS) or FALLBACK_TITLE,
         "body": _clip(shown_body, BODY_MAX_CHARS),
         "url": safe_url[:URL_MAX_CHARS],
         "conversation_id": conversation_id,
-        # One notification per conversation: a newer one replaces it on the device.
-        "tag": f"docsgpt:{conversation_id}" if conversation_id else f"docsgpt:{kind}",
+        "tag": tag,
     }
 
 

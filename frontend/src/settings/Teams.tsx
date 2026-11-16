@@ -819,7 +819,7 @@ export default function Teams() {
       case 'tool':
         return '/settings/tools';
       case 'prompt':
-        return '/settings/general';
+        return '/settings/prompts';
       default:
         return '/settings';
     }

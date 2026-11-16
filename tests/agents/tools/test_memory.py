@@ -350,6 +350,22 @@ class TestStrReplaceAction:
         )
         assert "File updated" in result
 
+    @pytest.mark.parametrize(
+        "new_str",
+        [r"C:\Users\fyx", r"\1", r"\g<name>", r"a\\b"],
+    )
+    def test_replace_new_str_is_literal(self, memory_tool, new_str):
+        memory_tool.execute_action(
+            "create", path="/doc.txt", file_text="replace here"
+        )
+        result = memory_tool.execute_action(
+            "str_replace", path="/doc.txt", old_str="replace here", new_str=new_str
+        )
+        assert "File updated" in result
+
+        content = memory_tool.execute_action("view", path="/doc.txt")
+        assert new_str in content
+
 
 # =====================================================================
 # Insert Action

@@ -209,6 +209,7 @@ class TestGetValidTokenInfo:
                 service.get_valid_token_info(cid)
         assert exc.value.status == "disconnected"
 
+    @pytest.mark.fresh_db
     def test_concurrent_refresh_spends_the_refresh_token_once(self, pg_engine):
         """Two workers with an expiring rotating token: one refresh, both succeed."""
         with pg_engine.begin() as conn:
@@ -237,6 +238,49 @@ class TestGetValidTokenInfo:
         assert errors == []
         assert fake.calls == ["rt-0"]
         assert results == ["new-at-1", "new-at-1"]
+
+
+def _share_point_auth(refresh_result):
+    """A real SharePointAuth whose MSAL app answers a refresh with ``refresh_result``."""
+    settings = MagicMock(
+        MICROSOFT_CLIENT_ID="ms-client-id", MICROSOFT_CLIENT_SECRET="secret",
+        MICROSOFT_TENANT_ID="common", MICROSOFT_AUTHORITY=None,
+    )
+    with patch("docsgpt.parser.connectors.share_point.auth.settings", settings), patch(
+        "docsgpt.parser.connectors.share_point.auth.ConfidentialClientApplication"
+    ) as msal:
+        msal.return_value.acquire_token_by_refresh_token.return_value = refresh_result
+        from docsgpt.parser.connectors.share_point.auth import SharePointAuth
+
+        return SharePointAuth()
+
+
+class TestSharePointStoredExpiryHeals:
+    """A connection saved with the id_token's ``exp`` as its expiry gets the access token's on its next refresh."""
+
+    @pytest.mark.parametrize("with_id_token", [True, False])
+    def test_rejected_token_refresh_rewrites_expiry(self, pg_conn, with_id_token):
+        now = int(time.time())
+        stale = {
+            "access_token": "old-at", "refresh_token": "rt-0", "token_uri": "https://issuer",
+            "expiry": now + 1800, "allows_shared_content": True,
+        }
+        cid = _connection(pg_conn, provider="share_point", secrets={"token_info": stale})
+        refresh = {
+            "token_type": "Bearer", "expires_in": 3600, "ext_expires_in": 3600,
+            "access_token": "new-at", "refresh_token": "rt-1",
+        }
+        if with_id_token:
+            refresh["id_token_claims"] = {"iss": "https://issuer", "exp": now + 600, "tid": "work-tenant"}
+
+        with _patch_service_db(pg_conn), _auth(_share_point_auth(refresh)):
+            info = service.get_valid_token_info(cid, rejected_access_token="old-at")
+
+        stored = service.read_secrets(_row(pg_conn, cid))["token_info"]
+        assert info["access_token"] == stored["access_token"] == "new-at"
+        assert now + 3600 <= stored["expiry"] <= int(time.time()) + 3600
+        assert stored["allows_shared_content"] is True
+        assert stored["token_uri"] == "https://issuer"
 
 
 class TestApiKeyConnections:

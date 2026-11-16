@@ -1,3 +1,5 @@
+import type { McpCallToolResult } from '../../api/services/mcpAppsService';
+
 export type ToolCallsType = {
   tool_name: string;
   action_name: string;
@@ -18,10 +20,19 @@ export type ToolCallsType = {
   status?:
     | 'pending'
     | 'completed'
+    | 'success'
     | 'error'
     | 'awaiting_approval'
+    | 'awaiting_answer'
+    | 'skipped'
     | 'denied'
     | 'requires_client_execution';
+  /**
+   * An `ask_user` call paused on `awaiting_answer`: the model's lead-in line
+   * and its questions, normalized. Once answered they are its `arguments`.
+   */
+  message?: string | null;
+  questions?: unknown;
   artifact_id?: string;
   // Every artifact this call produced, with display names. A single call can
   // write several files (``run_code``), and ``artifact_id`` names only the
@@ -72,6 +83,17 @@ export type ToolCallsType = {
   job_finished_at?: string;
   /** What the job's card says beyond its status (patched on when it ends; absent on older calls). */
   job_notices?: { code: string; pid?: number }[];
+  /**
+   * The MCP App view the call renders inline (`docsgpt/agents/mcp_apps.py`):
+   * its `ui://` resource, the tool row to read it through, and the call's full
+   * `CallToolResult`, which the view is handed. `result` is on the live call
+   * only; a saved one reads it back from `/api/mcp_apps/result`.
+   */
+  ui?: {
+    resource_uri: string;
+    tool_id: string;
+    result?: McpCallToolResult;
+  };
 };
 
 /** The arguments to show for a call: what it sends, not what the model asked. */

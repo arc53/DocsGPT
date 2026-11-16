@@ -57,13 +57,14 @@ import BackgroundNotifications from './backgroundJobs/BackgroundNotifications';
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const {
+    authType,
     isAuthLoading,
     oidcFailed,
     oidcErrorCode,
     oidcProviderName,
     retryOidcLogin,
   } = useTokenAuth();
-  useDataInitializer(isAuthLoading);
+  useDataInitializer(isAuthLoading, authType);
   const [isDarkTheme] = useDarkTheme();
 
   if (oidcFailed) {

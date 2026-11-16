@@ -14,6 +14,7 @@ from typing import Dict, Optional, Tuple, Union
 
 from docsgpt.core.settings import settings
 from docsgpt.parser.file.base_parser import BaseParser
+from docsgpt.parser.html_text import html_to_text
 from docsgpt.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,8 @@ def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> 
         MarkupTooDeepError: The tree is too deep and ``plain_when_too_deep`` is off.
     """
     from bs4 import CData, Declaration, ProcessingInstruction
-    from markdownify import MarkdownConverter
+
+    from docsgpt.parser.markdown_conversion import WhitespacePreservingConverter
 
     for tag in soup.find_all(_DROP_TAGS):
         tag.decompose()
@@ -86,7 +88,7 @@ def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> 
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
-    converter = converter or MarkdownConverter(**MARKDOWNIFY_OPTIONS)
+    converter = converter or WhitespacePreservingConverter(**MARKDOWNIFY_OPTIONS)
     try:
         markdown = converter.convert_soup(soup)
     except RecursionError as e:
@@ -207,7 +209,7 @@ class HTMLParser(BaseParser):
 
         with open(file, "r", errors=errors) as f:
             soup = BeautifulSoup(f, "html.parser")
-        return soup.get_text("\n")
+        return html_to_text(soup)
 
     def get_file_metadata(self, file: Path) -> Dict:
         """Return the document title, when the markup carries one."""

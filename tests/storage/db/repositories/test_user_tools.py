@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
 
 def _repo(conn) -> UserToolsRepository:
     return UserToolsRepository(conn)
+
+
+def _age(conn, row: dict, days: int) -> None:
+    """Make ``row`` ``days`` older: rows created in one transaction share ``created_at``."""
+    conn.execute(text("UPDATE user_tools SET created_at = now() - make_interval(days => :d) WHERE id = :id"),
+                 {"d": days, "id": row["id"]})
 
 
 class TestCreate:
@@ -213,3 +220,33 @@ class TestDelete:
         deleted = repo.delete(created["id"], "user-other")
         assert deleted is False
         assert repo.get(created["id"], "user-1") is not None
+
+
+class TestBriefListing:
+    def test_ids_cover_own_and_extra_rows_newest_first_with_the_tool_type(self, pg_conn):
+        repo = _repo(pg_conn)
+        own = [repo.create("u", "api_tool", config={"key": "val"}) for _ in range(2)]
+        _age(pg_conn, own[0], 1)
+        shared = repo.create("other", "mcp_tool")
+        repo.create("other", "hidden")
+        rows = repo.list_ids_for_user("u", extra_ids=[str(shared["id"]), "not-a-uuid"])
+        assert {r["id"] for r in rows} == {str(own[0]["id"]), str(own[1]["id"]), str(shared["id"])}
+        assert all(set(r) == {"id", "user_id", "name"} for r in rows)
+        assert [r["id"] for r in rows if r["user_id"] == "u"] == [str(own[1]["id"]), str(own[0]["id"])]
+        assert next(r for r in rows if r["id"] == str(shared["id"]))["name"] == "mcp_tool"
+
+    def test_brief_rows_carry_names_and_description_and_never_config_or_actions(self, pg_conn):
+        repo = _repo(pg_conn)
+        first = repo.create("u", "api_tool", custom_name="Users API", display_name="API Tool",
+                            description="Lists users", config={"token": "sk-secret"},
+                            actions=[{"name": "get_users"}])
+        second = repo.create("u", "mcp_tool")
+        _age(pg_conn, first, 1)
+        rows = repo.list_brief([str(first["id"]), str(second["id"]), "nope"])
+        assert rows == [
+            {"id": str(second["id"]), "user_id": "u", "name": "mcp_tool", "custom_name": None,
+             "display_name": None, "description": None},
+            {"id": str(first["id"]), "user_id": "u", "name": "api_tool", "custom_name": "Users API",
+             "display_name": "API Tool", "description": "Lists users"},
+        ]
+        assert repo.list_brief([]) == []

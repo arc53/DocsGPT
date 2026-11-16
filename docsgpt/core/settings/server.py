@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import NoDecode
 
 from docsgpt.core.settings._shared import EnvList, SettingsGroup
+from docsgpt.security.client_ip import expand_trusted_proxies
 
 
 class ServerSettings(SettingsGroup):
@@ -51,6 +52,33 @@ class ServerSettings(SettingsGroup):
             "are refused whatever is listed. Empty, every private address is refused."
         ),
     )
+    TRUSTED_PROXIES: Annotated[list[str], NoDecode, EnvList(none_is_empty=True)] = Field(
+        default=["private"],
+        description=(
+            "Proxies whose X-Forwarded-For and X-Forwarded-Proto the API believes, as a comma list or JSON list "
+            "of IPs and CIDR ranges plus two keywords: private (loopback, 10.0.0.0/8, 172.16.0.0/12, "
+            "192.168.0.0/16, fc00::/7) and cloudflare (Cloudflare's published ranges). The client IP recorded in "
+            "the audit log and access log is the rightmost X-Forwarded-For entry outside this list, so a client "
+            "cannot spoof it. Add cloudflare, or your load balancer's range, when one sits in front of a private "
+            "hop. * trusts every peer and takes the leftmost entry, which any client can forge. none trusts no "
+            "one and records the peer's address."
+        ),
+    )
+    TRUST_CF_CONNECTING_IP: bool = Field(
+        default=False,
+        description=(
+            "Take the client IP from Cloudflare's CF-Connecting-IP header when the request reaches the API from a "
+            "Cloudflare address, directly or through TRUSTED_PROXIES. The header is ignored from any other "
+            "address, so a request that bypasses Cloudflare cannot set it."
+        ),
+    )
+
+    @field_validator("TRUSTED_PROXIES")
+    @classmethod
+    def _check_trusted_proxies(cls, value: list[str]) -> list[str]:
+        expand_trusted_proxies(value)
+        return value
+
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = Field(
         default=30,
         description=(

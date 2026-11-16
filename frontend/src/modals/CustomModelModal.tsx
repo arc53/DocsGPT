@@ -57,7 +57,9 @@ const DEFAULT_CONTEXT_WINDOW = 128000;
 const MIN_CONTEXT_WINDOW = 1000;
 const MAX_CONTEXT_WINDOW = 10_000_000;
 
-const buildInitialFormState = (model?: CustomModel | null): FormState => {
+export const buildInitialFormState = (
+  model?: CustomModel | null,
+): FormState => {
   if (!model) {
     return {
       display_name: '',
@@ -84,9 +86,11 @@ const buildInitialFormState = (model?: CustomModel | null): FormState => {
     description: model.description || '',
     base_url: model.base_url || '',
     api_key: '',
-    supports_tools: model.capabilities?.supports_tools ?? true,
+    // A flag missing from a saved model is off in the model registry
+    // (docsgpt/core/model_registry.py); show it the same way here.
+    supports_tools: model.capabilities?.supports_tools ?? false,
     supports_structured_output:
-      model.capabilities?.supports_structured_output ?? true,
+      model.capabilities?.supports_structured_output ?? false,
     supports_images: attachments.includes('image'),
     context_window:
       model.capabilities?.context_window ?? DEFAULT_CONTEXT_WINDOW,

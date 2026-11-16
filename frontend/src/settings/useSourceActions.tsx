@@ -27,6 +27,8 @@ import {
   updateUploadTask,
 } from '../upload/uploadSlice';
 import { can } from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
+import { agentUseCount } from '../utils/resourceUsage';
 import useRetrievalAvailability from './components/useRetrievalAvailability';
 import ConvertToWikiModal from './ConvertToWikiModal';
 import EnableGraphRAGModal from './EnableGraphRAGModal';
@@ -331,7 +333,14 @@ export function useSourceActions({
             interpolation: { escapeValue: false },
             name: toDelete.name,
           })}
-          description={t('settings.sources.deleteConsequence')}
+          description={
+            agentUseCount(toDelete.used_by) > 0
+              ? t('settings.sources.deleteUsedBy', {
+                  count: agentUseCount(toDelete.used_by),
+                  formatted: formatCount(agentUseCount(toDelete.used_by)),
+                })
+              : t('settings.sources.deleteConsequence')
+          }
           modalState="ACTIVE"
           setModalState={(state) => state === 'INACTIVE' && setToDelete(null)}
           handleSubmit={confirmDelete}

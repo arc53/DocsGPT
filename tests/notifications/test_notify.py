@@ -11,6 +11,9 @@ from docsgpt.notifications import notify, presence
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.push_subscriptions import PushSubscriptionsRepository
 
+
+pytestmark = pytest.mark.fresh_db
+
 P256DH = "BIzyXn-qzOUEO1_AJqEJdxVQ4LBymTq3lFS7btztj_VA-UWISfaIbQpPNPssV2rq5CDmYvbBa4xZYzzmgSeWyNM"
 
 
@@ -188,6 +191,35 @@ class TestDecisions:
         assert _call(None, url="/") == notify.TOAST
         assert published[0]["scope"] == {"kind": "user"}
         assert published[0]["payload"]["conversation_id"] is None
+        assert "schedule_id" not in published[0]["payload"]
+
+
+SCHEDULE_ID = "22222222-2222-2222-2222-222222222222"
+
+
+class TestAboutASchedule:
+    """A notice about a schedule carries its id, so the app can drop it once the schedule is resumed."""
+
+    def _paused(self, **overrides):
+        return _call(
+            None, kind="schedule_paused", title="Nightly digest", body="No CRM tool.",
+            url=f"/activity/schedules?schedule={SCHEDULE_ID}", schedule_id=SCHEDULE_ID, **overrides,
+        )
+
+    def test_the_toast_names_the_schedule(self, db, fake_redis, published, pushes, push_on):
+        presence.report("u1", "t1", None, True)
+        assert self._paused() == notify.TOAST
+        assert published[0]["scope"] == {"kind": "user"}
+        assert published[0]["payload"]["schedule_id"] == SCHEDULE_ID
+        assert published[0]["payload"]["url"] == f"/activity/schedules?schedule={SCHEDULE_ID}"
+
+    def test_the_push_is_tagged_by_the_schedule(self, db, fake_redis, published, pushes, push_on):
+        _subscribe(db)
+        assert self._paused() == notify.PUSH
+        [(_user, payload)] = pushes
+        assert payload["title"] == "Scheduled task paused"
+        assert payload["body"] == "Nightly digest: No CRM tool."
+        assert payload["tag"] == f"docsgpt:schedule:{SCHEDULE_ID}"
 
 
 class TestNeverRaises:

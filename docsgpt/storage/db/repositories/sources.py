@@ -58,6 +58,16 @@ def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
 
 
 
+def _name_search(search_term: Optional[str]):
+    """The case-insensitive substring predicate on ``name``, or None for no search.
+
+    ``%`` and ``_`` in the term are escaped so they match literally.
+    """
+    if not search_term:
+        return None
+    return sources_table.c.name.ilike(f"%{like_escape(search_term)}%", escape="\\")
+
+
 def _coerce_jsonb(value: Any) -> Any:
     """Normalize incoming JSONB values for the Core ``Table.update()`` path.
 
@@ -374,6 +384,7 @@ class SourcesRepository:
         sort_field: str = "created_at",
         sort_order: str = "desc",
         extra_ids: Optional[list] = None,
+        only_ids: Optional[list] = None,
     ) -> list[dict]:
         """Return sources owned by ``user_id``, paginated and optionally filtered.
 
@@ -396,6 +407,9 @@ class SourcesRepository:
                 reaches the emitted SQL as a string.
             sort_order: ``"asc"`` or ``"desc"``; anything else is treated
                 as ``"desc"``.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+            only_ids: When given, keep only these ids (an empty list keeps
+                none); the paginated listing narrows by kind and usage this way.
 
         Returns:
             A list of source rows as plain dicts (via ``row_to_dict``),
@@ -417,13 +431,11 @@ class SourcesRepository:
             )
             .where(_owned_or_shared_scope(user_id, extra_ids))
         )
-        if search_term:
-            stmt = stmt.where(
-                sources_table.c.name.ilike(
-                    f"%{like_escape(search_term)}%",
-                    escape="\\",
-                )
-            )
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
+        if only_ids is not None:
+            stmt = stmt.where(sources_table.c.id.in_(_coerce_uuid_ids(only_ids)))
 
         # ``id`` is appended as a stable tiebreaker so paginated windows
         # are deterministic across equal sort keys.
@@ -438,6 +450,75 @@ class SourcesRepository:
 
         result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
+
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """Every source ``list_for_user`` lists, as ``{id, user_id}`` only, in its default order (newest first).
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any source's
+        JSONB columns.
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+
+        Returns:
+            ``{"id", "user_id"}`` dicts with string ids.
+        """
+        stmt = (
+            select(sources_table.c.id, sources_table.c.user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [{"id": str(row.id), "user_id": row.user_id} for row in self._conn.execute(stmt)]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The scalar fields of the sources ``ids`` names, with their ingest status, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Source ids.
+
+        Returns:
+            ``{"id", "user_id", "name", "type", "tokens", "ingest_status"}`` dicts with string ids.
+        """
+        uuids = _coerce_uuid_ids(ids)
+        if not uuids:
+            return []
+        stmt = (
+            select(
+                sources_table.c.id, sources_table.c.user_id, sources_table.c.name, sources_table.c.type,
+                sources_table.c.tokens, _ingest_status_case(),
+            )
+            .select_from(
+                sources_table.outerjoin(
+                    ingest_chunk_progress_table, ingest_chunk_progress_table.c.source_id == sources_table.c.id
+                )
+            )
+            .where(sources_table.c.id.in_(uuids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [
+            {"id": str(row.id), "user_id": row.user_id, "name": row.name, "type": row.type,
+             "tokens": row.tokens, "ingest_status": row.ingest_status}
+            for row in self._conn.execute(stmt)
+        ]
+
+    def get_directory_structure(self, source_id: str) -> Optional[dict]:
+        """One source's ``directory_structure``, with no access check: the caller has already made one.
+
+        Args:
+            source_id: The source's id.
+
+        Returns:
+            The stored tree, or None when it has none or there is no such source.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        return self._conn.execute(
+            text("SELECT directory_structure FROM sources WHERE id = CAST(:id AS uuid)"), {"id": str(source_id)}
+        ).scalar()
 
     def count_for_user(
         self,
@@ -464,16 +545,43 @@ class SourcesRepository:
             .select_from(sources_table)
             .where(_owned_or_shared_scope(user_id, extra_ids))
         )
-        if search_term:
-            stmt = stmt.where(
-                sources_table.c.name.ilike(
-                    f"%{like_escape(search_term)}%",
-                    escape="\\",
-                )
-            )
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
         result = self._conn.execute(stmt)
         row = result.fetchone()
         return int(row[0]) if row is not None else 0
+
+    def list_facets_for_user(
+        self,
+        user_id: str,
+        *,
+        search_term: Optional[str] = None,
+        extra_ids: Optional[list] = None,
+    ) -> list[dict]:
+        """Every row ``list_for_user`` would match, with only the columns that decide its kind.
+
+        The paginated listing counts sources per kind and per usage over the
+        whole match, not one page, so it reads these light rows (no directory
+        tree or metadata) for all of them.
+
+        Args:
+            user_id: Scope rows to this owner.
+            search_term: Same substring filter as ``list_for_user``.
+            extra_ids: Same union of team-shared ids as ``list_for_user``.
+
+        Returns:
+            Dicts with ``id``, ``user_id``, ``type``, ``remote_data``,
+            ``config``, ``sync_frequency`` and ``connection_id``.
+        """
+        t = sources_table
+        stmt = select(
+            t.c.id, t.c.user_id, t.c.type, t.c.remote_data, t.c.config, t.c.sync_frequency, t.c.connection_id,
+        ).where(_owned_or_shared_scope(user_id, extra_ids))
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
+        return [row_to_dict(r) for r in self._conn.execute(stmt).fetchall()]
 
     def update(self, source_id: str, user_id: str, fields: dict) -> None:
         filtered = {k: v for k, v in fields.items() if k in _ALLOWED_COLUMNS}

@@ -543,7 +543,7 @@ describe('ConnectWizard', () => {
     expect(title()).toBe('settings.connectors.wizard.doneTitle');
     expect(service.setup).not.toHaveBeenCalled();
     await click('settings.connectors.wizard.done');
-    expect(onClose).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
   });
 
   it('syncs the picked folder named after it', async () => {
@@ -782,7 +782,7 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.doneSummaryNone',
       );
       await click('settings.connectors.wizard.done');
-      expect(onClose).toHaveBeenCalledWith(true);
+      expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
     });
 
     it('never says who is connected before it knows', async () => {
@@ -819,7 +819,7 @@ describe('ConnectWizard', () => {
     await click('pick-folder');
     await click('modals.uploadDoc.train');
     await click('settings.connectors.wizard.done');
-    expect(onClose).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
   });
 
   it("uses Google's picker with the client id the server offers", async () => {
@@ -904,7 +904,7 @@ describe('ConnectWizard', () => {
     expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
     expect(document.body.textContent).toContain('pick-repo');
     await click('cancel');
-    expect(onClose).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
   });
 
   it('starts a file picker over after a reconnect, with nothing picked', async () => {
@@ -950,6 +950,38 @@ describe('ConnectWizard', () => {
     ).toEqual([]);
   });
 
+  // A builder opens the wizard from Add tool: leaving goes through it, so
+  // unsaved work gets its question first.
+  it('leaves through the opener when it is given a way out', async () => {
+    service.createConnection.mockResolvedValue({
+      success: true,
+      connection: { id: 'conn-1' },
+    });
+    setupOk([], [TELEGRAM_TOOL]);
+    const onNavigate = vi.fn();
+    const store = await render(
+      base,
+      vi.fn(),
+      { onNavigate },
+      [],
+      [{ id: 'old-chat-doc' }],
+    );
+    await connectWithKey('t');
+    await click('settings.connectors.wizard.tryInChat');
+    expect(onNavigate).toHaveBeenCalledWith('/c/new', {
+      beforeLeave: expect.any(Function),
+    });
+    expect(document.body.textContent).not.toContain('NEW_CHAT');
+    const selected = () =>
+      (store.getState() as { preference: { selectedDocs: unknown[] } })
+        .preference.selectedDocs;
+    // The chat keeps its sources while the opener asks...
+    expect(selected()).toEqual([{ id: 'old-chat-doc' }]);
+    // ...and drops them once the reader leaves.
+    await act(async () => onNavigate.mock.calls[0][1].beforeLeave());
+    expect(selected()).toEqual([]);
+  });
+
   it.each([
     ['reconnect', 'settings.connectors.wizard.setupReconnect'],
     ['disabled', 'settings.connectors.wizard.setupDisabled'],
@@ -989,7 +1021,7 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.syncLater',
       );
       await click('settings.connectors.openInKnowledge');
-      expect(onClose).toHaveBeenCalledWith(true);
+      expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
       expect(document.body.textContent).toContain('KNOWLEDGE?source=src-1');
     });
 
@@ -1165,6 +1197,65 @@ describe('ConnectWizard', () => {
     open.mockRestore();
   });
 
+  // Signing an MCP preset in again updates its tool: nothing new to put on
+  // an agent.
+  it('reports no new tool after signing an MCP preset in again', async () => {
+    const notion: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:notion',
+      name: 'Notion',
+      icon: 'notion',
+      auth_kind: 'mcp_oauth',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      mcp_url: 'https://mcp.notion.com/mcp',
+      oauth_scopes: [],
+      publisher: 'preset',
+    };
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+    mcpApi.testMCPConnection.mockResolvedValue({
+      json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+    });
+    mcpApi.saveMCPServer.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, id: 'tool-3' }),
+    });
+    service.listConnections.mockResolvedValue({
+      success: true,
+      connections: [
+        { id: 'conn-9', connector_key: 'mcp:notion', updated_at: '2026-09-28' },
+      ],
+    });
+    service.getConnection.mockResolvedValue({
+      success: true,
+      connection: { tools: [{ ...TELEGRAM_TOOL, id: 'tool-3' }] },
+    });
+    const onClose = vi.fn();
+    const store = await render(notion, onClose, {
+      mode: 'reconnect',
+      connectionId: 'conn-9',
+      mcpToolId: 'tool-3',
+    });
+    await click('settings.connectors.wizard.signIn');
+    await act(async () => {
+      store.dispatch(
+        sseEventReceived({
+          id: 'ev-2',
+          type: 'mcp.oauth.completed',
+          scope: { kind: 'mcp_oauth', id: 'task-1' },
+          payload: { tools: [] },
+        }),
+      );
+    });
+    expect(mcpApi.saveMCPServer.mock.calls[0][0]).toMatchObject({
+      id: 'tool-3',
+    });
+    await click('settings.connectors.wizard.done');
+    expect(onClose).toHaveBeenCalledWith(true, []);
+    open.mockRestore();
+  });
+
   it('connects a no-auth MCP preset with one Connect button', async () => {
     const open = vi.spyOn(window, 'open');
     mcpApi.saveMCPServer.mockResolvedValue({
@@ -1223,7 +1314,7 @@ describe('ConnectWizard', () => {
       expect(button('settings.connectors.status.connect')).toBeUndefined();
       expect(mcpApi.saveMCPServer).toHaveBeenCalledTimes(1);
       await click('settings.connectors.wizard.done');
-      expect(onClose).toHaveBeenCalledWith(true);
+      expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
     },
   );
 
@@ -1500,7 +1591,9 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.toolsHeading:1',
       );
       await click('settings.connectors.wizard.done');
-      expect(onClose).toHaveBeenCalledWith(true);
+      // The tool it created (the saved MCP server), for an opener that
+      // puts new tools on something (Add tool).
+      expect(onClose).toHaveBeenCalledWith(true, ['tool-9']);
     });
 
     it('ends on the summary when nothing is picked and Sync is off', async () => {

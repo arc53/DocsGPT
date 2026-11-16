@@ -21,9 +21,9 @@ from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsp
 import idna
 import requests
 from bs4 import BeautifulSoup, CData, Comment, FeatureNotFound, NavigableString, Tag
-from markdownify import MarkdownConverter
 
 from docsgpt.core.settings import settings
+from docsgpt.parser.markdown_conversion import WhitespacePreservingConverter
 from docsgpt.parser.file.html_parser import (
     MARKDOWNIFY_OPTIONS,
     MarkupTooDeepError,
@@ -623,7 +623,7 @@ class PageContent:
     language: Optional[str]
 
 
-class _LinkConverter(MarkdownConverter):
+class _LinkConverter(WhitespacePreservingConverter):
     """Markdown with link URLs dropped, or kept only for links inside sentences."""
 
     def __init__(self, base_url: str, keep_links: bool):

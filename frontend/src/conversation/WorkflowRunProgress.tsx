@@ -62,7 +62,10 @@ function StatusIcon({ step, active }: { step: WorkflowStep; active: boolean }) {
   return <CircleCheck aria-hidden className="text-success size-4" />;
 }
 
-/** One step: status, node icon, title and time, then a line about its result. */
+/**
+ * One step: status, node icon, title, time and attempts, then a line about
+ * its result, or the retry it is on.
+ */
 function StepRow({
   step,
   now,
@@ -111,10 +114,41 @@ function StepRow({
               {duration}
             </span>
           )}
+          {step.attempts && step.attempts > 1 && (
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+              {t('conversation.workflow.attempts', { count: step.attempts })}
+            </span>
+          )}
         </div>
         {step.error ? (
           <p className="text-destructive mt-0.5 text-xs wrap-break-word">
             {step.error}
+          </p>
+        ) : working && step.attempt ? (
+          <p
+            className="text-warning mt-0.5 truncate text-xs"
+            title={step.retryError}
+          >
+            {step.maxAttempts
+              ? t('conversation.workflow.retryingOf', {
+                  attempt: step.attempt,
+                  total: step.maxAttempts,
+                })
+              : t('conversation.workflow.retrying', {
+                  attempt: step.attempt,
+                })}
+            {step.retryError && ` · ${step.retryError}`}
+          </p>
+        ) : step.items ? (
+          <p className="text-muted-foreground mt-0.5 truncate text-xs">
+            {t('conversation.workflow.loopItems', {
+              done: step.items.done,
+              total: step.items.total,
+            })}
+            {step.items.failed > 0 &&
+              ` · ${t('conversation.workflow.loopItemsFailed', {
+                count: step.items.failed,
+              })}`}
           </p>
         ) : (
           step.detail && (

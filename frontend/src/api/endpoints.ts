@@ -3,6 +3,7 @@ const endpoints = {
     CONFIG: '/api/config',
     ME: '/api/user/me',
     QUOTA: '/api/user/quota',
+    PREFERENCES: '/api/user/preferences',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
@@ -61,6 +62,14 @@ const endpoints = {
       `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
     RESOURCE_SETTINGS: '/api/resource_settings',
     ALL_TEAMS: '/api/admin/teams',
+    // The drafter's routes (session-only on the server; access tokens get 403).
+    DRAFTER_CONFIG: '/api/drafter/config',
+    DRAFTER_STREAM: '/api/drafter/stream',
+    DRAFTER_TURN_CANCEL: (turnId: string) =>
+      `/api/drafter/turns/${encodeURIComponent(turnId)}/cancel`,
+    DRAFTER_AGENT_GAPS: (agentId: string) =>
+      `/api/drafter/agent_gaps?agent_id=${encodeURIComponent(agentId)}`,
+    CHECK_PROMPT: '/api/check_prompt',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',
@@ -224,6 +233,8 @@ const endpoints = {
     RESTORE_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}/restore`,
     WORKFLOWS: '/api/workflows',
+    WORKFLOW_RUN_STEP: (workflowRunId: string, stepIndex: number) =>
+      `/api/workflow_runs/${encodeURIComponent(workflowRunId)}/steps/${stepIndex}`,
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
@@ -297,6 +308,7 @@ const endpoints = {
       `/api/admin/quotas/users/${encodeURIComponent(id)}`,
     SOURCE_DEFAULTS: '/api/admin/defaults/sources',
     AGENT_DEFAULTS: '/api/admin/defaults/agents',
+    MODEL_DEFAULTS: '/api/admin/defaults/models',
     GUARDRAILS: '/api/admin/guardrails',
   },
   CONVERSATION: {

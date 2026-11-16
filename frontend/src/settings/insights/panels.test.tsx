@@ -202,12 +202,12 @@ describe('insight panels', () => {
 
   it("stacks each week's questions by outcome as counts, greetings left out", () => {
     act(() => root.render(<AnswerStatusPanel data={insights()} />));
-    expect(chart.props!.data.labels).toEqual([
-      '1–4 Oct',
-      '5–11 Oct',
-      '12–18 Oct',
-      '19–24 Oct',
-    ]);
+    // Newer ICU sets a range's dash between spaces, older ICU doesn't.
+    expect(
+      chart.props!.data.labels.map((label: string) =>
+        label.replace(/\s?–\s?/, '–'),
+      ),
+    ).toEqual(['1–4 Oct', '5–11 Oct', '12–18 Oct', '19–24 Oct']);
     // A quiet week is a short column, an empty one none at all.
     expect(drawn()).toEqual([
       [`${P}.options.answerStatus.fullyAnswered`, [10, 0, 12.5, 7.5]],

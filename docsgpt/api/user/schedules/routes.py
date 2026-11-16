@@ -27,6 +27,7 @@ from docsgpt.agents.scheduler_utils import (
     resolve_timezone,
 )
 from docsgpt.api import api
+from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     allowed_actions,
@@ -197,6 +198,22 @@ def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any],
     if row.get("user_id") != ra.owner_id:
         raise AccessDenied(404, "schedule not found")
     return row, ra.owner_id
+
+
+def _refuse_unfinished_agent_graph(conn, agent_id) -> Any:
+    """The 400 that keeps a schedule from running a workflow agent's unfinished graph.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The schedule's agent, or None for an agentless one.
+
+    Returns:
+        The error response, or None when the schedule may run.
+    """
+    if not agent_id:
+        return None
+    agent = AgentsRepository(conn).get_by_id(str(agent_id))
+    return refuse_unfinished_graph(conn, agent) if agent else None
 
 
 def _user_id() -> Optional[str]:
@@ -418,7 +435,12 @@ class AgentSchedules(Resource):
             except (TypeError, ValueError):
                 return _err("token_budget must be a non-negative integer")
         with db_readonly() as conn:
+            # A schedule runs the agent's graph headless: a workflow agent's
+            # must be a finished one.
+            refusal = refuse_unfinished_graph(conn, agent)
             count = SchedulesRepository(conn).count_active_for_user(owner_id)
+        if refusal is not None:
+            return refusal
         if (
             settings.SCHEDULE_MAX_PER_USER > 0
             and count >= settings.SCHEDULE_MAX_PER_USER
@@ -710,6 +732,10 @@ class ScheduleResource(Resource):
                 return _err(denied.message, denied.status)
             if existing.get("status") in ("cancelled", "completed"):
                 return _err("schedule is terminal", 409)
+            if action == "resume":
+                refusal = _refuse_unfinished_agent_graph(conn, existing.get("agent_id"))
+                if refusal is not None:
+                    return refusal
             if action == "pause":
                 fields_in: Dict[str, Any] = {"status": "paused", "next_run_at": None}
             else:
@@ -815,6 +841,9 @@ class ScheduleRunNow(Resource):
                 return _err("schedule not found", 404)
             if schedule.get("status") == "cancelled":
                 return _err("schedule is cancelled", 409)
+            refusal = _refuse_unfinished_agent_graph(conn, schedule.get("agent_id"))
+            if refusal is not None:
+                return refusal
             if ScheduleRunsRepository(conn).has_active_run(schedule_id):
                 return _err("a run is already in flight", 409)
             scheduled_for = datetime.now(timezone.utc)
