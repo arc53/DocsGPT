@@ -9,6 +9,7 @@ import userService from '../api/services/userService';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Dropzone } from '../components/ui/dropzone';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
 import {
@@ -31,6 +32,25 @@ import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
 
 /** A plan entry for a whole knowledge folder rather than one source. */
 const isFolderEntry = (source: { type: string }) => source.type === 'folder';
+
+// Radix Select can't hold an empty value: "Leave unattached" gets a sentinel.
+const UNATTACHED = '__docsgpt-unattached__';
+
+/** The map with `key` set to `value`, or without it for "Leave unattached". */
+const mapped = (
+  map: Record<string, string>,
+  key: string,
+  value: string,
+): Record<string, string> => {
+  const next = { ...map };
+  if (value === UNATTACHED) delete next[key];
+  else next[key] = value;
+  return next;
+};
+
+// Names come from the file and the account: React escapes them already, so
+// i18next must not turn `&` or quotes into entities.
+const noEscape = { interpolation: { escapeValue: false } };
 
 const YAML_ACCEPT = {
   'application/x-yaml': ['.yaml', '.yml'],
@@ -216,37 +236,42 @@ export default function ImportAgentModal({
         className="flex items-center gap-2 text-sm"
       >
         <CircleCheck className="text-success size-4" aria-hidden="true" />
-        {t('modals.importAgent.folderMatched', { name })}
+        {t('modals.importAgent.folderMatched', { name, ...noEscape })}
       </p>
     ) : (
       <div key={`folder:${ref ?? index}`} className="flex flex-col gap-1">
         <p className="flex items-center gap-2 text-sm">
           <TriangleAlert className="text-warning size-4" aria-hidden="true" />
-          {t('modals.importAgent.folderMissing', { name })}
+          {t('modals.importAgent.folderMissing', { name, ...noEscape })}
         </p>
         {ref && folderOptions.length > 0 && (
-          <Select
-            value={folderMap[ref] || ''}
-            onValueChange={(value) =>
-              setFolderMap((prev) => ({
-                ...prev,
-                [ref]: value,
-              }))
-            }
+          <FormField
+            label={t('modals.importAgent.folderFor', { name, ...noEscape })}
           >
-            <SelectTrigger className="w-full">
-              <SelectValue
-                placeholder={t('modals.importAgent.leaveUnattached')}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {folderOptions.map((folder) => (
-                <SelectItem key={folder.id} value={folder.id}>
-                  {folder.label}
+            <Select
+              value={folderMap[ref] || ''}
+              onValueChange={(value) =>
+                setFolderMap((prev) => mapped(prev, ref, value))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={t('modals.importAgent.leaveUnattached')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {/* A pick can be taken back without cancelling. */}
+                <SelectItem value={UNATTACHED}>
+                  {t('modals.importAgent.leaveUnattached')}
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                {folderOptions.map((folder) => (
+                  <SelectItem key={folder.id} value={folder.id}>
+                    {folder.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
         )}
       </div>
     );
@@ -472,7 +497,10 @@ export default function ImportAgentModal({
                         className="text-success size-4"
                         aria-hidden="true"
                       />
-                      {t('modals.importAgent.sourceMatched', { name: s.name })}
+                      {t('modals.importAgent.sourceMatched', {
+                        name: s.name,
+                        ...noEscape,
+                      })}
                     </p>
                   ) : (
                     <div key={s.name} className="flex flex-col gap-1">
@@ -483,34 +511,45 @@ export default function ImportAgentModal({
                         />
                         {t('modals.importAgent.sourceMissing', {
                           name: s.name,
+                          ...noEscape,
                         })}
                       </p>
-                      <Select
-                        value={sourceMap[s.name] || ''}
-                        onValueChange={(value) =>
-                          setSourceMap((prev) => ({ ...prev, [s.name]: value }))
-                        }
+                      <FormField
+                        label={t('modals.importAgent.sourceFor', {
+                          name: s.name,
+                          ...noEscape,
+                        })}
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue
-                            placeholder={t(
-                              'modals.importAgent.leaveUnattached',
+                        <Select
+                          value={sourceMap[s.name] || ''}
+                          onValueChange={(value) =>
+                            setSourceMap((prev) => mapped(prev, s.name, value))
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue
+                              placeholder={t(
+                                'modals.importAgent.leaveUnattached',
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={UNATTACHED}>
+                              {t('modals.importAgent.leaveUnattached')}
+                            </SelectItem>
+                            {(sourceDocs || []).map(
+                              (doc: { id?: string; name?: string }) => (
+                                <SelectItem
+                                  key={String(doc.id)}
+                                  value={String(doc.id)}
+                                >
+                                  {doc.name}
+                                </SelectItem>
+                              ),
                             )}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(sourceDocs || []).map(
-                            (doc: { id?: string; name?: string }) => (
-                              <SelectItem
-                                key={String(doc.id)}
-                                value={String(doc.id)}
-                              >
-                                {doc.name}
-                              </SelectItem>
-                            ),
-                          )}
-                        </SelectContent>
-                      </Select>
+                          </SelectContent>
+                        </Select>
+                      </FormField>
                     </div>
                   ),
                 )}
@@ -529,6 +568,7 @@ export default function ImportAgentModal({
                         />
                         {t('modals.importAgent.toolBuiltin', {
                           type: tool.type,
+                          ...noEscape,
                         })}
                       </p>
                     )}
@@ -540,6 +580,7 @@ export default function ImportAgentModal({
                         />
                         {t('modals.importAgent.toolReuse', {
                           name: tool.name || tool.type,
+                          ...noEscape,
                         })}
                       </p>
                     )}
@@ -548,6 +589,7 @@ export default function ImportAgentModal({
                         <AlertDescription>
                           {t('modals.importAgent.toolUnavailable', {
                             type: tool.type,
+                            ...noEscape,
                           })}
                         </AlertDescription>
                       </Alert>
@@ -557,6 +599,7 @@ export default function ImportAgentModal({
                         <p className="text-sm">
                           {t('modals.importAgent.toolCreate', {
                             name: tool.name || tool.type,
+                            ...noEscape,
                           })}
                         </p>
                         {(tool.requires_secrets || []).map((field) => (
@@ -565,7 +608,7 @@ export default function ImportAgentModal({
                             type="password"
                             placeholder={t(
                               'modals.importAgent.secretPlaceholder',
-                              { field },
+                              { field, ...noEscape },
                             )}
                             value={toolSecrets[tool.key]?.[field] || ''}
                             onChange={(e) =>
@@ -589,6 +632,7 @@ export default function ImportAgentModal({
                       <p className="text-sm">
                         {t('modals.importAgent.modelCustom', {
                           name: m.display_name,
+                          ...noEscape,
                         })}
                       </p>
                       <Input

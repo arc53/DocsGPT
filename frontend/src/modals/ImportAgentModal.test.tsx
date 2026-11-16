@@ -1,8 +1,22 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
+// A name is shown after its key, escaped the way i18next does unless the
+// call turns escaping off (React escapes it already).
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (
+      key: string,
+      options?: { name?: string; interpolation?: { escapeValue?: boolean } },
+    ) => {
+      if (options?.name === undefined) return key;
+      const name =
+        options.interpolation?.escapeValue === false
+          ? options.name
+          : options.name.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      return `${key}:${name}`;
+    },
+  }),
 }));
 
 const folderList = (items: unknown[]) => ({
@@ -16,7 +30,10 @@ const folderList = (items: unknown[]) => ({
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
     selector({
-      preference: { token: 'token', sourceDocs: [] },
+      preference: {
+        token: 'token',
+        sourceDocs: [{ id: 'd-1', name: 'Rate sheets' }],
+      },
       folders: {
         tree: folderList([
           { id: 'f-1', name: 'Carriers', parent_id: null },
@@ -259,5 +276,105 @@ describe('ImportAgentModal', () => {
       sources: {},
       folders: {},
     });
+  });
+  const pickOption = async (field: string, option: string) => {
+    const trigger = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        'button[role="combobox"]',
+      ),
+    ).find((b) => b.labels?.[0]?.textContent === field);
+    expect(trigger).toBeDefined();
+    await act(async () => {
+      trigger!.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const item = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((o) => o.textContent === option);
+    expect(item).toBeDefined();
+    await act(async () => item!.click());
+    await flush();
+  };
+
+  const reviewMissing = async () => {
+    service.planImportAgent.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        plan: {
+          target: { action: 'create', agent_id: null, matched_by: null },
+          sources: [
+            { name: 'Ops & "Rates"', type: 'folder', status: 'missing' },
+            { name: 'Q4 & Q3', type: 'local', status: 'missing' },
+          ],
+          tools: [],
+          prompt: { status: 'default' },
+          models: [],
+        },
+      }),
+    );
+    act(() => {
+      root.render(
+        <ImportAgentModal
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+        />,
+      );
+    });
+    const file = new File(['name: Agent\n'], 'agent.yaml', {
+      type: 'application/x-yaml',
+    });
+    await act(async () => dropzone.onDrop!([file], []));
+    await flush();
+    await clickButton('modals.importAgent.review');
+  };
+
+  it('labels each mapping select with the folder or source it stands for, names unescaped', async () => {
+    await reviewMissing();
+    const labels = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        'button[role="combobox"]',
+      ),
+    ).map((b) => b.labels?.[0]?.textContent);
+    expect(labels).toEqual([
+      'modals.importAgent.folderFor:Ops & "Rates"',
+      'modals.importAgent.sourceFor:Q4 & Q3',
+    ]);
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('modals.importAgent.folderMissing:Ops & "Rates"');
+    expect(body).toContain('modals.importAgent.sourceMissing:Q4 & Q3');
+    expect(body).not.toContain('&amp;');
+  });
+
+  it('sends a missing folder and source mapped by hand', async () => {
+    await reviewMissing();
+    await pickOption(
+      'modals.importAgent.folderFor:Ops & "Rates"',
+      'Carriers › Rate archive',
+    );
+    await pickOption('modals.importAgent.sourceFor:Q4 & Q3', 'Rate sheets');
+    await clickButton('modals.importAgent.import');
+    expect(service.importAgent.mock.calls[0][0].resolution).toMatchObject({
+      sources: { 'Q4 & Q3': 'd-1' },
+      folders: { 'Ops & "Rates"': 'f-2' },
+    });
+  });
+
+  it('takes a mapping back with Leave unattached', async () => {
+    await reviewMissing();
+    const folderField = 'modals.importAgent.folderFor:Ops & "Rates"';
+    const sourceField = 'modals.importAgent.sourceFor:Q4 & Q3';
+    await pickOption(folderField, 'Carriers › Rate archive');
+    await pickOption(sourceField, 'Rate sheets');
+    await pickOption(folderField, 'modals.importAgent.leaveUnattached');
+    await pickOption(sourceField, 'modals.importAgent.leaveUnattached');
+    await clickButton('modals.importAgent.import');
+    const { resolution } = service.importAgent.mock.calls[0][0];
+    expect(resolution.folders).toEqual({});
+    expect(resolution.sources).toEqual({});
   });
 });
