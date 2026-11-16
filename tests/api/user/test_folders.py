@@ -320,3 +320,45 @@ class TestList:
         used_by = body["folders"][0]["used_by"]
         assert [a["name"] for a in used_by["agents"]] == ["Reader"]
         assert used_by["others"] == 1
+
+
+class TestTreeWrites:
+    """Writes to one tree are serialized, and losing the sibling-name race still reads as a taken name."""
+
+    @staticmethod
+    def _advisory_locks(conn) -> int:
+        return conn.execute(
+            text("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()")
+        ).scalar()
+
+    @pytest.mark.parametrize("action", ["create", "update", "delete"])
+    def test_each_write_holds_the_trees_lock(self, pg_conn, action):
+        """Two opposite moves at once would both pass the cycle check; one waits for the other instead."""
+        from docsgpt.api.user.folders.service import create_folder, delete_folder, update_folder
+
+        repo = FoldersRepository(pg_conn)
+        a = repo.create("tw-user", "A")
+        b = repo.create("tw-user", "B")
+        before = self._advisory_locks(pg_conn)
+        if action == "create":
+            create_folder(pg_conn, "tw-user", "source", "C")
+        elif action == "update":
+            update_folder(pg_conn, "tw-user", a, parent_id=str(b["id"]))
+        else:
+            delete_folder(pg_conn, a)
+        assert self._advisory_locks(pg_conn) == before + 1
+
+    @pytest.mark.parametrize("action", ["create", "update"])
+    def test_losing_the_name_race_is_409(self, pg_conn, action):
+        from docsgpt.api.user.folders import service
+
+        repo = FoldersRepository(pg_conn)
+        repo.create("tw-user", "Taken")
+        other = repo.create("tw-user", "Other")
+        with patch.object(service, "_check_name_free"), pytest.raises(service.FolderError) as err, \
+                pg_conn.begin_nested():
+            if action == "create":
+                service.create_folder(pg_conn, "tw-user", "source", "taken")
+            else:
+                service.update_folder(pg_conn, "tw-user", other, name="TAKEN")
+        assert (err.value.status, err.value.code) == (409, "folder_name_taken")

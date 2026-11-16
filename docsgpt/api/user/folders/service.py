@@ -26,6 +26,7 @@ from typing import Any, Iterable, Optional
 
 from flask import Response, jsonify, make_response
 from sqlalchemy import Connection, text
+from sqlalchemy.exc import IntegrityError
 
 from docsgpt.api.user.resource_access import (
     WORKSPACE_ACTIONS,
@@ -65,6 +66,10 @@ TEAM_ITEM_NOT_FILEABLE = "team_item_not_fileable"
 ITEM_NOT_IN_TEAM = "item_not_in_team"
 
 _UNSET = object()
+
+# The unique index that keeps sibling names apart (ignoring case); a write that
+# loses the race to it after the name check fails on it.
+_SIBLING_NAME_INDEX = "folders_sibling_name_uidx"
 
 
 class FolderError(Exception):
@@ -248,11 +253,29 @@ def resolve_folder(conn: Connection, folder_id: Any, user: str, resource_type: O
     return folder
 
 
+def _name_taken() -> FolderError:
+    return FolderError(409, "folder_name_taken", "A folder with this name already exists here")
+
+
 def _check_name_free(
     conn: Connection, user: str, resource_type: str, parent_id: Optional[str], name: str, exclude_id: Optional[str]
 ) -> None:
     if FoldersRepository(conn).sibling_named(user, resource_type, parent_id, name, exclude_id) is not None:
-        raise FolderError(409, "folder_name_taken", "A folder with this name already exists here")
+        raise _name_taken()
+
+
+def _raise_if_name_taken(err: IntegrityError) -> None:
+    """Raise 409 ``folder_name_taken`` for a write that lost the sibling-name race (``folders_sibling_name_uidx``).
+
+    Args:
+        err: The failed write's error; any other constraint is left to the caller.
+
+    Raises:
+        FolderError: 409 ``folder_name_taken``.
+    """
+    diag = getattr(getattr(err, "orig", None), "diag", None)
+    if getattr(diag, "constraint_name", None) == _SIBLING_NAME_INDEX or _SIBLING_NAME_INDEX in str(err):
+        raise _name_taken() from err
 
 
 def _depth(conn: Connection, folder_id: Optional[str], user: str) -> int:
@@ -291,14 +314,19 @@ def create_folder(
             ``folder_too_deep`` or ``folder_name_taken``.
     """
     clean = clean_folder_name(name)
+    FoldersRepository(conn).lock_tree(user)
     parent = resolve_folder(conn, parent_id, user, resource_type) if parent_id else None
     parent_pg = str(parent["id"]) if parent else None
     if _depth(conn, parent_pg, user) + 1 > MAX_FOLDER_DEPTH:
         raise FolderError(400, "folder_too_deep", f"Folders nest at most {MAX_FOLDER_DEPTH} levels deep")
     _check_name_free(conn, user, resource_type, parent_pg, clean, None)
-    folder = FoldersRepository(conn).create(
-        user, clean, description=description, parent_id=parent_pg, created_by=created_by,
-    )
+    try:
+        folder = FoldersRepository(conn).create(
+            user, clean, description=description, parent_id=parent_pg, created_by=created_by,
+        )
+    except IntegrityError as err:
+        _raise_if_name_taken(err)
+        raise
     # The row has no type; echo the requested one so the response keeps today's ``type``.
     return {**folder, "resource_type": resource_type} if resource_type else folder
 
@@ -337,6 +365,12 @@ def update_folder(
     repo = FoldersRepository(conn)
     folder_pg = str(folder["id"])
     resource_type = folder.get("resource_type") or "agent"
+    repo.lock_tree(user)
+    # Read again under the lock: the row the caller holds may predate a move that just committed.
+    current = repo.get(folder_pg, user)
+    if current is None:
+        raise FolderError(404, "folder_not_found", "Folder not found")
+    folder = {**current, "resource_type": folder.get("resource_type")} if folder.get("resource_type") else current
     fields: dict[str, Any] = {}
     target_parent = str(folder["parent_id"]) if folder.get("parent_id") else None
     if parent_id is not _UNSET:
@@ -360,7 +394,11 @@ def update_folder(
     if description is not _UNSET:
         fields["description"] = description
     if fields:
-        repo.update(folder_pg, user, fields)
+        try:
+            repo.update(folder_pg, user, fields)
+        except IntegrityError as err:
+            _raise_if_name_taken(err)
+            raise
     return repo.get(folder_pg, user) or folder
 
 
@@ -377,7 +415,9 @@ def delete_folder(conn: Connection, folder: dict) -> dict[str, Any]:
         dict: ``{"moved_items": n, "moved_folders": n, "renamed": [{"id", "from", "to"}]}`` (child folders
         renamed so their names stay unique where they land).
     """
-    return FoldersRepository(conn).delete_into_parent(folder)
+    repo = FoldersRepository(conn)
+    repo.lock_tree(folder["user_id"])
+    return repo.delete_into_parent(folder)
 
 
 def visible_item_id(conn: Connection, resource_type: str, resource_id: Any, user: str) -> Optional[str]:

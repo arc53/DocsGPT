@@ -66,6 +66,19 @@ class FoldersRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
 
+    def lock_tree(self, user_id: str) -> None:
+        """Hold ``user_id``'s tree for this transaction, so its creates, moves and deletes run one at a time.
+
+        Two opposite moves at once would each pass the cycle check against a
+        tree without the other's move, and both commit.
+
+        Args:
+            user_id: The tree's owner.
+        """
+        self._conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended('folders:' || :user_id, 0))"), {"user_id": user_id}
+        )
+
     def create(
         self,
         user_id: str,
