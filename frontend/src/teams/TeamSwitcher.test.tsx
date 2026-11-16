@@ -244,7 +244,13 @@ describe('TeamSwitcher switching', () => {
     setWorkspaces('personal', [PERSONAL, OPS]);
     render();
     act(() => item('Operations').click());
-    expect(navigate).toHaveBeenCalledWith('/agents/manage', { replace: true });
+    // The switch rides on the navigation; the layout makes it once the list
+    // has rendered.
+    expect(navigate).toHaveBeenCalledWith('/agents/manage', {
+      replace: true,
+      state: { workspaceSwitch: { id: 't1', reason: 'user' } },
+    });
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('stays on a list page', () => {

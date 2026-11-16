@@ -1,4 +1,5 @@
 import { AGENTS_MANAGE_ROOT } from '../agents/paths';
+import type { SwitchReason } from './workspaceSlice';
 
 /** Query parameters that open a folder or one item of the old workspace. */
 const ITEM_PARAMS = ['folder', 'source', 'tool', 'prompt'];
@@ -35,4 +36,51 @@ export function workspaceLandingPath(pathname: string, search = ''): string {
   ITEM_PARAMS.forEach((name) => params.delete(name));
   const query = params.toString();
   return query ? `${pathname}?${query}` : pathname;
+}
+
+/** A workspace switch that waits for the page it navigated to. */
+export type SwitchOnArrival = { id: string; reason: SwitchReason };
+
+const SWITCH_STATE_KEY = 'workspaceSwitch';
+
+/**
+ * The location state that asks for a workspace switch once the page it is
+ * navigated with has rendered (the layout's `useWorkspaceLanding` does it).
+ * The router applies a new location in a transition, after a store update
+ * has already rendered: a switch dispatched next to the navigation would
+ * remount the page on the old address, which opens the old item again.
+ *
+ * Args:
+ *   id: `personal` or a team id.
+ *   reason: Why the app switches (see `switchWorkspace`).
+ *
+ * Returns:
+ *   The `state` to navigate with.
+ */
+export function switchOnArrival(
+  id: string,
+  reason: SwitchReason = 'user',
+): Record<string, SwitchOnArrival> {
+  return { [SWITCH_STATE_KEY]: { id, reason } };
+}
+
+/**
+ * The switch a location's state asks for, if any.
+ *
+ * Args:
+ *   state: The location's `state`.
+ *
+ * Returns:
+ *   The switch, or null.
+ */
+export function switchRequested(state: unknown): SwitchOnArrival | null {
+  if (!state || typeof state !== 'object') return null;
+  const request = (state as Record<string, unknown>)[SWITCH_STATE_KEY];
+  if (!request || typeof request !== 'object') return null;
+  const { id, reason } = request as Partial<SwitchOnArrival>;
+  if (typeof id !== 'string' || !id) return null;
+  return {
+    id,
+    reason: reason === 'link' || reason === 'lost' ? reason : 'user',
+  };
 }

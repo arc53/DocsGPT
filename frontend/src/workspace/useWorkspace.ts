@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { workspaceLandingPath } from './landing';
+import { switchOnArrival, workspaceLandingPath } from './landing';
 import {
   selectCanCreateInWorkspace,
   selectCurrentWorkspace,
@@ -43,12 +43,15 @@ export default function useWorkspace(): UseWorkspace {
   const switchTo = useCallback(
     (next: string) => {
       if (next === id) return;
-      // Leave the old workspace's page in the same render as the switch, so
-      // the page that remounts is the list, not the item.
       const target = workspaceLandingPath(location.pathname, location.search);
-      if (target !== `${location.pathname}${location.search}`)
-        navigate(target, { replace: true });
-      dispatch(switchWorkspace(next));
+      if (target === `${location.pathname}${location.search}`) {
+        dispatch(switchWorkspace(next));
+        return;
+      }
+      // Leave the old workspace's page first; the switch follows once the
+      // list has rendered, so the page that remounts is the list, not the
+      // item (which would open the old item again).
+      navigate(target, { replace: true, state: switchOnArrival(next) });
     },
     [dispatch, navigate, id, location.pathname, location.search],
   );

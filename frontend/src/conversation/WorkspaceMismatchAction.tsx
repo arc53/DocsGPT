@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import { agentChatPath } from '../agents/paths';
@@ -11,7 +11,7 @@ import {
 } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import type { AccessFields } from '../utils/accessUtils';
-import { switchWorkspace } from '../workspace/workspaceSlice';
+import { switchOnArrival } from '../workspace/landing';
 import { followStep } from './followWorkspace';
 
 /**
@@ -30,7 +30,6 @@ export default function WorkspaceMismatchAction({
   agentId?: string;
 }) {
   const { t } = useTranslation();
-  const dispatch = useDispatch();
   const navigate = useNavigate();
   const selectedAgent = useSelector(selectSelectedAgent);
   const agents = useSelector(selectAgents);
@@ -52,10 +51,12 @@ export default function WorkspaceMismatchAction({
   return (
     <AlertAction
       onClick={() => {
-        // Leave the old chat in the same render as the switch, so the page
-        // that reloads is the agent's new chat.
-        navigate(agentChatPath(agentId));
-        dispatch(switchWorkspace(step.target, { reason: 'link' }));
+        // Leave the old chat first; the switch follows once the agent's new
+        // chat has rendered, so the page that reloads is that chat, not the
+        // old one.
+        navigate(agentChatPath(agentId), {
+          state: switchOnArrival(step.target, 'link'),
+        });
       }}
     >
       {t('workspace.chat.switchTo', {

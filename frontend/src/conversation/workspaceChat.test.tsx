@@ -1,8 +1,14 @@
 import { configureStore } from '@reduxjs/toolkit';
-import { act, type ReactNode } from 'react';
+import { act, useEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { Provider } from 'react-redux';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Provider, useSelector } from 'react-redux';
+import {
+  MemoryRouter,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+} from 'react-router-dom';
 
 vi.mock('i18next', () => ({
   default: { t: (key: string) => key, language: 'en' },
@@ -19,9 +25,11 @@ import type { AccessFields } from '../utils/accessUtils';
 import { prefSlice } from '../preferences/preferenceSlice';
 import workspaceReducer, {
   loadWorkspaces,
+  selectWorkspaceId,
   switchWorkspace,
 } from '../workspace/workspaceSlice';
 import { setRequestWorkspace } from '../workspace/requestWorkspace';
+import useWorkspaceLanding from '../workspace/useWorkspaceLanding';
 import ChatWorkspaceLine from './ChatWorkspaceLine';
 import { curatedErrorText } from './curatedError';
 import WorkspaceMismatchAction from './WorkspaceMismatchAction';
@@ -63,6 +71,30 @@ function Where() {
   return null;
 }
 
+/** Each page mount, as "<workspace> <path>". */
+let mounts: string[] = [];
+
+/** The app's layout: the page remounts on a switch, and lands after one. */
+function Layout() {
+  const workspace = useSelector(selectWorkspaceId);
+  useWorkspaceLanding();
+  return <Outlet key={workspace} />;
+}
+
+function Page({ node }: { node: ReactNode }) {
+  const location = useLocation();
+  const workspace = useSelector(selectWorkspaceId);
+  useEffect(() => {
+    mounts.push(`${workspace} ${location.pathname}`);
+  }, []);
+  return (
+    <>
+      {node}
+      <Where />
+    </>
+  );
+}
+
 beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -76,21 +108,19 @@ afterEach(() => {
   localStorage.clear();
 });
 
-const render = (store: ReturnType<typeof makeStore>, node: ReactNode) =>
+const render = (
+  store: ReturnType<typeof makeStore>,
+  node: ReactNode,
+  at = '/c/new',
+) =>
   act(() => {
     root.render(
       <Provider store={store}>
-        <MemoryRouter initialEntries={['/c/new']}>
+        <MemoryRouter initialEntries={[at]}>
           <Routes>
-            <Route
-              path="*"
-              element={
-                <>
-                  {node}
-                  <Where />
-                </>
-              }
-            />
+            <Route element={<Layout />}>
+              <Route path="*" element={<Page node={node} />} />
+            </Route>
           </Routes>
         </MemoryRouter>
       </Provider>,
@@ -116,6 +146,16 @@ describe('a chat refused because its agent lives in another workspace', () => {
     act(() => button?.click());
     expect(store.getState().workspace.current).toBe('t1');
     expect(path).toBe('/agents/a1/c/new');
+  });
+
+  it("switches only once the agent's new chat has rendered, so the old chat never reloads in the new workspace", () => {
+    const store = makeStore('personal', agent({ kind: 'team', team_id: 't1' }));
+    render(store, <WorkspaceMismatchAction agentId="a1" />, '/c/abc');
+    mounts = [];
+    act(() => container.querySelector('button')?.click());
+    expect(store.getState().workspace.current).toBe('t1');
+    expect(store.getState().workspace.lastReason).toBe('link');
+    expect(mounts).toEqual(['t1 /agents/a1/c/new']);
   });
 
   it('offers Personal for a personal agent used in a team', () => {
