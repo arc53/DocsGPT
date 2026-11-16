@@ -64,6 +64,7 @@ import type { AppDispatch } from '../store';
 import { agentChatPath, agentEditPath } from '../agents/paths';
 import { agentUseCount } from '../utils/resourceUsage';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import { captureWorkspace } from '../workspace/requestWorkspace';
 import WorkspaceLine from '../workspace/WorkspaceLine';
 import {
   type FiledItem,
@@ -165,9 +166,11 @@ export default function Prompts() {
     dispatch(setPrompts(list));
   };
 
-  // `quiet`: a reload after a change keeps the cards on screen.
+  // `quiet`: a reload after a change keeps the cards on screen. A list that
+  // answers after a workspace switch is the old workspace's: dropped.
   const loadPrompts = (quiet = false) => {
     if (!quiet) setLoading(true);
+    const workspace = captureWorkspace();
     return userService
       .getPrompts(token)
       .then((response: Response) => {
@@ -176,6 +179,7 @@ export default function Prompts() {
         return response.json();
       })
       .then((data: ListedPrompt[]) => {
+        if (!workspace.isCurrent()) return;
         showList(Array.isArray(data) ? data : []);
         setHeldUsage({ key: '', inUse: {} });
         setLoadFailed(false);

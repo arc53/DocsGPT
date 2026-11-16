@@ -83,6 +83,7 @@ import actionToastReducer from '../notifications/actionToastSlice';
 import foldersReducer from '../components/folders/foldersSlice';
 import type { Folder } from '../components/folders/types';
 import preferenceReducer, { setToken } from '../preferences/preferenceSlice';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import workspaceReducer, {
   PERSONAL_ROW,
   type WorkspaceRole,
@@ -465,5 +466,27 @@ describe('Prompts page in a workspace', () => {
     const loads = service.getPrompts.mock.calls.length;
     await act(async () => share.props!.onMoved!());
     expect(service.getPrompts.mock.calls.length).toBeGreaterThan(loads);
+  });
+
+  it("keeps a list that answers after a workspace switch out of the new workspace's pickers", async () => {
+    let answer: (body: unknown) => void = () => undefined;
+    service.getPrompts.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = (body) =>
+            resolve({ ok: true, status: 200, json: async () => body });
+        }),
+    );
+    setRequestWorkspace('personal', 0);
+    try {
+      await render();
+      const before = store.getState().preference.prompts;
+      // The user switches to a team while the list is out.
+      setRequestWorkspace('t1', 1);
+      await act(async () => answer([...presets, own]));
+      expect(store.getState().preference.prompts).toBe(before);
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
   });
 });
