@@ -146,6 +146,24 @@ class TestExMember:
         assert _single(cid).status_code == 200
         assert [c["id"] for c in _list(workspace=tid).get_json()] == [cid]
 
+    def test_membership_of_another_team_does_not_keep_an_ex_members_team_chats(self, use_conn):
+        """Being in some other team must not count as being in the chat's team, for every lookup."""
+        tid, _ = _team(use_conn)
+        _team(use_conn, owner="zoe", members=(("vera", "team_viewer"),))
+        repo = ConversationsRepository(use_conn)
+        cid = str(repo.create("vera", "Ours", team_id=tid, legacy_mongo_id="507f1f77bcf86cd799439011")["id"])
+        repo.append_message(cid, {"prompt": "about Ours", "response": "ok", "metadata": {}})
+
+        TeamMembersRepository(use_conn).remove_member(tid, "vera")
+
+        assert _single(cid).status_code == 404
+        assert repo.get(cid, "vera") is None
+        assert repo.get_owned(cid, "vera") is None
+        assert repo.get_by_legacy_id("507f1f77bcf86cd799439011", "vera") is None
+        assert repo.list_for_user("vera", team_id=tid) == []
+        assert repo.search_for_user("vera", "about", team_id=tid) == []
+        assert repo.rename(cid, "vera", "Renamed") is False
+
     def test_the_reconnect_reader_checks_membership(self, use_conn, monkeypatch):
         from docsgpt.api import async_sse
 

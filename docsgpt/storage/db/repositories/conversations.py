@@ -74,7 +74,10 @@ def team_visible_sql(alias: str = "", user_param: str = "user_id") -> str:
     Returns:
         str: A parenthesized boolean SQL expression.
     """
-    col = f"{alias}." if alias else ""
+    # Always qualify the column: a bare ``team_id`` inside the
+    # ``team_members`` subquery would bind to ``ws_m.team_id`` and turn the
+    # check into "member of any team".
+    col = f"{alias or 'conversations'}."
     user = f":{user_param}"
     return (
         f"({col}team_id IS NULL"
