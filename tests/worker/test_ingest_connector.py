@@ -682,3 +682,59 @@ class TestConnectorDownloadFailures:
         assert kind == "source.ingest.completed"
         assert payload["no_changes"] is True and "partial" not in payload
         assert uploads == []
+
+
+@pytest.mark.unit
+class TestConnectorUnparsedFiles:
+    """A downloaded file that cannot be parsed is skipped and reported, not fatal to the source (ledger #90)."""
+
+    @pytest.fixture
+    def drive(self, monkeypatch, _mock_connector_pipeline):
+        """Download two notes and a legacy workbook, and parse them with the real reader, without calamine."""
+        import functools
+        import shutil
+        import sys
+        from pathlib import Path
+
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.markdown_parser import MarkdownParser
+        from docsgpt.parser.file.tabular_parser import ExcelParser
+
+        workbook = Path(__file__).parents[1] / "parser" / "file" / "fixtures" / "legacy.xls"
+
+        def _download(temp_dir, config):
+            Path(temp_dir, "Finance").mkdir()
+            shutil.copy(workbook, Path(temp_dir, "Finance", "budget.xls"))
+            Path(temp_dir, "notes.md").write_text("first file")
+            Path(temp_dir, "guide.md").write_text("second file")
+            return {"files_downloaded": 3, "files_failed": 0, "folders_failed": 0, "empty_result": False}
+
+        _mock_connector_pipeline.download_to_directory.side_effect = _download
+        monkeypatch.setitem(sys.modules, "python_calamine", None)
+        monkeypatch.setattr(worker, "SUPPORTED_SOURCE_EXTENSIONS", {".md", ".xls"})
+        extractor = {".md": MarkdownParser(), ".xls": ExcelParser()}
+        monkeypatch.setattr(
+            worker, "SimpleDirectoryReader", functools.partial(SimpleDirectoryReader, file_extractor=extractor),
+        )
+        stored: list = []
+        monkeypatch.setattr(
+            worker, "embed_and_store_documents",
+            lambda docs, full_path, source_id, task, **kw: stored.extend(docs),
+        )
+        return stored
+
+    def test_the_good_files_are_ingested_and_the_skipped_one_named(
+        self, task_self, published, monkeypatch, caplog, drive,
+    ):
+        _uploads(monkeypatch)
+
+        with caplog.at_level("WARNING"):
+            result = _upload_ingest(task_self)
+
+        assert result["status"] == "complete"
+        assert sorted(doc.page_content for doc in drive) == ["first file", "second file"]
+        assert (result["files_unparsed"], result["unparsed_files"]) == (1, ["Finance/budget.xls"])
+        kind, payload = published[-1]
+        assert kind == "source.ingest.completed"
+        assert (payload["files_unparsed"], payload["unparsed_files"]) == (1, ["Finance/budget.xls"])
+        assert any("budget.xls" in record.getMessage() for record in caplog.records)

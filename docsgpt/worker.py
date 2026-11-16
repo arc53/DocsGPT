@@ -447,6 +447,27 @@ def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
     return _callback
 
 
+# How many skipped files an ingest result names; the count covers them all.
+_UNPARSED_FILES_LISTED = 20
+
+
+def _unparsed_files_report(reader: Any, base_dir: str) -> Dict[str, Any]:
+    """The files ``reader.load_data`` skipped as unparseable, for an ingest's result and completed event.
+
+    Args:
+        reader: The ``SimpleDirectoryReader`` that read the source.
+        base_dir: Directory the reported paths are made relative to.
+
+    Returns:
+        ``{"files_unparsed": n, "unparsed_files": [relative paths]}``, or ``{}`` when nothing was skipped.
+    """
+    failed = getattr(reader, "failed_files", None)
+    if not isinstance(failed, list) or not failed:
+        return {}
+    paths = [os.path.relpath(str(path), start=base_dir) for path, _ in failed]
+    return {"files_unparsed": len(paths), "unparsed_files": paths[:_UNPARSED_FILES_LISTED]}
+
+
 # Define a function to extract metadata from a given filename.
 
 
@@ -4890,6 +4911,14 @@ def _ingest_connector(
                     self, user, source_uuid, start_pct=40, end_pct=60,
                 )
             )
+            # A file no parser could read is left out of the index (load_data
+            # logs each one); the ingest fails only when every file did.
+            unparsed = _unparsed_files_report(reader, temp_dir)
+            if unparsed:
+                logging.error(
+                    f"{unparsed['files_unparsed']} file(s) from {source_type} could not be parsed for source "
+                    f"{source_id_for_events}: {', '.join(unparsed['unparsed_files'])}"
+                )
             directory_structure = getattr(reader, "directory_structure", {})
 
             # Step 4: Process documents (chunking, embedding, etc.)
@@ -5026,6 +5055,7 @@ def _ingest_connector(
                     **_task_id_field(self),
                     "tokens": tokens,
                     **partial,
+                    **unparsed,
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
@@ -5042,6 +5072,7 @@ def _ingest_connector(
                 "id": source_id_for_events,
                 "status": "complete",
                 **partial,
+                **unparsed,
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)

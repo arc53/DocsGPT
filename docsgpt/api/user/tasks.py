@@ -282,8 +282,9 @@ def schedule_syncs(self, frequency):
     return resp
 
 
+# Each attempt walks the whole selection again, so what fails the same way every time is not retried.
 @celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
-             dont_autoretry_for=(IngestTooLarge, _connection_unavailable(), ConnectorAuthError))
+             dont_autoretry_for=(*NO_RETRY, _connection_unavailable(), ConnectorAuthError))
 def sync_connector_source(self, source_id):
     """Re-sync one connector source from its connection, with no browser involved."""
     from docsgpt.worker import sync_connector_source as run
