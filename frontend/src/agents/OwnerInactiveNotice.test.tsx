@@ -272,4 +272,43 @@ describe('an opened agent read from the list', () => {
     );
     expect(container.textContent).toBe('');
   });
+
+  const takenOver: OutsideAccess = {
+    api_key: true,
+    public_link: false,
+    webhook: false,
+    paid_by: { user_id: 'u1', label: 'lena@meridian.example' },
+    paused_for: null,
+    can_take_over: false,
+  };
+
+  it('stays cleared after a take over while the page keeps the record it had', async () => {
+    vi.useFakeTimers();
+    try {
+      const opened = withAccess('l6', { paused_for: { reason: 'payer_left' } });
+      await mount(opened);
+      await act(async () => rememberOutsideAccess('l6', takenOver));
+      expect(container.textContent).toBe('');
+      // Minutes later the page re-renders with the record read before it.
+      vi.advanceTimersByTime(5 * 60_000);
+      await mount({ ...opened });
+      expect(container.textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('follows a record of the agent read after the take over', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getAgent.mockReturnValue(new Promise(() => {}));
+      await mount(withAccess('l7', undefined));
+      await act(async () => rememberOutsideAccess('l7', takenOver));
+      vi.advanceTimersByTime(60_000);
+      await mount(withAccess('l7', { paused_for: { reason: 'no_payer' } }));
+      expect(container.textContent).toContain('payer.common.pause.noPayer');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

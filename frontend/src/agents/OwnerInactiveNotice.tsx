@@ -101,6 +101,19 @@ const remembered = new Map<
   { at: number; access: OutsideAccess | null }
 >();
 const listeners = new Set<() => void>();
+// When the notices first saw each agent record's `outside_access`. What the
+// page learned later beats a record seen before it, however long ago: the
+// page keeps the record it opened with, which a Take over made stale.
+const recordSeenAt = new WeakMap<OutsideAccess, number>();
+
+const seenAt = (record: OutsideAccess): number => {
+  let at = recordSeenAt.get(record);
+  if (at === undefined) {
+    at = Date.now();
+    recordSeenAt.set(record, at);
+  }
+  return at;
+};
 
 /**
  * Tells the agent's notices what its outside access is now: after a Take
@@ -127,8 +140,9 @@ const subscribe = (listener: () => void) => {
 
 /**
  * The opened agent's outside access: what it carries, unless the page
- * learned something newer, and whether it still has to be read (an agent from
- * the list, for a reader who manages its access).
+ * learned something since that record was first seen, and whether it still
+ * has to be read (an agent from the list, for a reader who manages its
+ * access).
  */
 function useOutsideAccess(agent: NoticeAgent | null | undefined): {
   access: OutsideAccess | null;
@@ -142,7 +156,10 @@ function useOutsideAccess(agent: NoticeAgent | null | undefined): {
   );
   const own = agent?.outside_access;
   const fresh = !!entry && Date.now() - entry.at < FRESH_MS;
-  const access = entry && (own === undefined || fresh) ? entry.access : own;
+  const newer =
+    !!entry &&
+    (own === undefined || (own === null ? fresh : entry.at >= seenAt(own)));
+  const access = newer ? entry.access : own;
   const needsRead =
     !!id &&
     own === undefined &&
