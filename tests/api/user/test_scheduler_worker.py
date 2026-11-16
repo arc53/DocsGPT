@@ -139,7 +139,7 @@ class TestExecuteScheduledRunBody:
         assert sched["consecutive_failure_count"] == 1
         assert "schedule.run.failed" in {e[0] for e in stub_events}
 
-    def test_quota_refusal_marks_budget_exceeded(
+    def test_an_allowance_refusal_before_start_skips_the_run_as_a_payer_pause(
         self, pg_engine, patched_engine, stub_events,
     ):
         from datetime import datetime, timezone
@@ -158,11 +158,12 @@ class TestExecuteScheduledRunBody:
             side_effect=QuotaExceededError(exceeded),
         ):
             result = execute_scheduled_run_body(str(run["id"]), "celery-q")
-        assert result["status"] == "failed"
+        # The setter's allowance pauses the schedule until the window resets; it is not a failure.
+        assert result["status"] == "skipped"
         with pg_engine.connect() as conn:
             row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
-        assert row["error_type"] == "budget_exceeded"
-        assert "Usage quota reached" in row["error"]
+        assert row["status"] == "skipped"
+        assert row["error_type"] == "payer_out_of_allowance"
 
     def test_agent_limit_refusal_marks_budget_exceeded_naming_the_limit(
         self, pg_engine, patched_engine, stub_events,

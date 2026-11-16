@@ -15,10 +15,11 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text as sql_text
 
 from docsgpt.agents.headless_runner import run_agent_headless
-from docsgpt.api.owner_pause import OWNER_INACTIVE, any_deactivated
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.quotas.service import QuotaExceededError
+from docsgpt.quotas.agent_limits import AgentLimitExceeded
+from docsgpt.quotas.pause import NO_PAYER, PAYER_OUT_OF_ALLOWANCE, PAUSE_REASONS, Pause, schedule_pause
+from docsgpt.quotas.service import NoPayerError, QuotaExceededError
 from docsgpt.storage.db.engine import get_engine
 from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.conversations import (
@@ -228,9 +229,21 @@ def _notify_failing(schedule: Dict[str, Any], kind: str, error_type: Optional[st
     )
 
 
-def _counts_toward_autopause(run: Dict[str, Any]) -> bool:
-    """Whether a failed run bumps the failure count; a Run now is watched by whoever started it, so it doesn't."""
-    return run.get("trigger_source") != "manual"
+def _counts_toward_autopause(run: Dict[str, Any], error_type: Optional[str] = None) -> bool:
+    """Whether a failed run bumps the failure count.
+
+    A Run now is watched by whoever started it, so it doesn't. Nor does a run
+    stopped for its payer (out of allowance mid-run): that clears by itself,
+    and auto-pause would leave the schedule off after it had.
+
+    Args:
+        run: The run.
+        error_type: Why it failed, when known.
+
+    Returns:
+        True when the failure counts.
+    """
+    return run.get("trigger_source") != "manual" and error_type not in PAUSE_REASONS
 
 
 def _autopause_if_due(schedules_repo: SchedulesRepository, schedule: Dict[str, Any], failures: int) -> bool:
@@ -323,9 +336,10 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
 
     On a team's agent the schedule's user is the person who set it and pays
     for it: it runs only while they still hold ``manage_schedules`` there
-    (Editor and up), so leaving the team or a demotion to Viewer stops it. A
-    schedule stored under a team's principal never runs: a principal pays for
-    nothing.
+    (Editor and up). Leaving the team or a demotion to Viewer is reported
+    before this, as a pause (``payer_left``); so is a schedule stored under a
+    team's principal (``no_payer``), which never runs: a principal pays for
+    nothing. This stays as the last word for both.
 
     Args:
         schedule: The schedule row.
@@ -358,45 +372,101 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
         return resolve(conn, "agent", str(agent_id), user_id) is not None
 
 
-def _paused_by_deactivation(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> bool:
-    """Whether the run pauses because the agent's owner or the schedule's user is deactivated.
-
-    Args:
-        schedule: The schedule row.
-        agent_config: The agent row (or the agentless ephemeral config).
-
-    Returns:
-        True when either account is deactivated.
-    """
-    with get_engine().connect() as conn:
-        return any_deactivated(conn, agent_config.get("user_id"), schedule.get("user_id"))
+def _out_of_allowance_line(pause: Pause) -> str:
+    """The notice body for an allowance pause: until when, when the window's reset is known."""
+    if pause.until is None:
+        return "Paused: you're out of allowance"
+    return f"Paused: you're out of allowance until {pause.until.day} {pause.until:%b}"
 
 
-def _skip_paused(run: Dict[str, Any]) -> Dict[str, Any]:
-    """Record a run skipped while an account it runs on is deactivated.
+def _skip_paused(
+    run: Dict[str, Any], schedule: Dict[str, Any], pause: Pause, *, collapse: bool = True,
+) -> Dict[str, Any]:
+    """Record a run skipped while the schedule is paused for its payer.
 
-    A pause, not a failure: it neither counts toward auto-pause nor notifies,
-    and the schedule keeps its cadence, so runs carry on by themselves once the
-    account is reactivated. ``error_type`` names the reason (the UI reads it);
-    ``error`` repeats it for the run log.
+    A pause, not a failure: it neither counts toward auto-pause nor sends a
+    failure notice, and the schedule keeps its cadence, so runs carry on by
+    themselves once the reason clears (a reactivated account, the setter back
+    in the role, someone taking over, a new allowance window). ``error_type``
+    names the reason (the UI reads it); ``error`` repeats it for the run log.
+
+    One row stands for a whole streak: when the schedule's latest finished run
+    is already skipped for the same reason, a scheduled run is deleted instead
+    of stored, so a paused schedule doesn't fill its log. A Run now keeps its
+    row, since whoever started it is watching it. The payer hears of an
+    allowance pause once, on the streak's first skip; nobody else is told
+    from here.
 
     Args:
         run: The pending run.
+        schedule: Its schedule.
+        pause: Why it is paused.
+        collapse: Whether a run inside a streak may be deleted; False once the
+            run has started.
 
     Returns:
         The task's result dict.
     """
+    reason = pause.reason
     with get_engine().begin() as conn:
-        ScheduleRunsRepository(conn).update(
+        runs = ScheduleRunsRepository(conn)
+        latest = runs.latest_finished([str(schedule["id"])]).get(str(schedule["id"]))
+        in_streak = latest is not None and latest.get("status") == "skipped" and latest.get("error_type") == reason
+        if in_streak and collapse and run.get("trigger_source") != "manual":
+            if runs.delete_pending(str(run["id"])):
+                return {"status": "skipped", "reason": reason, "collapsed": True}
+        runs.update(
             str(run["id"]),
             {
                 "status": "skipped",
                 "finished_at": datetime.now(timezone.utc),
-                "error_type": OWNER_INACTIVE,
-                "error": OWNER_INACTIVE,
+                "error_type": reason,
+                "error": reason,
             },
         )
-    return {"status": "skipped", "reason": OWNER_INACTIVE}
+    if reason == PAYER_OUT_OF_ALLOWANCE and pause.payer and not in_streak:
+        from docsgpt.notifications.notify import notify_user
+
+        schedule_id = str(schedule["id"])
+        notify_user(
+            user_id=pause.payer,
+            conversation_id=None,
+            kind="schedule_paused",
+            title=_schedule_title(schedule)[:200],
+            body=_out_of_allowance_line(pause),
+            url=f"/activity/schedules?schedule={schedule_id}",
+            schedule_id=schedule_id,
+        )
+    return {"status": "skipped", "reason": reason}
+
+
+def _pause_from_refusal(exc: QuotaExceededError, payer: Optional[str]) -> Optional[Pause]:
+    """The payer pause a refusal from the run's own pre-check stands for, or None for a failure.
+
+    The schedule's pause check ran just before, so this only catches what
+    changed in between. The agent's own limit is not a payer pause; nor is a
+    stop that came mid-run (``stops_run``), which is a failed run.
+
+    Args:
+        exc: The refusal ``run_agent_headless`` raised.
+        payer: The schedule's payer.
+
+    Returns:
+        The pause to record, or None when the run is a failure.
+    """
+    if isinstance(exc, NoPayerError):
+        return Pause(NO_PAYER, None)
+    exceeded = getattr(exc, "exceeded", None)
+    if getattr(exc, "stops_run", False) or exceeded is None or isinstance(exceeded, AgentLimitExceeded):
+        return None
+    return Pause(PAYER_OUT_OF_ALLOWANCE, payer, getattr(exceeded, "resets_at", None))
+
+
+def _quota_failure_type(exc: QuotaExceededError) -> str:
+    """A refusal recorded as a failed run: the payer's allowance mid-run, else the agent's limit."""
+    if getattr(exc, "stops_run", False) and not isinstance(getattr(exc, "exceeded", None), AgentLimitExceeded):
+        return PAYER_OUT_OF_ALLOWANCE
+    return "budget_exceeded"
 
 
 def _schedule_caller_rules(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> Dict[str, bool]:
@@ -485,8 +555,12 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
     if agent_config is None:
         return _fail_before_start(run, schedule, "agent missing")
 
-    if _paused_by_deactivation(schedule, agent_config):
-        return _skip_paused(run)
+    # Paused for its payer: a deactivated account, a setter no longer in the
+    # role on a team agent, nobody to bill, or the payer out of allowance.
+    with engine.connect() as conn:
+        pause = schedule_pause(conn, schedule, agent_config)
+    if pause is not None:
+        return _skip_paused(run, schedule, pause)
 
     if not _scheduler_still_allowed(schedule, agent_config):
         return _fail_before_start(run, schedule, "agent access revoked")
@@ -528,9 +602,15 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         error_type = "timeout"
         error_text = "run exceeded soft time limit"
     except QuotaExceededError as exc:
-        # The agent's limit or the setter's allowance is used up; the run never started.
+        payer_pause = _pause_from_refusal(exc, schedule.get("user_id") or run.get("user_id"))
+        if payer_pause is not None:
+            # Refused before it started, for its payer: a pause like the check
+            # above, not a failure. The run already shows as started, so it
+            # keeps its row.
+            return _skip_paused(run, schedule, payer_pause, collapse=False)
+        # The agent's own limit, before the run started or mid-run.
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
-        error_type = "budget_exceeded"
+        error_type = _quota_failure_type(exc)
         error_text = str(exc)
     except Exception as exc:
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
@@ -619,7 +699,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         count = 0
         if new_status == "success":
             schedules_repo.reset_failure_count(str(schedule["id"]))
-        elif new_status in ("failed", "timeout") and _counts_toward_autopause(run):
+        elif new_status in ("failed", "timeout") and _counts_toward_autopause(run, error_type):
             count = schedules_repo.bump_failure_count(str(schedule["id"]))
             autopaused = _autopause_if_due(schedules_repo, schedule, count)
         # Once: terminal-flip on cron-fired runs only; manual runs on a

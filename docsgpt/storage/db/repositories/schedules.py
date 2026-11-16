@@ -136,6 +136,75 @@ class SchedulesRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def lock_internal(self, schedule_id: str) -> Optional[dict]:
+        """Fetch a schedule whoever it is stored under and lock the row (``FOR UPDATE``) until the transaction ends.
+
+        Args:
+            schedule_id: Schedule UUID.
+
+        Returns:
+            The row, or None when it doesn't exist.
+        """
+        row = self._conn.execute(
+            text("SELECT * FROM schedules WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+            {"id": str(schedule_id)},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def take_over(self, schedule_id: str, user_id: str) -> Optional[dict]:
+        """Store a schedule under a new payer, who runs it from now on.
+
+        The failure count starts afresh, and the chat it was set from is
+        dropped: that chat stays its old setter's, and the runs would
+        otherwise read its history into output the new payer sees. The
+        status is left alone, so a schedule someone paused stays paused.
+
+        Args:
+            schedule_id: Schedule UUID.
+            user_id: The new payer.
+
+        Returns:
+            The updated row, or None when no row matched.
+        """
+        row = self._conn.execute(
+            text(
+                "UPDATE schedules SET user_id = :user_id, consecutive_failure_count = 0, "
+                "origin_conversation_id = NULL WHERE id = CAST(:id AS uuid) RETURNING *"
+            ),
+            {"id": str(schedule_id), "user_id": user_id},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_with_context(self, schedule_id: str, viewer: str) -> Optional[dict]:
+        """One schedule with the extra keys of the lists (``list_for_owner_agents_with_context``).
+
+        ``origin_conversation_name`` is filled only when the viewer set it:
+        the chat a schedule came from stays with its setter.
+
+        Args:
+            schedule_id: Schedule UUID.
+            viewer: Who reads it.
+
+        Returns:
+            The row with ``agent_name``, ``agent_image``, ``agent_user_id`` and
+            ``origin_conversation_name``, or None when it doesn't exist.
+        """
+        row = self._conn.execute(
+            text(
+                """
+                SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                       a.user_id AS agent_user_id,
+                       CASE WHEN s.user_id = :viewer THEN c.name END AS origin_conversation_name
+                FROM schedules s
+                LEFT JOIN agents a ON a.id = s.agent_id
+                LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+                WHERE s.id = CAST(:id AS uuid)
+                """
+            ),
+            {"id": str(schedule_id), "viewer": viewer},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_for_agent(
         self,
         agent_id: str,

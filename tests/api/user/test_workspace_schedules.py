@@ -240,6 +240,7 @@ class TestRunsNeedTheSettersRole:
         headless.assert_called_once()
 
     def test_a_setter_demoted_to_viewer_stops_running(self, pg_engine, patched_engine):
+        # A pause for the payer (``payer_left``), not a failure: it runs again once they are back in the role.
         with pg_engine.begin() as conn:
             tid, run = self._pending(conn, EDITOR)
             conn.execute(
@@ -248,7 +249,7 @@ class TestRunsNeedTheSettersRole:
             )
         result, headless = self._run(pg_engine, run)
         headless.assert_not_called()
-        assert result["status"] == "failed"
+        assert (result["status"], result["reason"]) == ("skipped", "payer_left")
 
     def test_a_setter_who_left_stops_running(self, pg_engine, patched_engine):
         with pg_engine.begin() as conn:
@@ -259,7 +260,7 @@ class TestRunsNeedTheSettersRole:
             )
         result, headless = self._run(pg_engine, run)
         headless.assert_not_called()
-        assert result["status"] == "failed"
+        assert (result["status"], result["reason"]) == ("skipped", "payer_left")
 
     def test_a_schedule_stored_under_the_principal_never_runs(self, pg_engine, patched_engine):
         with pg_engine.begin() as conn:
@@ -271,7 +272,7 @@ class TestRunsNeedTheSettersRole:
             )
         result, headless = self._run(pg_engine, run)
         headless.assert_not_called()
-        assert result["status"] == "failed"
+        assert (result["status"], result["reason"]) == ("skipped", "no_payer")
 
 
 @pytest.mark.fresh_db

@@ -559,6 +559,8 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/push/public_key": ("*",),
     "/api/push/subscriptions": ("*",),
     "/api/conversations/<string:conversation_id>/read": ("*",),
+    # Taking over makes the caller pay for a teammate's schedule: a session only, like moving.
+    "/api/schedules/<string:schedule_id>/take_over": ("*",),
 }
 DENIED_PREFIXES = (
     "/api/admin/",
