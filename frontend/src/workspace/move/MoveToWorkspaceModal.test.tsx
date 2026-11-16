@@ -367,7 +367,10 @@ describe('MoveToWorkspaceModal', () => {
     const store = configureStore({
       reducer: {
         preference: (
-          state = { token: 'tok', sourceDocs: [{ id: 's1' }] },
+          state: { token: string; sourceDocs: unknown } = {
+            token: 'tok',
+            sourceDocs: [{ id: 's1' }],
+          },
           action: { type: string; payload?: unknown },
         ) =>
           action.type === 'preference/setSourceDocs'
