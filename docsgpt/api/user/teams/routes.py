@@ -1275,8 +1275,8 @@ def _team_item_shares(conn, ra: ResourceAccess, user: str) -> dict:
         dict: ``success``, ``shares`` (always empty), ``workspace`` (``{kind, team_id, name}``),
         ``members_count``, and for an agent ``outside_access``, the agent payload's own block
         (``outside_access_state``: ``{api_key, public_link, webhook, paid_by, paused_for,
-        can_take_over}``), so the dialog and the agent page never disagree. The payer is named to
-        every member, as the team's own record.
+        can_take_over}``), so the dialog and the agent page never disagree. Every member reads
+        what is on; only those who manage it read who pays and why it is paused.
     """
     # Imported here: the agents package pulls in most of the API, which would
     # make importing the teams routes order-dependent.
@@ -1288,11 +1288,12 @@ def _team_item_shares(conn, ra: ResourceAccess, user: str) -> dict:
         {"t": ra.team_id},
     ).scalar()
     body = {
+        # First, so the named ``workspace`` below replaces the payload's unnamed one.
+        **ra.payload(),
         "success": True,
         "shares": [],
         "workspace": {"kind": "team", "team_id": ra.team_id, "name": team.get("name")},
         "members_count": int(members_count or 0),
-        **ra.payload(),
     }
     if ra.resource_type == "agent":
         agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}

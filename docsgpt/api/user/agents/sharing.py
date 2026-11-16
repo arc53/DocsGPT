@@ -86,8 +86,9 @@ def outside_access_state(
 ) -> dict:
     """An agent's ``outside_access`` block: what is on, who pays, why it is paused and whether ``user`` may take over.
 
-    Only for a reader who may see it (``manage_access_details``, or the
-    person owner): it names the payer.
+    Who pays, and why and until when it is paused, are for a reader who
+    manages the access (``manage_access_details``, or the person owner);
+    anyone else (a team item's share dialog) reads only what is on.
 
     Args:
         conn: Open database connection.
@@ -101,16 +102,18 @@ def outside_access_state(
         agent's payer, the label their email when on file, else their id; None on a personal agent, whose
         owner pays, and while nothing is on or nobody pays); ``paused_for`` (``{reason, until}`` or None);
         ``can_take_over`` (a team agent with something on, the reader holds ``manage_access_details`` and
-        is not already the payer).
+        is not already the payer). ``paid_by`` and ``paused_for`` are None for a reader without
+        ``manage_access_details``.
     """
     kinds = outside_access_kinds(agent)
+    manages = ra.can("manage_access_details")
     payer = agent.get("access_payer_id") if (ra.is_team_item and kinds) else None
     paid_by = None
-    if payer:
+    if payer and manages:
         paid_by = {"user_id": payer, "label": UsersRepository(conn).emails_for([payer]).get(payer) or payer}
     pause = best_effort(
         conn, "the agent's outside-access pause", lambda: outside_access_pause(conn, agent, checks=checks), None,
-    )
+    ) if manages else None
     return {
         "api_key": "api_key" in kinds,
         "public_link": "public_link" in kinds,
@@ -118,7 +121,7 @@ def outside_access_state(
         "paid_by": paid_by,
         "paused_for": pause.payload() if pause else None,
         "can_take_over": bool(
-            ra.is_team_item and kinds and ra.can("manage_access_details")
+            ra.is_team_item and kinds and manages
             and not is_principal_id(user) and payer != user
         ),
     }

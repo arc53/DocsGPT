@@ -317,11 +317,13 @@ class TestTeamItemPayer:
         aid = str(AgentsRepository(db).create(
             principal_id(tid), "Team agent", "published", key=f"k-{uuid.uuid4().hex}", access_payer_id="adam",
         )["id"])
-        resp = self._shares(client, aid)
+        resp = self._shares(client, aid, "alice")
         assert resp.status_code == 200
         outside = _body(resp)["outside_access"]
         assert outside["api_key"] is True
         assert outside["paid_by"] == {"user_id": "adam", "label": "adam@x.io"}
+        # Below Admin the dialog says what is on, not who pays.
+        assert _body(self._shares(client, aid, "vera"))["outside_access"]["paid_by"] is None
 
     def test_paid_by_is_none_without_outside_access(self, client, db):
         tid = _team(db)

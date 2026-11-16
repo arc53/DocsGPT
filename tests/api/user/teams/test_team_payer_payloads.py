@@ -122,9 +122,30 @@ class TestShareDialogPause:
         QuotaPoliciesRepository(db).upsert(scope="user", subject_id="jonas", token_limit=10)
         TokenUsageRepository(db).insert(user_id="jonas", prompt_tokens=20)
         _, resets = window_bounds("month")
-        assert _outside(client, aid, "tomas")["paused_for"] == {
+        assert _outside(client, aid, "lena")["paused_for"] == {
             "reason": "payer_out_of_allowance", "until": resets.isoformat(),
         }
+
+    @pytest.mark.parametrize("user", ["dana", "tomas"])
+    def test_below_admin_reads_what_is_on_but_not_who_pays_or_why_it_is_paused(self, client, db, user):
+        tid = _team(db)
+        aid = _published(db, tid, "jonas")
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="jonas", token_limit=10)
+        TokenUsageRepository(db).insert(user_id="jonas", prompt_tokens=20)
+
+        assert _outside(client, aid, user) == {
+            "api_key": True, "public_link": False, "webhook": False, "paid_by": None, "paused_for": None,
+            "can_take_over": False,
+        }
+
+    @pytest.mark.parametrize("user", ["lena", "dana", "tomas"])
+    def test_the_dialog_names_the_team(self, client, db, user):
+        tid = _team(db)
+        aid = _published(db, tid, "jonas")
+        with _as(user):
+            body = json.loads(client.get(f"/api/resource_shares?resource_type=agent&resource_id={aid}").data)
+
+        assert body["workspace"] == {"kind": "team", "team_id": tid, "name": "Ops"}
 
     def test_nothing_on_is_never_paused(self, client, db):
         tid = _team(db)
