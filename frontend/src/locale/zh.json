@@ -2722,6 +2722,10 @@
   },
   "payer": {
     "access": {
+      "notice": "外部访问已暂停。{{reason}}",
+      "noticeUnknown": "外部访问已暂停。",
+      "paused": "已暂停",
+      "pausedBecause": "已暂停 · {{reason}}",
       "takenOver": "现在由您为此智能体的外部使用付费。"
     },
     "common": {
@@ -4344,6 +4348,12 @@
         "weekly": "每周"
       },
       "syncNow": "立即同步",
+      "syncPaused": {
+        "noPayer": "定时同步已暂停：团队中没有人可以为其付费。",
+        "noPayerSince": "定时同步自 {{date}} 起暂停：团队中没有人可以为其付费。",
+        "other": "定时同步已暂停。",
+        "otherSince": "定时同步自 {{date}} 起暂停。"
+      },
       "syncStarted": "正在同步 {{name}}…",
       "syncing": "同步中...",
       "testRetrieval": {

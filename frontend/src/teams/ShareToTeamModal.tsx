@@ -1265,6 +1265,8 @@ export default function ShareToTeamModal({
       >
         <TeamItemAccess
           resourceType={resourceType}
+          resourceId={resourceId}
+          resourceName={resourceName}
           info={teamItem}
           currentUserId={currentUserId}
           onNavigate={onClose}

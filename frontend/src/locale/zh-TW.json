@@ -2723,6 +2723,10 @@
   },
   "payer": {
     "access": {
+      "notice": "外部存取已暫停。{{reason}}",
+      "noticeUnknown": "外部存取已暫停。",
+      "paused": "已暫停",
+      "pausedBecause": "已暫停 · {{reason}}",
       "takenOver": "現在由您為此代理的外部使用付費。"
     },
     "common": {
@@ -4346,6 +4350,12 @@
         "weekly": "每週"
       },
       "syncNow": "立即同步",
+      "syncPaused": {
+        "noPayer": "排程同步已暫停：團隊中沒有人能為其付費。",
+        "noPayerSince": "排程同步自 {{date}} 起暫停：團隊中沒有人能為其付費。",
+        "other": "排程同步已暫停。",
+        "otherSince": "排程同步自 {{date}} 起暫停。"
+      },
       "syncStarted": "正在同步 {{name}}…",
       "syncing": "同步中...",
       "testRetrieval": {

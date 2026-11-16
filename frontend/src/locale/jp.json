@@ -2723,6 +2723,10 @@
   },
   "payer": {
     "access": {
+      "notice": "外部からのアクセスは一時停止中です。{{reason}}",
+      "noticeUnknown": "外部からのアクセスは一時停止中です。",
+      "paused": "一時停止中",
+      "pausedBecause": "一時停止中 · {{reason}}",
       "takenOver": "このエージェントの外部からの利用は今後あなたが支払います。"
     },
     "common": {
@@ -4346,6 +4350,12 @@
         "weekly": "毎週"
       },
       "syncNow": "今すぐ同期",
+      "syncPaused": {
+        "noPayer": "定期同期は一時停止中です：チーム内に支払える人がいません。",
+        "noPayerSince": "定期同期は {{date}} から一時停止中です：チーム内に支払える人がいません。",
+        "other": "定期同期は一時停止中です。",
+        "otherSince": "定期同期は {{date}} から一時停止中です。"
+      },
       "syncStarted": "{{name}} を同期しています…",
       "syncing": "同期中...",
       "testRetrieval": {

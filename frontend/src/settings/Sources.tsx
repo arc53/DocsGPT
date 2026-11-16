@@ -5,8 +5,10 @@ import {
   HardDrive,
   Network,
   RefreshCw,
+  TriangleAlert,
   X,
 } from 'lucide-react';
+import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -43,6 +45,7 @@ import PageToolbar from '../components/PageToolbar';
 import RoleMeta, { showsRole } from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
@@ -87,6 +90,8 @@ import {
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
+import { formatPayerDate } from '../payer/pauseReason';
+import type { SourceSyncPaused } from '../payer/types';
 import Upload from '../upload/Upload';
 import {
   KNOWLEDGE_LINK_PARAMS,
@@ -168,6 +173,27 @@ function asListedDoc(doc: KnowledgeDoc): Doc {
   };
 }
 
+/**
+ * Why a team source's scheduled sync is skipped ("Scheduled sync paused:
+ * nobody in the team can pay for it."), with since when; empty while it
+ * runs. A reason the app doesn't know still reads as paused.
+ *
+ * Args:
+ *   t: The translate function.
+ *   doc: The source, with the server's `sync_paused`.
+ *   language: The UI language, for the date.
+ */
+function syncPausedText(t: TFunction, doc: Doc, language?: string): string {
+  const paused = (doc as Doc & { sync_paused?: SourceSyncPaused | null })
+    .sync_paused;
+  if (!paused) return '';
+  const kind = paused.reason === 'sync_no_payer' ? 'noPayer' : 'other';
+  const date = formatPayerDate(paused.since, language);
+  return date
+    ? t(`settings.sources.syncPaused.${kind}Since`, { date })
+    : t(`settings.sources.syncPaused.${kind}`);
+}
+
 // A sync with no word on its first ingest (live events off, or the stream
 // resumed past the event) is looked for on the lists instead: from 2 minutes
 // after it started, every 30 s, until STARTED_SYNC_GIVE_UP_MS.
@@ -236,7 +262,7 @@ export default function Sources({
   paginatedDocuments,
   handleDeleteDocument,
 }: DocumentsProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
@@ -1092,6 +1118,8 @@ export default function Sources({
     const paused = connectionNeedsSignIn(connection);
     const ingest = ingestState(document);
     const line = sourceCardLine(t, document, connection);
+    // A team source's scheduled sync that nobody in the team can pay for.
+    const syncPaused = syncPausedText(t, document, i18n?.language);
     const tokens = Number(document.tokens) || 0;
     const graph = document.config?.kind === 'graphrag';
     const build = graph && document.id ? graphBuilds[document.id] : undefined;
@@ -1142,6 +1170,18 @@ export default function Sources({
           <CardDescription size="xs" className="line-clamp-2 wrap-break-word">
             {line}
           </CardDescription>
+        ) : null}
+        {syncPaused ? (
+          <p
+            data-sync-paused
+            className="text-warning flex items-start gap-1.5 text-xs"
+          >
+            <TriangleAlert
+              className="mt-0.5 size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            {syncPaused}
+          </p>
         ) : null}
         {/* Pills are states only: the sign-in, the ingest, a graph build. */}
         {(connection && paused) || ingest || building ? (
@@ -1297,9 +1337,20 @@ export default function Sources({
     shownFolders.length === 0 &&
     sharedDocs.length === 0;
 
+  const viewSyncPaused = documentToView
+    ? syncPausedText(t, documentToView, i18n?.language)
+    : '';
+
   return documentToView ? (
     <SourceFolderTrail.Provider value={folderCrumbs}>
       <div className="flex flex-col">
+        {viewSyncPaused ? (
+          <Alert variant="warning" role="note" className="mb-4">
+            <AlertDescription>
+              <p>{viewSyncPaused}</p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {isWikiSource(documentToView) ? (
           <WikiViewer
             docId={documentToView.id || ''}

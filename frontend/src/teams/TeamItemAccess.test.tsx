@@ -15,6 +15,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+// Take over needs the session and the toast; tested in the .payer file.
+vi.mock('react-redux', () => ({
+  useDispatch: () => vi.fn(),
+  useSelector: (selector: (s: unknown) => unknown) =>
+    selector({ preference: { token: null } }),
+}));
+
 import TeamItemAccess, { type TeamItemShares } from './TeamItemAccess';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

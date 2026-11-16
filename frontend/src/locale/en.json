@@ -2770,6 +2770,10 @@
   },
   "payer": {
     "access": {
+      "notice": "Outside access is paused. {{reason}}",
+      "noticeUnknown": "Outside access is paused.",
+      "paused": "Paused",
+      "pausedBecause": "Paused · {{reason}}",
       "takenOver": "You pay for this agent's outside use now."
     },
     "common": {
@@ -4399,6 +4403,12 @@
         "weekly": "Weekly"
       },
       "syncNow": "Sync now",
+      "syncPaused": {
+        "noPayer": "Scheduled sync paused: nobody in the team can pay for it.",
+        "noPayerSince": "Scheduled sync paused since {{date}}: nobody in the team can pay for it.",
+        "other": "Scheduled sync paused.",
+        "otherSince": "Scheduled sync paused since {{date}}."
+      },
       "syncStarted": "Syncing {{name}}…",
       "syncing": "Syncing...",
       "testRetrieval": {

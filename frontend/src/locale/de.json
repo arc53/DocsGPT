@@ -2749,6 +2749,10 @@
   },
   "payer": {
     "access": {
+      "notice": "Der Zugriff von außen ist pausiert. {{reason}}",
+      "noticeUnknown": "Der Zugriff von außen ist pausiert.",
+      "paused": "Pausiert",
+      "pausedBecause": "Pausiert · {{reason}}",
       "takenOver": "Sie bezahlen jetzt die Nutzung dieses Agenten von außen."
     },
     "common": {
@@ -4378,6 +4382,12 @@
         "weekly": "Wöchentlich"
       },
       "syncNow": "Jetzt synchronisieren",
+      "syncPaused": {
+        "noPayer": "Geplante Synchronisierung pausiert: Niemand im Team kann dafür bezahlen.",
+        "noPayerSince": "Geplante Synchronisierung seit {{date}} pausiert: Niemand im Team kann dafür bezahlen.",
+        "other": "Geplante Synchronisierung pausiert.",
+        "otherSince": "Geplante Synchronisierung seit {{date}} pausiert."
+      },
       "syncStarted": "{{name}} wird synchronisiert…",
       "syncing": "Synchronisiere...",
       "testRetrieval": {

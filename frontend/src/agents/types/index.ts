@@ -1,5 +1,6 @@
 import type { FolderRefDetail } from '../../components/folders/pickedFolders';
 import type { SponsorAudience } from '../sponsorConsent';
+import type { OutsideAccess } from '../../payer/types';
 import type { AccessFields } from '../../utils/accessUtils';
 
 export type ToolSummary = {
@@ -160,6 +161,13 @@ export type Agent = {
   // Who reaches the agent's resources, sent when the caller may take one
   // over, so the take-over confirmation can say who it extends to.
   sponsor_audience?: SponsorAudience;
+  /** Its owner's account is deactivated, so its key, link, webhook and schedules stop. */
+  owner_inactive?: boolean;
+  /**
+   * Its key, public link and webhook: which are on, who pays, why they are
+   * paused (GET /api/get_agent, callers who manage access details).
+   */
+  outside_access?: OutsideAccess;
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;

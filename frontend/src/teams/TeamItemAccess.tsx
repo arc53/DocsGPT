@@ -1,15 +1,25 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
-import type {
-  OutsideAccess,
-  PersonRef,
-} from '../api/services/workspacesService';
+import { rememberOutsideAccess } from '../agents/OwnerInactiveNotice';
+import payerService from '../api/services/payerService';
 import type { ResourceType } from '../api/services/teamsService';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { SectionHeader } from '../components/ui/section-header';
+import type { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
+import { pauseReasonText } from '../payer/pauseReason';
+import TakeOverModal from '../payer/TakeOverModal';
+import type {
+  OutsideAccess,
+  OutsideAccessKind,
+  PersonRef,
+} from '../payer/types';
+import { selectToken } from '../preferences/preferenceSlice';
 import { roleAtLeast, type WorkspaceRole } from '../workspace/workspaceSlice';
 
 /**
@@ -25,9 +35,8 @@ export type TeamItemShares = {
   allowed_actions?: string[];
   team_role?: WorkspaceRole | null;
   origin?: 'own' | 'team' | 'shared' | null;
-  /** Agents only. */
-  outside_access?:
-    (Omit<OutsideAccess, 'paid_by'> & { paid_by?: PersonRef | null }) | null;
+  /** Agents only: what is on, who pays, why it is paused, Take over. */
+  outside_access?: OutsideAccess | null;
 };
 
 /** Whether a `resource_shares` answer is a team item's. */
@@ -38,6 +47,10 @@ export const isTeamItemShares = (body: unknown): body is TeamItemShares =>
 
 type Props = {
   resourceType: ResourceType;
+  /** The item's id: an agent's outside access is taken over by it. */
+  resourceId?: string;
+  /** The item's name, for the Take over confirm. */
+  resourceName?: string;
   info: TeamItemShares;
   /** The caller's user id, to say "you" for the payer. */
   currentUserId?: string;
@@ -55,26 +68,45 @@ const initialOf = (label: string): string => {
  * membership, so it shows one row for everyone in the team (with Manage
  * members for the team's Admins), the caller's own row with their team role,
  * and for an agent what reaches it from outside the team (public link, API
- * key and widget, webhook), each On or Off and who pays for it. Those are
- * changed on the agent's own page, by an Admin.
+ * key and widget, webhook), each On or Off and who pays for it, or why it is
+ * paused. Those are changed on the agent's own page, by an Admin; an Admin
+ * who doesn't pay for them can take them over here.
  */
 export default function TeamItemAccess({
   resourceType,
+  resourceId,
+  resourceName,
   info,
   currentUserId,
   onNavigate,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dispatch = useDispatch();
+  const token = useSelector(selectToken);
   const noEscape = { interpolation: { escapeValue: false } };
   const team = info.workspace.name ?? '';
   const role = info.team_role ?? 'viewer';
-  const outside = resourceType === 'agent' ? info.outside_access : null;
+  const given = resourceType === 'agent' ? info.outside_access : null;
+  // The block as last answered: the dialog's read, then a Take over's.
+  const [outside, setOutside] = useState(given ?? null);
+  useEffect(() => setOutside(given ?? null), [given]);
+  const [takeOverState, setTakeOverState] = useState<ActiveState>('INACTIVE');
 
   const payer = (person: PersonRef | null | undefined): string | null => {
     if (!person) return null;
     if (currentUserId && person.user_id === currentUserId)
       return t('workspace.share.payerYou');
     return person.label || null;
+  };
+  const paused = outside?.paused_for ?? null;
+  const pausedText = (): string => {
+    const reason = pauseReasonText(t, paused, outside?.paid_by?.label, team, {
+      you: !!currentUserId && outside?.paid_by?.user_id === currentUserId,
+      language: i18n?.language,
+    });
+    return reason
+      ? t('payer.access.pausedBecause', { reason, ...noEscape })
+      : t('payer.access.paused');
   };
   const state = (on: boolean): string => {
     if (!on) return t('workspace.share.off');
@@ -83,14 +115,29 @@ export default function TeamItemAccess({
       ? t('workspace.share.onPaidBy', { name, ...noEscape })
       : t('workspace.share.on');
   };
+  const canTakeOver = !!outside?.can_take_over && !!resourceId;
 
-  const outsideRows = outside
-    ? [
-        { key: 'publicLink', on: !!outside.public_link },
-        { key: 'apiKey', on: !!outside.api_key },
-        { key: 'webhook', on: !!outside.webhook },
-      ]
-    : [];
+  const takeOver = async () => {
+    if (!resourceId) return;
+    const result = await payerService.takeOverOutsideAccess(resourceId, token);
+    setOutside(result.outside_access);
+    rememberOutsideAccess(resourceId, result.outside_access);
+    dispatch(
+      showActionToast({
+        variant: 'success',
+        message: t('payer.access.takenOver'),
+      }),
+    );
+  };
+
+  const outsideRows: { key: string; kind: OutsideAccessKind; on: boolean }[] =
+    outside
+      ? [
+          { key: 'publicLink', kind: 'public_link', on: !!outside.public_link },
+          { key: 'apiKey', kind: 'api_key', on: !!outside.api_key },
+          { key: 'webhook', kind: 'webhook', on: !!outside.webhook },
+        ]
+      : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -154,11 +201,29 @@ export default function TeamItemAccess({
             {outsideRows.map((row) => (
               <ListRow
                 key={row.key}
+                // A paused row's reason is a sentence: it wraps.
+                wrap={row.on && !!paused}
                 title={t(`workspace.share.${row.key}`)}
+                description={
+                  row.on && paused ? (
+                    <span className="text-warning">{pausedText()}</span>
+                  ) : (
+                    state(row.on)
+                  )
+                }
                 trailing={
-                  <span className="text-muted-foreground shrink-0 pr-3 text-sm">
-                    {state(row.on)}
-                  </span>
+                  row.on && canTakeOver ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      shape="pill"
+                      className="shrink-0"
+                      onClick={() => setTakeOverState('ACTIVE')}
+                    >
+                      {t('payer.common.takeOver.submit')}
+                    </Button>
+                  ) : null
                 }
               />
             ))}
@@ -167,6 +232,17 @@ export default function TeamItemAccess({
             {t('workspace.share.adminsOnly')}
           </p>
         </section>
+      ) : null}
+      {/* Stays mounted after a Take over, so its dialog closes as usual. */}
+      {outside && resourceId ? (
+        <TakeOverModal
+          kind="outside_access"
+          name={resourceName ?? ''}
+          payer={outside?.paid_by}
+          modalState={takeOverState}
+          setModalState={setTakeOverState}
+          onConfirm={takeOver}
+        />
       ) : null}
     </div>
   );

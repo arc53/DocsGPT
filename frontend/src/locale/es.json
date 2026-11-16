@@ -2843,6 +2843,10 @@
   },
   "payer": {
     "access": {
+      "notice": "El acceso externo está en pausa. {{reason}}",
+      "noticeUnknown": "El acceso externo está en pausa.",
+      "paused": "En pausa",
+      "pausedBecause": "En pausa · {{reason}}",
       "takenOver": "Ahora pagas el uso externo de este agente."
     },
     "common": {
@@ -4531,6 +4535,12 @@
         "weekly": "Semanal"
       },
       "syncNow": "Sincronizar ahora",
+      "syncPaused": {
+        "noPayer": "Sincronización programada en pausa: nadie del equipo puede pagarla.",
+        "noPayerSince": "Sincronización programada en pausa desde el {{date}}: nadie del equipo puede pagarla.",
+        "other": "Sincronización programada en pausa.",
+        "otherSince": "Sincronización programada en pausa desde el {{date}}."
+      },
       "syncStarted": "Sincronizando {{name}}…",
       "syncing": "Sincronizando...",
       "testRetrieval": {

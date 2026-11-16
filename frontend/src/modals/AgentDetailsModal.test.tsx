@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-redux', () => ({
+  useDispatch: () => vi.fn(),
   useSelector: (selector: (s: unknown) => unknown) =>
     selector({ preference: { token: null } }),
 }));
