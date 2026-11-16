@@ -158,6 +158,8 @@ class SchedulesRepository:
         dropped: that chat stays its old setter's, and the runs would
         otherwise read its history into output the new payer sees. The
         status is left alone, so a schedule someone paused stays paused.
+        A one-time task whose time has passed while it waited out its old
+        payer's pause runs now rather than at its next check.
 
         Args:
             schedule_id: Schedule UUID.
@@ -169,11 +171,37 @@ class SchedulesRepository:
         row = self._conn.execute(
             text(
                 "UPDATE schedules SET user_id = :user_id, consecutive_failure_count = 0, "
-                "origin_conversation_id = NULL WHERE id = CAST(:id AS uuid) RETURNING *"
+                "origin_conversation_id = NULL, "
+                "next_run_at = CASE WHEN trigger_type = 'once' AND next_run_at IS NOT NULL "
+                "THEN LEAST(next_run_at, GREATEST(run_at, now())) ELSE next_run_at END "
+                "WHERE id = CAST(:id AS uuid) RETURNING *"
             ),
             {"id": str(schedule_id), "user_id": user_id},
         ).fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def rearm_once(self, schedule_id: str, at: datetime) -> bool:
+        """Give a one-time task skipped for its payer a next run, so it fires once the pause clears.
+
+        Only an active one-time task the dispatcher has already taken (no
+        next run) is re-armed: a person who paused, edited or ran it since
+        keeps what they set.
+
+        Args:
+            schedule_id: Schedule UUID.
+            at: When to check the pause again.
+
+        Returns:
+            True when the task was re-armed.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE schedules SET next_run_at = :at WHERE id = CAST(:id AS uuid) "
+                "AND trigger_type = 'once' AND status = 'active' AND next_run_at IS NULL"
+            ),
+            {"id": str(schedule_id), "at": at},
+        )
+        return (result.rowcount or 0) > 0
 
     def get_with_context(self, schedule_id: str, viewer: str) -> Optional[dict]:
         """One schedule with the extra keys of the lists (``list_for_owner_agents_with_context``).

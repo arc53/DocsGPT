@@ -465,3 +465,152 @@ class TestRunEvents:
         _execute(run)
 
         assert events == []
+
+
+def _once_schedule(conn, *, origin: str | None = None) -> tuple[str, dict]:
+    """A one-time task on a team agent whose time has come: the dispatcher cleared its next run."""
+    tid, principal = _team(conn)
+    agent = AgentsRepository(conn).create(principal, "Bot", "published", agent_type="classic", default_model_id="m")
+    schedule = SchedulesRepository(conn).create(
+        user_id=EDITOR, agent_id=str(agent["id"]), trigger_type="once", instruction="hi", name="Reminder",
+        run_at=_now() - timedelta(minutes=1), next_run_at=None, origin_conversation_id=origin,
+    )
+    return tid, schedule
+
+
+def _take_over(conn, schedule: dict, user_id: str) -> None:
+    """What the Take over route writes, in its own transaction."""
+    SchedulesRepository(conn).lock_internal(str(schedule["id"]))
+    SchedulesRepository(conn).take_over(str(schedule["id"]), user_id)
+    ScheduleRunsRepository(conn).reassign_pending(str(schedule["id"]), user_id)
+
+
+class TestOneTimeTaskPaused:
+    """A one-time task skipped for its payer waits and runs once the pause clears, as a recurring one would."""
+
+    def _assert_waits(self, engine, schedule, at: datetime) -> None:
+        row = _schedule_row(engine, schedule)
+        assert row["status"] == "active"
+        assert row["next_run_at"] is not None
+        next_run = row["next_run_at"]
+        next_run = datetime.fromisoformat(next_run) if isinstance(next_run, str) else next_run
+        assert abs((next_run - at).total_seconds()) < 60
+
+    def test_a_payer_out_of_allowance_waits_for_the_reset(self, engine, notified):
+        from docsgpt.quotas.pause import schedule_pause
+
+        with engine.begin() as conn:
+            _tid, schedule = _once_schedule(conn)
+            run = _pending(conn, schedule)
+            _out_of_allowance(conn, EDITOR)
+        with engine.connect() as conn:
+            agent = AgentsRepository(conn).get_by_id(str(schedule["agent_id"]))
+            until = schedule_pause(conn, schedule, agent).until
+
+        assert _execute(run)[0]["status"] == "skipped"
+
+        self._assert_waits(engine, schedule, until)
+
+    def test_a_setter_who_left_waits_and_a_take_over_runs_it_at_once(self, engine, notified):
+        with engine.begin() as conn:
+            tid, schedule = _once_schedule(conn)
+            run = _pending(conn, schedule)
+            _set_role(conn, tid, EDITOR, None)
+
+        assert _execute(run)[0]["status"] == "skipped"
+        self._assert_waits(engine, schedule, _now() + timedelta(seconds=settings.SCHEDULE_MIN_INTERVAL))
+
+        with engine.begin() as conn:
+            _take_over(conn, schedule, OWNER)
+        self._assert_waits(engine, schedule, _now())
+
+    def test_a_take_over_leaves_a_task_not_yet_due_alone(self, engine, notified):
+        later = _now() + timedelta(days=2)
+        with engine.begin() as conn:
+            _tid, schedule = _once_schedule(conn)
+            SchedulesRepository(conn).update_internal(str(schedule["id"]), {"run_at": later, "next_run_at": later})
+            _take_over(conn, schedule, OWNER)
+
+        self._assert_waits(engine, schedule, later)
+
+    def test_a_task_that_ran_is_not_re_armed_by_a_take_over(self, engine, notified):
+        with engine.begin() as conn:
+            _tid, schedule = _once_schedule(conn)
+            run = _pending(conn, schedule)
+        assert _execute(run)[0]["status"] == "success"
+
+        with engine.begin() as conn:
+            _take_over(conn, schedule, OWNER)
+
+        row = _schedule_row(engine, schedule)
+        assert (row["status"], row["next_run_at"]) == ("completed", None)
+
+
+class TestTakeOverAsTheRunStarts:
+    """A take over committed after the worker picked the run up, but before it claimed it, decides who pays."""
+
+    def _take_over_while_loading(self, engine, schedule):
+        from docsgpt.api.user import scheduler_worker
+
+        real = scheduler_worker._agent_config_for_schedule
+
+        def _load(row):
+            with engine.begin() as conn:
+                _take_over(conn, schedule, OWNER)
+            return real(row)
+
+        return patch("docsgpt.api.user.scheduler_worker._agent_config_for_schedule", _load)
+
+    def test_the_taker_pays_and_the_run_is_theirs(self, engine, notified):
+        with engine.begin() as conn:
+            _tid, schedule = _team_schedule(conn)
+            run = _pending(conn, schedule)
+
+        with self._take_over_while_loading(engine, schedule):
+            result, headless = _execute(run)
+
+        assert result["status"] == "success"
+        assert headless.call_args.kwargs["payer"] == OWNER
+        assert _run_row(engine, run)["user_id"] == OWNER
+
+    def test_a_one_time_task_no_longer_reads_the_old_setters_chat(self, engine, notified):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        with engine.begin() as conn:
+            tid, _ = _team(conn)
+            chat = ConversationsRepository(conn).create(EDITOR, "Private", team_id=tid)
+            ConversationsRepository(conn).append_message(
+                str(chat["id"]), {"prompt": "secret plan", "response": "noted", "metadata": {}},
+            )
+            _tid, schedule = _once_schedule(conn, origin=str(chat["id"]))
+            run = _pending(conn, schedule)
+
+        with self._take_over_while_loading(engine, schedule):
+            result, headless = _execute(run)
+
+        assert result["status"] == "success"
+        kwargs = headless.call_args.kwargs
+        assert kwargs["payer"] == OWNER
+        assert kwargs["conversation_id"] is None
+        assert kwargs["chat_history"] == []
+        with engine.connect() as conn:
+            assert len(ConversationsRepository(conn).get_messages(str(chat["id"]))) == 1
+
+
+class TestTakerAlsoOutOfAllowance:
+    def test_a_new_payers_pause_is_its_own_streak_and_tells_them(self, engine, notified):
+        with engine.begin() as conn:
+            _tid, schedule = _team_schedule(conn)
+            first = _pending(conn, schedule)
+            second = _pending(conn, schedule, minutes=5)
+            _out_of_allowance(conn, EDITOR)
+            _out_of_allowance(conn, OWNER)
+        assert _execute(first)[0]["status"] == "skipped"
+        with engine.begin() as conn:
+            _take_over(conn, schedule, OWNER)
+
+        assert _execute(second)[0]["status"] == "skipped"
+
+        row = _run_row(engine, second)
+        assert (row["status"], row["error_type"], row["user_id"]) == ("skipped", "payer_out_of_allowance", OWNER)
+        assert [n["user_id"] for n in notified] == [EDITOR, OWNER]

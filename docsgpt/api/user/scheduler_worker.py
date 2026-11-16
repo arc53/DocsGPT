@@ -8,7 +8,7 @@ are terminal and recorded; only the pre-start load is retry-safe.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -391,11 +391,16 @@ def _skip_paused(
     names the reason (the UI reads it); ``error`` repeats it for the run log.
 
     One row stands for a whole streak: when the schedule's latest finished run
-    is already skipped for the same reason, a scheduled run is deleted instead
-    of stored, so a paused schedule doesn't fill its log. A Run now keeps its
-    row, since whoever started it is watching it. The payer hears of an
-    allowance pause once, on the streak's first skip; nobody else is told
-    from here.
+    is already skipped for the same reason and billed to the same payer, a
+    scheduled run is deleted instead of stored, so a paused schedule doesn't
+    fill its log. A Run now keeps its row, since whoever started it is
+    watching it. The payer hears of an allowance pause once, on the streak's
+    first skip; nobody else is told from here. Someone who takes over while
+    out of allowance themselves starts a streak of their own.
+
+    A one-time task has no next run to carry on with, so it gets one: when the
+    payer's allowance resets, when that is known, else after the shortest
+    recurring interval. Take over brings it forward to now.
 
     Args:
         run: The pending run.
@@ -411,7 +416,15 @@ def _skip_paused(
     with get_engine().begin() as conn:
         runs = ScheduleRunsRepository(conn)
         latest = runs.latest_finished([str(schedule["id"])]).get(str(schedule["id"]))
-        in_streak = latest is not None and latest.get("status") == "skipped" and latest.get("error_type") == reason
+        in_streak = (
+            latest is not None
+            and latest.get("status") == "skipped"
+            and latest.get("error_type") == reason
+            and latest.get("user_id") == run.get("user_id")
+        )
+        if schedule.get("trigger_type") == "once" and run.get("trigger_source") != "manual":
+            retry_at = pause.until or datetime.now(timezone.utc) + timedelta(seconds=settings.SCHEDULE_MIN_INTERVAL)
+            SchedulesRepository(conn).rearm_once(str(schedule["id"]), retry_at)
         if in_streak and collapse and run.get("trigger_source") != "manual":
             if runs.delete_pending(str(run["id"])):
                 return {"status": "skipped", "reason": reason, "collapsed": True}
@@ -536,10 +549,27 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
     # Refuse non-runnable terminal states; manual run-now bypasses.
     if run.get("status") != "pending":
         return {"status": "skipped", "reason": f"run status={run.get('status')}"}
-    if schedule.get("status") in {"cancelled", "completed"} and run.get(
-        "trigger_source"
-    ) != "manual":
-        with engine.begin() as conn:
+
+    # Take over never changes the agent, so its row can be loaded before the claim.
+    agent_config = _agent_config_for_schedule(schedule)
+
+    # The claim, under the schedule's row lock (Take over takes it too), with
+    # the schedule and run read afresh: the payer, the chat it was set from and
+    # its history all come from what holds at the claim. A take over committed
+    # before it has moved this run to the taker; one after it leaves the
+    # started run with the payer it started under.
+    pause: Optional[Pause] = None
+    refusal: Optional[str] = None
+    with engine.begin() as conn:
+        schedule = SchedulesRepository(conn).lock_internal(str(run["schedule_id"]))
+        run = ScheduleRunsRepository(conn).get_internal(run_id)
+        if schedule is None or run is None:
+            return {"status": "skipped", "reason": "schedule not found"}
+        if run.get("status") != "pending":
+            return {"status": "skipped", "reason": f"run status={run.get('status')}"}
+        if schedule.get("status") in {"cancelled", "completed"} and run.get(
+            "trigger_source"
+        ) != "manual":
             ScheduleRunsRepository(conn).update(
                 run_id,
                 {
@@ -549,25 +579,22 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                     "error": "schedule no longer active",
                 },
             )
-        return {"status": "skipped", "reason": "schedule terminal"}
-
-    agent_config = _agent_config_for_schedule(schedule)
-    if agent_config is None:
-        return _fail_before_start(run, schedule, "agent missing")
-
-    # Paused for its payer: a deactivated account, a setter no longer in the
-    # role on a team agent, nobody to bill, or the payer out of allowance.
-    with engine.connect() as conn:
-        pause = schedule_pause(conn, schedule, agent_config)
+            return {"status": "skipped", "reason": "schedule terminal"}
+        if agent_config is None:
+            refusal = "agent missing"
+        else:
+            # Paused for its payer: a deactivated account, a setter no longer in
+            # the role on a team agent, nobody to bill, or the payer out of allowance.
+            pause = schedule_pause(conn, schedule, agent_config)
+            if pause is None and not _scheduler_still_allowed(schedule, agent_config):
+                refusal = "agent access revoked"
+        if pause is None and refusal is None:
+            if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):
+                return {"status": "skipped", "reason": "lost race to mark_running"}
+    if refusal is not None:
+        return _fail_before_start(run, schedule, refusal)
     if pause is not None:
         return _skip_paused(run, schedule, pause)
-
-    if not _scheduler_still_allowed(schedule, agent_config):
-        return _fail_before_start(run, schedule, "agent access revoked")
-
-    with engine.begin() as conn:
-        if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):
-            return {"status": "skipped", "reason": "lost race to mark_running"}
     _publish_run_event("schedule.run.started", {**run, "status": "running"}, schedule)
 
     started = datetime.now(timezone.utc)

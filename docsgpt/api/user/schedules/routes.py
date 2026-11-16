@@ -446,8 +446,12 @@ def _mark_payer_state(
             row["paused_for"] = None
             continue
         run = latest.get(str(row["id"])) or {}
-        # A paused streak keeps one row, its first skip.
-        streak = run.get("status") == "skipped" and run.get("error_type") == pause.reason
+        # A paused streak keeps one row, its first skip; a new payer's pause starts a streak of its own.
+        streak = (
+            run.get("status") == "skipped"
+            and run.get("error_type") == pause.reason
+            and run.get("user_id") == row.get("user_id")
+        )
         row["paused_for"] = {**pause.payload(), "since": run.get("scheduled_for") if streak else None}
 
 

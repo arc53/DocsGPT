@@ -509,6 +509,19 @@ class TestPayloads:
             assert read["paused_for"]["reason"] == "payer_out_of_allowance"
             assert read["paused_for"]["until"]
 
+    def test_a_taker_out_of_allowance_reads_no_since_from_the_old_payers_streak(self, app, pg_conn):
+        tid, agent_id, sched = _team_schedule(pg_conn)
+        ScheduleRunsRepository(pg_conn).record_skipped(
+            str(sched["id"]), EDITOR, agent_id, datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
+            error_type="payer_out_of_allowance", error="payer_out_of_allowance",
+        )
+        _out_of_allowance(pg_conn, ADMIN)
+        assert _take_over(app, pg_conn, sched["id"], ADMIN).status_code == 200
+
+        for read in self._reads(app, pg_conn, tid, agent_id, sched["id"], ADMIN):
+            assert read["paused_for"]["reason"] == "payer_out_of_allowance"
+            assert read["paused_for"]["since"] is None
+
     def test_a_viewer_may_not_take_over(self, app, pg_conn):
         from docsgpt.api.user.schedules.routes import UserSchedules
 

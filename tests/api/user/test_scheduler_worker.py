@@ -62,6 +62,7 @@ def patched_engine(pg_engine, monkeypatch):
             "POSTGRES_URI": str(pg_engine.url),
             "SCHEDULE_AUTOPAUSE_FAILURES": 2,
             "SCHEDULE_NOTIFY_RECURRING_FAILURES": False,
+            "SCHEDULE_MIN_INTERVAL": 900,
         })(),
     )
     yield pg_engine

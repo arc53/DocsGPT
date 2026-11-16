@@ -138,8 +138,8 @@ A running schedule pauses when its payer can't pay. It shows why, and since when
 
 While it is paused:
 
-- Each due run is recorded as **Skipped**, with the reason as its error type. One row stands for the whole streak: later skips for the same reason aren't stored, so a schedule paused for three weeks leaves one row. A **Run now** keeps its row.
-- Skipped runs don't count toward [auto-pause](#auto-pause) and send no failure notification. The schedule keeps its cadence and runs again by itself once the reason clears; nobody needs to resume it.
+- Each due run is recorded as **Skipped**, with the reason as its error type. One row stands for the whole streak: later skips for the same reason and payer aren't stored, so a schedule paused for three weeks leaves one row. A **Run now** keeps its row.
+- Skipped runs don't count toward [auto-pause](#auto-pause) and send no failure notification. The schedule keeps its cadence and runs again by itself once the reason clears; nobody needs to resume it. A one-time task waits the same way: it is tried again when the allowance resets, or every `SCHEDULE_MIN_INTERVAL` seconds for the other reasons, and right away after a take over.
 - When the payer runs out of allowance, they get one notification on the first skipped run, such as "Paused: you're out of allowance until 1 Dec". When a member leaves or loses the role, the team's Owner and Admins are told once, at that change (see [When someone leaves a team](/Using/team-workspaces#when-someone-leaves-a-team)).
 
 The allowance is also checked before each model call of a run. If it runs out during a run, the run stops there: it is recorded as **Failed** with `payer_out_of_allowance` and keeps its partial output. That failure doesn't count toward auto-pause either. The agent's own limit stops a run the same way, as `budget_exceeded`, and that one does count.
