@@ -28,7 +28,9 @@ What a move takes along, and what it can't:
   a moved item is deleted; the mover's own filing goes to the chosen folder.
 - The mover's own chats with a moved agent follow it. Other people's stay in
   the workspace they were started in: a move never puts someone's private
-  chat where a team's admins could export it. Schedules keep the person who
+  chat where a team's admins could export it. Chats through the agent's key,
+  widget or webhook, stored under its owner, go to the new owner so the key
+  can continue them. Schedules keep the person who
   set them (they pay), and outside access (key, link, webhook) keeps running
   on the mover as its payer. ``created_by`` is kept.
 - A move in that would leave any agent with outside access (whoever owns it)
@@ -896,8 +898,19 @@ class _Planner:
         agents = self.ids("agent")
         if not agents:
             return 0
-        from_team = None if self.direction == "in" else self.team_id
-        return ConversationsRepository(self.conn).count_agent_chats(agents, team_id=from_team, user_ids=[self.mover])
+        if self.direction == "out":
+            return ConversationsRepository(self.conn).count_agent_chats(
+                agents, team_id=self.team_id, user_ids=[self.mover],
+            )
+        # Moving in, the mover's hidden chats with the agent came through its key, widget or webhook: they
+        # become the team's (see the executor's key chats), not chats of the mover's that switch.
+        return int(self.conn.execute(
+            text(
+                "SELECT count(*) FROM conversations WHERE agent_id = ANY(CAST(:agents AS uuid[])) "
+                "AND team_id IS NULL AND user_id = :mover AND visibility = 'listed'"
+            ),
+            {"agents": agents, "mover": self.mover},
+        ).scalar() or 0)
 
     def ids(self, kind: str) -> list[str]:
         return [i for k, i in self.moving if k == kind]
@@ -1112,6 +1125,7 @@ class _Executor:
         self._strip_agents()
         self._strip_nodes()
         self._refile(in_moving_folder)
+        self._key_chats()
         self._chats()
         self._audit()
 
@@ -1319,6 +1333,45 @@ class _Executor:
         for kind, item_id in self.plan.moving:
             if kind != "folder" and (kind, item_id) not in in_moving_folder:
                 items.file(self.new, kind, item_id, target)
+
+    def _key_chats(self) -> None:
+        """Give the moved agents' key, widget and webhook chats to their new owner, in its workspace.
+
+        Those runs are stored under the agent's owner, and the key reaches its
+        chats as that owner, so they follow the agent or the key can't continue
+        them. Moving in, the mover's listed chats with an agent are their own
+        (see :meth:`_chats`); moving out, every chat the team's principal holds
+        came from outside.
+        """
+        plan = self.plan
+        agents = plan.ids("agent")
+        if not agents:
+            return
+        keys = [k for k in (plan.moving[("agent", a)].row.get("key") for a in agents) if k]
+        team = plan.team_id
+        from_team, to_team = (None, team) if plan.direction == "in" else (team, None)
+        own = " AND (agent_id IS NULL OR visibility <> 'listed')" if plan.direction == "in" else ""
+        ids = [r[0] for r in self.conn.execute(
+            text(
+                "SELECT id::text FROM conversations WHERE user_id = :old "
+                "AND team_id IS NOT DISTINCT FROM CAST(:from_team AS uuid) "
+                f"AND (agent_id = ANY(CAST(:agents AS uuid[])) OR api_key = ANY(CAST(:keys AS text[]))){own}"
+            ),
+            {"old": self.old, "from_team": from_team, "agents": agents, "keys": keys},
+        ).fetchall()]
+        if not ids:
+            return
+        self.conn.execute(
+            text("UPDATE conversations SET user_id = :new, team_id = CAST(:to_team AS uuid) "
+                 "WHERE id = ANY(CAST(:ids AS uuid[]))"),
+            {"new": self.new, "to_team": to_team, "ids": ids},
+        )
+        # Copies of the owner that a continuation and a tool resume check.
+        for table in ("conversation_messages", "pending_tool_state"):
+            self.conn.execute(
+                text(f"UPDATE {table} SET user_id = :new WHERE conversation_id = ANY(CAST(:ids AS uuid[]))"),
+                {"new": self.new, "ids": ids},
+            )
 
     def _chats(self) -> None:
         agents = self.plan.ids("agent")

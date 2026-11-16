@@ -417,3 +417,63 @@ class TestMoveOut:
         assert owner_of(pg_conn, "prompt", pr) == "adam"
         assert FolderItemsRepository(pg_conn).filing("adam", "prompt", pr) == top
         assert _events(pg_conn, "team.folder_moved_out")[0]["metadata"]["folder_id"] == top
+
+
+def _pending(conn, conv_id: str, user: str) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO pending_tool_state (conversation_id, user_id, messages, pending_tool_calls, tools_dict, "
+            "tool_schemas, agent_config, expires_at) VALUES (CAST(:c AS uuid), :u, '[]', '[]', '{}', '[]', '{}', "
+            "now() + interval '1 hour')"
+        ),
+        {"c": conv_id, "u": user},
+    )
+
+
+def _owners(conn, conv_id: str) -> tuple:
+    """``(conversation owner, team id, message owners, pending-state owners)`` of one chat."""
+    conv = _row(conn, "conversations", conv_id)
+    messages = {r[0] for r in conn.execute(
+        text("SELECT user_id FROM conversation_messages WHERE conversation_id = CAST(:c AS uuid)"), {"c": conv_id})}
+    pending = {r[0] for r in conn.execute(
+        text("SELECT user_id FROM pending_tool_state WHERE conversation_id = CAST(:c AS uuid)"), {"c": conv_id})}
+    return conv["user_id"], str(conv["team_id"]) if conv["team_id"] else None, messages, pending
+
+
+class TestKeyChatsFollowTheAgentsOwner:
+    """A key, widget or webhook chat is stored under the agent's owner, and the key keeps reaching it after a move."""
+
+    def _chat(self, conn, user, *, team_id=None, **fields) -> str:
+        convs = ConversationsRepository(conn)
+        conv = convs.create(user, "c", team_id=team_id, **fields)
+        convs.append_message(str(conv["id"]), {"prompt": "q", "response": "a"})
+        _pending(conn, str(conv["id"]), user)
+        return str(conv["id"])
+
+    def test_moving_in_the_key_chats_become_the_teams(self, pg_conn):
+        tid, principal = team(pg_conn)
+        ag = agent(pg_conn, "adam", key="k-chats-in", status="published")
+        by_key = self._chat(pg_conn, "adam", agent_id=ag, api_key="k-chats-in", visibility="hidden")
+        no_agent = self._chat(pg_conn, "adam", api_key="k-chats-in", visibility="hidden")
+        in_app = self._chat(pg_conn, "adam", agent_id=ag, api_key="k-chats-in", visibility="listed")
+
+        planned = plan(pg_conn, "adam", body(tid, [("agent", ag)]))
+        apply(pg_conn, "adam", body(tid, [("agent", ag)]))
+
+        assert planned["conversations_switched"] == 1
+        for conv_id in (by_key, no_agent):
+            assert _owners(pg_conn, conv_id) == (principal, tid, {principal}, {principal})
+        assert _owners(pg_conn, in_app) == ("adam", tid, {"adam"}, {"adam"})
+
+    def test_moving_out_the_teams_key_chats_become_the_movers(self, pg_conn):
+        tid, principal = team(pg_conn)
+        ag = agent(pg_conn, principal, key="k-chats-out", status="published", access_payer_id="adam")
+        by_key = self._chat(pg_conn, principal, team_id=tid, agent_id=ag, api_key="k-chats-out", visibility="hidden")
+        no_agent = self._chat(pg_conn, principal, team_id=tid, api_key="k-chats-out", visibility="hidden")
+        unrelated = self._chat(pg_conn, principal, team_id=tid, api_key="k-other", visibility="hidden")
+
+        apply(pg_conn, "adam", body("personal", [("agent", ag)]))
+
+        for conv_id in (by_key, no_agent):
+            assert _owners(pg_conn, conv_id) == ("adam", None, {"adam"}, {"adam"})
+        assert _owners(pg_conn, unrelated) == (principal, tid, {principal}, {principal})
