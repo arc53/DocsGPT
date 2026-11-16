@@ -690,10 +690,9 @@ class TestConnectorUnparsedFiles:
 
     @pytest.fixture
     def drive(self, monkeypatch, _mock_connector_pipeline):
-        """Download two notes and a legacy workbook, and parse them with the real reader, without calamine."""
+        """Download two notes and a legacy workbook, and parse them with the real reader."""
         import functools
         import shutil
-        import sys
         from pathlib import Path
 
         from docsgpt.parser.file.bulk import SimpleDirectoryReader
@@ -707,10 +706,13 @@ class TestConnectorUnparsedFiles:
             shutil.copy(workbook, Path(temp_dir, "Finance", "budget.xls"))
             Path(temp_dir, "notes.md").write_text("first file")
             Path(temp_dir, "guide.md").write_text("second file")
-            return {"files_downloaded": 3, "files_failed": 0, "folders_failed": 0, "empty_result": False}
+            return {
+                "files_downloaded": 3, "files_failed": 0, "folders_failed": 0, "empty_result": False,
+                "sync_fingerprint": "fp-2",
+            }
 
         _mock_connector_pipeline.download_to_directory.side_effect = _download
-        monkeypatch.setitem(sys.modules, "python_calamine", None)
+        _mock_connector_pipeline.sync_fingerprint.return_value = "fp-2"
         monkeypatch.setattr(worker, "SUPPORTED_SOURCE_EXTENSIONS", {".md", ".xls"})
         extractor = {".md": MarkdownParser(), ".xls": ExcelParser()}
         monkeypatch.setattr(
@@ -723,8 +725,15 @@ class TestConnectorUnparsedFiles:
         )
         return stored
 
+    @pytest.fixture
+    def no_reader(self, monkeypatch):
+        """The workbook's reader is not installed, so the workbook cannot be parsed."""
+        import sys
+
+        monkeypatch.setitem(sys.modules, "python_calamine", None)
+
     def test_the_good_files_are_ingested_and_the_skipped_one_named(
-        self, task_self, published, monkeypatch, caplog, drive,
+        self, task_self, published, monkeypatch, caplog, drive, no_reader,
     ):
         _uploads(monkeypatch)
 
@@ -738,3 +747,61 @@ class TestConnectorUnparsedFiles:
         assert kind == "source.ingest.completed"
         assert (payload["files_unparsed"], payload["unparsed_files"]) == (1, ["Finance/budget.xls"])
         assert any("budget.xls" in record.getMessage() for record in caplog.records)
+
+    def test_an_ingest_that_skipped_a_file_keeps_no_fingerprint(self, task_self, monkeypatch, drive, no_reader):
+        """Otherwise the next sync matches it and skips, and the file stays out once it can be read."""
+        import json
+
+        uploads = _uploads(monkeypatch)
+
+        _upload_ingest(task_self)
+
+        assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])
+
+    def test_a_sync_that_skipped_a_file_clears_the_stored_fingerprint(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, drive, no_reader,
+    ):
+        import json
+
+        uploads = _uploads(monkeypatch)
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+
+        _sync(worker, task_self, str(src["id"]))
+
+        assert uploads[0]["sync_fingerprint"] == ""
+        assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])
+
+    def test_the_next_sync_reads_the_file_once_it_can(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, drive, no_reader, _mock_connector_pipeline,
+    ):
+        """Once the reader is installed, the next sync walks the selection again and indexes the workbook."""
+        import json
+        import sys
+
+        uploads = _uploads(monkeypatch)
+        src = _gdrive_source(pg_conn, {})
+        _sync(worker, task_self, str(src["id"]))
+        # Store what the sync sent, as the internal API does.
+        SourcesRepository(pg_conn).update(
+            str(src["id"]), "dave", {"remote_data": json.loads(uploads[0]["remote_data"])},
+        )
+        monkeypatch.delitem(sys.modules, "python_calamine")
+        drive.clear()
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert _mock_connector_pipeline.download_to_directory.call_count == 2
+        assert "files_unparsed" not in result
+        assert any("alpha" in doc.page_content for doc in drive)
+
+    def test_a_clean_ingest_keeps_its_fingerprint(self, task_self, monkeypatch, drive):
+        import json
+
+        uploads = _uploads(monkeypatch)
+
+        result = _upload_ingest(task_self)
+
+        assert "files_unparsed" not in result
+        assert json.loads(uploads[0]["remote_data"])["sync_fingerprint"] == worker._connector_sync_fingerprint(
+            "fp-2", None
+        )

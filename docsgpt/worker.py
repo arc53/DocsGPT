@@ -4983,9 +4983,10 @@ def _ingest_connector(
             assert_index_complete(source_uuid)
 
             # The fingerprint lets the next sync skip an unchanged selection.
-            # It is left out when a file failed, so that sync tries again.
+            # It is left out when a file failed to download or to parse, so
+            # that sync tries again (a parser may be installed by then).
             remote_data = {"provider": source_type, **api_source_config}
-            sync_fingerprint = None if partial else _connector_sync_fingerprint(
+            sync_fingerprint = None if partial or unparsed else _connector_sync_fingerprint(
                 download_info.get("sync_fingerprint"), config
             )
             if sync_fingerprint:
