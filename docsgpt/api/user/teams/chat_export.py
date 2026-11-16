@@ -25,7 +25,7 @@ from flask import Response, jsonify, make_response, stream_with_context
 from flask_restx import Resource
 from sqlalchemy import text
 
-from docsgpt.api.audit import record_event
+from docsgpt.api.audit import record_required_event
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -199,7 +199,8 @@ class TeamChatsExport(Resource):
         404 while ``TEAM_CHAT_EXPORT_ENABLED`` is off, as if the route were
         absent. The team's Owner and Admins only (403
         ``workspace_role_required`` below Admin, 404 outside the team). The
-        ``team.chats_exported`` audit row is written before the first byte.
+        ``team.chats_exported`` audit row is written before the first byte;
+        503 ``audit_unavailable`` and no file when it can't be.
         """
         if not settings.TEAM_CHAT_EXPORT_ENABLED:
             return make_response(jsonify({"success": False, "message": "Not found"}), 404)
@@ -212,10 +213,19 @@ class TeamChatsExport(Resource):
                     return refusal
                 team = TeamsRepository(conn).get(team_id) or {}
                 conversations, people = _counts(conn, team_id)
-                record_event(
-                    conn, "team.chats_exported", actor=user, team_id=team_id, conversations=conversations,
-                    people=people,
-                )
+                try:
+                    record_required_event(
+                        conn, "team.chats_exported", actor=user, team_id=team_id, conversations=conversations,
+                        people=people,
+                    )
+                except Exception:
+                    # Every export is audited: with no audit row there is no file.
+                    logger.error("Team chat export refused: the audit row was not written", exc_info=True)
+                    return make_response(
+                        jsonify({"success": False, "error": "audit_unavailable",
+                                 "message": "The export can't be recorded right now. Try again later."}),
+                        503,
+                    )
         except Exception as err:
             logger.error("Team chat export failed: %s", err, exc_info=True)
             return make_response(jsonify({"success": False}), 400)

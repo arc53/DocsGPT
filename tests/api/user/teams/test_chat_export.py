@@ -273,3 +273,15 @@ class TestAudit:
         ((actor, metadata),) = _audits(db)
         assert actor == "adam"
         assert metadata == {"team_id": tid, "conversations": 4, "people": 2}
+
+    def test_no_audit_row_no_file(self, client, db, export_on):
+        tid = _team(db)
+        _chat(db, "eddie", tid, "Secret plans")
+
+        with patch("docsgpt.api.audit.AuthEventsRepository.insert", side_effect=RuntimeError("audit down")):
+            resp = _export(client, tid)
+
+        assert resp.status_code == 503
+        assert b"Secret plans" not in resp.data
+        assert json.loads(resp.data)["error"] == "audit_unavailable"
+        assert _audits(db) == []
