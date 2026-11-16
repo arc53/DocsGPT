@@ -17,6 +17,13 @@ filed there (a filing in a team's tree is the team principal's, whoever made
 it). Nothing is confirmed there, since nothing runs as a person; a source
 that isn't the team's feeds nothing even when filed there.
 
+A holder that people outside its shares reach (an API key, a public link or a
+webhook) reads no *borrowed* source through a folder: one its owner doesn't
+own and uses only through a grant. Attaching such a folder is refused at save,
+but a borrowed source filed into an attached folder later would otherwise
+reach the key at the next run. The publish check itself still sees them
+(``keep_borrowed``).
+
 On a personal agent or workflow owned by someone else (a teammate attached their own
 folder), the folder's owner stands in like a sponsor: it feeds a source only
 when the holder's owner may use it or the folder's owner may sponsor it
@@ -40,6 +47,7 @@ from docsgpt.api.user.resource_access import (
     can_sponsor_ref,
     can_use_ref,
     holder_editable_by,
+    holder_has_outside_access,
     person_labels,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -277,8 +285,18 @@ def _expand(
     folder_ids: Optional[Iterable[Any]],
     holder_type: Optional[str] = None,
     holder: Optional[dict] = None,
+    *,
+    keep_borrowed: bool = False,
 ) -> tuple[dict[str, list[str]], dict[str, str]]:
     """Each existing folder's sources, and why each stopped folder feeds none.
+
+    Args:
+        conn: Open connection.
+        folder_ids: Folder ids.
+        holder_type: ``agent`` or ``workflow`` when a holder reads them.
+        holder: The holder row.
+        keep_borrowed: Keep the sources the holder's owner only borrows even
+            when the holder has outside access (the publish check lists them).
 
     Returns:
         tuple: ``(folder_id -> [source_id], folder_id -> reason)``.
@@ -300,9 +318,18 @@ def _expand(
             if not editors[owner]:
                 stopped[fid] = REASON_CANNOT_EDIT_HOLDER
     usable: dict[tuple[str, str], bool] = {}
+    outside: list[bool] = []
+
+    def _borrowed(source_id: str) -> bool:
+        # Read the holder's access lazily: only a source someone else owns can be borrowed.
+        if not outside:
+            outside.append(not keep_borrowed and holder_has_outside_access(conn, holder_type, holder))
+        return outside[0] and can_use_ref(conn, "source", source_id, holder_owner)
 
     def _feeds(owner: str, source_id: str, source_owner: str) -> bool:
         if not (source_owner == owner or can_use_ref(conn, "source", source_id, owner)):
+            return False
+        if holder_owner and source_owner != holder_owner and _borrowed(source_id):
             return False
         if not holder_owner or owner == holder_owner:
             return True
@@ -329,8 +356,13 @@ def expand_folders(
     folder_ids: Optional[Iterable[Any]],
     holder_type: Optional[str] = None,
     holder: Optional[dict] = None,
+    *,
+    keep_borrowed: bool = False,
 ) -> dict[str, list[str]]:
     """Each existing source folder's sources: its owner's filings across its subtree, usable by the owner.
+
+    A holder with outside access gets none its owner only borrows, unless
+    ``keep_borrowed``.
 
     Args:
         conn: Open connection.
@@ -338,13 +370,14 @@ def expand_folders(
         holder_type: ``agent`` or ``workflow`` when a holder reads them; None for the folder owner's own
             chat (no holder rules).
         holder: The holder row (its ``user_id`` is the holder's owner).
+        keep_borrowed: Keep borrowed sources whatever the holder's access (for the publish check).
 
     Returns:
         dict[str, list[str]]: ``folder_id -> [source_id, ...]`` (lower-case), in
         folder order, shallower filings first, then by source name. A stopped
         teammate's folder maps to ``[]``.
     """
-    return _expand(conn, folder_ids, holder_type, holder)[0]
+    return _expand(conn, folder_ids, holder_type, holder, keep_borrowed=keep_borrowed)[0]
 
 
 def folder_source_ids(
@@ -352,6 +385,8 @@ def folder_source_ids(
     folder_ids: Optional[Iterable[Any]],
     holder_type: Optional[str] = None,
     holder: Optional[dict] = None,
+    *,
+    keep_borrowed: bool = False,
 ) -> list[str]:
     """Every source the folders feed (see :func:`expand_folders`), each once, in folder order.
 
@@ -360,13 +395,14 @@ def folder_source_ids(
         folder_ids: Folder ids.
         holder_type: ``agent`` or ``workflow`` when a holder reads them.
         holder: The holder row.
+        keep_borrowed: Keep borrowed sources whatever the holder's access (for the publish check).
 
     Returns:
         list[str]: Lower-case source ids.
     """
     out: list[str] = []
     seen: set[str] = set()
-    for sources in expand_folders(conn, folder_ids, holder_type, holder).values():
+    for sources in expand_folders(conn, folder_ids, holder_type, holder, keep_borrowed=keep_borrowed).values():
         for sid in sources:
             if sid not in seen:
                 seen.add(sid)

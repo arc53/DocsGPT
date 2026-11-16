@@ -2082,7 +2082,10 @@ def borrowed_refs(
         # Lazy: folder_knowledge imports this module.
         from docsgpt.api.user.folder_knowledge import folder_source_ids
 
-        candidates.extend(("source", sid) for sid in folder_source_ids(conn, folder_ids, holder_type, holder))
+        candidates.extend(
+            ("source", sid)
+            for sid in folder_source_ids(conn, folder_ids, holder_type, holder, keep_borrowed=True)
+        )
     pairs: list[tuple[str, str]] = []
     for resource_type, rid in candidates:
         if (resource_type, rid) not in pairs and _sponsorable(resource_type, rid):

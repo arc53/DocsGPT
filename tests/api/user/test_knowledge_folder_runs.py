@@ -335,7 +335,9 @@ class TestTeammateFolders:
         viewed = _source(pg_conn, owner=OTHER, name="viewed")
         _grant(pg_conn, "source", viewed, OTHER, OWNER, "viewer")
         _file(pg_conn, viewed, folder)
-        _, rows = authorized_agent_sources(pg_conn, _agent(pg_conn, knowledge_folder_ids=[folder]))
+        # No key: a keyed agent reads no borrowed source (TestBorrowedSourcesStayInside).
+        agent = AgentsRepository(pg_conn).create(OWNER, "A", "draft", agent_type="classic", knowledge_folder_ids=[folder])
+        _, rows = authorized_agent_sources(pg_conn, agent)
         assert [str(r["id"]) for r in rows] == [viewed]
 
     def test_a_missing_folder_reads_stopped(self, pg_conn):
@@ -364,3 +366,88 @@ class TestTeammateFolders:
             assert engine._node_source_ids(AgentNodeConfig(folders=[folder])) == [sid]
             TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
             assert engine._node_source_ids(AgentNodeConfig(folders=[folder])) == []
+
+
+class TestBorrowedSourcesStayInside:
+    """A source the owner only views through a grant never goes out through a folder on a keyed, linked or hooked agent.
+
+    The publish check runs when outside access is made or the agent is saved,
+    so a borrowed source filed into an attached folder later would otherwise
+    reach the key. The owner's agent without outside access reads it as before.
+    """
+
+    def _lent(self, pg_conn):
+        folder = _folder(pg_conn)
+        own = _source(pg_conn, name="a-own")
+        lent = _source(pg_conn, owner=OTHER, name="b-lent")
+        _grant(pg_conn, "source", lent, OTHER, OWNER, "viewer")
+        _file(pg_conn, own, folder)
+        _file(pg_conn, lent, folder)
+        return folder, own, lent
+
+    def test_a_keyed_agent_run_drops_it(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import authorized_agent_sources
+
+        folder, own, _ = self._lent(pg_conn)
+        _, rows = authorized_agent_sources(pg_conn, _agent(pg_conn, knowledge_folder_ids=[folder]))
+        assert [str(r["id"]) for r in rows] == [own]
+
+    @pytest.mark.parametrize("access", [{"shared": True, "shared_token": "tok-kr"}, {"incoming_webhook_token": "wh-kr"}])
+    def test_a_linked_or_hooked_agent_run_drops_it(self, pg_conn, access):
+        from docsgpt.api.answer.services.stream_processor import authorized_agent_sources
+
+        folder, own, _ = self._lent(pg_conn)
+        agent = AgentsRepository(pg_conn).create(
+            OWNER, "A", "published", agent_type="classic", knowledge_folder_ids=[folder], **access
+        )
+        _, rows = authorized_agent_sources(pg_conn, agent)
+        assert [str(r["id"]) for r in rows] == [own]
+
+    def test_the_key_cannot_search_it(self, pg_conn):
+        from docsgpt.services import search_service
+
+        folder, own, _ = self._lent(pg_conn)
+        _agent(pg_conn, knowledge_folder_ids=[folder])
+        seen = {}
+
+        def _search_sources(query, source_ids, chunks):
+            seen["ids"] = source_ids
+            return []
+
+        @contextmanager
+        def _conn():
+            yield pg_conn
+
+        with patch.object(search_service, "db_readonly", _conn), \
+             patch.object(search_service, "_search_sources", _search_sources):
+            search_service.search("k-runs", "q", 5)
+        assert seen["ids"] == [own]
+
+    def test_the_owners_agent_without_outside_access_still_reads_it(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import authorized_agent_sources
+
+        folder, own, lent = self._lent(pg_conn)
+        agent = AgentsRepository(pg_conn).create(OWNER, "A", "draft", agent_type="classic", knowledge_folder_ids=[folder])
+        _, rows = authorized_agent_sources(pg_conn, agent)
+        assert [str(r["id"]) for r in rows] == [own, lent]
+
+    def test_a_workflow_node_drops_it_once_its_agent_has_a_key(self, pg_conn):
+        from docsgpt.agents.workflows.schemas import AgentNodeConfig
+
+        folder, own, lent = self._lent(pg_conn)
+        engine = TestWorkflowNodes()._engine(pg_conn)
+        workflow_id = str(engine.agent.workflow_row["id"])
+        agent = AgentsRepository(pg_conn).create(
+            OWNER, "W", "published", agent_type="workflow", workflow_id=workflow_id
+        )
+        with _patch_db(pg_conn):
+            assert engine._node_source_ids(AgentNodeConfig(folders=[folder])) == [own, lent]
+            AgentsRepository(pg_conn).update_by_id(str(agent["id"]), {"key": "k-wf-kr"})
+            assert engine._node_source_ids(AgentNodeConfig(folders=[folder])) == [own]
+
+    def test_the_publish_check_still_sees_it(self, pg_conn):
+        from docsgpt.api.user.resource_access import borrowed_refs
+
+        folder, _, lent = self._lent(pg_conn)
+        agent = _agent(pg_conn, knowledge_folder_ids=[folder])
+        assert borrowed_refs(pg_conn, OWNER, [], [folder], holder_type="agent", holder=agent) == [("source", lent)]
