@@ -365,6 +365,32 @@ describe('UsageTab', () => {
     );
   });
 
+  it('offers no Take over on what the reader already pays for', async () => {
+    getTeamUsage.mockResolvedValue(
+      usage({
+        paused: [
+          {
+            type: 'schedule',
+            id: 's1',
+            name: 'Tender digest',
+            agent: { id: 'a2', name: 'Tender helper' },
+            paused_for: {
+              reason: 'payer_out_of_allowance',
+              until: '2026-12-01T00:00:00Z',
+            },
+            paid_by: { user_id: 'me', label: 'me@x.io' },
+          },
+        ],
+      }),
+    );
+    await render();
+    const [schedule] = rows('usage-paused');
+    expect(schedule.textContent).toContain(
+      'payer.common.pause.outOfAllowanceYou',
+    );
+    expect(button('payer.common.takeOver.submit', schedule)).toBeUndefined();
+  });
+
   it('leaves the paused list out when nothing is paused', async () => {
     getTeamUsage.mockResolvedValue(usage({ paused: [] }));
     await render();

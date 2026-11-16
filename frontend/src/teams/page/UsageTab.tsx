@@ -347,6 +347,8 @@ export default function UsageTab({ team, role }: UsageTabProps) {
           : t('payer.team.paused.accessAll');
         target = agentEditPath(item.agent?.id || item.id);
       }
+      // The reader already pays for it: there is nothing to take over.
+      if (payer.you) target = null;
     }
     return (
       <ListRow
