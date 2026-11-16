@@ -268,6 +268,7 @@ const REFRESH_EVENTS: ReadonlySet<string> = new Set([
   'schedule.run.started',
   'schedule.run.completed',
   'schedule.run.failed',
+  'schedule.run.skipped',
   'schedule.autopaused',
   'schedule.resumed',
   'schedule.cancelled',

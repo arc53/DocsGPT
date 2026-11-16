@@ -12,7 +12,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { PanelBody, PanelHeader, SidePanel } from '@/components/ui/side-panel';
 import { formatTimestamp } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
-import { OWNER_INACTIVE, runReason } from './runReason';
+import { isPauseSkip, runReason } from './runReason';
 import ScheduleStatusBadge from './StatusBadge';
 
 export type RunDetailDrawerProps = {
@@ -28,6 +28,8 @@ export default function RunDetailDrawer({
   const { t } = useTranslation();
   if (!run) return null;
   const reason = runReason(run);
+  // A run skipped while paused for its payer: a reason, not an error.
+  const pauseSkip = isPauseSkip(run);
   return (
     <SidePanel
       open
@@ -76,23 +78,26 @@ export default function RunDetailDrawer({
             <SectionHeader
               as="h3"
               size="xs"
-              tone="destructive"
+              tone={pauseSkip ? 'default' : 'destructive'}
               title={
                 reason
-                  ? t('agents.schedules.runDetails.errorWithType', {
-                      // A label with an apostrophe; React escapes on render.
-                      interpolation: { escapeValue: false },
-                      type: t(`activity.now.errorType.${reason}`, {
-                        defaultValue: reason,
-                      }),
-                    })
+                  ? t(
+                      pauseSkip
+                        ? 'agents.schedules.runDetails.skippedWithType'
+                        : 'agents.schedules.runDetails.errorWithType',
+                      {
+                        // A label with an apostrophe; React escapes on render.
+                        interpolation: { escapeValue: false },
+                        type: t(`activity.now.errorType.${reason}`, {
+                          defaultValue: reason,
+                        }),
+                      },
+                    )
                   : t('agents.schedules.runDetails.error')
               }
             />
             {/* A pause has no text beyond its reason. */}
-            {run.error !== OWNER_INACTIVE && (
-              <CodeBlock maxHeight="sm">{run.error}</CodeBlock>
-            )}
+            {!pauseSkip && <CodeBlock maxHeight="sm">{run.error}</CodeBlock>}
           </section>
         )}
         {run.output && (

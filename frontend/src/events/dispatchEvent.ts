@@ -30,6 +30,8 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   // Scheduler envelopes (scheduler_worker.py); consumed by schedulesSlice.
   'schedule.run.completed',
   'schedule.run.failed',
+  // A run refused for its payer after it was announced as started.
+  'schedule.run.skipped',
   'schedule.autopaused',
   // Revoke a stale schedule.autopaused / surface a once-schedule finish.
   'schedule.resumed',

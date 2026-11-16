@@ -1,3 +1,5 @@
+import type { SchedulePayerFields } from '../../payer/types';
+
 export type ScheduleTriggerType = 'once' | 'recurring';
 
 export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'cancelled';
@@ -5,7 +7,10 @@ export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'cancelled';
 export type ScheduleRunStatus =
   'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'timeout';
 
-// Mirrors the schedule_runs.error_type CHECK constraint (migrations 0010, 0027, 0063).
+// Mirrors the schedule_runs.error_type CHECK constraint (migrations 0010, 0027,
+// 0063, 0065). The last four name a run skipped while the schedule is paused
+// for its payer; `payer_out_of_allowance` also names a run stopped mid-way at
+// the payer's allowance (failed, partial output kept).
 export type ScheduleRunErrorType =
   | 'auth_expired'
   | 'tool_not_allowed'
@@ -17,9 +22,18 @@ export type ScheduleRunErrorType =
   | 'overlap'
   | 'stream_error'
   | 'empty_output'
-  | 'cannot_complete';
+  | 'cannot_complete'
+  | 'owner_inactive'
+  | 'payer_left'
+  | 'no_payer'
+  | 'payer_out_of_allowance';
 
-export type Schedule = {
+/**
+ * A schedule as every read returns it. `paid_by` is who pays for its runs,
+ * `paused_for` why it is paused for that payer (only while active), and
+ * `can_take_over` whether the caller may become the payer.
+ */
+export type Schedule = SchedulePayerFields & {
   id: string;
   user_id: string;
   // Null for agentless one-time tasks (migration 0011).

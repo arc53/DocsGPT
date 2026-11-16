@@ -34,6 +34,7 @@ import {
   updateSchedule,
 } from '../agents/schedules/schedulesSlice';
 import useScheduleAgentContext from '../agents/schedules/useScheduleAgentContext';
+import useScheduleTakeOver from '../agents/schedules/useScheduleTakeOver';
 import type {
   Schedule,
   ScheduleCreatePayload,
@@ -71,6 +72,7 @@ export default function AllSchedules() {
   const schedules = useSelector(selectAllSchedules);
   const loading = useSelector(selectAllSchedulesLoading);
   const failed = useSelector(selectAllSchedulesError);
+  const takeOver = useScheduleTakeOver();
   const agents = useSelector(selectAgents);
   const [searchParams] = useSearchParams();
   const focusId = searchParams.get('schedule');
@@ -350,6 +352,7 @@ export default function AllSchedules() {
                       setDeleteState('ACTIVE');
                     }}
                     onSelectRun={setActiveRun}
+                    {...takeOver.rowProps}
                     extraMeta={
                       !schedule.agent_id && schedule.origin_conversation_id ? (
                         <Button
@@ -430,6 +433,7 @@ export default function AllSchedules() {
           </TabsContent>
         </Tabs>
       )}
+      {takeOver.takeOverModal}
       <RunDetailDrawer run={activeRun} onClose={() => setActiveRun(null)} />
       {modalOpen && formReady && (
         <ScheduleFormModal

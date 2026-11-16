@@ -1,5 +1,6 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
+import payerService from '../../api/services/payerService';
 import schedulesService from '../../api/services/schedulesService';
 import {
   sseEventReceived,
@@ -125,6 +126,19 @@ export const runScheduleNow = createAsyncThunk<
 >('schedules/runNow', async ({ id, token }) => {
   const r = await schedulesService.runNow(id, token);
   return { scheduleId: id, run: r.run };
+});
+
+/**
+ * Makes the caller the payer of a team agent's schedule. A refusal rejects
+ * with the server's code (`max_schedules`, `workspace_role_required`…) on
+ * the error, so the confirm can word it.
+ */
+export const takeOverSchedule = createAsyncThunk<
+  Schedule,
+  { id: string; token: string | null }
+>('schedules/takeOver', async ({ id, token }) => {
+  const r = await payerService.takeOverSchedule(id, token);
+  return r.schedule;
 });
 
 export const loadRunsForSchedule = createAsyncThunk<
@@ -360,6 +374,10 @@ const schedulesSlice = createSlice({
       .addCase(setSchedulePaused.fulfilled, (state, action) => {
         applyToLists(state, action.payload);
       })
+      // The answer carries the new payer and its pause state.
+      .addCase(takeOverSchedule.fulfilled, (state, action) => {
+        applyToLists(state, action.payload);
+      })
       .addCase(deleteSchedule.fulfilled, (state, action) => {
         const id = action.payload;
         Object.keys(state.byAgent).forEach((agentId) => {
@@ -400,6 +418,28 @@ const schedulesSlice = createSlice({
           const scheduleId = (payload.schedule_id as string | undefined) || '';
           if (!scheduleId) return;
           switch (envelope.type) {
+            // A run refused for its payer after it was announced as started
+            // is skipped: it didn't run, so the schedule's last run stays.
+            case 'schedule.run.skipped': {
+              const runId = (payload.run_id as string | undefined) || '';
+              if (runId) {
+                upsertRunDelta(
+                  state,
+                  scheduleId,
+                  {
+                    id: runId,
+                    schedule_id: scheduleId,
+                    status: 'skipped',
+                    error_type:
+                      (payload.error_type as ScheduleRun['error_type']) ?? null,
+                    error: (payload.error as string | undefined) ?? null,
+                    finished_at: envelope.ts ?? null,
+                  },
+                  envelope.ts,
+                );
+              }
+              break;
+            }
             case 'schedule.run.completed':
             case 'schedule.run.failed': {
               const runId = (payload.run_id as string | undefined) || '';
