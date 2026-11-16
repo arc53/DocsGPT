@@ -102,3 +102,26 @@ def test_a_mongo_folder_becomes_the_owners_filing(pg_conn):
     ).fetchall()
     assert [tuple(r) for r in rows] == [("filed", "u", folder)]
     assert stats["folder_refs"] == 2
+
+
+def test_a_rerun_clears_a_filing_mongo_no_longer_has(pg_conn):
+    folder_oid, foreign_oid = ObjectId(), ObjectId()
+    pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('u', 'F', :oid)"), {"oid": folder_oid}
+    )
+    pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('v', 'G', :oid)"), {"oid": foreign_oid}
+    )
+    unset, unknown, foreign = ObjectId(), ObjectId(), ObjectId()
+    _run(pg_conn, [{"_id": oid, "user": "u", "name": oid, "folder_id": folder_oid} for oid in (unset, unknown, foreign)])
+    # The Mongo agents left their folder, point at one that never came over, or at someone else's.
+    _run(
+        pg_conn,
+        [
+            {"_id": unset, "user": "u", "name": unset},
+            {"_id": unknown, "user": "u", "name": unknown, "folder_id": ObjectId()},
+            {"_id": foreign, "user": "u", "name": foreign, "folder_id": foreign_oid},
+        ],
+    )
+    rows = pg_conn.execute(text("SELECT count(*) FROM folder_items WHERE resource_type = 'agent'")).scalar()
+    assert rows == 0

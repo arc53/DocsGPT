@@ -1152,7 +1152,18 @@ def _backfill_agents(
         """
     )
     # The Mongo folder becomes the owner's filing (``folder_items``), matched
-    # by the agent's legacy id once the agent row exists.
+    # by the agent's legacy id once the agent row exists. On a re-run, a filing
+    # Mongo no longer backs (no folder, one that never came over, or another
+    # user's) is cleared first, so Mongo stays the record for every agent.
+    unfile_sql = text(
+        """
+        DELETE FROM folder_items fi
+        USING agents a
+        WHERE a.legacy_mongo_id = :legacy_mongo_id
+          AND fi.user_id = a.user_id AND fi.resource_type = 'agent' AND fi.resource_id = a.id
+          AND fi.folder_id IS DISTINCT FROM CAST(:folder_id AS uuid)
+        """
+    )
     filing_sql = text(
         """
         INSERT INTO folder_items (user_id, resource_type, resource_id, folder_id)
@@ -1167,6 +1178,7 @@ def _backfill_agents(
     seen = written = skipped = 0
     batch: list[dict] = []
     filings: list[dict] = []
+    unfilings: list[dict] = []
     try:
         for doc in cursor:
             seen += 1
@@ -1244,6 +1256,7 @@ def _backfill_agents(
                 "last_used_at": doc.get("lastUsedAt") or doc.get("last_used_at"),
                 "legacy_mongo_id": str(doc["_id"]),
             })
+            unfilings.append({"folder_id": folder_pg, "legacy_mongo_id": str(doc["_id"])})
             if folder_pg:
                 filings.append({"folder_id": folder_pg, "legacy_mongo_id": str(doc["_id"])})
             if len(batch) >= batch_size:
@@ -1257,6 +1270,8 @@ def _backfill_agents(
             written += len(batch)
     finally:
         cursor.close()
+    if unfilings and not dry_run:
+        conn.execute(unfile_sql, unfilings)
     if filings and not dry_run:
         conn.execute(filing_sql, filings)
     return {"seen": seen, "written": written, "skipped": skipped, "folder_refs": len(filings)}
