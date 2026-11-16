@@ -28,7 +28,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../../api/services/workspacesService', () => ({ default: api }));
 
-const userApi = vi.hoisted(() => ({ getFolders: vi.fn() }));
+const userApi = vi.hoisted(() => ({ getFolders: vi.fn(), getDocs: vi.fn() }));
 vi.mock('../../api/services/userService', () => ({ default: userApi }));
 
 import type {
@@ -178,6 +178,8 @@ beforeEach(() => {
   userApi.getFolders.mockImplementation(() =>
     json({ folders: [{ id: 'tf1', name: 'Carriers', parent_id: null }] }),
   );
+  userApi.getDocs.mockReset();
+  userApi.getDocs.mockImplementation(() => json([]));
   api.planMove.mockResolvedValue({ ok: true, status: 200, plan: fullPlan() });
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -354,6 +356,38 @@ describe('MoveToWorkspaceModal', () => {
     expect(userApi.getFolders).toHaveBeenCalledWith('tok');
     expect(text()).toContain('workspace.move.done.team');
     expect(text()).toContain('workspace.move.openIn(name=Operations)');
+  });
+
+  it("after a move reads the app's knowledge list again, without what left", async () => {
+    api.applyMove.mockResolvedValue({
+      ok: true,
+      status: 200,
+      plan: fullPlan(),
+    });
+    const store = configureStore({
+      reducer: {
+        preference: (
+          state = { token: 'tok', sourceDocs: [{ id: 's1' }] },
+          action: { type: string; payload?: unknown },
+        ) =>
+          action.type === 'preference/setSourceDocs'
+            ? { ...state, sourceDocs: action.payload }
+            : state,
+        folders: foldersReducer,
+        actionToast: actionToastReducer,
+        workspace: workspaceReducer,
+      },
+      preloadedState: { workspace: workspaceState('personal', 'admin') },
+    });
+    await render({}, store as never);
+    userApi.getDocs.mockImplementation(() => json([{ id: 's2' }]));
+    act(() => submit()!.click());
+    await flush();
+    // The agent's source went with it: the pickers stop offering it here.
+    expect(userApi.getDocs).toHaveBeenCalledWith('tok');
+    expect(
+      (store.getState().preference as { sourceDocs: unknown }).sourceDocs,
+    ).toEqual([{ id: 's2' }]);
   });
 
   it('swaps in the fresh plan when it changed', async () => {

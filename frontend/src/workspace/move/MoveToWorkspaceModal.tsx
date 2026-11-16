@@ -47,6 +47,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { selectToken } from '../../preferences/preferenceSlice';
+import { reloadSourceDocs } from '../../preferences/reloadSourceDocs';
 import type { AppDispatch } from '../../store';
 import { cn } from '../../lib/utils';
 import { readerIdFromToken } from '../../utils/personLabel';
@@ -116,8 +117,9 @@ type TargetTree = { workspace: string; folders: Folder[]; failed: boolean };
  * what can't; a move an agent with outside access would refuse stays
  * disabled with the reason on screen. Confirming sends the plan's
  * fingerprint: when the plan changed meanwhile the fresh one takes its place
- * with a notice. After the move the folder tree reloads, the page hears of
- * it, and the dialog offers to open the workspace it went to.
+ * with a notice. After the move the folder tree and the app's knowledge list
+ * reload, the page hears of it, and the dialog offers to open the workspace
+ * it went to.
  */
 export default function MoveToWorkspaceModal({
   subject,
@@ -255,6 +257,9 @@ export default function MoveToWorkspaceModal({
     if (result.ok) {
       setDone(true);
       void dispatch(loadFolders({ token }));
+      // Sources moved (on their own or with an agent or folder) left this
+      // workspace: the pickers must stop offering them here.
+      void dispatch(reloadSourceDocs(token));
       onMoved?.();
       return;
     }

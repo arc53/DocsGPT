@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
+import { reloadSourceDocs } from '../../preferences/reloadSourceDocs';
 import type { AppDispatch } from '../../store';
 import { folderRemoved, loadFolders } from './foldersSlice';
 import type { RenamedFolder } from './folderCopy';
@@ -146,6 +147,9 @@ export function useFolderActions(kind: ItemKind): FolderActions {
         }>(userService.deleteFolder(id, token), () =>
           dispatch(folderRemoved({ id, parentId })),
         );
+        // Its sources now sit in the parent: the pickers' copy of the
+        // knowledge list would still file them under the deleted folder.
+        if (result?.moved_items !== 0) void dispatch(reloadSourceDocs(token));
         return {
           moved_items: result?.moved_items ?? 0,
           moved_folders: result?.moved_folders ?? 0,

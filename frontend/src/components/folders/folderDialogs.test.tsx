@@ -24,6 +24,7 @@ const api = vi.hoisted(() => ({
   updateFolder: vi.fn(),
   deleteFolder: vi.fn(),
   fileFolderItems: vi.fn(),
+  getDocs: vi.fn(),
 }));
 vi.mock('../../api/services/userService', () => ({ default: api }));
 
@@ -119,6 +120,7 @@ beforeEach(() => {
   moveToWorkspace.kinds = [];
   moveToWorkspace.items = [];
   api.getFolders.mockImplementation(() => json({ folders }));
+  api.getDocs.mockImplementation(() => json([]));
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -438,6 +440,9 @@ describe('useFolderMenu', () => {
     expect(dialog()?.textContent).toContain('folders.deleteMoves');
     await click(button('folders.deleteFolder'));
     expect(api.deleteFolder).toHaveBeenCalledWith('carriers', 'tok');
+    // Its sources moved up a level: the pickers' knowledge list is read
+    // again, so none stays filed under the deleted folder.
+    expect(api.getDocs).toHaveBeenCalledWith('tok');
     // Nothing was renamed: the folder leaving the page says enough.
     expect(store.getState().actionToast.current).toBeNull();
   });
@@ -456,6 +461,8 @@ describe('useFolderMenu', () => {
     await mount(<Harness folder={folders[0]} />);
     await click(button('folders.delete'));
     await click(button('folders.deleteFolder'));
+    // No item moved: the knowledge list has nothing to catch up on.
+    expect(api.getDocs).not.toHaveBeenCalled();
     const toast = store.getState().actionToast.current;
     expect(toast?.variant).toBe('success');
     expect(toast?.message).toContain('Rate archive → Rate archive (2)');

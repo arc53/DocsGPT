@@ -714,11 +714,11 @@ export default function Sources({
       });
       refreshDocs();
     },
-    // Another workspace's now: it leaves this list and the app's.
+    // Another workspace's now: it leaves this list (the Move dialog reads
+    // the app's knowledge list again).
     onMovedToWorkspace: (doc) => {
       if (documentToView?.id === doc.id) closeDocument();
       refreshDocs();
-      void reloadKnowledge();
     },
     onSyncStarted: (doc, sync) =>
       doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
@@ -728,8 +728,11 @@ export default function Sources({
   });
 
   // The folder ⋯ (on its tile and its crumb row). A deleted folder's sources
-  // moved up a level, so the list is read again.
-  const folderMenu = useFolderMenu('source', () => refreshDocs());
+  // moved up a level, and a folder moved to another workspace took its
+  // sources along, so the list is read again.
+  const folderMenu = useFolderMenu('source', () => refreshDocs(), {
+    onMovedToWorkspace: () => refreshDocs(),
+  });
   const [newFolderOpen, setNewFolderOpen] = useState(false);
 
   /**
