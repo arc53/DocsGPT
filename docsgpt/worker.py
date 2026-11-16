@@ -4434,7 +4434,7 @@ def agent_webhook_worker(self, agent_id, payload):
         from docsgpt.quotas.pause import PAYER_OUT_OF_ALLOWANCE
         from docsgpt.quotas.payer import published_access_payer
         from docsgpt.quotas.run_limits import RUN_LIMIT_ERROR_TYPES
-        from docsgpt.quotas.service import QuotaExceededError
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
 
         outcome = run_agent_headless(
             agent_config,
