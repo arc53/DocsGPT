@@ -285,14 +285,77 @@ class FoldersRepository:
         return {"moved_items": moved_items, "moved_folders": moved_folders, "renamed": renamed}
 
 
+# The table each filed kind lives in. A filing has no FK to its item (four
+# tables), so a delete trigger removes its filings instead.
+_ITEM_TABLES = {"agent": "agents", "source": "sources", "tool": "user_tools", "prompt": "prompts"}
+
+
 class FolderItemsRepository:
     """The ``folder_items`` table: which folder of one owner's tree holds each item filed there."""
 
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
 
+    def _lock_item(self, resource_type: str, resource_id: str) -> bool:
+        """Hold the item against a delete until this transaction ends; False when it is gone.
+
+        A delete that commits between a caller's check and the insert would
+        leave an orphan filing: its cleanup trigger ran before the row existed.
+
+        Args:
+            resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
+            resource_id: The item's UUID.
+
+        Returns:
+            bool: Whether the item still exists.
+        """
+        table = _ITEM_TABLES.get(resource_type)
+        if table is None:
+            return True
+        row = self._conn.execute(
+            text(f"SELECT 1 FROM {table} WHERE id = CAST(:id AS uuid) FOR SHARE"), {"id": str(resource_id)}
+        ).first()
+        return row is not None
+
+    def file_if_unfiled(self, user_id: str, resource_type: str, resource_id: str, folder_id: str) -> bool:
+        """File an item into ``folder_id`` only when the user hasn't filed it anywhere yet.
+
+        For a new item's first filing (an ingest that may run twice): a filing
+        made meanwhile, a move by its owner included, stays.
+
+        Args:
+            user_id: The tree's owner.
+            resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
+            resource_id: The item's UUID.
+            folder_id: A folder of ``user_id``'s tree.
+
+        Returns:
+            bool: True when this call filed it.
+        """
+        if not self._lock_item(resource_type, resource_id):
+            return False
+        result = self._conn.execute(
+            text(
+                """
+                INSERT INTO folder_items (user_id, resource_type, resource_id, folder_id)
+                VALUES (:user_id, :resource_type, CAST(:resource_id AS uuid), CAST(:folder_id AS uuid))
+                ON CONFLICT (user_id, resource_type, resource_id) DO NOTHING
+                """
+            ),
+            {
+                "user_id": user_id,
+                "resource_type": resource_type,
+                "resource_id": str(resource_id),
+                "folder_id": str(folder_id),
+            },
+        )
+        return result.rowcount == 1
+
     def file(self, user_id: str, resource_type: str, resource_id: str, folder_id: Optional[str]) -> None:
-        """File an item into ``folder_id``, or unfile it with ``None``. Replaces the user's previous filing."""
+        """File an item into ``folder_id``, or unfile it with ``None``. Replaces the user's previous filing.
+
+        An item that no longer exists is not filed.
+        """
         params = {
             "user_id": user_id,
             "resource_type": resource_type,
@@ -307,6 +370,8 @@ class FolderItemsRepository:
                 ),
                 params,
             )
+            return
+        if not self._lock_item(resource_type, resource_id):
             return
         self._conn.execute(
             text(

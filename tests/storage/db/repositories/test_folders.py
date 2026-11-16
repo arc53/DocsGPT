@@ -255,6 +255,29 @@ class TestFolderItems:
         assert items.filing("v", "agent", agent["id"]) == theirs["id"]
         assert items.filings("u", "agent", ["not-a-uuid"]) == {}
 
+    @pytest.mark.parametrize("kind", ["agent", "source", "tool", "prompt"])
+    def test_an_item_that_is_gone_is_not_filed(self, pg_conn, kind):
+        """Filing locks the item first: one deleted meanwhile leaves no row behind (there is no FK to it)."""
+        import uuid
+
+        folder = _repo(pg_conn).create("u", "F")
+        items = FolderItemsRepository(pg_conn)
+        gone = str(uuid.uuid4())
+        items.file("u", kind, gone, folder["id"])
+        assert items.filing("u", kind, gone) is None
+        assert items.file_if_unfiled("u", kind, gone, folder["id"]) is False
+        assert items.filing("u", kind, gone) is None
+
+    def test_file_if_unfiled_never_moves_a_filing(self, pg_conn):
+        repo = _repo(pg_conn)
+        items = FolderItemsRepository(pg_conn)
+        a = repo.create("u", "A")
+        b = repo.create("u", "B")
+        agent = AgentsRepository(pg_conn).create("u", "x", "draft")
+        assert items.file_if_unfiled("u", "agent", agent["id"], a["id"]) is True
+        assert items.file_if_unfiled("u", "agent", agent["id"], b["id"]) is False
+        assert items.filing("u", "agent", agent["id"]) == a["id"]
+
 
 class TestTenantIsolation:
     def test_user_a_cannot_see_user_b_folders(self, pg_conn):

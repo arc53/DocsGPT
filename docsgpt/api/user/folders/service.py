@@ -706,6 +706,9 @@ def ingest_folder(conn: Connection, user: str, raw: Any) -> Optional[str]:
 def file_new_source(conn: Connection, user: str, source_id: str, folder_id: Optional[str]) -> bool:
     """File a just-created source into its owner's folder, when it still exists.
 
+    Insert-only: a source already filed (an ingest run again after it filed,
+    and the owner moved it since) keeps its filing.
+
     Args:
         conn: Open connection.
         user: The source's owner (a team's principal for a team upload).
@@ -719,5 +722,4 @@ def file_new_source(conn: Connection, user: str, source_id: str, folder_id: Opti
         return False
     if FoldersRepository(conn).get(str(folder_id), user, "source") is None:
         return False
-    FolderItemsRepository(conn).file(user, "source", str(source_id), str(folder_id))
-    return True
+    return FolderItemsRepository(conn).file_if_unfiled(user, "source", str(source_id), str(folder_id))
