@@ -5299,8 +5299,8 @@
       },
       "cannotTitle": "無法移動",
       "chats": {
-        "in_one": "使用它的 {{count}} 個聊天將移至 {{team}}。",
-        "in_other": "使用它的 {{count}} 個聊天將移至 {{team}}。",
+        "in_one": "您使用它的 {{count}} 個聊天將移至 {{team}}。",
+        "in_other": "您使用它的 {{count}} 個聊天將移至 {{team}}。",
         "out_one": "您使用它的 {{count}} 個聊天將移至個人。",
         "out_other": "您使用它的 {{count}} 個聊天將移至個人。"
       },

@@ -5354,8 +5354,8 @@
       },
       "cannotTitle": "Can't move",
       "chats": {
-        "in_one": "{{count}} chat with it moves to {{team}}.",
-        "in_other": "{{count}} chats with it move to {{team}}.",
+        "in_one": "{{count}} of your chats with it moves to {{team}}.",
+        "in_other": "{{count}} of your chats with it move to {{team}}.",
         "out_one": "{{count}} of your chats with it moves to Personal.",
         "out_other": "{{count}} of your chats with it move to Personal."
       },

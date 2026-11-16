@@ -5333,8 +5333,8 @@
       },
       "cannotTitle": "Kann nicht verschoben werden",
       "chats": {
-        "in_one": "{{count}} Chat damit wandert zu {{team}}.",
-        "in_other": "{{count}} Chats damit wandern zu {{team}}.",
+        "in_one": "{{count}} deiner Chats damit wandert zu {{team}}.",
+        "in_other": "{{count}} deiner Chats damit wandern zu {{team}}.",
         "out_one": "{{count}} deiner Chats damit wandert nach Persönlich.",
         "out_other": "{{count}} deiner Chats damit wandern nach Persönlich."
       },

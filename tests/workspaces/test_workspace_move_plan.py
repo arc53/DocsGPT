@@ -222,14 +222,14 @@ class TestWhoAndWhat:
         assert (outside["api_key"], outside["public_link"], outside["webhook"]) == (True, False, False)
         assert outside["paid_by"]["user_id"] == "eddie"
 
-    def test_member_conversations_are_counted(self, pg_conn):
+    def test_only_the_movers_own_conversations_are_counted(self, pg_conn):
         tid, _ = team(pg_conn)
         ag = agent(pg_conn, "eddie")
         convs = ConversationsRepository(pg_conn)
         convs.create("vera", "c1", agent_id=ag)
         convs.create("eddie", "c2", agent_id=ag)
         convs.create("olga", "c3", agent_id=ag)
-        assert plan(pg_conn, "eddie", body(tid, [("agent", ag)]))["conversations_switched"] == 2
+        assert plan(pg_conn, "eddie", body(tid, [("agent", ag)]))["conversations_switched"] == 1
 
     def test_a_published_agent_left_behind_borrows(self, pg_conn):
         tid, _ = team(pg_conn)

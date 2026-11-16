@@ -5535,9 +5535,9 @@
       },
       "cannotTitle": "No se puede mover",
       "chats": {
-        "in_many": "{{count}} chats con él pasan a {{team}}.",
-        "in_one": "{{count}} chat con él pasa a {{team}}.",
-        "in_other": "{{count}} chats con él pasan a {{team}}.",
+        "in_many": "{{count}} de tus chats con él pasan a {{team}}.",
+        "in_one": "{{count}} de tus chats con él pasa a {{team}}.",
+        "in_other": "{{count}} de tus chats con él pasan a {{team}}.",
         "out_many": "{{count}} de tus chats con él pasan a Personal.",
         "out_one": "{{count}} de tus chats con él pasa a Personal.",
         "out_other": "{{count}} de tus chats con él pasan a Personal."

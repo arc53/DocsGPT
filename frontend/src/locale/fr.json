@@ -5535,9 +5535,9 @@
       },
       "cannotTitle": "Ne peut pas être déplacé",
       "chats": {
-        "in_many": "{{count}} chats avec lui passent dans {{team}}.",
-        "in_one": "{{count}} chat avec lui passe dans {{team}}.",
-        "in_other": "{{count}} chats avec lui passent dans {{team}}.",
+        "in_many": "{{count}} de vos chats avec lui passent dans {{team}}.",
+        "in_one": "{{count}} de vos chats avec lui passe dans {{team}}.",
+        "in_other": "{{count}} de vos chats avec lui passent dans {{team}}.",
         "out_many": "{{count}} de vos chats avec lui passent dans Personnel.",
         "out_one": "{{count}} de vos chats avec lui passe dans Personnel.",
         "out_other": "{{count}} de vos chats avec lui passent dans Personnel."

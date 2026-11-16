@@ -158,14 +158,19 @@ class TestMoveIn:
         assert items.filing("eddie", "prompt", pr) is None
         assert items.filing(principal, "prompt", pr) == target
 
-    def test_members_conversations_switch_others_stay(self, pg_conn):
+    def test_only_the_movers_own_chats_switch(self, pg_conn):
         tid, _ = team(pg_conn)
         ag = agent(pg_conn, "eddie")
         convs = ConversationsRepository(pg_conn)
+        eddies = convs.create("eddie", "c0", agent_id=ag, visibility="listed")
+        # A teammate's private chat never lands where the team's admins could export it.
         veras = convs.create("vera", "c1", agent_id=ag)
         olgas = convs.create("olga", "c2", agent_id=ag)
+        planned = plan(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        assert planned["conversations_switched"] == 1
         apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
-        assert convs.team_id_of(str(veras["id"])) == tid
+        assert convs.team_id_of(str(eddies["id"])) == tid
+        assert convs.team_id_of(str(veras["id"])) is None
         assert convs.team_id_of(str(olgas["id"])) is None
 
     def test_schedules_keep_their_payer_and_outside_access_bills_the_mover(self, pg_conn):

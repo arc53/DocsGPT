@@ -26,9 +26,11 @@ What a move takes along, and what it can't:
 - Grants and share switches on moved items are deleted, sponsors cleared, and
   stored secrets re-sealed for the new owner. Someone else's personal filing of
   a moved item is deleted; the mover's own filing goes to the chosen folder.
-- Members' chats with a moved agent follow it to the team. Schedules keep the
-  person who set them (they pay), and outside access (key, link, webhook)
-  keeps running on the mover as its payer. ``created_by`` is kept.
+- The mover's own chats with a moved agent follow it. Other people's stay in
+  the workspace they were started in: a move never puts someone's private
+  chat where a team's admins could export it. Schedules keep the person who
+  set them (they pay), and outside access (key, link, webhook) keeps running
+  on the mover as its payer. ``created_by`` is kept.
 - A move in that would leave any agent with outside access (whoever owns it)
   using a moved item is refused with 409 ``move_would_borrow``: its key, link
   or webhook would serve a team's item. The agents the mover can open are
@@ -889,14 +891,13 @@ class _Planner:
             if e.kind == "agent" and has_outside_access(e.row)
         ]
 
-    def _chats(self, members: Iterable[str]) -> int:
+    def _chats(self) -> int:
+        """How many of the mover's own chats with the moving agents switch workspace."""
         agents = self.ids("agent")
         if not agents:
             return 0
-        repo = ConversationsRepository(self.conn)
-        if self.direction == "in":
-            return repo.count_agent_chats(agents, team_id=None, user_ids=list(members))
-        return repo.count_agent_chats(agents, team_id=self.team_id, user_ids=[self.mover])
+        from_team = None if self.direction == "in" else self.team_id
+        return ConversationsRepository(self.conn).count_agent_chats(agents, team_id=from_team, user_ids=[self.mover])
 
     def ids(self, kind: str) -> list[str]:
         return [i for k, i in self.moving if k == kind]
@@ -939,7 +940,7 @@ class _Planner:
             "borrowing_agents": borrowing,
             "borrowing_others": hidden,
             "needs_admin": self._needs_admin(),
-            "conversations_switched": self._chats(members),
+            "conversations_switched": self._chats(),
             "renames": renames,
         }
         body["fingerprint"] = hashlib.sha256(
@@ -1323,12 +1324,12 @@ class _Executor:
         agents = self.plan.ids("agent")
         if not agents:
             return
-        repo = ConversationsRepository(self.conn)
-        if self.plan.direction == "in":
-            repo.move_agent_chats(agents, from_team_id=None, to_team_id=self.plan.team_id, user_ids=self.plan.members)
-        else:
-            repo.move_agent_chats(agents, from_team_id=self.plan.team_id, to_team_id=None,
-                                  user_ids=[self.plan.mover])
+        # Only the mover's own chats: other people's stay where they started them.
+        team = self.plan.team_id
+        from_team, to_team = (None, team) if self.plan.direction == "in" else (team, None)
+        ConversationsRepository(self.conn).move_agent_chats(
+            agents, from_team_id=from_team, to_team_id=to_team, user_ids=[self.plan.mover],
+        )
 
     def _audit(self) -> None:
         plan = self.plan
