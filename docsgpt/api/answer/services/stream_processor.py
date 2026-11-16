@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar
 
@@ -661,6 +662,11 @@ class StreamProcessor:
         # one made this turn); the agent stamps it on the turn's metadata.
         self.last_compression_at: Optional[Any] = None
         self._agent_data: Optional[Dict[str, Any]] = None
+        # Set by the route: checks the turn's limits once its caller and agent
+        # are known and returns the billing the rest of the setup runs in.
+        self.setup_gate: Optional[Callable[["StreamProcessor"], Any]] = None
+        # True once that check passed, so the route doesn't repeat it.
+        self.setup_gate_passed = False
 
     @functools.cached_property
     def decision_record(self) -> DecisionRecord:
@@ -685,8 +691,13 @@ class StreamProcessor:
         return FORMS in self.client_capabilities
 
     def initialize(self):
-        """Initialize all required components for processing"""
+        """Initialize all required components for processing.
+
+        The setup gate runs once the caller and agent are known, before
+        anything that can call a model (history compression among them).
+        """
         self._configure_agent()
+        self._pass_setup_gate()
         self._validate_and_set_model()
         self._configure_source()
         self._configure_retriever()
@@ -734,29 +745,57 @@ class StreamProcessor:
         A request with neither a token nor an agent API key has nobody to run
         for: nothing is set up (no pre-fetch runs the agent's tools), None is
         returned and the route answers 401.
+
+        Once the caller and agent are known, the route's ``setup_gate`` checks
+        the turn's limits, before setup reaches any model (history
+        compression, the query rephrase, the source prescreen), and the rest
+        of the setup runs in the billing it returns, as the stream does.
         """
         if not self.decoded_token and not self.data.get("api_key"):
             return None
         if not getattr(self, "request_id", None):
             self.request_id = str(uuid.uuid4())
-        self.initialize()
+        with ExitStack() as scope:
+            # The setup gate's billing is entered here, so it covers the rest of the build.
+            self._setup_scope = scope
+            try:
+                self.initialize()
+            finally:
+                self._setup_scope = None
 
-        agent_type = self.agent_config.get("agent_type", "classic")
+            agent_type = self.agent_config.get("agent_type", "classic")
 
-        # Sources by exposure (D11), decided the same way for a headless run:
-        # see ``plan_source_use``.
-        _, agentic_sources = self._exposure_partition()
-        use = plan_source_use(agent_type, agentic_sources)
-        docs_together, docs_list = None, None
-        if use.prefetch:
-            docs_together, docs_list = self.pre_fetch_docs(question, exposure=use.exposure)
-        tools_data = self.pre_fetch_tools()
-        return self.create_agent(
-            docs_together=docs_together,
-            docs=docs_list,
-            tools_data=tools_data,
-            agentic_sources=use.agentic_sources,
-        )
+            # Sources by exposure (D11), decided the same way for a headless run:
+            # see ``plan_source_use``.
+            _, agentic_sources = self._exposure_partition()
+            use = plan_source_use(agent_type, agentic_sources)
+            docs_together, docs_list = None, None
+            if use.prefetch:
+                docs_together, docs_list = self.pre_fetch_docs(question, exposure=use.exposure)
+            tools_data = self.pre_fetch_tools()
+            return self.create_agent(
+                docs_together=docs_together,
+                docs=docs_list,
+                tools_data=tools_data,
+                agentic_sources=use.agentic_sources,
+            )
+
+    def _pass_setup_gate(self) -> None:
+        """Run the route's ``setup_gate`` and bill the rest of the build as it says.
+
+        The billing is entered on the build's scope (:meth:`build_agent`), so
+        it lasts until the agent is built. Nothing happens without a gate.
+
+        Raises:
+            Exception: Whatever the gate refuses the turn with.
+        """
+        if self.setup_gate is None:
+            return
+        billing = self.setup_gate(self)
+        self.setup_gate_passed = True
+        scope = getattr(self, "_setup_scope", None)
+        if scope is not None and billing is not None:
+            scope.enter_context(billing)
 
     @_traced_setup
     def build_continuation_from_messages(self, messages, tool_actions):

@@ -106,7 +106,7 @@ answer_ns = Namespace("answer", description="Answer related operations", path="/
 
 
 def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Optional[str]]:
-    """Who a stream bills, what kind of run it is, and the team workspace its spend belongs to.
+    """Who a stream bills, what kind of run it is, and which workspace its spend belongs to.
 
     A person chatting pays for their own chat, in the conversation's
     workspace. Key, widget, ``/v1`` and public-link callers run as the agent's
@@ -125,18 +125,58 @@ def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Opti
     outside = getattr(executor, "external_caller", False) is True or (
         getattr(executor, "public_link_caller", False) is True
     )
-    decoded_token = arguments.get("decoded_token")
+    # A new chat names its workspace; a resumed one carries it on its executor.
+    team_id = arguments.get("workspace_team_id") or getattr(executor, "workspace_team_id", None)
+    return _run_billing(
+        outside=outside,
+        decoded_token=arguments.get("decoded_token"),
+        team_id=team_id,
+        agent_id=arguments.get("agent_id"),
+        user_api_key=arguments.get("user_api_key"),
+    )
+
+
+def _run_billing(
+    *,
+    outside: bool,
+    decoded_token: Any,
+    team_id: Any,
+    agent_id: Any,
+    user_api_key: Optional[str],
+) -> Tuple[Optional[str], str, Optional[str]]:
+    """Who a turn bills, its run kind and its workspace, from what the turn is (see :func:`_stream_billing`).
+
+    Args:
+        outside: Key, widget, ``/v1`` or public-link traffic.
+        decoded_token: The turn's identity; its ``sub`` pays for a chat.
+        team_id: The chat's workspace team.
+        agent_id: The agent the turn runs.
+        user_api_key: The agent key the turn runs with, if any.
+
+    Returns:
+        ``(payer, run_kind, team_id)``.
+    """
     sub = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
     if not outside and not is_principal_id(sub):
-        # A new chat names its workspace; a resumed one carries it on its executor.
-        team_id = arguments.get("workspace_team_id") or getattr(executor, "workspace_team_id", None)
         return sub, "chat", team_id if isinstance(team_id, str) and team_id else None
     try:
-        payer, team_id = agent_payer_and_team(arguments.get("agent_id"), arguments.get("user_api_key"))
+        payer, agent_team = agent_payer_and_team(agent_id, user_api_key)
     except Exception:
         logger.exception("Could not read the agent's published-access payer")
-        payer, team_id = None, None
-    return payer or sub, "published", team_id or team_of_principal(sub)
+        payer, agent_team = None, None
+    return payer or sub, "published", agent_team or team_of_principal(sub)
+
+
+class UsageRefused(Exception):
+    """A turn refused by its limits once its caller and agent were known, before setup made any model call.
+
+    Attributes:
+        response: The refusal to send back.
+    """
+
+    def __init__(self, response: Response) -> None:
+        super().__init__("usage refused")
+        self.response = response
 
 
 def _no_payer_response() -> Response:
@@ -651,6 +691,40 @@ class BaseAnswerResource:
                 jsonify({"success": False, "message": "Invalid API key."}), 401
             )
         return None
+
+    def setup_gate(self, processor: Any) -> Any:
+        """Check a turn's limits once its caller and agent are known, and bill the rest of its setup.
+
+        ``StreamProcessor.build_agent`` calls this before anything in setup
+        reaches a model (history compression, the query rephrase, the source
+        prescreen), so a refused turn spends nothing. What passes runs its
+        setup billed like the stream it starts: the same payer, run kind,
+        workspace and per-call limits.
+
+        Args:
+            processor: The ``StreamProcessor`` whose agent was just resolved.
+
+        Returns:
+            The billing context the rest of the setup runs in.
+
+        Raises:
+            UsageRefused: A limit is used up, or nobody can pay.
+        """
+        agent_config = processor.agent_config
+        if error := self.check_usage(agent_config, processor.decoded_token, agent_id=processor.agent_id):
+            raise UsageRefused(error)
+        run = {"agent_id": processor.agent_id, "user_api_key": agent_config.get("user_api_key")}
+        payer, run_kind, team_id = _run_billing(
+            outside=bool(agent_config.get("external_api_caller") or agent_config.get("public_link_caller")),
+            decoded_token=processor.decoded_token,
+            team_id=getattr(processor, "workspace_team_id", None),
+            **run,
+        )
+        try:
+            limits = _stream_limits(run, payer, run_kind)
+        except NoPayerError:
+            raise UsageRefused(_no_payer_response())
+        return billed_to(payer, processor.request_id, kind=run_kind, team_id=team_id, limits=limits)
 
     def check_usage_on_resume(self, processor: Any, conversation_id: Any) -> Optional[Response]:
         """Run ``check_usage`` for a tool continuation, releasing its claim on refusal.

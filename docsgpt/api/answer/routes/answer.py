@@ -7,7 +7,7 @@ from flask_restx import fields, Resource
 from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
-from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
+from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource, UsageRefused
 
 from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_CODE,
@@ -165,14 +165,19 @@ class AnswerResource(Resource, BaseAnswerResource):
                 )
             else:
                 # ---- Normal mode ----
+                # Limits are checked as soon as the caller and agent are
+                # known, before setup reaches a model.
+                processor.setup_gate = self.setup_gate
                 agent = processor.build_agent(data.get("question", ""))
                 if not processor.decoded_token:
                     return make_response({"error": "Unauthorized"}, 401)
 
-                if error := self.check_usage(
-                    processor.agent_config,
-                    processor.decoded_token,
-                    agent_id=processor.agent_id,
+                if processor.setup_gate_passed is not True and (
+                    error := self.check_usage(
+                        processor.agent_config,
+                        processor.decoded_token,
+                        agent_id=processor.agent_id,
+                    )
                 ):
                     return error
 
@@ -224,6 +229,9 @@ class AnswerResource(Resource, BaseAnswerResource):
             extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)
+        except UsageRefused as refused:
+            # A limit used up, found before setup reached a model.
+            return refused.response
         except ContextOverflowError as e:
             # A turn too big for the window, found before any provider call.
             logger.info("/api/answer - turn does not fit the context window: %s", bounded_error_text(e))

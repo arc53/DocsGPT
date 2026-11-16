@@ -15,7 +15,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from flask import Blueprint, current_app, jsonify, make_response, request, Response
 
-from docsgpt.api.answer.routes.base import BaseAnswerResource
+from docsgpt.api.answer.routes.base import BaseAnswerResource, UsageRefused
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_CODE,
@@ -470,6 +470,10 @@ def chat_completions():
         """Run the request once its files are attachment rows."""
         # Set when this request took the resume claim, so a refusal can release it.
         claimed_conversation_id = None
+        helper = _V1AnswerHelper()
+        # A built agent's limits are checked as soon as the caller and agent
+        # are known, before setup reaches a model.
+        processor.setup_gate = helper.setup_gate
 
         if internal_data.get("tool_actions"):
             conversation_id = internal_data.get("conversation_id")
@@ -557,13 +561,14 @@ def chat_completions():
             )
         agent.client_disconnected = client_gone
 
-        helper = _V1AnswerHelper()
         if claimed_conversation_id:
             usage_error = helper.check_usage_on_resume(processor, claimed_conversation_id)
-        else:
+        elif processor.setup_gate_passed is not True:
             usage_error = helper.check_usage(
                 processor.agent_config, processor.decoded_token, agent_id=processor.agent_id
             )
+        else:
+            usage_error = None
         if usage_error:
             return usage_error
 
@@ -655,6 +660,9 @@ def chat_completions():
         """The response for an error raised while setting up or running the request."""
         try:
             raise error
+        except UsageRefused as refused:
+            # A limit used up, found before setup reached a model; nothing was claimed.
+            return refused.response
         except ResumeInProgressError:
             if idem_key:
                 v1_idempotency.release(idem_key)
