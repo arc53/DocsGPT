@@ -40,6 +40,8 @@ import {
   selectToken,
   setSelectedAgent,
   setSelectedDocs,
+  // The chat's picked folders; this wizard's own folder pick is local.
+  setSelectedFolders as setChatFolders,
 } from '../preferences/preferenceSlice';
 import RetrievalOptions, {
   isPrescreenConfigValid,
@@ -613,7 +615,7 @@ export default function ConnectWizard({
 
   // Offered only when the run turned tools on and synced nothing (a new
   // source opens in Knowledge instead), so the chat starts over no sources:
-  // never the ones the last chat had picked.
+  // never the ones or the folders the last chat had picked.
   const tryInChat = () => {
     onFinished?.();
     close();
@@ -625,6 +627,7 @@ export default function ConnectWizard({
         dispatch(updateConversationId({ query: { conversationId: null } }));
         dispatch(setSelectedAgent(null));
         dispatch(setSelectedDocs([]));
+        dispatch(setChatFolders([]));
       },
     });
   };

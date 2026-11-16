@@ -312,15 +312,25 @@ describe('ConnectWizard', () => {
         notifications: notificationsReducer,
         // Applies the chat selection, as the real slice does.
         preference: (
-          state: { token: null; selectedDocs: { id: string }[] } = {
+          state: {
+            token: null;
+            selectedDocs: { id: string }[];
+            selectedFolders: { id: string }[];
+          } = {
             token: null,
             selectedDocs: [],
+            selectedFolders: [],
           },
           action: { type: string; payload?: unknown },
         ) =>
           action.type === 'preference/setSelectedDocs'
             ? { ...state, selectedDocs: action.payload as { id: string }[] }
-            : state,
+            : action.type === 'preference/setSelectedFolders'
+              ? {
+                  ...state,
+                  selectedFolders: action.payload as { id: string }[],
+                }
+              : state,
         conversation: (state = {}) => state,
       },
       preloadedState: {
@@ -332,7 +342,14 @@ describe('ConnectWizard', () => {
           loaded: true,
           failed: false,
         },
-        preference: { token: null, selectedDocs },
+        // The last chat's folder rides along with its sources.
+        preference: {
+          token: null,
+          selectedDocs,
+          selectedFolders: selectedDocs.length
+            ? [{ id: 'old-chat-folder' }]
+            : [],
+        },
         conversation: {},
       },
     });
@@ -954,11 +971,12 @@ describe('ConnectWizard', () => {
     await click('settings.connectors.wizard.tryInChat');
     expect(onClose).toHaveBeenCalled();
     expect(document.body.textContent).toContain('NEW_CHAT');
-    // The last chat's sources don't come along.
-    expect(
-      (store.getState() as { preference: { selectedDocs: unknown[] } })
-        .preference.selectedDocs,
-    ).toEqual([]);
+    // The last chat's sources and folders don't come along.
+    const { preference } = store.getState() as {
+      preference: { selectedDocs: unknown[]; selectedFolders: unknown[] };
+    };
+    expect(preference.selectedDocs).toEqual([]);
+    expect(preference.selectedFolders).toEqual([]);
   });
 
   // A builder opens the wizard from Add tool: leaving goes through it, so
