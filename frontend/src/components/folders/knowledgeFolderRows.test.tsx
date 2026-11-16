@@ -229,6 +229,20 @@ describe('buildKnowledgeRows while searching', () => {
       ['Sources', 'loose', 'detail'],
     ]);
   });
+
+  it('lists no folder rows under a kind filter, even when a search matches one', () => {
+    const list = rows({
+      kindFiltered: true,
+      query: 'rate',
+      shownDocs: [docs[2]],
+      pick: pick([], ['gone']),
+      unlistedFolders: [{ id: 'gone', label: 'Rate desk' }],
+    });
+    // Picking a folder would bring the kinds the filter hides.
+    expect(summary(list)).toEqual([
+      ['Sources', 'rates 2025', 'Carriers › Rate archive · detail'],
+    ]);
+  });
 });
 
 describe('buildKnowledgeRows opening a folder', () => {

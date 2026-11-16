@@ -76,7 +76,8 @@ const matchesQuery = (item: MultiSelectPopoverItem, needle: string) =>
  *   folders, then its sources. Inside a picked folder every row is checked,
  *   muted and fixed, "Included with <folder>".
  * - **Search or a kind filter**: flat over the place, folders whose name
- *   matches first (no chevron), then sources, each line led by its folder
+ *   matches first (no chevron; none under a kind filter, which lists only
+ *   that kind), then sources, each line led by its folder
  *   trail (below the open folder); an included row keeps its trail, its
  *   muted box saying it comes with a picked folder.
  *
@@ -221,7 +222,10 @@ export function buildKnowledgeRows({
     const within = place
       ? new Set([...subtreeIds(tree, place)].filter((id) => id !== place))
       : undefined;
-    const folders = needle
+    // A kind filter lists sources only: picking a folder would take every
+    // kind it holds, the filtered-out ones too.
+    const folderRows = needle !== '' && !kindFiltered;
+    const folders = folderRows
       ? matchingFolders(tree, needle, within)
           .filter(holdsKnowledge)
           .map((folder) =>
@@ -238,7 +242,7 @@ export function buildKnowledgeRows({
     const extras = place
       ? []
       : [
-          ...(needle ? unlistedRows() : []),
+          ...(folderRows ? unlistedRows() : []),
           ...extraSources.map((item) => ({ ...item, group: labels.own })),
         ];
     const rows = [...folders, ...sources, ...extras];
