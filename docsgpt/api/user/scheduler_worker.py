@@ -606,8 +606,16 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         if payer_pause is not None:
             # Refused before it started, for its payer: a pause like the check
             # above, not a failure. The run already shows as started, so it
-            # keeps its row.
-            return _skip_paused(run, schedule, payer_pause, collapse=False)
+            # keeps its row, and the UI is told it ended or it stays "running".
+            result = _skip_paused(run, schedule, payer_pause, collapse=False)
+            _publish_run_event(
+                "schedule.run.skipped",
+                {**run, "status": "skipped"},
+                schedule,
+                error_type=payer_pause.reason,
+                error=payer_pause.reason,
+            )
+            return result
         # The agent's own limit, before the run started or mid-run.
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
         error_type = _quota_failure_type(exc)

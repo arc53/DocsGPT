@@ -46,7 +46,6 @@ from docsgpt.api.user.resource_access import (
     AccessDenied,
     ResourceAccess,
     build,
-    has_outside_access,
     public_settings,
     require,
     resolve,
@@ -62,7 +61,6 @@ from docsgpt.api.user.team_authz import (
 from docsgpt.api.user.team_sharing import is_valid_resource_type
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.notifications.notify import notify_user
-from docsgpt.quotas.pause import PayerChecks, outside_access_pause
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
@@ -1265,7 +1263,7 @@ class ResourceShares(Resource):
             return {"success": False}, 400
 
 
-def _team_item_shares(conn, ra: ResourceAccess, user: str | None = None) -> dict:
+def _team_item_shares(conn, ra: ResourceAccess, user: str) -> dict:
     """The share dialog of a team's item: the workspace, its size and the agent's outside access.
 
     Args:
@@ -1275,14 +1273,15 @@ def _team_item_shares(conn, ra: ResourceAccess, user: str | None = None) -> dict
 
     Returns:
         dict: ``success``, ``shares`` (always empty), ``workspace`` (``{kind, team_id, name}``),
-        ``members_count``, and for an agent ``outside_access`` (``{api_key, public_link, webhook,
-        paid_by, paused_for, can_take_over}``). ``paid_by`` is the published-access payer as
-        ``{user_id, label}``, None while the agent has no outside access or nobody pays for it; the
-        payer is named to every member, as the team's own record, by their email when on file, else
-        by their user id. ``paused_for`` (``{reason, until}`` or None) says why outside traffic is
-        refused for its payer. ``can_take_over`` is true for a caller who may manage the access
-        details and isn't the payer, while something is switched on.
+        ``members_count``, and for an agent ``outside_access``, the agent payload's own block
+        (``outside_access_state``: ``{api_key, public_link, webhook, paid_by, paused_for,
+        can_take_over}``), so the dialog and the agent page never disagree. The payer is named to
+        every member, as the team's own record.
     """
+    # Imported here: the agents package pulls in most of the API, which would
+    # make importing the teams routes order-dependent.
+    from docsgpt.api.user.agents import sharing as agent_sharing
+
     team = TeamsRepository(conn).get(ra.team_id) or {}
     members_count = conn.execute(
         text("SELECT count(DISTINCT user_id) FROM team_members WHERE team_id = CAST(:t AS uuid)"),
@@ -1297,19 +1296,7 @@ def _team_item_shares(conn, ra: ResourceAccess, user: str | None = None) -> dict
     }
     if ra.resource_type == "agent":
         agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}
-        switched_on = has_outside_access(agent)
-        payer = agent.get("access_payer_id") if switched_on else None
-        pause = outside_access_pause(conn, agent, checks=PayerChecks()) if switched_on else None
-        body["outside_access"] = {
-            "api_key": bool(agent.get("key")),
-            "public_link": bool(agent.get("shared") and agent.get("shared_token")),
-            "webhook": bool(agent.get("incoming_webhook_token")),
-            "paid_by": person_ref(payer, _user_labels(conn, {payer}) if payer else {}),
-            "paused_for": pause.payload() if pause else None,
-            "can_take_over": bool(
-                switched_on and user and ra.can("manage_access_details") and payer != user
-            ),
-        }
+        body["outside_access"] = agent_sharing.outside_access_state(conn, agent, ra, user)
     return body
 
 

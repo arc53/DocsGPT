@@ -441,10 +441,14 @@ def chat_completions():
 
     # Storing inline files and queueing their parses costs storage and worker
     # time, so an exhausted quota refuses the request before either happens.
-    # ``_serve`` checks again once the agent is built.
+    # ``_serve`` checks again once the agent is built. The key holder is
+    # outside traffic: a refusal says only that the agent is paused, never
+    # the payer's numbers.
     if internal_data.get("inline_files"):
         usage_error = _V1AnswerHelper().check_usage(
-            {"user_api_key": api_key}, decoded_token, agent_id=agent_id_value or None
+            {"user_api_key": api_key, "external_api_caller": True},
+            decoded_token,
+            agent_id=agent_id_value or None,
         )
         if usage_error:
             # Nothing is claimed or stored yet: the idempotency claim is taken in ``_serve``.

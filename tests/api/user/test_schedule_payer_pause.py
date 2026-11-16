@@ -398,3 +398,70 @@ class TestMidRunStop:
         assert result["status"] == "failed"
         assert _run_row(engine, run)["error_type"] == "payer_out_of_allowance"
         assert _schedule_row(engine, schedule)["consecutive_failure_count"] == 0
+
+
+class TestRunEvents:
+    """Every run that announced ``schedule.run.started`` announces how it ended, so the UI never shows it running."""
+
+    @pytest.fixture
+    def events(self, engine, monkeypatch):
+        sent: list[tuple[str, dict]] = []
+
+        def _publish(user_id, event_type, payload, **_kw):
+            sent.append((event_type, payload))
+            return "1-0"
+
+        monkeypatch.setattr("docsgpt.api.user.scheduler_worker.publish_user_event", _publish)
+        return sent
+
+    @staticmethod
+    def _allowance_refusal():
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
+
+        return QuotaExceededError(QuotaExceeded(
+            user_id=EDITOR, bucket="agent", budget="tokens", usage=10, limit=10, source="user", source_id=None,
+            resets_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        ))
+
+    @pytest.mark.parametrize("refusal,reason", [
+        ("allowance", "payer_out_of_allowance"),
+        ("no_payer", "no_payer"),
+    ])
+    def test_a_pre_check_refusal_after_start_closes_the_run_as_skipped(self, engine, notified, events, refusal, reason):
+        from docsgpt.quotas.service import NoPayerError
+
+        with engine.begin() as conn:
+            _tid, schedule = _team_schedule(conn)
+            run = _pending(conn, schedule)
+
+        _execute(run, self._allowance_refusal() if refusal == "allowance" else NoPayerError("team:x"))
+
+        assert [kind for kind, _ in events] == ["schedule.run.started", "schedule.run.skipped"]
+        closing = events[-1][1]
+        assert closing["run_id"] == str(run["id"])
+        assert closing["schedule_id"] == str(schedule["id"])
+        assert (closing["status"], closing["error_type"]) == ("skipped", reason)
+
+    @pytest.mark.parametrize("outcome,closing", [
+        (_OK, "schedule.run.completed"),
+        ({**_OK, "answer": "partial", "error_type": "payer_out_of_allowance", "error": "quota"}, "schedule.run.failed"),
+        (RuntimeError("boom"), "schedule.run.failed"),
+    ])
+    def test_every_started_run_ends_with_one_closing_event(self, engine, notified, events, outcome, closing):
+        with engine.begin() as conn:
+            _tid, schedule = _team_schedule(conn)
+            run = _pending(conn, schedule)
+
+        _execute(run, outcome)
+
+        assert [kind for kind, _ in events] == ["schedule.run.started", closing]
+
+    def test_a_run_skipped_before_it_starts_announces_nothing(self, engine, notified, events):
+        with engine.begin() as conn:
+            tid, schedule = _team_schedule(conn)
+            run = _pending(conn, schedule)
+            _set_role(conn, tid, EDITOR, None)
+
+        _execute(run)
+
+        assert events == []

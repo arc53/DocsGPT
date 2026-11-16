@@ -389,8 +389,10 @@ def _mark_payer_state(
     ``paused_for`` is ``{reason, until, since}`` while the schedule is paused
     for its payer (``quotas.pause.schedule_pause``), else None: ``until`` is
     when it resumes by itself (an allowance's reset), ``since`` when its runs
-    began to be skipped for that reason (None before the first skip). A
-    finished schedule is never reported paused. Each distinct payer's
+    began to be skipped for that reason (None before the first skip). Only an
+    ``active`` schedule is reported paused: one a person or auto-pause
+    stopped isn't running, so nothing pauses it for its payer (the team's
+    Usage tab and the payer's quota leave it out too). Each distinct payer's
     allowance is checked once per call.
 
     Args:
@@ -402,9 +404,9 @@ def _mark_payer_state(
     checks = PayerChecks()
     pauses = []
     for row, owner in zip(rows, agent_owners):
-        live = row.get("status") in _LIVE_STATUSES
+        running = row.get("status") == "active"
         agent = {"id": row.get("agent_id"), "user_id": owner} if row.get("agent_id") else None
-        pauses.append(schedule_pause(conn, row, agent, checks=checks) if live else None)
+        pauses.append(schedule_pause(conn, row, agent, checks=checks) if running else None)
         row["can_take_over"] = _may_take_over(conn, checks, viewer, row, owner)
     paused = [str(row["id"]) for row, pause in zip(rows, pauses) if pause is not None]
     latest = ScheduleRunsRepository(conn).latest_finished(paused) if paused else {}

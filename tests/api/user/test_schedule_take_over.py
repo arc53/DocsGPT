@@ -395,6 +395,17 @@ class TestPayloads:
         for read in self._reads(app, pg_conn, tid, agent_id, sched["id"], ADMIN):
             assert read["paused_for"]["since"] is None
 
+    def test_a_schedule_a_person_paused_reports_no_payer_pause(self, app, pg_conn):
+        # As the team's Usage tab and the payer's quota read it: it isn't running, so nothing pauses it for its payer.
+        tid, agent_id, sched = _team_schedule(pg_conn)
+        SchedulesRepository(pg_conn).update(str(sched["id"]), EDITOR, {"status": "paused", "next_run_at": None})
+        _set_role(pg_conn, tid, EDITOR, None)
+
+        for read in self._reads(app, pg_conn, tid, agent_id, sched["id"], ADMIN):
+            assert read["status"] == "paused"
+            assert read["paused_for"] is None
+            assert read["can_take_over"] is True
+
     def test_an_out_of_allowance_payer_reads_until_the_reset(self, app, pg_conn):
         tid, agent_id, sched = _team_schedule(pg_conn)
         _out_of_allowance(pg_conn, EDITOR)

@@ -133,6 +133,36 @@ class TestShareDialogPause:
         assert outside["paused_for"] is None and outside["can_take_over"] is False
 
 
+class TestShareDialogUsesTheAgentPayloadRule:
+    """The share dialog's ``outside_access`` comes from the same helper as the agent payload's, so they can't drift."""
+
+    def test_the_dialog_returns_the_agent_payloads_block(self, client, db):
+        tid = _team(db)
+        aid = _published(db, tid, "jonas")
+        marker = {"from": "outside_access_state"}
+        seen = []
+
+        def _state(conn, agent, ra, user, *, checks=None):
+            seen.append((str(agent["id"]), ra.resource_id, user))
+            return marker
+
+        with patch("docsgpt.api.user.agents.sharing.outside_access_state", _state):
+            assert _outside(client, aid, "lena") == marker
+        assert seen == [(aid, aid, "lena")]
+
+    @pytest.mark.parametrize("payer,user", [("jonas", "lena"), ("jonas", "jonas"), ("dana", "tomas"), (None, "lena")])
+    def test_the_dialog_matches_the_helper_for_each_reader(self, client, db, payer, user):
+        from docsgpt.api.user.agents.sharing import outside_access_state
+        from docsgpt.api.user.resource_access import resolve
+
+        tid = _team(db)
+        aid = _published(db, tid, payer)
+        expected = outside_access_state(
+            db, AgentsRepository(db).get_by_id(aid), resolve(db, "agent", aid, user), user,
+        )
+        assert _outside(client, aid, user) == json.loads(json.dumps(expected))
+
+
 class TestWorkspaceRows:
     def _rows(self, client, user="tomas"):
         with _as(user):
