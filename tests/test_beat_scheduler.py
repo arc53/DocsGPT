@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -254,6 +254,27 @@ def test_an_entry_due_this_second_is_left_to_redbeat(scheduler, schedule, monkey
     monkeypatch.setattr(scheduler.app, "now", lambda: NOW)
     schedule.due_at = [int(NOW.timestamp()), int(NOW.timestamp()) - 3600]
 
+    assert scheduler.tick() == scheduler.max_interval
+
+
+@pytest.mark.unit
+def test_an_entry_due_in_a_second_the_tick_crossed_is_not_slept_past(scheduler, schedule, monkeypatch):
+    # RedBeat read the schedule at 13.25 s, so it saw neither this entry nor (it peeks at one) the one after.
+    # Sending took until 14.75 s, past the entry's whole second.
+    clock = {"now": NOW}
+    monkeypatch.setattr(scheduler.app, "now", lambda: clock["now"])
+
+    def read_schedule(self):
+        clock["now"] = NOW + timedelta(seconds=1.5)
+        return {}
+
+    monkeypatch.setattr(RedBeatScheduler, "schedule", property(read_schedule))
+    schedule.due_at = [NOW.timestamp() + 600, int(NOW.timestamp()) + 1]
+
+    # Overdue already: tick again at once, which reads it as due.
+    assert scheduler.tick() == 0.0
+    # That tick started in the entry's second, so it does not count the entry again, even one RedBeat
+    # found not quite due by its exact time (left in place here): no spinning on 0.
     assert scheduler.tick() == scheduler.max_interval
 
 

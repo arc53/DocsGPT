@@ -16,7 +16,7 @@ RedBeat also oversleeps. A tick sleeps until the soonest of the entries it read:
 score, plus one entry it peeks at after them. When that one entry turns out to be due as well, it is
 sent, and only the sent entries' own intervals are left. Two 5-minute tasks sent together then put beat
 to sleep for 300 s while the 30 s tasks wait, which is also longer than the lock lives. So each tick's
-sleep is cut to the next entry's due time, read back from Redis after the tick.
+sleep is cut to the due time of the next entry the tick did not read, read back from Redis after it.
 """
 
 import logging
@@ -75,7 +75,8 @@ class DocsGPTScheduler(RedBeatScheduler):
         try:
             if not self._hold_lock():
                 return standby
-            return self._until_next_entry(super().tick(min=min, **kwargs))
+            started = self.app.now().timestamp()
+            return self._until_next_entry(super().tick(min=min, **kwargs), started)
         except LockError:
             # Lost between the check and RedBeat's own extend; the next tick takes it back.
             self.holding_lock = False
@@ -84,20 +85,29 @@ class DocsGPTScheduler(RedBeatScheduler):
             logger.warning("beat: Redis is not reachable (%s); retrying in %ss", exc, standby)
             return standby
 
-    def _until_next_entry(self, interval: float) -> float:
+    def _until_next_entry(self, interval: float, started: float) -> float:
         """``interval``, cut to the time left until the next entry in Redis is due.
 
-        Scores are whole seconds, and RedBeat's tick has already read every entry up to this second,
-        so only later scores count. Waking on the score is at most a second early; the tick after
-        that sleeps the rest.
+        Scores are whole seconds. RedBeat's tick read every entry scored up to the second it ``started``
+        in, so only later scores count; an entry it read there but found not due yet is in ``interval``.
+        Sending can take long enough to cross into a later second, and an entry scored there was not read
+        (RedBeat peeks at one entry only). Its wait is then 0, so beat ticks again at once and reads it as
+        due; that tick started in its second, so the entry is not counted again. Waking on a score is at
+        most a second early, and the tick after that sleeps the rest.
+
+        Args:
+            interval: The sleep RedBeat's tick asked for.
+            started: When the tick started, as a UNIX timestamp.
+
+        Returns:
+            The seconds to sleep: ``interval``, or less when an entry is due sooner.
         """
-        now = self.app.now().timestamp()
         following = get_redis(self.app).zrangebyscore(
-            self.app.redbeat_conf.schedule_key, f"({int(now)}", "+inf", start=0, num=1, withscores=True
+            self.app.redbeat_conf.schedule_key, f"({int(started)}", "+inf", start=0, num=1, withscores=True
         )
         if not following:
             return interval
-        return min(interval, following[0][1] - now)
+        return min(interval, max(0.0, following[0][1] - self.app.now().timestamp()))
 
     def _hold_lock(self) -> bool:
         """Extend the lock this beat holds, or take it when free; False while another beat has it."""
