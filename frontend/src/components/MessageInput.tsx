@@ -46,6 +46,7 @@ import {
   setSelectedFolders,
 } from '../preferences/preferenceSlice';
 import UsageNotice, { useUsageStop } from '../payer/UsageNotice';
+import { chatUsageScope } from '../payer/usageSlice';
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
@@ -436,8 +437,9 @@ export default function MessageInput({
     [attachments, selectedModel],
   );
   const attachmentBudgetShare = useSelector(selectAttachmentBudgetShare);
-  // A chat with an agent spends the agent allowance, one without the direct one.
-  const usageScope = useSelector(selectSelectedAgent) ? 'agent' : 'direct';
+  // A chat with an agent spends the agent allowance, one without the direct
+  // one, and one with an agent reached only by its link spends the publisher's.
+  const usageScope = chatUsageScope(useSelector(selectSelectedAgent));
   const usageStopped = useUsageStop(usageScope) && usageNotice;
   // No cap on how many files attach: past the model's attachment budget the
   // files still send, and Knowledge is offered as the better home for them.
@@ -1662,7 +1664,7 @@ export default function MessageInput({
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
       {signInAgain.modals}
-      {usageNotice && <UsageNotice scope={usageScope} />}
+      {usageNotice && usageScope && <UsageNotice scope={usageScope} />}
       {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
       <input

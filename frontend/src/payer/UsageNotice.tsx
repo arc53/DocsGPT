@@ -37,7 +37,8 @@ const ACCESS_KEYS: Record<OutsideAccessKind, string> = {
 /**
  * Keeps the person's quota fresh while a composer is open: reads it when
  * first shown and when the signed-in person changes, and again on focus (the
- * slice throttles that to every 5 minutes).
+ * slice throttles that to every 5 minutes, or every 15 seconds while an
+ * allowance is used up).
  */
 export function useUsageRefresh(): void {
   const dispatch = useDispatch();
@@ -66,17 +67,18 @@ export function useUsageRefresh(): void {
 
 /**
  * Whether the person has used up an allowance this chat spends from. The
- * composer doesn't send while it is; a refetch (reset, a raised limit,
- * focus) opens it again.
+ * composer doesn't send while it is; a refetch (the reset, or coming back to
+ * the window after a limit was raised) opens it again.
  *
  * Args:
- *   scope: `direct` for a chat without an agent, `agent` with one.
+ *   scope: `direct` for a chat without an agent, `agent` with one, null for
+ *     a chat the person doesn't pay for (never stopped).
  */
-export function useUsageStop(scope: UsageScope): boolean {
-  return (
-    useSelector((state: RootLike) => selectUsageNotice(state, scope))?.level ===
-    'reached'
+export function useUsageStop(scope: UsageScope | null): boolean {
+  const notice = useSelector((state: RootLike) =>
+    scope ? selectUsageNotice(state, scope) : null,
   );
+  return notice?.level === 'reached';
 }
 
 type UsageNoticeProps = {

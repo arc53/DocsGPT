@@ -11,10 +11,12 @@ import payerService, {
 } from '../api/services/payerService';
 import workspaceReducer, { switchWorkspace } from '../workspace/workspaceSlice';
 import reducer, {
+  chatUsageScope,
   connectUsage,
   createUsageListener,
   FOCUS_REFETCH_MS,
   loadUsage,
+  STOPPED_FOCUS_REFETCH_MS,
   noteQuotaError,
   noteTurnFinished,
   noticeFor,
@@ -135,6 +137,23 @@ describe('usageSlice', () => {
     expect(getQuota).toHaveBeenCalledTimes(1);
   });
 
+  it('refetches on focus soon while stopped, so a raised limit opens the composer', async () => {
+    getQuota.mockResolvedValueOnce(
+      quota({ buckets: [bucket('all', 100, 100)] }),
+    );
+    getQuota.mockResolvedValue(quota({ buckets: [bucket('all', 100, 200)] }));
+    const store = await start();
+    expect(selectUsageNotice(store.getState(), 'direct')?.level).toBe(
+      'reached',
+    );
+    expect(STOPPED_FOCUS_REFETCH_MS).toBeLessThan(FOCUS_REFETCH_MS);
+    await vi.advanceTimersByTimeAsync(STOPPED_FOCUS_REFETCH_MS);
+    store.dispatch(usageFocused());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getQuota).toHaveBeenCalledTimes(2);
+    expect(selectUsageNotice(store.getState(), 'direct')).toBeNull();
+  });
+
   it('refetches at the reset, so a stopped composer opens again', async () => {
     getQuota.mockResolvedValueOnce(
       quota({ buckets: [bucket('all', 100, 100)] }),
@@ -225,5 +244,41 @@ describe('noticeFor', () => {
       resets_at: RESET,
     };
     expect(noticeFor(quota({ notice }))).toBe(notice);
+  });
+});
+
+describe('chatUsageScope', () => {
+  it('is direct without an agent and agent with the person’s own', () => {
+    expect(chatUsageScope(null)).toBe('direct');
+    expect(chatUsageScope({})).toBe('agent');
+    expect(
+      chatUsageScope({
+        access: 'owner',
+        workspace: { kind: 'personal', team_id: null },
+      }),
+    ).toBe('agent');
+  });
+
+  it('is agent for a team’s agent or one shared with the person', () => {
+    expect(
+      chatUsageScope({
+        access: 'viewer',
+        workspace: { kind: 'team', team_id: 't1' },
+        origin: 'team',
+      }),
+    ).toBe('agent');
+    expect(
+      chatUsageScope({
+        access: 'viewer',
+        workspace: { kind: 'personal', team_id: null },
+        origin: 'shared',
+      }),
+    ).toBe('agent');
+  });
+
+  it('is nothing for an agent reached only by its link: its publisher pays', () => {
+    expect(
+      chatUsageScope({ access: 'viewer', allowed_actions: ['pin', 'use'] }),
+    ).toBeNull();
   });
 });

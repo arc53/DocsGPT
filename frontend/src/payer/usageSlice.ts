@@ -16,6 +16,11 @@ import payerService, {
 export const TURN_DEBOUNCE_MS = 30_000;
 /** Coming back to the window reads the quota again at most this often. */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
+/**
+ * The same while an allowance is used up: someone may have raised the
+ * limit, and the composer stays shut until a read says so.
+ */
+export const STOPPED_FOCUS_REFETCH_MS = 15_000;
 /** Past the reset, so the server is already counting the new window. */
 const RESET_SLACK_MS = 2_000;
 /** One wait toward the reset; a month is past one setTimeout's range. */
@@ -28,6 +33,37 @@ const NEAR_PERCENT = 80;
  * with one. Both also spend from `all`.
  */
 export type UsageScope = 'direct' | 'agent';
+
+/** The access fields of the agent a chat runs with (`Agent`'s). */
+type ChatAgentAccess = {
+  access?: string | null;
+  workspace?: unknown;
+  origin?: string | null;
+  allowed_actions?: string[];
+};
+
+/**
+ * Which of the person's allowances a chat spends from, as the server bills
+ * it: `direct` without an agent, `agent` with one they own or reach through
+ * a team, and nothing for an agent they reach only by its public link, whose
+ * publisher pays (the person's own allowance neither stops nor counts it).
+ * Such an agent arrives as a viewer with no `workspace`, since the person
+ * has no grant on it.
+ *
+ * Args:
+ *   agent: The selected agent, or null for a chat without one.
+ *
+ * Returns:
+ *   The scope, or null when the chat spends nothing of the person's.
+ */
+export function chatUsageScope(
+  agent: ChatAgentAccess | null | undefined,
+): UsageScope | null {
+  if (!agent) return 'direct';
+  const linkOnly =
+    agent.access === 'viewer' && !agent.workspace && !agent.origin;
+  return linkOnly ? null : 'agent';
+}
 
 export type UsageState = {
   /** The last answer of `GET /api/user/quota`; null until one arrives. */
@@ -118,10 +154,16 @@ const nextReset = (quota: QuotaResponse | null): number | null => {
   return times.length ? Math.min(...times) : null;
 };
 
+const isStopped = (quota: QuotaResponse | null): boolean =>
+  (['direct', 'agent'] as const).some(
+    (scope) => noticeFor(quota, scope)?.level === 'reached',
+  );
+
 /**
  * The listener that keeps the quota fresh: after each finished turn
  * (debounced), at once after a quota error, on focus at most every 5
- * minutes, and at the reset. One per store.
+ * minutes (every 15 s while an allowance is used up), and at the reset.
+ * One per store.
  */
 export function createUsageListener() {
   const listener = createListenerMiddleware();
@@ -148,8 +190,11 @@ export function createUsageListener() {
   listener.startListening({
     actionCreator: usageFocused,
     effect: (_action, api) => {
-      const { loadedAt } = usageOf(api.getState());
-      if (loadedAt !== null && Date.now() - loadedAt < FOCUS_REFETCH_MS) return;
+      const { loadedAt, quota } = usageOf(api.getState());
+      const every = isStopped(quota)
+        ? STOPPED_FOCUS_REFETCH_MS
+        : FOCUS_REFETCH_MS;
+      if (loadedAt !== null && Date.now() - loadedAt < every) return;
       api.dispatch(loadUsage() as never);
     },
   });
