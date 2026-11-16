@@ -68,8 +68,11 @@ def test_a_key_holder_with_files_is_told_only_that_the_agent_is_paused(db, provi
 
     assert response.status_code == 429
     body = response.get_json()
-    assert body["code"] == PAUSED_CODE
-    assert not set(_NUMBERS) & set(body)
+    # The OpenAI error shape every other /v1 error uses.
+    assert body["error"]["code"] == PAUSED_CODE
+    assert body["error"]["type"] == "rate_limit_error"
+    assert not set(_NUMBERS) & set(body) and not set(_NUMBERS) & set(body["error"])
+    assert response.headers["x-should-retry"] == "false"
     assert "u-test" not in response.get_data(as_text=True)
     assert provider.decorated_for == []
     ingested.assert_not_called()

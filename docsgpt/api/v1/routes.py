@@ -325,7 +325,54 @@ def _response_finish_reason(agent: Any) -> str:
 
 class _V1AnswerHelper(BaseAnswerResource):
     """Thin wrapper to access complete_stream / process_response_stream."""
-    pass
+
+    def check_usage(
+        self,
+        agent_config: Dict,
+        decoded_token: Optional[Dict] = None,
+        agent_id: Optional[str] = None,
+    ) -> Optional[Response]:
+        """``BaseAnswerResource.check_usage``, with a paused agent's refusal in the ``/v1`` error shape.
+
+        Args:
+            agent_config: The run's agent config.
+            decoded_token: The run's identity.
+            agent_id: The agent the request runs through.
+
+        Returns:
+            None, or the refusal.
+        """
+        refusal = super().check_usage(agent_config, decoded_token, agent_id=agent_id)
+        return _openai_pause(refusal) if refusal is not None else None
+
+
+def _openai_pause(response: Response) -> Response:
+    """A paused agent's refusal (``agent_paused``, ``no_payer``) in the OpenAI error shape other ``/v1`` errors use.
+
+    The status and the ``Retry-After`` / ``x-should-retry`` headers are kept;
+    any other refusal is returned as it is.
+
+    Args:
+        response: ``check_usage``'s refusal.
+
+    Returns:
+        The refusal to send.
+    """
+    from docsgpt.api.owner_pause import PAUSED_CODE
+    from docsgpt.quotas.payer import NO_PAYER_CODE
+
+    body = response.get_json(silent=True)
+    if not isinstance(body, dict) or body.get("code") not in (PAUSED_CODE, NO_PAYER_CODE):
+        return response
+    kind = "rate_limit_error" if response.status_code == 429 else "permission_error"
+    reshaped = make_response(
+        jsonify({"error": {"message": body.get("message"), "type": kind, "code": body["code"]}}),
+        response.status_code,
+    )
+    for header in ("Retry-After", "x-should-retry"):
+        if header in response.headers:
+            reshaped.headers[header] = response.headers[header]
+    return reshaped
 
 
 @v1_bp.route("/chat/completions", methods=["POST"])

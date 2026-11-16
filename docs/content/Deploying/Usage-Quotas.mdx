@@ -105,7 +105,7 @@ When the payer of an agent's outside access is out of quota, people reaching the
 }
 ```
 
-It is a `429` with `Retry-After` set to the reset and `x-should-retry: false`. A run stopped part way for the same reason ends with the same code and message. The agent's own limit keeps its own message, which is about the agent, not a person. The same `agent_paused` refusal, as a `403`, answers outside callers while the payer's account is deactivated or, on a team agent, while the payer is no longer an Admin there. A team agent whose outside access has nobody to pay for it answers `no_payer`.
+It is a `429` with `Retry-After` set to the reset and `x-should-retry: false`. On `/v1` the body has the OpenAI error shape the API's other errors use: `{"error": {"message": "...", "type": "rate_limit_error", "code": "agent_paused"}}`. A run stopped part way for the same reason ends with the same code and message. The agent's own limit keeps its own message, which is about the agent, not a person. The same `agent_paused` refusal, as a `403`, answers outside callers while the payer's account is deactivated or, on a team agent, while the payer is no longer an Admin there. A team agent whose outside access has nobody to pay for it answers `no_payer`.
 
 ## Pricing
 
