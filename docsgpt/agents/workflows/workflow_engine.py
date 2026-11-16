@@ -871,7 +871,12 @@ class WorkflowEngine:
             prompt_embeds_documents as _prompt_embeds_documents,
         )
 
-        node_config = AgentNodeConfig(**node.config.get("config", node.config))
+        raw_config = node.config.get("config", node.config)
+        # A null list (a graph saved through the API) means none, as an omitted key does.
+        node_config = AgentNodeConfig(**{
+            key: value for key, value in raw_config.items()
+            if not (value is None and key in ("tools", "sources", "folders", "input_documents"))
+        })
 
         self._node_search_outcome = None
         node_docs = (

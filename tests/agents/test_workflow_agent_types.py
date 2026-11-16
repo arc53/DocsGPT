@@ -776,6 +776,24 @@ class TestWorkflowNodeDocumentsReachTheAgent:
         assert captured["search_outcome"] is None
         retrieve.assert_not_called()
 
+    def test_null_lists_read_as_empty(self, monkeypatch):
+        """A graph saved through the API with ``null`` for a node's tools, sources or folders still runs."""
+        engine = create_engine()
+        node = create_agent_node(node_id="n", agent_type="classic")
+        node.config.update({"tools": None, "sources": None, "folders": None, "input_documents": None})
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["sources_were_searched"] is False
+
 
 @pytest.mark.unit
 class TestWorkflowNodeRelevance:
