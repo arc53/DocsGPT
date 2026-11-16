@@ -20,7 +20,8 @@
   webhook) on a team agent; always a person. It is bookkeeping for
   ``agents_set_updated_at``.
 * ``conversations.team_id`` (NULL = Personal), ``ON DELETE CASCADE``, and the
-  sidebar index gains it.
+  sidebar index gains it. ``conversations_team_idx`` (``team_id, id``, team
+  rows only) serves a team's chat export and the cascade when a team goes.
 * ``schedule_runs.error_type`` also allows ``owner_inactive``, and the reasons
   a run is skipped while its payer can't pay: ``payer_out_of_allowance``,
   ``payer_left`` and ``no_payer``.
@@ -239,6 +240,10 @@ def upgrade() -> None:
         "ON conversations (user_id, team_id, date DESC) WHERE visibility = 'listed'"
     )
     op.execute("DROP INDEX IF EXISTS conversations_user_listed_idx")
+    # A team's chats by team: the export pages through them by id, and deleting a team cascades to them.
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS conversations_team_idx ON conversations (team_id, id) WHERE team_id IS NOT NULL"
+    )
 
     # A run skipped because its owner or payer was deactivated, or its payer can't pay, says so.
     _add_constraint(
@@ -317,6 +322,7 @@ def downgrade() -> None:
         "ON conversations (user_id, date DESC) WHERE visibility = 'listed'"
     )
     op.execute("DROP INDEX IF EXISTS conversations_user_ws_listed_idx")
+    op.execute("DROP INDEX IF EXISTS conversations_team_idx")
     op.execute("ALTER TABLE conversations DROP COLUMN IF EXISTS team_id")
 
     op.execute("DROP TRIGGER IF EXISTS agents_set_updated_at ON agents")

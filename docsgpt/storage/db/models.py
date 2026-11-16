@@ -857,6 +857,14 @@ Index(
     postgresql_where=conversations_table.c.visibility == "listed",
 )
 
+# A team's chats by team: its chat export and the cascade when the team goes (0065).
+Index(
+    "conversations_team_idx",
+    conversations_table.c.team_id,
+    conversations_table.c.id,
+    postgresql_where=conversations_table.c.team_id.isnot(None),
+)
+
 conversation_messages_table = Table(
     "conversation_messages",
     metadata,

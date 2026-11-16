@@ -91,8 +91,21 @@ def test_head_schema(pg_conn):
     assert "access_payer_id" in _columns(pg_conn, "agents")
     assert "team_id" in _columns(pg_conn, "conversations")
     indexes = _indexes(pg_conn)
-    assert {"users_team_id_uidx", "conversations_user_ws_listed_idx"} <= indexes
+    assert {"users_team_id_uidx", "conversations_user_ws_listed_idx", "conversations_team_idx"} <= indexes
     assert "conversations_user_listed_idx" not in indexes
+
+
+def test_a_teams_chats_are_found_by_team_without_a_scan(pg_conn):
+    team = _team(pg_conn)
+    pg_conn.execute(text("SET LOCAL enable_seqscan = off"))
+    # The export's page query and a team delete's cascade both start from the team.
+    plan = "\n".join(
+        r[0] for r in pg_conn.execute(
+            text("EXPLAIN SELECT id FROM conversations WHERE team_id = CAST(:t AS uuid) ORDER BY id LIMIT 200"),
+            {"t": team},
+        )
+    )
+    assert "conversations_team_idx" in plan
 
 
 def test_upgrade_backfills_principals_roles_kinds_and_provenance(pg_conn):
@@ -319,6 +332,7 @@ def test_round_trip(pg_conn):
         assert "access_payer_id" not in _columns(pg_conn, "agents")
         assert "team_id" not in _columns(pg_conn, "conversations")
         assert "conversations_user_listed_idx" in _indexes(pg_conn)
+        assert "conversations_team_idx" not in _indexes(pg_conn)
         assert pg_conn.execute(text("SELECT count(*) FROM users WHERE user_id = :p"), {"p": principal}).scalar() == 0
         assert _roles(pg_conn, team) == {
             ("alice", "team_admin", "manual"),
