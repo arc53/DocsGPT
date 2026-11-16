@@ -1663,7 +1663,8 @@ let listRefreshAgain = false;
  * fetch, so a burst of events (a replayed backlog, several chats finishing)
  * costs two requests and an older list never lands over a newer one; a
  * `conversation.renamed` that arrives meanwhile gets a list read after the
- * title. A failed fetch keeps the list on screen.
+ * title. A failed fetch keeps the list on screen, and a list that answers
+ * after a workspace switch is dropped.
  *
  * Args:
  *   getState: The store's state getter; the token is read at each fetch.
@@ -1685,9 +1686,12 @@ function refreshConversationList(
       do {
         listRefreshAgain = false;
         const { token } = (getState() as RootState).preference;
+        // A list read before a switch is the old workspace's.
+        const workspace = captureWorkspace();
         try {
           const fetched = await getConversations(token);
-          if (fetched.data) dispatch(receiveConversations(fetched));
+          if (fetched.data && workspace.isCurrent())
+            dispatch(receiveConversations(fetched));
         } catch (error) {
           console.error('conversations refresh failed', error);
         }
