@@ -300,6 +300,101 @@ class TestTakeOver:
         assert resp.get_json()["schedule"]["paused_for"]["reason"] == "payer_out_of_allowance"
 
 
+    def test_a_finished_schedule_cant_be_taken_over(self, app, pg_conn):
+        for status in ("completed", "cancelled"):
+            _tid, _agent_id, sched = _team_schedule(pg_conn)
+            pg_conn.execute(text("UPDATE schedules SET status = :s WHERE id = CAST(:id AS uuid)"),
+                            {"s": status, "id": str(sched["id"])})
+
+            resp = _take_over(app, pg_conn, sched["id"], ADMIN)
+
+            assert resp.status_code == 409
+            assert resp.get_json()["error"] == "schedule_finished"
+            assert SchedulesRepository(pg_conn).get_internal(str(sched["id"]))["user_id"] == EDITOR
+            assert _audits(pg_conn, sched["id"]) == []
+
+
+class TestSetterWithoutTheRole:
+    """A setter who left the team or lost Editor no longer manages their schedule on its agent."""
+
+    def _write_calls(self, app, conn, schedule_id, user):
+        from docsgpt.api.user.schedules.routes import ScheduleResource, ScheduleRunNow
+
+        sid = str(schedule_id)
+        path = f"/api/schedules/{sid}"
+        return {
+            "put": _call(app, conn, ScheduleResource, "put", path, user, json={"instruction": "new"}, args=(sid,)),
+            "pause": _call(app, conn, ScheduleResource, "patch", path, user, json={"action": "pause"}, args=(sid,)),
+            "run": _call(app, conn, ScheduleRunNow, "post", f"{path}/run", user, args=(sid,)),
+            "delete": _call(app, conn, ScheduleResource, "delete", path, user, args=(sid,)),
+        }
+
+    def _read_calls(self, app, conn, schedule_id, run_id, user):
+        from docsgpt.api.user.schedules.routes import ScheduleResource, ScheduleRunDetail, ScheduleRunList
+
+        sid = str(schedule_id)
+        path = f"/api/schedules/{sid}"
+        return {
+            "get": _call(app, conn, ScheduleResource, "get", path, user, args=(sid,)),
+            "runs": _call(app, conn, ScheduleRunList, "get", f"{path}/runs", user, args=(sid,)),
+            "run": _call(app, conn, ScheduleRunDetail, "get", f"{path}/runs/{run_id}", user, args=(sid, str(run_id))),
+        }
+
+    def _unchanged(self, conn, sched):
+        row = SchedulesRepository(conn).get_internal(str(sched["id"]))
+        assert row["instruction"] == "hi"
+        assert row["status"] == "active"
+        assert not ScheduleRunsRepository(conn).has_active_run(str(sched["id"]))
+
+    def test_a_removed_setter_neither_reads_nor_changes_it(self, app, pg_conn):
+        tid, agent_id, sched = _team_schedule(pg_conn)
+        run = ScheduleRunsRepository(pg_conn).record_skipped(
+            str(sched["id"]), EDITOR, agent_id, datetime.now(timezone.utc) - timedelta(hours=1),
+            error_type="payer_left", error="payer_left",
+        )
+        _set_role(pg_conn, tid, EDITOR, None)
+
+        for name, resp in self._read_calls(app, pg_conn, sched["id"], run["id"], EDITOR).items():
+            assert resp.status_code == 404, name
+        with patch("docsgpt.api.user.tasks.execute_scheduled_run.apply_async"):
+            for name, resp in self._write_calls(app, pg_conn, sched["id"], EDITOR).items():
+                assert resp.status_code == 404, name
+        self._unchanged(pg_conn, sched)
+
+    def test_a_setter_now_a_viewer_reads_it_and_their_own_runs_but_cant_change_it(self, app, pg_conn):
+        tid, agent_id, sched = _team_schedule(pg_conn)
+        runs = ScheduleRunsRepository(pg_conn)
+        when = datetime.now(timezone.utc) - timedelta(hours=2)
+        theirs = runs.record_skipped(str(sched["id"]), EDITOR, agent_id, when, error_type="payer_left",
+                                     error="payer_left")
+        others = runs.record_skipped(str(sched["id"]), ADMIN, agent_id, when + timedelta(hours=1),
+                                     error_type="payer_left", error="payer_left")
+        _set_role(pg_conn, tid, EDITOR, "team_viewer")
+
+        reads = self._read_calls(app, pg_conn, sched["id"], theirs["id"], EDITOR)
+        assert reads["get"].status_code == 200
+        assert reads["run"].status_code == 200
+        assert [r["id"] for r in reads["runs"].get_json()["runs"]] == [str(theirs["id"])]
+        other = self._read_calls(app, pg_conn, sched["id"], others["id"], EDITOR)["run"]
+        assert other.status_code == 404
+        with patch("docsgpt.api.user.tasks.execute_scheduled_run.apply_async"):
+            for name, resp in self._write_calls(app, pg_conn, sched["id"], EDITOR).items():
+                assert resp.status_code == 403, name
+        self._unchanged(pg_conn, sched)
+
+    def test_an_editor_still_manages_their_own(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import ScheduleResource
+
+        _tid, _agent_id, sched = _team_schedule(pg_conn)
+        sid = str(sched["id"])
+
+        resp = _call(app, pg_conn, ScheduleResource, "put", f"/api/schedules/{sid}", EDITOR,
+                     json={"instruction": "new"}, args=(sid,))
+
+        assert resp.status_code == 200, resp.get_json()
+        assert SchedulesRepository(pg_conn).get_internal(sid)["instruction"] == "new"
+
+
 class TestTokens:
     def test_a_personal_access_token_is_refused(self):
         from docsgpt.api.pat.tokens import SCOPES, expand_scopes
@@ -436,6 +531,14 @@ class TestPayloads:
         assert one["can_take_over"] is False
         assert one["paused_for"] is None
         assert one["paid_by"] is not None
+
+    def test_a_schedule_nobody_pays_for_names_no_payer(self, app, pg_conn):
+        tid, agent_id, sched = _team_schedule(pg_conn, setter="principal")
+
+        for read in self._reads(app, pg_conn, tid, agent_id, sched["id"], ADMIN):
+            assert read["paid_by"] is None
+            assert read["paused_for"]["reason"] == "no_payer"
+            assert read["can_take_over"] is True
 
     def test_a_list_checks_each_payers_allowance_once(self, app, pg_conn):
         from docsgpt.api.user.schedules.routes import UserSchedules

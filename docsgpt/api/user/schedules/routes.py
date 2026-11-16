@@ -59,7 +59,7 @@ from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
 from docsgpt.workspaces.context import WorkspaceError, current_workspace
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
-from docsgpt.workspaces.roles import role_at_least
+from docsgpt.workspaces.roles import role_at_least, team_role_for
 
 
 logger = logging.getLogger(__name__)
@@ -202,17 +202,24 @@ def _agent_for_schedules(agent_id: str, user_id: str) -> tuple[Dict[str, Any], s
     return agent, (user_id if ra.is_team_item else ra.owner_id)
 
 
-def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any], str]:
+def _schedule_for(
+    conn, schedule_id: str, user_id: str, own_action: str = "manage_schedules",
+) -> tuple[Dict[str, Any], str]:
     """Fetch a schedule the caller may manage, and the id to act as.
 
-    The caller's own schedule is always theirs. Otherwise it must be a
-    schedule of an agent they hold ``manage_schedules`` on, stored under
-    that agent's owner (another member's private schedule stays hidden).
+    The caller's own schedule is theirs, except on a team's agent, where they
+    still need ``own_action`` there: someone who left the team, or lost the
+    role, stops managing what they set. Otherwise it must be a schedule of an
+    agent they hold ``manage_schedules`` on, stored under that agent's owner
+    (another member's private schedule stays hidden).
 
     Args:
         conn: Open database connection.
         schedule_id: Schedule UUID.
         user_id: The caller.
+        own_action: The agent action the caller needs on a team's agent to
+            reach their own schedule: ``manage_schedules`` to change it,
+            ``use`` to read it (a Viewer still lists the schedules they set).
 
     Returns:
         ``(schedule, acting_user_id)``.
@@ -227,22 +234,44 @@ def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any],
     # A monitor is managed from /api/monitors, never as a schedule.
     if row is None or row.get("trigger_type") == "monitor":
         raise AccessDenied(404, "schedule not found")
-    if row.get("user_id") == user_id:
-        return row, user_id
     agent_id = row.get("agent_id")
+    if row.get("user_id") == user_id:
+        agent = AgentsRepository(conn).get_by_id(str(agent_id)) if agent_id else None
+        if agent is None or not is_principal_id(agent.get("user_id")):
+            return row, user_id
+        _require_on_agent(conn, str(agent_id), user_id, own_action)
+        return row, user_id
     if not agent_id:
         raise AccessDenied(404, "schedule not found")
-    try:
-        ra = require(conn, "agent", str(agent_id), user_id, "manage_schedules")
-    except AccessDenied as denied:
-        if denied.status == 404:
-            raise AccessDenied(404, "schedule not found")
-        raise
+    ra = _require_on_agent(conn, str(agent_id), user_id, "manage_schedules")
     if ra.is_team_item and not is_principal_id(row.get("user_id")):
         return row, row["user_id"]
     if row.get("user_id") != ra.owner_id:
         raise AccessDenied(404, "schedule not found")
     return row, ra.owner_id
+
+
+def _require_on_agent(conn, agent_id: str, user_id: str, action: str):
+    """``require`` on a schedule's agent, a hidden agent reading as a missing schedule.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The schedule's agent.
+        user_id: The caller.
+        action: The agent action needed.
+
+    Returns:
+        The caller's ``ResourceAccess`` on the agent.
+
+    Raises:
+        AccessDenied: 404 when the agent isn't visible, 403 when the role can't do ``action``.
+    """
+    try:
+        return require(conn, "agent", agent_id, user_id, action)
+    except AccessDenied as denied:
+        if denied.status == 404:
+            raise AccessDenied(404, "schedule not found")
+        raise
 
 
 def _refuse_unfinished_agent_graph(conn, agent_id) -> Any:
@@ -340,7 +369,9 @@ def _mark_paid_by(conn, viewer: str, rows: list[Dict[str, Any]], agent_owners: l
 
     A team's agent names its schedules' setters to every member, as its own
     record; a personal agent names someone only to a reader who knows them
-    (``resource_access.creator_payloads``).
+    (``resource_access.creator_payloads``). A schedule stored under a team's
+    principal has nobody paying for it (the team is never billed), so its
+    ``paid_by`` is None.
 
     Args:
         conn: Open database connection.
@@ -351,7 +382,7 @@ def _mark_paid_by(conn, viewer: str, rows: list[Dict[str, Any]], agent_owners: l
     pairs = [{"user_id": owner, "created_by": row.get("user_id")} for row, owner in zip(rows, agent_owners)]
     payers = creator_payloads(conn, viewer, pairs)
     for row, pair in zip(rows, pairs):
-        row["paid_by"] = created_by_payload(pair, payers)
+        row["paid_by"] = None if is_principal_id(row.get("user_id")) else created_by_payload(pair, payers)
 
 
 #: Statuses of a schedule that still runs, or would once resumed.
@@ -450,16 +481,19 @@ def _list_payload(conn, viewer: str, rows: list[Dict[str, Any]]) -> list[Dict[st
     return out
 
 
-def _runs_user(conn, schedule: Dict[str, Any], acting: str) -> Optional[str]:
+def _runs_user(conn, schedule: Dict[str, Any], acting: str, viewer: str) -> Optional[str]:
     """Whose runs a schedule's run log shows: everyone's on a team agent, else the acting user's.
 
     A team agent's schedule changes payer when someone takes it over; its log
-    keeps the runs billed to whoever paid before.
+    keeps the runs billed to whoever paid before. Only those who manage the
+    team's schedules read that whole log: a setter who is now a Viewer reads
+    the runs billed to them.
 
     Args:
         conn: Open database connection.
         schedule: The schedule row.
         acting: The id the caller acts as on it.
+        viewer: The caller.
 
     Returns:
         The user to filter runs by, or None for every run of the schedule.
@@ -468,7 +502,9 @@ def _runs_user(conn, schedule: Dict[str, Any], acting: str) -> Optional[str]:
     if agent_id:
         agent = AgentsRepository(conn).get_by_id(str(agent_id))
         if agent is not None and is_principal_id(agent.get("user_id")):
-            return None
+            team_id = team_of_principal(agent.get("user_id"))
+            if role_at_least(team_role_for(conn, viewer, team_id), WORKSPACE_ACTIONS["agent"]["manage_schedules"]):
+                return None
     return acting
 
 
@@ -798,7 +834,7 @@ class ScheduleResource(Resource):
             return _err("invalid schedule id", 400)
         with db_readonly() as conn:
             try:
-                row, _acting = _schedule_for(conn, schedule_id, user_id)
+                row, _acting = _schedule_for(conn, schedule_id, user_id, own_action="use")
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
             agent = AgentsRepository(conn).get_by_id(str(row["agent_id"])) if row.get("agent_id") else None
@@ -1097,11 +1133,11 @@ class ScheduleRunList(Resource):
             offset = 0
         with db_readonly() as conn:
             try:
-                _schedule, acting = _schedule_for(conn, schedule_id, user_id)
+                _schedule, acting = _schedule_for(conn, schedule_id, user_id, own_action="use")
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
             rows = ScheduleRunsRepository(conn).list_runs(
-                schedule_id, _runs_user(conn, _schedule, acting), limit=limit, offset=offset,
+                schedule_id, _runs_user(conn, _schedule, acting, user_id), limit=limit, offset=offset,
             )
         return _ok(
             {
@@ -1124,10 +1160,10 @@ class ScheduleRunDetail(Resource):
             return _err("invalid id", 400)
         with db_readonly() as conn:
             try:
-                schedule, acting = _schedule_for(conn, schedule_id, user_id)
+                schedule, acting = _schedule_for(conn, schedule_id, user_id, own_action="use")
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
-            run = ScheduleRunsRepository(conn).get(run_id, _runs_user(conn, schedule, acting))
+            run = ScheduleRunsRepository(conn).get(run_id, _runs_user(conn, schedule, acting, user_id))
             if run is None or str(run.get("schedule_id")) != str(
                 schedule["id"]
             ):
@@ -1156,8 +1192,8 @@ class ScheduleTakeOver(Resource):
             200 ``{success, schedule, changed}``; ``changed`` is false when the
             caller already paid for it. Refusals carry ``{success: false,
             error, message}``: 401; 404 ``schedule_not_found``; 403
-            ``workspace_role_required``; 409 ``take_over_team_only``; 429
-            ``max_schedules``.
+            ``workspace_role_required``; 409 ``take_over_team_only`` or
+            ``schedule_finished`` (completed or cancelled); 429 ``max_schedules``.
         """
         user_id = _user_id()
         if not user_id:
@@ -1192,12 +1228,14 @@ class ScheduleTakeOver(Resource):
             locked = schedules.lock_internal(schedule_id)
             if locked is None:
                 return not_found
+            # A completed or cancelled schedule never runs again: nobody pays for it.
+            if locked.get("status") not in _LIVE_STATUSES:
+                return _refuse(409, "schedule_finished", "a completed or cancelled schedule can't be taken over")
             previous = locked.get("user_id")
             changed = previous != user_id
             if changed:
                 if (
-                    locked.get("status") in _LIVE_STATUSES
-                    and settings.SCHEDULE_MAX_PER_USER > 0
+                    settings.SCHEDULE_MAX_PER_USER > 0
                     and schedules.count_active_for_user(user_id) >= settings.SCHEDULE_MAX_PER_USER
                 ):
                     return _refuse(429, "max_schedules", "max schedules per user reached")

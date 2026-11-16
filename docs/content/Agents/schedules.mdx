@@ -156,7 +156,7 @@ A schedule on a personal agent can't be taken over. Taking over isn't available 
 
 Schedules have their own endpoints. Call them with a session token or a [personal access token](/API/personal-access-tokens) with the `schedules:read` or `schedules:write` scope. The [REST API reference](/API/reference) lists them all.
 
-Every schedule in a response has `paid_by` (`{user_id, label}`), `paused_for` (`{reason, until, since}` while it is paused for its payer, else `null`) and `can_take_over`.
+Every schedule in a response has `paid_by` (`{user_id, label}`, `null` when nobody pays for it), `paused_for` (`{reason, until, since}` while it is paused for its payer, else `null`) and `can_take_over`.
 
 A workflow agent's schedule runs its saved graph, so creating, resuming or running one now for a draft whose workflow isn't finished answers `400` with the [graph rules](/Agents/nodes#graph-rules) it breaks.
 
@@ -169,7 +169,7 @@ A workflow agent's schedule runs its saved graph, so creating, resuming or runni
 | `GET`, `PUT`, `DELETE /api/schedules/<id>` | Read, edit or delete a schedule |
 | `PATCH /api/schedules/<id>` | `{"action": "pause"}` or `{"action": "resume"}` |
 | `POST /api/schedules/<id>/run` | Run now |
-| `POST /api/schedules/<id>/take_over` | [Take over](#take-over) a schedule on a team agent: `{success, schedule, changed}`, `changed` false when you already pay. Refusals: `404` `schedule_not_found`, `403` `workspace_role_required`, `409` `take_over_team_only`, `429` `max_schedules`. Not open to personal access tokens |
+| `POST /api/schedules/<id>/take_over` | [Take over](#take-over) a schedule on a team agent: `{success, schedule, changed}`, `changed` false when you already pay. Refusals: `404` `schedule_not_found`, `403` `workspace_role_required`, `409` `take_over_team_only` or `schedule_finished` (completed or cancelled), `429` `max_schedules`. Not open to personal access tokens |
 | `GET /api/schedules/<id>/runs?limit=50&offset=0` | The run log |
 | `GET /api/schedules/<id>/runs/<run_id>` | One run's output and error |
 
