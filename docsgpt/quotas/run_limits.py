@@ -268,6 +268,9 @@ class RunLimits:
                     )
             if not self._limits:
                 return None
+            if self._resets_at is not None and datetime.datetime.now(datetime.timezone.utc) >= self._resets_at:
+                # A run that outlived its period counts from the new one, as the next run would.
+                self._window_start, self._resets_at = window_bounds(settings.QUOTA_PERIOD)
             totals = repo.usage_totals_for_buckets(self.payer, self._window_start, tuple(self._limits))
         for bucket, resolved in self._limits.items():
             tokens_used, cost_used = totals.get(bucket, (0, 0.0))

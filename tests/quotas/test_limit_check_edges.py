@@ -164,3 +164,44 @@ class TestTheStreamRetryIsChecked:
             list(primary._execute_with_fallback("_raw_gen_stream", [], model="primary-model", messages=[]))
 
         assert primary.calls == 1
+
+
+@pytest.mark.unit
+class TestARunCrossingAPeriodReset:
+    def test_it_counts_from_the_new_period_once_the_old_one_ended(self, monkeypatch):
+        from contextlib import nullcontext
+        from datetime import datetime, timedelta, timezone
+
+        from docsgpt.quotas import run_limits
+        from docsgpt.quotas.resolver import ResolvedLimit, ResolvedLimits
+
+        from docsgpt.core.settings import settings
+        from docsgpt.quotas.windows import window_bounds
+
+        # The run started in the previous period, which has since ended.
+        old_reset, _ = window_bounds(settings.QUOTA_PERIOD, datetime.now(timezone.utc))
+        old_start = old_reset - timedelta(days=40)
+        starts = []
+
+        class _Usage:
+            def __init__(self, _conn):
+                pass
+
+            def usage_totals_for_buckets(self, user_id, start, buckets):
+                starts.append(start)
+                # The old period's spend is over the limit; the new one's is not.
+                used = 150 if start < old_reset else 10
+                return {bucket: (used, 0.0) for bucket in buckets}
+
+        monkeypatch.setattr(run_limits, "TokenUsageRepository", _Usage)
+        monkeypatch.setattr(run_limits, "db_readonly", lambda: nullcontext(None))
+        limits = run_limits.RunLimits(
+            "lena",
+            limits={"all": ResolvedLimits(tokens=ResolvedLimit(100, "user"), cost=ResolvedLimit())},
+            window_start=old_start,
+            resets_at=old_reset,
+        )
+
+        limits.check_call()
+
+        assert starts and starts[-1] >= old_reset
