@@ -1470,7 +1470,9 @@ class StreamProcessor:
             # Authorized. Keep the row so _configure_agent can run a draft
             # agent, which has key = NULL, from it.
             self._authorized_agent_row = agent
-            if is_owner:
+            # The agent page's "last used": its owner's chats, and on a team
+            # agent its members' (the team owns it).
+            if is_owner or via_team_role:
                 now = datetime.datetime.now(datetime.timezone.utc)
                 try:
                     with db_session() as conn:

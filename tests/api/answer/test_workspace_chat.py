@@ -72,6 +72,14 @@ def _conversation(conn, user, team_id=None, agent_id=None) -> str:
 
 
 class TestMemberChatsWithTeamAgent:
+    def test_a_members_chat_marks_the_team_agent_used(self, use_conn):
+        tid, principal = _team(use_conn)
+        aid = str(_agent(use_conn, principal)["id"])
+        proc = _processor({"question": "q", "agent_id": aid}, "vera")
+        with _request():
+            proc._get_agent_key(aid, "vera")
+        assert AgentsRepository(use_conn).get(aid, principal)["last_used_at"] is not None
+
     def test_a_viewer_chats_as_themselves_and_the_agent_runs_as_the_team(self, use_conn):
         tid, principal = _team(use_conn)
         aid = str(_agent(use_conn, principal)["id"])
