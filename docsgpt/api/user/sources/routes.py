@@ -184,6 +184,32 @@ def _file_count(row: dict) -> Optional[int]:
     return count_pages(structure) if isinstance(structure, dict) and structure else None
 
 
+def _sync_paused(row: dict) -> Optional[dict]:
+    """Why a source's scheduled sync is skipped, from ``metadata.sync_paused``: ``{reason, since}``, or None.
+
+    The sync worker sets the flag on a team source when nobody may pay for
+    its scheduled sync and clears it once someone can. Only those two keys
+    leave the server; a flag of an unexpected shape still reads as paused.
+
+    Args:
+        row: A ``sources`` row.
+
+    Returns:
+        ``{"reason": str | None, "since": str | None}`` while the flag is set, else None.
+    """
+    metadata = row.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except ValueError:
+            return None
+    if not isinstance(metadata, dict) or metadata.get("sync_paused") is None:
+        return None
+    flag = metadata["sync_paused"]
+    flag = flag if isinstance(flag, dict) else {}
+    return {"reason": flag.get("reason"), "since": flag.get("since")}
+
+
 def _with_access(
     entry: dict, access: Optional[str], switches: Optional[dict], workspace: Optional[Workspace] = None
 ) -> dict:
@@ -369,6 +395,7 @@ class CombinedJson(Resource):
                     "files": _file_count(index),
                     # As in the paginated listing (SourcesRepository.list_for_user).
                     "ingestStatus": index.get("ingest_status"),
+                    "sync_paused": _sync_paused(index),
                     # The caller's own filing: folder_id and its path, top-level folder first.
                     **filing.fields(index["id"]),
                     "created_by": created_by_payload(index, creators),
@@ -408,7 +435,9 @@ class PaginatedSources(Resource):
         description=(
             "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` "
             "(the agents using it) and the caller's filing (``folder_id``, ``folder_path`` "
-            "[{id, name}] from the top-level folder down). ``kind_counts`` counts every kind with the "
+            "[{id, name}] from the top-level folder down) and ``sync_paused`` ({reason, since} while a team "
+            "source's scheduled sync is skipped for want of a payer, else null). ``kind_counts`` counts every "
+            "kind with the "
             "search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search "
             "and kind filters applied. Both follow ``origin``; ``origin_counts`` counts own/shared with the "
             "search, kind and usage filters applied. With ``folder``, the counts and ``subtree_total`` cover "
@@ -595,6 +624,8 @@ class PaginatedSources(Resource):
                     "connectionId": _connection_id(doc),
                     "website": _website_summary(doc),
                     "files": _file_count(doc),
+                    # A team source's scheduled sync skipped for want of a payer.
+                    "sync_paused": _sync_paused(doc),
                     "used_by": used_by.get(str(doc["id"])) or empty_usage(),
                     **filing.fields(doc["id"]),
                     "created_by": created_by_payload(doc, creators),

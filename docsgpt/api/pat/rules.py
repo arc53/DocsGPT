@@ -561,6 +561,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/conversations/<string:conversation_id>/read": ("*",),
     # Taking over makes the caller pay for a teammate's schedule: a session only, like moving.
     "/api/schedules/<string:schedule_id>/take_over": ("*",),
+    "/api/agents/<string:agent_id>/outside_access/take_over": ("*",),
     # A team's spend by person and every chat of the team are for its admins in a session.
     "/api/teams/<string:team_id>/usage": ("*",),
     "/api/teams/<string:team_id>/chats/export": ("*",),

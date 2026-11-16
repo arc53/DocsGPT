@@ -55,7 +55,7 @@ from docsgpt.api.user.resource_access import (
     workspace_mismatch_refusal,
     workspace_mismatches,
 )
-from docsgpt.api.user.agents.sharing import access_payer_fields
+from docsgpt.api.user.agents.sharing import access_payer_fields, outside_access_state
 from docsgpt.api.user.team_sharing import (
     can_access,
     visible_with_access,
@@ -844,6 +844,7 @@ class GetAgent(Resource):
             folder_id = None
             owner_inactive = False
             creator = None
+            outside_access = None
             with db_readonly() as conn, cached_resolves():
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
@@ -854,6 +855,10 @@ class GetAgent(Resource):
                     folder_id = FolderItemsRepository(conn).filing(filing_owner(ra, user), "agent", str(agent["id"]))
                     owner_inactive = bool(UsersRepository(conn).deactivated_among([agent.get("user_id")]))
                     creator = created_by_payload(agent, creator_payloads(conn, user, [agent]))
+                    # Who pays for its key, link and webhook, and why they are paused: for
+                    # those who manage them (the person owner always does).
+                    if ra.can("manage_access_details"):
+                        outside_access = outside_access_state(conn, agent, ra, user)
                 # Edit-page detail: who vouches for resources the owner can't
                 # use, and which attached resources stopped running and why,
                 # with their names. Only for people who may edit the agent:
@@ -888,6 +893,8 @@ class GetAgent(Resource):
             data["resource_states"] = states
             # Its key, link, webhook and schedules pause while the owner is deactivated.
             data["owner_inactive"] = owner_inactive
+            if outside_access is not None:
+                data["outside_access"] = outside_access
             if audience is not None:
                 data["sponsor_audience"] = audience
             return make_response(jsonify(data), 200)

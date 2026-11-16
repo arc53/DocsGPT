@@ -2,19 +2,28 @@
 
 import datetime
 import secrets
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.core.settings import settings
 from docsgpt.api.user.agents.graph_checks import refuse_borrowed_outside_access, refuse_unfinished_graph
 from docsgpt.api.user.agents.starters import stored_starters
 from docsgpt.api.user.base import resolve_tool_details
-from docsgpt.api.user.resource_access import AccessDenied, ResourceAccess, require, resolve
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    ResourceAccess,
+    best_effort,
+    require,
+    resolve,
+)
+from docsgpt.quotas.pause import PayerChecks, outside_access_pause
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository, expose_prompt_preset
+from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_to_dict, expose_prompt_preset
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
@@ -52,6 +61,66 @@ def access_payer_fields(ra: ResourceAccess, agent: dict, user: str, *, turning_o
     if turning_on or not agent.get("access_payer_id"):
         return {"access_payer_id": user}
     return {}
+
+
+def outside_access_kinds(agent: dict) -> list[str]:
+    """Which ways in from outside are switched on, in a fixed order: ``api_key``, ``public_link``, ``webhook``.
+
+    Args:
+        agent: The agent row.
+
+    Returns:
+        list[str]: The kinds that are on; empty when none is.
+    """
+    switched_on = {
+        "api_key": bool(agent.get("key")),
+        "public_link": bool(agent.get("shared") and agent.get("shared_token")),
+        "webhook": bool(agent.get("incoming_webhook_token")),
+    }
+    return [kind for kind, on in switched_on.items() if on]
+
+
+def outside_access_state(
+    conn, agent: dict, ra: ResourceAccess, user: str, *, checks: Optional[PayerChecks] = None
+) -> dict:
+    """An agent's ``outside_access`` block: what is on, who pays, why it is paused and whether ``user`` may take over.
+
+    Only for a reader who may see it (``manage_access_details``, or the
+    person owner): it names the payer.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row.
+        ra: The reader's access to the agent.
+        user: The reader.
+        checks: The request's :class:`PayerChecks`, to share across a list; a fresh one when None.
+
+    Returns:
+        dict: ``api_key``, ``public_link``, ``webhook`` (bools); ``paid_by`` (``{user_id, label}`` of a team
+        agent's payer, the label their email when on file, else their id; None on a personal agent, whose
+        owner pays, and while nothing is on or nobody pays); ``paused_for`` (``{reason, until}`` or None);
+        ``can_take_over`` (a team agent with something on, the reader holds ``manage_access_details`` and
+        is not already the payer).
+    """
+    kinds = outside_access_kinds(agent)
+    payer = agent.get("access_payer_id") if (ra.is_team_item and kinds) else None
+    paid_by = None
+    if payer:
+        paid_by = {"user_id": payer, "label": UsersRepository(conn).emails_for([payer]).get(payer) or payer}
+    pause = best_effort(
+        conn, "the agent's outside-access pause", lambda: outside_access_pause(conn, agent, checks=checks), None,
+    )
+    return {
+        "api_key": "api_key" in kinds,
+        "public_link": "public_link" in kinds,
+        "webhook": "webhook" in kinds,
+        "paid_by": paid_by,
+        "paused_for": pause.payload() if pause else None,
+        "can_take_over": bool(
+            ra.is_team_item and kinds and ra.can("manage_access_details")
+            and not is_principal_id(user) and payer != user
+        ),
+    }
 
 
 def _link_access(conn, agent_id: str, user_id) -> dict:
@@ -364,3 +433,70 @@ class ShareAgent(Resource):
         return make_response(
             jsonify({"success": True, "shared_token": shared_token}), 200
         )
+
+
+def _refusal(status: int, error: str, message: str):
+    return make_response(jsonify({"success": False, "error": error, "message": message}), status)
+
+
+@agents_sharing_ns.route("/agents/<string:agent_id>/outside_access/take_over")
+class TakeOverOutsideAccess(Resource):
+    @api.doc(
+        description=(
+            "Become the person who pays for a team agent's outside access (its API key, public link and "
+            "webhook). Needs the Admin role in the team; not available on a personal agent, whose owner "
+            "pays. Returns {success, outside_access, changed}; changed is false when the caller already "
+            "pays. Refusals: 404 agent_not_found, 403 workspace_role_required, 409 take_over_team_only, "
+            "409 no_outside_access."
+        ),
+    )
+    def post(self, agent_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_session() as conn:
+                ra = resolve(conn, "agent", agent_id, user)
+                if ra is None:
+                    return _refusal(404, "agent_not_found", "Agent not found")
+                if not ra.is_team_item:
+                    return _refusal(
+                        409, "take_over_team_only", "Only a team's agent can be taken over: here its owner pays.",
+                    )
+                if is_principal_id(user) or not ra.can("manage_access_details"):
+                    return _refusal(
+                        403, "workspace_role_required", "Taking over needs the admin role in the team",
+                    )
+                # Locked, so two Admins taking over at once each see the payer the other left.
+                agent = agent_row_to_dict(
+                    conn.execute(
+                        _sql_text("SELECT * FROM agents WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+                        {"id": ra.resource_id},
+                    ).fetchone()
+                )
+                if not agent:
+                    return _refusal(404, "agent_not_found", "Agent not found")
+                kinds = outside_access_kinds(agent)
+                if not kinds:
+                    return _refusal(409, "no_outside_access", "This agent has no API key, public link or webhook")
+                previous = agent.get("access_payer_id")
+                changed = previous != user
+                if changed:
+                    # A bookkeeping column: the agent's updated_at stays.
+                    AgentsRepository(conn).update(str(agent["id"]), ra.owner_id, {"access_payer_id": user})
+                    agent["access_payer_id"] = user
+                    record_event(
+                        conn,
+                        "team.outside_access_taken_over",
+                        actor=user,
+                        team_id=ra.team_id,
+                        agent_id=str(agent["id"]),
+                        access=kinds,
+                        **{"from": previous, "to": user},
+                    )
+                state = outside_access_state(conn, agent, ra, user)
+        except Exception as err:
+            current_app.logger.error(f"Error taking over outside access: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "outside_access": state, "changed": changed}), 200)
