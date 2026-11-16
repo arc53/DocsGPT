@@ -33,13 +33,16 @@ The person must have signed in to DocsGPT at least once. Otherwise DocsGPT can't
 
 A team has four roles: **Viewer**, **Editor**, **Admin** and **Owner**. They decide what each member can do in the team's workspace; see [Team roles](/Using/team-workspaces#team-roles). Admins can also remove anything shared with the team.
 
-A team's page has three tabs:
+A team's page has four tabs:
 
-- **Members**: Admins change a member's role from the drop-down next to their name and remove them with **Remove**. The removal dialog says that the team items they added stay with the team, and lists the personal items they share with it.
+- **Members**: Admins change a member's role from the drop-down next to their name and remove them with **Remove**. The removal dialog says that the team items they added stay with the team, lists the personal items they share with it, and says which schedules and outside access they pay for would pause.
 - **Personal items shared**: the personal items members share with the team. They belong to the people who shared them, not to the team.
-- **Settings** (Admins): the team's name and description, **Transfer ownership** (the Owner only) and **Delete team** (the Owner, once the team owns nothing).
+- **Usage** (Admins): what the team workspace used this period or the last, by person and by agent, and what is paused for its payer. It is a report, not a limit; see [Usage](/Using/team-workspaces#usage).
+- **Settings** (Admins): the team's name and description, **Transfer ownership** (the Owner only), the chat export when the operator turned it on (see [Export the team's chats](/Using/team-workspaces#export-the-teams-chats)), and **Delete team** (the Owner, once the team owns nothing).
 
 A team always keeps at least one Admin, and the Owner can't be demoted or removed. The web app has no button to leave a team; use the [team API](/Deploying/Access-Control#managing-a-team) for that.
+
+Leaving a team, or losing a role, pauses what you pay for there: the schedules you set on the team's agents pause when you leave or drop to Viewer, and outside access you pay for pauses when you leave or drop below Admin. The team's Owner and Admins are notified, and anyone with the right role can [take it over](/Using/team-workspaces#take-over). If you're added back with the role, it runs again on your allowance. Your chats in Personal and your own agents are unaffected. See [Who pays](/Using/team-workspaces#who-pays).
 
 ## Switch workspace
 

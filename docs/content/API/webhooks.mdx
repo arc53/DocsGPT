@@ -137,7 +137,7 @@ A successful run nests the agent's output under `result.result`:
 }
 ```
 
-When the agent owner's [usage quota](/Deploying/Usage-Quotas) is exhausted, the agent does not run, but the task still ends with `SUCCESS`: check `result.status`.
+When the [usage quota](/Deploying/Usage-Quotas) of the person who pays for the agent's outside access is used up, or the agent's own limit is reached, the agent does not run, but the task still ends with `SUCCESS`: check `result.status`. A run that reaches either limit part way stops before its next model call and returns the same status, with what it did so far under `result`.
 
 ```json
 {
@@ -145,6 +145,8 @@ When the agent owner's [usage quota](/Deploying/Usage-Quotas) is exhausted, the 
   "result": {"status": "quota_exceeded", "error": "..."}
 }
 ```
+
+While outside access is paused for another reason, the task ends the same way with `"status": "agent_paused"` (the payer's account is deactivated or, on a team agent, the payer is no longer an Admin there) or `"status": "no_payer"` (a team agent with nobody to pay for its outside access). See [Who pays](/Using/team-workspaces#who-pays).
 
 A run that takes longer than `WEBHOOK_RUN_TIMEOUT` (default 600 seconds) is stopped, and the task also ends with `SUCCESS`, with `"status": "timeout"`. Anything the agent did before it was stopped, such as a tool action, has already taken effect. On a self-hosted instance, raise the setting if your agent legitimately needs longer.
 
@@ -244,7 +246,7 @@ A webhook run happens in the background, with nobody watching it. While it runs,
 - **Wikis are read-only unless their owner allows outside edits.** Anyone with the URL decides the run's input, so the agent edits a [wiki source](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links) only when the wiki's owner turned on **Let API and widget users edit this wiki**. It can always read the wiki.
 - **Sources are searched with the payload's text, not the whole payload.** An agent that searches its sources before it answers (a classic agent does) searches them with the payload's human-written fields: the values of `question`, `query`, `prompt`, `title`, `subject`, `summary`, `name`, `description`, `body`, `text`, `message` and `content`, from the top three levels of the payload (and the first five items of each list). Each distinct value is used once, and the search is cut at 2,000 characters. A payload without any of those fields is searched with its JSON, cut the same way. Searching with the raw JSON would match on keys, ids and URLs rather than on what the event is about. The agent still receives the whole payload.
 - **Chat-only tools are unavailable.** The `scheduler` tool is not offered to the agent during a webhook run.
-- **Usage counts against the owner's quota.** When it is exhausted, the run is skipped (see the `quota_exceeded` result above).
+- **Usage counts against the quota of whoever pays for the agent's outside access.** On a personal agent that is its owner; on a team agent, the Admin who turned outside access on or took it over. When it is used up, the run is skipped (see the `quota_exceeded` result above).
 
 ### Keep the URL secret
 

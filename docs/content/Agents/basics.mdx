@@ -144,7 +144,7 @@ Once an agent is created, you can:
     * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
     * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
     * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).
-    * On a team-shared agent, editors can manage Access Details too, unless the owner turns off **Editors can manage access details**.
+    * On a team-shared agent, only the owner manages Access Details unless the owner turns on **Editors can manage access details** (off by default). In a team workspace, Admins manage a team agent's Access Details.
 * **Share it with a team:** Viewers chat with it; editors can also change it. The share dialog lists what the agent uses and whose access each item runs with. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
 * **Use it via API:** Every published agent has an API key (in **Access Details**) that can be used with the native [Agent API](/API/agent-api) or the [OpenAI-Compatible API](/API/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
 

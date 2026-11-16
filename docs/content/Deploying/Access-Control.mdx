@@ -143,8 +143,8 @@ Each role includes everything the role above it in the table can do.
 | Role | Capabilities |
 | --- | --- |
 | `viewer` | Uses the team's agents, sources, tools and prompts, and lists its folders. New members join as viewers. |
-| `editor` | Creates, imports, edits and exports the team's items, sees an agent's logs and manages its schedules, manages the team's folders, and moves their own items into the team. |
-| `admin` | Publishes the team's agents and manages their API key, public link and webhook, deletes items, moves items out to their own Personal workspace, manages members and roles, and edits the team's name and description. |
+| `editor` | Creates, imports, edits and exports the team's items, sees an agent's logs and manages its schedules (and takes one over as its payer), manages the team's folders, and moves their own items into the team. |
+| `admin` | Publishes the team's agents and manages their API key, public link and webhook (and takes over paying for them), deletes items, moves items out to their own Personal workspace, manages members and roles, reads the team's usage report, exports its chats when `TEAM_CHAT_EXPORT_ENABLED` is on, and edits the team's name and description. |
 | `owner` | The team's creator, or whoever ownership was transferred to. An admin who can also transfer ownership and delete the team. |
 
 The owner is `teams.owner_id`; the other roles are stored per member as `team_admin`, `team_editor` and `team_viewer`. Requests take and return the short names. The older names still work: `team_member` is read and accepted as `viewer`, and team payloads keep `member_role` (`team_admin` or `team_member`) beside the new `role`. Upgrading turns existing members into viewers and existing admins into admins.
@@ -158,6 +158,11 @@ The owner is `teams.owner_id`; the other roles are stored per member as `team_ad
 | `GET` / `POST` | `/api/teams/<id>/members` | List members / add a member: `email` or `user_id`, and `role` (`viewer`, the default, `editor` or `admin`). |
 | `PUT` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's `role` / remove (or leave). |
 | `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership to an existing member, who becomes an `admin` too (owner only; a global admin overrides). |
+| `GET` | `/api/teams/<id>/usage?period=current` | The team's [usage report](/Using/team-workspaces#usage) for this `QUOTA_PERIOD` window, or `period=previous`: totals, chats and runs without a person, by person and by agent, and what is paused for its payer (owner and admins). |
+| `GET` | `/api/teams/<id>/chats/export` | Every chat of the team workspace as one NDJSON file (owner and admins; `404` while `TEAM_CHAT_EXPORT_ENABLED` is off). See [Export the team's chats](/Using/team-workspaces#export-the-teams-chats). |
+| `POST` | `/api/agents/<agent_id>/outside_access/take_over` | Become the payer of a team agent's API key, public link and webhook (admins). `409` `take_over_team_only` on a personal agent, `409` `no_outside_access` when none is on. |
+
+For the team's owner and admins, each row of `GET /api/teams/<id>/members` also has `pays_for` (`{schedules, outside_access}`): what that member pays for on the team's agents, which pauses if they leave or lose the role. The usage, export and take over endpoints aren't open to personal access tokens; a schedule's take over is in [Agent Schedules](/Agents/schedules#rest-api).
 
 A team always keeps at least one `admin`: demoting or removing the last one returns `409`. The team owner can't be demoted or removed either: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave. `owner` can't be set as a role: only the transfer changes it.
 
@@ -318,6 +323,8 @@ Admin, team, token and data-plane actions are appended to the `auth_events` tabl
 | `admin_sessions_revoked` | `access` | An admin force-logs-out a user. |
 | `team.create`, `team.member_add`, `team.member_role_changed`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete` | `access` | Team management. Older rows name a role change `team.member_role`. |
 | `team.item_moved_in`, `team.item_moved_out`, `team.folder_moved_in`, `team.folder_moved_out` | `access` | An agent, source, tool or prompt, or a folder, [moves](/Using/team-workspaces#move-to-team-and-back) into a team's workspace or out of it to a member's Personal workspace. |
+| `team.schedule_taken_over`, `team.outside_access_taken_over` | `access` | Someone [takes over](/Using/team-workspaces#take-over) paying for a schedule or for a team agent's outside access. The metadata names the schedule or agent, who paid before (`from`) and who pays now (`to`); outside access also lists which ways in were on. |
+| `team.chats_exported` | `access` | A team's owner or an admin [exports the team's chats](/Using/team-workspaces#export-the-teams-chats). The metadata counts the chats and the people in them. |
 | `quota_policy_set` / `quota_policy_deleted` | `config` | A [usage quota](/Deploying/Usage-Quotas) is changed. |
 | `connector_policy_set` | `config` | An admin changes connector policies under **Admin → Connectors**. |
 | `source_defaults_set` | `config` | An admin changes the default retrieval settings for new sources under **Admin → Defaults**. The metadata lists each changed field as `[old, new]`. |

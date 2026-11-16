@@ -35,7 +35,16 @@ An agent's Monitoring pages are open to the owner and editors. Viewers see them 
 
 Pick a period with the select on the right of the page's toolbar: **Hour**, **24 hours**, **7 days**, **15 days** or **30 days** (the default). The Insights pages have the same select in the same place. The last hour is charted per minute, the last 24 hours per hour, and longer periods per day. Times are in UTC.
 
-If an admin has set a [usage quota](/Deploying/Usage-Quotas) for you, **Your usage quota** at the top of **Settings → Analytics** shows your tokens and cost against the limit, split into **Chat without an agent** and **Through agents** when both apply, with the time it resets. It doesn't appear when you have no quota, or on an agent's Analytics.
+If an admin has set a [usage quota](/Deploying/Usage-Quotas) for you, the top of **Settings → Analytics** shows one meter of your use this period against your allowance, with when it resets. The meter is split into what you pay for:
+
+| Part | Counts |
+| --- | --- |
+| **Your chats** | Your chats in Personal and in your teams, with or without an agent, and Draft with DocsGPT. |
+| **Schedules you set** | Their runs, and the monitors you set. |
+| **Agents you published** | Their API keys, public links and webhooks, for the agents whose outside access you pay for. |
+| **Other** | Building knowledge, such as a graph from a source, and use recorded before the parts were counted. |
+
+It doesn't appear when you have no quota, or on an agent's Analytics. From 80% of your allowance a line above the chat input warns you, and at 100% the chat stops until it resets; see [What people see](/Deploying/Usage-Quotas#what-people-see). A team's Owner and Admins see the team workspace's use on the team's [Usage](/Using/team-workspaces#usage) tab.
 
 The summary cards total the period:
 

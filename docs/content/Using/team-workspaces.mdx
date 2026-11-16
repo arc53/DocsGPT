@@ -1,6 +1,6 @@
 ---
 title: Team Workspaces
-description: How team workspaces work in DocsGPT, including the workspace switcher, Personal and team items, the four team roles, shared folders, moving work into a team and back, and what stays personal.
+description: How team workspaces work in DocsGPT, including the workspace switcher, Personal and team items, the four team roles, shared folders, moving work into a team and back, what stays personal, who pays for runs, the team Usage tab and chat export.
 lastUpdated: 2026-11-15
 ---
 
@@ -45,7 +45,7 @@ DocsGPT remembers your workspace in this browser. Each browser tab keeps its own
 
 A link to a team item or a team chat switches to its workspace, and DocsGPT says so ("Switched to Operations"). If you're no longer in the team, DocsGPT switches to Personal and tells you.
 
-In a team workspace, the sidebar has a **Team** entry that opens the team's page: its **Members**, **Personal items shared**, and, for Admins, **Settings**.
+In a team workspace, the sidebar has a **Team** entry that opens the team's page: its **Members**, **Personal items shared**, and, for Admins, [**Usage**](#usage) and **Settings**.
 
 ## Team roles
 
@@ -54,8 +54,8 @@ Your role is the same on everything in the workspace. A team item's tile names w
 | Role | Can |
 | --- | --- |
 | **Viewer** | Chat with the team's agents and pin them. Use the team's knowledge, tools and prompts, browse its sources, and duplicate its prompts. |
-| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules, create folders and file items in them, and move their own items in from Personal. A new agent from an Editor is a draft until an Admin publishes it. |
-| **Admin** | Everything an Editor can, plus publish agents and manage outside access (API key and widget, public link, webhook), delete items, move items out to their own Personal, add and remove members and change their roles, and edit the team's name and description. |
+| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules (and [take one over](#take-over)), create folders and file items in them, and move their own items in from Personal. A new agent from an Editor is a draft until an Admin publishes it. |
+| **Admin** | Everything an Editor can, plus publish agents and manage outside access (API key and widget, public link, webhook) and take it over, delete items, move items out to their own Personal, add and remove members and change their roles, see the team's [Usage](#usage), [export its chats](#export-the-teams-chats) when the instance allows it, and edit the team's name and description. |
 | **Owner** | The person who created the team, or was given it. An Admin who can also transfer ownership and delete the team. |
 
 New members join as Viewers. A team always keeps at least one Admin, and the Owner can't be demoted or removed: to step down, transfer ownership first, under the team's **Settings**.
@@ -155,6 +155,9 @@ A team's page lists, under **Personal items shared**, the personal items members
 - **Team items stay.** Items they added belong to the team and keep working. They lose access to them. If they're added again, they get it back.
 - **Their chats in the team** can no longer be opened by them, and nobody else can open them either. If they're added again, the chats come back.
 - **Their personal items stay theirs.** What they shared with the team pauses: nobody in the team reaches it while they're out. If they're added again, those shares work again. Before removing someone, the dialog lists the personal items they share with the team, so you can ask them to move the ones the team depends on first.
+- **What they paid for on team agents pauses.** The schedules they set pause, and so does outside access they pay for. Nothing is deleted: it runs again if they're added back with the role, or once someone [takes it over](#take-over). See [What pauses, and when it resumes](#what-pauses-and-when-it-resumes).
+
+The same pause follows a role change: schedules a member set pause when they drop to Viewer, and outside access they pay for pauses when they drop below Admin. When a removal or a demotion pauses anything, the team's Owner and Admins get one notification that names it, for example "Dana left Operations: 2 schedules and outside access on 1 agent are paused until someone takes over." Whoever made the change isn't notified, and the person who left isn't either. Its link opens the team's [Usage](#usage) tab, which lists everything paused.
 
 A team that still owns items can't be deleted. Move its items to Personal or delete them first; the team's **Settings** names what is left.
 
@@ -164,13 +167,83 @@ A team that still owns items can't be deleted. Move its items to Personal or del
 - **Custom models.** A team agent uses the models your instance offers, not a member's custom model.
 - **Paired devices.** A remote device runs on one person's machine.
 - **Access tokens.** A token acts as you; see [Over the API](#over-the-api).
-- **Your chats.** A chat belongs to the workspace you started it in and can use only that workspace's items. In a team, the composer says "Operations · Only you can see this chat". Other members, Admins included, can't open your chats. As with any agent, a team agent's **Logs** and **Insights**, which Editors and up see, record each run, the question included.
+- **Your chats.** A chat belongs to the workspace you started it in and can use only that workspace's items. In a team, the composer says "Operations · Only you can see this chat". Other members, Admins included, can't open your chats. If the instance allows it, the team's Owner and Admins can [export the team's chats](#export-the-teams-chats) to a file, and a new chat in that team says so. As with any agent, a team agent's **Logs** and **Insights**, which Editors and up see, record each run, the question included.
 
 A team chat can be shared only as a read-only link, and only by an Admin. **Delete all chats** in **Settings → General** deletes your chats in the current workspace only.
 
 ## Who pays
 
-Whoever starts a run pays for it from their own allowance: the person chatting, the person who set a schedule, or the person who published the agent. Where an agent lives doesn't change that, and moving an agent doesn't either.
+Whoever starts a run pays for it, from their own allowance: the [usage quota](/Deploying/Usage-Quotas) an instance admin sets for each person. A team has no budget of its own, and where an agent lives or who owns it never decides who pays. Moving an agent doesn't change it either.
+
+| Run | Who pays |
+| --- | --- |
+| A chat, with or without an agent, in Personal or in a team | The person chatting |
+| A schedule's runs | The person who set the schedule |
+| An agent's API key and widget, public link, webhook, `/v1` and MCP traffic | On a team agent, the Admin who turned its outside access on, or who took it over. On a personal agent, its owner |
+| A background continuation, a retry, a chat's title, a workflow step | Whoever pays for the run it belongs to |
+
+An agent's own limit (tokens or requests per 24 hours) applies on top, whoever pays. One run has one payer, fixed when it starts, and the limits are checked again before each of its model calls; see [Usage Quotas](/Deploying/Usage-Quotas#windows-and-enforcement).
+
+A chat never names its payer, because it is always the person chatting. A schedule says who pays for it: "Paid by Dana", or "Paid by you". On a team agent, the share dialog and the agent's Access Details name who pays for its outside access.
+
+### What pauses, and when it resumes
+
+A schedule, or a team agent's outside access, pauses when its payer can't pay. Nothing is deleted and nothing needs to be switched back on: it runs again by itself once the reason clears. The item shows why it is paused, for example "Dana is out of allowance until 1 Dec."
+
+| Reason | Clears when |
+| --- | --- |
+| The payer is out of allowance | The allowance resets, an instance admin raises it, or someone takes it over |
+| The payer left the team, or lost the role it needs: Editor for a schedule, Admin for outside access | They're added back with that role, or someone takes it over |
+| Nobody pays for it | Someone takes it over |
+| The account it runs on is deactivated | The account is reactivated. On a team agent, someone can also take it over |
+
+While outside access is paused, the agent's API key, widget, public link, webhook, `/v1` and MCP callers are told only "This agent is paused, so it can't answer right now.", never whose account it is or why. Members still chat with the agent in the app, each on their own allowance. A paused schedule skips its runs; see [Paid by and paused schedules](/Agents/schedules#paid-by-and-paused-schedules).
+
+A team source's scheduled sync runs for the person who added the source while they are an Editor or above in the team. Otherwise its scheduled syncs are skipped and the source shows its sync as paused. A paused sync can't be taken over; an Editor can still sync the source by hand.
+
+### Take over
+
+**Take over** makes you the payer of a schedule or of an agent's outside access, by your own click. Nobody becomes a payer any other way.
+
+| What | Who can take it over |
+| --- | --- |
+| A schedule on a team agent | Editors and up |
+| A team agent's outside access | Admins and the Owner |
+| Anything on a personal agent | Nobody: its owner pays for its outside access, and a schedule stays with the person it is stored under |
+
+Take over is offered on any running or paused schedule and on any agent with outside access on, not only on paused ones, unless you already pay for it. It asks you to confirm once:
+
+- You pay for it from then on. What it used so far stays with the earlier payer, and a run already going finishes on their allowance.
+- The agent's own limit still applies.
+- A schedule you take over starts its failure count again, and is no longer linked to the chat it was set from: that chat stays private to the person who had it.
+
+Take over isn't available with a [personal access token](/API/personal-access-tokens); sign in to the app. Each one is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.schedule_taken_over` or `team.outside_access_taken_over`, with who paid before and who pays now.
+
+## Usage
+
+The team's Owner and Admins have a **Usage** tab on the team's page. It reports what was used in the team workspace:
+
+- **This period or the previous one.** A period is the instance's quota window ([`QUOTA_PERIOD`](/Deploying/Settings-Reference#quotas): a day, a week or a month, in UTC).
+- **Chats and runs without a person.** Chats count what members ran themselves, plain chats without an agent included. Runs without a person are schedules, an agent's outside traffic and other background work.
+- **By person**, with each person's role. People who have left the team stay listed with what they used.
+- **By agent**, with its requests, how many people used it, whether its own limit is on, and who pays for its outside access.
+- **What is paused**: every schedule, outside access and scheduled source sync in the team that is paused for its payer, with the reason and who paid. Each schedule or outside access links to the agent's page, where the right role can [take it over](#take-over).
+
+Amounts are in dollars where the models have a price, and in tokens otherwise. Only use in this workspace counts: a member's Personal use never shows here, and an agent's use stays in the report after it is moved out. Use recorded before this release isn't in it.
+
+The Usage tab is a report, not a limit. Nothing in it can be capped or edited: each person's allowance stays their own, set by an instance admin under [Usage Quotas](/Deploying/Usage-Quotas).
+
+## Export the team's chats
+
+Team chats are private to the person who started them. An operator can let a team's Owner and Admins export them all, by setting `TEAM_CHAT_EXPORT_ENABLED=true` (off by default). There is no screen for browsing other people's chats: only one file.
+
+With the setting on:
+
+- The team's **Settings** tab has an export row for its Owner and Admins. It downloads one NDJSON file, `docsgpt-<team>-chats-<date>.ndjson`, with every chat started in that team workspace, including chats of people who have since left and chats through the team's agents from outside (API key, widget, public link).
+- Each chat keeps its name, who started it, its agent, and each message's prompt and answer, time, model, source titles, tool names, attachment file names and feedback.
+- The file never holds personal chats, other teams' chats, tool arguments or results, reasoning, or attachment contents.
+- Members see "Admins of Operations can export chats here" when they start a new chat in the team.
+- Each export is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.chats_exported`, with how many chats and people it covered.
 
 ## Over the API
 
