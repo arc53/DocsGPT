@@ -2756,7 +2756,13 @@
         "ownerInactive": "実行に使うアカウントが無効になっています。",
         "payerLeft": "{{name}} さんが {{team}} を離れたか、支払うためのロールを失いました。",
         "payerLeftNoTeam": "{{name}} さんがチームを離れたか、支払うためのロールを失いました。",
+        "payerLeftTeam": "{{name}} さんが {{team}} を離れました。",
+        "payerLeftTeamNoTeam": "{{name}} さんがチームを離れました。",
+        "payerLeftTeamUnnamed": "支払う人がチームを離れました。",
         "payerLeftUnnamed": "支払う人がチームを離れたか、支払うためのロールを失いました。",
+        "payerLostRole": "{{name}} さんは {{team}} で支払うためのロールをもう持っていません。",
+        "payerLostRoleNoTeam": "{{name}} さんは支払うためのロールをもう持っていません。",
+        "payerLostRoleUnnamed": "支払う人は支払うためのロールをもう持っていません。",
         "withSince": "{{reason}}{{date}} から一時停止中です。"
       },
       "takeOver": {

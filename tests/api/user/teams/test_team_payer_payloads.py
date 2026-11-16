@@ -106,7 +106,7 @@ class TestShareDialogPause:
         tid = _team(db)
         aid = _published(db, tid, "dana")
         outside = _outside(client, aid, "lena")
-        assert outside["paused_for"] == {"reason": "payer_left", "until": None}
+        assert outside["paused_for"] == {"reason": "payer_left", "until": None, "left_team": False}
         assert outside["can_take_over"] is True
 
     def test_no_payer(self, client, db):

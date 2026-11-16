@@ -27,6 +27,12 @@ export type PausedFor = {
   until?: string | null;
   /** ISO of the first skipped run (schedules only), or null. */
   since?: string | null;
+  /**
+   * For `payer_left`: true when the payer left the team, false when they are
+   * still in it with a role too low to pay. Absent when the server can't say
+   * (a stored pause), which reads as either.
+   */
+  left_team?: boolean | null;
 };
 
 /** One way an agent answers from outside the app. */
@@ -48,7 +54,7 @@ export type OutsideAccess = {
   public_link: boolean;
   webhook: boolean;
   paid_by?: PersonRef | null;
-  paused_for?: Pick<PausedFor, 'reason' | 'until'> | null;
+  paused_for?: Pick<PausedFor, 'reason' | 'until' | 'left_team'> | null;
   /** The caller may take it over: a team agent, an Admin, not the payer. */
   can_take_over?: boolean;
 };

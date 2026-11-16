@@ -94,15 +94,23 @@ const reasonOnly = (
     case 'owner_inactive':
       // The agent's owner or the payer; the server doesn't say which.
       return t('payer.common.pause.ownerInactive');
-    case 'payer_left':
-      if (!name || you) return t('payer.common.pause.payerLeftUnnamed');
+    case 'payer_left': {
+      // Left the team, still in it with too low a role, or (a stored pause) unknown.
+      const key =
+        paused.left_team === true
+          ? 'payerLeftTeam'
+          : paused.left_team === false
+            ? 'payerLostRole'
+            : 'payerLeft';
+      if (!name || you) return t(`payer.common.pause.${key}Unnamed`);
       return teamName
-        ? t('payer.common.pause.payerLeft', {
+        ? t(`payer.common.pause.${key}`, {
             name,
             team: teamName,
             ...noEscape,
           })
-        : t('payer.common.pause.payerLeftNoTeam', { name, ...noEscape });
+        : t(`payer.common.pause.${key}NoTeam`, { name, ...noEscape });
+    }
     case 'no_payer':
       return t('payer.common.pause.noPayer');
     case 'payer_out_of_allowance': {
@@ -120,8 +128,9 @@ const reasonOnly = (
 
 /**
  * Why a schedule or an agent's outside access is paused, in one sentence:
- * "Tomas is out of allowance until 1 Dec.", "Ines left Operations or lost
- * the role that pays for it.", "Nobody pays for it.". With `since` (the
+ * "Tomas is out of allowance until 1 Dec.", "Ines left Operations.", "Ines
+ * no longer has the role in Operations that pays for it.", "Nobody pays for
+ * it.". With `since` (the
  * first skipped run) it adds "Paused since 12 Nov.".
  *
  * Args:

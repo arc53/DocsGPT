@@ -2876,7 +2876,13 @@
         "ownerInactive": "La cuenta con la que se ejecuta está desactivada.",
         "payerLeft": "{{name}} dejó {{team}} o perdió el rol con el que lo paga.",
         "payerLeftNoTeam": "{{name}} dejó el equipo o perdió el rol con el que lo paga.",
+        "payerLeftTeam": "{{name}} dejó {{team}}.",
+        "payerLeftTeamNoTeam": "{{name}} dejó el equipo.",
+        "payerLeftTeamUnnamed": "Quien lo paga dejó el equipo.",
         "payerLeftUnnamed": "Quien lo paga dejó el equipo o perdió el rol con el que lo paga.",
+        "payerLostRole": "{{name}} ya no tiene en {{team}} el rol con el que lo paga.",
+        "payerLostRoleNoTeam": "{{name}} ya no tiene el rol con el que lo paga.",
+        "payerLostRoleUnnamed": "Quien lo paga ya no tiene el rol necesario.",
         "withSince": "{{reason}} En pausa desde el {{date}}."
       },
       "takeOver": {

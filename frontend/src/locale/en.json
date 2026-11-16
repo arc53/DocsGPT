@@ -2803,7 +2803,13 @@
         "ownerInactive": "The account it runs as is deactivated.",
         "payerLeft": "{{name}} left {{team}} or lost the role that pays for it.",
         "payerLeftNoTeam": "{{name}} left the team or lost the role that pays for it.",
+        "payerLeftTeam": "{{name}} left {{team}}.",
+        "payerLeftTeamNoTeam": "{{name}} left the team.",
+        "payerLeftTeamUnnamed": "Its payer left the team.",
         "payerLeftUnnamed": "Its payer left the team or lost the role that pays for it.",
+        "payerLostRole": "{{name}} no longer has the role in {{team}} that pays for it.",
+        "payerLostRoleNoTeam": "{{name}} no longer has the role that pays for it.",
+        "payerLostRoleUnnamed": "Its payer no longer has the role that pays for it.",
         "withSince": "{{reason}} Paused since {{date}}."
       },
       "takeOver": {

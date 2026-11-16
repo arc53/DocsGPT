@@ -40,6 +40,29 @@ describe('pauseReasonText', () => {
     );
   });
 
+  it('says whether the payer left the team or only lost the role', () => {
+    const left = { reason: 'payer_left', left_team: true } as const;
+    const demoted = { reason: 'payer_left', left_team: false } as const;
+    expect(pauseReasonText(t, left, 'Ines', 'Operations')).toBe(
+      'payer.common.pause.payerLeftTeam(name=Ines,team=Operations)',
+    );
+    expect(pauseReasonText(t, left, 'Ines')).toBe(
+      'payer.common.pause.payerLeftTeamNoTeam(name=Ines)',
+    );
+    expect(pauseReasonText(t, left, null)).toBe(
+      'payer.common.pause.payerLeftTeamUnnamed',
+    );
+    expect(pauseReasonText(t, demoted, 'Ines', 'Operations')).toBe(
+      'payer.common.pause.payerLostRole(name=Ines,team=Operations)',
+    );
+    expect(pauseReasonText(t, demoted, 'Ines')).toBe(
+      'payer.common.pause.payerLostRoleNoTeam(name=Ines)',
+    );
+    expect(
+      pauseReasonText(t, demoted, 'Ines', 'Operations', { you: true }),
+    ).toBe('payer.common.pause.payerLostRoleUnnamed');
+  });
+
   it('says nobody pays', () => {
     expect(pauseReasonText(t, { reason: 'no_payer' })).toBe(
       'payer.common.pause.noPayer',

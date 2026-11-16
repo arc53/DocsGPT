@@ -54,15 +54,27 @@ class Pause:
         reason: One of :data:`PAUSE_REASONS`.
         payer: The person it is paused for, or None when nobody pays (``no_payer``).
         until: When it resumes by itself (the allowance window's reset), else None.
+        left_team: For ``payer_left``: True when the payer is no longer in the
+            team, False when they are still in it with a role too low to pay;
+            None for the other reasons.
     """
 
     reason: str
     payer: Optional[str]
     until: Optional[datetime] = None
+    left_team: Optional[bool] = None
 
     def payload(self) -> dict:
-        """The ``paused_for`` shape payloads carry: ``{reason, until}``, ``until`` an ISO string or None."""
-        return {"reason": self.reason, "until": self.until.isoformat() if self.until else None}
+        """The ``paused_for`` shape payloads carry.
+
+        Returns:
+            ``{reason, until}``, ``until`` an ISO string or None, plus
+            ``left_team`` for ``payer_left``.
+        """
+        body = {"reason": self.reason, "until": self.until.isoformat() if self.until else None}
+        if self.reason == PAYER_LEFT:
+            body["left_team"] = self.left_team
+        return body
 
 
 class PayerChecks:
@@ -193,7 +205,7 @@ def schedule_pause(
         return Pause(OWNER_INACTIVE, setter)
     team_id = team_of_principal(owner)
     if team_id and setter and not _holds(checks, conn, setter, team_id, "manage_schedules"):
-        return Pause(PAYER_LEFT, setter)
+        return Pause(PAYER_LEFT, setter, left_team=checks.team_role(conn, setter, team_id) is None)
     if setter is None:
         return Pause(NO_PAYER, None)
     # As the run's own pre-check: traffic through an agent, keyed or not, is the agent bucket.
@@ -236,7 +248,7 @@ def outside_access_pause(
         return Pause(OWNER_INACTIVE, payer)
     team_id = team_of_principal(owner)
     if team_id and payer and not _holds(checks, conn, payer, team_id, "manage_access_details"):
-        return Pause(PAYER_LEFT, payer)
+        return Pause(PAYER_LEFT, payer, left_team=checks.team_role(conn, payer, team_id) is None)
     if payer is None:
         # A personal agent always has its owner to pay; only a broken row has neither.
         return Pause(NO_PAYER, None) if owner else None

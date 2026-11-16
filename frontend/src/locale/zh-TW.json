@@ -2756,7 +2756,13 @@
         "ownerInactive": "執行所用的帳戶已停用。",
         "payerLeft": "{{name}} 已離開 {{team}} 或失去為此付費的角色。",
         "payerLeftNoTeam": "{{name}} 已離開團隊或失去為此付費的角色。",
+        "payerLeftTeam": "{{name}} 已離開 {{team}}。",
+        "payerLeftTeamNoTeam": "{{name}} 已離開團隊。",
+        "payerLeftTeamUnnamed": "付費者已離開團隊。",
         "payerLeftUnnamed": "付費者已離開團隊或失去為此付費的角色。",
+        "payerLostRole": "{{name}} 在 {{team}} 中已不再擁有為此付費的角色。",
+        "payerLostRoleNoTeam": "{{name}} 已不再擁有為此付費的角色。",
+        "payerLostRoleUnnamed": "付費者已不再擁有為此付費的角色。",
         "withSince": "{{reason}}自 {{date}} 起暫停。"
       },
       "takeOver": {

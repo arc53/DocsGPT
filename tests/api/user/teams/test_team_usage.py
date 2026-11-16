@@ -264,11 +264,11 @@ class TestPaused:
         assert paused["schedule"]["id"] == schedule
         assert paused["schedule"]["name"] == "Morning report"
         assert paused["schedule"]["agent"] == {"id": agent, "name": "Carrier desk"}
-        assert paused["schedule"]["paused_for"] == {"reason": "payer_left", "until": None}
+        assert paused["schedule"]["paused_for"] == {"reason": "payer_left", "until": None, "left_team": False}
         assert paused["schedule"]["paid_by"] == {"user_id": "vera", "label": "vera@x.io"}
         assert paused["outside_access"]["agent"] == {"id": agent, "name": "Carrier desk"}
         assert paused["outside_access"]["access"] == ["api_key"]
-        assert paused["outside_access"]["paused_for"] == {"reason": "payer_left", "until": None}
+        assert paused["outside_access"]["paused_for"] == {"reason": "payer_left", "until": None, "left_team": False}
         assert paused["outside_access"]["paid_by"] == {"user_id": "eddie", "label": "eddie@x.io"}
         assert paused["source_sync"]["id"] == source and paused["source_sync"]["name"] == "Carrier docs"
         assert paused["source_sync"]["paused_for"] == {"reason": "sync_no_payer",

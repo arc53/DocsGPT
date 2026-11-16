@@ -2782,7 +2782,13 @@
         "ownerInactive": "Das Konto, unter dem es läuft, ist deaktiviert.",
         "payerLeft": "{{name}} hat {{team}} verlassen oder die Rolle verloren, mit der dafür bezahlt wird.",
         "payerLeftNoTeam": "{{name}} hat das Team verlassen oder die Rolle verloren, mit der dafür bezahlt wird.",
+        "payerLeftTeam": "{{name}} hat {{team}} verlassen.",
+        "payerLeftTeamNoTeam": "{{name}} hat das Team verlassen.",
+        "payerLeftTeamUnnamed": "Wer dafür bezahlt, hat das Team verlassen.",
         "payerLeftUnnamed": "Wer dafür bezahlt, hat das Team verlassen oder die Rolle verloren.",
+        "payerLostRole": "{{name}} hat in {{team}} nicht mehr die Rolle, mit der dafür bezahlt wird.",
+        "payerLostRoleNoTeam": "{{name}} hat nicht mehr die Rolle, mit der dafür bezahlt wird.",
+        "payerLostRoleUnnamed": "Wer dafür bezahlt, hat nicht mehr die nötige Rolle.",
         "withSince": "{{reason}} Pausiert seit {{date}}."
       },
       "takeOver": {

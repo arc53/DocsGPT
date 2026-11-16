@@ -123,7 +123,10 @@ class TestSchedulePause:
         agent = _team_agent(conn, principal)
         _set_role(conn, team, "eddie", role)
 
-        assert schedule_pause(conn, _schedule(agent, "eddie"), agent, now=NOW) == Pause("payer_left", "eddie", None)
+        # Whether they left or were demoted is read from the same role lookup, so the line can say which.
+        assert schedule_pause(conn, _schedule(agent, "eddie"), agent, now=NOW) == Pause(
+            "payer_left", "eddie", None, left_team=role is None
+        )
 
     def test_re_adding_the_setter_resumes_it(self, conn):
         team, principal = _team(conn)
@@ -229,7 +232,7 @@ class TestOutsideAccessPause:
         agent = _team_agent(conn, principal)
         _set_role(conn, team, "adam", role)
 
-        assert outside_access_pause(conn, agent, now=NOW) == Pause("payer_left", "adam", None)
+        assert outside_access_pause(conn, agent, now=NOW) == Pause("payer_left", "adam", None, left_team=role is None)
 
     def test_re_promoting_the_payer_resumes_it(self, conn):
         team, principal = _team(conn)
@@ -327,7 +330,12 @@ def test_the_payload_shape():
     assert Pause("payer_out_of_allowance", "eddie", RESETS_AT).payload() == {
         "reason": "payer_out_of_allowance", "until": RESETS_AT.isoformat(),
     }
-    assert Pause("payer_left", "eddie", None).payload() == {"reason": "payer_left", "until": None}
+    assert Pause("payer_left", "eddie", None, left_team=True).payload() == {
+        "reason": "payer_left", "until": None, "left_team": True,
+    }
+    assert Pause("payer_left", "eddie", None, left_team=False).payload() == {
+        "reason": "payer_left", "until": None, "left_team": False,
+    }
 
 
 class TestPayerChecks:
