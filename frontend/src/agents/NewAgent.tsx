@@ -1932,16 +1932,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getModels();
   }, [token, mode, markSaved]);
 
-  // Validate folder_id from the URL against the caller's agent folders: a
-  // new agent is filed there only when the folder is theirs.
+  // The folder_id from the URL files a new agent there. It is dropped only
+  // when the loaded tree shows the folder missing; while the tree loads, or
+  // when it can't be read, the id is sent as it is and the server checks it,
+  // so a save meanwhile doesn't land at the root.
   useEffect(() => {
-    if (!folderIdFromUrl || agentFolders.failed) {
+    if (!folderIdFromUrl) {
       setValidatedFolderId(null);
       return;
     }
     if (!agentFolders.loaded) {
-      if (!agentFolders.loading)
+      if (!agentFolders.loading && !agentFolders.failed)
         dispatch(loadFolders({ type: 'agent', token }));
+      setValidatedFolderId(folderIdFromUrl);
       return;
     }
     const folderExists = agentFolders.items.some(
