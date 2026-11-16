@@ -29,6 +29,7 @@ import {
 } from '../upload/uploadSlice';
 import { wakeFromMetadata } from '../backgroundJobs/kinds';
 import { newIdempotencyKey } from '../utils/idempotency';
+import { captureWorkspace } from '../workspace/requestWorkspace';
 import { switchWorkspace } from '../workspace/workspaceSlice';
 import {
   appendAnswerText,
@@ -321,16 +322,26 @@ export const loadConversation = createAsyncThunk<
 >('loadConversation', async (args, { dispatch, getState }) => {
   const { id, force, resolveAgent, unlessStreaming } = args;
   const seq = ++loadSeq;
+  const workspace = captureWorkspace();
   const state = getState() as RootState;
   const token = state.preference.token;
   if (!force && state.conversation.conversationId === id) {
     return { data: null, stale: true };
   }
   const response = await conversationService.getConversation(id, token);
+  // A switch while the chat was out (or a newer load) leaves this one
+  // behind: following the chat into its workspace would undo the switch,
+  // and a refusal must not send the new workspace's page to a new chat.
+  if (seq !== loadSeq || !workspace.isCurrent()) {
+    return { data: null, stale: true };
+  }
   if (!response.ok) {
     return { data: null, stale: false };
   }
   const data = await response.json();
+  if (seq !== loadSeq || !workspace.isCurrent()) {
+    return { data: null, stale: true };
+  }
   if (!data) return { data: null, stale: false };
   let agent: Agent | null | undefined;
   try {

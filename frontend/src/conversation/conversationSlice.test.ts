@@ -21,6 +21,7 @@ import preferenceReducer, {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import uploadReducer, { addAttachment } from '../upload/uploadSlice';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import {
   handleFetchAnswer,
   handleSubmitToolActions,
@@ -867,6 +868,60 @@ describe('loadConversation with resolveAgent', () => {
         .unwrap(),
     ).rejects.toThrow('Failed to fetch');
     expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+  });
+
+  it('drops a chat that answers after a workspace switch, without following it back', async () => {
+    let answer: ((response: Response) => void) | null = null;
+    vi.spyOn(conversationService, 'getConversation').mockReturnValue(
+      new Promise<Response>((resolve) => (answer = resolve)),
+    );
+    const store = makeLoadStore();
+    const resolveAgent = vi.fn(async () => null);
+    setRequestWorkspace('t1', 1);
+    try {
+      const load = store.dispatch(
+        loadConversation({ id: 'c-2', force: true, resolveAgent }),
+      );
+      await vi.waitFor(() => expect(answer).not.toBeNull());
+      // The user switches to another workspace while the chat is out.
+      setRequestWorkspace('t2', 2);
+      answer!({
+        ok: true,
+        json: async () => ({ queries: [{ prompt: 'new chat' }] }),
+      } as Response);
+
+      await expect(load.unwrap()).resolves.toEqual({
+        data: null,
+        stale: true,
+      });
+      // The resolver is what follows a chat into its workspace.
+      expect(resolveAgent).not.toHaveBeenCalled();
+      expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
+  });
+
+  it('reads a refusal that answers after a switch as stale, not missing', async () => {
+    let answer: ((response: Response) => void) | null = null;
+    vi.spyOn(conversationService, 'getConversation').mockReturnValue(
+      new Promise<Response>((resolve) => (answer = resolve)),
+    );
+    const store = makeLoadStore();
+    setRequestWorkspace('t1', 1);
+    try {
+      const load = store.dispatch(loadConversation({ id: 'c-2', force: true }));
+      await vi.waitFor(() => expect(answer).not.toBeNull());
+      setRequestWorkspace('personal', 2);
+      answer!({ ok: false, status: 404 } as Response);
+      // Not missing: the caller would leave the page for a new chat.
+      await expect(load.unwrap()).resolves.toEqual({
+        data: null,
+        stale: true,
+      });
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
   });
 
   it('applies nothing when a newer load superseded it', async () => {

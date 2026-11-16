@@ -82,7 +82,8 @@ async function waitFor(
  * Takes the app to the workspace an item or chat opened by its link lives
  * in, before it is shown: the switch closes the open chat and reloads the
  * page area, so a chat applied after it stays, and nothing of the old
- * workspace is drawn first. Says "Switched to <name>".
+ * workspace is drawn first. Says "Switched to <name>". A switch the user
+ * makes while it waits for the list wins: it then does nothing.
  *
  * Args:
  *   item: The item's `workspace`.
@@ -100,11 +101,14 @@ export const followItemWorkspace =
     dispatch: (action: Action) => unknown,
     getState: GetState,
   ): Promise<boolean> => {
+    const { epoch } = workspaceOf(getState);
     if (followStep(item, workspaceOf(getState)).kind === 'wait')
       await waitFor(
         () => followStep(item, workspaceOf(getState)).kind !== 'wait',
         timeoutMs,
       );
+    // The user switched while it waited: their pick stands.
+    if (workspaceOf(getState).epoch !== epoch) return false;
     const step = followStep(item, workspaceOf(getState));
     if (step.kind !== 'switch') return false;
     dispatch(switchWorkspace(step.target, { reason: 'link' }));

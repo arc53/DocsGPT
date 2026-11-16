@@ -156,6 +156,18 @@ describe('followItemWorkspace: a chat opened by its link', () => {
     expect(store.getState().workspace.current).toBe('t1');
   });
 
+  it('gives up when the user switches while it waits for the list', async () => {
+    const store = makeStore('t2', false);
+    const follow = store.dispatch(
+      followItemWorkspace({ kind: 'team', team_id: 't1' }),
+    );
+    await flush();
+    store.dispatch(switchWorkspace('personal'));
+    store.dispatch(listLoaded());
+    await expect(follow).resolves.toBe(false);
+    expect(store.getState().workspace.current).toBe('personal');
+  });
+
   it('gives up waiting when the list never comes', async () => {
     vi.useFakeTimers();
     try {
