@@ -52,9 +52,10 @@ function bindingBudget(
 }
 
 /**
- * Settings › Analytics: the person's allowance as one meter, and what it
- * went on this period (their chats, the schedules they set, the agents they
- * published, and Other). Nothing for an unlimited person.
+ * Settings › Analytics: the person's allowance as one meter, and, when that
+ * meter covers all their use, what it went on this period (their chats, the
+ * schedules they set, the agents they published, and Other). Nothing for an
+ * unlimited person.
  */
 export default function UsageQuota() {
   const { t, i18n } = useTranslation();
@@ -100,9 +101,15 @@ export default function UsageQuota() {
       ? bucket.bucket
       : 'all';
   const allowance = t('settings.analytics.quota.allowance');
-  const parts = (quota.parts ?? []).filter(
-    (part) => part.kind !== 'other' || part.tokens > 0 || part.cost > 0,
-  );
+  // The parts split all of the person's use, so they sit only under a meter
+  // of all of it: under the direct or agent allowance they would list spend
+  // (a schedule's under "chats without an agent") the bar doesn't count.
+  const parts =
+    scope === 'all'
+      ? (quota.parts ?? []).filter(
+          (part) => part.kind !== 'other' || part.tokens > 0 || part.cost > 0,
+        )
+      : [];
 
   return (
     <Card variant="subtle" padding="lg" className="mb-6">

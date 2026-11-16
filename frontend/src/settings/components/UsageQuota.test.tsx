@@ -133,7 +133,7 @@ describe('UsageQuota', () => {
       limited({
         buckets: [
           {
-            bucket: 'direct',
+            bucket: 'all',
             tokens: { limit: 2_000_000, used: 1_500_000 },
             cost: { limit: null, used: 3 },
             resets_at: RESET,
@@ -142,12 +142,34 @@ describe('UsageQuota', () => {
       }),
     );
     const text = container.textContent ?? '';
-    expect(text).toContain('settings.analytics.quota.scope.direct');
     expect(text).toContain(
       'settings.analytics.quota.usedOf(used=1,500,000,limit=2,000,000)',
     );
     expect(text).toContain('1,000');
   });
+
+  it.each(['direct', 'agent'])(
+    "leaves the parts out under a %s meter, which they don't add up to",
+    async (bucket) => {
+      await render(
+        limited({
+          buckets: [
+            {
+              bucket,
+              tokens: { limit: null, used: 0 },
+              cost: { limit: 100, used: 40 },
+              resets_at: RESET,
+            },
+          ],
+        }),
+      );
+      const text = container.textContent ?? '';
+      expect(text).toContain(`settings.analytics.quota.scope.${bucket}`);
+      expect(
+        container.querySelectorAll('[data-testid="usage-part"]'),
+      ).toHaveLength(0);
+    },
+  );
 
   it('is hidden for an unlimited person', async () => {
     await render(limited({ buckets: [], parts: null }));
