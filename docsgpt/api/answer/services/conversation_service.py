@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text as sql_text
 
+from docsgpt import tracing
 from docsgpt.activity.flags import cancel_streams
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
@@ -586,7 +587,9 @@ class ConversationService:
         if title_inputs and status in ("complete", "failed"):
             if async_title_generation:
                 threading.Thread(
-                    target=self._generate_title_safely,
+                    # The title is part of the run: its call bills the run's
+                    # payer, kind and workspace, and meets its limits.
+                    target=tracing.wrap(self._generate_title_safely),
                     args=(message_id, title_inputs),
                     name="docsgpt-title-generation",
                     daemon=True,
@@ -615,6 +618,10 @@ class ConversationService:
                     else None
                 )
         except Exception as e:
+            if getattr(e, "stops_run", False):
+                # The run's limit is used up: the chat keeps its question as its name.
+                logger.info("finalize_message title skipped: the run's limit is used up")
+                return
             logger.error(
                 f"finalize_message title generation failed: {e}",
                 exc_info=True,
