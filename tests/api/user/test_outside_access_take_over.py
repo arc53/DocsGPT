@@ -356,7 +356,11 @@ class TestGetAgentOutsideAccess:
 
         block = _get_agent(app, pg_conn, str(agent["id"]), "jonas")[1]["outside_access"]
 
-        assert block["paused_for"] == {"reason": reason, "until": until}
+        expected = {"reason": reason, "until": until}
+        if reason == "payer_left":
+            # A team payer's pause says whether they left the team or only lost the role that pays.
+            expected["left_team"] = setup == "left"
+        assert block["paused_for"] == expected
         assert block["can_take_over"] is True
 
     def test_a_personal_agent_names_no_payer_and_offers_no_take_over(self, app, pg_conn, quota):
