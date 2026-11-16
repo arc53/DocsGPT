@@ -301,7 +301,10 @@ def test_deleting_a_folder_drops_it_from_agents_knowledge_folders(pg_conn):
 def test_filing_does_not_move_the_agents_updated_at(pg_conn):
     folder = _insert_folder(pg_conn, "folders", "u", "F")
     agent = _insert_agent(pg_conn, "u", "A")
-    before = pg_conn.execute(text("SELECT updated_at FROM agents WHERE id = CAST(:a AS uuid)"), {"a": agent}).scalar()
+    # ``now()`` is fixed inside the test's transaction: only an older stamp shows a bump.
+    from tests.storage.db.repositories.test_agents import _age
+
+    before = _age(pg_conn, agent)
     _file(pg_conn, "u", "agent", agent, folder)
     after = pg_conn.execute(text("SELECT updated_at FROM agents WHERE id = CAST(:a AS uuid)"), {"a": agent}).scalar()
     assert before == after

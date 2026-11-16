@@ -290,6 +290,10 @@ class TestUpdateAgent:
         owners = FoldersRepository(pg_conn).create(OWNER, "Owner's")
         FolderItemsRepository(pg_conn).file(OWNER, "agent", agent_id, str(owners["id"]))
         mine = FoldersRepository(pg_conn).create(EDITOR, "Mine")
+        # ``now()`` is fixed inside the test's transaction: only an older stamp shows a bump.
+        from tests.storage.db.repositories.test_agents import _age
+
+        _age(pg_conn, agent_id)
         stamp = _row(pg_conn, agent_id)["updated_at"]
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"folder_id": str(mine["id"])})
         assert _status(resp) == 200, _json(resp)
