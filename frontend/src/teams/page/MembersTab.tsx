@@ -1,9 +1,12 @@
 import {
   Bot,
   FileText,
+  KeyRound,
+  type LucideIcon,
   MessageSquare,
   Plus,
   Trash2,
+  Wallet,
   Wrench,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
@@ -17,6 +20,7 @@ import teamsService, {
   type ResourceType,
   type TeamGrant,
   teamErrorMessage,
+  TeamsApiError,
   type TeamMember,
   type TeamRole,
 } from '../../api/services/teamsService';
@@ -53,6 +57,72 @@ import TeamRoleSelect, { TeamRoleBadge } from './TeamRoleSelect';
 const MEMBERS_PAGE_SIZE = 25;
 
 type Member = TeamMember & { source?: string };
+
+/** What a change of membership pauses of what the member pays for. */
+type PausedCounts = { schedules: number; outside_access: number };
+
+const ROLE_RANK: Record<TeamRole, number> = {
+  viewer: 0,
+  editor: 1,
+  admin: 2,
+  owner: 3,
+};
+
+/**
+ * What a role change or a removal pauses of what a member pays for on the
+ * team's agents: the schedules they set once they drop below Editor, the
+ * outside access they pay for once they drop below Admin. The counts come
+ * from the server (`pays_for`, sent to owners and admins only).
+ *
+ * Args:
+ *   member: The member, with `pays_for`.
+ *   next: Their role after the change, or null when they leave.
+ *
+ * Returns:
+ *   The counts that would pause; zeros without `pays_for`.
+ */
+function pausedByChange(
+  member: TeamMember,
+  next: TeamRole | null,
+): PausedCounts {
+  const pays = member.pays_for;
+  if (!pays) return { schedules: 0, outside_access: 0 };
+  const before = memberTeamRole(member);
+  const loses = (needed: TeamRole): boolean =>
+    ROLE_RANK[before] >= ROLE_RANK[needed] &&
+    (next === null || ROLE_RANK[next] < ROLE_RANK[needed]);
+  return {
+    schedules: loses('editor') ? pays.schedules || 0 : 0,
+    outside_access: loses('admin') ? pays.outside_access || 0 : 0,
+  };
+}
+
+const pausesAnything = (counts: PausedCounts): boolean =>
+  counts.schedules > 0 || counts.outside_access > 0;
+
+/** One consequence line in a confirm: an icon, what happens, and why. */
+function Consequence({
+  icon: Icon,
+  title,
+  detail,
+}: {
+  icon: LucideIcon;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex gap-3">
+      <Icon
+        className="text-muted-foreground mt-0.5 size-4 shrink-0"
+        aria-hidden
+      />
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-muted-foreground text-xs">{detail}</p>
+      </div>
+    </div>
+  );
+}
 
 const RESOURCE_ICONS: Record<ResourceType, typeof Bot> = {
   agent: Bot,
@@ -99,6 +169,15 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
 
   const [removeState, setRemoveState] = useState<ActiveState>('INACTIVE');
   const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
+
+  // A role change that would pause what the member pays for asks first.
+  const [roleChangeState, setRoleChangeState] =
+    useState<ActiveState>('INACTIVE');
+  const [roleChange, setRoleChange] = useState<{
+    member: Member;
+    next: AssignableTeamRole;
+    paused: PausedCounts;
+  } | null>(null);
 
   // The caller's own sub: changing your own role changes what you can do.
   const currentUserId = useMemo(() => {
@@ -222,6 +301,71 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
     afterChange(member.user_id);
   };
 
+  const requestRoleChange = (member: Member, next: AssignableTeamRole) => {
+    const paused = pausedByChange(member, next);
+    if (!pausesAnything(paused)) {
+      handleRoleChange(member, next);
+      return;
+    }
+    setRoleChange({ member, next, paused });
+    setRoleChangeState('ACTIVE');
+  };
+
+  // Returns the request so the confirm stays open on a failure and says why.
+  const confirmRoleChange = async () => {
+    if (!roleChange) return;
+    const { member, next } = roleChange;
+    const res = await teamsService.setMemberRole(
+      team.id,
+      member.user_id,
+      next,
+      token,
+    );
+    if (res?.success === false)
+      throw new TeamsApiError(
+        400,
+        res.message ?? t('settings.teams.updateFailed'),
+      );
+    setRoleChange(null);
+    afterChange(member.user_id);
+  };
+
+  // The lines a confirm adds for what the member pays for.
+  const payerLines = (name: string, paused: PausedCounts): ReactNode[] => {
+    const lines: ReactNode[] = [];
+    if (paused.schedules > 0)
+      lines.push(
+        <Consequence
+          key="schedules"
+          icon={Wallet}
+          title={t('payer.team.remove.schedules', {
+            count: paused.schedules,
+            name,
+            interpolation: { escapeValue: false },
+          })}
+          detail={t('payer.team.remove.schedulesDetail', {
+            name,
+            interpolation: { escapeValue: false },
+          })}
+        />,
+      );
+    if (paused.outside_access > 0)
+      lines.push(
+        <Consequence
+          key="access"
+          icon={KeyRound}
+          title={t('payer.team.remove.access', {
+            count: paused.outside_access,
+          })}
+          detail={t('payer.team.remove.accessDetail', {
+            name,
+            interpolation: { escapeValue: false },
+          })}
+        />,
+      );
+    return lines;
+  };
+
   const requestRemove = (member: Member) => {
     setMemberToRemove(member);
     setRemoveState('ACTIVE');
@@ -241,6 +385,10 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
   const removeShared = memberToRemove
     ? sharedBy(grants, memberToRemove.user_id)
     : [];
+  const removePayerLines = memberToRemove
+    ? payerLines(removeName, pausedByChange(memberToRemove, null))
+    : [];
+  const roleChangeName = roleChange ? memberLabel(roleChange.member) : '';
 
   const resourceIcon = (type: ResourceType): ReactNode => {
     const Icon = RESOURCE_ICONS[type] ?? FileText;
@@ -322,7 +470,7 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
                     {canManage && !isOwner ? (
                       <TeamRoleSelect
                         value={memberRole}
-                        onChange={(next) => handleRoleChange(m, next)}
+                        onChange={(next) => requestRoleChange(m, next)}
                         className="shrink-0"
                         aria-label={t('settings.teams.memberRoleLabel')}
                       />
@@ -423,6 +571,9 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
         }
         variant="destructive"
       >
+        {removePayerLines.length > 0 && (
+          <div className="flex flex-col gap-3">{removePayerLines}</div>
+        )}
         {removeShared.length > 0 && (
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium">
@@ -459,6 +610,35 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
                 team: team.name,
               })}
             </p>
+          </div>
+        )}
+      </ConfirmationModal>
+
+      <ConfirmationModal
+        message={t('payer.team.demote.title', {
+          interpolation: { escapeValue: false },
+          name: roleChangeName,
+          role: roleChange
+            ? t(`workspace.common.roles.${roleChange.next}`)
+            : '',
+        })}
+        description={t('payer.team.demote.description', {
+          interpolation: { escapeValue: false },
+          name: roleChangeName,
+          team: team.name,
+        })}
+        modalState={roleChangeState}
+        setModalState={setRoleChangeState}
+        submitLabel={t('payer.team.demote.submit')}
+        handleSubmit={confirmRoleChange}
+        handleCancel={() => setRoleChange(null)}
+        error={(e) =>
+          teamErrorMessage(t, e, t('settings.teams.roleChangeError'))
+        }
+      >
+        {roleChange && (
+          <div className="flex flex-col gap-3">
+            {payerLines(roleChangeName, roleChange.paused)}
           </div>
         )}
       </ConfirmationModal>

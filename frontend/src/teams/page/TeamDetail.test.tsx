@@ -58,6 +58,11 @@ vi.mock('./SettingsTab', () => ({
     <div data-testid="tab-settings" data-role={role} />
   ),
 }));
+vi.mock('./UsageTab', () => ({
+  default: ({ role }: { role: string }) => (
+    <div data-testid="tab-usage" data-role={role} />
+  ),
+}));
 
 const listGrants = vi.fn();
 vi.mock('../../api/services/teamsService', async (importOriginal) => ({
@@ -88,13 +93,19 @@ function Where() {
 }
 
 describe('the team tabs config', () => {
-  it('keeps a Usage tab for later, switched off', () => {
+  it('has a Usage tab for the owner and admins', () => {
     const usage = TEAM_TABS.find((tab) => tab.key === 'usage');
-    expect(usage).toBeDefined();
-    expect(usage?.enabled).toBe(false);
+    expect(usage?.enabled).toBe(true);
     expect(visibleTeamTabs('owner').map((tab) => tab.key)).toEqual([
       'members',
       'shared',
+      'usage',
+      'settings',
+    ]);
+    expect(visibleTeamTabs('admin').map((tab) => tab.key)).toEqual([
+      'members',
+      'shared',
+      'usage',
       'settings',
     ]);
     expect(visibleTeamTabs('editor').map((tab) => tab.key)).toEqual([
@@ -174,11 +185,11 @@ describe('TeamDetail', () => {
     expect(tabLinks().map((tab) => tab.textContent)).toEqual([
       'settings.teams.tabs.members',
       'settings.teams.tabs.shared',
+      'settings.teams.tabs.usage',
       'settings.teams.tabs.settings',
     ]);
     expect(tabLinks()[0].getAttribute('aria-current')).toBe('page');
     expect(body().querySelector('[data-testid="tab-members"]')).not.toBeNull();
-    expect(body().textContent).not.toContain('settings.teams.tabs.usage');
   });
 
   it('reads the tab from the URL', async () => {
@@ -212,9 +223,21 @@ describe('TeamDetail', () => {
     ).toBe('viewer');
   });
 
-  it('sends the switched-off Usage path to Members', async () => {
+  it('opens the Usage tab for the owner', async () => {
+    await render('/teams/t1/usage');
+    expect(where()).toBe('/teams/t1/usage');
+    expect(
+      body()
+        .querySelector('[data-testid="tab-usage"]')
+        ?.getAttribute('data-role'),
+    ).toBe('owner');
+  });
+
+  it("sends an Editor's Usage path to Members", async () => {
+    setTeam({ role: 'editor', member_role: 'team_member', is_owner: false });
     await render('/teams/t1/usage');
     expect(where()).toBe('/teams/t1');
+    expect(body().textContent).not.toContain('settings.teams.tabs.usage');
   });
 
   it("takes the caller's live role from the grants answer", async () => {

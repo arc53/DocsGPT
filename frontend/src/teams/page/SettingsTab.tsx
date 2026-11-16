@@ -1,3 +1,4 @@
+import { FileDown } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -10,6 +11,9 @@ import teamsService, {
   type TeamRole,
 } from '../../api/services/teamsService';
 import { AGENTS_MANAGE_ROOT } from '../../agents/paths';
+import payerService, {
+  payerErrorMessage,
+} from '../../api/services/payerService';
 import {
   Alert,
   AlertAction,
@@ -25,12 +29,16 @@ import { Textarea } from '../../components/ui/textarea';
 import { useDebouncedValue } from '../../hooks';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
+import { showActionToast } from '../../notifications/actionToastSlice';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { AppDispatch } from '../../store';
+import { downloadBlob } from '../../utils/browserUtils';
 import { decodeJwtPayload } from '../../utils/jwtUtils';
 import {
   loadWorkspaces,
+  roleAtLeast,
   selectWorkspaceId,
+  selectWorkspaces,
   switchWorkspace,
 } from '../../workspace/workspaceSlice';
 import {
@@ -69,9 +77,10 @@ type SettingsTabProps = {
 };
 
 /**
- * The team's own settings: name and description for its admins; transfer
- * and delete for its owner. A team that still owns items can't be deleted:
- * the page says what it owns and offers to open the team to move them.
+ * The team's own settings: name and description for its admins, and the
+ * chat export when the instance allows it; transfer and delete for its
+ * owner. A team that still owns items can't be deleted: the page says what
+ * it owns and offers to open the team to move them.
  */
 export default function SettingsTab({ team, role }: SettingsTabProps) {
   const { t } = useTranslation();
@@ -79,6 +88,12 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const workspaceId = useSelector(selectWorkspaceId);
+  const workspaces = useSelector(selectWorkspaces);
+  // The instance setting comes on the team's workspace row.
+  const chatExport =
+    roleAtLeast(role, 'admin') &&
+    workspaces.some((row) => row.id === team.id && row.chat_export === true);
+  const [exporting, setExporting] = useState(false);
 
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description ?? '');
@@ -187,6 +202,27 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
     }
   };
 
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { blob, filename } = await payerService.exportTeamChats(
+        team.id,
+        token,
+      );
+      downloadBlob(blob, filename);
+    } catch (error) {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: payerErrorMessage(t, error, t('payer.team.export.failed')),
+        }),
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const confirmTransfer = async () => {
     if (!newOwnerRow) return;
     await teamsService.transferOwner(team.id, newOwnerRow.user_id, token);
@@ -275,6 +311,29 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
           </Button>
         </div>
       </section>
+
+      {chatExport && (
+        <section className="border-border flex flex-col gap-4 border-t pt-6">
+          <SectionHeader
+            as="h4"
+            size="sm"
+            title={t('payer.team.export.title')}
+            description={t('payer.team.export.description')}
+          />
+          <div>
+            <Button
+              variant="outline"
+              size="field"
+              shape="pill"
+              onClick={handleExport}
+              loading={exporting}
+            >
+              <FileDown aria-hidden />
+              {t('payer.team.export.action')}
+            </Button>
+          </div>
+        </section>
+      )}
 
       {isOwner && (
         <section className="border-border flex flex-col gap-4 border-t pt-6">

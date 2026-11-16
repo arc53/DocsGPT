@@ -2858,6 +2858,87 @@
       "takenOver": "You pay for this schedule's runs now."
     },
     "team": {
+      "byAgent": {
+        "deleted": "Deleted agent",
+        "empty": "No agent was used in this period.",
+        "limitOn": "Agent limit on",
+        "noLimit": "No agent limit",
+        "outsideNoPayer": "outside access with nobody paying",
+        "outsidePaidBy": "outside access paid by {{name}}",
+        "outsidePaidByYou": "outside access paid by you",
+        "people_one": "{{formatted}} person",
+        "people_other": "{{formatted}} people",
+        "requests_one": "{{formatted}} request",
+        "requests_other": "{{formatted}} requests",
+        "title": "By agent",
+        "totalsOnly": "Chats without an agent, and agents deleted since, count in the totals only."
+      },
+      "byPerson": {
+        "left": "Left the team",
+        "title": "By person",
+        "you": "you"
+      },
+      "demote": {
+        "description": "With the new role, {{name}} can't pay for these in {{team}} any more.",
+        "submit": "Change role",
+        "title": "Change \"{{name}}\" to {{role}}?"
+      },
+      "empty": "Nobody used anything here in this period.",
+      "export": {
+        "action": "Export",
+        "description": "One file with every chat in this workspace: who, when, which agent. Personal chats are never included. Each export is written to the audit log.",
+        "failed": "Couldn't export the chats. Please try again.",
+        "title": "Export chats"
+      },
+      "loadError": "Couldn't load the usage report.",
+      "notALimit": "What a person uses here counts against their own allowance, together with their work elsewhere. Nothing on this page is a limit.",
+      "paused": {
+        "access": "Outside access through its {{access}}",
+        "accessAll": "Outside access",
+        "description": "They stay paused until someone takes them over, or until the payer's allowance resets.",
+        "schedule": "Schedule on {{agent}}",
+        "scheduleNoAgent": "Schedule",
+        "sync": "Scheduled sync",
+        "syncNoPayer": "Nobody in the team can pay for it.",
+        "takeOverLabel": "Take over \"{{name}}\"",
+        "title": "Paused",
+        "unnamed": "Untitled"
+      },
+      "period": {
+        "current": {
+          "day": "Today",
+          "month": "This month",
+          "week": "This week"
+        },
+        "label": "Period",
+        "previous": {
+          "day": "Yesterday",
+          "month": "Last month",
+          "week": "Last week"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} pays for it. An admin can take it over on the agent's page.",
+        "access_one": "Outside access on {{count}} agent pauses",
+        "access_other": "Outside access on {{count}} agents pauses",
+        "schedulesDetail": "{{name}} pays for them. An editor or admin can take them over on the agent's Schedules page.",
+        "schedules_one": "{{count}} schedule {{name}} set on team agents pauses",
+        "schedules_other": "{{count}} schedules {{name}} set on team agents pause"
+      },
+      "showAll": "Show all {{formatted}}",
+      "showFewer": "Show fewer",
+      "stats": {
+        "chats": "Chats",
+        "chatsDetail": "Paid by the people chatting",
+        "people_one": "By {{formatted}} person",
+        "people_other": "By {{formatted}} people",
+        "runs": "Runs without a person",
+        "runsDetail": "Schedules, API keys, the widget and webhooks, paid by whoever set them up",
+        "used": "Used in {{team}}"
+      },
+      "tokens_one": "{{formatted}} token",
+      "tokens_other": "{{formatted}} tokens",
       "usageTab": "Usage"
     }
   },
@@ -5220,6 +5301,7 @@
         "confirm": "Delete all your chats in {{name}}?",
         "consequence": "Every chat you started in {{name}} is deleted, with its messages. Chats in your other workspaces stay. This can't be undone."
       },
+      "exportNotice": "Admins of {{team}} can export chats here",
       "mismatch": "This agent belongs to another workspace than this chat.",
       "notFound": "You're no longer in this team, so the chat can't continue here.",
       "onlyYou": "Only you can see this chat",

@@ -25,6 +25,8 @@ export type WorkspaceRow = {
   role?: WorkspaceRole | null;
   member_count?: number;
   principal_label?: string | null;
+  /** Team rows only: the team's owner and admins can export its chats. */
+  chat_export?: boolean;
 };
 
 export type WorkspaceState = {

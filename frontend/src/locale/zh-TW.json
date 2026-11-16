@@ -2811,6 +2811,87 @@
       "takenOver": "現在由您為此排程的執行付費。"
     },
     "team": {
+      "byAgent": {
+        "deleted": "已刪除的代理",
+        "empty": "此期間未使用任何代理。",
+        "limitOn": "已開啟代理限額",
+        "noLimit": "無代理限額",
+        "outsideNoPayer": "外部存取無人付費",
+        "outsidePaidBy": "外部存取由 {{name}} 付費",
+        "outsidePaidByYou": "外部存取由您付費",
+        "people_one": "{{formatted}} 人",
+        "people_other": "{{formatted}} 人",
+        "requests_one": "{{formatted}} 次請求",
+        "requests_other": "{{formatted}} 次請求",
+        "title": "依代理",
+        "totalsOnly": "沒有代理的聊天以及之後刪除的代理只計入總計。"
+      },
+      "byPerson": {
+        "left": "已離開團隊",
+        "title": "依成員",
+        "you": "您"
+      },
+      "demote": {
+        "description": "換成新角色後，{{name}} 無法再在 {{team}} 中為這些付費。",
+        "submit": "變更角色",
+        "title": "要將「{{name}}」改為{{role}}嗎？"
+      },
+      "empty": "此期間這裡沒有任何用量。",
+      "export": {
+        "action": "匯出",
+        "description": "將此工作區的所有聊天匯出為一個檔案：誰、何時、哪個代理。個人聊天永遠不會包含在內。每次匯出都會寫入稽核記錄。",
+        "failed": "無法匯出聊天。請再試一次。",
+        "title": "匯出聊天"
+      },
+      "loadError": "無法載入用量報告。",
+      "notALimit": "一個人在這裡的用量會和其在其他地方的用量一起計入其個人額度。此頁面上沒有任何限額。",
+      "paused": {
+        "access": "透過{{access}}的外部存取",
+        "accessAll": "外部存取",
+        "description": "在有人接手或付費者的額度重設之前，它們會保持暫停。",
+        "schedule": "{{agent}} 的排程",
+        "scheduleNoAgent": "排程",
+        "sync": "排定的同步",
+        "syncNoPayer": "團隊中沒有人能為其付費。",
+        "takeOverLabel": "接手「{{name}}」",
+        "title": "已暫停",
+        "unnamed": "無標題"
+      },
+      "period": {
+        "current": {
+          "day": "今天",
+          "month": "本月",
+          "week": "本週"
+        },
+        "label": "期間",
+        "previous": {
+          "day": "昨天",
+          "month": "上個月",
+          "week": "上週"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "由 {{name}} 付費。管理員可以在代理頁面上接手。",
+        "access_one": "{{count}} 個代理的外部存取將暫停",
+        "access_other": "{{count}} 個代理的外部存取將暫停",
+        "schedulesDetail": "由 {{name}} 付費。編輯者或管理員可以在代理的排程頁面上接手。",
+        "schedules_one": "{{name}} 在團隊代理上設定的 {{count}} 個排程將暫停",
+        "schedules_other": "{{name}} 在團隊代理上設定的 {{count}} 個排程將暫停"
+      },
+      "showAll": "顯示全部（{{formatted}}）",
+      "showFewer": "收合",
+      "stats": {
+        "chats": "聊天",
+        "chatsDetail": "由聊天的人付費",
+        "people_one": "{{formatted}} 人使用",
+        "people_other": "{{formatted}} 人使用",
+        "runs": "無人參與的執行",
+        "runsDetail": "排程、API 金鑰、小工具和 Webhook，由設定它們的人付費",
+        "used": "在 {{team}} 中的用量"
+      },
+      "tokens_one": "{{formatted}} 個 token",
+      "tokens_other": "{{formatted}} 個 token",
       "usageTab": "用量"
     }
   },
@@ -5165,6 +5246,7 @@
         "confirm": "要刪除您在 {{name}} 中的所有聊天嗎？",
         "consequence": "您在 {{name}} 中開始的每個聊天都會連同其訊息一起刪除。您其他工作區中的聊天會保留。此操作無法復原。"
       },
+      "exportNotice": "{{team}} 的管理員可以匯出這裡的聊天",
       "mismatch": "此代理屬於與此聊天不同的工作區。",
       "notFound": "您已不在此團隊中，因此無法在這裡繼續聊天。",
       "onlyYou": "只有您能看到此聊天",

@@ -2932,6 +2932,93 @@
       "takenOver": "Vous payez désormais les exécutions de cette planification."
     },
     "team": {
+      "byAgent": {
+        "deleted": "Agent supprimé",
+        "empty": "Aucun agent n’a été utilisé sur cette période.",
+        "limitOn": "Limite de l’agent activée",
+        "noLimit": "Pas de limite d’agent",
+        "outsideNoPayer": "accès extérieur que personne ne paie",
+        "outsidePaidBy": "accès extérieur payé par {{name}}",
+        "outsidePaidByYou": "accès extérieur payé par vous",
+        "people_many": "{{formatted}} personnes",
+        "people_one": "{{formatted}} personne",
+        "people_other": "{{formatted}} personnes",
+        "requests_many": "{{formatted}} requêtes",
+        "requests_one": "{{formatted}} requête",
+        "requests_other": "{{formatted}} requêtes",
+        "title": "Par agent",
+        "totalsOnly": "Les conversations sans agent, et les agents supprimés depuis, ne comptent que dans les totaux."
+      },
+      "byPerson": {
+        "left": "A quitté l’équipe",
+        "title": "Par personne",
+        "you": "vous"
+      },
+      "demote": {
+        "description": "Avec son nouveau rôle, {{name}} ne peut plus payer ces éléments dans {{team}}.",
+        "submit": "Changer le rôle",
+        "title": "Passer « {{name}} » en {{role}} ?"
+      },
+      "empty": "Personne n’a rien utilisé ici sur cette période.",
+      "export": {
+        "action": "Exporter",
+        "description": "Un fichier avec chaque conversation de cet espace de travail : qui, quand, quel agent. Les conversations personnelles n’y figurent jamais. Chaque export est inscrit au journal d’audit.",
+        "failed": "Impossible d’exporter les conversations. Veuillez réessayer.",
+        "title": "Exporter les conversations"
+      },
+      "loadError": "Impossible de charger le rapport d’utilisation.",
+      "notALimit": "Ce qu’une personne utilise ici est décompté de son propre quota, avec son travail ailleurs. Rien sur cette page n’est une limite.",
+      "paused": {
+        "access": "Accès extérieur par {{access}}",
+        "accessAll": "Accès extérieur",
+        "description": "Ils restent en pause jusqu’à ce que quelqu’un les reprenne, ou jusqu’à la réinitialisation du quota de la personne qui paie.",
+        "schedule": "Planification de {{agent}}",
+        "scheduleNoAgent": "Planification",
+        "sync": "Synchronisation planifiée",
+        "syncNoPayer": "Personne dans l’équipe ne peut la payer.",
+        "takeOverLabel": "Reprendre « {{name}} »",
+        "title": "En pause",
+        "unnamed": "Sans titre"
+      },
+      "period": {
+        "current": {
+          "day": "Aujourd’hui",
+          "month": "Ce mois-ci",
+          "week": "Cette semaine"
+        },
+        "label": "Période",
+        "previous": {
+          "day": "Hier",
+          "month": "Le mois dernier",
+          "week": "La semaine dernière"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} le paie. Un administrateur peut le reprendre sur la page de l’agent.",
+        "access_many": "L’accès extérieur de {{count}} agents est mis en pause",
+        "access_one": "L’accès extérieur de {{count}} agent est mis en pause",
+        "access_other": "L’accès extérieur de {{count}} agents est mis en pause",
+        "schedulesDetail": "{{name}} les paie. Un éditeur ou un administrateur peut les reprendre sur la page Planifications de l’agent.",
+        "schedules_many": "{{count}} planifications créées par {{name}} sur des agents de l’équipe sont mises en pause",
+        "schedules_one": "{{count}} planification créée par {{name}} sur des agents de l’équipe est mise en pause",
+        "schedules_other": "{{count}} planifications créées par {{name}} sur des agents de l’équipe sont mises en pause"
+      },
+      "showAll": "Tout afficher ({{formatted}})",
+      "showFewer": "Afficher moins",
+      "stats": {
+        "chats": "Conversations",
+        "chatsDetail": "Payées par les personnes qui discutent",
+        "people_many": "Par {{formatted}} personnes",
+        "people_one": "Par {{formatted}} personne",
+        "people_other": "Par {{formatted}} personnes",
+        "runs": "Exécutions sans personne",
+        "runsDetail": "Planifications, clés d’API, widget et webhooks, payés par la personne qui les a configurés",
+        "used": "Utilisé dans {{team}}"
+      },
+      "tokens_many": "{{formatted}} jetons",
+      "tokens_one": "{{formatted}} jeton",
+      "tokens_other": "{{formatted}} jetons",
       "usageTab": "Utilisation"
     }
   },
@@ -5388,6 +5475,7 @@
         "confirm": "Supprimer tous vos chats dans {{name}} ?",
         "consequence": "Chaque chat que vous avez commencé dans {{name}} est supprimé, avec ses messages. Les chats de vos autres espaces de travail restent. Cette action est irréversible."
       },
+      "exportNotice": "Les administrateurs de {{team}} peuvent exporter les conversations d’ici",
       "mismatch": "Cet agent appartient à un autre espace de travail que ce chat.",
       "notFound": "Vous ne faites plus partie de cette équipe ; le chat ne peut pas continuer ici.",
       "onlyYou": "Vous seul voyez ce chat",

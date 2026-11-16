@@ -2837,6 +2837,87 @@
       "takenOver": "Sie bezahlen jetzt die Ausführungen dieses Zeitplans."
     },
     "team": {
+      "byAgent": {
+        "deleted": "Gelöschter Agent",
+        "empty": "In diesem Zeitraum wurde kein Agent genutzt.",
+        "limitOn": "Agent-Limit an",
+        "noLimit": "Kein Agent-Limit",
+        "outsideNoPayer": "Zugriff von außen, den niemand bezahlt",
+        "outsidePaidBy": "Zugriff von außen bezahlt von {{name}}",
+        "outsidePaidByYou": "Zugriff von außen bezahlt von Ihnen",
+        "people_one": "{{formatted}} Person",
+        "people_other": "{{formatted}} Personen",
+        "requests_one": "{{formatted}} Anfrage",
+        "requests_other": "{{formatted}} Anfragen",
+        "title": "Nach Agent",
+        "totalsOnly": "Chats ohne Agent und inzwischen gelöschte Agenten zählen nur in den Summen."
+      },
+      "byPerson": {
+        "left": "Hat das Team verlassen",
+        "title": "Nach Person",
+        "you": "Sie"
+      },
+      "demote": {
+        "description": "Mit der neuen Rolle kann {{name}} das in {{team}} nicht mehr bezahlen.",
+        "submit": "Rolle ändern",
+        "title": "\"{{name}}\" zu {{role}} ändern?"
+      },
+      "empty": "In diesem Zeitraum wurde hier nichts genutzt.",
+      "export": {
+        "action": "Exportieren",
+        "description": "Eine Datei mit jedem Chat in diesem Arbeitsbereich: wer, wann, welcher Agent. Persönliche Chats sind nie enthalten. Jeder Export wird im Audit-Log festgehalten.",
+        "failed": "Die Chats konnten nicht exportiert werden. Bitte versuchen Sie es erneut.",
+        "title": "Chats exportieren"
+      },
+      "loadError": "Der Nutzungsbericht konnte nicht geladen werden.",
+      "notALimit": "Was eine Person hier nutzt, zählt zu ihrem eigenen Kontingent, zusammen mit ihrer Arbeit anderswo. Nichts auf dieser Seite ist ein Limit.",
+      "paused": {
+        "access": "Zugriff von außen über {{access}}",
+        "accessAll": "Zugriff von außen",
+        "description": "Sie bleiben pausiert, bis jemand sie übernimmt oder das Kontingent der zahlenden Person zurückgesetzt wird.",
+        "schedule": "Zeitplan von {{agent}}",
+        "scheduleNoAgent": "Zeitplan",
+        "sync": "Geplante Synchronisierung",
+        "syncNoPayer": "Niemand im Team kann dafür bezahlen.",
+        "takeOverLabel": "\"{{name}}\" übernehmen",
+        "title": "Pausiert",
+        "unnamed": "Ohne Titel"
+      },
+      "period": {
+        "current": {
+          "day": "Heute",
+          "month": "Dieser Monat",
+          "week": "Diese Woche"
+        },
+        "label": "Zeitraum",
+        "previous": {
+          "day": "Gestern",
+          "month": "Letzter Monat",
+          "week": "Letzte Woche"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} bezahlt dafür. Ein Admin kann ihn auf der Seite des Agenten übernehmen.",
+        "access_one": "Zugriff von außen auf {{count}} Agenten wird pausiert",
+        "access_other": "Zugriff von außen auf {{count}} Agenten wird pausiert",
+        "schedulesDetail": "{{name}} bezahlt dafür. Ein Bearbeiter oder Admin kann sie auf der Zeitplan-Seite des Agenten übernehmen.",
+        "schedules_one": "{{count}} Zeitplan, den {{name}} für Team-Agenten angelegt hat, wird pausiert",
+        "schedules_other": "{{count}} Zeitpläne, die {{name}} für Team-Agenten angelegt hat, werden pausiert"
+      },
+      "showAll": "Alle {{formatted}} anzeigen",
+      "showFewer": "Weniger anzeigen",
+      "stats": {
+        "chats": "Chats",
+        "chatsDetail": "Bezahlt von den Personen, die chatten",
+        "people_one": "Von {{formatted}} Person",
+        "people_other": "Von {{formatted}} Personen",
+        "runs": "Ausführungen ohne Person",
+        "runsDetail": "Zeitpläne, API-Schlüssel, Widget und Webhooks, bezahlt von der Person, die sie eingerichtet hat",
+        "used": "Genutzt in {{team}}"
+      },
+      "tokens_one": "{{formatted}} Token",
+      "tokens_other": "{{formatted}} Tokens",
       "usageTab": "Nutzung"
     }
   },
@@ -5199,6 +5280,7 @@
         "confirm": "Alle deine Chats in {{name}} löschen?",
         "consequence": "Jeder Chat, den du in {{name}} begonnen hast, wird mitsamt seinen Nachrichten gelöscht. Chats in deinen anderen Arbeitsbereichen bleiben. Das kann nicht rückgängig gemacht werden."
       },
+      "exportNotice": "Admins von {{team}} können Chats hier exportieren",
       "mismatch": "Dieser Agent gehört zu einem anderen Arbeitsbereich als dieser Chat.",
       "notFound": "Du bist nicht mehr in diesem Team, daher kann der Chat hier nicht weitergehen.",
       "onlyYou": "Nur du siehst diesen Chat",

@@ -28,6 +28,7 @@ import {
 import MembersTab from './MembersTab';
 import SettingsTab from './SettingsTab';
 import SharedItemsTab from './SharedItemsTab';
+import UsageTab from './UsageTab';
 import { initialOf } from './teamGrants';
 import {
   TEAM_TABS,
@@ -39,8 +40,8 @@ import {
 
 /**
  * One team's page at `/teams/:teamId/:tab?`: the team's name and the
- * caller's role, then tabs (Members, Personal items shared, and Settings
- * for its owner and admins). A tab the caller may not open, or one that
+ * caller's role, then tabs (Members, Personal items shared, and Usage and
+ * Settings for its owner and admins). A tab the caller may not open, or one that
  * isn't built, goes to Members.
  */
 export default function TeamDetail() {
@@ -226,6 +227,7 @@ export default function TeamDetail() {
             onGrantsChanged={loadGrants}
           />
         )}
+        {current.key === 'usage' && <UsageTab team={team} role={role} />}
         {current.key === 'settings' && <SettingsTab team={team} role={role} />}
       </div>
     </SectionShell>

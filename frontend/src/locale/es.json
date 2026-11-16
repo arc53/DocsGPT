@@ -2932,6 +2932,93 @@
       "takenOver": "Ahora pagas las ejecuciones de esta programación."
     },
     "team": {
+      "byAgent": {
+        "deleted": "Agente eliminado",
+        "empty": "No se usó ningún agente en este periodo.",
+        "limitOn": "Límite del agente activado",
+        "noLimit": "Sin límite del agente",
+        "outsideNoPayer": "acceso externo sin nadie que lo pague",
+        "outsidePaidBy": "acceso externo pagado por {{name}}",
+        "outsidePaidByYou": "acceso externo pagado por ti",
+        "people_many": "{{formatted}} personas",
+        "people_one": "{{formatted}} persona",
+        "people_other": "{{formatted}} personas",
+        "requests_many": "{{formatted}} solicitudes",
+        "requests_one": "{{formatted}} solicitud",
+        "requests_other": "{{formatted}} solicitudes",
+        "title": "Por agente",
+        "totalsOnly": "Los chats sin agente, y los agentes eliminados desde entonces, solo cuentan en los totales."
+      },
+      "byPerson": {
+        "left": "Dejó el equipo",
+        "title": "Por persona",
+        "you": "tú"
+      },
+      "demote": {
+        "description": "Con el nuevo rol, {{name}} ya no puede pagar esto en {{team}}.",
+        "submit": "Cambiar rol",
+        "title": "¿Cambiar a \"{{name}}\" a {{role}}?"
+      },
+      "empty": "Nadie usó nada aquí en este periodo.",
+      "export": {
+        "action": "Exportar",
+        "description": "Un archivo con todos los chats de este espacio de trabajo: quién, cuándo, qué agente. Los chats personales nunca se incluyen. Cada exportación queda en el registro de auditoría.",
+        "failed": "No se pudieron exportar los chats. Inténtalo de nuevo.",
+        "title": "Exportar chats"
+      },
+      "loadError": "No se pudo cargar el informe de uso.",
+      "notALimit": "Lo que una persona usa aquí cuenta contra su propia asignación, junto con su trabajo en otros lugares. Nada en esta página es un límite.",
+      "paused": {
+        "access": "Acceso externo a través de su {{access}}",
+        "accessAll": "Acceso externo",
+        "description": "Siguen en pausa hasta que alguien los asuma o hasta que se renueve la asignación de quien paga.",
+        "schedule": "Programación de {{agent}}",
+        "scheduleNoAgent": "Programación",
+        "sync": "Sincronización programada",
+        "syncNoPayer": "Nadie en el equipo puede pagarla.",
+        "takeOverLabel": "Asumir \"{{name}}\"",
+        "title": "En pausa",
+        "unnamed": "Sin título"
+      },
+      "period": {
+        "current": {
+          "day": "Hoy",
+          "month": "Este mes",
+          "week": "Esta semana"
+        },
+        "label": "Periodo",
+        "previous": {
+          "day": "Ayer",
+          "month": "Mes pasado",
+          "week": "Semana pasada"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} lo paga. Un administrador puede asumirlo en la página del agente.",
+        "access_many": "Se pausa el acceso externo de {{count}} agentes",
+        "access_one": "Se pausa el acceso externo de {{count}} agente",
+        "access_other": "Se pausa el acceso externo de {{count}} agentes",
+        "schedulesDetail": "{{name}} las paga. Un editor o administrador puede asumirlas en la página de programaciones del agente.",
+        "schedules_many": "Se pausan {{count}} programaciones que {{name}} creó en agentes del equipo",
+        "schedules_one": "Se pausa {{count}} programación que {{name}} creó en agentes del equipo",
+        "schedules_other": "Se pausan {{count}} programaciones que {{name}} creó en agentes del equipo"
+      },
+      "showAll": "Ver todos ({{formatted}})",
+      "showFewer": "Ver menos",
+      "stats": {
+        "chats": "Chats",
+        "chatsDetail": "Pagados por las personas que chatean",
+        "people_many": "Por {{formatted}} personas",
+        "people_one": "Por {{formatted}} persona",
+        "people_other": "Por {{formatted}} personas",
+        "runs": "Ejecuciones sin una persona",
+        "runsDetail": "Programaciones, claves de API, el widget y webhooks, pagados por quien los configuró",
+        "used": "Usado en {{team}}"
+      },
+      "tokens_many": "{{formatted}} tokens",
+      "tokens_one": "{{formatted}} token",
+      "tokens_other": "{{formatted}} tokens",
       "usageTab": "Uso"
     }
   },
@@ -5388,6 +5475,7 @@
         "confirm": "¿Eliminar todos tus chats en {{name}}?",
         "consequence": "Se eliminan todos los chats que iniciaste en {{name}}, con sus mensajes. Los chats de tus otros espacios de trabajo se conservan. No se puede deshacer."
       },
+      "exportNotice": "Los administradores de {{team}} pueden exportar los chats de aquí",
       "mismatch": "Este agente pertenece a otro espacio de trabajo que este chat.",
       "notFound": "Ya no estás en este equipo, así que el chat no puede continuar aquí.",
       "onlyYou": "Solo tú puedes ver este chat",

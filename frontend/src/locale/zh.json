@@ -2810,6 +2810,87 @@
       "takenOver": "现在由您为此计划任务的运行付费。"
     },
     "team": {
+      "byAgent": {
+        "deleted": "已删除的智能体",
+        "empty": "此期间未使用任何智能体。",
+        "limitOn": "已开启智能体限额",
+        "noLimit": "无智能体限额",
+        "outsideNoPayer": "外部访问无人付费",
+        "outsidePaidBy": "外部访问由 {{name}} 付费",
+        "outsidePaidByYou": "外部访问由您付费",
+        "people_one": "{{formatted}} 人",
+        "people_other": "{{formatted}} 人",
+        "requests_one": "{{formatted}} 次请求",
+        "requests_other": "{{formatted}} 次请求",
+        "title": "按智能体",
+        "totalsOnly": "没有智能体的聊天以及之后删除的智能体只计入总计。"
+      },
+      "byPerson": {
+        "left": "已离开团队",
+        "title": "按成员",
+        "you": "您"
+      },
+      "demote": {
+        "description": "换成新角色后，{{name}} 无法再在 {{team}} 中为这些付费。",
+        "submit": "更改角色",
+        "title": "将“{{name}}”改为{{role}}？"
+      },
+      "empty": "此期间这里没有任何用量。",
+      "export": {
+        "action": "导出",
+        "description": "将此工作区的所有聊天导出为一个文件：谁、何时、哪个智能体。个人聊天永远不包含在内。每次导出都会写入审计日志。",
+        "failed": "无法导出聊天。请重试。",
+        "title": "导出聊天"
+      },
+      "loadError": "无法加载用量报告。",
+      "notALimit": "一个人在这里的用量会和其在其他地方的用量一起计入其个人额度。此页面上没有任何限额。",
+      "paused": {
+        "access": "通过{{access}}的外部访问",
+        "accessAll": "外部访问",
+        "description": "在有人接管或付费人的额度重置之前，它们会保持暂停。",
+        "schedule": "{{agent}} 的计划任务",
+        "scheduleNoAgent": "计划任务",
+        "sync": "定时同步",
+        "syncNoPayer": "团队中没有人能为其付费。",
+        "takeOverLabel": "接管“{{name}}”",
+        "title": "已暂停",
+        "unnamed": "无标题"
+      },
+      "period": {
+        "current": {
+          "day": "今天",
+          "month": "本月",
+          "week": "本周"
+        },
+        "label": "期间",
+        "previous": {
+          "day": "昨天",
+          "month": "上月",
+          "week": "上周"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "由 {{name}} 付费。管理员可以在智能体页面上接管。",
+        "access_one": "{{count}} 个智能体的外部访问将暂停",
+        "access_other": "{{count}} 个智能体的外部访问将暂停",
+        "schedulesDetail": "由 {{name}} 付费。编辑者或管理员可以在智能体的计划任务页面上接管。",
+        "schedules_one": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停",
+        "schedules_other": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停"
+      },
+      "showAll": "显示全部（{{formatted}}）",
+      "showFewer": "收起",
+      "stats": {
+        "chats": "聊天",
+        "chatsDetail": "由聊天的人付费",
+        "people_one": "{{formatted}} 人使用",
+        "people_other": "{{formatted}} 人使用",
+        "runs": "无人参与的运行",
+        "runsDetail": "计划任务、API 密钥、小组件和 Webhook，由设置它们的人付费",
+        "used": "在 {{team}} 中的用量"
+      },
+      "tokens_one": "{{formatted}} 个 token",
+      "tokens_other": "{{formatted}} 个 token",
       "usageTab": "用量"
     }
   },
@@ -5163,6 +5244,7 @@
         "confirm": "删除您在 {{name}} 中的所有聊天？",
         "consequence": "您在 {{name}} 中开始的每个聊天都会连同其消息一起删除。您其他工作区中的聊天会保留。此操作无法撤销。"
       },
+      "exportNotice": "{{team}} 的管理员可以导出这里的聊天",
       "mismatch": "此智能体属于与此聊天不同的工作区。",
       "notFound": "您已不在此团队中，因此无法在这里继续聊天。",
       "onlyYou": "只有您能看到此聊天",

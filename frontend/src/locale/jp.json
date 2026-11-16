@@ -2811,6 +2811,87 @@
       "takenOver": "このスケジュールの実行は今後あなたが支払います。"
     },
     "team": {
+      "byAgent": {
+        "deleted": "削除されたエージェント",
+        "empty": "この期間に使われたエージェントはありません。",
+        "limitOn": "エージェントの上限あり",
+        "noLimit": "エージェントの上限なし",
+        "outsideNoPayer": "外部アクセスの支払者なし",
+        "outsidePaidBy": "外部アクセスは {{name}} さんが支払い",
+        "outsidePaidByYou": "外部アクセスはあなたが支払い",
+        "people_one": "{{formatted}} 人",
+        "people_other": "{{formatted}} 人",
+        "requests_one": "{{formatted}} 件のリクエスト",
+        "requests_other": "{{formatted}} 件のリクエスト",
+        "title": "エージェント別",
+        "totalsOnly": "エージェントなしのチャットと、その後削除されたエージェントは合計にのみ含まれます。"
+      },
+      "byPerson": {
+        "left": "チームを離れました",
+        "title": "メンバー別",
+        "you": "あなた"
+      },
+      "demote": {
+        "description": "新しいロールでは、{{name}} さんは {{team}} でこれらを支払えなくなります。",
+        "submit": "ロールを変更",
+        "title": "「{{name}}」を{{role}}に変更しますか？"
+      },
+      "empty": "この期間、ここでは何も使われていません。",
+      "export": {
+        "action": "エクスポート",
+        "description": "このワークスペースのすべてのチャットを 1 つのファイルにします（誰が、いつ、どのエージェントで）。個人のチャットは含まれません。エクスポートはすべて監査ログに記録されます。",
+        "failed": "チャットをエクスポートできませんでした。もう一度お試しください。",
+        "title": "チャットをエクスポート"
+      },
+      "loadError": "使用状況レポートを読み込めませんでした。",
+      "notALimit": "ここで使った分は、その人のほかの作業と合わせて本人の利用枠から差し引かれます。このページに上限はありません。",
+      "paused": {
+        "access": "{{access}} 経由の外部アクセス",
+        "accessAll": "外部アクセス",
+        "description": "誰かが引き継ぐか、支払者の利用枠がリセットされるまで一時停止したままです。",
+        "schedule": "{{agent}} のスケジュール",
+        "scheduleNoAgent": "スケジュール",
+        "sync": "定期同期",
+        "syncNoPayer": "チーム内に支払える人がいません。",
+        "takeOverLabel": "「{{name}}」を引き継ぐ",
+        "title": "一時停止中",
+        "unnamed": "無題"
+      },
+      "period": {
+        "current": {
+          "day": "今日",
+          "month": "今月",
+          "week": "今週"
+        },
+        "label": "期間",
+        "previous": {
+          "day": "昨日",
+          "month": "先月",
+          "week": "先週"
+        },
+        "range": "{{start}}〜{{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} さんが支払っています。管理者がエージェントのページで引き継げます。",
+        "access_one": "{{count}} 件のエージェントの外部アクセスが一時停止します",
+        "access_other": "{{count}} 件のエージェントの外部アクセスが一時停止します",
+        "schedulesDetail": "{{name}} さんが支払っています。編集者または管理者がエージェントのスケジュールページで引き継げます。",
+        "schedules_one": "{{name}} さんがチームのエージェントに設定したスケジュール {{count}} 件が一時停止します",
+        "schedules_other": "{{name}} さんがチームのエージェントに設定したスケジュール {{count}} 件が一時停止します"
+      },
+      "showAll": "すべて表示（{{formatted}}）",
+      "showFewer": "表示を減らす",
+      "stats": {
+        "chats": "チャット",
+        "chatsDetail": "チャットした人が支払い",
+        "people_one": "{{formatted}} 人が利用",
+        "people_other": "{{formatted}} 人が利用",
+        "runs": "人が関わらない実行",
+        "runsDetail": "スケジュール、API キー、ウィジェット、Webhook。設定した人が支払い",
+        "used": "{{team}} での使用量"
+      },
+      "tokens_one": "{{formatted}} トークン",
+      "tokens_other": "{{formatted}} トークン",
       "usageTab": "利用状況"
     }
   },
@@ -5165,6 +5246,7 @@
         "confirm": "{{name}} のチャットをすべて削除しますか？",
         "consequence": "{{name}} で始めたチャットはメッセージごとすべて削除されます。ほかのワークスペースのチャットは残ります。この操作は元に戻せません。"
       },
+      "exportNotice": "{{team}} の管理者はここでのチャットをエクスポートできます",
       "mismatch": "このエージェントは、このチャットとは別のワークスペースに属しています。",
       "notFound": "このチームのメンバーではなくなったため、ここではチャットを続けられません。",
       "onlyYou": "このチャットはあなただけが見られます",

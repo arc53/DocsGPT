@@ -14,7 +14,9 @@ type ChatWorkspaceLineProps = {
 /**
  * The line under the chat composer in a team: "Operations · Only you can see
  * this chat". A chat belongs to the workspace it was started in, but stays
- * its starter's own. Nothing in Personal, where every chat is.
+ * its starter's own. When the instance lets a team's admins export its chats,
+ * the line says that instead, so nobody reads "only you" about a chat others
+ * can export. Nothing in Personal, where every chat is.
  */
 export default function ChatWorkspaceLine({ notice }: ChatWorkspaceLineProps) {
   const { t } = useTranslation();
@@ -31,7 +33,14 @@ export default function ChatWorkspaceLine({ notice }: ChatWorkspaceLineProps) {
             {workspace.name}
           </MetaItem>
         ) : null}
-        <span>{t('workspace.chat.onlyYou')}</span>
+        <span>
+          {workspace.chat_export
+            ? t('workspace.chat.exportNotice', {
+                team: workspace.name || t('workspace.chat.thisTeam'),
+                interpolation: { escapeValue: false },
+              })
+            : t('workspace.chat.onlyYou')}
+        </span>
         {notice}
       </MetaLine>
     </div>

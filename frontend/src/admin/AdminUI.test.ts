@@ -28,6 +28,14 @@ describe('eventLabel', () => {
     );
   });
 
+  it('names the payer events', () => {
+    expect(eventLabel('team.schedule_taken_over')).toBe('Schedule taken over');
+    expect(eventLabel('team.outside_access_taken_over')).toBe(
+      'Outside access taken over',
+    );
+    expect(eventLabel('team.chats_exported')).toBe('Team chats exported');
+  });
+
   it('stays legible for an event a newer release added', () => {
     expect(eventLabel('source.archived')).toBe('Source archived');
     expect(eventLabel('brand_new_event')).toBe('Brand new event');

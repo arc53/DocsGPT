@@ -28,11 +28,11 @@ export const TEAM_TABS: ReadonlyArray<TeamTab> = [
     enabled: true,
     minRole: 'viewer',
   },
-  // The team's usage report, for its owner and admins; not built yet.
+  // The team's usage report, for its owner and admins.
   {
     key: 'usage',
     labelKey: 'settings.teams.tabs.usage',
-    enabled: false,
+    enabled: true,
     minRole: 'admin',
   },
   {
