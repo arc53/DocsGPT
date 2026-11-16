@@ -10,9 +10,14 @@ import {
   useLocation,
 } from 'react-router-dom';
 
+// Toasts read as their keys.
+vi.mock('i18next', () => ({ default: { t: (key: string) => key } }));
+
+import actionToastReducer from '../notifications/actionToastSlice';
 import { setRequestWorkspace } from './requestWorkspace';
 import useWorkspace from './useWorkspace';
 import useWorkspaceLanding from './useWorkspaceLanding';
+import { workspaceListenerMiddleware } from './workspaceListener';
 import workspaceReducer, {
   loadWorkspaces,
   selectWorkspaceId,
@@ -63,13 +68,19 @@ function Switcher() {
   return null;
 }
 
-const makeStore = (current = 'personal') => {
-  const store = configureStore({ reducer: { workspace: workspaceReducer } });
-  store.dispatch({
-    type: loadWorkspaces.fulfilled.type,
-    payload: ROWS,
-    meta: { requestId: null, arg: { token: null } },
+const listLoaded = (rows = ROWS) => ({
+  type: loadWorkspaces.fulfilled.type,
+  payload: rows,
+  meta: { requestId: null, arg: { token: null } },
+});
+
+const makeStore = (current = 'personal', loaded = true) => {
+  const store = configureStore({
+    reducer: { workspace: workspaceReducer, actionToast: actionToastReducer },
+    middleware: (getDefault) =>
+      getDefault().prepend(workspaceListenerMiddleware.middleware),
   });
+  if (loaded) store.dispatch(listLoaded());
   if (current !== 'personal') store.dispatch(switchWorkspace(current));
   return store;
 };
@@ -143,5 +154,32 @@ describe('switching workspace from the switcher', () => {
     expect(store.getState().workspace.current).toBe('personal');
     expect(where.path).toBe('/settings/tools');
     expect(mounts).toEqual(['personal /settings/tools']);
+  });
+});
+
+describe('a team that turns out gone', () => {
+  it('keeps a page opened by its address when the stored team is gone at start', () => {
+    // The last visit was in t9, which the caller has since left.
+    const store = makeStore('t9', false);
+    render(store, '/c/abc');
+    mounts = [];
+    act(() => {
+      store.dispatch(listLoaded());
+    });
+    expect(store.getState().workspace.current).toBe('personal');
+    expect(where.path).toBe('/c/abc');
+    // The page loads again in Personal; a chat of the gone team says so.
+    expect(mounts).toEqual(['personal /c/abc']);
+  });
+
+  it('lands the page on its list when a team confirmed earlier goes', () => {
+    const store = makeStore('t1');
+    render(store, '/c/abc');
+    mounts = [];
+    act(() => {
+      store.dispatch(listLoaded([ROWS[0]]));
+    });
+    expect(store.getState().workspace.current).toBe('personal');
+    expect(where.path).toBe('/c/new');
   });
 });
