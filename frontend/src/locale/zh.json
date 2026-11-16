@@ -2814,6 +2814,7 @@
         "deleted": "已删除的智能体",
         "empty": "此期间未使用任何智能体。",
         "limitOn": "已开启智能体限额",
+        "movedOut": "已移出团队",
         "noLimit": "无智能体限额",
         "outsideNoPayer": "外部访问无人付费",
         "outsidePaidBy": "外部访问由 {{name}} 付费",

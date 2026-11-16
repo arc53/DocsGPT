@@ -208,14 +208,19 @@ def team_usage_body(conn, team_id: str, period: str) -> dict:
     Returns:
         ``{success, period {kind, start, end, current}, totals {tokens, cost, people}, split {chats, runs},
         by_person [{user_id, label, role, tokens, cost}], by_agent [{agent_id, name, tokens, cost, requests,
-        people, limit_on, published}], paused [...]}``. ``role`` is None for someone no longer in the team;
-        ``name`` None for an agent that can't be read; ``published`` is ``{paid_by}`` while the agent has
-        outside access on, else None.
+        people, limit_on, published, moved_out}], paused [...]}``. ``role`` is None for someone no longer in
+        the team; ``name`` None for an agent that can't be read or has moved out; ``published`` is
+        ``{paid_by}`` while the team's agent has outside access on, else None; ``moved_out`` is True for an
+        agent the team no longer owns, whose spend here stays but whose name, owner and payer now are
+        someone else's.
     """
     start, end = period_bounds(period)
     usage = TokenUsageRepository(conn).team_usage(team_id, start, end, limit=LIST_LIMIT)
     people = {row["user_id"] for row in usage["by_person"]}
-    agents = _agents(conn, [row["agent_id"] for row in usage["by_agent"]])
+    found = _agents(conn, [row["agent_id"] for row in usage["by_agent"]])
+    principal = principal_id(team_id)
+    moved_out = {agent_id for agent_id, agent in found.items() if agent.get("user_id") != principal}
+    agents = {agent_id: agent for agent_id, agent in found.items() if agent_id not in moved_out}
     payers = {_published_payer(agent) for agent in agents.values() if access_on(agent)}
     labels = _user_labels(conn, people | {p for p in payers if p})
     roles = _roles_in_team(conn, team_id, people)
@@ -234,6 +239,7 @@ def team_usage_body(conn, team_id: str, period: str) -> dict:
         agent = agents.get(row["agent_id"]) or {}
         by_agent.append({
             **row,
+            "moved_out": row["agent_id"] in moved_out,
             "name": agent.get("name"),
             "limit_on": bool(agent) and has_agent_limit(agent),
             "published": (

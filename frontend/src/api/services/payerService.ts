@@ -109,6 +109,8 @@ export type TeamUsage = {
     people: number;
     limit_on: boolean;
     published: { paid_by: PersonRef | null } | null;
+    /** The team no longer owns it: no name, limit or payer, only what it spent here. */
+    moved_out: boolean;
   })[];
   paused: TeamUsagePausedItem[];
 };

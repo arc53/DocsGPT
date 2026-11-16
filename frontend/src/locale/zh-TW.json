@@ -2815,6 +2815,7 @@
         "deleted": "已刪除的代理",
         "empty": "此期間未使用任何代理。",
         "limitOn": "已開啟代理限額",
+        "movedOut": "已移出團隊",
         "noLimit": "無代理限額",
         "outsideNoPayer": "外部存取無人付費",
         "outsidePaidBy": "外部存取由 {{name}} 付費",

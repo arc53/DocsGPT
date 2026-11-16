@@ -2841,6 +2841,7 @@
         "deleted": "Gelöschter Agent",
         "empty": "In diesem Zeitraum wurde kein Agent genutzt.",
         "limitOn": "Agent-Limit an",
+        "movedOut": "Aus dem Team verschoben",
         "noLimit": "Kein Agent-Limit",
         "outsideNoPayer": "Zugriff von außen, den niemand bezahlt",
         "outsidePaidBy": "Zugriff von außen bezahlt von {{name}}",

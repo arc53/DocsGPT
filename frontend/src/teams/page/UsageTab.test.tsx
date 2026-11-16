@@ -113,6 +113,7 @@ const usage = (over: Partial<TeamUsage> = {}): TeamUsage => ({
       people: 9,
       limit_on: false,
       published: null,
+      moved_out: false,
     },
     {
       agent_id: 'a2',
@@ -123,6 +124,7 @@ const usage = (over: Partial<TeamUsage> = {}): TeamUsage => ({
       people: 4,
       limit_on: true,
       published: { paid_by: { user_id: 'me', label: 'me@x.io' } },
+      moved_out: false,
     },
     {
       agent_id: 'a3',
@@ -133,6 +135,18 @@ const usage = (over: Partial<TeamUsage> = {}): TeamUsage => ({
       people: 1,
       limit_on: false,
       published: null,
+      moved_out: false,
+    },
+    {
+      agent_id: 'a4',
+      name: null,
+      tokens: 500,
+      cost: 0.5,
+      requests: 1,
+      people: 1,
+      limit_on: false,
+      published: null,
+      moved_out: true,
     },
   ],
   paused: [
@@ -276,12 +290,15 @@ describe('UsageTab', () => {
 
   it('lists agents with their limit and who pays for outside use', async () => {
     await render();
-    const [carrier, tender, deleted] = rows('usage-by-agent');
+    const [carrier, tender, deleted, moved] = rows('usage-by-agent');
     expect(carrier.textContent).toContain('Carrier desk');
     expect(carrier.textContent).toContain('payer.team.byAgent.noLimit');
     expect(tender.textContent).toContain('payer.team.byAgent.limitOn');
     expect(tender.textContent).toContain('payer.team.byAgent.outsidePaidByYou');
     expect(deleted.textContent).toContain('payer.team.byAgent.deleted');
+    // An agent the team no longer owns: no name, limit or payer that are now someone else's.
+    expect(moved.textContent).toContain('payer.team.byAgent.movedOut');
+    expect(moved.textContent).not.toContain('payer.team.byAgent.noLimit');
     // Agentless chats and deleted agents count in the totals only.
     expect(section('usage-by-agent').textContent).toContain(
       'payer.team.byAgent.totalsOnly',

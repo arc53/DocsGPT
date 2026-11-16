@@ -259,7 +259,9 @@ export default function UsageTab({ team, role }: UsageTabProps) {
   };
 
   const agentRow = (row: TeamUsage['by_agent'][number]) => {
-    const name = row.name?.trim() || t('payer.team.byAgent.deleted');
+    const name = row.moved_out
+      ? t('payer.team.byAgent.movedOut')
+      : row.name?.trim() || t('payer.team.byAgent.deleted');
     const parts = [
       t('payer.team.byAgent.requests', {
         count: row.requests,
@@ -297,9 +299,11 @@ export default function UsageTab({ team, role }: UsageTabProps) {
           <AmountCell
             value={amount(row)}
             sub={
-              row.limit_on
-                ? t('payer.team.byAgent.limitOn')
-                : t('payer.team.byAgent.noLimit')
+              row.moved_out
+                ? undefined
+                : row.limit_on
+                  ? t('payer.team.byAgent.limitOn')
+                  : t('payer.team.byAgent.noLimit')
             }
           />
         }

@@ -2936,6 +2936,7 @@
         "deleted": "Agente eliminado",
         "empty": "No se usó ningún agente en este periodo.",
         "limitOn": "Límite del agente activado",
+        "movedOut": "Sacado del equipo",
         "noLimit": "Sin límite del agente",
         "outsideNoPayer": "acceso externo sin nadie que lo pague",
         "outsidePaidBy": "acceso externo pagado por {{name}}",

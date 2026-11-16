@@ -227,7 +227,7 @@ The team's Owner and Admins have a **Usage** tab on the team's page. It reports 
 - **This period or the previous one.** A period is the instance's quota window ([`QUOTA_PERIOD`](/Deploying/Settings-Reference#quotas): a day, a week or a month, in UTC).
 - **Chats and runs without a person.** Chats count what members ran themselves, plain chats without an agent included. Runs without a person are schedules, an agent's outside traffic and other background work.
 - **By person**, with each person's role. People who have left the team stay listed with what they used.
-- **By agent**, with its requests, how many people used it, whether its own limit is on, and who pays for its outside access.
+- **By agent**, with its requests, how many people used it, whether its own limit is on, and who pays for its outside access. An agent moved out of the team since shows as "Moved out", with what it used here and nothing about where it is now.
 - **What is paused**: every schedule, outside access and scheduled source sync in the team that is paused for its payer, with the reason and who paid. Each schedule or outside access links to the agent's page, where the right role can [take it over](#take-over).
 
 Amounts are in dollars where the models have a price, and in tokens otherwise. Only use in this workspace counts: a member's Personal use never shows here, and an agent's use stays in the report after it is moved out. Use recorded before this release isn't in it.

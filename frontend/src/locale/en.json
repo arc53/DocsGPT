@@ -2862,6 +2862,7 @@
         "deleted": "Deleted agent",
         "empty": "No agent was used in this period.",
         "limitOn": "Agent limit on",
+        "movedOut": "Moved out",
         "noLimit": "No agent limit",
         "outsideNoPayer": "outside access with nobody paying",
         "outsidePaidBy": "outside access paid by {{name}}",

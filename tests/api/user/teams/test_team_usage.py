@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import text
 
 from docsgpt.api.pat.tokens import expand_scopes
 from docsgpt.quotas.windows import window_bounds
@@ -118,6 +119,26 @@ class TestTotals:
         assert row["agent_id"] == agent and row["name"] == "Carrier desk"
         assert row["tokens"] == 80 and row["people"] == 2 and row["requests"] >= 0
         assert row["limit_on"] is False and row["published"] is None
+        assert row["moved_out"] is False
+
+    @pytest.mark.parametrize("new_owner", ["adam", "other-team"])
+    def test_an_agent_moved_out_shows_no_name_or_payer(self, client, db, new_owner):
+        tid = _team(db)
+        agent = str(AgentsRepository(db).create(
+            principal_id(tid), "Widget", "published", key=f"k-{uuid.uuid4().hex}", access_payer_id="adam",
+            limited_token_mode=True, token_limit=1000,
+        )["id"])
+        _spend(db, "adam", tid, 10, kind="published", agent_id=agent)
+        owner = principal_id(_team(db, name="Elsewhere", owner="olga")) if new_owner == "other-team" else "adam"
+        db.execute(text("UPDATE agents SET user_id = :o, name = 'Renamed since' WHERE id = CAST(:a AS uuid)"),
+                   {"o": owner, "a": agent})
+
+        (row,) = _body(_usage(client, tid))["by_agent"]
+
+        # Who owns it now, its current name and its payer are not this team's to read.
+        assert row["moved_out"] is True
+        assert row["name"] is None and row["published"] is None and row["limit_on"] is False
+        assert row["tokens"] == 10
 
     def test_period_names_the_window(self, client, db):
         tid = _team(db)
