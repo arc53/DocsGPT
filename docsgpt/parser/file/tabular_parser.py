@@ -6,11 +6,14 @@ Contains parsers for tabular data files.
 import csv
 import datetime
 import io
+import logging
 import math
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Union
 
-from docsgpt.parser.file.base_parser import BaseParser
+from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError
+
+logger = logging.getLogger(__name__)
 
 # The separators a spreadsheet actually writes into a file named ".csv". Excel
 # writes the list separator of the machine's locale, which is a semicolon across
@@ -128,6 +131,13 @@ def detect_file_separator(
 # means something. A genuinely empty cell is still empty, and ``pandas_config``
 # can turn the default list back on.
 _KEEP_LITERAL_NA = {"keep_default_na": False}
+
+# Workbook formats pandas would read with xlrd (.xls), pyxlsb (.xlsb) or odfpy
+# (.ods), none of which is installed. calamine reads all three. .xlsx and .xlsm
+# stay on pandas' default (openpyxl), so their output does not change; legacy
+# bytes under one of those names still reach calamine, which pandas falls back
+# to when xlrd or pyxlsb is missing.
+_CALAMINE_SUFFIXES = frozenset({".xls", ".xlsb", ".ods"})
 
 
 def cell_to_text(value: Any) -> str:
@@ -329,10 +339,12 @@ class PandasCSVParser(BaseParser):
 
 
 class ExcelParser(BaseParser):
-    r"""Excel (.xlsx) parser.
+    r"""Excel parser for .xlsx, .xlsm, .xlsb, .xls and OpenDocument .ods files.
 
-    Parses Excel files using Pandas `read_excel` function.
-    If special parameters are required, use the `pandas_config` dict.
+    Parses workbooks using Pandas `read_excel` function: .xls, .xlsb and .ods
+    through calamine, the others through pandas' default engine (openpyxl).
+    If special parameters are required, use the `pandas_config` dict; an
+    `engine` given there is used as is.
 
     Args:
         concat_rows (bool): whether to concatenate all rows into one document.
@@ -385,13 +397,30 @@ class ExcelParser(BaseParser):
         return {}
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
-        """Parse file."""
+        """Parse file.
+
+        Raises:
+            DocumentParseError: When the reader the workbook's format needs is
+                not installed. That is the same on every attempt, so ingest
+                skips the file and Celery does not retry it.
+        """
         try:
             import pandas as pd
         except ImportError:
             raise ValueError("pandas module is required to read Excel files.")
 
-        df = pd.read_excel(file, **{**_KEEP_LITERAL_NA, **self._pandas_config})
+        options = {**_KEEP_LITERAL_NA, **self._pandas_config}
+        if "engine" not in options and Path(file).suffix.lower() in _CALAMINE_SUFFIXES:
+            options["engine"] = "calamine"
+        try:
+            df = pd.read_excel(file, **options)
+        except ImportError as exc:
+            # pandas imports the reader for the file's format only now, so this
+            # is that reader missing, not pandas: the same on every attempt.
+            logger.warning(f"No reader installed for workbook {Path(file).name}: {exc}")
+            raise DocumentParseError(
+                f"Failed to parse {Path(file).name}: the reader for this workbook format is not installed ({exc})"
+            ) from exc
         headers = [cell_to_text(h) for h in df.columns.tolist()]
         header_row = f"{self._header_prefix}{self._col_joiner.join(headers)}"
 
