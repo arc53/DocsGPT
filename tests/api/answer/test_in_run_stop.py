@@ -145,6 +145,19 @@ class TestAChatStoppedMidTurn:
         assert kwargs["metadata"]["error_code"] == "quota-exceeded"
         assert kwargs["metadata"]["error_params"]["resets_at"]
 
+    def test_the_saved_message_keeps_the_tool_calls_that_ran(self, db, flask_app, provider):
+        # The agent reports its calls when its turn ends, which a stop never reaches.
+        _over_allowance(db, "dana")
+        agent = _agent(gen=_turn_then_refused_call())
+        ran = {"call_id": "c1", "tool_name": "search", "status": "completed"}
+        agent._get_truncated_tool_calls.return_value = [ran]
+
+        resource, _ = _stream(flask_app, agent, decoded_token={"sub": "dana"})
+
+        kwargs = resource.conversation_service.finalize_message.call_args.kwargs
+        assert kwargs["status"] == "failed"
+        assert kwargs["tool_calls"] == [ran]
+
     def test_the_provider_decorates_the_person_chatting_own_refusal(self, db, flask_app, provider):
         _over_allowance(db, "dana")
 

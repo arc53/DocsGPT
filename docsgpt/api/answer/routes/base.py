@@ -2262,6 +2262,9 @@ class BaseAnswerResource:
                 image_names=_native_image_names(agent),
             )
             response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
+            # A turn cut short (a limit's stop among them) never reports its
+            # calls; the saved message keeps those that ran.
+            tool_calls = _turn_tool_calls(agent, tool_calls)
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR
