@@ -368,37 +368,45 @@ export default function MoveToFolderModal({
               autoFocus={!isMobile}
             />
             {!searching && level !== null ? (
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <BreadcrumbLink asChild>
-                      <button type="button" onClick={() => setLevel(null)}>
-                        {rootLabel}
-                      </button>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                  {trail.map((folder, index) => (
-                    <Fragment key={folder.id}>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem>
-                        {index === trail.length - 1 ? (
-                          <BreadcrumbPage>{folder.name}</BreadcrumbPage>
-                        ) : (
-                          <BreadcrumbLink asChild>
-                            <button
-                              type="button"
-                              title={folder.name}
-                              onClick={() => setLevel(folder.id)}
-                            >
-                              {folder.name}
-                            </button>
-                          </BreadcrumbLink>
-                        )}
-                      </BreadcrumbItem>
-                    </Fragment>
-                  ))}
-                </BreadcrumbList>
-              </Breadcrumb>
+              // cmdk's root handles Enter by choosing the highlighted row;
+              // stop it here so Enter on a crumb opens that level instead.
+              <div
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.stopPropagation();
+                }}
+              >
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    <BreadcrumbItem>
+                      <BreadcrumbLink asChild>
+                        <button type="button" onClick={() => setLevel(null)}>
+                          {rootLabel}
+                        </button>
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    {trail.map((folder, index) => (
+                      <Fragment key={folder.id}>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                          {index === trail.length - 1 ? (
+                            <BreadcrumbPage>{folder.name}</BreadcrumbPage>
+                          ) : (
+                            <BreadcrumbLink asChild>
+                              <button
+                                type="button"
+                                title={folder.name}
+                                onClick={() => setLevel(folder.id)}
+                              >
+                                {folder.name}
+                              </button>
+                            </BreadcrumbLink>
+                          )}
+                        </BreadcrumbItem>
+                      </Fragment>
+                    ))}
+                  </BreadcrumbList>
+                </Breadcrumb>
+              </div>
             ) : null}
             {error ? (
               <Alert variant="destructive">

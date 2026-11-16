@@ -273,6 +273,40 @@ describe('MoveToFolderModal', () => {
     expect(onMoved).toHaveBeenCalledWith('carriers');
   });
 
+  it('opens a crumb with Enter, without choosing the highlighted row', async () => {
+    await renderMove({
+      kind: 'items',
+      ids: ['a1'],
+      name: 'Support',
+      folderId: null,
+    });
+    await click(
+      document.body.querySelector(
+        'button[aria-label="folders.openFolder:Carriers"]',
+      ),
+    );
+    // Highlight Rate archive, as typing or the arrows would.
+    const input = document.body.querySelector(
+      '[data-slot="command-input"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+      );
+    });
+    expect(row('Rate archive')?.getAttribute('data-selected')).toBe('true');
+    const crumb = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('nav button'),
+    ).find((b) => b.textContent === 'folders.root.agent')!;
+    await act(async () => {
+      crumb.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    // Rate archive was highlighted; Enter on the crumb leaves it unchosen.
+    expect(button('folders.move')?.disabled).toBe(true);
+  });
+
   it('searches every level and shows the trail', async () => {
     await renderMove({
       kind: 'items',
