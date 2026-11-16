@@ -37,8 +37,13 @@ export function formatPayerDate(
   }).format(date);
 }
 
+/** The user id a team's own principal has; it stands for the team itself. */
+const TEAM_PRINCIPAL_PREFIX = '__team__';
+
 /**
- * Who pays, for the reader: their label, and whether it is the reader.
+ * Who pays, for the reader: their label, and whether it is the reader. The
+ * team itself is nobody: a team has no allowance, so a schedule it "pays" for
+ * has no payer and must not read "Paid by <team>".
  *
  * Args:
  *   person: `paid_by` from the server.
@@ -48,7 +53,8 @@ export function payerOf(
   person: PersonRef | null | undefined,
   me?: string | null,
 ): { label: string | null; you: boolean } {
-  if (!person) return { label: null, you: false };
+  if (!person || person.user_id?.startsWith(TEAM_PRINCIPAL_PREFIX))
+    return { label: null, you: false };
   return {
     label: person.label || null,
     you: !!me && person.user_id === me,

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { payerErrorMessage } from '../api/services/payerService';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import type { ActiveState } from '../models/misc';
+import { payerOf } from './pauseReason';
 import type { PersonRef } from './types';
 
 export type TakeOverKind = 'schedule' | 'outside_access';
@@ -76,7 +77,7 @@ export default function TakeOverModal({
   const { t } = useTranslation();
   const noEscape = { interpolation: { escapeValue: false } };
   const block = kind === 'schedule' ? 'schedule' : 'access';
-  const payerName = payer?.label || null;
+  const payerName = payerOf(payer).label;
   return (
     <ConfirmationModal
       message={t('payer.common.takeOver.title', { name, ...noEscape })}

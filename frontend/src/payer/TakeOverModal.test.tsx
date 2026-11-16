@@ -76,6 +76,12 @@ describe('TakeOverModal', () => {
     expect(text()).toContain('payer.common.takeOver.limitDetail');
   });
 
+  it('names nobody when the team itself is the payer', () => {
+    render({ payer: { user_id: '__team__t1', label: 'Operations' } });
+    expect(text()).toContain('payer.common.takeOver.schedule.youPayUnnamed');
+    expect(text()).not.toContain('Operations');
+  });
+
   it('words outside access and shows the caller’s own facts', () => {
     render({
       kind: 'outside_access',

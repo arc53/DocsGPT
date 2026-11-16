@@ -136,6 +136,22 @@ describe('ScheduleRow payer', () => {
     expect(container.querySelector('svg.lucide-wallet')).toBeNull();
   });
 
+  it('names nobody when the team itself is the payer', async () => {
+    // The team has no allowance, so a schedule it "pays" for has no payer.
+    await render(
+      {
+        ...base,
+        paid_by: { user_id: '__team__t1', label: 'Operations' },
+        paused_for: { reason: 'no_payer', since: null },
+      },
+      { teamName: 'Operations' },
+    );
+    expect(text()).toContain('payer.common.pause.noPayer');
+    expect(text()).not.toContain('payer.common.paidBy');
+    expect(text()).not.toContain('Operations');
+    expect(container.querySelector('svg.lucide-wallet')).toBeNull();
+  });
+
   const reasons: [PauseReason, string][] = [
     ['owner_inactive', 'payer.common.pause.ownerInactive'],
     ['payer_left', 'payer.common.pause.payerLeft(name=Dana,team=Operations)'],
