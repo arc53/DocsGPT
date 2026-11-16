@@ -553,6 +553,41 @@ describe('MultiSelectPopover', () => {
       expect(onBack).toHaveBeenCalledTimes(1);
     });
 
+    it('reaches an included folder by the arrows and opens it, without toggling it', () => {
+      const openRates = vi.fn();
+      onToggle.mockClear();
+      show({
+        items: [
+          {
+            id: 'folder:r',
+            label: 'Rate archive',
+            checked: true,
+            muted: true,
+            disabled: true,
+            onOpen: openRates,
+            openLabel: 'Open Rate archive',
+          },
+        ],
+        search: '',
+        onSearchChange: () => undefined,
+      });
+      const input = document.querySelector<HTMLInputElement>(
+        '[data-slot="command-input"]',
+      )!;
+      const key = (name: string) =>
+        act(() => {
+          input.dispatchEvent(
+            new KeyboardEvent('keydown', { key: name, bubbles: true }),
+          );
+        });
+      key('ArrowDown');
+      expect(rowsNow()[0].getAttribute('data-selected')).toBe('true');
+      key('Enter');
+      expect(onToggle).not.toHaveBeenCalled();
+      key('ArrowRight');
+      expect(openRates).toHaveBeenCalledTimes(1);
+    });
+
     it('lists a pinnedOnly row only when it was picked as the picker opened', () => {
       show({ selectedFirst: true });
       expect(rowsNow().map((row) => row.textContent)).toEqual([

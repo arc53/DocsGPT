@@ -252,7 +252,10 @@ export function MultiSelectPopover({
           ...(item.keywords ?? []),
           ...(item.folderTrail ? [item.folderTrail] : []),
         ]}
-        disabled={item.disabled}
+        // A row with an opener (a folder inside a picked one) stays
+        // reachable by the arrows, so ArrowRight can open it; its own
+        // `disabled` still keeps it from toggling.
+        disabled={item.disabled && !item.onOpen}
         onSelect={() => {
           if (!item.disabled) onToggle(item.id);
         }}
