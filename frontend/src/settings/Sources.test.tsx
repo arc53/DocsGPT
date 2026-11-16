@@ -16,7 +16,11 @@ const {
   folderState,
 } = vi.hoisted(() => ({
   // The workspace's folder tree (`folders.tree`); undefined is unloaded.
-  folderState: { items: undefined as unknown[] | undefined },
+  folderState: {
+    items: undefined as unknown[] | undefined,
+    // The last load failed, with none before it.
+    failed: false,
+  },
   // The callbacks Convert to wiki and Enable GraphRAG were given.
   changeModals: {
     onConverted: null as null | (() => void),
@@ -127,9 +131,9 @@ vi.mock('react-redux', () => ({
         ? {
             tree: {
               items: folderState.items,
-              loaded: true,
+              loaded: !folderState.failed,
               loading: false,
-              failed: false,
+              failed: folderState.failed,
               latestRequestId: null,
               removedParents: {},
             },
@@ -2192,6 +2196,7 @@ describe('Sources folders', () => {
     container.remove();
     document.body.innerHTML = '';
     folderState.items = undefined;
+    folderState.failed = false;
     knowledge.docs = undefined;
     connectors.startedSyncs = [];
   });
@@ -2245,6 +2250,17 @@ describe('Sources folders', () => {
     await mount(root, [loose]);
     expect(folderTiles()).toEqual([]);
     expect(headings()).toEqual([]);
+  });
+
+  it('says the folders failed to load, with Retry, above the unfiled sources', async () => {
+    folderState.items = [];
+    folderState.failed = true;
+    await mount(root, [loose]);
+    // The root lists only sources in no folder: without the error the
+    // filed ones would vanish without a word.
+    expect(container.textContent).toContain('folders.errors.loadFailed');
+    expect(button('retry')).toBeDefined();
+    expect(container.textContent).toContain('Loose');
   });
 
   it('shows folders on page 1 only', async () => {

@@ -1326,11 +1326,16 @@ export default function Sources({
     />
   );
   // The root with no folders keeps one unheaded grid, as before folders;
-  // with folders (or inside one) every group has its heading.
+  // with folders (or inside one) every group has its heading. A failed folder
+  // load sections it too: the root lists only unfiled sources, so it must
+  // say the folders (and what is filed in them) couldn't be shown.
+  const rootFoldersFailed =
+    foldersFailed && !inFolder && !flat && currentPage === 1;
   const sectioned =
     showAttention ||
     inFolder ||
     hasFolders ||
+    rootFoldersFailed ||
     shownFolders.length > 0 ||
     sharedDocs.length > 0;
   const nothingListed =
@@ -1611,7 +1616,7 @@ export default function Sources({
                     ))}
                   </div>
                 </section>
-              ) : foldersFailed && !inFolder && !flat && currentPage === 1 ? (
+              ) : rootFoldersFailed ? (
                 foldersError
               ) : null}
               {gridDocuments.length + pendingSyncs.length > 0 ? (
