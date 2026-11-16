@@ -225,6 +225,33 @@ describe('FolderNameModal', () => {
   });
 });
 
+describe('FolderNameModal saving when the reload fails', () => {
+  it('shows the new name though the list could not be read again', async () => {
+    api.updateFolder.mockImplementation(() =>
+      json({ id: 'customs', name: 'Customs 2026', parent_id: null }),
+    );
+    api.getFolders.mockImplementation(() => json({}, false, 500));
+    const onOpenChange = vi.fn();
+    await mount(
+      <FolderNameModal
+        open
+        onOpenChange={onOpenChange}
+        kind="agent"
+        mode="rename"
+        folder={{ id: 'customs', name: 'Customs' }}
+      />,
+    );
+    const input = dialog()?.querySelector('input') as HTMLInputElement;
+    await typeInto(input, 'Customs 2026');
+    await click(button('folders.rename'));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    const saved = store
+      .getState()
+      .folders.tree.items.find((f) => f.id === 'customs');
+    expect(saved?.name).toBe('Customs 2026');
+  });
+});
+
 describe('MoveToFolderModal', () => {
   const renderMove = (subject: MoveSubject, onMoved = vi.fn()) =>
     mount(

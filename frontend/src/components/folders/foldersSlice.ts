@@ -74,6 +74,17 @@ const foldersSlice = createSlice({
   name: 'folders',
   initialState,
   reducers: {
+    /**
+     * A folder the server created, renamed or moved, as it answered: put it
+     * in now, keeping the counts the list had (the answer may lack them), so
+     * the change shows even when the reload after it fails.
+     */
+    folderSaved(state, action: PayloadAction<Folder>) {
+      const list = state.tree;
+      const index = list.items.findIndex((f) => f.id === action.payload.id);
+      if (index === -1) list.items.push(action.payload);
+      else list.items[index] = { ...list.items[index], ...action.payload };
+    },
     /** A folder the server deleted: drop it now, ahead of the reload. */
     folderRemoved(
       state,
@@ -145,6 +156,6 @@ export const selectFolders =
     return selectFolderTree(state).items;
   };
 
-export const { folderRemoved } = foldersSlice.actions;
+export const { folderRemoved, folderSaved } = foldersSlice.actions;
 
 export default foldersSlice.reducer;

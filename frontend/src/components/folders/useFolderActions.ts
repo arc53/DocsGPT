@@ -5,7 +5,8 @@ import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { reloadSourceDocs } from '../../preferences/reloadSourceDocs';
 import type { AppDispatch } from '../../store';
-import { folderRemoved, loadFolders } from './foldersSlice';
+import { captureWorkspace } from '../../workspace/requestWorkspace';
+import { folderRemoved, folderSaved, loadFolders } from './foldersSlice';
 import type { RenamedFolder } from './folderCopy';
 import type { Folder, ItemKind } from './types';
 
@@ -111,8 +112,9 @@ export function useFolderActions(kind: ItemKind): FolderActions {
   const run = useCallback(
     async <T>(
       request: Promise<Response>,
-      onSuccess?: () => void,
+      onSuccess?: (body: T) => void,
     ): Promise<T> => {
+      const workspace = captureWorkspace();
       let response: Response;
       try {
         response = await request;
@@ -120,11 +122,23 @@ export function useFolderActions(kind: ItemKind): FolderActions {
         throw new FolderRequestError('request_failed', '');
       }
       const body = (await unwrap(response)) as T;
-      onSuccess?.();
+      // Another workspace's tree is on screen now: leave it alone.
+      if (!workspace.isCurrent()) return body;
+      onSuccess?.(body);
       await reload();
       return body;
     },
     [reload],
+  );
+
+  // The saved folder goes in at once: the reload after it never rejects, so
+  // a failed one would otherwise keep the old name or place on screen.
+  const saved = useCallback(
+    (folder: Folder) => {
+      if (folder && typeof folder.id === 'string')
+        dispatch(folderSaved(folder));
+    },
+    [dispatch],
   );
 
   return useMemo(
@@ -132,12 +146,14 @@ export function useFolderActions(kind: ItemKind): FolderActions {
       create: (name, parentId) =>
         run<Folder>(
           userService.createFolder({ name, parent_id: parentId }, token),
+          saved,
         ),
       rename: (id, name) =>
-        run<Folder>(userService.updateFolder(id, { name }, token)),
+        run<Folder>(userService.updateFolder(id, { name }, token), saved),
       move: (id, parentId) =>
         run<Folder>(
           userService.updateFolder(id, { parent_id: parentId }, token),
+          saved,
         ),
       remove: async (id, parentId) => {
         const result = await run<{
@@ -171,6 +187,6 @@ export function useFolderActions(kind: ItemKind): FolderActions {
       },
       reload,
     }),
-    [run, reload, dispatch, kind, token],
+    [run, reload, saved, dispatch, kind, token],
   );
 }

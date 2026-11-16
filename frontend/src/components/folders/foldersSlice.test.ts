@@ -13,6 +13,7 @@ import {
 import { switchWorkspace } from '../../workspace/workspaceSlice';
 import foldersReducer, {
   folderRemoved,
+  folderSaved,
   loadFolders,
   selectFolderList,
   selectFolderTree,
@@ -165,6 +166,26 @@ describe('foldersSlice', () => {
     const list = selectFolderTree(store.getState());
     expect(list.items.map((f) => f.id)).toEqual(['p']);
     expect(list.removedParents).toEqual({ c: 'p' });
+  });
+
+  it('puts a saved folder in, keeping the counts its answer lacks', async () => {
+    getFolders.mockImplementation(() =>
+      ok({
+        folders: [
+          { id: 'f1', name: 'Onboarding', parent_id: null, item_count: 4 },
+        ],
+      }),
+    );
+    const store = makeStore();
+    await store.dispatch(loadFolders({ token: 'tok' }));
+    store.dispatch(
+      folderSaved({ id: 'f1', name: 'Onboarding 2026', parent_id: null }),
+    );
+    store.dispatch(folderSaved({ id: 'f2', name: 'Rates', parent_id: 'f1' }));
+    expect(selectFolderTree(store.getState()).items).toEqual([
+      { id: 'f1', name: 'Onboarding 2026', parent_id: null, item_count: 4 },
+      { id: 'f2', name: 'Rates', parent_id: 'f1' },
+    ]);
   });
 
   it('reads a store without the slice as empty', () => {
