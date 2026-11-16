@@ -3119,8 +3119,7 @@
       "tokens_few": "{{formatted}} токена",
       "tokens_many": "{{formatted}} токенов",
       "tokens_one": "{{formatted}} токен",
-      "tokens_other": "{{formatted}} токена",
-      "usageTab": "Использование"
+      "tokens_other": "{{formatted}} токена"
     }
   },
   "prompts": {

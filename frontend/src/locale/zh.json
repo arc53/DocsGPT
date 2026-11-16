@@ -2890,8 +2890,7 @@
         "used": "在 {{team}} 中的用量"
       },
       "tokens_one": "{{formatted}} 个 token",
-      "tokens_other": "{{formatted}} 个 token",
-      "usageTab": "用量"
+      "tokens_other": "{{formatted}} 个 token"
     }
   },
   "prompts": {

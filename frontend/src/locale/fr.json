@@ -3018,8 +3018,7 @@
       },
       "tokens_many": "{{formatted}} jetons",
       "tokens_one": "{{formatted}} jeton",
-      "tokens_other": "{{formatted}} jetons",
-      "usageTab": "Utilisation"
+      "tokens_other": "{{formatted}} jetons"
     }
   },
   "prompts": {

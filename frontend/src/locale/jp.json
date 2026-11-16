@@ -2891,8 +2891,7 @@
         "used": "{{team}} での使用量"
       },
       "tokens_one": "{{formatted}} トークン",
-      "tokens_other": "{{formatted}} トークン",
-      "usageTab": "利用状況"
+      "tokens_other": "{{formatted}} トークン"
     }
   },
   "prompts": {

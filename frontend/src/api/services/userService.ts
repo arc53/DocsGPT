@@ -7,8 +7,6 @@ const userService = {
     throttledApiClient.get(endpoints.USER.CONFIG, null),
   getMe: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.ME, token),
-  getQuota: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.QUOTA, token),
   /**
    * `{success, chat_prompt_id, chat_prompt_set, task_model_id,
    * task_model_unavailable, instance_task_model_id}`: the prompt chats

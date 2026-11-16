@@ -2938,8 +2938,7 @@
         "used": "Used in {{team}}"
       },
       "tokens_one": "{{formatted}} token",
-      "tokens_other": "{{formatted}} tokens",
-      "usageTab": "Usage"
+      "tokens_other": "{{formatted}} tokens"
     }
   },
   "prompts": {

@@ -3018,8 +3018,7 @@
       },
       "tokens_many": "{{formatted}} tokens",
       "tokens_one": "{{formatted}} token",
-      "tokens_other": "{{formatted}} tokens",
-      "usageTab": "Uso"
+      "tokens_other": "{{formatted}} tokens"
     }
   },
   "prompts": {
