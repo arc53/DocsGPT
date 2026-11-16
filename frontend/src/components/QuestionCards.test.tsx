@@ -421,8 +421,10 @@ describe('QuestionCards, options that take a value or rule out the others', () =
         new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
       );
     });
-    // Radix moves focus to the next radio, which checks it.
-    expect(valued.getAttribute('data-state')).toBe('checked');
+    // Radix moves focus to the next radio on a timer, which checks it.
+    await vi.waitFor(() =>
+      expect(valued.getAttribute('data-state')).toBe('checked'),
+    );
     expect(card('hr').querySelector('input')).not.toBeNull();
     expect(document.activeElement).toBe(valued);
   });
