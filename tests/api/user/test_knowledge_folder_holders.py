@@ -148,6 +148,26 @@ class TestAgentCreate:
         assert _status(resp) == 201, resp.get_json()
         assert _folders(_row(pg_conn, resp.get_json()["id"])) == []
 
+    def test_a_workflow_agent_update_keeps_no_folders(self, app, pg_conn):
+        folder = _folder(pg_conn)
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id = str(AgentsRepository(pg_conn).create(
+            OWNER, "Flow", "draft", agent_type="workflow", workflow_id=str(wf["id"])
+        )["id"])
+        resp = _put(app, pg_conn, agent_id, OWNER, {"folders": [folder]})
+        assert _status(resp) == 200, resp.get_json()
+        assert _folders(_row(pg_conn, agent_id)) == []
+
+    def test_switching_to_a_workflow_agent_clears_its_folders(self, app, pg_conn):
+        folder = _folder(pg_conn)
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id = str(AgentsRepository(pg_conn).create(
+            OWNER, "Flow", "draft", agent_type="classic", knowledge_folder_ids=[folder]
+        )["id"])
+        resp = _put(app, pg_conn, agent_id, OWNER, {"agent_type": "workflow", "workflow_id": str(wf["id"])})
+        assert _status(resp) == 200, resp.get_json()
+        assert _folders(_row(pg_conn, agent_id)) == []
+
 
 def _folder_resource(folder_id, name):
     return {"key": f"folder:{folder_id}", "type": "folder", "id": folder_id, "name": name}

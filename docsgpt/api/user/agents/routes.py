@@ -1913,6 +1913,13 @@ class UpdateAgent(Resource):
                 final_agent_type = update_fields.get(
                     "agent_type", existing_agent.get("agent_type")
                 )
+                # A workflow agent reads folders on its nodes only, as create and
+                # import leave it: folders sent for it, or kept from before a
+                # switch, would feed its run and search while usage leaves them out.
+                if final_agent_type == "workflow" and (
+                    update_fields.get("knowledge_folder_ids") or existing_agent.get("knowledge_folder_ids")
+                ):
+                    update_fields["knowledge_folder_ids"] = []
 
                 if final_status == "published":
                     if final_agent_type == "workflow":
