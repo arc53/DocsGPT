@@ -57,7 +57,7 @@ function Harness({ initial }: { initial: KnowledgePick }) {
     onPickChange: setPick,
     connections: [],
   }).popoverProps;
-  return null;
+  return <>{popover.header}</>;
 }
 
 const mount = async (initial: KnowledgePick, list = tree()) => {
@@ -103,5 +103,21 @@ describe('useKnowledgeFolderPicker', () => {
     expect(popover.selectedIds).toEqual([]);
     // Still listed, unticked: no row moves under the pointer.
     expect(pinnedIds()).toEqual([folderRowId('rates'), 'q4']);
+  });
+
+  it('says the folders failed to load, with Retry that loads them again', async () => {
+    // The load each open asks for fails too.
+    api.getFolders.mockImplementationOnce(() => json({}, false, 500));
+    const store = await mount(
+      { sources: [], folders: [] },
+      tree({ items: [], loaded: false, failed: true }),
+    );
+    expect(container.textContent).toContain('folders.errors.loadFailed');
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(api.getFolders).toHaveBeenCalledWith('tok');
+    expect(store.getState().folders.tree.items).toEqual(folders);
   });
 });

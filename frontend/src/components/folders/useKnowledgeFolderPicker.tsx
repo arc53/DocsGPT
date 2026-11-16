@@ -10,6 +10,7 @@ import type {
   MultiSelectPopoverProps,
 } from '../MultiSelectPopover';
 import { toSourcePickerItem, toSourcePickerItems } from '../sourcePickerItems';
+import { EmptyState } from '../ui/empty-state';
 import { IconButton } from '../ui/icon-button';
 import {
   Breadcrumb,
@@ -74,10 +75,12 @@ export type KnowledgeFolderPopoverProps = Pick<
 export function useSourceFolderTree(): {
   tree: FolderTree;
   loaded: boolean;
+  /** The load failed and none before it answered: no folders to show. */
+  failed: boolean;
   reload: () => void;
 } {
-  const { tree, loaded, reload } = useFolderTree();
-  return { tree, loaded, reload };
+  const { list, tree, loaded, reload } = useFolderTree();
+  return { tree, loaded, failed: list.failed && !loaded, reload };
 }
 
 /**
@@ -169,7 +172,7 @@ export function useKnowledgeFolderPicker({
   tree: FolderTree;
 } {
   const { t } = useTranslation();
-  const { tree, reload } = useSourceFolderTree();
+  const { tree, failed, reload } = useSourceFolderTree();
   const [place, setPlace] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   // Each open starts at the root with an empty search, and reads the
@@ -277,8 +280,18 @@ export function useKnowledgeFolderPicker({
         if (next !== pick) onPickChange(next);
       },
       filters: kinds.filters,
+      // A failed folder load says so with Retry rather than listing the
+      // sources as if there were no folders.
       header: openPlace ? (
         <PickerFolderCrumb trail={trail} onNavigate={setPlace} />
+      ) : failed ? (
+        <EmptyState
+          size="xs"
+          illustration="none"
+          tone="destructive"
+          title={t('folders.errors.loadFailed')}
+          onRetry={reload}
+        />
       ) : undefined,
       search,
       onSearchChange: setSearch,
