@@ -1525,6 +1525,7 @@
     },
     "quotaExceeded": {
       "cost": "利用予算 {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
+      "reached": "利用枠に達したため、この回答は停止しました。",
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。"
     },
     "reasoning": "推論",
@@ -2714,6 +2715,95 @@
     "previousPage": "前のページ",
     "range": "{{total}}件中 {{from}}–{{to}}件"
   },
+  "payer": {
+    "access": {
+      "takenOver": "このエージェントの外部からの利用は今後あなたが支払います。"
+    },
+    "common": {
+      "access": {
+        "apiKey": "API キー",
+        "publicLink": "公開リンク",
+        "webhook": "Webhook"
+      },
+      "errors": {
+        "maxSchedules": "スケジュールはすでに上限まであります。1 つ削除してからもう一度お試しください。",
+        "noOutsideAccess": "このエージェントでは外部アクセスがオンになっていないため、引き継ぐものはありません。",
+        "notAvailableToTokens": "アクセストークンでは引き継げません。アプリにサインインして行ってください。",
+        "notFound": "これはもう存在しないか、開けなくなっています。",
+        "roleRequired": "このチームでのあなたのロールでは引き継げません。",
+        "teamOnly": "引き継げるのはチームに属するものだけです。"
+      },
+      "paidBy": "支払い: {{name}}",
+      "paidByYou": "支払い: あなた",
+      "pause": {
+        "noPayer": "誰も支払っていません。",
+        "outOfAllowance": "{{name}} さんは {{date}} まで利用枠を使い切っています。",
+        "outOfAllowanceUndated": "支払う人が利用枠を使い切っています。",
+        "outOfAllowanceUnnamed": "支払う人が {{date}} まで利用枠を使い切っています。",
+        "outOfAllowanceYou": "{{date}} まで利用枠を使い切っています。",
+        "ownerInactive": "実行に使うアカウントが無効になっています。",
+        "payerLeft": "{{name}} さんが {{team}} を離れたか、支払うためのロールを失いました。",
+        "payerLeftNoTeam": "{{name}} さんがチームを離れたか、支払うためのロールを失いました。",
+        "payerLeftUnnamed": "支払う人がチームを離れたか、支払うためのロールを失いました。",
+        "withSince": "{{reason}}{{date}} から一時停止中です。"
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "今後は外部からの利用をあなたが支払います",
+          "youPayDetail": "API キー、公開リンク、Webhook 経由のリクエストは {{name}} さんではなくあなたの利用枠から差し引かれます。これまでの利用分は {{name}} さんのままです。",
+          "youPayUnnamed": "API キー、公開リンク、Webhook 経由のリクエストはあなたの利用枠から差し引かれます。"
+        },
+        "failed": "引き継げませんでした。もう一度お試しください。",
+        "limitApplies": "エージェントの上限は引き続き適用されます",
+        "limitDetail": "誰が支払っても、エージェントは自身の上限で停止します。",
+        "schedule": {
+          "youPay": "今後は実行をあなたが支払います",
+          "youPayDetail": "{{name}} さんではなくあなたの利用枠から差し引かれます。これまでの実行は {{name}} さんのままです。",
+          "youPayUnnamed": "あなたの利用枠から差し引かれます。"
+        },
+        "submit": "引き継ぐ",
+        "title": "「{{name}}」を引き継ぎますか？"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "このエージェントは一時停止中のため、今は回答できません。",
+        "noPayer": "このエージェントの利用を支払う人が今いないため、回答できません。"
+      },
+      "near": {
+        "day": "今日の利用枠の {{percent}}% を使いました。{{time}} にリセットされます。",
+        "month": "{{month}}の利用枠の {{percent}}% を使いました。{{date}} にリセットされます。",
+        "week": "今週の利用枠の {{percent}}% を使いました。{{date}} にリセットされます。"
+      },
+      "reached": {
+        "body": "{{covers}}{{resets}}",
+        "covers": {
+          "agent": "対象は、エージェントとのチャット、あなたが設定したスケジュール、あなたが公開したエージェントです。",
+          "all": "対象は、すべてのワークスペースでのチャット、あなたが設定したスケジュール、あなたが公開したエージェントです。",
+          "direct": "対象は、すべてのワークスペースでのエージェントなしのチャットです。"
+        },
+        "published": "{{name}} は {{access}} 経由で回答しなくなりました。",
+        "schedules_one": "あなたが設定したスケジュール {{count}} 件が一時停止しています。",
+        "schedules_other": "あなたが設定したスケジュール {{count}} 件が一時停止しています。",
+        "seeUsage": "利用状況を見る",
+        "title": {
+          "day": "今日の利用枠に達しました",
+          "month": "{{month}}の利用枠に達しました",
+          "week": "今週の利用枠に達しました"
+        }
+      },
+      "resets": {
+        "date": "{{date}} にリセットされます。",
+        "time": "{{time}} にリセットされます。"
+      }
+    },
+    "schedules": {
+      "takenOver": "このスケジュールの実行は今後あなたが支払います。"
+    },
+    "team": {
+      "usageTab": "利用状況"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "Boundaries セクションがないため、エージェントがドキュメントやツールの結果に隠れた指示に従うおそれがあります",
@@ -3085,14 +3175,27 @@
       "positiveFeedback": "肯定的なフィードバック",
       "promptTokens": "プロンプトトークン",
       "quota": {
-        "cost": "コスト",
-        "resets": "{{resetsAt}} にリセット",
+        "allowance": "あなたの利用枠",
+        "parts": {
+          "chat": "あなたのチャット",
+          "chatDetail": "個人とあなたのチーム",
+          "other": "その他",
+          "otherDetail": "ナレッジの構築と、内訳の集計前の利用",
+          "published": "あなたが公開したエージェント",
+          "publishedDetail": "その API キー、公開リンク、Webhook",
+          "schedule": "あなたが設定したスケジュール",
+          "scheduleDetail": "その実行と、あなたが設定したモニター"
+        },
+        "resetsAt": "{{time}} にリセット",
+        "resetsOn": "{{date}} にリセット",
         "scope": {
-          "agent": "エージェント経由",
+          "agent": "エージェントとのチャット、スケジュール、公開したエージェント",
+          "all": "あなたが支払うすべて",
           "direct": "エージェントなしのチャット"
         },
-        "title": "利用クォータ",
-        "tokens": "トークン",
+        "titleDay": "今日の利用状況",
+        "titleMonth": "利用状況（{{month}}）",
+        "titleWeek": "今週の利用状況",
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "スケジュール実行",

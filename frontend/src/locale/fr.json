@@ -1566,6 +1566,7 @@
     },
     "quotaExceeded": {
       "cost": "Vous avez utilisé {{used}} sur votre budget d’utilisation de {{limit}}. Il sera réinitialisé le {{resetsAt}}.",
+      "reached": "Vous avez atteint votre quota d’utilisation, cette réponse a donc été arrêtée.",
       "tokens": "Vous avez utilisé {{used}} sur votre quota de {{limit}} jetons. Il sera réinitialisé le {{resetsAt}}."
     },
     "reasoning": "Raisonnement",
@@ -2834,6 +2835,96 @@
     "previousPage": "Page précédente",
     "range": "{{from}}–{{to}} sur {{total}}"
   },
+  "payer": {
+    "access": {
+      "takenOver": "Vous payez désormais l’utilisation externe de cet agent."
+    },
+    "common": {
+      "access": {
+        "apiKey": "sa clé d’API",
+        "publicLink": "son lien public",
+        "webhook": "son webhook"
+      },
+      "errors": {
+        "maxSchedules": "Vous avez déjà autant de planifications que possible. Supprimez-en une, puis réessayez.",
+        "noOutsideAccess": "Aucun accès externe n’est activé pour cet agent, il n’y a donc rien à reprendre.",
+        "notAvailableToTokens": "La reprise n’est pas possible avec un jeton d’accès. Connectez-vous à l’application pour le faire.",
+        "notFound": "Cet élément n’existe plus, ou vous ne pouvez plus l’ouvrir.",
+        "roleRequired": "Votre rôle dans cette équipe ne vous permet pas de reprendre ceci.",
+        "teamOnly": "Seul un élément qui appartient à une équipe peut être repris."
+      },
+      "paidBy": "Payé par {{name}}",
+      "paidByYou": "Payé par vous",
+      "pause": {
+        "noPayer": "Personne ne le paie.",
+        "outOfAllowance": "{{name}} a épuisé son quota jusqu’au {{date}}.",
+        "outOfAllowanceUndated": "La personne qui le paie a épuisé son quota.",
+        "outOfAllowanceUnnamed": "La personne qui le paie a épuisé son quota jusqu’au {{date}}.",
+        "outOfAllowanceYou": "Vous avez épuisé votre quota jusqu’au {{date}}.",
+        "ownerInactive": "Le compte sous lequel il s’exécute est désactivé.",
+        "payerLeft": "{{name}} a quitté {{team}} ou perdu le rôle qui le paie.",
+        "payerLeftNoTeam": "{{name}} a quitté l’équipe ou perdu le rôle qui le paie.",
+        "payerLeftUnnamed": "La personne qui le paie a quitté l’équipe ou perdu son rôle.",
+        "withSince": "{{reason}} En pause depuis le {{date}}."
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "Vous payez désormais son utilisation externe",
+          "youPayDetail": "Les requêtes passant par sa clé d’API, son lien public et son webhook sont décomptées de votre quota, pas de celui de {{name}}. Ce qu’elles ont utilisé jusqu’ici reste à {{name}}.",
+          "youPayUnnamed": "Les requêtes passant par sa clé d’API, son lien public et son webhook sont décomptées de votre quota."
+        },
+        "failed": "La reprise a échoué. Veuillez réessayer.",
+        "limitApplies": "La limite de l’agent s’applique toujours",
+        "limitDetail": "Quel que soit le payeur, l’agent s’arrête à sa propre limite.",
+        "schedule": {
+          "youPay": "Vous payez désormais ses exécutions",
+          "youPayDetail": "Elles sont décomptées de votre quota, pas de celui de {{name}}. Les exécutions passées restent à {{name}}.",
+          "youPayUnnamed": "Elles sont décomptées de votre quota."
+        },
+        "submit": "Reprendre",
+        "title": "Reprendre « {{name}} » ?"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "Cet agent est en pause, il ne peut donc pas répondre pour le moment.",
+        "noPayer": "Personne ne paie l’utilisation de cet agent pour le moment, il ne peut donc pas répondre."
+      },
+      "near": {
+        "day": "Vous avez utilisé {{percent}} % de votre quota d’aujourd’hui. Il est réinitialisé à {{time}}.",
+        "month": "Vous avez utilisé {{percent}} % de votre quota de {{month}}. Il est réinitialisé le {{date}}.",
+        "week": "Vous avez utilisé {{percent}} % de votre quota de cette semaine. Il est réinitialisé le {{date}}."
+      },
+      "reached": {
+        "body": "{{covers}} {{resets}}",
+        "covers": {
+          "agent": "Il couvre vos conversations avec des agents, les planifications que vous avez créées et les agents que vous avez publiés.",
+          "all": "Il couvre vos conversations dans tous les espaces de travail, les planifications que vous avez créées et les agents que vous avez publiés.",
+          "direct": "Il couvre vos conversations sans agent, dans tous les espaces de travail."
+        },
+        "published": "{{name}} ne répond plus via {{access}}.",
+        "schedules_many": "{{count}} planifications que vous avez créées sont en pause.",
+        "schedules_one": "{{count}} planification que vous avez créée est en pause.",
+        "schedules_other": "{{count}} planifications que vous avez créées sont en pause.",
+        "seeUsage": "Voir votre utilisation",
+        "title": {
+          "day": "Vous avez atteint votre quota d’aujourd’hui",
+          "month": "Vous avez atteint votre quota de {{month}}",
+          "week": "Vous avez atteint votre quota de cette semaine"
+        }
+      },
+      "resets": {
+        "date": "Il est réinitialisé le {{date}}.",
+        "time": "Il est réinitialisé à {{time}}."
+      }
+    },
+    "schedules": {
+      "takenOver": "Vous payez désormais les exécutions de cette planification."
+    },
+    "team": {
+      "usageTab": "Utilisation"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "Il n’a pas de section Boundaries, donc l’agent risque de suivre des instructions cachées dans des documents ou des résultats d’outils",
@@ -3228,14 +3319,27 @@
       "positiveFeedback": "Retours positifs",
       "promptTokens": "Jetons de prompt",
       "quota": {
-        "cost": "Coût",
-        "resets": "Réinitialisation {{resetsAt}}",
-        "scope": {
-          "agent": "Via des agents",
-          "direct": "Conversation sans agent"
+        "allowance": "Votre quota",
+        "parts": {
+          "chat": "Vos conversations",
+          "chatDetail": "Dans Personnel et dans vos équipes",
+          "other": "Autre",
+          "otherDetail": "Construction des connaissances, et utilisation antérieure à la répartition",
+          "published": "Agents que vous avez publiés",
+          "publishedDetail": "Leurs clés d’API, liens publics et webhooks",
+          "schedule": "Planifications que vous avez créées",
+          "scheduleDetail": "Leurs exécutions, et les moniteurs que vous avez créés"
         },
-        "title": "Votre quota d’utilisation",
-        "tokens": "Jetons",
+        "resetsAt": "Réinitialisé à {{time}}",
+        "resetsOn": "Réinitialisé le {{date}}",
+        "scope": {
+          "agent": "Vos conversations avec des agents, vos planifications et les agents que vous avez publiés",
+          "all": "Tout ce que vous payez",
+          "direct": "Vos conversations sans agent"
+        },
+        "titleDay": "Votre utilisation aujourd’hui",
+        "titleMonth": "Votre utilisation, {{month}}",
+        "titleWeek": "Votre utilisation cette semaine",
         "usedOf": "{{used}} sur {{limit}}"
       },
       "scheduledRuns": "Exécutions planifiées",

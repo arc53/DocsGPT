@@ -1566,6 +1566,7 @@
     },
     "quotaExceeded": {
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}.",
+      "reached": "Has alcanzado tu asignación de uso, así que esta respuesta se detuvo.",
       "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}."
     },
     "reasoning": "Razonamiento",
@@ -2834,6 +2835,96 @@
     "previousPage": "Página anterior",
     "range": "{{from}}–{{to}} de {{total}}"
   },
+  "payer": {
+    "access": {
+      "takenOver": "Ahora pagas el uso externo de este agente."
+    },
+    "common": {
+      "access": {
+        "apiKey": "clave de API",
+        "publicLink": "enlace público",
+        "webhook": "webhook"
+      },
+      "errors": {
+        "maxSchedules": "Ya tienes tantas programaciones como puedes tener. Elimina una y vuelve a intentarlo.",
+        "noOutsideAccess": "Este agente no tiene ningún acceso externo activado, así que no hay nada que asumir.",
+        "notAvailableToTokens": "No se puede asumir el pago con un token de acceso. Inicia sesión en la app para hacerlo.",
+        "notFound": "Ya no existe o ya no puedes abrirlo.",
+        "roleRequired": "Tu rol en este equipo no te permite asumir esto.",
+        "teamOnly": "Solo se puede asumir algo que pertenece a un equipo."
+      },
+      "paidBy": "Pagado por {{name}}",
+      "paidByYou": "Pagado por ti",
+      "pause": {
+        "noPayer": "Nadie lo paga.",
+        "outOfAllowance": "{{name}} ha agotado su asignación hasta el {{date}}.",
+        "outOfAllowanceUndated": "Quien lo paga ha agotado su asignación.",
+        "outOfAllowanceUnnamed": "Quien lo paga ha agotado su asignación hasta el {{date}}.",
+        "outOfAllowanceYou": "Has agotado tu asignación hasta el {{date}}.",
+        "ownerInactive": "La cuenta con la que se ejecuta está desactivada.",
+        "payerLeft": "{{name}} dejó {{team}} o perdió el rol con el que lo paga.",
+        "payerLeftNoTeam": "{{name}} dejó el equipo o perdió el rol con el que lo paga.",
+        "payerLeftUnnamed": "Quien lo paga dejó el equipo o perdió el rol con el que lo paga.",
+        "withSince": "{{reason}} En pausa desde el {{date}}."
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "A partir de ahora pagas su uso externo",
+          "youPayDetail": "Las solicitudes por su clave de API, enlace público y webhook cuentan contra tu asignación, no la de {{name}}. Lo que usaron hasta ahora queda con {{name}}.",
+          "youPayUnnamed": "Las solicitudes por su clave de API, enlace público y webhook cuentan contra tu asignación."
+        },
+        "failed": "No se pudo asumir. Inténtalo de nuevo.",
+        "limitApplies": "El límite del agente sigue aplicándose",
+        "limitDetail": "Pague quien pague, el agente se detiene en su propio límite.",
+        "schedule": {
+          "youPay": "A partir de ahora pagas sus ejecuciones",
+          "youPayDetail": "Cuentan contra tu asignación, no la de {{name}}. Las ejecuciones anteriores quedan con {{name}}.",
+          "youPayUnnamed": "Cuentan contra tu asignación."
+        },
+        "submit": "Asumir",
+        "title": "¿Asumir \"{{name}}\"?"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "Este agente está en pausa, así que ahora no puede responder.",
+        "noPayer": "Ahora nadie paga el uso de este agente, así que no puede responder."
+      },
+      "near": {
+        "day": "Has usado el {{percent}} % de tu asignación de hoy. Se restablece a las {{time}}.",
+        "month": "Has usado el {{percent}} % de tu asignación de {{month}}. Se restablece el {{date}}.",
+        "week": "Has usado el {{percent}} % de tu asignación de esta semana. Se restablece el {{date}}."
+      },
+      "reached": {
+        "body": "{{covers}} {{resets}}",
+        "covers": {
+          "agent": "Cubre tus chats con agentes, las programaciones que creaste y los agentes que publicaste.",
+          "all": "Cubre tus chats en todos los espacios de trabajo, las programaciones que creaste y los agentes que publicaste.",
+          "direct": "Cubre tus chats sin agente, en todos los espacios de trabajo."
+        },
+        "published": "{{name}} ha dejado de responder por su {{access}}.",
+        "schedules_many": "{{count}} programaciones que creaste están en pausa.",
+        "schedules_one": "{{count}} programación que creaste está en pausa.",
+        "schedules_other": "{{count}} programaciones que creaste están en pausa.",
+        "seeUsage": "Ver tu uso",
+        "title": {
+          "day": "Has alcanzado tu asignación de hoy",
+          "month": "Has alcanzado tu asignación de {{month}}",
+          "week": "Has alcanzado tu asignación de esta semana"
+        }
+      },
+      "resets": {
+        "date": "Se restablece el {{date}}.",
+        "time": "Se restablece a las {{time}}."
+      }
+    },
+    "schedules": {
+      "takenOver": "Ahora pagas las ejecuciones de esta programación."
+    },
+    "team": {
+      "usageTab": "Uso"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "No tiene la sección Boundaries, así que el agente podría seguir instrucciones ocultas en documentos o en resultados de herramientas",
@@ -3228,14 +3319,27 @@
       "positiveFeedback": "Retroalimentación positiva",
       "promptTokens": "Tokens de prompt",
       "quota": {
-        "cost": "Coste",
-        "resets": "Se restablece el {{resetsAt}}",
-        "scope": {
-          "agent": "A través de agentes",
-          "direct": "Chat sin agente"
+        "allowance": "Tu asignación",
+        "parts": {
+          "chat": "Tus chats",
+          "chatDetail": "En Personal y en tus equipos",
+          "other": "Otros",
+          "otherDetail": "Creación de conocimiento y uso de antes de que se separara por partes",
+          "published": "Agentes que publicaste",
+          "publishedDetail": "Sus claves de API, enlaces públicos y webhooks",
+          "schedule": "Programaciones que creaste",
+          "scheduleDetail": "Sus ejecuciones y los monitores que creaste"
         },
-        "title": "Tu cuota de uso",
-        "tokens": "Tokens",
+        "resetsAt": "Se restablece a las {{time}}",
+        "resetsOn": "Se restablece el {{date}}",
+        "scope": {
+          "agent": "Tus chats con agentes, tus programaciones y los agentes que publicaste",
+          "all": "Todo lo que pagas",
+          "direct": "Tus chats sin agente"
+        },
+        "titleDay": "Tu uso de hoy",
+        "titleMonth": "Tu uso, {{month}}",
+        "titleWeek": "Tu uso de esta semana",
         "usedOf": "{{used}} de {{limit}}"
       },
       "scheduledRuns": "Ejecuciones programadas",

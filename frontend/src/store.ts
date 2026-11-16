@@ -30,6 +30,10 @@ import {
   prefSlice,
 } from './preferences/preferenceSlice';
 import monitorsReducer from './monitors/monitorsSlice';
+import usageReducer, {
+  connectUsage,
+  usageListenerMiddleware,
+} from './payer/usageSlice';
 import graphBuildReducer from './settings/graphBuildSlice';
 import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
@@ -100,6 +104,7 @@ const store = configureStore({
     background: backgroundReducer,
     activity: activityReducer,
     workspace: workspaceReducer,
+    usage: usageReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
@@ -109,10 +114,13 @@ const store = configureStore({
       conversationListenerMiddleware.middleware,
       backgroundListenerMiddleware.middleware,
       activityListenerMiddleware.middleware,
+      usageListenerMiddleware.middleware,
     ),
 });
 
 connectWorkspaceClient(store);
+// The chat stream handlers tell the usage slice when a turn ends.
+connectUsage(store);
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;

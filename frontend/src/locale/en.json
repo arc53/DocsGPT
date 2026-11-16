@@ -1551,6 +1551,7 @@
     },
     "quotaExceeded": {
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}.",
+      "reached": "You've reached your usage allowance, so this answer stopped.",
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}."
     },
     "reasoning": "Reasoning",
@@ -2761,6 +2762,95 @@
     "previousPage": "Previous page",
     "range": "{{from}}–{{to}} of {{total}}"
   },
+  "payer": {
+    "access": {
+      "takenOver": "You pay for this agent's outside use now."
+    },
+    "common": {
+      "access": {
+        "apiKey": "API key",
+        "publicLink": "public link",
+        "webhook": "webhook"
+      },
+      "errors": {
+        "maxSchedules": "You already have as many schedules as you can. Delete one, then try again.",
+        "noOutsideAccess": "This agent has no outside access turned on, so there's nothing to take over.",
+        "notAvailableToTokens": "Taking over isn't available with an access token. Sign in to the app to do it.",
+        "notFound": "This no longer exists, or you can no longer open it.",
+        "roleRequired": "Your role in this team doesn't let you take this over.",
+        "teamOnly": "Only an item that belongs to a team can be taken over."
+      },
+      "paidBy": "Paid by {{name}}",
+      "paidByYou": "Paid by you",
+      "pause": {
+        "noPayer": "Nobody pays for it.",
+        "outOfAllowance": "{{name}} is out of allowance until {{date}}.",
+        "outOfAllowanceUndated": "Its payer is out of allowance.",
+        "outOfAllowanceUnnamed": "Its payer is out of allowance until {{date}}.",
+        "outOfAllowanceYou": "You're out of allowance until {{date}}.",
+        "ownerInactive": "The account it runs as is deactivated.",
+        "payerLeft": "{{name}} left {{team}} or lost the role that pays for it.",
+        "payerLeftNoTeam": "{{name}} left the team or lost the role that pays for it.",
+        "payerLeftUnnamed": "Its payer left the team or lost the role that pays for it.",
+        "withSince": "{{reason}} Paused since {{date}}."
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "You pay for its outside use from now on",
+          "youPayDetail": "Requests through its API key, public link and webhook count against your allowance, not {{name}}'s. What they used so far stays with {{name}}.",
+          "youPayUnnamed": "Requests through its API key, public link and webhook count against your allowance."
+        },
+        "failed": "Couldn't take it over. Please try again.",
+        "limitApplies": "The agent's limit still applies",
+        "limitDetail": "Whoever pays, the agent stops at its own limit.",
+        "schedule": {
+          "youPay": "You pay for its runs from now on",
+          "youPayDetail": "They count against your allowance, not {{name}}'s. Runs so far stay with {{name}}.",
+          "youPayUnnamed": "They count against your allowance."
+        },
+        "submit": "Take over",
+        "title": "Take over \"{{name}}\"?"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "This agent is paused, so it can't answer right now.",
+        "noPayer": "This agent has nobody to pay for its use right now, so it can't answer."
+      },
+      "near": {
+        "day": "You've used {{percent}}% of your allowance for today. It resets at {{time}}.",
+        "month": "You've used {{percent}}% of your allowance for {{month}}. It resets on {{date}}.",
+        "week": "You've used {{percent}}% of your allowance for this week. It resets on {{date}}."
+      },
+      "reached": {
+        "body": "{{covers}} {{resets}}",
+        "covers": {
+          "agent": "It covers your chats with agents, the schedules you set and the agents you published.",
+          "all": "It covers your chats in every workspace, the schedules you set and the agents you published.",
+          "direct": "It covers your chats without an agent, in every workspace."
+        },
+        "published": "{{name}} has stopped answering through its {{access}}.",
+        "schedules_one": "{{count}} schedule you set is paused.",
+        "schedules_other": "{{count}} schedules you set are paused.",
+        "seeUsage": "See your usage",
+        "title": {
+          "day": "You've reached your allowance for today",
+          "month": "You've reached your allowance for {{month}}",
+          "week": "You've reached your allowance for this week"
+        }
+      },
+      "resets": {
+        "date": "It resets on {{date}}.",
+        "time": "It resets at {{time}}."
+      }
+    },
+    "schedules": {
+      "takenOver": "You pay for this schedule's runs now."
+    },
+    "team": {
+      "usageTab": "Usage"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "It has no Boundaries section, so the agent may follow instructions hidden in documents or tool results",
@@ -3132,14 +3222,27 @@
       "positiveFeedback": "Positive feedback",
       "promptTokens": "Prompt tokens",
       "quota": {
-        "cost": "Cost",
-        "resets": "Resets {{resetsAt}}",
-        "scope": {
-          "agent": "Through agents",
-          "direct": "Chat without an agent"
+        "allowance": "Your allowance",
+        "parts": {
+          "chat": "Your chats",
+          "chatDetail": "In Personal and in your teams",
+          "other": "Other",
+          "otherDetail": "Building knowledge, and use from before parts were counted",
+          "published": "Agents you published",
+          "publishedDetail": "Their API keys, public links and webhooks",
+          "schedule": "Schedules you set",
+          "scheduleDetail": "Their runs, and the monitors you set"
         },
-        "title": "Your usage quota",
-        "tokens": "Tokens",
+        "resetsAt": "Resets at {{time}}",
+        "resetsOn": "Resets on {{date}}",
+        "scope": {
+          "agent": "Your chats with agents, your schedules and the agents you published",
+          "all": "Everything you pay for",
+          "direct": "Your chats without an agent"
+        },
+        "titleDay": "Your usage today",
+        "titleMonth": "Your usage, {{month}}",
+        "titleWeek": "Your usage this week",
         "usedOf": "{{used}} of {{limit}}"
       },
       "scheduledRuns": "Scheduled runs",

@@ -13,11 +13,15 @@ import {
   FEEDBACK,
   RetrievalPayload,
 } from './conversationModels';
+import { noteQuotaError, noteTurnFinished } from '../payer/usageSlice';
 import {
   agentLimitErrorMessage,
   isAgentLimitError,
   isQuotaError,
+  PAYER_STOP_CODES,
+  QUOTA_EXCEEDED,
   quotaErrorMessage,
+  quotaErrorParams,
 } from './quotaError';
 import { ToolCallsType } from './types';
 
@@ -35,6 +39,16 @@ const WORKSPACE_ERROR_CODES: ReadonlySet<string> = new Set([
   'workspace_mismatch',
   'workspace_not_found',
 ]);
+
+/**
+ * Tells the usage slice a turn ended, from its terminal stream frame: a stop
+ * for the person's allowance reads the quota at once, any other end after a
+ * pause (the turn's spend may have moved the meter).
+ */
+function _noteUsage(frame: { type?: unknown; code?: unknown }): void {
+  if (frame.type === 'error' && frame.code === QUOTA_EXCEEDED) noteQuotaError();
+  else if (frame.type === 'end' || frame.type === 'error') noteTurnFinished();
+}
 
 /**
  * Drain an SSE response body, forwarding each ``data:`` line to
@@ -67,6 +81,7 @@ async function _handlePreStreamHttpError(
   if (contentType.includes('text/event-stream')) return false;
   let message: string | null = null;
   let code: string | null = null;
+  let params: Record<string, unknown> | null = null;
   try {
     const text = await response.text();
     if (text) {
@@ -74,6 +89,18 @@ async function _handlePreStreamHttpError(
         const parsed = JSON.parse(text);
         if (isQuotaError(parsed)) {
           message = quotaErrorMessage(parsed, i18n.t.bind(i18n), i18n.language);
+          // With its code and values the chat words it as the in-run stop is.
+          code = QUOTA_EXCEEDED;
+          params = quotaErrorParams(parsed);
+        } else if (
+          parsed &&
+          typeof parsed === 'object' &&
+          PAYER_STOP_CODES.has(parsed.error_code)
+        ) {
+          // The agent is paused or has nobody to pay for it: no numbers.
+          code = parsed.error_code;
+          message =
+            (typeof parsed.message === 'string' && parsed.message) || code;
         } else if (isAgentLimitError(parsed)) {
           // The agent's own limit, worded for the user: a code makes the
           // chat show it as prose rather than a raw server error.
@@ -111,7 +138,7 @@ async function _handlePreStreamHttpError(
   dispatch(
     JSON.stringify(
       code
-        ? { type: 'error', error: message, code }
+        ? { type: 'error', error: message, code, ...(params && { params }) }
         : { type: 'error', error: message },
     ),
   );
@@ -403,6 +430,7 @@ export function handleFetchAnswerSteaming(
         if (parsed.type === 'message_id' && parsed.message_id) {
           messageId = parsed.message_id;
         } else if (parsed.type === 'end' || parsed.type === 'error') {
+          if (!endReceived) _noteUsage(parsed);
           endReceived = true;
         }
       }
@@ -608,6 +636,7 @@ export function handleSubmitToolActions(
           // ``end``, so treating only ``end`` as terminal would
           // trigger a reconnect against an already-finished stream
           // and hang on keepalives.
+          if (!endReceived) _noteUsage(parsed);
           endReceived = true;
         }
       }

@@ -58,6 +58,14 @@ const endpoints = {
       `/api/teams/${id}/members/${encodeURIComponent(memberId)}`,
     TEAM_GRANTS: (id: string) => `/api/teams/${id}/grants`,
     TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
+    // Owner and Admins of the team only; closed to access tokens.
+    TEAM_USAGE: (id: string, period: 'current' | 'previous' = 'current') =>
+      `/api/teams/${encodeURIComponent(id)}/usage?period=${period}`,
+    // 404 while TEAM_CHAT_EXPORT_ENABLED is off.
+    TEAM_CHATS_EXPORT: (id: string) =>
+      `/api/teams/${encodeURIComponent(id)}/chats/export`,
+    AGENT_OUTSIDE_ACCESS_TAKE_OVER: (agentId: string) =>
+      `/api/agents/${encodeURIComponent(agentId)}/outside_access/take_over`,
     WORKSPACES: '/api/workspaces',
     WORKSPACE_MOVE_PLAN: '/api/workspace_moves/plan',
     WORKSPACE_MOVES: '/api/workspace_moves',
@@ -258,6 +266,8 @@ const endpoints = {
       `/api/agents/${agentId}/schedules/stats?days=${days ?? 30}`,
     SCHEDULE: (id: string) => `/api/schedules/${id}`,
     SCHEDULE_RUN_NOW: (id: string) => `/api/schedules/${id}/run`,
+    SCHEDULE_TAKE_OVER: (id: string) =>
+      `/api/schedules/${encodeURIComponent(id)}/take_over`,
     SCHEDULE_RUNS: (id: string, limit?: number, offset?: number) =>
       `/api/schedules/${id}/runs?limit=${limit ?? 50}&offset=${offset ?? 0}`,
     SCHEDULE_RUN: (id: string, runId: string) =>

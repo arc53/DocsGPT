@@ -1525,6 +1525,7 @@
     },
     "quotaExceeded": {
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。",
+      "reached": "您已达到使用额度，因此此回答已停止。",
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。"
     },
     "reasoning": "推理",
@@ -2713,6 +2714,95 @@
     "previousPage": "上一页",
     "range": "第 {{from}}–{{to}} 条，共 {{total}} 条"
   },
+  "payer": {
+    "access": {
+      "takenOver": "现在由您为此智能体的外部使用付费。"
+    },
+    "common": {
+      "access": {
+        "apiKey": "API 密钥",
+        "publicLink": "公开链接",
+        "webhook": "Webhook"
+      },
+      "errors": {
+        "maxSchedules": "您的计划任务已达上限。请删除一个后重试。",
+        "noOutsideAccess": "此智能体没有开启任何外部访问，因此无可接管。",
+        "notAvailableToTokens": "使用访问令牌无法接管。请登录应用后操作。",
+        "notFound": "此项已不存在，或您已无法打开它。",
+        "roleRequired": "您在此团队中的角色不允许接管此项。",
+        "teamOnly": "只有属于团队的项目才能被接管。"
+      },
+      "paidBy": "付费人：{{name}}",
+      "paidByYou": "付费人：您",
+      "pause": {
+        "noPayer": "无人为此付费。",
+        "outOfAllowance": "{{name}} 的额度已用完，直到 {{date}}。",
+        "outOfAllowanceUndated": "付费人的额度已用完。",
+        "outOfAllowanceUnnamed": "付费人的额度已用完，直到 {{date}}。",
+        "outOfAllowanceYou": "您的额度已用完，直到 {{date}}。",
+        "ownerInactive": "运行所用的账户已停用。",
+        "payerLeft": "{{name}} 已离开 {{team}} 或失去了为此付费的角色。",
+        "payerLeftNoTeam": "{{name}} 已离开团队或失去了为此付费的角色。",
+        "payerLeftUnnamed": "付费人已离开团队或失去了为此付费的角色。",
+        "withSince": "{{reason}}自 {{date}} 起暂停。"
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "从现在起由您为其外部使用付费",
+          "youPayDetail": "通过其 API 密钥、公开链接和 Webhook 的请求计入您的额度，而不是 {{name}} 的。此前的用量仍归 {{name}}。",
+          "youPayUnnamed": "通过其 API 密钥、公开链接和 Webhook 的请求计入您的额度。"
+        },
+        "failed": "未能接管。请重试。",
+        "limitApplies": "智能体的限额仍然有效",
+        "limitDetail": "无论谁付费，智能体都会在达到自身限额时停止。",
+        "schedule": {
+          "youPay": "从现在起由您为其运行付费",
+          "youPayDetail": "运行计入您的额度，而不是 {{name}} 的。此前的运行仍归 {{name}}。",
+          "youPayUnnamed": "运行计入您的额度。"
+        },
+        "submit": "接管",
+        "title": "接管“{{name}}”？"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "此智能体已暂停，目前无法回答。",
+        "noPayer": "目前无人为此智能体的使用付费，因此它无法回答。"
+      },
+      "near": {
+        "day": "您已用掉今天额度的 {{percent}}%。额度将于 {{time}} 重置。",
+        "month": "您已用掉{{month}}额度的 {{percent}}%。额度将于 {{date}} 重置。",
+        "week": "您已用掉本周额度的 {{percent}}%。额度将于 {{date}} 重置。"
+      },
+      "reached": {
+        "body": "{{covers}}{{resets}}",
+        "covers": {
+          "agent": "它涵盖您与智能体的聊天、您设置的计划任务以及您发布的智能体。",
+          "all": "它涵盖您在所有工作区的聊天、您设置的计划任务以及您发布的智能体。",
+          "direct": "它涵盖您在所有工作区中不使用智能体的聊天。"
+        },
+        "published": "{{name}} 已停止通过其{{access}}回答。",
+        "schedules_one": "您设置的 {{count}} 个计划任务已暂停。",
+        "schedules_other": "您设置的 {{count}} 个计划任务已暂停。",
+        "seeUsage": "查看您的用量",
+        "title": {
+          "day": "您已达到今天的额度",
+          "month": "您已达到{{month}}的额度",
+          "week": "您已达到本周的额度"
+        }
+      },
+      "resets": {
+        "date": "额度将于 {{date}} 重置。",
+        "time": "额度将于 {{time}} 重置。"
+      }
+    },
+    "schedules": {
+      "takenOver": "现在由您为此计划任务的运行付费。"
+    },
+    "team": {
+      "usageTab": "用量"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "它没有 Boundaries 部分，智能体可能会执行隐藏在文档或工具结果中的指令",
@@ -3084,14 +3174,27 @@
       "positiveFeedback": "正向反馈",
       "promptTokens": "提示词令牌",
       "quota": {
-        "cost": "费用",
-        "resets": "{{resetsAt}} 重置",
-        "scope": {
-          "agent": "通过智能体",
-          "direct": "不使用智能体的聊天"
+        "allowance": "您的额度",
+        "parts": {
+          "chat": "您的聊天",
+          "chatDetail": "在个人空间和您的团队中",
+          "other": "其他",
+          "otherDetail": "构建知识，以及分项统计之前的用量",
+          "published": "您发布的智能体",
+          "publishedDetail": "其 API 密钥、公开链接和 Webhook",
+          "schedule": "您设置的计划任务",
+          "scheduleDetail": "其运行，以及您设置的监控"
         },
-        "title": "您的用量配额",
-        "tokens": "令牌",
+        "resetsAt": "{{time}} 重置",
+        "resetsOn": "{{date}} 重置",
+        "scope": {
+          "agent": "您与智能体的聊天、您的计划任务以及您发布的智能体",
+          "all": "您付费的一切",
+          "direct": "您不使用智能体的聊天"
+        },
+        "titleDay": "您今天的用量",
+        "titleMonth": "您的用量（{{month}}）",
+        "titleWeek": "您本周的用量",
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "计划运行",

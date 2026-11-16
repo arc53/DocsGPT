@@ -1530,6 +1530,7 @@
     },
     "quotaExceeded": {
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
+      "reached": "Sie haben Ihr Nutzungskontingent erreicht, deshalb wurde diese Antwort gestoppt.",
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
     "reasoning": "Begründung",
@@ -2740,6 +2741,95 @@
     "previousPage": "Vorherige Seite",
     "range": "{{from}}–{{to}} von {{total}}"
   },
+  "payer": {
+    "access": {
+      "takenOver": "Sie bezahlen jetzt die Nutzung dieses Agenten von außen."
+    },
+    "common": {
+      "access": {
+        "apiKey": "API-Schlüssel",
+        "publicLink": "öffentlichen Link",
+        "webhook": "Webhook"
+      },
+      "errors": {
+        "maxSchedules": "Sie haben bereits so viele Zeitpläne wie möglich. Löschen Sie einen und versuchen Sie es erneut.",
+        "noOutsideAccess": "Für diesen Agenten ist kein Zugriff von außen eingeschaltet, es gibt also nichts zu übernehmen.",
+        "notAvailableToTokens": "Mit einem Zugriffstoken lässt sich nichts übernehmen. Melden Sie sich dafür in der App an.",
+        "notFound": "Das gibt es nicht mehr, oder Sie können es nicht mehr öffnen.",
+        "roleRequired": "Ihre Rolle in diesem Team erlaubt es nicht, das zu übernehmen.",
+        "teamOnly": "Übernehmen lässt sich nur, was einem Team gehört."
+      },
+      "paidBy": "Bezahlt von {{name}}",
+      "paidByYou": "Bezahlt von Ihnen",
+      "pause": {
+        "noPayer": "Niemand bezahlt dafür.",
+        "outOfAllowance": "{{name}} hat das Kontingent bis {{date}} aufgebraucht.",
+        "outOfAllowanceUndated": "Wer dafür bezahlt, hat das Kontingent aufgebraucht.",
+        "outOfAllowanceUnnamed": "Wer dafür bezahlt, hat das Kontingent bis {{date}} aufgebraucht.",
+        "outOfAllowanceYou": "Sie haben Ihr Kontingent bis {{date}} aufgebraucht.",
+        "ownerInactive": "Das Konto, unter dem es läuft, ist deaktiviert.",
+        "payerLeft": "{{name}} hat {{team}} verlassen oder die Rolle verloren, mit der dafür bezahlt wird.",
+        "payerLeftNoTeam": "{{name}} hat das Team verlassen oder die Rolle verloren, mit der dafür bezahlt wird.",
+        "payerLeftUnnamed": "Wer dafür bezahlt, hat das Team verlassen oder die Rolle verloren.",
+        "withSince": "{{reason}} Pausiert seit {{date}}."
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "Ab jetzt bezahlen Sie die Nutzung von außen",
+          "youPayDetail": "Anfragen über API-Schlüssel, öffentlichen Link und Webhook zählen gegen Ihr Kontingent, nicht gegen das von {{name}}. Was bisher verbraucht wurde, bleibt bei {{name}}.",
+          "youPayUnnamed": "Anfragen über API-Schlüssel, öffentlichen Link und Webhook zählen gegen Ihr Kontingent."
+        },
+        "failed": "Die Übernahme ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
+        "limitApplies": "Das Limit des Agenten gilt weiterhin",
+        "limitDetail": "Egal wer bezahlt: Der Agent stoppt an seinem eigenen Limit.",
+        "schedule": {
+          "youPay": "Ab jetzt bezahlen Sie seine Ausführungen",
+          "youPayDetail": "Sie zählen gegen Ihr Kontingent, nicht gegen das von {{name}}. Bisherige Ausführungen bleiben bei {{name}}.",
+          "youPayUnnamed": "Sie zählen gegen Ihr Kontingent."
+        },
+        "submit": "Übernehmen",
+        "title": "\"{{name}}\" übernehmen?"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "Dieser Agent ist pausiert und kann gerade nicht antworten.",
+        "noPayer": "Für diesen Agenten bezahlt gerade niemand, deshalb kann er nicht antworten."
+      },
+      "near": {
+        "day": "Sie haben {{percent}} % Ihres Kontingents für heute verbraucht. Es wird um {{time}} zurückgesetzt.",
+        "month": "Sie haben {{percent}} % Ihres Kontingents für {{month}} verbraucht. Es wird am {{date}} zurückgesetzt.",
+        "week": "Sie haben {{percent}} % Ihres Kontingents für diese Woche verbraucht. Es wird am {{date}} zurückgesetzt."
+      },
+      "reached": {
+        "body": "{{covers}} {{resets}}",
+        "covers": {
+          "agent": "Es umfasst Ihre Chats mit Agenten, die Zeitpläne, die Sie angelegt haben, und die Agenten, die Sie veröffentlicht haben.",
+          "all": "Es umfasst Ihre Chats in jedem Arbeitsbereich, die Zeitpläne, die Sie angelegt haben, und die Agenten, die Sie veröffentlicht haben.",
+          "direct": "Es umfasst Ihre Chats ohne Agent, in jedem Arbeitsbereich."
+        },
+        "published": "{{name}} antwortet nicht mehr über {{access}}.",
+        "schedules_one": "{{count}} Zeitplan, den Sie angelegt haben, ist pausiert.",
+        "schedules_other": "{{count}} Zeitpläne, die Sie angelegt haben, sind pausiert.",
+        "seeUsage": "Nutzung ansehen",
+        "title": {
+          "day": "Sie haben Ihr Kontingent für heute erreicht",
+          "month": "Sie haben Ihr Kontingent für {{month}} erreicht",
+          "week": "Sie haben Ihr Kontingent für diese Woche erreicht"
+        }
+      },
+      "resets": {
+        "date": "Es wird am {{date}} zurückgesetzt.",
+        "time": "Es wird um {{time}} zurückgesetzt."
+      }
+    },
+    "schedules": {
+      "takenOver": "Sie bezahlen jetzt die Ausführungen dieses Zeitplans."
+    },
+    "team": {
+      "usageTab": "Nutzung"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "Es fehlt der Abschnitt „Boundaries“, daher könnte der Agent Anweisungen befolgen, die in Dokumenten oder Tool-Ergebnissen versteckt sind",
@@ -3111,14 +3201,27 @@
       "positiveFeedback": "Positives Feedback",
       "promptTokens": "Prompt-Tokens",
       "quota": {
-        "cost": "Kosten",
-        "resets": "Wird zurückgesetzt: {{resetsAt}}",
-        "scope": {
-          "agent": "Über Agenten",
-          "direct": "Chat ohne Agent"
+        "allowance": "Ihr Kontingent",
+        "parts": {
+          "chat": "Ihre Chats",
+          "chatDetail": "In Persönlich und in Ihren Teams",
+          "other": "Sonstiges",
+          "otherDetail": "Wissensaufbau und Nutzung aus der Zeit, bevor sie aufgeteilt wurde",
+          "published": "Von Ihnen veröffentlichte Agenten",
+          "publishedDetail": "Ihre API-Schlüssel, öffentlichen Links und Webhooks",
+          "schedule": "Von Ihnen angelegte Zeitpläne",
+          "scheduleDetail": "Ihre Ausführungen und die Monitore, die Sie angelegt haben"
         },
-        "title": "Ihr Nutzungskontingent",
-        "tokens": "Tokens",
+        "resetsAt": "Zurückgesetzt um {{time}}",
+        "resetsOn": "Zurückgesetzt am {{date}}",
+        "scope": {
+          "agent": "Ihre Chats mit Agenten, Ihre Zeitpläne und die Agenten, die Sie veröffentlicht haben",
+          "all": "Alles, wofür Sie bezahlen",
+          "direct": "Ihre Chats ohne Agent"
+        },
+        "titleDay": "Ihre Nutzung heute",
+        "titleMonth": "Ihre Nutzung, {{month}}",
+        "titleWeek": "Ihre Nutzung diese Woche",
         "usedOf": "{{used}} von {{limit}}"
       },
       "scheduledRuns": "Geplante Ausführungen",

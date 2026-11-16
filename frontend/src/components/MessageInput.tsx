@@ -37,6 +37,7 @@ import {
   selectAttachmentBudgetShare,
   selectSelectedDocs,
   selectSelectedFolders,
+  selectSelectedAgent,
   selectSelectedModel,
   selectSourceDocs,
   selectSttAvailable,
@@ -44,6 +45,7 @@ import {
   setSelectedDocs,
   setSelectedFolders,
 } from '../preferences/preferenceSlice';
+import UsageNotice, { useUsageStop } from '../payer/UsageNotice';
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
@@ -368,6 +370,12 @@ type MessageInputProps = {
   placeholder?: string;
   /** The chat's own composer: in a team it says whose chat this is. */
   workspaceLine?: boolean;
+  /**
+   * The person's allowance above the composer: the 80% line, and the stop
+   * at 100%, which holds sending. Defaults to `workspaceLine` (the chat's
+   * own composer); a chat someone else pays for (a public link) leaves it out.
+   */
+  usageNotice?: boolean;
 };
 
 export default function MessageInput({
@@ -382,6 +390,7 @@ export default function MessageInput({
   sendBlocked = false,
   placeholder,
   workspaceLine = false,
+  usageNotice = workspaceLine,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -427,6 +436,9 @@ export default function MessageInput({
     [attachments, selectedModel],
   );
   const attachmentBudgetShare = useSelector(selectAttachmentBudgetShare);
+  // A chat with an agent spends the agent allowance, one without the direct one.
+  const usageScope = useSelector(selectSelectedAgent) ? 'agent' : 'direct';
+  const usageStopped = useUsageStop(usageScope) && usageNotice;
   // No cap on how many files attach: past the model's attachment budget the
   // files still send, and Knowledge is offered as the better home for them.
   const overAttachmentBudget = useMemo(
@@ -1533,6 +1545,7 @@ export default function MessageInput({
   const composerIdle =
     !loading &&
     !sendBlocked &&
+    !usageStopped &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
   const canSubmit = hasSubmittableContent && composerIdle;
@@ -1649,6 +1662,7 @@ export default function MessageInput({
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
       {signInAgain.modals}
+      {usageNotice && <UsageNotice scope={usageScope} />}
       {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
       <input

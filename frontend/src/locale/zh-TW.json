@@ -1525,6 +1525,7 @@
     },
     "quotaExceeded": {
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。",
+      "reached": "您已達到使用額度，因此此回答已停止。",
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。"
     },
     "reasoning": "推理",
@@ -2714,6 +2715,95 @@
     "previousPage": "上一頁",
     "range": "第 {{from}}–{{to}} 筆，共 {{total}} 筆"
   },
+  "payer": {
+    "access": {
+      "takenOver": "現在由您為此代理的外部使用付費。"
+    },
+    "common": {
+      "access": {
+        "apiKey": "API 金鑰",
+        "publicLink": "公開連結",
+        "webhook": "Webhook"
+      },
+      "errors": {
+        "maxSchedules": "您的排程已達上限。請刪除一個後再試一次。",
+        "noOutsideAccess": "此代理沒有開啟任何外部存取，因此沒有可接手的項目。",
+        "notAvailableToTokens": "使用存取權杖無法接手。請登入應用程式後操作。",
+        "notFound": "此項目已不存在，或您已無法開啟。",
+        "roleRequired": "您在此團隊中的角色不允許接手此項目。",
+        "teamOnly": "只有屬於團隊的項目才能被接手。"
+      },
+      "paidBy": "付費者：{{name}}",
+      "paidByYou": "付費者：您",
+      "pause": {
+        "noPayer": "沒有人為此付費。",
+        "outOfAllowance": "{{name}} 的額度已用完，直到 {{date}}。",
+        "outOfAllowanceUndated": "付費者的額度已用完。",
+        "outOfAllowanceUnnamed": "付費者的額度已用完，直到 {{date}}。",
+        "outOfAllowanceYou": "您的額度已用完，直到 {{date}}。",
+        "ownerInactive": "執行所用的帳戶已停用。",
+        "payerLeft": "{{name}} 已離開 {{team}} 或失去為此付費的角色。",
+        "payerLeftNoTeam": "{{name}} 已離開團隊或失去為此付費的角色。",
+        "payerLeftUnnamed": "付費者已離開團隊或失去為此付費的角色。",
+        "withSince": "{{reason}}自 {{date}} 起暫停。"
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "從現在起由您為其外部使用付費",
+          "youPayDetail": "透過其 API 金鑰、公開連結和 Webhook 的請求計入您的額度，而不是 {{name}} 的。先前的用量仍歸 {{name}}。",
+          "youPayUnnamed": "透過其 API 金鑰、公開連結和 Webhook 的請求計入您的額度。"
+        },
+        "failed": "無法接手。請再試一次。",
+        "limitApplies": "代理的限額仍然有效",
+        "limitDetail": "無論誰付費，代理都會在達到自身限額時停止。",
+        "schedule": {
+          "youPay": "從現在起由您為其執行付費",
+          "youPayDetail": "執行計入您的額度，而不是 {{name}} 的。先前的執行仍歸 {{name}}。",
+          "youPayUnnamed": "執行計入您的額度。"
+        },
+        "submit": "接手",
+        "title": "接手「{{name}}」？"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "此代理已暫停，目前無法回答。",
+        "noPayer": "目前沒有人為此代理的使用付費，因此它無法回答。"
+      },
+      "near": {
+        "day": "您已用掉今天額度的 {{percent}}%。額度將於 {{time}} 重設。",
+        "month": "您已用掉{{month}}額度的 {{percent}}%。額度將於 {{date}} 重設。",
+        "week": "您已用掉本週額度的 {{percent}}%。額度將於 {{date}} 重設。"
+      },
+      "reached": {
+        "body": "{{covers}}{{resets}}",
+        "covers": {
+          "agent": "它涵蓋您與代理的聊天、您設定的排程以及您發布的代理。",
+          "all": "它涵蓋您在所有工作區的聊天、您設定的排程以及您發布的代理。",
+          "direct": "它涵蓋您在所有工作區中不使用代理的聊天。"
+        },
+        "published": "{{name}} 已停止透過其{{access}}回答。",
+        "schedules_one": "您設定的 {{count}} 個排程已暫停。",
+        "schedules_other": "您設定的 {{count}} 個排程已暫停。",
+        "seeUsage": "查看您的用量",
+        "title": {
+          "day": "您已達到今天的額度",
+          "month": "您已達到{{month}}的額度",
+          "week": "您已達到本週的額度"
+        }
+      },
+      "resets": {
+        "date": "額度將於 {{date}} 重設。",
+        "time": "額度將於 {{time}} 重設。"
+      }
+    },
+    "schedules": {
+      "takenOver": "現在由您為此排程的執行付費。"
+    },
+    "team": {
+      "usageTab": "用量"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "它沒有 Boundaries 區段，代理可能會執行隱藏在文件或工具結果中的指令",
@@ -3085,14 +3175,27 @@
       "positiveFeedback": "正向回饋",
       "promptTokens": "提示 Token",
       "quota": {
-        "cost": "費用",
-        "resets": "{{resetsAt}} 重設",
-        "scope": {
-          "agent": "透過代理",
-          "direct": "不使用代理的聊天"
+        "allowance": "您的額度",
+        "parts": {
+          "chat": "您的聊天",
+          "chatDetail": "在個人空間和您的團隊中",
+          "other": "其他",
+          "otherDetail": "建立知識，以及分項統計之前的用量",
+          "published": "您發布的代理",
+          "publishedDetail": "其 API 金鑰、公開連結和 Webhook",
+          "schedule": "您設定的排程",
+          "scheduleDetail": "其執行，以及您設定的監控"
         },
-        "title": "您的用量配額",
-        "tokens": "權杖",
+        "resetsAt": "{{time}} 重設",
+        "resetsOn": "{{date}} 重設",
+        "scope": {
+          "agent": "您與代理的聊天、您的排程以及您發布的代理",
+          "all": "您付費的一切",
+          "direct": "您不使用代理的聊天"
+        },
+        "titleDay": "您今天的用量",
+        "titleMonth": "您的用量（{{month}}）",
+        "titleWeek": "您本週的用量",
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "排程執行",

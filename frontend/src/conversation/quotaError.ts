@@ -2,19 +2,55 @@ import type { TFunction } from 'i18next';
 
 import { formatDateTime, intlLocale } from '../utils/dateTimeUtils';
 
+/** The code of a stop for the person's own allowance (a 429 or in-run). */
+export const QUOTA_EXCEEDED = 'quota-exceeded';
+/** The code of a stop for the agent's own 24-hour limit. */
+export const AGENT_LIMIT_EXCEEDED = 'agent-limit-exceeded';
+/**
+ * Codes that stop a chat on an agent whose payer can't pay: `agent_paused`
+ * (what outside callers hear, with no numbers) and `no_payer`.
+ */
+export const PAYER_STOP_CODES: ReadonlySet<unknown> = new Set([
+  'agent_paused',
+  'no_payer',
+]);
+
 export type QuotaErrorBody = {
   error_code?: string;
   dimension?: string;
+  unit?: string;
   usage?: number;
   limit?: number;
+  bucket?: string;
   resets_at?: string;
 };
+
+/**
+ * The values a quota refusal is worded from, as an in-run stop carries them
+ * in `params`, so a refusal before the run and a stop during it read alike.
+ */
+export function quotaErrorParams(
+  body: QuotaErrorBody,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const key of [
+    'dimension',
+    'unit',
+    'usage',
+    'limit',
+    'bucket',
+    'resets_at',
+  ] as const) {
+    if (body[key] !== undefined) params[key] = body[key];
+  }
+  return params;
+}
 
 export function isQuotaError(body: unknown): body is QuotaErrorBody {
   return (
     !!body &&
     typeof body === 'object' &&
-    (body as QuotaErrorBody).error_code === 'quota-exceeded'
+    (body as QuotaErrorBody).error_code === QUOTA_EXCEEDED
   );
 }
 
@@ -63,7 +99,7 @@ export function isAgentLimitError(body: unknown): body is AgentLimitErrorBody {
   return (
     !!body &&
     typeof body === 'object' &&
-    (body as AgentLimitErrorBody).error_code === 'agent-limit-exceeded'
+    (body as AgentLimitErrorBody).error_code === AGENT_LIMIT_EXCEEDED
   );
 }
 

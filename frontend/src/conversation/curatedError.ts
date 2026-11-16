@@ -1,7 +1,15 @@
-import type { TFunction } from 'i18next';
+import i18next, { type TFunction } from 'i18next';
 
 import { isRecord } from '../utils/wireGuards';
 import type { Query } from './conversationModels';
+import {
+  AGENT_LIMIT_EXCEEDED,
+  type AgentLimitErrorBody,
+  agentLimitErrorMessage,
+  QUOTA_EXCEEDED,
+  type QuotaErrorBody,
+  quotaErrorMessage,
+} from './quotaError';
 
 /** Values a curated error was worded from (``needed_tokens``…). */
 export type ErrorParams = Record<string, unknown>;
@@ -48,6 +56,9 @@ export function setErrorDetail(
   if (params) query.errorParams = params;
   else delete query.errorParams;
 }
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
 
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -97,6 +108,26 @@ export function curatedErrorText(
       return t('workspace.chat.mismatch');
     case 'workspace_not_found':
       return t('workspace.chat.notFound');
+    // The person's allowance, before the run or during it (the partial
+    // answer stays above): worded from its values, with the reset.
+    case QUOTA_EXCEEDED:
+      return isNumber(params?.usage) && isNumber(params?.limit)
+        ? quotaErrorMessage(params as QuotaErrorBody, t, i18next.language)
+        : t('conversation.quotaExceeded.reached');
+    // The agent's own limit; a refusal before the run arrives worded.
+    case AGENT_LIMIT_EXCEEDED:
+      return isNumber(params?.usage) && isNumber(params?.limit)
+        ? agentLimitErrorMessage(
+            params as AgentLimitErrorBody,
+            t,
+            i18next.language,
+          )
+        : message;
+    // Someone else pays for this agent and can't: never their numbers.
+    case 'agent_paused':
+      return t('payer.notice.chat.agentPaused');
+    case 'no_payer':
+      return t('payer.notice.chat.noPayer');
     default:
       return message;
   }
