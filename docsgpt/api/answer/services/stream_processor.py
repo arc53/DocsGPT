@@ -82,6 +82,8 @@ class ChatWorkspaceError(Exception):
 
     ``workspace_not_found`` (404): the request names a team the caller is not in.
     ``workspace_mismatch`` (409): the agent lives in another workspace than the chat.
+    ``conversation_not_found`` (404): the chat it continues is one the caller
+    can't read (a team chat they left with the team, or none at all).
     """
 
     def __init__(self, status: int, code: str, message: str) -> None:
@@ -1810,6 +1812,23 @@ class StreamProcessor:
 
         return None
 
+    def _refuse_unreadable_conversation(self) -> None:
+        """Refuse an in-app turn on a chat its caller can't read, before its agent is looked at.
+
+        The history load would refuse it later anyway; here it gets a code the
+        client can act on instead of an agent access error. Key traffic reads
+        the chat as the agent's owner, so it is left to that load.
+
+        Raises:
+            ChatWorkspaceError: 404 ``conversation_not_found``.
+        """
+        if not self.conversation_id or not self.initial_user_id or self.data.get("api_key"):
+            return
+        if self._existing_conversation(self.initial_user_id) is None:
+            raise ChatWorkspaceError(
+                404, "conversation_not_found", "This chat isn't there, or you no longer have access to it."
+            )
+
     def _existing_conversation(self, identity: Optional[str]) -> Optional[Dict[str, Any]]:
         """The request's conversation as ``identity`` may read it, or None (looked up once per identity)."""
         if not self.conversation_id or not identity:
@@ -1956,6 +1975,7 @@ class StreamProcessor:
 
         Unified flow: resolve the effective API key, then extract config once.
         """
+        self._refuse_unreadable_conversation()
         agent_id = self._resolve_agent_id()
         # Who asked, before an API key swaps the identity to the agent's owner.
         caller = self.initial_user_id

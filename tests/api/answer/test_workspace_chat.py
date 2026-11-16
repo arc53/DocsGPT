@@ -366,6 +366,28 @@ class TestAutoResume:
         assert self._allowed(use_conn, cid, "vera", monkeypatch) is False
 
 
+class TestAnExMembersOldTeamChat:
+    @pytest.mark.parametrize("with_agent", [True, False])
+    @pytest.mark.parametrize("route", ["/api/answer", "/stream"])
+    def test_posting_to_it_says_the_chat_is_not_available(self, use_conn, route, with_agent):
+        from docsgpt.api.answer.routes.answer import AnswerResource
+        from docsgpt.api.answer.routes.stream import StreamResource
+
+        tid, principal = _team(use_conn)
+        aid = str(_agent(use_conn, principal)["id"]) if with_agent else None
+        cid = _conversation(use_conn, "vera", team_id=tid, agent_id=aid)
+        TeamMembersRepository(use_conn).remove_member(tid, "vera")
+        body = {"question": "hi", "conversation_id": cid, **({"agent_id": aid} if aid else {})}
+
+        resource = AnswerResource if route == "/api/answer" else StreamResource
+        with Flask(__name__).test_request_context(route, method="POST", json=body):
+            request.decoded_token = {"sub": "vera"}
+            response = resource().post()
+
+        assert response.status_code == 404
+        assert "conversation_not_found" in response.get_data(as_text=True)
+
+
 class TestRoutesAnswerTheWorkspaceRefusal:
     @pytest.mark.parametrize("route", ["/api/answer", "/stream"])
     def test_mismatch_is_409(self, monkeypatch, route):
