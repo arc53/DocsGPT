@@ -285,3 +285,27 @@ class TestAudit:
         assert b"Secret plans" not in resp.data
         assert json.loads(resp.data)["error"] == "audit_unavailable"
         assert _audits(db) == []
+
+
+class TestMemory:
+    def test_messages_load_in_batches_of_bounded_size(self, client, db, export_on):
+        from docsgpt.api.user.teams import chat_export
+
+        tid = _team(db)
+        sizes = {_chat(db, "eddie", tid, f"Chat {n}", messages=[("q", "a")] * n): n for n in (1, 1, 2, 3, 1)}
+        loaded: list[int] = []
+        real = chat_export._messages
+
+        def _spy(conn, conversation_ids):
+            out = real(conn, conversation_ids)
+            loaded.append(sum(len(rows) for rows in out.values()))
+            return out
+
+        with patch("docsgpt.api.user.teams.chat_export.MESSAGE_BATCH", 2), \
+                patch("docsgpt.api.user.teams.chat_export._messages", _spy):
+            _, *rows = _lines(_export(client, tid))
+
+        assert {row["id"]: len(row["messages"]) for row in rows} == sizes
+        # A batch stays within the bound unless one chat alone is larger.
+        assert max(loaded) == 3 and all(n <= 2 for n in loaded if n != 3)
+        assert sum(loaded) == 8

@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 #: Conversations read per round trip while the file streams.
 PAGE_SIZE = 200
 
+#: Most messages held at once while the file streams; a longer chat is read on its own.
+MESSAGE_BATCH = 2000
+
 _SLUG_UNSAFE = re.compile(r"[^a-z0-9-]+")
 
 _CONVERSATIONS_SQL = (
@@ -135,6 +138,38 @@ def _messages(conn, conversation_ids: list[str]) -> dict[str, list[dict]]:
     return out
 
 
+def _message_batches(conn, conversation_ids: list[str]) -> list[list[str]]:
+    """Split a page of conversations, in order, into runs of at most :data:`MESSAGE_BATCH` messages.
+
+    A conversation is never split (it is one line of the file), so one longer
+    than the bound makes a batch of its own.
+
+    Args:
+        conn: Open connection.
+        conversation_ids: The page's conversations, in file order.
+
+    Returns:
+        The ids in batches, order kept.
+    """
+    counts = dict(conn.execute(
+        text(
+            "SELECT conversation_id::text, count(*) FROM conversation_messages "
+            "WHERE conversation_id = ANY(CAST(:ids AS uuid[])) GROUP BY conversation_id"
+        ),
+        {"ids": conversation_ids},
+    ).fetchall())
+    batches: list[list[str]] = []
+    held = 0
+    for conversation_id in conversation_ids:
+        size = int(counts.get(conversation_id, 0))
+        if not batches or held + size > MESSAGE_BATCH:
+            batches.append([])
+            held = 0
+        batches[-1].append(conversation_id)
+        held += size
+    return batches
+
+
 def _labels(conn, user_ids: set[str]) -> dict[str, str]:
     labels = _user_labels(conn, {u for u in user_ids if not is_principal_id(u)})
     labels.update(UsersRepository(conn).principal_labels(user_ids))
@@ -143,6 +178,9 @@ def _labels(conn, user_ids: set[str]) -> dict[str, str]:
 
 def conversation_lines(conn, team_id: str) -> Iterator[dict]:
     """Every conversation of the team as its export line, paged by id so a long export holds no big result.
+
+    Messages are read a batch at a time (:func:`_message_batches`), so a page
+    of long chats isn't held in memory at once.
 
     Args:
         conn: Open connection, held for the whole walk.
@@ -163,25 +201,42 @@ def conversation_lines(conn, team_id: str) -> Iterator[dict]:
         if not page:
             return
         ids = [str(row["id"]) for row in page]
-        messages = _messages(conn, ids)
         labels = _labels(conn, {row["user_id"] for row in page})
-        for row in page:
-            owner = row["user_id"]
-            yield {
-                "type": "conversation",
-                "id": str(row["id"]),
-                "name": row["name"],
-                "user": {"user_id": owner, "label": labels.get(owner) or owner, "member": owner in members},
-                "agent": {"id": str(row["agent_id"]), "name": row["agent_name"]} if row["agent_id"] else None,
-                # Key, widget and public-link traffic, as opposed to a member chatting in the app.
-                "via": "outside" if is_principal_id(owner) or row["is_shared_usage"] else "app",
-                "created_at": _iso(row["created_at"]),
-                "updated_at": _iso(row["updated_at"]),
-                "messages": messages.get(str(row["id"]), []),
-            }
+        rows = {str(row["id"]): row for row in page}
+        for batch in _message_batches(conn, ids):
+            yield from _batch_lines(conn, [rows[i] for i in batch], labels, members)
         after = ids[-1]
         if len(page) < PAGE_SIZE:
             return
+
+
+def _batch_lines(conn, page: list[dict], labels: dict[str, str], members: set[str]) -> Iterator[dict]:
+    """The export lines of a batch of conversations, their messages read in one query.
+
+    Args:
+        conn: Open connection.
+        page: The batch's conversation rows, in file order.
+        labels: ``user_id -> label`` for their owners.
+        members: The team's current members.
+
+    Yields:
+        One conversation line each (see :func:`conversation_lines`).
+    """
+    messages = _messages(conn, [str(row["id"]) for row in page])
+    for row in page:
+        owner = row["user_id"]
+        yield {
+            "type": "conversation",
+            "id": str(row["id"]),
+            "name": row["name"],
+            "user": {"user_id": owner, "label": labels.get(owner) or owner, "member": owner in members},
+            "agent": {"id": str(row["agent_id"]), "name": row["agent_name"]} if row["agent_id"] else None,
+            # Key, widget and public-link traffic, as opposed to a member chatting in the app.
+            "via": "outside" if is_principal_id(owner) or row["is_shared_usage"] else "app",
+            "created_at": _iso(row["created_at"]),
+            "updated_at": _iso(row["updated_at"]),
+            "messages": messages.get(str(row["id"]), []),
+        }
 
 
 def _stream(team_id: str, header: dict) -> Iterator[str]:
