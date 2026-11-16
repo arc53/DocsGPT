@@ -42,10 +42,11 @@ LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
 def access_payer_fields(ra: ResourceAccess, agent: dict, user: str, *, turning_on: bool) -> dict:
     """The ``access_payer_id`` write that goes with outside access a team Admin sets up: that Admin pays for it.
 
-    A team has no credit, so whoever turns on a team agent's key, public link
-    or webhook pays for the traffic that comes in through it. Rotating
-    something already on, or any other save, keeps the payer; it is filled in
-    only when none is recorded. A personal agent records none: its owner pays.
+    A team has no credit, so whoever turns on a team agent's first way in
+    (key, public link or webhook) pays for the traffic that comes in through
+    them all. Turning on a second way in, rotating something already on, or
+    any other save keeps the payer: only Take over moves it. It is filled in
+    when none is recorded. A personal agent records none: its owner pays.
 
     Args:
         ra: The caller's access to the agent (from ``require(..., "manage_access_details")``).
@@ -58,7 +59,7 @@ def access_payer_fields(ra: ResourceAccess, agent: dict, user: str, *, turning_o
     """
     if not ra.is_team_item or is_principal_id(user):
         return {}
-    if turning_on or not agent.get("access_payer_id"):
+    if not agent.get("access_payer_id") or (turning_on and not outside_access_kinds(agent)):
         return {"access_payer_id": user}
     return {}
 

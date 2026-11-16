@@ -1175,7 +1175,9 @@ class _Executor:
             payer = None
             if self.plan.direction == "in" and has_outside_access(row):
                 ra = build_team("agent", agent_id, self.new, self.plan.role)
-                payer = access_payer_fields(ra, row, self.plan.mover, turning_on=True).get("access_payer_id")
+                # The mover pays for the outside access they bring in, whatever the row recorded before.
+                fresh = {**row, "access_payer_id": None}
+                payer = access_payer_fields(ra, fresh, self.plan.mover, turning_on=True).get("access_payer_id")
             self._reown(
                 "agents", [agent_id],
                 ", slug = NULL, resource_sponsors = '{}'::jsonb, image = :image, access_payer_id = :payer, "

@@ -320,12 +320,34 @@ class TestOutwardExposure:
         assert row["shared"] is True
         assert row["access_payer_id"] == ADMIN
 
-    def test_an_admin_turning_a_link_on_takes_over_the_payer(self, app, pg_conn):
+    def test_turning_a_link_on_beside_a_key_keeps_the_payer(self, app, pg_conn):
         from docsgpt.api.user.agents.sharing import ShareAgent
 
         tid, principal = _team(pg_conn)
         agent_id = _agent(pg_conn, principal, status="published", key=f"k-{uuid.uuid4().hex}",
                           access_payer_id=ADMIN)
+        resp = _call(app, pg_conn, ShareAgent, "put", "/api/share_agent", OWNER, json={"id": agent_id, "shared": True})
+        assert _status(resp) == 200
+        assert _row(pg_conn, agent_id)["access_payer_id"] == ADMIN
+
+    def test_turning_a_webhook_on_beside_a_key_keeps_the_payer(self, app, pg_conn):
+        from docsgpt.api.user.agents.webhooks import AgentWebhook
+
+        tid, principal = _team(pg_conn)
+        agent_id = _agent(pg_conn, principal, status="published", key=f"k-{uuid.uuid4().hex}",
+                          access_payer_id=ADMIN)
+        resp = _call(app, pg_conn, AgentWebhook, "get", "/api/agent_webhook", OWNER, query={"id": agent_id})
+        assert _status(resp) == 200, _json(resp)
+        row = _row(pg_conn, agent_id)
+        assert row["incoming_webhook_token"]
+        assert row["access_payer_id"] == ADMIN
+
+    def test_turning_the_first_way_in_on_again_makes_that_admin_the_payer(self, app, pg_conn):
+        from docsgpt.api.user.agents.sharing import ShareAgent
+
+        tid, principal = _team(pg_conn)
+        # Everything was turned off; the payer recorded then pays for nothing now.
+        agent_id = _agent(pg_conn, principal, status="published", access_payer_id=ADMIN)
         resp = _call(app, pg_conn, ShareAgent, "put", "/api/share_agent", OWNER, json={"id": agent_id, "shared": True})
         assert _status(resp) == 200
         assert _row(pg_conn, agent_id)["access_payer_id"] == OWNER

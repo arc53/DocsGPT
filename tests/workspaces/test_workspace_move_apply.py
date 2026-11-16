@@ -178,6 +178,12 @@ class TestMoveIn:
         row = _row(pg_conn, "agents", ag)
         assert row["access_payer_id"] == "adam" and row["key"] == "k-move-1"
 
+    def test_the_mover_pays_even_over_a_payer_left_on_the_row(self, pg_conn):
+        tid, _ = team(pg_conn)
+        ag = agent(pg_conn, "adam", key="k-move-2", status="published", access_payer_id="olga")
+        apply(pg_conn, "adam", body(tid, [("agent", ag)]))
+        assert _row(pg_conn, "agents", ag)["access_payer_id"] == "adam"
+
     def test_what_cant_move_is_removed_from_the_holder(self, pg_conn):
         tid, _ = team(pg_conn)
         other = other_team(pg_conn)
