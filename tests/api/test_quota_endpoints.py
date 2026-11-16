@@ -442,7 +442,9 @@ class TestMyQuota:
     def test_unlimited_user_sees_no_buckets(self, client, db):
         with _as("u1"):
             body = _body(client.get("/api/user/quota"))
-        assert body == {"success": True, "period": "month", "buckets": []}
+        assert body == {
+            "success": True, "period": "month", "buckets": [], "notice": None, "parts": None, "paused": None,
+        }
 
     def test_limited_user_sees_usage_without_policy_internals(self, client, db):
         QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", token_limit=100, note="secret note")

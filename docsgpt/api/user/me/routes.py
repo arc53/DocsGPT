@@ -7,7 +7,10 @@ auth chokepoint in ``app.py``). Auth-mode-agnostic. ``email``/``name``/
 never present for ``simple_jwt``/``session_jwt``/no-auth modes.
 
 ``GET /api/user/quota`` returns the caller's usage against the limits an admin
-set for them, without naming the policies behind those limits.
+set for them, without naming the policies behind those limits. For a caller
+with a limit it also says how near they are (``notice``, from 80%), what
+their use this period went to (``parts``) and, once a limit is reached, what
+they pay for that has stopped (``paused``).
 
 ``GET``/``PUT /api/user/preferences`` read and set the caller's settings that
 follow them across devices, stored in ``users.tool_preferences``: the prompt
@@ -21,11 +24,13 @@ still wins.
 
 from __future__ import annotations
 
+import logging
+import math
 from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource, fields
-from sqlalchemy import Connection
+from sqlalchemy import Connection, text
 
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids, missing_scope_response
@@ -35,11 +40,16 @@ from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.model_utils import model_is_usable, resolve_task_model_id
 from docsgpt.core.settings import settings
-from docsgpt.quotas.service import REQUEST_BUCKETS, QuotaService
+from docsgpt.quotas.pause import PAYER_OUT_OF_ALLOWANCE, PayerChecks, outside_access_pause, schedule_pause
+from docsgpt.quotas.service import REQUEST_BUCKETS, BucketStatus, QuotaService
+from docsgpt.quotas.windows import window_bounds
 from docsgpt.storage.db import model_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+
+logger = logging.getLogger(__name__)
 
 me_ns = Namespace("me", description="Current user identity and roles", path="/api")
 
@@ -76,10 +86,148 @@ def _own_budget(budget: dict) -> dict:
     return {"limit": budget["limit"], "used": budget["used"]}
 
 
+#: Use, in percent of a limit, from which the caller is told they are near it.
+NEAR_PERCENT = 80
+
+#: The parts of a person's use, in the order the meter shows them.
+QUOTA_PARTS = ("chat", "schedule", "published", "other")
+
+#: Which part each run kind counts toward; a kind not named here (and rows with none) is ``other``.
+_PART_OF_KIND = {
+    "chat": "chat",
+    "drafter": "chat",
+    "schedule": "schedule",
+    "monitor": "schedule",
+    "published": "published",
+}
+
+
+def quota_notice(statuses: list[BucketStatus]) -> Optional[dict]:
+    """The budget the caller has used most of, once that is at least :data:`NEAR_PERCENT`.
+
+    Args:
+        statuses: The caller's bucket statuses (``all``, ``direct``, ``agent``).
+
+    Returns:
+        ``{level: "near" | "reached", percent, bucket, budget: "tokens" | "cost", resets_at}``, or None
+        when every limit is unlimited or under 80% used. ``percent`` is whole, rounded down, at most 100.
+    """
+    best = None
+    for status in statuses:
+        for budget, limit, used in (
+            ("tokens", status.limits.tokens, status.tokens_used),
+            ("cost", status.limits.cost, status.cost_used),
+        ):
+            if limit.unlimited:
+                continue
+            ratio = used / limit.limit if limit.limit > 0 else 1.0
+            if best is None or ratio > best[0]:
+                best = (ratio, status, budget)
+    if best is None:
+        return None
+    ratio, status, budget = best
+    # Rounded first so float noise (0.29 * 100 = 28.999…) doesn't drop a point.
+    percent = min(100, math.floor(round(ratio * 100, 6)))
+    if percent < NEAR_PERCENT:
+        return None
+    return {
+        "level": "reached" if ratio >= 1 else "near",
+        "percent": percent,
+        "bucket": status.bucket,
+        "budget": budget,
+        "resets_at": status.resets_at.isoformat(),
+    }
+
+
+def quota_parts(conn: Connection, user_id: str) -> list[dict]:
+    """This period's use by the caller, split as the meter shows it.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+
+    Returns:
+        ``[{kind, tokens, cost}]`` for each of :data:`QUOTA_PARTS`, in order, zeros included.
+    """
+    start, _ = window_bounds(settings.QUOTA_PERIOD)
+    totals = {part: [0, 0.0] for part in QUOTA_PARTS}
+    for kind, (tokens, cost) in TokenUsageRepository(conn).usage_by_kind(user_id, start).items():
+        part = totals[_PART_OF_KIND.get(kind or "", "other")]
+        part[0] += tokens
+        part[1] += cost
+    return [{"kind": part, "tokens": tokens, "cost": round(cost, 6)} for part, (tokens, cost) in totals.items()]
+
+
+_OUTSIDE_ACCESS_ON = (
+    "(COALESCE(key, '') <> '' OR (shared AND COALESCE(shared_token, '') <> '') "
+    "OR COALESCE(incoming_webhook_token, '') <> '')"
+)
+
+
+def stopped_for_allowance(conn: Connection, user_id: str) -> dict:
+    """What the caller pays for that their used-up allowance has stopped.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+
+    Returns:
+        ``{schedules: n, published: [{agent_id, name, access: [api_key|public_link|webhook]}]}``: the
+        running schedules they set, and the agents whose outside access they pay for, that are paused
+        because they are out of allowance (not for another reason).
+    """
+    checks = PayerChecks()
+    schedules = conn.execute(
+        text(
+            "SELECT a.id, a.user_id, a.key FROM schedules s LEFT JOIN agents a ON a.id = s.agent_id "
+            "WHERE s.user_id = :user AND s.status = 'active'"
+        ),
+        {"user": user_id},
+    ).mappings().fetchall()
+    stopped = 0
+    for row in schedules:
+        agent = {"id": str(row["id"]), "user_id": row["user_id"], "key": row["key"]} if row["id"] else None
+        pause = schedule_pause(conn, {"user_id": user_id}, agent, checks=checks)
+        if pause is not None and pause.reason == PAYER_OUT_OF_ALLOWANCE:
+            stopped += 1
+    # The agents they pay outside traffic for: a team agent naming them, or their own personal agent.
+    agents = conn.execute(
+        text(
+            "SELECT id, name, user_id, access_payer_id, key, shared, shared_token, incoming_webhook_token "
+            "FROM agents WHERE (access_payer_id = :user OR (user_id = :user AND access_payer_id IS NULL)) "
+            f"AND {_OUTSIDE_ACCESS_ON} ORDER BY name, id"
+        ),
+        {"user": user_id},
+    ).mappings().fetchall()
+    published = []
+    for row in agents:
+        agent = dict(row)
+        pause = outside_access_pause(conn, agent, checks=checks)
+        if pause is None or pause.reason != PAYER_OUT_OF_ALLOWANCE:
+            continue
+        access = [
+            name
+            for name, on in (
+                ("api_key", agent.get("key")),
+                ("public_link", agent.get("shared") and agent.get("shared_token")),
+                ("webhook", agent.get("incoming_webhook_token")),
+            )
+            if on
+        ]
+        published.append({"agent_id": str(agent["id"]), "name": agent["name"], "access": access})
+    return {"schedules": stopped, "published": published}
+
+
 @me_ns.route("/user/quota")
 class MyQuotaResource(Resource):
     def get(self):
-        """Return the caller's limited buckets: ``{bucket, tokens, cost, resets_at}`` each."""
+        """Return the caller's limited buckets, the near-limit notice, the parts of their use, and what stopped.
+
+        ``buckets``: ``{bucket, tokens, cost, resets_at}`` each. ``notice``: see :func:`quota_notice`.
+        ``parts``: see :func:`quota_parts`, only when a limit is set. ``paused``: see
+        :func:`stopped_for_allowance`, only when ``notice.level`` is ``reached``. Each of the three is
+        null otherwise, and null too when it can't be worked out: the buckets still answer.
+        """
         decoded_token = getattr(request, "decoded_token", None)
         user_id = decoded_token.get("sub") if decoded_token else None
         if not user_id:
@@ -98,8 +246,33 @@ class MyQuotaResource(Resource):
                     "resets_at": data["resets_at"],
                 }
             )
+        notice = quota_notice(statuses)
+        parts = paused = None
+        if buckets:
+            # An unlimited caller costs no usage query: none of this applies to them.
+            try:
+                with db_readonly() as conn:
+                    parts = quota_parts(conn, user_id)
+            except Exception:
+                logger.exception("quota parts failed for user %s", user_id)
+        if notice is not None and notice["level"] == "reached":
+            try:
+                with db_readonly() as conn:
+                    paused = stopped_for_allowance(conn, user_id)
+            except Exception:
+                logger.exception("quota paused items failed for user %s", user_id)
         return make_response(
-            jsonify({"success": True, "period": settings.QUOTA_PERIOD, "buckets": buckets}), 200
+            jsonify(
+                {
+                    "success": True,
+                    "period": settings.QUOTA_PERIOD,
+                    "buckets": buckets,
+                    "notice": notice,
+                    "parts": parts,
+                    "paused": paused,
+                }
+            ),
+            200,
         )
 
 

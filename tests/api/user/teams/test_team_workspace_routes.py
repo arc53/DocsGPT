@@ -306,7 +306,10 @@ class TestTeamItems:
         assert body["shares"] == []
         assert body["workspace"]["kind"] == "team" and body["workspace"]["team_id"] == tid
         assert body["members_count"] == 4
-        assert body["outside_access"] == {"api_key": False, "public_link": False, "webhook": False, "paid_by": None}
+        assert body["outside_access"] == {
+            "api_key": False, "public_link": False, "webhook": False, "paid_by": None, "paused_for": None,
+            "can_take_over": False,
+        }
 
     def test_settings_cannot_be_changed_on_a_team_item(self, client, db):
         tid = _team(db)

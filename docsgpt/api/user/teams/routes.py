@@ -35,13 +35,14 @@ import logging
 import re
 import uuid
 
-from flask import jsonify, make_response, request
+from flask import Response, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from sqlalchemy import text
 
 from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.api.user.resource_access import (
     RESOURCE_TYPES,
+    WORKSPACE_ACTIONS,
     AccessDenied,
     ResourceAccess,
     build,
@@ -60,6 +61,8 @@ from docsgpt.api.user.team_authz import (
 )
 from docsgpt.api.user.team_sharing import is_valid_resource_type
 from docsgpt.events.publisher import publish_user_event
+from docsgpt.notifications.notify import notify_user
+from docsgpt.quotas.pause import PayerChecks, outside_access_pause
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
@@ -78,8 +81,14 @@ from docsgpt.storage.db.repositories.teams import TeamNotEmpty, TeamsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
-from docsgpt.workspaces.principal import is_principal_id
-from docsgpt.workspaces.roles import from_stored_role, legacy_member_role, team_role_for, to_stored_role
+from docsgpt.workspaces.principal import is_principal_id, principal_id
+from docsgpt.workspaces.roles import (
+    from_stored_role,
+    legacy_member_role,
+    role_at_least,
+    team_role_for,
+    to_stored_role,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +330,207 @@ def _user_labels(conn, user_ids: set[str]) -> dict[str, str]:
         {"ids": ids},
     ).fetchall()
     return {uid: email for uid, email in rows}
+
+
+def person_ref(user_id: str | None, labels: dict[str, str]) -> dict | None:
+    """``{user_id, label}`` naming a person (their email when on file, else their id), or None for nobody.
+
+    Args:
+        user_id: The person, or None.
+        labels: ``_user_labels`` for the ids in play.
+
+    Returns:
+        dict | None: The reference the payloads carry as ``paid_by`` and similar.
+    """
+    if not user_id:
+        return None
+    return {"user_id": user_id, "label": labels.get(user_id) or user_id}
+
+
+def team_admin_refusal(conn, user: str | None, team_id: str) -> Response | None:
+    """Refuse anyone but the team's Owner and Admins, for the team's reports.
+
+    The instance admin gets nothing here: the reports show what members did
+    in the team, which only the team's own admins may read.
+
+    Args:
+        conn: Open connection.
+        user: The caller.
+        team_id: The team, from the URL.
+
+    Returns:
+        A response to return (401 no caller, 404 not in the team, 403
+        ``workspace_role_required`` below Admin), or None to go on.
+    """
+    if not user:
+        return make_response(jsonify({"success": False, "message": "Authentication required"}), 401)
+    role = team_role_for(conn, user, team_id)
+    if role is None:
+        return make_response(jsonify({"success": False, "error": "team_not_found", "message": "Not found"}), 404)
+    if not role_at_least(role, "admin"):
+        return make_response(
+            jsonify(
+                {"success": False, "error": "workspace_role_required", "message": "This needs the admin role"}
+            ),
+            403,
+        )
+    return None
+
+
+#: An agent row (aliased ``a``) with some way in from outside switched on (``has_outside_access``).
+OUTSIDE_ACCESS_ON_SQL = (
+    "(COALESCE(a.key, '') <> '' OR (a.shared AND COALESCE(a.shared_token, '') <> '') "
+    "OR COALESCE(a.incoming_webhook_token, '') <> '')"
+)
+
+
+def pays_for(conn, team_id: str, user_ids: list[str]) -> dict[str, dict[str, int]]:
+    """What each person pays for on the team's agents.
+
+    Args:
+        conn: Open connection.
+        team_id: The team.
+        user_ids: The people.
+
+    Returns:
+        ``{user_id: {"schedules": n, "outside_access": n}}`` for every id:
+        the running schedules they set on the team's agents, and the team
+        agents with outside access on that they are the payer of.
+    """
+    ids = sorted({u for u in user_ids if u})
+    out = {u: {"schedules": 0, "outside_access": 0} for u in ids}
+    if not ids or not looks_like_uuid(str(team_id)):
+        return out
+    params = {"principal": principal_id(team_id), "ids": ids}
+    schedules = conn.execute(
+        text(
+            "SELECT s.user_id, count(*) FROM schedules s JOIN agents a ON a.id = s.agent_id "
+            "WHERE a.user_id = :principal AND s.user_id = ANY(:ids) AND s.status = 'active' GROUP BY s.user_id"
+        ),
+        params,
+    ).fetchall()
+    access = conn.execute(
+        text(
+            "SELECT a.access_payer_id, count(*) FROM agents a WHERE a.user_id = :principal "
+            f"AND a.access_payer_id = ANY(:ids) AND {OUTSIDE_ACCESS_ON_SQL} GROUP BY a.access_payer_id"
+        ),
+        params,
+    ).fetchall()
+    for user_id, count in schedules:
+        out[user_id]["schedules"] = int(count)
+    for user_id, count in access:
+        out[user_id]["outside_access"] = int(count)
+    return out
+
+
+def _paused_by_change(conn, team_id: str, member: str, before: str | None, after: str | None) -> dict[str, int]:
+    """What a membership change pauses of what ``member`` pays for in the team.
+
+    A schedule pauses when its setter drops below the role that manages
+    schedules, outside access when its payer drops below the role that
+    manages access details; whatever was paused already is not counted again.
+
+    Args:
+        conn: Open connection.
+        team_id: The team.
+        member: The person whose membership changed.
+        before: Their team role before (API name), or None.
+        after: Their team role after, or None when they left.
+
+    Returns:
+        ``{"schedules": n, "outside_access": n}``.
+    """
+    counts = pays_for(conn, team_id, [member])[member]
+    paused = {}
+    for key, action in (("schedules", "manage_schedules"), ("outside_access", "manage_access_details")):
+        needed = WORKSPACE_ACTIONS["agent"][action]
+        lost = role_at_least(before, needed) and not role_at_least(after, needed)
+        paused[key] = counts[key] if lost else 0
+    return paused
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def payer_left_text(member_label: str, team_name: str, new_role: str | None, paused: dict[str, int]) -> str:
+    """The notice the team's admins get: who changed, and what of theirs is paused.
+
+    Args:
+        member_label: The member, as people read them.
+        team_name: The team's name.
+        new_role: Their role now, or None when they left.
+        paused: ``_paused_by_change`` counts (at least one non-zero).
+
+    Returns:
+        One sentence, e.g. "dana@x.io left Operations: 2 schedules and outside
+        access on 1 agent are paused until someone takes over."
+    """
+    if new_role is None:
+        lead = f"{member_label} left {team_name}"
+    else:
+        article = "an" if new_role[:1] in "aeiou" else "a"
+        lead = f"{member_label} is now {article} {new_role.capitalize()} in {team_name}"
+    parts = []
+    if paused["schedules"]:
+        parts.append(_plural(paused["schedules"], "schedule"))
+    if paused["outside_access"]:
+        parts.append(f"outside access on {_plural(paused['outside_access'], 'agent')}")
+    verb = "are" if len(parts) > 1 or paused["schedules"] > 1 else "is"
+    return f"{lead}: {' and '.join(parts)} {verb} paused until someone takes over."
+
+
+def _payer_left_notice(
+    conn, team_id: str, member: str, before: str | None, after: str | None, actor: str | None
+) -> dict | None:
+    """Work out, inside the change's transaction, the notice a removal or demotion owes the team's admins.
+
+    Args:
+        conn: Open connection, after the change.
+        team_id: The team.
+        member: Whose membership changed.
+        before: Their stored role before.
+        after: Their stored role after, or None when they left.
+        actor: Who made the change; they saw what it pauses before confirming, so they aren't told again.
+
+    Returns:
+        ``{recipients, title, body, url}``, or None when the change pauses nothing, or when working it
+        out fails: the notice is best-effort and never fails the change (its reads run in a savepoint).
+    """
+    new_role = from_stored_role(after) if after else None
+    try:
+        with conn.begin_nested():
+            paused = _paused_by_change(conn, team_id, member, from_stored_role(before), new_role)
+            if not any(paused.values()):
+                return None
+            team = TeamsRepository(conn).get(team_id) or {}
+            label = _user_labels(conn, {member}).get(member) or member
+            recipients = [u for u in TeamsRepository(conn).admin_ids(team_id) if u != actor and u != member]
+    except Exception:
+        logger.warning("payer_left notice failed for team=%s", team_id, exc_info=True)
+        return None
+    team_name = team.get("name") or "the team"
+    return {
+        "recipients": recipients,
+        "title": f"Paused in {team_name}",
+        "body": payer_left_text(label, team_name, new_role, paused),
+        "url": f"/teams/{team_id}/usage",
+    }
+
+
+def _send_payer_left(notice: dict | None) -> None:
+    """Send a ``_payer_left_notice`` after the change committed; never raises."""
+    if not notice:
+        return
+    for recipient in notice["recipients"]:
+        notify_user(
+            user_id=recipient,
+            conversation_id=None,
+            kind="payer_left",
+            title=notice["title"],
+            body=notice["body"],
+            url=notice["url"],
+        )
 
 
 def _valid_resource(resource_type, resource_id) -> bool:
@@ -605,6 +815,11 @@ class TeamMembers(Resource):
         Optional query args: ``q`` (case-insensitive substring over email and
         user id), ``page`` (1-based) and ``page_size`` (1..100; paginates only
         when given). ``total`` is the row count after the ``q`` filter.
+
+        For the team's Owner and Admins each row also has ``pays_for``
+        (``{schedules, outside_access}``): the running schedules the member set
+        on the team's agents and the team agents whose outside access they pay
+        for, which pause when they leave or lose the role.
         """
         q, limit, offset = _members_query()
         try:
@@ -615,6 +830,10 @@ class TeamMembers(Resource):
                     repo.list_members(team_id, q=q, limit=limit, offset=offset), (team or {}).get("owner_id")
                 )
                 total = repo.count_members(team_id, q=q)
+                if role_at_least(team_role_for(conn, _current_user(), team_id), "admin"):
+                    counts = pays_for(conn, team_id, [m.get("user_id") for m in members])
+                    for member in members:
+                        member["pays_for"] = counts.get(member.get("user_id"), {"schedules": 0, "outside_access": 0})
             return make_response(
                 jsonify({"success": True, "members": members, "total": total}), 200
             )
@@ -645,6 +864,7 @@ class TeamMembers(Resource):
             "message": "No user found with that email (they must sign in once first)",
         }
         actor = _current_user()
+        notice = None
         try:
             with db_session() as conn:
                 # Resolve an email to its sub (the user must have logged in at
@@ -676,9 +896,11 @@ class TeamMembers(Resource):
                     )
                 elif before != role:
                     _audit_role_change(conn, actor, team_id, new_user, before, role)
+                    notice = _payer_left_notice(conn, team_id, new_user, before, role, actor)
             # Post-commit, best-effort: tell the new member they were added.
             if before is None:
                 _notify_member_added(team_id, new_user, role, actor)
+            _send_payer_left(notice)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Add member failed: %s", err, exc_info=True)
@@ -714,6 +936,7 @@ class TeamMember(Resource):
         if role is None:
             return {"success": False, "message": "invalid role"}, 400
         actor = _current_user()
+        notice = None
         try:
             with db_session() as conn:
                 members = TeamMembersRepository(conn)
@@ -727,6 +950,8 @@ class TeamMember(Resource):
                     return _refusal(refused)
                 if before != role:
                     _audit_role_change(conn, actor, team_id, member_id, before, role)
+                    notice = _payer_left_notice(conn, team_id, member_id, before, role, actor)
+            _send_payer_left(notice)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Update member role failed: %s", err, exc_info=True)
@@ -743,10 +968,10 @@ class TeamMember(Resource):
             return {"success": False, "message": "Forbidden"}, 403
         try:
             with db_session() as conn:
+                members = TeamMembersRepository(conn)
+                before = members.role_for(member_id, team_id)
                 try:
-                    TeamMembersRepository(conn).change_membership(
-                        team_id, member_id, None, actor=user
-                    )
+                    members.change_membership(team_id, member_id, None, actor=user)
                 except MembershipChangeRefused as refused:
                     return _refusal(refused)
                 _audit(
@@ -757,6 +982,8 @@ class TeamMember(Resource):
                     target_user=member_id,
                     self_leave=is_self,
                 )
+                notice = _payer_left_notice(conn, team_id, member_id, before, None, user) if before else None
+            _send_payer_left(notice)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Remove member failed: %s", err, exc_info=True)
@@ -1024,7 +1251,7 @@ class ResourceShares(Resource):
             with db_readonly() as conn:
                 ra = resolve(conn, resource_type, resource_id, user)
                 if ra is not None and ra.is_team_item:
-                    return make_response(jsonify(_team_item_shares(conn, ra)), 200)
+                    return make_response(jsonify(_team_item_shares(conn, ra, user)), 200)
                 try:
                     require(conn, resource_type, resource_id, user, "share")
                 except AccessDenied as denied:
@@ -1038,19 +1265,23 @@ class ResourceShares(Resource):
             return {"success": False}, 400
 
 
-def _team_item_shares(conn, ra: ResourceAccess) -> dict:
+def _team_item_shares(conn, ra: ResourceAccess, user: str | None = None) -> dict:
     """The share dialog of a team's item: the workspace, its size and the agent's outside access.
 
     Args:
         conn: Open connection.
         ra: The caller's access to the item (a team item).
+        user: The caller.
 
     Returns:
         dict: ``success``, ``shares`` (always empty), ``workspace`` (``{kind, team_id, name}``),
         ``members_count``, and for an agent ``outside_access`` (``{api_key, public_link, webhook,
-        paid_by}``; ``paid_by`` is the published-access payer as ``{user_id, label}``, None while the
-        agent has no outside access or nobody pays for it). The payer is named to every member, as
-        the team's own record, by their email when on file, else by their user id.
+        paid_by, paused_for, can_take_over}``). ``paid_by`` is the published-access payer as
+        ``{user_id, label}``, None while the agent has no outside access or nobody pays for it; the
+        payer is named to every member, as the team's own record, by their email when on file, else
+        by their user id. ``paused_for`` (``{reason, until}`` or None) says why outside traffic is
+        refused for its payer. ``can_take_over`` is true for a caller who may manage the access
+        details and isn't the payer, while something is switched on.
     """
     team = TeamsRepository(conn).get(ra.team_id) or {}
     members_count = conn.execute(
@@ -1066,13 +1297,17 @@ def _team_item_shares(conn, ra: ResourceAccess) -> dict:
     }
     if ra.resource_type == "agent":
         agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}
-        payer = agent.get("access_payer_id") if has_outside_access(agent) else None
+        switched_on = has_outside_access(agent)
+        payer = agent.get("access_payer_id") if switched_on else None
+        pause = outside_access_pause(conn, agent, checks=PayerChecks()) if switched_on else None
         body["outside_access"] = {
             "api_key": bool(agent.get("key")),
             "public_link": bool(agent.get("shared") and agent.get("shared_token")),
             "webhook": bool(agent.get("incoming_webhook_token")),
-            "paid_by": (
-                {"user_id": payer, "label": _user_labels(conn, {payer}).get(payer) or payer} if payer else None
+            "paid_by": person_ref(payer, _user_labels(conn, {payer}) if payer else {}),
+            "paused_for": pause.payload() if pause else None,
+            "can_take_over": bool(
+                switched_on and user and ra.can("manage_access_details") and payer != user
             ),
         }
     return body

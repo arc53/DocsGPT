@@ -16,6 +16,7 @@ from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource, fields
 
 from docsgpt.api import api
+from docsgpt.core.settings import settings
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -62,7 +63,8 @@ def list_workspaces(conn, user: str) -> list[dict]:
 
     Returns:
         list[dict]: ``{id: "personal", kind, name}`` first, then ``{id, kind: "team", name, slug, role,
-        member_count, principal_label}`` per team.
+        member_count, principal_label, chat_export}`` per team. ``chat_export`` says whether the team's
+        Owner and Admins can export its chats (``TEAM_CHAT_EXPORT_ENABLED``), so every member can be told.
     """
     teams = TeamsRepository(conn).workspaces_for(user)
     labels = UsersRepository(conn).principal_labels(principal_id(t["id"]) for t in teams)
@@ -77,6 +79,7 @@ def list_workspaces(conn, user: str) -> list[dict]:
             "role": _team_role(team),
             "member_count": int(team.get("member_count") or 0),
             "principal_label": labels.get(principal_id(team_id)),
+            "chat_export": bool(settings.TEAM_CHAT_EXPORT_ENABLED),
         })
     return out
 
