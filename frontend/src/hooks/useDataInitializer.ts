@@ -151,7 +151,9 @@ export default function useDataInitializer(
       return;
     }
 
-    // A switch empties the list, which loads it here again.
+    // A switch empties the list, which loads it here again; the workspace
+    // is watched too, since a list that was already empty (its load still
+    // out, or failed) doesn't change.
     const fetchConversationsData = async () => {
       if (!conversations?.data) {
         const workspace = captureWorkspace();
@@ -169,5 +171,5 @@ export default function useDataInitializer(
     };
 
     fetchConversationsData();
-  }, [isAuthLoading, conversations?.data, token]);
+  }, [isAuthLoading, conversations?.data, token, workspaceId]);
 }

@@ -6,6 +6,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import workspacesService from '../api/services/workspacesService';
+import { readerIdFromToken } from '../utils/personLabel';
 import { PERSONAL_WORKSPACE, setRequestWorkspace } from './requestWorkspace';
 
 export type WorkspaceKind = 'personal' | 'team';
@@ -49,6 +50,19 @@ export type WorkspaceState = {
 export const WORKSPACE_STORAGE_KEY = 'DocsGPTWorkspace';
 const LEGACY_TEAM_KEY = 'currentTeamId';
 
+/**
+ * The storage key for one person's choice: one per user id, so another
+ * account signing in on this browser doesn't start in a team that isn't
+ * theirs; the bare key without a signed-in person (no-auth installs).
+ *
+ * Args:
+ *   token: The session token, or null.
+ */
+export function workspaceStorageKey(token: string | null | undefined): string {
+  const userId = readerIdFromToken(token);
+  return userId ? `${WORKSPACE_STORAGE_KEY}:${userId}` : WORKSPACE_STORAGE_KEY;
+}
+
 export const PERSONAL_ROW: WorkspaceRow = {
   id: PERSONAL_WORKSPACE,
   kind: 'personal',
@@ -61,11 +75,12 @@ export const PERSONAL_ROW: WorkspaceRow = {
  */
 function readStoredWorkspace(): string {
   try {
-    const stored = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    const key = workspaceStorageKey(localStorage.getItem('authToken'));
+    const stored = localStorage.getItem(key);
     if (stored) return stored;
     const legacy = localStorage.getItem(LEGACY_TEAM_KEY);
     if (legacy) {
-      localStorage.setItem(WORKSPACE_STORAGE_KEY, legacy);
+      localStorage.setItem(key, legacy);
       localStorage.removeItem(LEGACY_TEAM_KEY);
       return legacy;
     }
@@ -76,14 +91,15 @@ function readStoredWorkspace(): string {
 }
 
 /**
- * Keeps the chosen workspace for the next visit.
+ * Keeps the chosen workspace for the person's next visit.
  *
  * Args:
  *   id: `personal` or a team id.
+ *   token: The session token, which names the person.
  */
-export function storeWorkspace(id: string): void {
+export function storeWorkspace(id: string, token: string | null): void {
   try {
-    localStorage.setItem(WORKSPACE_STORAGE_KEY, id);
+    localStorage.setItem(workspaceStorageKey(token), id);
     localStorage.removeItem(LEGACY_TEAM_KEY);
   } catch {
     // Storage off: the choice lasts for this visit.

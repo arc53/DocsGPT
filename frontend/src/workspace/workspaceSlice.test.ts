@@ -37,8 +37,13 @@ const load = async () => {
   const listener = await import('./workspaceListener');
   const request = await import('./requestWorkspace');
   const toast = await import('../notifications/actionToastSlice');
+  const preference = await import('../preferences/preferenceSlice');
   const store = configureStore({
-    reducer: { workspace: slice.default, actionToast: toast.default },
+    reducer: {
+      workspace: slice.default,
+      actionToast: toast.default,
+      preference: preference.default,
+    },
     middleware: (getDefault) =>
       getDefault().prepend(listener.workspaceListenerMiddleware.middleware),
   });
@@ -72,6 +77,25 @@ describe('workspace slice: where the app starts', () => {
     expect(slice.selectWorkspaceId(store.getState())).toBe('t9');
     expect(localStorage.getItem(STORAGE_KEY)).toBe('t9');
     expect(localStorage.getItem('currentTeamId')).toBeNull();
+  });
+
+  it("keeps each person's choice apart, so another account on this browser starts in Personal", async () => {
+    const token = (sub: string) =>
+      `h.${btoa(JSON.stringify({ sub })).replace(/=+$/, '')}.s`;
+    localStorage.setItem('authToken', token('alice'));
+    const first = await load();
+    first.store.dispatch(first.slice.switchWorkspace('t1'));
+
+    localStorage.setItem('authToken', token('bob'));
+    const second = await load();
+    expect(second.slice.selectWorkspaceId(second.store.getState())).toBe(
+      'personal',
+    );
+    expect(second.request.requestWorkspace()).toBe('personal');
+
+    localStorage.setItem('authToken', token('alice'));
+    const again = await load();
+    expect(again.slice.selectWorkspaceId(again.store.getState())).toBe('t1');
   });
 
   it('prefers the new key over a leftover currentTeamId', async () => {

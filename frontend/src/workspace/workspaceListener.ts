@@ -35,9 +35,10 @@ export const workspaceListenerMiddleware = createListenerMiddleware();
 workspaceListenerMiddleware.startListening({
   actionCreator: switchWorkspace,
   effect: (_action, api) => {
-    const { current, epoch } = (api.getState() as ListenerState).workspace;
+    const state = api.getState() as ListenerState;
+    const { current, epoch } = state.workspace;
     setRequestWorkspace(current, epoch);
-    storeWorkspace(current);
+    storeWorkspace(current, tokenOf(state));
   },
 });
 
