@@ -477,3 +477,35 @@ class TestKeyChatsFollowTheAgentsOwner:
         for conv_id in (by_key, no_agent):
             assert _owners(pg_conn, conv_id) == ("adam", None, {"adam"}, {"adam"})
         assert _owners(pg_conn, unrelated) == (principal, tid, {principal}, {principal})
+
+
+class TestLegacyToolRefs:
+    """An install migrated from Mongo may still name an agent's tool by its old id."""
+
+    def test_a_tool_named_by_its_old_id_moves_and_the_agent_names_it_by_uuid(self, pg_conn):
+        tid, principal = team(pg_conn)
+        tl = tool(pg_conn, "eddie")
+        legacy = "65a1b2c3d4e5f60718293a4b"
+        pg_conn.execute(text("UPDATE user_tools SET legacy_mongo_id = :l WHERE id = CAST(:i AS uuid)"),
+                        {"l": legacy, "i": tl})
+        ag = agent(pg_conn, "eddie", tools=[legacy])
+
+        planned = plan(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
+
+        assert ("tool", tl) in {(m["type"], m["id"]) for m in planned["moves_with"]}
+        assert owner_of(pg_conn, "tool", tl) == principal
+        assert _row(pg_conn, "agents", ag)["tools"] == [tl]
+
+    def test_someone_elses_tool_named_by_its_old_id_is_taken_off(self, pg_conn):
+        tid, _ = team(pg_conn)
+        theirs = tool(pg_conn, "olga")
+        legacy = "65a1b2c3d4e5f60718293a4c"
+        pg_conn.execute(text("UPDATE user_tools SET legacy_mongo_id = :l WHERE id = CAST(:i AS uuid)"),
+                        {"l": legacy, "i": theirs})
+        ag = agent(pg_conn, "eddie", tools=[legacy])
+
+        apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
+
+        assert owner_of(pg_conn, "tool", theirs) == "olga"
+        assert _row(pg_conn, "agents", ag)["tools"] == []

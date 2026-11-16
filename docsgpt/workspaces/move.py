@@ -30,9 +30,9 @@ What a move takes along, and what it can't:
   the workspace they were started in: a move never puts someone's private
   chat where a team's admins could export it. Chats through the agent's key,
   widget or webhook, stored under its owner, go to the new owner so the key
-  can continue them. Schedules keep the person who
-  set them (they pay), and outside access (key, link, webhook) keeps running
-  on the mover as its payer. ``created_by`` is kept.
+  can continue them. Schedules keep the person who set them (they pay), and
+  outside access (key, link, webhook) keeps running on the mover as its payer.
+  ``created_by`` is kept.
 - A move in that would leave any agent with outside access (whoever owns it)
   using a moved item is refused with 409 ``move_would_borrow``: its key, link
   or webhook would serve a team's item. The agents the mover can open are
@@ -283,6 +283,7 @@ class MovePlan:
         members: Everyone in the team (the owner included).
         blocking: Agents left behind that refuse the move (``borrowing_agents`` entries the mover can open).
         blocking_hidden: How many more refuse it that the mover can't open.
+        legacy_tools: An agent's tool refs that still name a tool by its Mongo id: ``old id -> uuid``.
     """
 
     body: dict
@@ -302,6 +303,7 @@ class MovePlan:
     members: list = field(default_factory=list)
     blocking: list = field(default_factory=list)
     blocking_hidden: int = 0
+    legacy_tools: dict = field(default_factory=dict)
 
     def ids(self, kind: str) -> list[str]:
         """The ids of one kind that move, in plan order."""
@@ -428,6 +430,7 @@ class _Planner:
         self.workflows: dict[str, dict] = {}
         self.stays: list[tuple[str, str]] = []
         self.dragged: list[tuple[str, str]] = []
+        self.legacy_tools: dict[str, str] = {}
         # Folders that take every item filed in them: the dragged ones and their sub-folders.
         self.whole_folders: set[str] = set()
         self._queue: list[tuple[str, str]] = []
@@ -586,6 +589,16 @@ class _Planner:
                 self.whole_folders.update(FoldersRepository(self.conn).subtree_levels(key[1], self.old_owner))
 
     def _dependency(self, kind: str, item_id: str, via: tuple[str, str]) -> None:
+        if kind == "tool" and not looks_like_uuid(item_id):
+            # Installs migrated from Mongo may still name a tool by its old id: it is planned (and the agent's
+            # ref rewritten) as the tool it names, so it doesn't stay behind unresolvable.
+            tool_id = self.conn.execute(
+                text("SELECT id::text FROM user_tools WHERE lower(legacy_mongo_id) = :legacy LIMIT 1"),
+                {"legacy": item_id.lower()},
+            ).scalar()
+            if tool_id:
+                self.legacy_tools[item_id] = tool_id
+                item_id = tool_id
         key = (kind, item_id)
         self.referenced.add(key)
         if key in self.moving or not looks_like_uuid(item_id):
@@ -976,6 +989,7 @@ class _Planner:
             members=sorted(members),
             blocking=blocking,
             blocking_hidden=hidden,
+            legacy_tools=self.legacy_tools,
         )
 
 
@@ -1284,8 +1298,10 @@ class _Executor:
                 fields["extra_source_ids"] = extra
             if row.get("prompt_id") and not self._kept("prompt", row["prompt_id"]):
                 fields["prompt_id"] = None
-            tools = [t for t in row.get("tools") or [] if self._kept("tool", t)]
-            if len(tools) != len(row.get("tools") or []):
+            named = row.get("tools") or []
+            tools = [self.plan.legacy_tools.get(str(t).lower(), t) for t in named]
+            tools = [t for t in tools if self._kept("tool", t)]
+            if tools != named:
                 fields["tools"] = tools
             folders = [f for f in row.get("knowledge_folder_ids") or [] if self._kept("folder", f)]
             if len(folders) != len(row.get("knowledge_folder_ids") or []):
