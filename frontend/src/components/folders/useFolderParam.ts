@@ -59,22 +59,30 @@ export function useFolderParam(kind?: ItemKind): FolderParam {
   );
 
   const missing = Boolean(folderId) && list.loaded && !tree.byId.has(folderId!);
+  // The missing folder already toasted for, so an effect that runs again
+  // before the redirect lands doesn't toast twice. It is cleared once the
+  // page is somewhere else, so coming back to it (Back, a stale link) toasts
+  // and redirects again.
   const toasted = useRef<string | null>(null);
   useEffect(() => {
-    if (!missing || !folderId) return;
+    if (!missing || !folderId) {
+      toasted.current = null;
+      return;
+    }
     // Deleted here: its contents went to the parent, and so does the page.
     if (folderId in list.removedParents) {
       setFolder(list.removedParents[folderId], true);
       return;
     }
-    if (toasted.current === folderId) return;
-    toasted.current = folderId;
-    dispatch(
-      showActionToast({
-        variant: 'destructive',
-        message: t('folders.errors.openFailed'),
-      }),
-    );
+    if (toasted.current !== folderId) {
+      toasted.current = folderId;
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('folders.errors.openFailed'),
+        }),
+      );
+    }
     setFolder(null, true);
   }, [missing, folderId, list.removedParents, dispatch, setFolder, t]);
 
