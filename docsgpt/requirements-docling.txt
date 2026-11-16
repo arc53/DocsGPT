@@ -980,9 +980,9 @@ google-auth-oauthlib==1.5.0 \
     --hash=sha256:71625fdea21c6c03217eb9ff13741c3096e6d257ebca0ad084dbd6e9f4aa4ef4 \
     --hash=sha256:b351107c7dd9017f426cbb0272ea1bc04f469020fd18f4443c7d40362e0b1510
     # via docsgpt
-google-genai==2.34.0 \
-    --hash=sha256:8e182cf3f73384167b96861cf0aef5102b5070f2db1ea11002879e913806ef37 \
-    --hash=sha256:a4cb02aebc4c357f863d2938132f0e3f7967fc5e00b8a4078673f68aad340665
+google-genai==3.0.0 \
+    --hash=sha256:af56a7754312c3a4a562e100160d05b701d03d5f49101e6c85796694a789ae07 \
+    --hash=sha256:f3e1a05a464a39cb6caf59a69824d3c54ef20dc5e403ff8fab1f4662cb18edf9
     # via docsgpt
 google-re2==1.1.20251105 \
     --hash=sha256:0476b07421b8882b279d5ceb5b760c15c62d581ded95274697fc1227e3869ee6 \
@@ -1224,7 +1224,6 @@ httpx==0.28.1 \
     #   daytona
     #   docling-slim
     #   elevenlabs
-    #   google-genai
     #   httpx-ws
     #   huggingface-hub
     #   qdrant-client
@@ -1239,6 +1238,7 @@ httpx2==2.16.0 \
     #   anthropic
     #   docsgpt
     #   fastmcp-slim
+    #   google-genai
     #   mcp
     #   openai
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten' \
