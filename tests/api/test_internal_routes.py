@@ -418,7 +418,7 @@ class TestUploadIndex:
         """Post a sync whose two looks at the source row find ``rows`` in turn."""
         data = {**self._faiss_form(source_id, *self._index_files()), "operation": "sync"}
         found = iter(rows)
-        with patch("docsgpt.api.internal.routes._locked_source", side_effect=lambda *a: next(found)):
+        with patch("docsgpt.api.internal.routes._locked_source", side_effect=lambda *a, **k: next(found)):
             return self._post_faiss(pg_conn, storage, data)
 
     def test_faiss_sync_of_a_source_deleted_while_its_files_saved_removes_them(self, pg_conn, tmp_path):

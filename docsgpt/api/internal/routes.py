@@ -157,7 +157,7 @@ def upload_index_files():
         # converted meanwhile must not overwrite its index. The check commits
         # straight away, so no row lock is held while the files upload.
         with db_session() as conn:
-            refusal = _sync_refusal(source_id, _locked_source(SourcesRepository(conn), source_id, user))
+            refusal = _sync_refusal(source_id, _locked_source(SourcesRepository(conn), source_id, user, any_owner=True))
         if refusal is not None:
             return refusal
     if faiss_files is not None:
@@ -179,7 +179,7 @@ def upload_index_files():
         repo = SourcesRepository(conn)
         # Locked until the write: a settings change waits instead of landing
         # between this read and the update, and a sync re-checks the row here.
-        existing = _locked_source(repo, source_id, user)
+        existing = _locked_source(repo, source_id, user, any_owner=is_sync)
         if is_sync:
             refusal = _sync_refusal(source_id, existing)
             if refusal is not None:
@@ -206,7 +206,8 @@ def upload_index_files():
                     stored_remote["sync_fingerprint"] = fingerprint
                 update_fields["remote_data"] = stored_remote
         if existing is not None:
-            repo.update(str(existing["id"]), user, update_fields)
+            # The row's own owner: a sync's source may have moved to another workspace since it was queued.
+            repo.update(str(existing["id"]), existing.get("user_id") or user, update_fields)
         else:
             repo.create(
                 job_name,
@@ -233,18 +234,25 @@ def upload_index_files():
     return {"status": "ok"}
 
 
-def _locked_source(repo: SourcesRepository, source_id: str, user: str) -> Optional[dict]:
+def _locked_source(
+    repo: SourcesRepository, source_id: str, user: str, *, any_owner: bool = False,
+) -> Optional[dict]:
     """The source row, locked for update when its id is a uuid, else looked up by its legacy id.
 
     Args:
         repo: A repository on the open transaction.
         source_id: The id the worker sent.
         user: The owner.
+        any_owner: Find a uuid source whoever owns it now. A sync carries the
+            owner it was queued with, and a source moved to another workspace
+            while it ran is still there: missing it would read as deleted and
+            drop the source's vectors.
 
     Returns:
         The row, or ``None`` when there is none.
     """
-    existing = repo.get_for_update(source_id, user) if looks_like_uuid(source_id) else None
+    owner = None if any_owner else user
+    existing = repo.get_for_update(source_id, owner) if looks_like_uuid(source_id) else None
     return existing if existing is not None else repo.get_by_legacy_id(source_id, user)
 
 
