@@ -34,6 +34,12 @@ export type KnowledgeRowsInput = {
   /** The sources the kind track lets through, within the open place. */
   shownDocs: Doc[];
   pick: KnowledgePick;
+  /**
+   * The pick as the picker opened. A nested folder or filed source picked
+   * then keeps its Selected row at the root after it is unticked, so it can
+   * be ticked again in place (the current pick alone would drop the row).
+   */
+  pickedAtOpen?: KnowledgePick;
   /** The open folder, or null at the root. */
   place: string | null;
   /** The search as typed. */
@@ -87,6 +93,7 @@ export function buildKnowledgeRows({
   docs,
   shownDocs,
   pick,
+  pickedAtOpen,
   place,
   query,
   kindFiltered,
@@ -276,13 +283,22 @@ export function buildKnowledgeRows({
   // The root.
   const topLevel = childFolders(tree, null).filter(holdsKnowledge);
   const topIds = new Set(topLevel.map((folder) => folder.id));
-  const nestedPicked = pick.folders
+  // What is picked now or was as the picker opened: the Selected rows stay
+  // put while their boxes are toggled.
+  const pinnedFolders = [
+    ...new Set([...(pickedAtOpen?.folders ?? []), ...pick.folders]),
+  ];
+  const pinnedSources = new Set([
+    ...(pickedAtOpen?.sources ?? []),
+    ...pickedSources,
+  ]);
+  const nestedPicked = pinnedFolders
     .filter((id) => tree.byId.has(id) && !topIds.has(id))
     .map((id) => tree.byId.get(id) as Folder);
   const loose = shownDocs.filter((doc) => docFolderId(tree, doc) === null);
   const filedPicked = shownDocs.filter(
     (doc) =>
-      docFolderId(tree, doc) !== null && pickedSources.has(sourceItemId(doc)),
+      docFolderId(tree, doc) !== null && pinnedSources.has(sourceItemId(doc)),
   );
   return [
     ...topLevel.map((folder) =>

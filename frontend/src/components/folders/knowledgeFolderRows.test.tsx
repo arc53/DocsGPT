@@ -134,6 +134,22 @@ describe('buildKnowledgeRows at the root', () => {
   });
 });
 
+describe('buildKnowledgeRows toggling a pinned row at the root', () => {
+  it('keeps an unticked subfolder or filed source picked at open, to tick again', () => {
+    const list = rows({
+      pick: pick(),
+      pickedAtOpen: pick(['tenders'], ['rates']),
+    });
+    const pinned = list.filter((row) => row.pinnedOnly);
+    expect(pinned.map((row) => [row.label, row.checked])).toEqual([
+      ['Rate archive', undefined],
+      ['tenders', undefined],
+    ]);
+    // Unticked, not included: it can be ticked again in place.
+    expect(pinned.every((row) => !row.disabled)).toBe(true);
+  });
+});
+
 describe('buildKnowledgeRows in a folder', () => {
   it('leads with All of the folder, then its folders and sources', () => {
     const list = rows({ place: 'carriers' });

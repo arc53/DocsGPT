@@ -175,11 +175,14 @@ export function useKnowledgeFolderPicker({
   // Each open starts at the root with an empty search, and reads the
   // folders again so the counts are the server's.
   const [wasOpen, setWasOpen] = useState(open);
+  // The pick as it opened: its Selected rows stay while they are toggled.
+  const [pickedAtOpen, setPickedAtOpen] = useState(pick);
   if (wasOpen !== open) {
     setWasOpen(open);
     if (open) {
       setPlace(null);
       setSearch('');
+      setPickedAtOpen(pick);
     }
   }
   // Only an open asks (reload is a new function every render).
@@ -233,6 +236,7 @@ export function useKnowledgeFolderPicker({
       docs,
       shownDocs: kinds.docs,
       pick,
+      pickedAtOpen,
       place: openPlace,
       query: search,
       kindFiltered: kinds.kind !== 'all',
@@ -256,6 +260,7 @@ export function useKnowledgeFolderPicker({
     tree,
     docs,
     pick,
+    pickedAtOpen,
     openPlace,
     search,
     unlistedFolders,
