@@ -122,7 +122,7 @@ import {
 import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
 import { joinList } from '../settings/insights/format';
-import { can } from '../utils/accessUtils';
+import { can, canPublish } from '../utils/accessUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import {
   selectedSourceIdsFromAgent,
@@ -209,6 +209,7 @@ import type { Model } from '../models/types';
 import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
 import {
   selectCurrentWorkspace,
+  selectWorkspaceRoleOrNull,
   type WorkspaceState,
 } from '../workspace/workspaceSlice';
 
@@ -390,6 +391,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     (agent as { workspace?: ItemWorkspace }).workspace,
   );
   const teamName = useSelector(selectTeamName);
+  const workspaceRole = useSelector(selectWorkspaceRoleOrNull);
   // The agent's folder (a new one's, from the address it was started in):
   // the pickers list what is filed there first.
   const holderFolder = pickerScope.holderElsewhere
@@ -2140,9 +2142,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // What the caller's role allows on this agent (`allowed_actions` from the
   // API). A new agent carries no access fields, so it reads as the owner's.
   const canEditPolicy = can(agent, 'edit_policy');
+  // A new agent is the workspace's: in a team only an Admin publishes it.
+  const mayPublish = canPublish(agent, workspaceRole);
   // Save on a published agent is an edit; on a draft or a new agent the main
   // button publishes it.
-  const canSubmit = can(agent, effectiveMode === 'edit' ? 'edit' : 'publish');
+  const canSubmit = effectiveMode === 'edit' ? can(agent, 'edit') : mayPublish;
+  // Someone who may save but not publish (a team's Editor) gets Save draft as
+  // the main button instead, since the server would refuse Publish.
+  const draftIsMain =
+    !canSubmit && modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit');
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
 
@@ -2324,7 +2332,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const agentMenu = useAgentMenu({
     agent,
     lead: [
-      ...(modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit')
+      ...(modeConfig[effectiveMode].showSaveDraft &&
+      can(agent, 'edit') &&
+      !draftIsMain
         ? [
             {
               label: t('agents.form.buttons.saveDraft'),
@@ -2408,6 +2418,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           className="flex-1 @2xl:flex-none"
         >
           {modeConfig[effectiveMode].buttonText}
+        </Button>
+      )}
+      {draftIsMain && (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          disabled={isDraftBlocked || publishLoading}
+          loading={draftLoading}
+          onClick={() => void saveAgent('draft')}
+          className="flex-1 @2xl:flex-none"
+        >
+          {t('agents.form.buttons.saveDraft')}
         </Button>
       )}
     </div>
@@ -3299,7 +3322,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   title={t('agents.form.preview.publishTitle')}
                   description={t('agents.form.preview.publishDescription')}
                   action={
-                    can(agent, 'publish') ? (
+                    mayPublish ? (
                       <Button
                         type="button"
                         size="sm"

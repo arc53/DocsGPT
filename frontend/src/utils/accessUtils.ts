@@ -94,6 +94,32 @@ export function can(
 }
 
 /**
+ * Whether the caller may publish an agent or workflow. One read from the
+ * server answers with its own access fields; a new one, or one saved in this
+ * session, carries none and lands in the current workspace, where publishing
+ * a team's agent is an Admin's (outward exposure belongs to the team).
+ *
+ * Args:
+ *   item: The agent, with its access fields when it has them.
+ *   workspaceRole: The caller's role in the current workspace (`owner` in
+ *     Personal); null without a workspace, which reads as Personal.
+ *
+ * Returns:
+ *   True when the server would let the caller publish it.
+ */
+export function canPublish(
+  item: AccessFields | null | undefined,
+  workspaceRole: string | null | undefined,
+): boolean {
+  if (!item) return false;
+  if (item.allowed_actions || item.access || item.ownership)
+    return can(item, 'publish');
+  return (
+    !workspaceRole || workspaceRole === 'owner' || workspaceRole === 'admin'
+  );
+}
+
+/**
  * Whether the item's ⋯ offers Share. A personal item follows `share`; a
  * team's item offers it to every member, read-only for most, since the
  * dialog then says where its access comes from rather than changing it.

@@ -33,7 +33,8 @@ import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
-import { can, canOpenShare } from '../../utils/accessUtils';
+import { can, canOpenShare, canPublish } from '../../utils/accessUtils';
+import { selectWorkspaceRoleOrNull } from '../../workspace/workspaceSlice';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
@@ -337,6 +338,7 @@ function WorkflowBuilderInner() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const workspaceRole = useSelector(selectWorkspaceRoleOrNull);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
@@ -2179,9 +2181,12 @@ function WorkflowBuilderInner() {
   }, [detailsSaveRequested, persistWorkflow, isPublished]);
 
   // Save on a published workflow is an edit and needs a change; Publish on a
-  // new or draft one doesn't. A new workflow has no access fields, so it
-  // reads as the owner's. Without the right the button isn't rendered.
-  const canSubmit = can(currentAgent, isPublished ? 'edit' : 'publish');
+  // new or draft one doesn't. A new workflow has no access fields: it is the
+  // workspace's, which in a team only an Admin publishes. Without the right
+  // the button isn't rendered, and Save draft is the main button instead.
+  const canSubmit = isPublished
+    ? can(currentAgent, 'edit')
+    : canPublish(currentAgent, workspaceRole);
   const isPrimaryActionDisabled =
     isPublishing || !canSave || (isPublished && !hasUnsavedWork);
   const primaryActionLabel = isPublished
@@ -2423,7 +2428,7 @@ function WorkflowBuilderInner() {
             {canSaveDraft && (
               <Button
                 type="button"
-                variant="outline"
+                variant={canSubmit ? 'outline' : 'default'}
                 size="field"
                 shape="pill"
                 onClick={handleSaveDraft}

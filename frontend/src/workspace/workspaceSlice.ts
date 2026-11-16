@@ -233,6 +233,15 @@ export const selectWorkspaceRole = (state: RootLike): WorkspaceRole => {
   return row.role ?? 'viewer';
 };
 
+/**
+ * The caller's role in the current workspace, or null in a store without the
+ * workspace slice (a component test's), which callers read as Personal.
+ */
+export const selectWorkspaceRoleOrNull = (state: {
+  workspace?: WorkspaceState;
+}): WorkspaceRole | null =>
+  state.workspace ? selectWorkspaceRole(state as RootLike) : null;
+
 /** Whether New, Add, Import and New folder show: Personal, or Editor and up. */
 export const selectCanCreateInWorkspace = (state: RootLike): boolean =>
   roleAtLeast(selectWorkspaceRole(state), 'editor');

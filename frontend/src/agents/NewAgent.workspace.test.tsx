@@ -242,6 +242,29 @@ describe('NewAgent in a workspace', () => {
       );
     });
 
+  const buttonsNamed = (label: string) =>
+    Array.from(container.querySelectorAll('button')).filter(
+      (button) => button.textContent?.trim() === label,
+    );
+
+  it("makes Save draft the main button for a team's Editor, who can't publish", async () => {
+    inTeam();
+    await mountNew();
+    expect(buttonsNamed('agents.form.buttons.publish')).toHaveLength(0);
+    expect(buttonsNamed('agents.form.buttons.saveDraft')).toHaveLength(1);
+  });
+
+  it("keeps Publish the main button for a team's Admin", async () => {
+    inTeam();
+    mockState.workspace.workspaces[1].role = 'admin';
+    try {
+      await mountNew();
+      expect(buttonsNamed('agents.form.buttons.publish')).toHaveLength(1);
+    } finally {
+      mockState.workspace.workspaces[1].role = 'editor';
+    }
+  });
+
   it("asks for the tools and models of the team it's in", async () => {
     inTeam();
     await mountNew();
