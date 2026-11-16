@@ -892,6 +892,7 @@ function Upload({
         {
           name: ingestor.name,
           initial_content: String(ingestor.config.initial_content ?? ''),
+          ...(folderId ? { folder_id: folderId } : {}),
         },
         token,
       )

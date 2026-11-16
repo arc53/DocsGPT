@@ -198,6 +198,39 @@ class TestRemoteFolder:
         assert dispatch.call_args.kwargs["kwargs"]["folder_id"] == folder["id"]
 
 
+class TestWikiFolder:
+    def _create(self, app, conn, folder_id):
+        from docsgpt.api.user.sources.routes import CreateWikiSource
+
+        body = {"name": "Runbook", **({"folder_id": folder_id} if folder_id is not None else {})}
+        with _patch_db(conn, ROUTES), _patch_db(conn, UPLOAD), patch(
+            f"{ROUTES}._wiki_store_refusal", return_value=None
+        ), app.test_request_context("/api/sources/wiki", method="POST", json=body):
+            from flask import request
+
+            request.decoded_token = {"sub": USER}
+            return CreateWikiSource().post()
+
+    def test_a_wiki_is_filed_in_the_folder_it_was_made_in(self, app, pg_conn):
+        folder = FoldersRepository(pg_conn).create(USER, "K", resource_type="source")
+        response = self._create(app, pg_conn, folder["id"])
+        assert response.status_code == 200, response.get_json()
+        source_id = response.get_json()["source_id"]
+        assert FolderItemsRepository(pg_conn).filing(USER, "source", source_id) == folder["id"]
+
+    def test_no_folder_files_nothing(self, app, pg_conn):
+        response = self._create(app, pg_conn, None)
+        assert response.status_code == 200
+        assert FolderItemsRepository(pg_conn).filing(USER, "source", response.get_json()["source_id"]) is None
+
+    def test_only_the_callers_folder(self, app, pg_conn):
+        theirs = FoldersRepository(pg_conn).create(OTHER, "K", resource_type="source")
+        response = self._create(app, pg_conn, theirs["id"])
+        assert response.status_code == 404
+        assert response.get_json()["error"] == "folder_not_found"
+        assert not [row for row in SourcesRepository(pg_conn).list_for_user(USER) if row["name"] == "Runbook"]
+
+
 class TestWorkerFiling:
     def test_files_the_new_source_for_the_uploader(self, pg_conn):
         from docsgpt.worker import _file_new_source

@@ -233,7 +233,7 @@ const userService = {
   ): Promise<Response> =>
     apiClient.post(endpoints.USER.SOURCE_SEARCH(sourceId), data, token),
   createWiki: (
-    data: { name: string; initial_content?: string },
+    data: { name: string; initial_content?: string; folder_id?: string },
     token: string | null,
   ): Promise<Response> =>
     apiClient.post(endpoints.USER.CREATE_WIKI, data, token),

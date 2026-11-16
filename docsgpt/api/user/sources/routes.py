@@ -42,6 +42,7 @@ from docsgpt.api.user.sources.upload import (
     _claim_task_or_get_cached,
     _read_idempotency_key,
     _release_claim,
+    _requested_folder,
     connector_personal_only,
     creation_workspace,
     reingest_idempotency_key,
@@ -55,7 +56,7 @@ from docsgpt.api.user.resource_usage import (
     is_in_use,
     used_by_many,
 )
-from docsgpt.api.user.folders.service import SourceFiling, folder_error, subtree_ids
+from docsgpt.api.user.folders.service import SourceFiling, file_new_source, folder_error, subtree_ids
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
@@ -1445,6 +1446,9 @@ class CreateWikiSource(Resource):
             "initial_content": fields.String(
                 description="Optional markdown seed for /index.md"
             ),
+            "folder_id": fields.String(
+                description="One of the caller's source folders (the team's in a team) to file the wiki in"
+            ),
         },
     )
 
@@ -1477,6 +1481,10 @@ class CreateWikiSource(Resource):
         if workspace_refusal is not None:
             return workspace_refusal
         owner = workspace.owner_id
+        # Filed like an upload: a folder of the new wiki's owner's tree.
+        folder_id, folder_refusal = _requested_folder(user, data.get("folder_id"), owner)
+        if folder_refusal is not None:
+            return folder_refusal
         source_id = str(uuid.uuid4())
         try:
             with db_session() as conn:
@@ -1509,6 +1517,7 @@ class CreateWikiSource(Resource):
                         updated_via="human",
                     )
                     rebuild_wiki_directory_structure(conn, source_id, owner)
+                file_new_source(conn, owner, source_id, folder_id)
                 record_event(
                     conn,
                     "source.created",

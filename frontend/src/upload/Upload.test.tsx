@@ -750,6 +750,21 @@ describe('Upload source-type tiles', () => {
     expect(launcher.options?.folderId).toBe('fold-1');
   });
 
+  it('files a wiki made inside a folder into it', async () => {
+    folderId = 'fold-1';
+    createWiki.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, source_id: 'wiki-1' }),
+    });
+    await openType('wiki');
+    await typeInto(nameInput(), 'Handbook');
+    await act(async () => trainButton().click());
+    expect(createWiki.mock.calls.at(-1)?.[0]).toMatchObject({
+      name: 'Handbook',
+      folder_id: 'fold-1',
+    });
+  });
+
   it('sends no folder from the root of Knowledge', async () => {
     const sent = stubXhr();
     await openType('website');

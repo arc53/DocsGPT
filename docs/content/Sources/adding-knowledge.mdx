@@ -261,7 +261,7 @@ Every source in `GET /api/sources` and `GET /api/sources/paginated` carries your
 - `folder`: one of your Knowledge folder ids, or `root`. The counts (`kind_counts`, `usage_counts` and `subtree_total`) cover the folder and every folder inside it; `root` covers everything. An unknown folder answers `404`.
 - `direct`: `true` lists only the sources filed directly in `folder` (with `root`, the sources in no folder); `false`, the default, lists the whole subtree.
 
-To file a new source as you add it, send `folder_id` with `POST /api/upload` or `POST /api/remote`, or `sync.folder_id` with `POST /api/connections/<id>/setup`. It must be one of your Knowledge folders, or the request answers `404` with `folder_not_found`.
+To file a new source as you add it, send `folder_id` with `POST /api/upload`, `POST /api/remote` or `POST /api/sources/wiki`, or `sync.folder_id` with `POST /api/connections/<id>/setup`. It must be one of your Knowledge folders, or the request answers `404` with `folder_not_found`.
 
 The agent folder routes under `/api/agents/folders`, including `move_agent` and `bulk_move`, still work: they are the same as `/api/folders` with `type=agent`. With a [personal access token](/API/personal-access-tokens#resource-restrictions), Knowledge folders need `sources:read` or `sources:write`, and agent folders `agents:read` or `agents:write`.
 
