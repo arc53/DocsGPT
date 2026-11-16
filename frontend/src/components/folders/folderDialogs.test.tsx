@@ -32,6 +32,8 @@ vi.mock('../../api/services/userService', () => ({ default: api }));
 const moveToWorkspace = vi.hoisted(() => ({
   kinds: [] as string[],
   items: [] as unknown[],
+  // Off: the hook offers no move (no team takes it, or the role is short).
+  offer: true,
 }));
 vi.mock('../../workspace/move/useMoveToWorkspace', () => ({
   useMoveToWorkspace: (kind: string) => {
@@ -39,6 +41,7 @@ vi.mock('../../workspace/move/useMoveToWorkspace', () => ({
     return {
       menuOption: (item: unknown) => {
         moveToWorkspace.items.push(item);
+        if (!moveToWorkspace.offer) return null;
         return { label: 'workspace.menu.moveToTeam', onClick: () => undefined };
       },
       dialog: <div data-testid="move-to-workspace-dialog" />,
@@ -119,6 +122,7 @@ beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset());
   moveToWorkspace.kinds = [];
   moveToWorkspace.items = [];
+  moveToWorkspace.offer = true;
   api.getFolders.mockImplementation(() => json({ folders }));
   api.getDocs.mockImplementation(() => json([]));
   container = document.createElement('div');
@@ -462,6 +466,27 @@ describe('useFolderMenu', () => {
   it('leaves a Viewer in a team only what the move hook offers', async () => {
     await mount(<Harness folder={folders[0]} />, 'viewer');
     expect(labels()).toEqual(['workspace.menu.moveToTeam']);
+  });
+
+  it('draws no crumb ⋯ when it would open an empty menu', async () => {
+    function Crumb({ folder }: { folder: Folder }) {
+      const menu = useFolderMenu('agent');
+      return <div data-testid="crumb-menu">{menu.crumbMenu(folder)}</div>;
+    }
+    moveToWorkspace.offer = false;
+    await mount(<Crumb folder={folders[0]} />, 'viewer');
+    expect(
+      container.querySelector('[data-testid="crumb-menu"] button'),
+    ).toBeNull();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    // An Editor gets the ⋯, named for the folder.
+    await mount(<Crumb folder={folders[0]} />, 'editor');
+    expect(
+      container
+        .querySelector('[data-testid="crumb-menu"] button')
+        ?.getAttribute('aria-label'),
+    ).toBe('folders.menuLabel:Carriers');
   });
 
   it('confirms a delete with what moves where, then deletes', async () => {

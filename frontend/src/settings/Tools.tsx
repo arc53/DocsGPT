@@ -880,16 +880,7 @@ export default function Tools() {
                   trail={page.trail}
                   onNavigate={page.openFolder}
                   meta={folderCountLine(t, folder, 'tool')}
-                  menu={
-                    <ActionMenu
-                      size="toolbar"
-                      options={page.folderMenu.menuOptions(folder)}
-                      triggerLabel={t('folders.menuLabel', {
-                        name: folder.name,
-                        interpolation: { escapeValue: false },
-                      })}
-                    />
-                  }
+                  menu={page.folderMenu.crumbMenu(folder)}
                 />
               </div>
             ) : inFolder ? null : (

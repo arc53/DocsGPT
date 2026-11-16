@@ -10,7 +10,7 @@ import { agentUseCount } from '../../utils/resourceUsage';
 import type { MovableItem } from '../../workspace/move/useMoveToWorkspace';
 import { useMoveToWorkspace } from '../../workspace/move/useMoveToWorkspace';
 import { Alert, AlertDescription } from '../ui/alert';
-import type { MenuOption } from '../ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../ui/dropdown-menu';
 import {
   folderDeleteConsequence,
   folderErrorMessage,
@@ -37,6 +37,11 @@ export type FolderMenu = {
    * move between workspaces can remain (its hook decides).
    */
   menuOptions: (folder: Folder) => MenuOption[];
+  /**
+   * The open folder's ⋯ for its crumb row, or null when it would offer
+   * nothing (a Viewer in a team the folder can't move out of).
+   */
+  crumbMenu: (folder: Folder) => ReactNode;
   /** The rename, move, delete and workspace-move dialogs; render once. */
   dialogs: ReactNode;
 };
@@ -114,6 +119,21 @@ export function useFolderMenu(
         separatorBefore: true,
       },
     ];
+  };
+
+  const crumbMenu = (folder: Folder): ReactNode => {
+    const options = menuOptions(folder);
+    if (options.length === 0) return null;
+    return (
+      <ActionMenu
+        size="toolbar"
+        options={options}
+        triggerLabel={t('folders.menuLabel', {
+          name: folder.name,
+          interpolation: { escapeValue: false },
+        })}
+      />
+    );
   };
 
   const close = () => setDialog(null);
@@ -204,5 +224,5 @@ export function useFolderMenu(
     </>
   );
 
-  return { menuOptions, dialogs };
+  return { menuOptions, crumbMenu, dialogs };
 }

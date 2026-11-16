@@ -1295,16 +1295,7 @@ export default function Sources({
       </Button>
     </div>
   ) : undefined;
-  const folderMenuButton = folder ? (
-    <ActionMenu
-      size="toolbar"
-      options={folderMenu.menuOptions(folder)}
-      triggerLabel={t('folders.menuLabel', {
-        name: folder.name,
-        interpolation: { escapeValue: false },
-      })}
-    />
-  ) : null;
+  const folderMenuButton = folder ? folderMenu.crumbMenu(folder) : null;
   // The open folder before its folder list has loaded: wait for it (or say
   // it failed) rather than draw a folder with no name.
   const folderPending = inFolder && !folder;

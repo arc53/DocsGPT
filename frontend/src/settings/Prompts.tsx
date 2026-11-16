@@ -442,16 +442,7 @@ export default function Prompts() {
             trail={page.trail}
             onNavigate={page.openFolder}
             meta={folderCountLine(t, folder, 'prompt')}
-            menu={
-              <ActionMenu
-                size="toolbar"
-                options={page.folderMenu.menuOptions(folder)}
-                triggerLabel={t('folders.menuLabel', {
-                  name: folder.name,
-                  interpolation: { escapeValue: false },
-                })}
-              />
-            }
+            menu={page.folderMenu.crumbMenu(folder)}
           />
         </div>
       ) : inFolder ? null : (

@@ -6,7 +6,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
-import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { folderCountLine } from '../components/folders/folderCopy';
 import FolderCrumbRow from '../components/folders/FolderCrumbRow';
@@ -516,16 +515,7 @@ function AgentFolderView({
             onNewAgent={onNewAgent}
           />
         }
-        menu={
-          <ActionMenu
-            size="toolbar"
-            options={folderMenu.menuOptions(folder)}
-            triggerLabel={t('folders.menuLabel', {
-              name: folder.name,
-              interpolation: { escapeValue: false },
-            })}
-          />
-        }
+        menu={folderMenu.crumbMenu(folder)}
       />
       {agentsLoading ? (
         <div className={TILE_GRID}>
