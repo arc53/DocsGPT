@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 from docsgpt.utils import strip_null_bytes
+from docsgpt.workspaces.principal import PRINCIPAL_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,56 @@ def _started_at(record: Dict[str, Any]) -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+def _still_in_team(team: str) -> str:
+    """SQL that holds when ``team`` (a team id as text, NULL for Personal) is still the ``:scope_user`` caller's.
+
+    Args:
+        team: A SQL text expression.
+
+    Returns:
+        str: A parenthesized boolean SQL expression.
+    """
+    return (
+        f"(({team}) IS NULL"
+        f" OR EXISTS (SELECT 1 FROM teams rt_t WHERE rt_t.id = CAST(({team}) AS uuid)"
+        " AND rt_t.owner_id = :scope_user)"
+        f" OR EXISTS (SELECT 1 FROM team_members rt_m WHERE rt_m.team_id = CAST(({team}) AS uuid)"
+        " AND rt_m.user_id = :scope_user))"
+    )
+
+
+def _owner_team(column: str) -> str:
+    """SQL for the team (as text) whose principal ``column`` names; NULL for a person."""
+    return (
+        f"(CASE WHEN left({column}, {len(PRINCIPAL_PREFIX)}) = '{PRINCIPAL_PREFIX}' "
+        f"THEN substr({column}, {len(PRINCIPAL_PREFIX) + 1}) END)"
+    )
+
+
+# A trace of a team's chat, agent or workflow run is the team's record: the
+# person who made it stops reading it on leaving the team, as their team
+# chats and runs elsewhere, and reads it again if re-added. The trace columns
+# are qualified so a same-named column of a subquery's table can't capture them.
+_USER_SCOPE = " AND ".join([
+    "user_id = :scope_user",
+    _still_in_team(
+        f"(SELECT {_owner_team('rt_a.user_id')} FROM agents rt_a WHERE rt_a.id = request_traces.agent_id)"
+    ),
+    _still_in_team(
+        "(SELECT rt_c.team_id::text FROM conversations rt_c WHERE rt_c.id = request_traces.conversation_id)"
+    ),
+    _still_in_team(
+        f"(SELECT {_owner_team('rt_w.user_id')} FROM workflow_runs rt_r"
+        " JOIN workflows rt_w ON rt_w.id = rt_r.workflow_id WHERE rt_r.id = request_traces.workflow_run_id)"
+    ),
+])
+
+
 def _scope_clause(user_id: Optional[str], agent_id: Optional[str]) -> tuple[str, Dict[str, Any]]:
-    """Owner scoping: an owned agent's traces, else the caller's own traces."""
+    """Owner scoping: an owned agent's traces, else the caller's own traces in workspaces still theirs."""
     if agent_id:
         return "agent_id = CAST(:scope_agent AS uuid)", {"scope_agent": str(agent_id)}
-    return "user_id = :scope_user", {"scope_user": user_id}
+    return _USER_SCOPE, {"scope_user": user_id}
 
 
 class RequestTracesRepository:
