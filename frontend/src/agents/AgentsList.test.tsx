@@ -237,6 +237,22 @@ describe('AgentsList empties', () => {
     expectTextOnlySm(empty);
     expect(empty?.querySelector('button')?.textContent).toBe('agents.newAgent');
   });
+
+  it('keeps New folder, Import and a folder load error on an empty My agents', async () => {
+    await render('/agents/manage/mine');
+    expect(buttonLabels()).toEqual(
+      expect.arrayContaining(['folders.newFolder', 'agents.importAgent']),
+    );
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    state.folders.tree.loaded = false;
+    state.folders.tree.failed = true;
+    await render('/agents/manage/mine');
+    const error = empties().find((el) =>
+      el.textContent?.includes('folders.errors.loadFailed'),
+    );
+    expect(error?.textContent).toContain('retry');
+  });
 });
 
 describe('AgentsList folders', () => {

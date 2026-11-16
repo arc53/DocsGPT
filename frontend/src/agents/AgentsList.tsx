@@ -689,7 +689,10 @@ function AgentSection({
     return <NoSearchResults />;
   }
 
-  if (isFilteredView && hasNoAgentsAtAll && folders.length === 0) {
+  // My agents keeps its header even when empty: New folder and Import are
+  // there, and so is a folder load error with Retry (an empty folder must
+  // not vanish without a word). The section's empty state stands below.
+  if (isFilteredView && hasNoAgentsAtAll && folders.length === 0 && !isUser) {
     return (
       <EmptyState
         size="sm"
