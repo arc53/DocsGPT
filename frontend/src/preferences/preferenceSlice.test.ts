@@ -1,7 +1,9 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { loadFolders } from '../components/folders/foldersSlice';
+import foldersReducer, {
+  loadFolders,
+} from '../components/folders/foldersSlice';
 import type { Doc } from '../models/misc';
 import { getStoredRecentFolders } from './preferenceApi';
 import type { RootState } from '../store';
@@ -327,6 +329,33 @@ describe('composer folder pick', () => {
     store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
     store.dispatch(loaded([{ id: 'c', name: 'Carrier docs' }], 'agent'));
     expect(selectSelectedFolders(store.getState() as RootState)).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
+  });
+
+  it('follows the newer of two overlapping loads, whichever answers last', () => {
+    const store = configureStore({
+      reducer: { preference: reducer, folders: foldersReducer },
+      middleware: (getDefault) =>
+        getDefault().prepend(prefListenerMiddleware.middleware),
+    });
+    store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
+    const arg = { token: null };
+    store.dispatch(loadFolders.pending('older', arg));
+    store.dispatch(loadFolders.pending('newer', arg));
+    store.dispatch(
+      loadFolders.fulfilled(
+        [{ id: 'c', name: 'Carrier docs', parent_id: null }],
+        'newer',
+        arg,
+      ),
+    );
+    // The older load, from before the folder existed, answers last.
+    store.dispatch(loadFolders.fulfilled([], 'older', arg));
+    expect(selectSelectedFolders(store.getState() as RootState)).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
+    expect(getStoredRecentFolders()).toEqual([
       { id: 'c', name: 'Carrier docs' },
     ]);
   });
