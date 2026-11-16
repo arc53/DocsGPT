@@ -641,6 +641,7 @@ function PromptDetailPage({
 }) {
   const { t } = useTranslation();
   const { target, readOnly } = detail;
+  const canCreate = useSelector(selectCanCreateHere);
   // The open prompt as the list last loaded it (a share changes it).
   const saved =
     target?.kind === 'edit'
@@ -696,9 +697,11 @@ function PromptDetailPage({
 
   const drafterOn =
     drafterConfig?.enabled === true && detail.status === 'ready';
-  // A prompt the caller can't change is improved as a copy.
+  // A prompt the caller can't change is improved as a copy, saved in the
+  // current workspace, so only by someone who may create there.
   const canImprove =
-    drafterOn && (!readOnly || (!!saved && can(saved, 'duplicate')));
+    drafterOn &&
+    (!readOnly || (!!saved && canCreate && can(saved, 'duplicate')));
   const improve = () => {
     if (readOnly && saved) void detail.duplicate(saved, { draft: true });
     else setDrawerOpen((open) => !open);

@@ -452,6 +452,38 @@ describe('Prompts page in a workspace', () => {
     );
   });
 
+  const allMenuLabels = () =>
+    Array.from(container.querySelectorAll('[data-testid="menu"] button')).map(
+      (b) => b.textContent,
+    );
+
+  it("never offers a team's Viewer Duplicate, since the copy can't be saved there", async () => {
+    service.getPrompts.mockImplementation(() =>
+      response([
+        ...presets,
+        {
+          ...teamPrompt,
+          access: 'viewer',
+          allowed_actions: ['use', 'duplicate'],
+        },
+      ]),
+    );
+    await render('viewer');
+    expect(menuLabels('Weekly lane report').length).toBeGreaterThan(0);
+    // Nor on the built-in prompts.
+    expect(allMenuLabels()).not.toContain('settings.prompts.duplicate');
+  });
+
+  it("offers a team's Editor Duplicate", async () => {
+    service.getPrompts.mockImplementation(() =>
+      response([...presets, teamPrompt]),
+    );
+    await render('editor');
+    expect(menuLabels('Weekly lane report')).toContain(
+      'settings.prompts.duplicate',
+    );
+  });
+
   it("reloads the list when the Share dialog's offer moves the prompt", async () => {
     // Not a plain assignment, which would narrow `props` to null below.
     Object.assign(share, { props: null });

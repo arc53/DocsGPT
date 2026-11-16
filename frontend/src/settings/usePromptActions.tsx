@@ -125,7 +125,8 @@ export default function usePromptActions({
               variant: 'default',
             },
       );
-    if (can(prompt, 'duplicate'))
+    // The copy is saved in the current workspace, so it needs create there.
+    if (canFile && can(prompt, 'duplicate'))
       options.push({
         icon: Copy,
         label: t('settings.prompts.duplicate'),
