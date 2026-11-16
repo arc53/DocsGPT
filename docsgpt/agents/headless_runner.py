@@ -37,7 +37,7 @@ from docsgpt.decisions import record as decision_record
 from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.agent_limits import AgentLimitExceededError, agent_limit_exceeded, has_agent_limit
-from docsgpt.quotas.payer import billed_to, published_access_payer
+from docsgpt.quotas.payer import billed_to, current_run_billing, published_access_payer
 from docsgpt.quotas.run_limits import RunLimitReached, RunLimits, limits_stop
 from docsgpt.quotas.service import NoPayerError, QuotaExceededError, QuotaService
 from docsgpt.retriever.base import SearchOutcome, search_outcome_of
@@ -68,7 +68,8 @@ def _check_run_limits(agent_config: Dict[str, Any], payer: Optional[str], is_age
 
     Raises:
         AgentLimitExceededError: The agent's 24-hour token or request limit is used up.
-        QuotaExceededError: The payer's allowance is used up.
+        QuotaExceededError: The payer's allowance is used up. On outside
+            traffic (a webhook) it says only that the agent is paused.
     """
     if is_agent_run and has_agent_limit(agent_config):
         with db_readonly() as conn:
@@ -77,7 +78,8 @@ def _check_run_limits(agent_config: Dict[str, Any], payer: Optional[str], is_age
             raise AgentLimitExceededError(hit)
     exceeded = QuotaService.check(payer, "agent" if is_agent_run else "direct")
     if exceeded is not None:
-        raise QuotaExceededError(exceeded)
+        billing = current_run_billing()
+        raise QuotaExceededError(exceeded, outside=getattr(billing, "kind", None) == "published")
 
 
 def _resolve_agent_id(agent_config: Dict[str, Any]) -> Optional[str]:

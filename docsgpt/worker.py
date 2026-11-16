@@ -4379,7 +4379,9 @@ def agent_webhook_worker(self, agent_id, payload):
     Raises on failure so the task ends ``FAILURE``: Celery treats a
     returned dict as success. A quota refusal and a run past
     ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``; a run a
-    limit stopped mid-way is ``quota_exceeded`` too, with what it did.
+    limit stopped mid-way returns the same status, with what it did. The
+    payer's allowance is ``agent_paused`` with only the paused message (the
+    caller reads it by task id), the agent's own limit ``quota_exceeded``.
     """
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
@@ -4428,6 +4430,8 @@ def agent_webhook_worker(self, agent_id, payload):
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
+        from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
+        from docsgpt.quotas.pause import PAYER_OUT_OF_ALLOWANCE
         from docsgpt.quotas.payer import published_access_payer
         from docsgpt.quotas.run_limits import RUN_LIMIT_ERROR_TYPES
         from docsgpt.quotas.service import QuotaExceededError
@@ -4453,12 +4457,19 @@ def agent_webhook_worker(self, agent_id, payload):
             logging.warning(
                 f"Webhook run for agent {agent_id} stopped by a limit", extra={"agent_id": agent_id}
             )
-            return {"status": "quota_exceeded", "error": outcome.get("error"), "result": result}
+            # The payer's allowance reads as a pause, as before the run.
+            status = PAUSED_CODE if outcome.get("error_type") == PAYER_OUT_OF_ALLOWANCE else "quota_exceeded"
+            return {"status": status, "error": outcome.get("error"), "result": result}
     except QuotaExceededError as e:
         # Returned, not raised: retrying cannot succeed before the quota resets.
         logging.warning(
             f"Webhook skipped for agent {agent_id}: {e}", extra={"agent_id": agent_id}
         )
+        if isinstance(getattr(e, "exceeded", None), QuotaExceeded):
+            # The payer's allowance: the caller reads this by task id, so it
+            # learns only that the agent is paused, never whose numbers.
+            return {"status": PAUSED_CODE, "error": PAUSED_MESSAGE}
+        # The agent's own limit, whose message is about the agent.
         return {"status": "quota_exceeded", "error": str(e)}
     except SoftTimeLimitExceeded:
         logging.warning(

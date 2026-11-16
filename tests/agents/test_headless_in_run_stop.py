@@ -180,8 +180,10 @@ class TestTheWebhookTask:
         monkeypatch.setattr("docsgpt.worker.db_readonly", _use)
         return pg_conn
 
-    @pytest.mark.parametrize("error_type", ["payer_out_of_allowance", "budget_exceeded"])
-    def test_a_stop_mid_run_returns_quota_exceeded(self, worker_db, monkeypatch, error_type):
+    @pytest.mark.parametrize(
+        "error_type, status", [("payer_out_of_allowance", "agent_paused"), ("budget_exceeded", "quota_exceeded")]
+    )
+    def test_a_stop_mid_run_keeps_what_it_did(self, worker_db, monkeypatch, error_type, status):
         from docsgpt import worker
         from docsgpt.agents import headless_runner
         from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -198,6 +200,84 @@ class TestTheWebhookTask:
 
         result = worker.agent_webhook_worker(task, str(agent["id"]), {"event": "ping"})
 
-        assert result["status"] == "quota_exceeded"
+        assert result["status"] == status
         assert result["error"] == "This agent is paused."
         assert result["result"]["answer"] == "Partial"
+
+
+def _allowance_exceeded() -> QuotaExceeded:
+    return QuotaExceeded(
+        user_id="dana", bucket="all", budget="tokens", usage=12345, limit=10000, source="user", source_id=None,
+        resets_at=RESETS_AT,
+    )
+
+
+@pytest.mark.unit
+class TestARefusalBeforeAnOutsideRun:
+    """A webhook refused before it starts is outside traffic: its caller hears only that the agent is paused."""
+
+    @pytest.fixture
+    def worker_db(self, pg_conn, monkeypatch):
+        @contextmanager
+        def _use():
+            yield pg_conn
+
+        monkeypatch.setattr("docsgpt.worker.db_session", _use)
+        monkeypatch.setattr("docsgpt.worker.db_readonly", _use)
+        return pg_conn
+
+    def _webhook(self, worker_db, monkeypatch, error):
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(worker_db).create("sam", "Mine", "published", agent_type="classic")
+        monkeypatch.setattr(headless_runner, "run_agent_headless", MagicMock(side_effect=error))
+        task = MagicMock(name="celery_task_self")
+        task.request.retries = 0
+        return worker.agent_webhook_worker(task, str(agent["id"]), {"event": "ping"})
+
+    def test_the_payers_allowance_says_only_paused(self, worker_db, monkeypatch):
+        from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
+        from docsgpt.quotas.service import QuotaExceededError
+
+        result = self._webhook(worker_db, monkeypatch, QuotaExceededError(_allowance_exceeded()))
+
+        assert result == {"status": PAUSED_CODE, "error": PAUSED_MESSAGE}
+        assert "12,345" not in str(result) and "10,000" not in str(result)
+
+    def test_the_agents_own_limit_keeps_its_message(self, worker_db, monkeypatch):
+        from docsgpt.quotas.agent_limits import AgentLimitExceededError
+
+        hit = AgentLimitExceeded(agent_id="agent-1", dimension="tokens", usage=150, limit=100)
+        result = self._webhook(worker_db, monkeypatch, AgentLimitExceededError(hit))
+
+        assert result == {"status": "quota_exceeded", "error": hit.message}
+
+    def test_the_pre_run_check_never_asks_the_provider_about_the_payer(self, monkeypatch):
+        from docsgpt.agents import headless_runner as hr
+        from docsgpt.api.owner_pause import PAUSED_MESSAGE
+        from docsgpt.quotas.payer import billed_to
+        from docsgpt.quotas.service import QuotaExceededError
+
+        provider = MagicMock(name="defaults_provider")
+        monkeypatch.setattr("docsgpt.quotas.service.get_defaults_provider", lambda: provider)
+        monkeypatch.setattr(hr.QuotaService, "check", lambda *a, **kw: _allowance_exceeded())
+
+        with billed_to("dana", kind="published"), pytest.raises(QuotaExceededError) as refused:
+            hr._check_run_limits({"user_id": "sam"}, "dana", True)
+
+        assert str(refused.value) == PAUSED_MESSAGE
+        provider.error_payload.assert_not_called()
+
+    def test_a_schedule_still_tells_its_payer_the_numbers(self, monkeypatch):
+        from docsgpt.agents import headless_runner as hr
+        from docsgpt.quotas.payer import billed_to
+        from docsgpt.quotas.service import QuotaExceededError
+
+        monkeypatch.setattr(hr.QuotaService, "check", lambda *a, **kw: _allowance_exceeded())
+
+        with billed_to("dana", kind="schedule"), pytest.raises(QuotaExceededError) as refused:
+            hr._check_run_limits({"user_id": "sam"}, "dana", True)
+
+        assert "12,345" in str(refused.value)

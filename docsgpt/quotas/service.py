@@ -108,10 +108,30 @@ class QuotaExceeded:
 
 
 class QuotaExceededError(Exception):
-    """Raised where a refused request has no HTTP response to carry the refusal."""
+    """Raised where a refused request has no HTTP response to carry the refusal.
 
-    def __init__(self, exceeded: QuotaExceeded) -> None:
+    Attributes:
+        exceeded: The used-up budget.
+        outside: The refused run is outside traffic on a published agent.
+    """
+
+    def __init__(self, exceeded: QuotaExceeded, *, outside: bool = False) -> None:
+        """Build the refusal.
+
+        Args:
+            exceeded: The used-up budget.
+            outside: The run is outside traffic on a published agent, whose
+                caller is told only that the agent is paused: the message
+                carries none of the payer's numbers, and the provider hook is
+                not asked about the payer.
+        """
         self.exceeded = exceeded
+        self.outside = outside
+        if outside:
+            from docsgpt.api.owner_pause import PAUSED_MESSAGE
+
+            super().__init__(PAUSED_MESSAGE)
+            return
         super().__init__(exceeded.to_payload()["message"])
 
 

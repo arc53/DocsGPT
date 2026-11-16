@@ -67,7 +67,7 @@ When a limit is reached during a run:
 
 - **A chat** stops where it is, keeps the partial answer, and says that the allowance is reached and when it resets.
 - **A scheduled run** is recorded as failed with `payer_out_of_allowance` and keeps its partial output. Later runs are skipped while the payer is out of allowance; see [Paid by and paused schedules](/Agents/schedules#paid-by-and-paused-schedules).
-- **A webhook run** ends with `"status": "quota_exceeded"` and what it did so far; see [Agent webhooks](/API/webhooks).
+- **A webhook run** ends with what it did so far and `"status": "agent_paused"` for the payer's allowance (the caller learns nothing more), or `"status": "quota_exceeded"` for the agent's own limit; see [Agent webhooks](/API/webhooks).
 
 ### Who pays
 
