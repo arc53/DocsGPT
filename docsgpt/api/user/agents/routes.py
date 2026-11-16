@@ -55,7 +55,7 @@ from docsgpt.api.user.resource_access import (
     workspace_mismatch_refusal,
     workspace_mismatches,
 )
-from docsgpt.api.user.agents.sharing import access_payer_fields, outside_access_state
+from docsgpt.api.user.agents.sharing import LINK_SHARED_ACCESS, access_payer_fields, outside_access_state
 from docsgpt.api.user.team_sharing import (
     can_access,
     visible_with_access,
@@ -344,10 +344,6 @@ def _legacy_team_access(access: Optional[str]) -> Optional[str]:
         return None
     return "editor" if access in ("editor", "admin") else "viewer"
 
-
-# What a caller who reached an agent only through its public share link may
-# do: chat with it and pin it. A team grant, when there is one, wins.
-LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
 
 # Agent fields that are the owner's policy (guardrails and the pooled quota).
 POLICY_FIELDS = (

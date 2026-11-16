@@ -1,3 +1,5 @@
+import type { ItemOrigin } from '../workspace/itemOrigin';
+
 /**
  * Access to a team-shared resource (agent, source, tool, prompt).
  *
@@ -14,8 +16,8 @@ export type AccessFields = {
   allowed_actions?: string[];
   /** Where the item lives. */
   workspace?: { kind: 'personal' | 'team'; team_id?: string | null } | null;
-  /** How it reached this list: the caller's, the team's, or shared. */
-  origin?: 'own' | 'team' | 'shared' | null;
+  /** How it reached this list (see `ItemOrigin`): the caller's, the team's, shared, or an agent's public link. */
+  origin?: ItemOrigin | null;
   /** Who added it; on a personal item, its owner. */
   created_by?: { user_id?: string | null; label?: string | null } | null;
   /** The caller's role in the item's team (team items). */

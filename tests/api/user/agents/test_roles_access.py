@@ -584,6 +584,31 @@ class TestListsCarryAccess:
         assert rows[0]["access"] == "viewer"
         assert rows[0]["allowed_actions"] == ["pin", "use"]
 
+    def test_link_only_agent_says_it_came_by_link(self, app, pg_conn):
+        """The composer reads ``origin: link`` to know the publisher pays, so every list that carries one says so."""
+        from docsgpt.api.user.agents.routes import PinAgent, PinnedAgents
+        from docsgpt.api.user.agents.sharing import SharedAgent, SharedAgents
+
+        agent_id = _agent(pg_conn, share=False)
+        AgentsRepository(pg_conn).update(agent_id, OWNER, {"shared": True, "shared_token": "tok-l"})
+        data = _json(_call(app, pg_conn, SharedAgent, "get", "/api/shared_agent?token=tok-l", STRANGER))
+        assert data["origin"] == "link"
+        rows = _json(_call(app, pg_conn, SharedAgents, "get", "/api/shared_agents", STRANGER))
+        assert rows[0]["origin"] == "link"
+        assert _status(_call(app, pg_conn, PinAgent, "post", f"/api/pin_agent?id={agent_id}", STRANGER)) == 200
+        rows = _json(_call(app, pg_conn, PinnedAgents, "get", "/api/pinned_agents", STRANGER))
+        assert [row["origin"] for row in rows] == ["link"]
+
+    def test_a_grant_is_not_link_origin(self, app, pg_conn):
+        from docsgpt.api.user.agents.sharing import SharedAgent
+
+        agent_id = _agent(pg_conn)
+        AgentsRepository(pg_conn).update(agent_id, OWNER, {"shared": True, "shared_token": "tok-g"})
+        data = _json(_call(app, pg_conn, SharedAgent, "get", "/api/shared_agent?token=tok-g", VIEWER))
+        assert data["origin"] != "link"
+        owner = _json(_call(app, pg_conn, SharedAgent, "get", "/api/shared_agent?token=tok-g", OWNER))
+        assert owner["origin"] == "own"
+
     def test_link_shared_agent_with_team_grant_uses_grant(self, app, pg_conn):
         from docsgpt.api.user.agents.sharing import SharedAgent
 

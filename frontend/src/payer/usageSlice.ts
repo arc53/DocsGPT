@@ -47,8 +47,7 @@ type ChatAgentAccess = {
  * it: `direct` without an agent, `agent` with one they own or reach through
  * a team, and nothing for an agent they reach only by its public link, whose
  * publisher pays (the person's own allowance neither stops nor counts it).
- * Such an agent arrives as a viewer with no `workspace`, since the person
- * has no grant on it.
+ * The server marks such an agent `origin: 'link'`.
  *
  * Args:
  *   agent: The selected agent, or null for a chat without one.
@@ -60,9 +59,7 @@ export function chatUsageScope(
   agent: ChatAgentAccess | null | undefined,
 ): UsageScope | null {
   if (!agent) return 'direct';
-  const linkOnly =
-    agent.access === 'viewer' && !agent.workspace && !agent.origin;
-  return linkOnly ? null : 'agent';
+  return agent.origin === 'link' ? null : 'agent';
 }
 
 export type UsageState = {

@@ -35,8 +35,10 @@ agents_sharing_ns = Namespace(
 
 
 # A caller who reached an agent only through its public link may chat with it
-# and pin it; a team grant, when there is one, gives more.
-LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
+# and pin it; a team grant, when there is one, gives more. ``origin: link``
+# says so outright, so the composer knows the publisher pays for the chat
+# rather than reading it from the fields a grant would add.
+LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"], "origin": "link"}
 
 
 def access_payer_fields(ra: ResourceAccess, agent: dict, user: str, *, turning_on: bool) -> dict:
