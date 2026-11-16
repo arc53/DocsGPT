@@ -961,7 +961,9 @@ class WorkflowEngine:
             "prompt_embeds_documents": _prompt_embeds_documents(
                 node_config.prompt_template
             ),
-            "sources_were_searched": bool(node_config.sources or node_config.folders),
+            # What the retrieval actually covered: a node whose folders are gone
+            # or empty, or whose sources all went, searched nothing.
+            "sources_were_searched": bool(self._node_search_outcome and self._node_search_outcome.searched),
             "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
@@ -2523,6 +2525,9 @@ class WorkflowEngine:
         sources: list = []
         try:
             sources = self._node_source_ids(node_config)
+            if not sources:
+                # Nothing left to search: no outcome, so the node isn't told it searched.
+                return []
             retriever = RetrieverCreator.create_retriever(
                 node_config.retriever or "classic",
                 source={"active_docs": sources},

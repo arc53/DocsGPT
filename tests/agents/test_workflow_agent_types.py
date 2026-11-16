@@ -697,8 +697,8 @@ class TestWorkflowNodeDocumentsReachTheAgent:
         node_config = AgentNodeConfig(agent_type="classic", sources=[foreign], **broken)
 
         assert engine._retrieve_node_sources(node_config) == []
-        outcome = engine._node_search_outcome
-        assert foreign not in outcome.searched and foreign not in outcome.failed
+        # Nothing it may read is left, so nothing is searched and nothing named.
+        assert engine._node_search_outcome is None
 
     def test_retrieve_keeps_the_retrievers_outcome(self, monkeypatch):
         from docsgpt.retriever.base import SearchOutcome
@@ -748,6 +748,33 @@ class TestWorkflowNodeDocumentsReachTheAgent:
 
         assert captured["search_outcome"] is outcome
         assert captured["sources_were_searched"] is True
+
+    @pytest.mark.parametrize("config", [{"folders": ["0b6c1f3e-8a4c-4c1e-9f3a-2d1e5c7a9b10"]}, {"sources": ["gone"]}])
+    def test_a_node_whose_sources_resolve_to_nothing_searched_nothing(self, monkeypatch, config):
+        """A folder that is gone or empty, or sources that are all gone, are not "searched, nothing matched"."""
+        engine = create_engine()
+        engine.state["query"] = "q"
+        monkeypatch.setattr(type(engine), "_node_source_ids", lambda self, node_config: [])
+        retrieve = MagicMock()
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever", retrieve,
+        )
+        node = create_agent_node(node_id="n", agent_type="classic")
+        node.config.update(config)
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["sources_were_searched"] is False
+        assert captured["search_outcome"] is None
+        retrieve.assert_not_called()
 
 
 @pytest.mark.unit
