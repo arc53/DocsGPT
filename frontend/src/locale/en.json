@@ -4888,6 +4888,13 @@
         "teamNotEmpty": "The team still owns items. Move or delete them first."
       },
       "label": "Teams",
+      "leave": {
+        "action": "Leave team",
+        "description": "You lose access to {{team}}'s agents, knowledge, tools, prompts and chats. Schedules you set on its agents and outside access you pay for pause until someone takes them over, and personal items you shared with it stop being shared. An admin can add you again.",
+        "done": "You left {{team}}.",
+        "error": "Could not leave the team.",
+        "title": "Leave {{team}}?"
+      },
       "loadError": "Failed to load teams.",
       "memberCount_one": "{{formatted}} member",
       "memberCount_other": "{{formatted}} members",

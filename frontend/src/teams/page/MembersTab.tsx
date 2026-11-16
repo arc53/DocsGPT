@@ -2,6 +2,7 @@ import {
   Bot,
   FileText,
   KeyRound,
+  LogOut,
   type LucideIcon,
   MessageSquare,
   Plus,
@@ -12,6 +13,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import teamsService, {
   type AssignableTeamRole,
@@ -43,7 +45,12 @@ import { showActionToast } from '../../notifications/actionToastSlice';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { AppDispatch } from '../../store';
 import { decodeJwtPayload } from '../../utils/jwtUtils';
-import { loadWorkspaces } from '../../workspace/workspaceSlice';
+import { PERSONAL_WORKSPACE } from '../../workspace/requestWorkspace';
+import {
+  loadWorkspaces,
+  switchWorkspace,
+  type WorkspaceState,
+} from '../../workspace/workspaceSlice';
 import { loadTeams, type Team } from '../teamsSlice';
 import {
   grantResourceName,
@@ -52,6 +59,11 @@ import {
   truncateSub,
 } from './teamGrants';
 import TeamRoleSelect, { TeamRoleBadge } from './TeamRoleSelect';
+import { TEAMS_ROOT } from './teamTabs';
+
+/** The current workspace; null in a store without the workspace slice. */
+const selectCurrentWorkspaceId = (state: { workspace?: WorkspaceState }) =>
+  state.workspace?.current ?? null;
 
 /** Members per page; search and the pager appear past one page. */
 const MEMBERS_PAGE_SIZE = 25;
@@ -147,7 +159,7 @@ type MembersTabProps = {
 /**
  * A team's members and their roles. Owners and admins add people (as Viewer
  * unless they pick another role), change roles and remove people; everyone
- * else reads the list.
+ * else reads the list. Everyone but the owner may leave the team.
  */
 export default function MembersTab({
   team,
@@ -157,8 +169,12 @@ export default function MembersTab({
 }: MembersTabProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const currentWorkspace = useSelector(selectCurrentWorkspaceId);
   const canManage = canManageTeam(role);
+  // The owner hands the team over or deletes it instead.
+  const canLeave = role !== 'owner';
 
   const [members, setMembers] = useState<Member[]>([]);
   // Members page from the server: search and 25 per page, shown only once
@@ -177,6 +193,7 @@ export default function MembersTab({
   const [addError, setAddError] = useState<string | null>(null);
   const [addPending, setAddPending] = useState(false);
 
+  const [leaveState, setLeaveState] = useState<ActiveState>('INACTIVE');
   const [removeState, setRemoveState] = useState<ActiveState>('INACTIVE');
   const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
 
@@ -392,6 +409,28 @@ export default function MembersTab({
     afterChange(memberToRemove.user_id);
   };
 
+  // Returns the request so the confirm stays open on a refusal (the last
+  // admin) and says why. Gone from the team, the caller is taken out of its
+  // workspace and back to their teams.
+  const confirmLeave = async () => {
+    if (!currentUserId) return;
+    await teamsService.removeMember(team.id, currentUserId, token);
+    dispatch(
+      showActionToast({
+        variant: 'success',
+        message: t('settings.teams.leave.done', {
+          team: team.name,
+          interpolation: { escapeValue: false },
+        }),
+      }),
+    );
+    if (currentWorkspace === team.id)
+      dispatch(switchWorkspace(PERSONAL_WORKSPACE));
+    dispatch(loadTeams({ token }));
+    dispatch(loadWorkspaces({ token }));
+    navigate(TEAMS_ROOT, { replace: true });
+  };
+
   const removeName = memberToRemove ? memberLabel(memberToRemove) : '';
   const removeShared = memberToRemove
     ? sharedBy(grants, memberToRemove.user_id)
@@ -414,7 +453,7 @@ export default function MembersTab({
         title={t('settings.teams.members')}
         count={membersAll}
         actions={
-          (membersAll > MEMBERS_PAGE_SIZE || canManage) && (
+          (membersAll > MEMBERS_PAGE_SIZE || canManage || canLeave) && (
             <div className="flex flex-wrap items-center gap-2">
               {membersAll > MEMBERS_PAGE_SIZE && (
                 <SearchInput
@@ -436,6 +475,17 @@ export default function MembersTab({
                 >
                   <Plus aria-hidden />
                   {t('settings.teams.addMember')}
+                </Button>
+              )}
+              {canLeave && (
+                <Button
+                  variant="outline"
+                  size="field"
+                  className="shrink-0"
+                  onClick={() => setLeaveState('ACTIVE')}
+                >
+                  <LogOut aria-hidden />
+                  {t('settings.teams.leave.action')}
                 </Button>
               )}
             </div>
@@ -464,6 +514,8 @@ export default function MembersTab({
           {members.map((m) => {
             const memberRole = memberTeamRole(m);
             const isOwner = memberRole === 'owner';
+            // You leave with Leave team, which says what leaving does.
+            const isSelf = m.user_id === currentUserId;
             return (
               <ListRow
                 key={`${m.user_id}-${m.source}`}
@@ -488,7 +540,7 @@ export default function MembersTab({
                     ) : (
                       <TeamRoleBadge role={memberRole} />
                     )}
-                    {canManage && !isOwner && (
+                    {canManage && !isOwner && !isSelf && (
                       <IconButton
                         variant="ghost-destructive"
                         size="icon-sm"
@@ -560,6 +612,23 @@ export default function MembersTab({
           </Alert>
         )}
       </Modal>
+
+      <ConfirmationModal
+        message={t('settings.teams.leave.title', {
+          interpolation: { escapeValue: false },
+          team: team.name,
+        })}
+        description={t('settings.teams.leave.description', {
+          interpolation: { escapeValue: false },
+          team: team.name,
+        })}
+        modalState={leaveState}
+        setModalState={setLeaveState}
+        submitLabel={t('settings.teams.leave.action')}
+        handleSubmit={confirmLeave}
+        error={(e) => teamErrorMessage(t, e, t('settings.teams.leave.error'))}
+        variant="destructive"
+      />
 
       <ConfirmationModal
         message={t('settings.teams.removeMemberConfirmation', {

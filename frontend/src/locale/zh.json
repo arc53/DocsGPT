@@ -4831,6 +4831,13 @@
         "teamNotEmpty": "团队仍拥有一些项目。请先移动或删除它们。"
       },
       "label": "团队",
+      "leave": {
+        "action": "退出团队",
+        "description": "您将无法再访问 {{team}} 的智能体、知识、工具、提示词和聊天。您为其智能体设置的计划任务以及由您付费的外部访问会暂停，直到有人接管；您与该团队共享的个人项目将不再共享。管理员可以重新添加您。",
+        "done": "您已退出 {{team}}。",
+        "error": "无法退出团队。",
+        "title": "退出 {{team}}？"
+      },
       "loadError": "加载团队失败。",
       "memberCount_one": "{{formatted}} 名成员",
       "memberCount_other": "{{formatted}} 名成员",

@@ -4867,6 +4867,13 @@
         "teamNotEmpty": "Dem Team gehören noch Elemente. Verschiebe oder lösche sie zuerst."
       },
       "label": "Teams",
+      "leave": {
+        "action": "Team verlassen",
+        "description": "Du verlierst den Zugriff auf die Agenten, das Wissen, die Tools, Prompts und Chats von {{team}}. Zeitpläne, die du für seine Agenten eingerichtet hast, und Zugriffe von außen, die du bezahlst, pausieren, bis jemand sie übernimmt, und persönliche Elemente, die du mit dem Team teilst, werden nicht mehr geteilt. Ein Admin kann dich wieder hinzufügen.",
+        "done": "Du hast {{team}} verlassen.",
+        "error": "Team konnte nicht verlassen werden.",
+        "title": "{{team}} verlassen?"
+      },
       "loadError": "Teams konnten nicht geladen werden.",
       "memberCount_one": "{{formatted}} Mitglied",
       "memberCount_other": "{{formatted}} Mitglieder",

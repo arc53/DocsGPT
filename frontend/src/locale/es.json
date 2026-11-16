@@ -5040,6 +5040,13 @@
         "teamNotEmpty": "El equipo todavía posee elementos. Muévelos o elimínalos primero."
       },
       "label": "Equipos",
+      "leave": {
+        "action": "Salir del equipo",
+        "description": "Pierdes el acceso a los agentes, el conocimiento, las herramientas, los prompts y los chats de {{team}}. Las programaciones que configuraste en sus agentes y el acceso externo que pagas se pausan hasta que alguien los asuma, y los elementos personales que compartiste con el equipo dejan de compartirse. Un administrador puede volver a añadirte.",
+        "done": "Has salido de {{team}}.",
+        "error": "No se pudo salir del equipo.",
+        "title": "¿Salir de {{team}}?"
+      },
       "loadError": "No se pudieron cargar los equipos.",
       "memberCount_many": "{{formatted}} miembros",
       "memberCount_one": "{{formatted}} miembro",

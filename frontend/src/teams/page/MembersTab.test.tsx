@@ -1,11 +1,14 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 // A JWT whose payload is {"sub":"me"}.
 const TOKEN = `x.${btoa(JSON.stringify({ sub: 'me' }))}.y`;
 
-const mockState = { preference: { token: TOKEN } };
+const mockState: {
+  preference: { token: string };
+  workspace?: { current: string; workspaces: unknown[] };
+} = { preference: { token: TOKEN } };
 const mockDispatch = vi.fn((action: unknown) => action);
 
 vi.mock('react-redux', () => ({
@@ -387,5 +390,93 @@ describe('MembersTab', () => {
         'workspace.common.roles.editor',
       );
     }
+  });
+
+  describe('Leave team', () => {
+    function Where() {
+      return <div data-testid="where">{useLocation().pathname}</div>;
+    }
+    const renderAt = async (role: 'owner' | 'admin' | 'editor' | 'viewer') => {
+      act(() => {
+        root.render(
+          <MemoryRouter initialEntries={['/teams/t1']}>
+            <MembersTab team={TEAM} role={role} grants={[]} />
+            <Where />
+          </MemoryRouter>,
+        );
+      });
+      await flush();
+    };
+    const where = () =>
+      body().querySelector('[data-testid="where"]')?.textContent;
+    const confirm = () => body().querySelector('[role="dialog"]');
+
+    afterEach(() => {
+      delete mockState.workspace;
+    });
+
+    it('is offered to every member but the owner', async () => {
+      for (const role of ['admin', 'editor', 'viewer'] as const) {
+        await renderAt(role);
+        expect(button('settings.teams.leave.action')).toBeDefined();
+      }
+      await renderAt('owner');
+      expect(button('settings.teams.leave.action')).toBeUndefined();
+    });
+
+    it('asks first, then leaves, goes to Personal and back to the teams', async () => {
+      mockState.workspace = { current: 't1', workspaces: [] };
+      await renderAt('editor');
+      act(() => button('settings.teams.leave.action').click());
+      await flush();
+      expect(confirm()!.textContent).toContain(
+        'settings.teams.leave.title(team=Operations)',
+      );
+      expect(removeMember).not.toHaveBeenCalled();
+      act(() => button('settings.teams.leave.action', confirm()!).click());
+      await flush();
+      expect(removeMember).toHaveBeenCalledWith('t1', 'me', TOKEN);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workspace/switched',
+          payload: expect.objectContaining({ id: 'personal' }),
+        }),
+      );
+      expect(toasts()).toContain('settings.teams.leave.done(team=Operations)');
+      expect(where()).toBe('/teams');
+    });
+
+    it('stays in another workspace the caller is in', async () => {
+      mockState.workspace = { current: 't2', workspaces: [] };
+      await renderAt('viewer');
+      act(() => button('settings.teams.leave.action').click());
+      await flush();
+      act(() => button('settings.teams.leave.action', confirm()!).click());
+      await flush();
+      expect(removeMember).toHaveBeenCalled();
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'workspace/switched' }),
+      );
+    });
+
+    it('says why when the server refuses, and stays', async () => {
+      removeMember.mockRejectedValue(refusal(409, 'last_admin'));
+      await renderAt('admin');
+      act(() => button('settings.teams.leave.action').click());
+      await flush();
+      act(() => button('settings.teams.leave.action', confirm()!).click());
+      await flush();
+      expect(confirm()).not.toBeNull();
+      expect(where()).toBe('/teams/t1');
+    });
+
+    it('offers no remove button on your own row', async () => {
+      await renderAt('admin');
+      expect(
+        rowOf('me@x.io').querySelector(
+          'button[aria-label="settings.teams.remove"]',
+        ),
+      ).toBeNull();
+    });
   });
 });

@@ -4833,6 +4833,13 @@
         "teamNotEmpty": "團隊仍擁有一些項目。請先移動或刪除它們。"
       },
       "label": "團隊",
+      "leave": {
+        "action": "退出團隊",
+        "description": "您將無法再存取 {{team}} 的代理、知識、工具、提示詞和聊天。您為其代理設定的排程以及由您付費的外部存取會暫停，直到有人接手；您與該團隊共用的個人項目將不再共用。管理員可以重新新增您。",
+        "done": "您已退出 {{team}}。",
+        "error": "無法退出團隊。",
+        "title": "要退出 {{team}} 嗎？"
+      },
       "loadError": "載入團隊失敗。",
       "memberCount_one": "{{formatted}} 位成員",
       "memberCount_other": "{{formatted}} 位成員",

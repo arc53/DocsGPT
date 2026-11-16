@@ -5040,6 +5040,13 @@
         "teamNotEmpty": "L’équipe possède encore des éléments. Déplacez-les ou supprimez-les d’abord."
       },
       "label": "Équipes",
+      "leave": {
+        "action": "Quitter l’équipe",
+        "description": "Vous perdez l’accès aux agents, aux connaissances, aux outils, aux prompts et aux chats de {{team}}. Les planifications que vous avez définies sur ses agents et l’accès extérieur que vous payez sont mis en pause jusqu’à ce que quelqu’un les reprenne, et les éléments personnels que vous partagiez avec l’équipe ne sont plus partagés. Un administrateur peut vous ajouter de nouveau.",
+        "done": "Vous avez quitté {{team}}.",
+        "error": "Impossible de quitter l’équipe.",
+        "title": "Quitter {{team}} ?"
+      },
       "loadError": "Échec du chargement des équipes.",
       "memberCount_many": "{{formatted}} membres",
       "memberCount_one": "{{formatted}} membre",
