@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -65,8 +66,31 @@ def redis():
     return FakeRedis()
 
 
+class FakeSchedule:
+    """RedBeat's sorted set of entries, as whole-second due times, for the one read the scheduler makes."""
+
+    def __init__(self):
+        self.due_at = []
+        self.error = None
+
+    def zrangebyscore(self, key, min, max, start=None, num=None, withscores=False):
+        assert key == "redbeat:test::schedule" and (start, num, withscores) == (0, 1, True)
+        if self.error:
+            raise self.error
+        after = float(min.removeprefix("("))
+        later = sorted(score for score in self.due_at if score > after)
+        return [("redbeat:test:entry", later[0])] if later else []
+
+
 @pytest.fixture
-def scheduler(monkeypatch, redis):
+def schedule(monkeypatch):
+    fake = FakeSchedule()
+    monkeypatch.setattr(beat_scheduler, "get_redis", lambda app: fake)
+    return fake
+
+
+@pytest.fixture
+def scheduler(monkeypatch, redis, schedule):
     app = Celery("beat-test", set_as_current=False)
     app.conf.redbeat_key_prefix = "redbeat:test:"
     sched = DocsGPTScheduler(app, lazy=True, lock_timeout=90)
@@ -199,6 +223,48 @@ def test_setup_schedule_waits_for_redis(scheduler, monkeypatch, outage):
 
     assert len(calls) == 8
     assert sleeps == [1, 2, 4, 8, 16, 30, 30]  # doubling, capped at STARTUP_RETRY_MAX_SECONDS
+
+
+# 2026-11-16 07:37:13.25 UTC: prod's beat sent its two 5-minute tasks, slept 300 s past a task due 3 s later,
+# and lost its 90 s lock (error-review ledger #91).
+NOW = datetime(2026, 11, 16, 7, 37, 13, 250000, tzinfo=timezone.utc)
+
+
+@pytest.mark.unit
+def test_a_tick_never_sleeps_past_the_next_entry(scheduler, schedule, monkeypatch):
+    # RedBeat looks one entry ahead. When that entry is itself due it is sent, and the only intervals left are
+    # the sent entries' own: here max_interval, as with no entries.
+    monkeypatch.setattr(scheduler.app, "now", lambda: NOW)
+    schedule.due_at = [NOW.timestamp() + 600, int(NOW.timestamp()) + 3]
+
+    assert scheduler.tick() == pytest.approx(2.75)
+
+
+@pytest.mark.unit
+def test_a_tick_keeps_redbeats_interval_when_nothing_is_due_sooner(scheduler, schedule, monkeypatch):
+    monkeypatch.setattr(scheduler.app, "now", lambda: NOW)
+    schedule.due_at = [NOW.timestamp() + 600]
+
+    assert scheduler.tick() == scheduler.max_interval
+
+
+@pytest.mark.unit
+def test_an_entry_due_this_second_is_left_to_redbeat(scheduler, schedule, monkeypatch):
+    # Scores are whole seconds. RedBeat already read everything up to this second, so only later ones count.
+    monkeypatch.setattr(scheduler.app, "now", lambda: NOW)
+    schedule.due_at = [int(NOW.timestamp()), int(NOW.timestamp()) - 3600]
+
+    assert scheduler.tick() == scheduler.max_interval
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("outage", REDIS_OUTAGES, ids=lambda exc: type(exc).__name__)
+def test_redis_going_away_while_reading_the_next_entry_stands_by(scheduler, schedule, outage):
+    scheduler.tick()
+    schedule.error = outage
+
+    assert scheduler.tick() == 15
+    assert scheduler.holding_lock
 
 
 @pytest.mark.unit

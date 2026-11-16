@@ -11,6 +11,12 @@ RedBeat lets one beat schedule at a time through a lock in Redis that expires af
 
 Here the lock is taken without waiting, on the tick: a beat without it stands by and tries again
 every :func:`standby_seconds`, and one that loses it takes it back unless another beat has.
+
+RedBeat also oversleeps. A tick sleeps until the soonest of the entries it read: those due by their
+score, plus one entry it peeks at after them. When that one entry turns out to be due as well, it is
+sent, and only the sent entries' own intervals are left. Two 5-minute tasks sent together then put beat
+to sleep for 300 s while the 30 s tasks wait, which is also longer than the lock lives. So each tick's
+sleep is cut to the next entry's due time, read back from Redis after the tick.
 """
 
 import logging
@@ -69,7 +75,7 @@ class DocsGPTScheduler(RedBeatScheduler):
         try:
             if not self._hold_lock():
                 return standby
-            return super().tick(min=min, **kwargs)
+            return self._until_next_entry(super().tick(min=min, **kwargs))
         except LockError:
             # Lost between the check and RedBeat's own extend; the next tick takes it back.
             self.holding_lock = False
@@ -77,6 +83,21 @@ class DocsGPTScheduler(RedBeatScheduler):
         except REDIS_UNAVAILABLE as exc:
             logger.warning("beat: Redis is not reachable (%s); retrying in %ss", exc, standby)
             return standby
+
+    def _until_next_entry(self, interval: float) -> float:
+        """``interval``, cut to the time left until the next entry in Redis is due.
+
+        Scores are whole seconds, and RedBeat's tick has already read every entry up to this second,
+        so only later scores count. Waking on the score is at most a second early; the tick after
+        that sleeps the rest.
+        """
+        now = self.app.now().timestamp()
+        following = get_redis(self.app).zrangebyscore(
+            self.app.redbeat_conf.schedule_key, f"({int(now)}", "+inf", start=0, num=1, withscores=True
+        )
+        if not following:
+            return interval
+        return min(interval, following[0][1] - now)
 
     def _hold_lock(self) -> bool:
         """Extend the lock this beat holds, or take it when free; False while another beat has it."""
