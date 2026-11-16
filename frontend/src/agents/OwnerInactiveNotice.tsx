@@ -155,10 +155,12 @@ function useOutsideAccess(agent: NoticeAgent | null | undefined): {
     () => remembered.get(id),
   );
   const own = agent?.outside_access;
+  // Noted on every render, so a record is dated before anything is learned.
+  const ownSeenAt = own ? seenAt(own) : null;
   const fresh = !!entry && Date.now() - entry.at < FRESH_MS;
   const newer =
     !!entry &&
-    (own === undefined || (own === null ? fresh : entry.at >= seenAt(own)));
+    (own === undefined || (ownSeenAt === null ? fresh : entry.at >= ownSeenAt));
   const access = newer ? entry.access : own;
   const needsRead =
     !!id &&
