@@ -122,18 +122,17 @@ class TestPresets:
         assert before.enabled is False
         assert before.available is False
 
-        presets = tmp_path / "mcp.yaml"
-        presets.write_text(
-            "- key: mcp:example\n"
-            "  name: Example\n"
-            "  description: Example records.\n"
-            "  icon: example\n"
-            "  category: knowledge\n"
-            "  mcp_url: https://mcp.example.com/mcp\n"
-            "  auth_kind: mcp_oauth\n",
+        (tmp_path / "example.yaml").write_text(
+            "key: mcp:example\n"
+            "name: Example\n"
+            "description: Example records.\n"
+            "icon: example\n"
+            "category: knowledge\n"
+            "mcp_url: https://mcp.example.com/mcp\n"
+            "auth_kind: mcp_oauth\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
+        monkeypatch.setattr(catalog, "_PRESETS_DIR", tmp_path)
         catalog.reset_registry_for_tests()
         try:
             with _db(pg_conn):
