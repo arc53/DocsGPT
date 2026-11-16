@@ -15,7 +15,8 @@ An agent uses a resource when running it would reach that resource:
 
 A source folder (kind ``folder``) is used by the classic agents that read it
 live (``agents.knowledge_folder_ids``) and by workflow agent nodes naming it in
-``folders``.
+``folders``. A source is also used by those holders when one of their folders
+(its subtree included) feeds it to them (``folder_knowledge.folder_source_ids``).
 
 Only agents the caller can open are listed: their own, the ones a team
 shares with them, and the agents of every team workspace they belong to
@@ -136,6 +137,35 @@ _WORKFLOW_SQL = """
 _WORKFLOW_MATCH = "workflow_node_refs(n.config, '{key}') && CAST({{ids}} AS text[])"
 
 _WORKFLOW_KEY = {"tool": "tools", "source": "sources", "folder": "folders"}
+
+# The folders each source is filed in, with every folder above them in the
+# same tree (a filing sits in its own user's folder): a holder naming any of
+# them reads the source, if the folder feeds it (checked in Python).
+_FOLDER_FED_UP = """
+    WITH RECURSIVE up(sid, id, level) AS (
+        SELECT fi.resource_id, fi.folder_id, 1 FROM folder_items fi
+        WHERE fi.resource_type = 'source' AND fi.resource_id = ANY(CAST(:ids AS uuid[]))
+        UNION
+        SELECT u.sid, p.id, u.level + 1
+        FROM up u JOIN folders c ON c.id = u.id JOIN folders p ON p.id = c.parent_id AND p.user_id = c.user_id
+        WHERE u.level < 64
+    )
+"""
+_FOLDER_FED_SQL = _FOLDER_FED_UP + f"""
+    SELECT DISTINCT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, u.sid::text AS ref,
+           'agent' AS holder_type, a.id::text AS holder_id, u.id::text AS folder_id
+    FROM up u JOIN agents a ON u.id = ANY(a.knowledge_folder_ids)
+    WHERE {_CLASSIC} AND ({{match}})
+    UNION
+    SELECT a.id::text, a.name, a.user_id, a.agent_type, a.status, u.sid::text,
+           'workflow', w.id::text, u.id::text
+    FROM up u
+    JOIN workflow_nodes n ON u.id::text = ANY(workflow_node_refs(n.config, 'folders'))
+    JOIN workflows w ON w.id = n.workflow_id AND n.graph_version = w.current_graph_version
+    JOIN agents a ON a.workflow_id = w.id
+    WHERE a.agent_type = 'workflow' AND n.node_type = 'agent' AND ({{match}})
+"""
+_FOLDER_FED_MATCH = "u.sid = ANY(CAST({ids} AS uuid[]))"
 
 # Installs migrated from Mongo (``scripts/db/backfill.py``) may still name a
 # tool in ``agents.tools``, or a tool or source in a workflow node, by its
@@ -355,6 +385,50 @@ def _usage_rows(
     rows.extend(
         conn.execute(text(_WORKFLOW_SQL.format(key=key).format(match=workflow_match)), text_params).fetchall()
     )
+    if kind == "source":
+        rows.extend(_folder_fed_rows(conn, full_ids, scoped_ids, params))
+    return rows
+
+
+def _folder_fed_rows(conn: Connection, full_ids: list[str], scoped_ids: list[str], params: dict) -> list[tuple]:
+    """The usage rows of sources an agent or workflow node reads through one of its knowledge folders.
+
+    A filing under a holder's folder is a candidate; it counts only when the
+    folder feeds that holder the source (``folder_source_ids``: the folder
+    owner may use it, the teammate rules, no borrowed source on a holder
+    with outside access).
+
+    Args:
+        conn: An open connection.
+        full_ids: Source ids whose every agent is read.
+        scoped_ids: Source ids whose agents are read only when the caller can open them.
+        params: The query parameters of :func:`_usage_rows`.
+
+    Returns:
+        list[tuple]: ``(agent_id, name, user_id, agent_type, status, ref)`` rows.
+    """
+    from docsgpt.api.user.folder_knowledge import folder_source_ids
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+    match = _match(_FOLDER_FED_MATCH, full_ids, scoped_ids)
+    candidates = conn.execute(text(_FOLDER_FED_SQL.format(match=match)), params).fetchall()
+    holders: dict[tuple[str, str], Optional[dict]] = {}
+    fed: dict[tuple[str, str, str], set[str]] = {}
+    rows: list[tuple] = []
+    for agent_id, name, owner, agent_type, status, ref, holder_type, holder_id, folder_id in candidates:
+        holder_key = (holder_type, holder_id)
+        if holder_key not in holders:
+            repo = AgentsRepository(conn) if holder_type == "agent" else WorkflowsRepository(conn)
+            holders[holder_key] = repo.get_by_id(holder_id)
+        holder = holders[holder_key]
+        if holder is None:
+            continue
+        fed_key = (holder_type, holder_id, folder_id)
+        if fed_key not in fed:
+            fed[fed_key] = set(folder_source_ids(conn, [folder_id], holder_type, holder))
+        if ref.lower() in fed[fed_key]:
+            rows.append((agent_id, name, owner, agent_type, status, ref))
     return rows
 
 

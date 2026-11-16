@@ -428,3 +428,30 @@ class TestUsage:
         _write_graph(pg_conn, str(wf["id"]), 1, body["nodes"], body["edges"])
         usage = used_by_many(pg_conn, EDITOR, "folder", [folder], deletable_ids=[folder])
         assert usage[folder] == {"agents": [], "others": 1}
+
+    def test_a_source_counts_as_used_by_agents_reading_its_folder(self, pg_conn):
+        """A source is used by the agents and workflow nodes whose folders (subtrees included) feed it."""
+        from docsgpt.api.user.resource_usage import used_by_many
+        from docsgpt.api.user.workflows.routes import _write_graph
+
+        folder = _folder(pg_conn)
+        child = _folder(pg_conn, name="EU", parent=folder)
+        deep = _filed_source(pg_conn, child, name="deep")
+        unfiled = str(SourcesRepository(pg_conn).create("loose", user_id=OWNER)["id"])
+        # Filed by its folder's owner, but someone else's they can't use: the folder feeds nothing of it.
+        stray = str(SourcesRepository(pg_conn).create("stray", user_id=VIEWER)["id"])
+        FolderItemsRepository(pg_conn).file(OWNER, "source", stray, folder)
+        classic = str(AgentsRepository(pg_conn).create(
+            OWNER, "Reader", "draft", agent_type="classic", knowledge_folder_ids=[folder]
+        )["id"])
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        workflow_agent = str(AgentsRepository(pg_conn).create(
+            OWNER, "Flow", "draft", agent_type="workflow", workflow_id=str(wf["id"])
+        )["id"])
+        body = _node_body([child])
+        _write_graph(pg_conn, str(wf["id"]), 1, body["nodes"], body["edges"])
+        ids = [deep, unfiled, stray]
+        usage = used_by_many(pg_conn, OWNER, "source", ids, deletable_ids=ids)
+        assert {a["id"] for a in usage[deep]["agents"]} == {classic, workflow_agent}
+        assert usage[unfiled] == {"agents": [], "others": 0}
+        assert usage[stray] == {"agents": [], "others": 0}
