@@ -248,6 +248,30 @@ class TestCeleryRunnerEdges:
         assert failed["status"] == "failed"
         assert "no longer available" in failed["error"]["message"]
 
+    def test_the_rebuilt_executor_keeps_the_turns_team_workspace(self, bg_db, conversation, monkeypatch):
+        # An agentless team chat offers the team's tools; the worker must look them up there too.
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        row = _job(conversation[0], conversation[1], key="k-ws", runner="celery")
+        seen = []
+
+        def _tools(self):
+            seen.append(self.workspace_team_id)
+            return {}
+
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolExecutor.get_tools", _tools)
+        turn = SimpleNamespace(
+            user="u1", user_api_key=None, agent_id=None, external_caller=False, public_link_caller=False,
+            api_write_allowlist=[], conversation_id=conversation[0], message_id=conversation[1],
+            workspace_team_id="team-7",
+        )
+        payload = celery_runner.worker_payload(turn, {"id": "x", "name": "t"}, "a", {})
+
+        assert payload["workspace_team_id"] == "team-7"
+        celery_runner.run_job(row["id"], payload)
+        assert seen == ["team-7"]
+
     def test_soft_time_limit(self, bg_db, conversation, monkeypatch):
         from celery.exceptions import SoftTimeLimitExceeded
 

@@ -42,7 +42,8 @@ def worker_payload(executor: Any, tool_data: Dict[str, Any], action_name: str, a
     Returns:
         A JSON-safe dict. ``payer``, ``run_kind`` and ``team_id`` are the
         turn's billing (``billed_to``; every chat and run opens one), each None
-        when the turn set none: the identity then pays.
+        when the turn set none: the identity then pays. ``workspace_team_id``
+        is the chat's workspace, whose tools the worker offers.
     """
     billing = current_run_billing()
     return {
@@ -57,6 +58,8 @@ def worker_payload(executor: Any, tool_data: Dict[str, Any], action_name: str, a
         "api_write_allowlist": sorted(executor.api_write_allowlist or []),
         "conversation_id": executor.conversation_id,
         "message_id": executor.message_id,
+        # The chat's workspace, whose tools the call is looked up among.
+        "workspace_team_id": getattr(executor, "workspace_team_id", None),
         "tool_row_id": str(tool_data.get("id")) if tool_data.get("id") else None,
         "tool_name": tool_data.get("name"),
         "action_name": action_name,
@@ -183,6 +186,7 @@ def _run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         executor.conversation_id = payload.get("conversation_id")
         executor.message_id = payload.get("message_id")
+        executor.workspace_team_id = payload.get("workspace_team_id") or None
         found = _resolve_tool(executor, payload)
         if found is None:
             raise LookupError(f"the tool {payload.get('tool_name')!r} is no longer available")
