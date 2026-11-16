@@ -137,6 +137,11 @@ type MembersTabProps = {
   role: TeamRole;
   /** The team's grants: the remove dialog lists what a member shares. */
   grants: TeamGrant[];
+  /**
+   * The caller changed their own role: the page reads it again, so the tabs
+   * and controls the old role gave go.
+   */
+  onOwnRoleChanged?: () => void;
 };
 
 /**
@@ -144,7 +149,12 @@ type MembersTabProps = {
  * unless they pick another role), change roles and remove people; everyone
  * else reads the list.
  */
-export default function MembersTab({ team, role, grants }: MembersTabProps) {
+export default function MembersTab({
+  team,
+  role,
+  grants,
+  onOwnRoleChanged,
+}: MembersTabProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
@@ -170,7 +180,9 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
   const [removeState, setRemoveState] = useState<ActiveState>('INACTIVE');
   const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
 
-  // A role change that would pause what the member pays for asks first.
+  // A role change that would pause what the member pays for asks first. The
+  // last one asked about stays set while closed, so the dialog closes with
+  // its own words rather than going blank.
   const [roleChangeState, setRoleChangeState] =
     useState<ActiveState>('INACTIVE');
   const [roleChange, setRoleChange] = useState<{
@@ -237,8 +249,10 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
   const afterChange = (memberId?: string) => {
     setMembersReload((n) => n + 1);
     dispatch(loadTeams({ token }));
-    if (memberId && memberId === currentUserId)
+    if (memberId && memberId === currentUserId) {
       dispatch(loadWorkspaces({ token }));
+      onOwnRoleChanged?.();
+    }
   };
 
   const reportError = (message: string) =>
@@ -326,7 +340,6 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
         400,
         res.message ?? t('settings.teams.updateFailed'),
       );
-    setRoleChange(null);
     afterChange(member.user_id);
   };
 
@@ -371,14 +384,12 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
     setRemoveState('ACTIVE');
   };
 
-  // Returns the request so the confirm stays open on a failure and says why;
-  // the member is cleared only once they're gone, so the dialog keeps the name.
+  // Returns the request so the confirm stays open on a failure and says why.
+  // The member stays set once removed, so the dialog closes with their name.
   const confirmRemove = async () => {
     if (!memberToRemove) return;
     await teamsService.removeMember(team.id, memberToRemove.user_id, token);
-    const removed = memberToRemove.user_id;
-    setMemberToRemove(null);
-    afterChange(removed);
+    afterChange(memberToRemove.user_id);
   };
 
   const removeName = memberToRemove ? memberLabel(memberToRemove) : '';
@@ -565,7 +576,6 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
         setModalState={setRemoveState}
         submitLabel={t('settings.teams.remove')}
         handleSubmit={confirmRemove}
-        handleCancel={() => setMemberToRemove(null)}
         error={(e) =>
           teamErrorMessage(t, e, t('settings.teams.removeMemberError'))
         }
@@ -631,7 +641,6 @@ export default function MembersTab({ team, role, grants }: MembersTabProps) {
         setModalState={setRoleChangeState}
         submitLabel={t('payer.team.demote.submit')}
         handleSubmit={confirmRoleChange}
-        handleCancel={() => setRoleChange(null)}
         error={(e) =>
           teamErrorMessage(t, e, t('settings.teams.roleChangeError'))
         }

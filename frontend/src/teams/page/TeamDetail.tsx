@@ -217,7 +217,12 @@ export default function TeamDetail() {
         </nav>
 
         {current.key === 'members' && (
-          <MembersTab team={team} role={role} grants={grants} />
+          <MembersTab
+            team={team}
+            role={role}
+            grants={grants}
+            onOwnRoleChanged={loadGrants}
+          />
         )}
         {current.key === 'shared' && (
           <SharedItemsTab

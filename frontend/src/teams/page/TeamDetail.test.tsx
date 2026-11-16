@@ -44,8 +44,16 @@ vi.mock('../../navigation/DetailBreadcrumb', () => ({ default: () => null }));
 
 // Each tab is a marker naming the role it was given.
 vi.mock('./MembersTab', () => ({
-  default: ({ role }: { role: string }) => (
-    <div data-testid="tab-members" data-role={role} />
+  default: ({
+    role,
+    onOwnRoleChanged,
+  }: {
+    role: string;
+    onOwnRoleChanged?: () => void;
+  }) => (
+    <div data-testid="tab-members" data-role={role}>
+      <button type="button" data-testid="own-role" onClick={onOwnRoleChanged} />
+    </div>
   ),
 }));
 vi.mock('./SharedItemsTab', () => ({
@@ -254,6 +262,32 @@ describe('TeamDetail', () => {
         .querySelector('[data-testid="tab-settings"]')
         ?.getAttribute('data-role'),
     ).toBe('admin');
+  });
+
+  it('reads the role again after you change your own, so the old controls go', async () => {
+    setTeam({ role: 'admin', member_role: 'team_admin', is_owner: false });
+    listGrants.mockResolvedValue({ grants: [], role: 'admin' });
+    await render('/teams/t1');
+    expect(tabLinks().map((tab) => tab.textContent)).toContain(
+      'settings.teams.tabs.settings',
+    );
+    // A non-owner Admin demoted themselves to Editor.
+    listGrants.mockResolvedValue({ grants: [], role: 'editor' });
+    act(() =>
+      body()
+        .querySelector<HTMLButtonElement>('[data-testid="own-role"]')!
+        .click(),
+    );
+    await flush();
+    expect(tabLinks().map((tab) => tab.textContent)).toEqual([
+      'settings.teams.tabs.members',
+      'settings.teams.tabs.shared',
+    ]);
+    expect(
+      body()
+        .querySelector('[data-testid="tab-members"]')
+        ?.getAttribute('data-role'),
+    ).toBe('editor');
   });
 
   it('says so when the team is not one of yours', async () => {

@@ -26,6 +26,8 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const mockConfirm = { holdOpen: false };
+
 // A light stand-in for the promise-aware confirm: title, description, body
 // and submit; a rejected submit keeps it open with `error`.
 vi.mock('../../modals/ConfirmationModal', async () => {
@@ -48,7 +50,8 @@ vi.mock('../../modals/ConfirmationModal', async () => {
         const result = props.handleSubmit();
         if (result instanceof Promise) {
           result.then(
-            () => props.setModalState('INACTIVE'),
+            // Held open, it shows what the real dialog shows while it closes.
+            () => mockConfirm.holdOpen || props.setModalState('INACTIVE'),
             (reason: unknown) => setFailed({ reason }),
           );
         } else props.setModalState('INACTIVE');
@@ -159,16 +162,24 @@ describe('MembersTab: what a change pauses of what a member pays for', () => {
   });
 
   afterEach(() => {
+    mockConfirm.holdOpen = false;
+    onOwnRoleChanged.mockClear();
     act(() => root.unmount());
     container.remove();
     document.body.innerHTML = '';
   });
 
+  const onOwnRoleChanged = vi.fn();
   const render = async () => {
     act(() => {
       root.render(
         <MemoryRouter>
-          <MembersTab team={TEAM} role="admin" grants={[]} />
+          <MembersTab
+            team={TEAM}
+            role="admin"
+            grants={[]}
+            onOwnRoleChanged={onOwnRoleChanged}
+          />
         </MemoryRouter>,
       );
     });
@@ -291,5 +302,46 @@ describe('MembersTab: what a change pauses of what a member pays for', () => {
     await pickRole('priya@x.io', 'editor');
     expect(confirm()).toBeNull();
     expect(setMemberRole).toHaveBeenCalledWith('t1', 'priya', 'editor', TOKEN);
+  });
+
+  it('keeps the demotion dialog worded while it closes', async () => {
+    mockConfirm.holdOpen = true;
+    await render();
+    await pickRole('jonas@x.io', 'editor');
+    act(() => button('payer.team.demote.submit', confirm()!)!.click());
+    await flush();
+    expect(setMemberRole).toHaveBeenCalled();
+    expect(confirm()!.textContent).toContain(
+      'payer.team.demote.title(name=jonas@x.io,role=workspace.common.roles.editor)',
+    );
+  });
+
+  it('keeps the remove dialog worded while it closes', async () => {
+    mockConfirm.holdOpen = true;
+    await render();
+    await openRemove('dana@x.io');
+    act(() => button('settings.teams.remove', confirm()!)!.click());
+    await flush();
+    expect(removeMember).toHaveBeenCalled();
+    expect(confirm()!.textContent).toContain(
+      'settings.teams.removeMemberConfirmation(name=dana@x.io,team=Operations)',
+    );
+  });
+
+  it('tells the page when you changed your own role', async () => {
+    setMembers([
+      member('lena', 'owner'),
+      member('me', 'admin', { schedules: 0, outside_access: 0 }),
+    ]);
+    await render();
+    await pickRole('me@x.io', 'editor');
+    expect(setMemberRole).toHaveBeenCalledWith('t1', 'me', 'editor', TOKEN);
+    expect(onOwnRoleChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't for someone else's role", async () => {
+    await render();
+    await pickRole('dana@x.io', 'admin');
+    expect(onOwnRoleChanged).not.toHaveBeenCalled();
   });
 });
