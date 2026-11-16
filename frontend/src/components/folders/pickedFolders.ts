@@ -37,9 +37,12 @@ export type PickedFolder = {
 };
 
 /**
- * The picked folders, named and counted: from the reader's own folder tree
- * (counted live, so a pick shows at once), else from the server's details (a
- * teammate's folder, or a deleted one).
+ * The picked folders, named and counted: from the reader's own folder tree,
+ * else from the server's details (a teammate's folder, or a deleted one). A
+ * saved folder takes the server's count of what it feeds the agent (a source
+ * the agent can't use, such as one only lent to the reader, isn't in it); a
+ * folder just picked is counted live from the tree, so the pick shows at
+ * once.
  *
  * Args:
  *   tree: The reader's source folders.
@@ -65,6 +68,8 @@ export function pickedFolders(
           ? 'sponsor_cannot_edit_agent'
           : undefined;
     const own = tree.byId.get(id);
+    if (own && typeof detail?.source_count === 'number')
+      return { id, name: own.name, sourceCount: detail.source_count };
     if (own) {
       const subtree = subtreeIds(tree, id);
       const sourceCount = docs.filter((doc) => {

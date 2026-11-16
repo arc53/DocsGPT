@@ -40,6 +40,22 @@ describe('pickedFolders', () => {
     ]);
   });
 
+  it("counts a saved own folder by the server's count of what it feeds", () => {
+    // The tree holds 3 sources under Carriers; one is only lent to the
+    // reader, so the agent gets 2.
+    expect(
+      pickedFolders(
+        tree,
+        docs,
+        ['carriers', 'customs'],
+        [{ id: 'carriers', name: 'Carriers', source_count: 2 }],
+      ),
+    ).toEqual([
+      { id: 'carriers', name: 'Carriers', sourceCount: 2 },
+      { id: 'customs', name: 'Customs', sourceCount: 1 },
+    ]);
+  });
+
   it("reads a teammate's or a deleted folder from the server's details", () => {
     const list = pickedFolders(
       tree,
