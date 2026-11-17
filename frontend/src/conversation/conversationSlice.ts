@@ -29,7 +29,12 @@ import {
 } from '../upload/uploadSlice';
 import { wakeFromMetadata } from '../backgroundJobs/kinds';
 import { newIdempotencyKey } from '../utils/idempotency';
-import { captureWorkspace } from '../workspace/requestWorkspace';
+import {
+  captureWorkspace,
+  PERSONAL_WORKSPACE,
+  requestWorkspace,
+} from '../workspace/requestWorkspace';
+import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
 import { switchWorkspace } from '../workspace/workspaceSlice';
 import {
   appendAnswerText,
@@ -316,6 +321,15 @@ export type LoadConversationArgs = {
 
 let loadSeq = 0;
 
+/** The workspace a loaded chat lives in, or null when it doesn't say. */
+function chatWorkspaceId(data: {
+  workspace?: ItemWorkspace | null;
+}): string | null {
+  const item = data.workspace;
+  if (!item) return null;
+  return item.kind === 'personal' ? PERSONAL_WORKSPACE : (item.team_id ?? null);
+}
+
 export const loadConversation = createAsyncThunk<
   LoadConversationResult,
   LoadConversationArgs
@@ -356,6 +370,12 @@ export const loadConversation = createAsyncThunk<
   // A later loadConversation has been issued; drop our writes so its
   // result wins, and tell the caller not to navigate off our return.
   if (seq !== loadSeq) {
+    return { data: null, stale: true };
+  }
+  // A switch while the agent resolved (a switch to another workspace's new
+  // chat issues no load) must not bring this chat into that workspace. The
+  // one switch that stands is the resolver's follow into the chat's own.
+  if (!workspace.isCurrent() && requestWorkspace() !== chatWorkspaceId(data)) {
     return { data: null, stale: true };
   }
   if (

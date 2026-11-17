@@ -924,6 +924,77 @@ describe('loadConversation with resolveAgent', () => {
     }
   });
 
+  it('drops a chat whose agent resolves after a switch to another workspace', async () => {
+    vi.spyOn(conversationService, 'getConversation').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [{ prompt: 'new chat' }],
+        agent_id: 'agent-b',
+        workspace: { kind: 'team', team_id: 't1' },
+      }),
+    } as Response);
+    const store = makeLoadStore();
+    let release: ((agent: Agent) => void) | null = null;
+    setRequestWorkspace('t1', 1);
+    try {
+      const load = store.dispatch(
+        loadConversation({
+          id: 'c-2',
+          force: true,
+          resolveAgent: () => new Promise<Agent>((r) => (release = r)),
+        }),
+      );
+      await vi.waitFor(() => expect(release).not.toBeNull());
+      // The user switches to another workspace's new chat while the agent
+      // is out; nothing bumps the load counter.
+      setRequestWorkspace('t2', 2);
+      release!(agentB);
+
+      await expect(load.unwrap()).resolves.toEqual({
+        data: null,
+        stale: true,
+      });
+      expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+      expect(store.getState().conversation.conversationId).toBeNull();
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
+  });
+
+  it('applies a chat its resolver followed into the chat own workspace', async () => {
+    vi.spyOn(conversationService, 'getConversation').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [{ prompt: 'new chat' }],
+        agent_id: 'agent-b',
+        workspace: { kind: 'team', team_id: 't2' },
+      }),
+    } as Response);
+    const store = makeLoadStore();
+    setRequestWorkspace('personal', 1);
+    try {
+      const result = await store
+        .dispatch(
+          loadConversation({
+            id: 'c-2',
+            force: true,
+            resolveAgent: async () => {
+              // The follow: the app switches to the chat's team.
+              setRequestWorkspace('t2', 2);
+              return agentB;
+            },
+          }),
+        )
+        .unwrap();
+
+      expect(result.stale).toBe(false);
+      expect(shown(store)).toEqual({ prompt: 'new chat', agent: 'agent-b' });
+      expect(store.getState().conversation.conversationId).toBe('c-2');
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
+  });
+
   it('applies nothing when a newer load superseded it', async () => {
     serveConversation('agent-b');
     const store = makeLoadStore();
