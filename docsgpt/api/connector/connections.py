@@ -2,8 +2,12 @@
 
 ``/api/connectors/catalog`` lists every service DocsGPT can connect to, with
 whether the server is set up for it and the caller's connection summary.
-``/api/connections`` lists and manages the caller's connections. Responses
-never include tokens or secrets.
+``/api/connections`` lists and manages the caller's connections, or with
+``owner=team`` the connections of the team the workspace header names.
+Routes about one connection go by the row's owner, never the header: a
+team's connection is seen by every member, managed by its Admins and
+browsed only by the Admin who connected it (``docsgpt/connectors/team.py``).
+Responses never include tokens or secrets.
 """
 
 from __future__ import annotations
@@ -17,9 +21,22 @@ from docsgpt.api import api
 from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.api.user.sources.access import SYNC_FREQUENCIES
 from docsgpt.connectors import catalog, service
+from docsgpt.connectors.team import (
+    CONNECTION_ACTIONS,
+    CONNECTION_PAUSED,
+    OWNER_PERSONAL,
+    OWNER_TEAM,
+    ConnectionAccess,
+    ConnectionDenied,
+    authorize_connection,
+    creation_owner,
+    is_team_connection,
+)
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.security.encryption import CredentialDecryptionError
+from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
+from docsgpt.workspaces.principal import team_of_principal
 
 connections_ns = Namespace("connections", description="Connectors and connections", path="/api")
 api.add_namespace(connections_ns)
@@ -38,18 +55,100 @@ def _not_found():
     return make_response(jsonify({"success": False, "error": "Connection not found"}), 404)
 
 
+def _listed_owner(conn, user_id: str) -> str:
+    """Whose connections a list shows: the caller's, or with ``owner=team`` the header team's.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+
+    Returns:
+        The caller, or the team's principal (any member may list them).
+
+    Raises:
+        WorkspaceError: 400 ``invalid_owner`` or ``team_workspace_required``, 404 outside the team.
+    """
+    value = (request.args.get("owner") or "").strip().lower()
+    if value in ("", OWNER_PERSONAL):
+        return user_id
+    if value != OWNER_TEAM:
+        raise WorkspaceError(400, "invalid_owner", "owner must be personal or team")
+    workspace = current_workspace(conn)
+    if not workspace.is_team:
+        raise WorkspaceError(400, "team_workspace_required", "Switch to the team to see its connections")
+    require_workspace_role(workspace, CONNECTION_ACTIONS["view"])
+    return workspace.owner_id
+
+
+def _access(conn, connection_id: str, user_id: str, action: str):
+    """``(access, None)`` when the caller may do ``action`` with the connection, else ``(None, refusal)``."""
+    try:
+        return authorize_connection(conn, connection_id, user_id, action), None
+    except ConnectionDenied as denied:
+        return None, denied.response()
+
+
+def replaces_account(access: ConnectionAccess) -> bool:
+    """Whether reconnecting this connection replaces its account with the caller's own.
+
+    True on a team's connection reconnected by an Admin other than whoever connected it: their sign-in
+    (or key) takes the connection over in place, and they connect it from then on.
+    """
+    return access.is_team and access.user != access.connected_by
+
+
+def unavailable_response(err: service.ConnectionUnavailable):
+    """409 for a connection that can't be used: ``connection_paused`` (with ``paused_for``) or ``reconnect``."""
+    if err.status == service.STATUS_PAUSED:
+        return make_response(jsonify({
+            "success": False, "error": CONNECTION_PAUSED, "message": str(err), "paused_for": err.paused_for,
+        }), 409)
+    return _error("Reconnect to continue", 409, code="reconnect")
+
+
+def audit_team_connection(conn, actor: str, event: str, row: dict, **detail) -> None:
+    """Record ``event`` on the team's audit trail when ``row`` is a team's connection (best-effort).
+
+    Args:
+        conn: Open connection inside the action's transaction.
+        actor: Who did it.
+        event: ``team.connection_added``, ``…_reconnected``, ``…_disconnected`` or ``…_removed``.
+        row: The connection.
+        **detail: More metadata; None values are dropped.
+    """
+    if not is_team_connection(row):
+        return
+    # Lazy: the teams routes import the user API, which imports this module.
+    from docsgpt.api.user.teams.routes import _audit
+
+    _audit(conn, actor, event, team_id=team_of_principal(row["user_id"]), connection_id=str(row["id"]), **detail)
+
+
+def _payload(conn, row: dict, user_id: str, counts: dict | None = None) -> dict:
+    return service.serialize_connection(row, counts, conn=conn, viewer=user_id)
+
+
 @connections_ns.route("/connectors/catalog")
 class ConnectorCatalog(Resource):
-    @api.doc(description="Every connector with its availability and the caller's connection summary")
+    @api.doc(
+        description=(
+            "Every connector with its availability and the caller's connection summary; with owner=team, "
+            "the summary of the connections of the team the workspace header names (any member)"
+        ),
+        params={"owner": "personal (default) or team"},
+    )
     def get(self):
         user_id = _user_id()
         if not user_id:
             return _unauthorized()
         try:
             with db_readonly() as conn:
+                owner_id = _listed_owner(conn, user_id)
                 entries = service.catalog_for_user(
-                    conn, user_id, is_admin=has_role(request.decoded_token, ROLE_ADMIN),
+                    conn, owner_id, is_admin=has_role(request.decoded_token, ROLE_ADMIN), viewer=user_id,
                 )
+        except WorkspaceError as err:
+            return err.response()
         except Exception as err:
             current_app.logger.error(f"Error building connector catalog: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to load connectors"}), 500)
@@ -59,10 +158,6 @@ class ConnectorCatalog(Resource):
 def _json_body() -> dict:
     body = request.get_json(silent=True)
     return body if isinstance(body, dict) else {}
-
-
-def _owned(conn, connection_id: str, user_id: str):
-    return ConnectorSessionsRepository(conn).get_for_user(connection_id, user_id)
 
 
 def _is_preset(row: dict) -> bool:
@@ -87,7 +182,9 @@ class ConnectionsList(Resource):
     @api.doc(
         description=(
             "Create a connection from pasted credentials: "
-            "{connector_key, credentials, label?}. Same credentials reuse the same connection."
+            "{connector_key, credentials, label?, owner?}. Same credentials reuse the same connection. "
+            "owner=team connects it for the team the workspace header names (Admins); without it the "
+            "connection is the caller's own, whatever the header."
         )
     )
     def post(self):
@@ -119,9 +216,18 @@ class ConnectionsList(Resource):
                 return _error(str(err), 502)
         try:
             with db_session() as conn:
+                owner_id, connected_by = creation_owner(conn, user_id, body.get("owner"))
                 row, created = service.create_api_key_connection(
-                    conn, user_id, definition, credentials, label=label,
+                    conn, owner_id, definition, credentials, label=label, connected_by=connected_by,
                 )
+                if created:
+                    audit_team_connection(
+                        conn, user_id, "team.connection_added", row,
+                        connector_key=definition.key, account_label=service.account_label(row),
+                    )
+                connection = _payload(conn, row, user_id)
+        except WorkspaceError as err:
+            return err.response()
         except service.EncryptionKeyNotConfigured as err:
             return _error(str(err), 400, code="encryption_key_default")
         except service.ConnectorDisabled as err:
@@ -136,21 +242,30 @@ class ConnectionsList(Resource):
                 {
                     "success": True,
                     "created": created,
-                    "connection": service.serialize_connection(row),
+                    "connection": connection,
                     "setup": dict(definition.setup),
                 }
             ),
             201 if created else 200,
         )
 
-    @api.doc(description="The caller's connections with status and linked resource counts")
+    @api.doc(
+        description=(
+            "The caller's connections with status and linked resource counts; with owner=team, the "
+            "connections of the team the workspace header names (any member). Each says who owns it, who "
+            "connected it, why it is paused and what the caller may do (allowed_actions, can_pick)."
+        ),
+        params={"owner": "personal (default) or team"},
+    )
     def get(self):
         user_id = _user_id()
         if not user_id:
             return _unauthorized()
         try:
             with db_readonly() as conn:
-                connections = service.list_connections(conn, user_id)
+                connections = service.list_connections(conn, _listed_owner(conn, user_id), viewer=user_id)
+        except WorkspaceError as err:
+            return err.response()
         except Exception as err:
             current_app.logger.error(f"Error listing connections: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to load connections"}), 500)
@@ -166,16 +281,16 @@ class ConnectionDetail(Resource):
             return _unauthorized()
         try:
             with db_readonly() as conn:
-                row = ConnectorSessionsRepository(conn).get_for_user(connection_id, user_id)
-                if row is None:
-                    return _not_found()
-                detail = service.connection_detail(conn, row)
+                access, refused = _access(conn, connection_id, user_id, "view")
+                if refused is not None:
+                    return refused
+                detail = service.connection_detail(conn, dict(access.row), viewer=user_id)
         except Exception as err:
             current_app.logger.error(f"Error loading connection: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to load connection"}), 500)
         return make_response(jsonify({"success": True, "connection": detail}), 200)
 
-    @api.doc(description="Name an account: {name}. An empty name clears it. Owner only.")
+    @api.doc(description="Name an account: {name}. An empty name clears it. Owner, or a team's Admins.")
     def patch(self, connection_id: str):
         user_id = _user_id()
         if not user_id:
@@ -184,16 +299,17 @@ class ConnectionDetail(Resource):
         if not isinstance(name, str) or len(name.strip()) > service.ACCOUNT_NAME_MAX:
             return _error(f"name must be text of at most {service.ACCOUNT_NAME_MAX} characters", 400)
         with db_session() as conn:
-            row = _owned(conn, connection_id, user_id)
-            if row is None:
-                return _not_found()
-            connection = service.rename_connection(conn, row, name)
+            access, refused = _access(conn, connection_id, user_id, "manage")
+            if refused is not None:
+                return refused
+            service.rename_connection(conn, dict(access.row), name)
+            connection = _payload(conn, ConnectorSessionsRepository(conn).get(connection_id), user_id)
         return make_response(jsonify({"success": True, "connection": connection}), 200)
 
     @api.doc(
         description=(
             "Remove a connection: {sources: keep | delete, tools: delete | keep}. "
-            "Kept sources keep their content and stop syncing."
+            "Kept sources keep their content and stop syncing. Owner, or a team's Admins."
         )
     )
     def delete(self, connection_id: str):
@@ -209,11 +325,18 @@ class ConnectionDetail(Resource):
             return _error("sources and tools must be keep or delete", 400)
         try:
             with db_session() as conn:
-                row = _owned(conn, connection_id, user_id)
-                if row is None:
-                    return _not_found()
+                access, refused = _access(conn, connection_id, user_id, "manage")
+                if refused is not None:
+                    return refused
+                row = dict(access.row)
+                counts = ConnectorSessionsRepository(conn).resource_counts([connection_id]).get(connection_id) or {}
                 to_delete = service.remove_connection(conn, row, sources=sources_mode, tools=tools_mode)
-            failed = [str(doc["id"]) for doc in to_delete if not delete_source(user_id, doc)]
+                audit_team_connection(
+                    conn, user_id, "team.connection_removed", row, sources=sources_mode, tools=tools_mode,
+                    source_count=counts.get("sources", 0), tool_count=counts.get("tools", 0),
+                )
+            actor = user_id if access.is_team else None
+            failed = [str(doc["id"]) for doc in to_delete if not delete_source(access.owner_id, doc, actor=actor)]
         except Exception as err:
             current_app.logger.error(f"Error removing connection: {err}", exc_info=True)
             return _error("Failed to remove connection", 500)
@@ -222,17 +345,21 @@ class ConnectionDetail(Resource):
 
 @connections_ns.route("/connections/<string:connection_id>/disconnect")
 class ConnectionDisconnect(Resource):
-    @api.doc(description="Delete a connection's stored credentials; its sources and tools stay")
+    @api.doc(description="Delete a connection's stored credentials; its sources and tools stay. Owner, or a "
+                         "team's Admins.")
     def post(self, connection_id: str):
         user_id = _user_id()
         if not user_id:
             return _unauthorized()
         try:
             with db_session() as conn:
-                row = ConnectorSessionsRepository(conn).get_for_user(connection_id, user_id)
-                if row is None:
-                    return _not_found()
-                connection = service.disconnect(conn, row)
+                access, refused = _access(conn, connection_id, user_id, "manage")
+                if refused is not None:
+                    return refused
+                row = dict(access.row)
+                service.disconnect(conn, row)
+                audit_team_connection(conn, user_id, "team.connection_disconnected", row)
+                connection = _payload(conn, ConnectorSessionsRepository(conn).get(connection_id), user_id)
         except Exception as err:
             current_app.logger.error(f"Error disconnecting connection: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to disconnect"}), 500)
@@ -246,8 +373,10 @@ class ConnectionSetup(Resource):
             "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, "
             "sync?: {items, frequency, name?, config?, folder_id?}}. allow_writes points GitHub's tool at its "
             "write endpoint. config is the synced source's retrieval settings, validated like an upload's; "
-            "folder_id files the new source in one of the caller's source folders (404 folder_not_found). "
-            "Honours an Idempotency-Key header for the sync."
+            "folder_id files the new source in one of the owner's source folders (404 folder_not_found). "
+            "Honours an Idempotency-Key header for the sync. On a team's connection: Admins; the sync only "
+            "by the Admin who connected it (403 connection_picker_owner_only); 409 connection_paused while "
+            "the account is paused. The source and tools are the team's."
         )
     )
     def post(self, connection_id: str):
@@ -262,16 +391,22 @@ class ConnectionSetup(Resource):
         try:
             mcp_actions = None
             with db_readonly() as conn:
-                row = _owned(conn, connection_id, user_id)
-                discover = bool(row) and create_tools and service.needs_mcp_discovery(conn, row)
-                forbidden = bool(row) and allow_writes and not service.writes_allowed(
+                # Choosing what a source syncs browses the account: only whoever connected it.
+                access, refused = _access(conn, connection_id, user_id, "pick" if body.get("sync") else "manage")
+                if refused is not None:
+                    return refused
+                row = dict(access.row)
+                try:
+                    service.ensure_account_usable(conn, row)
+                except service.ConnectionUnavailable as err:
+                    return unavailable_response(err)
+                discover = create_tools and service.needs_mcp_discovery(conn, row)
+                forbidden = allow_writes and not service.writes_allowed(
                     service.load_policies(conn), catalog.connector_key_for_row(row),
                 )
                 # An MCP preset's tool is rebuilt only while an admin leaves
                 # the preset on, as its sign-in's save requires.
                 disabled = discover and _is_preset(row) and not service.connector_enabled(conn, row)
-            if row is None:
-                return _not_found()
             if service.normalize_status(row) != service.STATUS_CONNECTED:
                 return _error("Reconnect before setting up", 409, code="reconnect")
             if forbidden:
@@ -286,28 +421,32 @@ class ConnectionSetup(Resource):
                 from docsgpt.connectors.mcp import discover_connection_actions
 
                 try:
-                    mcp_actions = discover_connection_actions(user_id, row, writes=allow_writes)
-                except service.ConnectionUnavailable:
+                    mcp_actions = discover_connection_actions(access.owner_id, row, writes=allow_writes)
+                except service.ConnectionUnavailable as err:
+                    if err.status == service.STATUS_PAUSED:
+                        return unavailable_response(err)
                     return _error("Reconnect before setting up", 409, code="reconnect")
                 except Exception as err:
                     current_app.logger.warning(f"Could not list the MCP server's tools: {err}")
                     return _error("The service's tools could not be reached. Try again.", 502,
                                   code="tools_unavailable")
             with db_session() as conn:
-                row = _owned(conn, connection_id, user_id)
-                if row is None:
-                    return _not_found()
+                access, refused = _access(conn, connection_id, user_id, "manage")
+                if refused is not None:
+                    return refused
+                row = dict(access.row)
                 tools = []
                 if create_tools:
                     tools = service.ensure_connection_tools(
-                        conn, user_id, row, permissions=body.get("tool_permissions") or None,
+                        conn, access.owner_id, row, permissions=body.get("tool_permissions") or None,
                         mcp_actions=mcp_actions, mcp_writes=allow_writes,
+                        created_by=user_id if access.is_team else None,
                     )
                 account_parameters = service.connection_parameters(row)
                 tool_payload = [service.serialize_tool(tool, account_parameters) for tool in tools]
             sources = []
             if body.get("sync"):
-                started = _start_sync(user_id, row, body["sync"])
+                started = _start_sync(access.owner_id, row, body["sync"], actor=user_id)
                 if isinstance(started, tuple):
                     message, status, *code = started
                     return _error(message, status, **({"code": code[0]} if code else {}))
@@ -318,15 +457,17 @@ class ConnectionSetup(Resource):
         return make_response(jsonify({"success": True, "tools": tool_payload, "sources": sources}), 200)
 
 
-def _start_sync(user_id: str, row: dict, sync: dict):
+def _start_sync(user_id: str, row: dict, sync: dict, *, actor: str | None = None):
     """Queue the first ingest of a source synced from ``row``.
 
     Args:
-        user_id: The connection's owner.
+        user_id: The connection's owner, and so the new source's: the person, or a team's principal.
         row: The connection row.
         sync: ``{items, frequency, name?, config?, folder_id?}``. ``config`` is the source's
             retrieval settings (a ``SourceConfig``), applied as an upload's are; ``folder_id`` one of
             the owner's source folders to file the new source in.
+        actor: The person asking, when not the owner (a team's Admin): the source records them as
+            who added it, they pay for it and hear its events.
 
     Returns:
         The source summary, or ``(message, status)`` on a bad request.
@@ -418,8 +559,10 @@ def _start_sync(user_id: str, row: dict, sync: dict):
             "sync_frequency": frequency,
             "config": source_config,
         }
+    if actor and actor != user_id:
+        kwargs["actor_id"] = actor
     idempotency_key, _ = _read_idempotency_key()
-    scoped_key = _scoped_idempotency_key(idempotency_key, user_id)
+    scoped_key = _scoped_idempotency_key(idempotency_key, actor or user_id)
     task_id = None
     if scoped_key:
         task_id, cached = _claim_task_or_get_cached(scoped_key, "connection_setup_sync")
@@ -450,15 +593,18 @@ class ConnectionRepositories(Resource):
         if not user_id:
             return _unauthorized()
         with db_readonly() as conn:
-            row = _owned(conn, connection_id, user_id)
-        if row is None or catalog.connector_key_for_row(row) != "github":
+            access, refused = _access(conn, connection_id, user_id, "pick")
+        if refused is not None:
+            return refused
+        row = dict(access.row)
+        if catalog.connector_key_for_row(row) != "github":
             return _not_found()
         app_sign_in = (row.get("auth_kind") or "") == "oauth"
         try:
             token = service.access_credentials(row).get("access_token")
             repositories = github.list_repositories(token or "", app=app_sign_in)
-        except service.ConnectionUnavailable:
-            return _error("Reconnect to continue", 409, code="reconnect")
+        except service.ConnectionUnavailable as err:
+            return unavailable_response(err)
         except github.TokenRejected as err:
             service.mark_reconnect_needed(connection_id, str(err))
             return _error("Reconnect to continue", 409, code="reconnect")
@@ -495,13 +641,16 @@ class LinearWorkspace(Resource):
         if not user_id:
             return _unauthorized()
         with db_readonly() as conn:
-            row = _owned(conn, connection_id, user_id)
-        if row is None or catalog.connector_key_for_row(row) != linear.LINEAR_CONNECTOR:
+            access, refused = _access(conn, connection_id, user_id, "pick")
+        if refused is not None:
+            return refused
+        row = dict(access.row)
+        if catalog.connector_key_for_row(row) != linear.LINEAR_CONNECTOR:
             return _not_found()
         try:
             workspace = mcp.run_connection_session(row, linear.mcp_url(), linear.list_workspace)
-        except service.ConnectionUnavailable:
-            return _error("Reconnect to continue", 409, code="reconnect")
+        except service.ConnectionUnavailable as err:
+            return unavailable_response(err)
         except service.TransientConnectionError:
             return _error("Linear is not responding. Try again.", 503)
         except Exception as err:
@@ -515,7 +664,10 @@ class ConnectionReconnect(Resource):
     @api.doc(
         description=(
             "OAuth: returns an authorization URL for the same account. "
-            "API key: accepts {credentials} and replaces the stored ones."
+            "API key: accepts {credentials} and replaces the stored ones. On a team's connection (Admins), "
+            "an Admin other than whoever connected it reconnects with their own account: replace is true, "
+            "the connection keeps its id, sources and tools, and they become who connected it "
+            "(409 account_already_connected with connection_id when the team already has that account)."
         )
     )
     def post(self, connection_id: str):
@@ -527,18 +679,25 @@ class ConnectionReconnect(Resource):
         body = _json_body()
         try:
             with db_readonly() as conn:
-                row = _owned(conn, connection_id, user_id)
-            if row is None:
-                return _not_found()
+                access, refused = _access(conn, connection_id, user_id, "manage")
+            if refused is not None:
+                return refused
+            row = dict(access.row)
+            replace = replaces_account(access)
             key = catalog.connector_key_for_row(row)
             definition = catalog.get_definition(key)
             auth_kind = row.get("auth_kind") or (definition.auth_kind if definition else None)
             if auth_kind == "oauth":
                 try:
-                    started = build_authorization(row["provider"], user_id, connection_id)
+                    started = build_authorization(
+                        row["provider"], user_id, connection_id,
+                        owner_id=access.owner_id if access.is_team else None, replace=replace,
+                    )
                 except OriginNotAllowed as err:
                     return origin_not_allowed_response(err)
-                return make_response(jsonify({"success": True, "kind": "oauth", **started}), 200)
+                return make_response(
+                    jsonify({"success": True, "kind": "oauth", "replace": replace, **started}), 200,
+                )
             if auth_kind == "mcp_oauth":
                 # The MCP client runs the OAuth dance (dynamic registration,
                 # PKCE); the frontend starts it through /api/mcp_server/test.
@@ -559,12 +718,18 @@ class ConnectionReconnect(Resource):
                 except CredentialDecryptionError:
                     stored = {}
                 merged = {**(stored.get("credentials") or {}), **{k: v for k, v in credentials.items() if v}}
+                # A team's account is whoever pasted the key that works now.
+                named = {"connected_by": user_id} if access.is_team else {}
                 service.write_secrets(
                     conn, locked, {**stored, "credentials": merged},
-                    status=service.STATUS_CONNECTED, last_error=None,
+                    status=service.STATUS_CONNECTED, last_error=None, **named,
                 )
                 service.resume_sources(conn, connection_id)
-                connection = service.serialize_connection(ConnectorSessionsRepository(conn).get(connection_id))
+                audit_team_connection(
+                    conn, user_id, "team.connection_reconnected", row, replaced=replace,
+                    previous_connected_by=access.connected_by,
+                )
+                connection = _payload(conn, ConnectorSessionsRepository(conn).get(connection_id), user_id)
         except service.EncryptionKeyNotConfigured as err:
             return _error(str(err), 400, code="encryption_key_default")
         except Exception as err:
@@ -575,19 +740,32 @@ class ConnectionReconnect(Resource):
 
 @connections_ns.route("/connections/<string:connection_id>/picker-token")
 class ConnectionPickerToken(Resource):
-    @api.doc(description="A short-lived access token for a browser-side file picker. Owner only; never a refresh token.")
+    @api.doc(
+        description=(
+            "A short-lived access token for a browser-side file picker; never a refresh token. Owner only; "
+            "on a team's connection only the Admin who connected it (403 connection_picker_owner_only), and "
+            "409 connection_paused while the account is paused."
+        )
+    )
     def post(self, connection_id: str):
         user_id = _user_id()
         if not user_id:
             return _unauthorized()
         with db_readonly() as conn:
-            row = _owned(conn, connection_id, user_id)
-        if row is None or (row.get("auth_kind") or "oauth") != "oauth":
+            access, refused = _access(conn, connection_id, user_id, "pick")
+            if refused is not None:
+                return refused
+            row = dict(access.row)
+            try:
+                service.ensure_account_usable(conn, row)
+            except service.ConnectionUnavailable as err:
+                return unavailable_response(err)
+        if (row.get("auth_kind") or "oauth") != "oauth":
             return _not_found()
         try:
             token = service.picker_token(connection_id, row.get("provider"))
-        except service.ConnectionUnavailable:
-            return _error("Reconnect to continue", 409, code="reconnect")
+        except service.ConnectionUnavailable as err:
+            return unavailable_response(err)
         except service.TransientConnectionError:
             return _error("The provider is not responding. Try again.", 503)
         return make_response(jsonify({"success": True, **token}), 200)
@@ -629,10 +807,11 @@ class ConnectionToolPermissions(Resource):
         if not isinstance(permissions, dict) or any(p not in PERMISSIONS for p in permissions.values()):
             return _error("permissions must map action names to always, ask or off", 400)
         with db_session() as conn:
-            row = _owned(conn, connection_id, user_id)
-            if row is None:
-                return _not_found()
-            tool = service.set_tool_permissions(conn, user_id, connection_id, tool_id, permissions)
+            access, refused = _access(conn, connection_id, user_id, "manage")
+            if refused is not None:
+                return refused
+            row = dict(access.row)
+            tool = service.set_tool_permissions(conn, access.owner_id, connection_id, tool_id, permissions)
             if tool is None:
                 return _not_found()
             payload = service.serialize_tool(tool, service.connection_parameters(row))
@@ -644,7 +823,8 @@ class ConnectionToolParameters(Resource):
     @api.doc(
         description=(
             "Fix or release an action's parameters: {action, parameters: {name: value | null}}. "
-            "A value is sent on every call and hidden from the model; null lets the model decide. Owner only."
+            "A value is sent on every call and hidden from the model; null lets the model decide. Owner, or "
+            "a team's Admins."
         )
     )
     def put(self, connection_id: str, tool_id: str):
@@ -656,11 +836,12 @@ class ConnectionToolParameters(Resource):
         if not isinstance(action, str) or not isinstance(pins, dict) or not pins:
             return _error("Send the action and a map of parameters to values or null", 400)
         with db_session() as conn:
-            row = _owned(conn, connection_id, user_id)
-            if row is None:
-                return _not_found()
+            access, refused = _access(conn, connection_id, user_id, "manage")
+            if refused is not None:
+                return refused
+            row = dict(access.row)
             try:
-                tool = service.set_tool_parameters(conn, user_id, connection_id, tool_id, action, pins)
+                tool = service.set_tool_parameters(conn, access.owner_id, connection_id, tool_id, action, pins)
             except ValueError as err:
                 return _error(str(err), 400)
             if tool is None:
@@ -679,13 +860,13 @@ class ConnectionRefreshTools(Resource):
         if not user_id:
             return _unauthorized()
         with db_readonly() as conn:
-            row = _owned(conn, connection_id, user_id)
-        if row is None:
-            return _not_found()
+            access, refused = _access(conn, connection_id, user_id, "manage")
+        if refused is not None:
+            return refused
         try:
-            diff = refresh_mcp_tools(user_id, row)
-        except service.ConnectionUnavailable:
-            return _error("Reconnect to continue", 409, code="reconnect")
+            diff = refresh_mcp_tools(access.owner_id, dict(access.row))
+        except service.ConnectionUnavailable as err:
+            return unavailable_response(err)
         except Exception as err:
             current_app.logger.error(f"Error refreshing MCP tools: {err}", exc_info=True)
             return _error("Failed to refresh tools", 502)
@@ -697,7 +878,7 @@ class ConnectionWrites(Resource):
     @api.doc(
         description=(
             "GitHub: let agents make changes through this connection, or only read: {allow}. "
-            "Re-reads the tool's actions from the matching endpoint. Owner only."
+            "Re-reads the tool's actions from the matching endpoint. Owner, or a team's Admins."
         )
     )
     def put(self, connection_id: str):
@@ -710,19 +891,19 @@ class ConnectionWrites(Resource):
         if not isinstance(allow, bool):
             return _error("allow must be true or false", 400)
         with db_readonly() as conn:
-            row = _owned(conn, connection_id, user_id)
-        if row is None:
-            return _not_found()
+            access, refused = _access(conn, connection_id, user_id, "manage")
+        if refused is not None:
+            return refused
         try:
-            result = set_builtin_writes(user_id, row, allow)
+            result = set_builtin_writes(access.owner_id, dict(access.row), allow)
         except service.WritesForbidden as err:
             return _error(str(err), 403, code="writes_forbidden")
         except NoMcpTool as err:
             return _error(str(err), 409, code="no_tools")
         except ValueError as err:
             return _error(str(err), 400)
-        except service.ConnectionUnavailable:
-            return _error("Reconnect to continue", 409, code="reconnect")
+        except service.ConnectionUnavailable as err:
+            return unavailable_response(err)
         except Exception as err:
             current_app.logger.error(f"Error switching write access: {err}", exc_info=True)
             return _error("The service's tools could not be reached. Try again.", 502, code="tools_unavailable")
