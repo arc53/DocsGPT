@@ -42,7 +42,14 @@ export type ConnectionListOptions = {
 
 /** `POST /api/tools/member`: a team tool on each person's own account. */
 export type MemberToolBody = {
+  /** A catalog key, or `custom_mcp` with `server_url` for a sign-in server. */
   connector_key: string;
+  /** `custom_mcp`: the server each person signs in to (OAuth). */
+  server_url?: string;
+  /** `custom_mcp`: `auto` (the default), `http` or `sse`. */
+  transport_type?: 'auto' | 'http' | 'sse';
+  /** `custom_mcp`: the tool's name; the server's host when left out. */
+  displayName?: string;
   permissions?: Record<string, 'always' | 'ask' | 'off'>;
   /** The team's Tools folder to file it in. */
   folder_id?: string;
