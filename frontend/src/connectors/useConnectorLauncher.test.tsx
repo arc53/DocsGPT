@@ -54,11 +54,15 @@ vi.mock('./ConnectWizard', () => ({
   },
 }));
 // The MCP server form, as a stub that saves on demand.
+type McpSavedStub = (
+  toolId?: string,
+  saved?: { connectionId: string | null },
+) => void;
 const mcpForm = vi.hoisted(() => ({
-  onServerSaved: null as null | ((toolId?: string) => void),
+  onServerSaved: null as null | McpSavedStub,
 }));
 vi.mock('../modals/MCPServerModal', () => ({
-  default: (props: { onServerSaved: (toolId?: string) => void }) => {
+  default: (props: { onServerSaved: McpSavedStub }) => {
     mcpForm.onServerSaved = props.onServerSaved;
     return <div data-testid="mcp-form" />;
   },
@@ -322,5 +326,35 @@ describe('useConnectorLauncher', () => {
     );
     await act(async () => mcpForm.onServerSaved!('mcp-old'));
     expect(onConnected).toHaveBeenCalledWith([]);
+  });
+  it("ends a team's MCP save on the connection it names, never on the caller's own", async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    // The caller's own newest sign-in to a custom server.
+    vi.mocked(connectorsService.listConnections).mockResolvedValue({
+      success: true,
+      connections: [
+        { id: 'mine', connector_key: 'custom_mcp', updated_at: '2026-11-17' },
+      ],
+    });
+    await act(async () => launchRef!(CUSTOM_MCP));
+    await act(async () =>
+      mcpForm.onServerSaved!('mcp-team', { connectionId: 'conn-team' }),
+    );
+    expect(wizard()).toBe('done:conn-team');
+
+    // A tool on each person's own sign-in has no connection: the run ends.
+    await act(async () => launchRef!(CUSTOM_MCP));
+    await act(async () =>
+      mcpForm.onServerSaved!('mcp-each', { connectionId: null }),
+    );
+    expect(wizard()).toBeUndefined();
+    expect(onConnected).toHaveBeenCalledWith(['mcp-each']);
   });
 });

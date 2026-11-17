@@ -133,9 +133,13 @@ export default function Connectors() {
     // `load` reads only what is listed.
   }, [dispatch, token, inTeam, teamId]);
 
-  // A custom server is added from the Tools page's form, which connects
-  // only the caller's own accounts.
-  const custom = inTeam ? [] : catalog.filter((c) => c.publisher === 'custom');
+  // A custom server or API adds a tool where it is added: in a team only an
+  // Admin adds one here (the MCP form signs in for the team, or for each
+  // person); Editors add team tools on the Tools page.
+  const custom =
+    inTeam && !canConnect
+      ? []
+      : catalog.filter((c) => c.publisher === 'custom');
   // A `?connector=` link to a part (a Reconnect that can't happen in place)
   // opens its parent's page.
   const openTarget = catalog.find((c) => c.key === openKey);

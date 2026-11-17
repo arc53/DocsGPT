@@ -5323,7 +5323,6 @@
         "headerName": "ヘッダー名",
         "oauthCompleted": "OAuth サインインが完了しました",
         "oauthInProgress": "OAuth サインインの完了を待っています…",
-        "oauthPersonalOnly": "サインインが必要なサーバー（OAuth）は、現在は個人ワークスペースでのみ追加できます。",
         "oauthPopupBlocked": "ブラウザがサインインウィンドウをブロックしました。続行するには認証ページを開いてください。",
         "openAuthPage": "認証ページを開く",
         "password": "パスワード",
@@ -5343,6 +5342,15 @@
         "sharedByEditor": "{{owner}} が共有 · あなたは編集者です",
         "sharedCredentialsNotice": "保存済みの認証情報は表示されません。入力した内容は、このツールを使うすべての人の認証情報を置き換えます。",
         "sharedOAuthOwnerOnly": "このサーバーの接続を変更したり、サインインを再接続したりできるのはオーナーだけです。名前の変更とアクションの編集は引き続き行えます。",
+        "team": {
+          "eachPerson": "各自が自分のアカウントでサインイン",
+          "eachPersonHint": "このサーバーを使う人は、それぞれ自分のアカウントでサインインします。まず個人で、このサーバーに自分でサインインしておく必要があります。",
+          "oauthNewServerOnly": "サインインが必要なサーバー（OAuth）をチームで使うには、新しいサーバーとして追加してください。",
+          "signInInPersonal": "個人でサインイン",
+          "teamOnce": "チームとして一度だけ、あなたのアカウントでサインイン",
+          "teamOnceHint": "チームの全員が、あなたがサインインしたアカウントを使います。あなたが接続した、チームの接続になります。",
+          "whoSignsIn": "サインインする人"
+        },
         "testBeforeSave": "保存する前に接続をテストしてください。",
         "testConnection": "接続をテスト",
         "timeout": "タイムアウト（秒）",

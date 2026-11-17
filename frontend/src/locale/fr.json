@@ -5556,7 +5556,6 @@
         "headerName": "Nom de l’en-tête",
         "oauthCompleted": "Connexion OAuth terminée",
         "oauthInProgress": "En attente de la fin de la connexion OAuth…",
-        "oauthPersonalOnly": "Pour l’instant, un serveur avec connexion (OAuth) ne peut être ajouté que dans votre espace Personnel.",
         "oauthPopupBlocked": "Le navigateur a bloqué la fenêtre de connexion. Ouvrez la page d’autorisation pour continuer.",
         "openAuthPage": "Ouvrir la page d’autorisation",
         "password": "Mot de passe",
@@ -5576,6 +5575,15 @@
         "sharedByEditor": "Partagé par {{owner}} · vous êtes éditeur",
         "sharedCredentialsNotice": "Les identifiants enregistrés restent masqués. Toute saisie les remplace pour tous les utilisateurs de cet outil.",
         "sharedOAuthOwnerOnly": "Seul le propriétaire peut modifier la connexion de ce serveur ou renouveler sa connexion. Vous pouvez toujours le renommer et modifier ses actions.",
+        "team": {
+          "eachPerson": "Chacun se connecte avec son propre compte",
+          "eachPersonHint": "Toute personne qui utilise ce serveur s’y connecte avec son propre compte. Il vous faut d’abord votre propre connexion à ce serveur dans Personnel.",
+          "oauthNewServerOnly": "Pour utiliser dans une équipe un serveur avec connexion (OAuth), ajoutez-le comme nouveau serveur.",
+          "signInInPersonal": "S’y connecter dans Personnel",
+          "teamOnce": "L’équipe se connecte une fois, avec votre compte",
+          "teamOnceHint": "Toute l’équipe utilise le compte avec lequel vous vous connectez. Il devient la connexion de l’équipe, connectée par vous.",
+          "whoSignsIn": "Qui se connecte"
+        },
         "testBeforeSave": "Testez la connexion avant d’enregistrer.",
         "testConnection": "Tester la connexion",
         "timeout": "Délai d’expiration (secondes)",

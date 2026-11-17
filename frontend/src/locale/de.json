@@ -5358,7 +5358,6 @@
         "headerName": "Header-Name",
         "oauthCompleted": "OAuth-Anmeldung abgeschlossen",
         "oauthInProgress": "Warte auf den Abschluss der OAuth-Anmeldung…",
-        "oauthPersonalOnly": "Ein Server mit Anmeldung (OAuth) kann vorerst nur in deinem persönlichen Arbeitsbereich hinzugefügt werden.",
         "oauthPopupBlocked": "Der Browser hat das Anmeldefenster blockiert. Öffne die Autorisierungsseite, um fortzufahren.",
         "openAuthPage": "Autorisierungsseite öffnen",
         "password": "Passwort",
@@ -5378,6 +5377,15 @@
         "sharedByEditor": "Geteilt von {{owner}} · du bist Bearbeiter",
         "sharedCredentialsNotice": "Gespeicherte Zugangsdaten bleiben verborgen. Was du eingibst, ersetzt sie für alle, die dieses Tool nutzen.",
         "sharedOAuthOwnerOnly": "Nur der Eigentümer kann die Verbindung dieses Servers ändern oder die Anmeldung neu verbinden. Du kannst ihn weiterhin umbenennen und seine Aktionen bearbeiten.",
+        "team": {
+          "eachPerson": "Jede Person meldet sich mit ihrem eigenen Konto an",
+          "eachPersonHint": "Alle, die diesen Server nutzen, melden sich mit ihrem eigenen Konto an. Du brauchst zuerst unter Persönlich eine eigene Anmeldung dafür.",
+          "oauthNewServerOnly": "Um in einem Team einen Server mit Anmeldung (OAuth) zu nutzen, füge ihn als neuen Server hinzu.",
+          "signInInPersonal": "Unter Persönlich anmelden",
+          "teamOnce": "Das Team meldet sich einmal an, mit deinem Konto",
+          "teamOnceHint": "Alle im Team nutzen das Konto, mit dem du dich anmeldest. Es wird die Verbindung des Teams, von dir verbunden.",
+          "whoSignsIn": "Wer meldet sich an"
+        },
         "testBeforeSave": "Teste die Verbindung, bevor du speicherst.",
         "testConnection": "Verbindung testen",
         "timeout": "Timeout (Sekunden)",

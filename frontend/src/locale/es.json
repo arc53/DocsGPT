@@ -5556,7 +5556,6 @@
         "headerName": "Nombre del encabezado",
         "oauthCompleted": "Inicio de sesión con OAuth completado",
         "oauthInProgress": "Esperando a que termine el inicio de sesión con OAuth…",
-        "oauthPersonalOnly": "Por ahora, un servidor con inicio de sesión (OAuth) solo se puede añadir en tu espacio Personal.",
         "oauthPopupBlocked": "El navegador bloqueó la ventana de inicio de sesión. Abre la página de autorización para continuar.",
         "openAuthPage": "Abrir página de autorización",
         "password": "Contraseña",
@@ -5576,6 +5575,15 @@
         "sharedByEditor": "Compartido por {{owner}} · eres editor",
         "sharedCredentialsNotice": "Las credenciales guardadas permanecen ocultas. Lo que introduzcas las reemplaza para todos los que usan esta herramienta.",
         "sharedOAuthOwnerOnly": "Solo el propietario puede cambiar la conexión de este servidor o volver a conectar su inicio de sesión. Aún puedes cambiarle el nombre y editar sus acciones.",
+        "team": {
+          "eachPerson": "Cada persona inicia sesión con su propia cuenta",
+          "eachPersonHint": "Quien use este servidor inicia sesión en él con su propia cuenta. Primero necesitas tu propio inicio de sesión en él en Personal.",
+          "oauthNewServerOnly": "Para usar en un equipo un servidor con inicio de sesión (OAuth), añádelo como servidor nuevo.",
+          "signInInPersonal": "Iniciar sesión en Personal",
+          "teamOnce": "El equipo inicia sesión una vez, con tu cuenta",
+          "teamOnceHint": "Todo el equipo usa la cuenta con la que inicias sesión. Pasa a ser la conexión del equipo, conectada por ti.",
+          "whoSignsIn": "Quién inicia sesión"
+        },
         "testBeforeSave": "Prueba la conexión antes de guardar.",
         "testConnection": "Probar conexión",
         "timeout": "Tiempo de espera (segundos)",

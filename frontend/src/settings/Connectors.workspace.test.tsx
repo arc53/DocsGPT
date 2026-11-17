@@ -339,6 +339,13 @@ describe('Connectors page in a team', () => {
     teamAnswers([teamDrive('editor')]);
     await render('connectors', 'editor');
     expect(card('s3')).toBe(null);
+    expect(button('settings.connectors.addCustom')).toBeUndefined();
+  });
+
+  it('an Admin adds a custom server for the team', async () => {
+    teamAnswers([teamDrive('admin')]);
+    await render('connectors', 'admin');
+    expect(button('settings.connectors.addCustom')).toBeDefined();
   });
 
   it('with nothing connected, a Viewer reads that an Admin can connect one', async () => {

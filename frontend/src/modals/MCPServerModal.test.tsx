@@ -1,5 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 
 const { events } = vi.hoisted(() => ({ events: { recent: [] as unknown[] } }));
 vi.mock('react-redux', () => ({
@@ -8,6 +9,7 @@ vi.mock('react-redux', () => ({
       notifications: { recentEvents: events.recent },
       preference: {},
     }),
+  useDispatch: () => vi.fn(),
 }));
 vi.mock('../preferences/preferenceSlice', () => ({
   selectToken: () => 'token',
@@ -80,12 +82,14 @@ describe('MCPServerModal', () => {
   const render = async (overrides: Partial<typeof server> = {}) => {
     await act(async () => {
       root.render(
-        <MCPServerModal
-          modalState="ACTIVE"
-          setModalState={() => {}}
-          server={{ ...server, ...overrides }}
-          onServerSaved={() => {}}
-        />,
+        <MemoryRouter>
+          <MCPServerModal
+            modalState="ACTIVE"
+            setModalState={() => {}}
+            server={{ ...server, ...overrides }}
+            onServerSaved={() => {}}
+          />
+        </MemoryRouter>,
       );
     });
   };

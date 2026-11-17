@@ -5323,7 +5323,6 @@
         "headerName": "標頭名稱",
         "oauthCompleted": "OAuth 登入已完成",
         "oauthInProgress": "正在等待 OAuth 登入完成…",
-        "oauthPersonalOnly": "需要登入的伺服器（OAuth）目前只能在個人工作區中新增。",
         "oauthPopupBlocked": "瀏覽器封鎖了登入視窗。開啟授權頁面以繼續。",
         "openAuthPage": "開啟授權頁面",
         "password": "密碼",
@@ -5343,6 +5342,15 @@
         "sharedByEditor": "由 {{owner}} 分享 · 你是編輯者",
         "sharedCredentialsNotice": "已儲存的憑證不會顯示。你輸入的內容將為所有使用此工具的人取代它們。",
         "sharedOAuthOwnerOnly": "只有擁有者可以變更此伺服器的連線或重新連結其登入。你仍然可以重新命名並編輯其動作。",
+        "team": {
+          "eachPerson": "每個人用自己的帳號登入",
+          "eachPersonHint": "使用此伺服器的每個人都用自己的帳號登入。你需要先在「個人」中自己登入此伺服器。",
+          "oauthNewServerOnly": "要在團隊中使用需要登入的伺服器（OAuth），請將其作為新伺服器新增。",
+          "signInInPersonal": "在「個人」中登入",
+          "teamOnce": "團隊用你的帳號登入一次",
+          "teamOnceHint": "團隊中的每個人都使用你登入的帳號。它會成為團隊的連線，由你連線。",
+          "whoSignsIn": "由誰登入"
+        },
         "testBeforeSave": "儲存前先測試連線。",
         "testConnection": "測試連線",
         "timeout": "逾時（秒）",

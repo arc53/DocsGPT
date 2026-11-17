@@ -15,6 +15,8 @@ const reduxState = vi.hoisted(() => ({
     loaded: true,
     loading: false,
     failed: false,
+    // Each team's accounts, by team id (the team's tools run on them).
+    teams: {} as Record<string, unknown>,
   },
   notifications: { recentEvents: [] as unknown[] },
   folders: {
@@ -45,6 +47,7 @@ vi.mock('react-i18next', () => ({
       void _i;
       return Object.keys(rest).length ? `${key}:${JSON.stringify(rest)}` : key;
     },
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -271,6 +274,7 @@ describe('Tools page in a workspace', () => {
       jsonResponse({ moved: ['t9'], skipped: [] }),
     );
     reduxState.folders.tree.items = folders;
+    reduxState.connectors.teams = {};
     moveToWorkspace.kinds = [];
     dispatch.mockReset();
     setWorkspace();
@@ -285,7 +289,10 @@ describe('Tools page in a workspace', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async (tools: unknown[], entry = '/settings/tools') => {
+  const render = async (
+    tools: unknown[],
+    entry: string | { pathname: string; state: unknown } = '/settings/tools',
+  ) => {
     api.getUserTools.mockImplementation(() => jsonResponse({ tools }));
     await act(async () => {
       root.render(
@@ -470,6 +477,168 @@ describe('Tools page in a workspace', () => {
     await act(async () => share.props!.onMoved!());
     expect(api.getUserTools.mock.calls.length).toBeGreaterThan(loads);
   });
+
+  describe("a team's accounts", () => {
+    // A tool on the team's GitHub, which Lena connected for the team.
+    const teamGithub = {
+      id: 'conn-team',
+      connector_key: 'github',
+      name: 'GitHub',
+      icon: 'github',
+      account_label: 'meridian-freight',
+      account_name: null,
+      auth_kind: 'oauth',
+      status: 'connected',
+      owner: 'team',
+      team_id: 't1',
+      connected_by: { user_id: 'lena', label: 'lena@meridian.example' },
+      paused_for: null,
+      allowed_actions: ['view'],
+      can_pick: false,
+    };
+    const githubTool = {
+      ...teamTool,
+      id: 'gh',
+      name: 'github',
+      displayName: 'GitHub',
+      connection_id: 'conn-team',
+      credential_mode: 'owner',
+    };
+    const withTeamAccounts = (connections: unknown[]) => {
+      reduxState.connectors.teams = {
+        t1: {
+          catalog: [],
+          connections,
+          loading: false,
+          loaded: true,
+          failed: false,
+          latestRequestId: null,
+        },
+      };
+    };
+    const meta = (name: string) =>
+      Array.from(tile(name).querySelectorAll('[data-slot="meta-item"]')).map(
+        (item) => item.textContent,
+      );
+
+    it('names the account and who connected it on a tool that runs on it', async () => {
+      setWorkspace('editor');
+      withTeamAccounts([teamGithub]);
+      await render([githubTool]);
+      const text = tile('GitHub').textContent ?? '';
+      expect(text).toContain('meridian-freight');
+      expect(text).toContain(
+        'settings.connectors.team.connectedBy:{"name":"lena@meridian.example"}',
+      );
+    });
+
+    it("gives an Admin Manage in Connectors on a team account's tool, and an Editor not", async () => {
+      setWorkspace('editor');
+      withTeamAccounts([teamGithub]);
+      await render([githubTool]);
+      expect(menuLabels('GitHub')).not.toContain(
+        'settings.tools.manageInConnectors',
+      );
+      act(() => root.unmount());
+      root = createRoot(container);
+      setWorkspace('admin');
+      withTeamAccounts([
+        { ...teamGithub, allowed_actions: ['view', 'sync', 'manage'] },
+      ]);
+      await render([githubTool]);
+      expect(menuLabels('GitHub')).toContain(
+        'settings.tools.manageInConnectors',
+      );
+    });
+
+    it('marks a tool on a paused team account, and offers no reconnect in place', async () => {
+      setWorkspace('admin');
+      withTeamAccounts([
+        {
+          ...teamGithub,
+          status: 'paused',
+          paused_for: { reason: 'payer_left', left_team: true },
+          allowed_actions: ['view', 'sync', 'manage'],
+        },
+      ]);
+      await render([githubTool]);
+      const badge = tile('GitHub').querySelector('[data-slot="badge"]');
+      expect(badge?.textContent).toBe('settings.connectors.status.paused');
+      expect(badge?.getAttribute('title')).toContain(
+        'settings.connectors.team.paused',
+      );
+      expect(menuLabels('GitHub')).not.toContain(
+        'settings.connectors.status.reconnect',
+      );
+    });
+
+    it('leaves reconnecting a team account to Connectors, even for an Admin', async () => {
+      setWorkspace('admin');
+      withTeamAccounts([
+        {
+          ...teamGithub,
+          status: 'reconnect_needed',
+          allowed_actions: ['view', 'sync', 'manage'],
+        },
+      ]);
+      await render([githubTool]);
+      const labels = menuLabels('GitHub');
+      expect(labels).not.toContain('settings.connectors.status.reconnect');
+      expect(labels).toContain('settings.tools.manageInConnectors');
+    });
+
+    it("says a tool on each person's own account runs on theirs, with no sign-in state of its own", async () => {
+      setWorkspace('editor');
+      api.getMCPAuthStatus.mockImplementation(() =>
+        jsonResponse({ success: true, statuses: { each: 'needs_auth' } }),
+      );
+      await render([
+        {
+          ...teamTool,
+          id: 'each',
+          name: 'mcp_tool',
+          displayName: 'Tracker',
+          config: { server_url: 'https://mcp.tracker.dev', auth_type: 'oauth' },
+          connection_id: null,
+          credential_mode: 'member',
+          connector_key: 'custom_mcp',
+        },
+      ]);
+      expect(meta('Tracker')).toContain('settings.tools.team.eachPersonMeta');
+      expect(tile('Tracker').querySelector('[data-slot="badge"]')).toBeNull();
+    });
+
+    it('offers an Admin, not an Editor, Connect a service when the team has no tools', async () => {
+      reduxState.folders.tree.items = [];
+      setWorkspace('editor');
+      await render([]);
+      expect(button('settings.tools.connectService')).toBeUndefined();
+      act(() => root.unmount());
+      root = createRoot(container);
+      setWorkspace('admin');
+      await render([]);
+      expect(button('settings.tools.connectService')).toBeDefined();
+    });
+  });
+
+  it('opens the MCP form filled in when a team sends the adder to sign in here', async () => {
+    await render([ownTool], {
+      pathname: '/settings/tools',
+      state: {
+        newMcpServer: {
+          displayName: 'Tracker',
+          server_url: 'https://mcp.tracker.dev/mcp',
+          auth_type: 'oauth',
+        },
+      },
+    });
+    expect(document.body.textContent).toContain('settings.tools.mcp.addServer');
+    expect(
+      document.body.querySelector<HTMLInputElement>(
+        'input[placeholder="https://example.com/mcp"]',
+      )?.value,
+    ).toBe('https://mcp.tracker.dev/mcp');
+  });
 });
 
 describe('MCP server form in a workspace', () => {
@@ -494,12 +663,14 @@ describe('MCP server form in a workspace', () => {
     >('../modals/MCPServerModal');
     await act(async () => {
       root.render(
-        <MCPServerModal
-          modalState="ACTIVE"
-          setModalState={() => {}}
-          server={server}
-          onServerSaved={() => {}}
-        />,
+        <MemoryRouter>
+          <MCPServerModal
+            modalState="ACTIVE"
+            setModalState={() => {}}
+            server={server}
+            onServerSaved={() => {}}
+          />
+        </MemoryRouter>,
       );
     });
   };
@@ -514,12 +685,15 @@ describe('MCP server form in a workspace', () => {
     expect(authTypes()).toContain('oauth');
   });
 
-  it("hides OAuth sign-in in a team, which can't hold a sign-in", async () => {
+  it('offers OAuth sign-in to an Editor adding a server in a team', async () => {
     setWorkspace('editor');
     await render();
+    expect(authTypes()).toContain('oauth');
+  });
+
+  it('offers a Viewer no sign-in for a new team server', async () => {
+    setWorkspace('viewer');
+    await render();
     expect(authTypes()).toEqual(['none', 'api_key', 'bearer']);
-    expect(document.body.textContent).toContain(
-      'settings.tools.mcp.oauthPersonalOnly',
-    );
   });
 });

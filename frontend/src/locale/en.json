@@ -5379,7 +5379,6 @@
         "headerName": "Header name",
         "oauthCompleted": "OAuth sign-in completed",
         "oauthInProgress": "Waiting for the OAuth sign-in to finish…",
-        "oauthPersonalOnly": "A server you sign in to (OAuth) can only be added in your Personal workspace for now.",
         "oauthPopupBlocked": "The browser blocked the sign-in window. Open the authorization page to continue.",
         "openAuthPage": "Open authorization page",
         "password": "Password",
@@ -5399,6 +5398,15 @@
         "sharedByEditor": "Shared by {{owner}} · you're an editor",
         "sharedCredentialsNotice": "Saved credentials stay hidden. Anything you enter replaces them for everyone who uses this tool.",
         "sharedOAuthOwnerOnly": "Only the owner can change this server's connection or reconnect its sign-in. You can still rename it and edit its actions.",
+        "team": {
+          "eachPerson": "Each person signs in with their own account",
+          "eachPersonHint": "Everyone who uses this server signs in to it with their own account. You need your own sign-in to it in Personal first.",
+          "oauthNewServerOnly": "To use a server you sign in to (OAuth) in a team, add it as a new server.",
+          "signInInPersonal": "Sign in to it in Personal",
+          "teamOnce": "The team signs in once, with your account",
+          "teamOnceHint": "Everyone in the team uses the account you sign in with. It becomes the team's connection, connected by you.",
+          "whoSignsIn": "Who signs in"
+        },
         "testBeforeSave": "Test the connection before you save.",
         "testConnection": "Test connection",
         "timeout": "Timeout (seconds)",

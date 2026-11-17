@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
 import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
-import MCPServerModal from '../modals/MCPServerModal';
+import MCPServerModal, { type McpSaved } from '../modals/MCPServerModal';
 import type { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
@@ -197,13 +197,29 @@ export default function useConnectorLauncher({
     [navigate],
   );
 
-  const afterMcpSave = async (toolId?: string) => {
+  const afterMcpSave = async (toolId?: string, teamSave?: McpSaved) => {
     if (active?.kind !== 'mcp') return;
     const connector = active.connector;
     mcpSaved.current = true;
     // Signing an existing server in again creates no tool.
     mcpToolId.current =
       typeof active.server?.id === 'string' ? undefined : toolId;
+    // A save in a team names the connection it runs on, or none for a tool
+    // on each person's own sign-in: the caller's own list would name theirs.
+    if (teamSave) {
+      // The form closes right after this yields; the summary comes after.
+      await Promise.resolve();
+      if (teamSave.connectionId)
+        setActive({
+          kind: 'wizard',
+          connector,
+          mode: 'done',
+          connectionId: teamSave.connectionId,
+          owner: 'team',
+        });
+      else end(true);
+      return;
+    }
     const list = await connectorsService.listConnections(token);
     refresh();
     const connections = (list?.connections ?? []) as {

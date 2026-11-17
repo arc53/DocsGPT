@@ -5321,7 +5321,6 @@
         "headerName": "请求头名称",
         "oauthCompleted": "OAuth 登录已完成",
         "oauthInProgress": "正在等待 OAuth 登录完成…",
-        "oauthPersonalOnly": "需要登录的服务器（OAuth）目前只能在个人工作区中添加。",
         "oauthPopupBlocked": "浏览器拦截了登录窗口。打开授权页面以继续。",
         "openAuthPage": "打开授权页面",
         "password": "密码",
@@ -5341,6 +5340,15 @@
         "sharedByEditor": "由 {{owner}} 共享 · 你是编辑者",
         "sharedCredentialsNotice": "已保存的凭据不会显示。你输入的内容将为所有使用此工具的人替换它们。",
         "sharedOAuthOwnerOnly": "只有所有者可以更改此服务器的连接或重新连接其登录。你仍然可以重命名它并编辑其操作。",
+        "team": {
+          "eachPerson": "每个人用自己的账号登录",
+          "eachPersonHint": "使用此服务器的每个人都用自己的账号登录。你需要先在“个人”中自己登录此服务器。",
+          "oauthNewServerOnly": "要在团队中使用需要登录的服务器（OAuth），请将其作为新服务器添加。",
+          "signInInPersonal": "在“个人”中登录",
+          "teamOnce": "团队用你的账号登录一次",
+          "teamOnceHint": "团队中的每个人都使用你登录的账号。它会成为团队的连接，由你连接。",
+          "whoSignsIn": "由谁登录"
+        },
         "testBeforeSave": "保存前先测试连接。",
         "testConnection": "测试连接",
         "timeout": "超时（秒）",

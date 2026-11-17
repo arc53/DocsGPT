@@ -49,12 +49,19 @@ import ConnectorIcon from '../connectors/ConnectorIcon';
 import ConnectorTile from '../connectors/ConnectorTile';
 import {
   connectionNeedsSignIn,
-  loadConnectors,
-  selectConnections,
+  reloadConnectors,
   selectConnectorCatalog,
+  selectWorkspaceConnections,
 } from '../connectors/connectorsSlice';
 import { accountLine, connectorDescription } from '../connectors/i18n';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
+import {
+  connectedByText,
+  connectionCan,
+  connectionPauseText,
+  isConnectionPaused,
+  isTeamConnection,
+} from '../connectors/teamConnections';
 import { toolServiceOf } from '../connectors/toolService';
 import { useLoaderState } from '../hooks';
 import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
@@ -77,6 +84,7 @@ import {
   type AccessFields,
 } from '../utils/accessUtils';
 import { formatCount } from '../utils/dateTimeUtils';
+import { readerIdFromToken } from '../utils/personLabel';
 import { agentUseCount } from '../utils/resourceUsage';
 import {
   canAddToolToOwn,
@@ -88,6 +96,11 @@ import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
 import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
 import WorkspaceLine from '../workspace/WorkspaceLine';
+import {
+  roleAtLeast,
+  selectCurrentWorkspace,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
 import {
   type FiledItem,
   filedAt,
@@ -120,6 +133,10 @@ const GRID =
 const USAGE_FILTERS = ['all', 'inUse', 'unused'] as const;
 type UsageFilter = (typeof USAGE_FILTERS)[number];
 
+/** A team tool that runs on each person's own account (no connection). */
+const isEachPersonTool = (tool: UserToolType): boolean =>
+  tool.credential_mode === 'member' && !tool.connection_id;
+
 /** In use: an agent uses it, or it is on in the caller's own chats. */
 const isToolInUse = (tool: UserToolType): boolean =>
   agentUseCount(tool.used_by) > 0 || toolInChat(tool);
@@ -133,13 +150,22 @@ const isToolInUse = (tool: UserToolType): boolean =>
  * tool shows its editor in place of the list.
  */
 export default function Tools() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
-  const connections = useSelector(selectConnections);
+  // The workspace's accounts: the team's in a team (its tools run on
+  // them), else the caller's own.
+  const connections = useSelector(selectWorkspaceConnections);
   const catalog = useSelector(selectConnectorCatalog);
   const inTeam = useSelector(selectInTeam);
   const canCreate = useSelector(selectCanCreateHere);
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  const isTeamAdmin = inTeam && roleAtLeast(role, 'admin');
+  const teamName = useSelector(
+    (state: Parameters<typeof selectCurrentWorkspace>[0]) =>
+      state.workspace ? selectCurrentWorkspace(state).name : '',
+  );
+  const me = readerIdFromToken(token);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -300,7 +326,11 @@ export default function Tools() {
     const connectorKey =
       connection?.connector_key ??
       toolServiceOf(tool, connections, catalog)?.connector?.key;
-    if (tool.connection_id && isOwner(tool) && connectorKey) {
+    // A team's account is managed there by its Admins.
+    const managesConnection = isTeamConnection(connection)
+      ? connectionCan(connection, 'manage')
+      : isOwner(tool);
+    if (tool.connection_id && managesConnection && connectorKey) {
       const params = new URLSearchParams({
         connector: connectorKey,
         connection: tool.connection_id,
@@ -313,8 +343,13 @@ export default function Tools() {
       });
     }
     // The caller's own connection that needs reconnecting (the badge says
-    // so) is reconnected from here, in place where it can be.
-    if (connection && connectionNeedsSignIn(connection))
+    // so) is reconnected from here, in place where it can be; a team's is
+    // reconnected on Connectors.
+    if (
+      connection &&
+      !isTeamConnection(connection) &&
+      connectionNeedsSignIn(connection)
+    )
       options.push({
         icon: RefreshCw,
         label: t('settings.connectors.status.reconnect'),
@@ -553,7 +588,8 @@ export default function Tools() {
   React.useEffect(() => {
     getUserTools();
     fetchMcpStatuses();
-    dispatch(loadConnectors({ token }));
+    // The caller's own accounts and, in a team, the team's.
+    dispatch(reloadConnectors({ token }));
   }, []);
 
   // The Connectors page opens a new OpenAPI tool here as an unsaved draft:
@@ -561,9 +597,19 @@ export default function Tools() {
   const routeState = location.state as {
     openToolId?: string;
     newApiTool?: boolean;
+    newMcpServer?: Record<string, unknown>;
   } | null;
   const openToolId = routeState?.openToolId;
   const newApiTool = routeState?.newApiTool;
+  // A team's MCP form sends the adder here, in Personal, to sign in to the
+  // server themselves first: the form opens again, filled in.
+  const newMcpServer = routeState?.newMcpServer;
+  React.useEffect(() => {
+    if (!newMcpServer) return;
+    navigate(location.pathname, { replace: true, state: null });
+    setReconnectTool(newMcpServer);
+    setReconnectModalState('ACTIVE');
+  }, [newMcpServer]);
   React.useEffect(() => {
     if (!openToolId) return;
     handleToolAdded(openToolId);
@@ -684,8 +730,24 @@ export default function Tools() {
   // health check, so it gets none.
   const stateBadge = (tool: UserToolType) => {
     const connection = connectionOf(tool);
+    // A team's account paused: nothing runs on it until it is reconnected.
+    if (isConnectionPaused(connection))
+      return (
+        <Badge
+          variant="warning"
+          title={connectionPauseText(t, connection, {
+            teamName,
+            me,
+            language: i18n.language,
+          })}
+        >
+          {t('settings.connectors.status.paused')}
+        </Badge>
+      );
+    // A tool on each person's own sign-in has no state of its own: each
+    // person signs in when they use it.
     const mcpStatus =
-      tool.name === 'mcp_tool' && !connection
+      tool.name === 'mcp_tool' && !connection && !isEachPersonTool(tool)
         ? mcpStatuses[tool.id]
         : undefined;
     if (connectionNeedsSignIn(connection) || mcpStatus === 'needs_auth')
@@ -721,6 +783,12 @@ export default function Tools() {
         ? connectorDescription(t, connector)
         : tool.description;
     const account = connection ? accountLine(t, connection) : null;
+    // A team's account names who connected it; a tool on each person's own
+    // account names none.
+    const connectedBy = connectedByText(t, connection, me);
+    const eachPerson = isEachPersonTool(tool)
+      ? t('settings.tools.team.eachPersonMeta')
+      : null;
     // Where a tool a search or filter found is filed.
     const folderLabel = flat ? folderLabelOf(tree, tool, folderId) : null;
     // The meta line: where it is filed, the account, who added it (a team's)
@@ -739,6 +807,16 @@ export default function Tools() {
             {account}
           </MetaItem>
         ) : null}
+        {connectedBy ? (
+          <MetaItem icon={<Users />} title={connectedBy}>
+            {connectedBy}
+          </MetaItem>
+        ) : null}
+        {eachPerson ? (
+          <MetaItem icon={<UserRound />} title={eachPerson}>
+            {eachPerson}
+          </MetaItem>
+        ) : null}
         {showsCreator(tool) ? <CreatorMeta item={tool} /> : null}
         {showsSharedFrom(tool) ? <SharedFromMeta item={tool} /> : null}
         {showsRole(tool) ? <RoleMeta item={tool} /> : null}
@@ -750,6 +828,8 @@ export default function Tools() {
     const hasMeta =
       !!folderLabel ||
       !!account ||
+      !!connectedBy ||
+      !!eachPerson ||
       showsCreator(tool) ||
       showsSharedFrom(tool) ||
       showsRole(tool) ||
@@ -998,8 +1078,8 @@ export default function Tools() {
                       >
                         {t('settings.tools.addTool')}
                       </Button>
-                      {/* Connections are personal: a team adds none. */}
-                      {inTeam ? null : (
+                      {/* A team's accounts are its Admins' to connect. */}
+                      {inTeam && !isTeamAdmin ? null : (
                         <Button
                           type="button"
                           variant="outline"
