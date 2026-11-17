@@ -89,7 +89,11 @@ const {
         </div>
       );
     },
-  dispatch: vi.fn(),
+  // Runs thunks, as the real store does; actions are only recorded.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any action
+  dispatch: vi.fn(function run(action: any): any {
+    return typeof action === 'function' ? action(run, () => ({})) : action;
+  }),
   service: {
     getConfig: vi.fn(),
     manageSync: vi.fn(),
@@ -237,6 +241,7 @@ vi.mock('../upload/Upload', () => ({
 import { syncForgotten } from '../connectors/connectorsSlice';
 import type { Doc } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import Sources from './Sources';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -284,6 +289,20 @@ const mount = (
       </MemoryRouter>,
     );
   });
+
+/**
+ * Makes the mocked store apply the knowledge list read back, as the real
+ * slice does, and run thunks.
+ */
+const applyKnowledge = () => {
+  const apply = (action: unknown): unknown => {
+    if (typeof action === 'function') return action(apply, () => ({}));
+    const { type, payload } = action as { type?: string; payload?: unknown };
+    if (type === 'preference/setSourceDocs') knowledge.docs = payload;
+    return action;
+  };
+  dispatch.mockImplementation(apply);
+};
 
 /** Opens the menu behind a trigger; returns its item labels. */
 const openMenu = async (testId: string) => {
@@ -1433,13 +1452,7 @@ describe('Sources citation link', () => {
     });
 
     it('keeps the link while it indexes, then opens the source once listed', async () => {
-      // The store applies the list read back, as the real slice does.
-      dispatch.mockImplementation(
-        (action: { type?: string; payload?: unknown }) => {
-          if (action?.type === 'preference/setSourceDocs')
-            knowledge.docs = action.payload;
-        },
-      );
+      applyKnowledge();
       await render('/settings/knowledge?source=src-new');
       // Not listed yet: the list shows and the link waits.
       expect(viewOf('file-tree')).toBeNull();
@@ -1457,6 +1470,26 @@ describe('Sources citation link', () => {
       expect(getDocs).toHaveBeenCalledTimes(1);
       expect(viewOf('file-tree')).not.toBeNull();
       expect(where()).toBe('');
+    });
+
+    it('applies no list read for a workspace the app has left', async () => {
+      applyKnowledge();
+      let answer: ((docs: Doc[]) => void) | null = null;
+      vi.mocked(getDocs).mockReturnValue(
+        new Promise<Doc[]>((resolve) => (answer = resolve)),
+      );
+      knowledge.docs = [];
+      connectors.events = [ingest('source.ingest.completed')];
+      try {
+        await render('/settings/knowledge?source=src-new');
+        await vi.waitFor(() => expect(answer).not.toBeNull());
+        // The user switches workspace while the list is out.
+        setRequestWorkspace('t1', 1);
+        await act(async () => answer!([doc({ id: 'src-new' })]));
+        expect(knowledge.docs).toEqual([]);
+      } finally {
+        setRequestWorkspace('personal', 0);
+      }
     });
 
     it('drops the link when the first sync fails', async () => {
@@ -1511,13 +1544,7 @@ describe('Sources citation link', () => {
       });
       vi.setSystemTime(new Date(START));
       dispatch.mockReset();
-      // The store applies the list read back, as the real slice does.
-      dispatch.mockImplementation(
-        (action: { type?: string; payload?: unknown }) => {
-          if (action?.type === 'preference/setSourceDocs')
-            knowledge.docs = action.payload;
-        },
-      );
+      applyKnowledge();
       vi.mocked(getDocs).mockReset();
       vi.mocked(getDocs).mockResolvedValue([]);
       withConnection('connected', { id: 'conn-drive' });

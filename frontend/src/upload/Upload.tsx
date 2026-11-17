@@ -39,13 +39,12 @@ import { ListRow, ListRows } from '../components/ui/list-row';
 import { formatBytes } from '../components/artifactViewUtils';
 import { ActiveState, Doc } from '../models/misc';
 
-import { getDocs } from '../preferences/preferenceApi';
 import {
   selectSelectedDocs,
   selectToken,
   setSelectedDocs,
-  setSourceDocs,
 } from '../preferences/preferenceSlice';
+import { reloadSourceDocs } from '../preferences/reloadSourceDocs';
 import {
   IngestorDefaultConfigs,
   IngestorFormSchemas,
@@ -73,6 +72,8 @@ import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import { isWikiUnsupported } from '../settings/wikiConvertUtils';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import {
+  captureWorkspace,
+  type CapturedWorkspace,
   requestWorkspace,
   WORKSPACE_HEADER,
 } from '../workspace/requestWorkspace';
@@ -454,13 +455,18 @@ function Upload({
     [dispatch],
   );
 
-  /** Re-read the source list into the store so a new source is pickable. */
+  /**
+   * Re-read the source list into the store so a new source is pickable. A
+   * list read for a workspace the app has left is not applied.
+   *
+   * @param workspace The workspace the upload started in; now when left out.
+   * @returns The list, or null once the app has left that workspace.
+   */
   const refreshSourceDocs = useCallback(
-    () =>
-      getDocs(token).then((docs) => {
-        dispatch(setSourceDocs(docs));
-        return docs;
-      }),
+    async (workspace: CapturedWorkspace = captureWorkspace()) => {
+      const docs = await dispatch(reloadSourceDocs(token));
+      return workspace.isCurrent() ? docs : null;
+    },
     [dispatch, token],
   );
 
@@ -495,6 +501,8 @@ function Upload({
       batch?: ReadonlySet<string>,
     ) => {
       let handled = false;
+      // The new source joins the selection of the workspace it was made in.
+      const workspace = captureWorkspace();
 
       const handleTerminal = (
         status: 'completed' | 'failed',
@@ -503,7 +511,7 @@ function Upload({
         if (handled) return;
         handled = true;
         if (status !== 'completed') return;
-        refreshSourceDocs()
+        refreshSourceDocs(workspace)
           .then((docs) => {
             if (selectUploadedDoc && Array.isArray(docs) && sourceId) {
               // Match the id this upload returned. Diffing against the list as

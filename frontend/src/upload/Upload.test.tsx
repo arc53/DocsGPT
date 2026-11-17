@@ -57,17 +57,29 @@ const fakeStore = vi.hoisted(() => {
   const state = {
     upload: { tasks: [] as Record<string, unknown>[] },
     notifications: { recentEvents: [] as Record<string, unknown>[] },
-    preference: { selectedDocs: [] as { id: string }[] },
+    preference: {
+      selectedDocs: [] as { id: string }[],
+      sourceDocs: null as { id: string }[] | null,
+    },
+  };
+  // Runs thunks and applies the chat selection and the knowledge list;
+  // every other action is ignored.
+  const dispatch = (
+    action:
+      | { type?: string; payload?: unknown }
+      | ((d: unknown, g: unknown) => unknown),
+  ): unknown => {
+    if (typeof action === 'function') return action(dispatch, () => state);
+    if (action?.type === 'preference/setSelectedDocs')
+      state.preference.selectedDocs = action.payload as { id: string }[];
+    if (action?.type === 'preference/setSourceDocs')
+      state.preference.sourceDocs = action.payload as { id: string }[];
+    return action;
   };
   return {
     state,
     getState: () => state,
-    // Applies the chat selection; every other action is ignored.
-    dispatch: (action: { type?: string; payload?: unknown }) => {
-      if (action?.type === 'preference/setSelectedDocs')
-        state.preference.selectedDocs = action.payload as { id: string }[];
-      return action;
-    },
+    dispatch,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -78,6 +90,7 @@ const fakeStore = vi.hoisted(() => {
       state.upload.tasks = [];
       state.notifications.recentEvents = [];
       state.preference.selectedDocs = [];
+      state.preference.sourceDocs = null;
     },
   };
 });
@@ -1127,6 +1140,24 @@ describe('Upload connected-service sync', () => {
     expect(fakeStore.state.preference.selectedDocs.map((d) => d.id)).toEqual([
       'src-1',
     ]);
+  });
+
+  it('applies no list or selection read for a workspace the app has left', async () => {
+    let answer: ((docs: unknown) => void) | null = null;
+    getDocs.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    setRequestWorkspace('t1', 1);
+    try {
+      await render(vi.fn());
+      await act(async () => launcher.options!.onSynced!(['src-1']));
+      await complete(['src-1']);
+      await vi.waitFor(() => expect(answer).not.toBeNull());
+      setRequestWorkspace('t2', 2);
+      await act(async () => answer!([{ id: 'src-1', name: 'Handbook' }]));
+      expect(fakeStore.state.preference.sourceDocs).toBeNull();
+      expect(fakeStore.state.preference.selectedDocs).toEqual([]);
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
   });
 
   it('does not refresh for a sync that failed', async () => {

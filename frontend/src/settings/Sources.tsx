@@ -80,7 +80,6 @@ import {
 } from '../models/misc';
 import type { SSEEvent } from '../notifications/notificationsSlice';
 import {
-  getDocs,
   getDocsWithPagination,
   type PaginatedDocs,
 } from '../preferences/preferenceApi';
@@ -90,6 +89,7 @@ import {
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
+import { reloadSourceDocs } from '../preferences/reloadSourceDocs';
 import { formatPayerDate } from '../payer/pauseReason';
 import type { SourceSyncPaused } from '../payer/types';
 import Upload from '../upload/Upload';
@@ -736,20 +736,20 @@ export default function Sources({
   const [newFolderOpen, setNewFolderOpen] = useState(false);
 
   /**
-   * Reads the app's knowledge list again into the store.
+   * Reads the app's knowledge list again into the store. A list that answers
+   * after a workspace switch belongs to the workspace left: it is dropped.
    *
-   * @returns The list, or null when it couldn't be read.
+   * @returns The list, or null when it couldn't be read or came too late.
    */
-  const reloadKnowledge = () =>
-    getDocs(token)
-      .then((docs) => {
-        if (docs) dispatch(setSourceDocs(docs));
-        return docs;
-      })
+  const reloadKnowledge = () => {
+    const workspace = captureWorkspace();
+    return dispatch(reloadSourceDocs(token))
+      .then((docs) => (workspace.isCurrent() ? docs : null))
       .catch((error) => {
         console.error(error);
         return null;
       });
+  };
 
   /**
    * Reads the open source again after its pages changed (added, refreshed,
