@@ -511,7 +511,8 @@ class CombinedJson(Resource):
                     "config": SourceConfig.parse(index.get("config")).model_dump(),
                     "ownership": ownership,
                     "team_access": team_access,
-                    "connectionId": _connection_id(index),
+                    # Which account a source syncs from stays with the workspace that owns it.
+                    "connectionId": _connection_id(index) if ownership == "user" else None,
                     # As in the paginated listing: citation links fall back
                     # to this list, and a website source opens as one.
                     "website": _website_summary(index),
@@ -757,7 +758,8 @@ class PaginatedSources(Resource):
                     "team_access": (
                         None if owned else team_shared.get(str(doc["id"])) or ("viewer" if received else None)
                     ),
-                    "connectionId": _connection_id(doc),
+                    # Which account a source syncs from stays with the workspace that owns it.
+                    "connectionId": _connection_id(doc) if owned else None,
                     "website": _website_summary(doc),
                     "files": _file_count(doc),
                     # A team source's sync skipped for want of a payer: its team connection's

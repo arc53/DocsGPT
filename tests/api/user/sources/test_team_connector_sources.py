@@ -495,6 +495,45 @@ class TestListedPause:
         assert rows[src]["sync_paused"] is None
 
 
+@pytest.mark.parametrize("listing", ["paginated", "combined"])
+class TestListedConnection:
+    def test_the_team_sees_which_connection_its_source_syncs_from(self, app, pg_conn, team, listing):
+        principal = principal_id(team)
+        row = _connection(pg_conn, principal, "adam")
+        src = _source(pg_conn, principal, row)
+
+        rows = _listed(app, pg_conn, "vera", team, listing)
+
+        assert rows[src]["connectionId"] == str(row["id"])
+
+    def test_another_team_it_is_shared_with_does_not_see_the_connection(self, app, pg_conn, team, listing):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+        principal = principal_id(team)
+        src = _source(pg_conn, principal, _connection(pg_conn, principal, "adam"))
+        other = str(TeamsRepository(pg_conn).create("QA", f"qa-{uuid.uuid4().hex[:6]}", "quinn")["id"])
+        TeamMembersRepository(pg_conn).add_member(other, "quinn", role="team_admin")
+        TeamItemSharesRepository(pg_conn).share(team, other, "source", src, "alice")
+
+        rows = _listed(app, pg_conn, "quinn", other, listing)
+
+        assert src in rows
+        assert rows[src]["connectionId"] is None
+
+    def test_a_teammate_does_not_see_the_connection_of_a_personal_source_shared_with_them(
+        self, app, pg_conn, team, listing,
+    ):
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+
+        src = _source(pg_conn, "adam", _connection(pg_conn, "adam"))
+        TeamResourceGrantsRepository(pg_conn).grant(team, "source", src, "adam", "adam")
+
+        rows = _listed(app, pg_conn, "eddie", None, listing)
+
+        assert src in rows
+        assert rows[src]["connectionId"] is None
+
+
 class TestUsageTab:
     def test_a_paused_connection_is_listed_with_who_pays(self, pg_conn, team, monkeypatch):
         from docsgpt.api.user.teams.usage import paused_items
