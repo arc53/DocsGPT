@@ -44,23 +44,24 @@ function Checkbox(checkboxProps: CheckboxProps) {
     >
       <CheckboxPrimitive.Indicator
         data-slot="checkbox-indicator"
-        className="grid place-content-center text-current transition-none"
+        className="group grid place-content-center text-current transition-none"
       >
-        {/* text-current: a parent that greys un-coloured svgs (CommandItem,
+        {/* Both glyphs are drawn and the indicator's own state hides one, so
+            an uncontrolled box (defaultChecked, a form reset) is right too.
+            text-current: a parent that greys un-coloured svgs (CommandItem,
             SelectItem) must not grey the tick. */}
-        {props.checked === 'indeterminate' ? (
-          <MinusIcon
-            className={
-              size === 'sm' ? 'size-3 text-current' : 'size-3.5 text-current'
-            }
-          />
-        ) : (
-          <CheckIcon
-            className={
-              size === 'sm' ? 'size-3 text-current' : 'size-3.5 text-current'
-            }
-          />
-        )}
+        <MinusIcon
+          className={cn(
+            size === 'sm' ? 'size-3' : 'size-3.5',
+            'text-current group-data-[state=checked]:hidden',
+          )}
+        />
+        <CheckIcon
+          className={cn(
+            size === 'sm' ? 'size-3' : 'size-3.5',
+            'text-current group-data-[state=indeterminate]:hidden',
+          )}
+        />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );
