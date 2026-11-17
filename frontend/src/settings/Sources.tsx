@@ -116,9 +116,9 @@ import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import {
   connectionNeedsSignIn,
   loadConnectors,
-  selectConnections,
   selectConnectorsLoaded,
   selectStartedSyncs,
+  selectWorkspaceConnections,
   syncForgotten,
 } from '../connectors/connectorsSlice';
 import {
@@ -128,6 +128,12 @@ import {
   startedSyncAge,
   syncIdsKey,
 } from '../connectors/startedSyncs';
+import {
+  connectionCan,
+  connectionPauseText,
+  isConnectionPaused,
+  isTeamConnection,
+} from '../connectors/teamConnections';
 import type { Connection } from '../connectors/types';
 import type { AppDispatch } from '../store';
 import { readerIdFromToken } from '../utils/personLabel';
@@ -221,6 +227,38 @@ function syncPausedText(
   });
 }
 
+/**
+ * What a source's card shows of the account it syncs through. The reader's
+ * own account needs a sign-in when it expired or fails, and they sign in
+ * again. A team's account says so too, but while it is paused it shows its
+ * pause instead; only whoever may manage it (a team Admin) gets Reconnect,
+ * which reconnects it as the team's.
+ *
+ * Args:
+ *   connection: The account, when listed in the current workspace.
+ *
+ * Returns:
+ *   `signIn`: it needs signing in again; `paused`: a team's account is
+ *   paused; `canReconnect`: the reader may reconnect it from the card.
+ */
+function connectionAttention(connection: Connection | undefined): {
+  signIn: boolean;
+  paused: boolean;
+  canReconnect: boolean;
+} {
+  if (!isTeamConnection(connection)) {
+    const signIn = connectionNeedsSignIn(connection);
+    return { signIn, paused: false, canReconnect: signIn };
+  }
+  const paused = isConnectionPaused(connection);
+  const signIn = !paused && connectionNeedsSignIn(connection);
+  return {
+    signIn,
+    paused,
+    canReconnect: (signIn || paused) && connectionCan(connection, 'manage'),
+  };
+}
+
 // A sync with no word on its first ingest (live events off, or the stream
 // resumed past the event) is looked for on the lists instead: from 2 minutes
 // after it started, every 30 s, until STARTED_SYNC_GIVE_UP_MS.
@@ -295,7 +333,9 @@ export default function Sources({
   const token = useSelector(selectToken);
   const canCreate = useSelector(selectCanCreate);
   const inTeam = useSelector(selectInTeam);
-  const connections = useSelector(selectConnections);
+  // The accounts sources sync through: the team's in a team (a team source
+  // never reads through a personal one), else the reader's own.
+  const connections = useSelector(selectWorkspaceConnections);
   // A team source's pause names whoever connected the team's account.
   const teamConnections = useTeamConnections();
   const teamName = useCurrentTeamName();
@@ -996,16 +1036,18 @@ export default function Sources({
       : [];
 
   // Needs attention: with no search or filter, the sources the reader can
-  // fix: a failed ingest they may reingest (`edit`), then a source on their
-  // own connection that needs a sign-in (only theirs are loaded). They come
-  // from the app's knowledge list so a source on any page counts. Indexing
+  // fix: a failed ingest they may reingest (`edit`), then a source on an
+  // account they may reconnect (their own, or a team's for an Admin). They
+  // come from the app's knowledge list so a source on any page counts. Indexing
   // needs no one, so it stays in the list. Page 1 leads with them and drops
   // them from its grid; later pages, with no such section, keep their own
   // cards. A card on this page is the fresher copy of its source.
   const unfiltered = !inFolder && !pendingTerm && !filtered;
   const attentionRank = (doc: Doc): number | null => {
     if (ingestState(doc) === 'failed' && can(doc, 'edit')) return 0;
-    return connectionNeedsSignIn(connectionOf(doc, connections)) ? 1 : null;
+    return connectionAttention(connectionOf(doc, connections)).canReconnect
+      ? 1
+      : null;
   };
   const attentionDocs =
     unfiltered && currentPage === 1
@@ -1190,12 +1232,22 @@ export default function Sources({
     const docId = document.id ? document.id.toString() : '';
     const folderLabel = showFolder ? folderLabelOf(document) : null;
     const connection = connectionOf(document, connections);
-    // Sync stops until the reader signs in again (the shared rule).
-    const paused = connectionNeedsSignIn(connection);
+    // Sync stops until someone signs in again (the shared rule), or while a
+    // team's account is paused.
+    const { signIn, paused, canReconnect } = connectionAttention(connection);
     const ingest = ingestState(document);
     const line = sourceCardLine(t, document, connection);
-    // A team source's scheduled sync that nobody in the team can pay for.
-    const syncPaused = syncPausedText(t, document, pauseOptions);
+    // A team source's sync that is paused, as the server words it, else
+    // the pause of the team's account it syncs through.
+    const syncPaused =
+      syncPausedText(t, document, pauseOptions) ||
+      (paused
+        ? connectionPauseText(t, connection, {
+            teamName,
+            me: pauseOptions.me,
+            language: pauseOptions.language,
+          })
+        : '');
     const tokens = Number(document.tokens) || 0;
     const graph = document.config?.kind === 'graphrag';
     const build = graph && document.id ? graphBuilds[document.id] : undefined;
@@ -1260,9 +1312,9 @@ export default function Sources({
           </p>
         ) : null}
         {/* Pills are states only: the sign-in, the ingest, a graph build. */}
-        {(connection && paused) || ingest || building ? (
+        {signIn || ingest || building ? (
           <div className="flex flex-wrap gap-1">
-            {connection && paused ? (
+            {signIn ? (
               <Badge variant="warning">
                 {t('settings.connectors.status.reconnect')}
               </Badge>
@@ -1316,9 +1368,8 @@ export default function Sources({
             ) : null}
             {showsRole(document) ? <RoleMeta item={document} /> : null}
           </MetaLine>
-          {/* The reader's own connection (only theirs are loaded): sign in
-              again right here, without opening the source. */}
-          {connection && paused ? (
+          {/* Sign in again right here, without opening the source. */}
+          {connection && canReconnect ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
