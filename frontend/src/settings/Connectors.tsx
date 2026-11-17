@@ -22,12 +22,14 @@ import {
 import {
   connectionNeedsSignIn,
   loadConnectors,
-  selectConnections,
-  selectConnectorCatalog,
-  selectConnectorsFailed,
-  selectConnectorsLoaded,
+  loadTeamConnectors,
+  selectWorkspaceConnections,
+  selectWorkspaceConnectorCatalog,
+  selectWorkspaceConnectorsFailed,
+  selectWorkspaceConnectorsLoaded,
 } from '../connectors/connectorsSlice';
 import { connectorDescription, connectorName } from '../connectors/i18n';
+import { isConnectionPaused } from '../connectors/teamConnections';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher, {
   type LaunchOptions,
@@ -35,7 +37,11 @@ import useConnectorLauncher, {
 import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import PersonalOnlyNotice from './PersonalOnlyNotice';
+import { readerIdFromToken } from '../utils/personLabel';
+import {
+  roleAtLeast,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
 import { selectInTeam } from './workspaceAccess';
 
 // The kind track is what a service does (the Knowledge / Tools split the
@@ -59,38 +65,44 @@ const hasWorking = (connector: ConnectorDefinition, accounts: Connection[]) =>
   accounts.some((c) => c.status === 'connected') ||
   connector.connected_count > 0;
 
-/** An account needs signing in again, or was disconnected. */
+/**
+ * An account needs signing in again, was disconnected, or (a team's) is
+ * paused until an Admin reconnects it.
+ */
 const hasBroken = (connector: ConnectorDefinition, accounts: Connection[]) =>
   accounts.some(
-    (c) => connectionNeedsSignIn(c) || c.status === 'disconnected',
-  ) || connector.state === 'reconnect';
+    (c) =>
+      connectionNeedsSignIn(c) ||
+      c.status === 'disconnected' ||
+      isConnectionPaused(c),
+  ) ||
+  connector.state === 'reconnect' ||
+  connector.state === 'paused';
 
 /**
- * Settings › Connectors. Connections are personal, so in a team workspace
- * the page says so (with Switch to Personal) instead of loading them.
+ * Settings › Connectors: the caller's own accounts in Personal; in a team,
+ * the team's. Every member sees the team's accounts and who connected each;
+ * only Admins see the catalog to connect one for the team, and manage them.
  */
 export default function Connectors() {
   const { t } = useTranslation();
-  const inTeam = useSelector(selectInTeam);
-  if (inTeam)
-    return (
-      <PersonalOnlyNotice
-        message={t('settings.connectors.personalOnly.connections')}
-      />
-    );
-  return <ConnectorsPage />;
-}
-
-function ConnectorsPage() {
-  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
-  const catalog = useSelector(selectConnectorCatalog);
-  const loaded = useSelector(selectConnectorsLoaded);
-  const failed = useSelector(selectConnectorsFailed);
+  const inTeam = useSelector(selectInTeam);
+  const teamId = useSelector(
+    (state: { workspace?: { current: string } }) =>
+      state.workspace?.current ?? '',
+  );
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  // Connecting for the team and managing its accounts is an Admin's.
+  const canConnect = !inTeam || roleAtLeast(role, 'admin');
+  const me = readerIdFromToken(token);
+  const catalog = useSelector(selectWorkspaceConnectorCatalog);
+  const loaded = useSelector(selectWorkspaceConnectorsLoaded);
+  const failed = useSelector(selectWorkspaceConnectorsFailed);
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
-  const connections = useSelector(selectConnections);
+  const connections = useSelector(selectWorkspaceConnections);
   // The address holds both filters, so Back and a reload keep them.
   const [capability, setCapability] = useUrlFilter(CAPABILITIES, {
     name: 'capability',
@@ -110,11 +122,20 @@ function ConnectorsPage() {
   const connectionParam = searchParams.get('connection') ?? undefined;
   const { launch, modals } = useConnectorLauncher();
 
+  const load = () =>
+    dispatch(
+      inTeam
+        ? loadTeamConnectors({ token, teamId })
+        : loadConnectors({ token }),
+    );
   useEffect(() => {
-    dispatch(loadConnectors({ token }));
-  }, [dispatch, token]);
+    load();
+    // `load` reads only what is listed.
+  }, [dispatch, token, inTeam, teamId]);
 
-  const custom = catalog.filter((c) => c.publisher === 'custom');
+  // A custom server is added from the Tools page's form, which connects
+  // only the caller's own accounts.
+  const custom = inTeam ? [] : catalog.filter((c) => c.publisher === 'custom');
   // A `?connector=` link to a part (a Reconnect that can't happen in place)
   // opens its parent's page.
   const openTarget = catalog.find((c) => c.key === openKey);
@@ -128,10 +149,25 @@ function ConnectorsPage() {
 
   // Listed for syncing (Add knowledge's Browse all connectors): a connect
   // starts with Sync into Knowledge on (sync-only connectors always do).
-  const withPurpose = (options: LaunchOptions = {}): LaunchOptions =>
-    capability === 'sync' ? { ...options, purpose: 'knowledge' } : options;
+  // In a team, every connect and reconnect from here is for the team.
+  const withPurpose = (options: LaunchOptions = {}): LaunchOptions => ({
+    ...options,
+    ...(capability === 'sync' && { purpose: 'knowledge' as const }),
+    ...(inTeam && { owner: 'team' as const }),
+  });
 
-  const cards = catalogCards(catalog);
+  // Someone who can't connect for the team sees only what it has connected
+  // (a service with an account of its own or of a part), never the catalog.
+  // A custom entry makes a tool of the caller's own, so a team lists none.
+  const cards = catalogCards(catalog).filter(
+    (connector) =>
+      !(inTeam && connector.publisher === 'custom') &&
+      (canConnect ||
+        accountsOf(connections, [
+          connector.key,
+          ...partsOf(connector.key).map((part) => part.key),
+        ]).length > 0),
+  );
   const matchesCapability = (
     connector: ConnectorDefinition,
     key: CapabilityFilter,
@@ -222,7 +258,11 @@ function ConnectorsPage() {
   return (
     <div className="flex flex-col">
       <PageToolbar
-        intro={t('settings.connectors.subtitle')}
+        intro={
+          inTeam
+            ? t('settings.connectors.team.notice')
+            : t('settings.connectors.subtitle')
+        }
         search={
           <SearchInput
             maxLength={256}
@@ -291,10 +331,18 @@ function ConnectorsPage() {
           tone="destructive"
           illustration="none"
           title={t('settings.connectors.loadFailed')}
-          onRetry={() => dispatch(loadConnectors({ token }))}
+          onRetry={load}
         />
       ) : visible.length === 0 ? (
-        status === 'connected' && !search ? (
+        inTeam && connections.length === 0 && !search ? (
+          <EmptyState
+            title={t(
+              canConnect
+                ? 'settings.connectors.team.emptyAdmin'
+                : 'settings.connectors.team.emptyMember',
+            )}
+          />
+        ) : status === 'connected' && !search ? (
           <EmptyState title={t('settings.connectors.empty')} />
         ) : (
           <EmptyState
@@ -317,6 +365,8 @@ function ConnectorsPage() {
                   <ConnectorCard
                     key={connector.key}
                     connector={connector}
+                    accounts={accountsOf(connections, keysOf(connector))}
+                    me={me}
                     onOpen={open}
                     // The section says Connected; a pill on every tile
                     // would only repeat it.
@@ -331,6 +381,7 @@ function ConnectorsPage() {
 
       <ConnectionDrawer
         connector={openConnector}
+        owner={inTeam ? 'team' : undefined}
         parts={openConnector ? partsOf(openConnector.key) : []}
         initialConnectionId={connectionParam}
         onClose={closeDrawer}
