@@ -5416,6 +5416,7 @@
         "losesShared_other": "您在 {{team}} 之外共享过的 {{count}} 人将失去访问权限：{{names}}。",
         "onlyYou": "在您共享之前，只有您可以使用。"
       },
+      "anotherTeam": "另一个团队",
       "borrow": {
         "in_one": "{{names}} 可从团队外部访问，并且使用了此次移动带入团队的内容，而外部访问不得提供这些内容。请将其一并移动、关闭其外部访问，或先从中移除这些项目。",
         "in_other": "{{names}} 可从团队外部访问，并且使用了此次移动带入团队的内容，而外部访问不得提供这些内容。请将其一并移动、关闭其外部访问，或先从中移除这些项目。",
@@ -5438,6 +5439,11 @@
         "team": "“{{name}}”现在归 {{team}} 所有。"
       },
       "doneButton": "完成",
+      "droppedShares": {
+        "description": "这些团队中使用它们的内容将停止运行。",
+        "title": "与其他团队的共享将结束",
+        "with": "已与 {{team}} 共享"
+      },
       "effects": {
         "removed_from_holder": "它将从使用它的地方移除。",
         "stays": "它会留在原处。"
@@ -5458,6 +5464,7 @@
         "not_a_person": "只有人员才能移动项目。",
         "not_found": "它已不存在。",
         "nothing_to_move": "这些项目都无法移动。",
+        "team_locked": "{{team}} 已锁定，因此其中的任何内容都不能移出。只有其所有者才能解除锁定。",
         "workspace_not_found": "该团队已不可用。",
         "workspace_role_required": "您在那里的角色不允许此次移动。"
       },
@@ -5514,9 +5521,15 @@
         "slug": "智能体地址“{{from}}”将变为“{{to}}”",
         "title": "为避免重名而重命名"
       },
+      "sharedRefs": {
+        "from": "通过 {{team}} 的共享使用",
+        "title": "通过另一个团队的共享保留"
+      },
       "someone": "某人",
       "submit": "移至 {{name}}",
       "teamLabel": "团队",
+      "teamLocked_one": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），而 {{team}} 已锁定，因此无法移入。请先关闭其外部访问。",
+      "teamLocked_other": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），而 {{team}} 已锁定，因此无法移入。请先关闭其外部访问。",
       "titleToPersonal": "将“{{name}}”移至个人",
       "titleToTeam": "将“{{name}}”移至团队",
       "unnamed": "您无法打开的项目",

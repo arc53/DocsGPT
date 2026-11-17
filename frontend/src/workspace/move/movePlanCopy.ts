@@ -37,6 +37,7 @@ export const MOVE_WITH_REASONS: readonly MoveWithReason[] = [
 /** Every code a refused plan or move answers with. */
 export const MOVE_ERROR_CODES: readonly MoveErrorCode[] = [
   'move_plan_changed',
+  'team_locked',
   'move_would_borrow',
   'move_needs_admin',
   'credentials_unreadable',
@@ -168,6 +169,28 @@ export function borrowMessage(
 }
 
 /**
+ * Why a move into a locked team is refused: the moving agents with outside
+ * access (a key, public link or webhook), which no role may bring in.
+ *
+ * Args:
+ *   t: The translator.
+ *   agentNames: The agents' names.
+ *   teamName: The locked team.
+ */
+export function teamLockedMessage(
+  t: TFunction,
+  agentNames: string[],
+  teamName: string,
+): string {
+  return t('workspace.move.teamLocked', {
+    count: agentNames.length,
+    names: nameList(t, agentNames),
+    team: teamName,
+    ...noEscape,
+  });
+}
+
+/**
  * A refused plan or move as one sentence for the dialog's Alert. Refusals
  * that name agents or tools say which.
  *
@@ -197,6 +220,12 @@ export function moveErrorMessage(
     const agents = names(body?.agents);
     if (agents.length || others)
       return borrowMessage(t, direction, agents, others, teamName);
+  }
+  // Into a locked team the agents with outside access are named; out of
+  // one, the team keeps everything in.
+  if (error === 'team_locked') {
+    const agents = names(body?.agents);
+    if (agents.length) return teamLockedMessage(t, agents, teamName);
   }
   if (error === 'move_needs_admin') {
     const agents = names(body?.agents);

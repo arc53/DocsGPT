@@ -432,6 +432,88 @@ describe('MoveToWorkspaceModal', () => {
     expect(text()).toContain('workspace.move.needsAdmin');
   });
 
+  it('disables the move into a locked team while an agent has outside access, and says why', async () => {
+    api.planMove.mockResolvedValue({
+      ok: true,
+      status: 200,
+      plan: fullPlan({
+        team_locked_agents: [{ id: 'a1', name: 'Carrier rate desk' }],
+      }),
+    });
+    await render();
+    expect(submit()?.disabled).toBe(true);
+    expect(text()).toContain('workspace.move.teamLocked');
+    expect(text()).toContain('Carrier rate desk');
+  });
+
+  it("lists what the agent keeps through another team's share", async () => {
+    api.planMove.mockResolvedValue({
+      ok: true,
+      status: 200,
+      plan: fullPlan({
+        shared_refs: [
+          {
+            type: 'source',
+            id: 's9',
+            name: 'Sales playbook',
+            shared_from: { team_id: 't2', name: 'Sales' },
+          },
+        ],
+      }),
+    });
+    await render();
+    expect(text()).toContain('workspace.move.sharedRefs.title');
+    expect(text()).toContain('Sales playbook');
+    expect(text()).toContain('workspace.move.sharedRefs.from(team=Sales)');
+    expect(submit()?.disabled).toBe(false);
+  });
+
+  it('lists the shares with other teams a move out ends', async () => {
+    api.planMove.mockResolvedValue({
+      ok: true,
+      status: 200,
+      plan: fullPlan({
+        to: {
+          workspace: { kind: 'personal', team_id: null, name: 'Personal' },
+          folder: null,
+        },
+        dropped_shares: [
+          {
+            type: 'agent',
+            id: 'a1',
+            name: 'Carrier rate desk',
+            team_id: 't2',
+            team_name: 'Sales',
+          },
+        ],
+      }),
+    });
+    await render(
+      { from: { kind: 'team', team_id: 't1' } },
+      makeStore('t1', 'admin'),
+    );
+    expect(text()).toContain('workspace.move.droppedShares.title');
+    expect(text()).toContain('workspace.move.droppedShares.with(team=Sales)');
+  });
+
+  it('says a locked team keeps its items in when the plan is refused', async () => {
+    api.planMove.mockResolvedValue({
+      ok: false,
+      status: 403,
+      error: 'team_locked',
+      message: '',
+      body: {},
+    });
+    await render(
+      { from: { kind: 'team', team_id: 't1' } },
+      makeStore('t1', 'admin'),
+    );
+    expect(text()).toContain(
+      'workspace.move.errors.team_locked(team=Operations)',
+    );
+    expect(submit()?.disabled).toBe(true);
+  });
+
   it('disables the move while a published agent would borrow, and says why', async () => {
     api.planMove.mockResolvedValue({
       ok: true,

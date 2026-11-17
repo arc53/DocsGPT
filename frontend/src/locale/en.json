@@ -5473,6 +5473,7 @@
         "losesShared_other": "{{count}} people you shared this with outside {{team}} will lose access: {{names}}.",
         "onlyYou": "Only you will have it, until you share it."
       },
+      "anotherTeam": "another team",
       "borrow": {
         "in_one": "{{names}} can be reached from outside the team and uses what this move brings in, which outside access must not serve. Move it too, turn its outside access off, or remove those items from it first.",
         "in_other": "{{names}} can be reached from outside the team and use what this move brings in, which outside access must not serve. Move them too, turn their outside access off, or remove those items from them first.",
@@ -5495,6 +5496,11 @@
         "team": "\"{{name}}\" now belongs to {{team}}."
       },
       "doneButton": "Done",
+      "droppedShares": {
+        "description": "Whatever uses these in those teams stops.",
+        "title": "Sharing with other teams ends",
+        "with": "Shared with {{team}}"
+      },
       "effects": {
         "removed_from_holder": "It will be removed from what uses it.",
         "stays": "It stays where it is."
@@ -5515,6 +5521,7 @@
         "not_a_person": "Only a person can move items.",
         "not_found": "It isn't there any more.",
         "nothing_to_move": "None of these items can move.",
+        "team_locked": "{{team}} is locked, so nothing moves out of it. Only its Owner can unlock it.",
         "workspace_not_found": "That team isn't available any more.",
         "workspace_role_required": "Your role there doesn't allow this move."
       },
@@ -5571,9 +5578,15 @@
         "slug": "The agent's address \"{{from}}\" becomes \"{{to}}\"",
         "title": "Renamed to avoid a clash"
       },
+      "sharedRefs": {
+        "from": "Used through the share from {{team}}",
+        "title": "Kept through another team's share"
+      },
       "someone": "someone",
       "submit": "Move to {{name}}",
       "teamLabel": "Team",
+      "teamLocked_one": "{{names}} can be reached from outside the team (a key, public link or webhook), and {{team}} is locked, so it can't come in. Turn its outside access off first.",
+      "teamLocked_other": "{{names}} can be reached from outside the team (a key, public link or webhook), and {{team}} is locked, so they can't come in. Turn their outside access off first.",
       "titleToPersonal": "Move \"{{name}}\" to Personal",
       "titleToTeam": "Move \"{{name}}\" to a team",
       "unnamed": "An item you can't open",

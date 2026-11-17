@@ -59,6 +59,12 @@ describe('move plan copy', () => {
     ...MOVE_WITH_REASONS.map(moveWithReasonKey),
     ...MOVE_ERROR_CODES.map(moveErrorKey),
     ...MOVE_KINDS.map(moveKindKey),
+    'workspace.move.teamLocked',
+    'workspace.move.sharedRefs.title',
+    'workspace.move.sharedRefs.from',
+    'workspace.move.droppedShares.title',
+    'workspace.move.droppedShares.description',
+    'workspace.move.droppedShares.with',
   ];
 
   it('covers every reason, effect and code the backend sends', () => {
@@ -85,6 +91,7 @@ describe('move plan copy', () => {
     expect(MOVE_ERROR_CODES).toEqual(
       expect.arrayContaining([
         'move_plan_changed',
+        'team_locked',
         'move_would_borrow',
         'move_needs_admin',
         'credentials_unreadable',
@@ -134,6 +141,29 @@ describe('move plan copy', () => {
     expect(message).toContain('workspace.move.borrow.in');
     expect(message).toContain('Public bot');
     expect(message).toContain('workspace.move.othersYouCantOpen');
+  });
+
+  it('names the agents with outside access a locked team keeps out', () => {
+    const message = moveErrorMessage(t, {
+      error: 'team_locked',
+      body: { agents: [{ id: 'a', name: 'Public bot' }] },
+      direction: 'in',
+      teamName: 'Operations',
+    });
+    expect(message).toContain('workspace.move.teamLocked');
+    expect(message).toContain('Public bot');
+    expect(message).toContain('team=Operations');
+  });
+
+  it('says a locked team keeps its items in', () => {
+    const message = moveErrorMessage(t, {
+      error: 'team_locked',
+      body: {},
+      direction: 'out',
+      teamName: 'Operations',
+    });
+    expect(message).toContain('workspace.move.errors.team_locked');
+    expect(message).toContain('team=Operations');
   });
 
   it('names the tools whose secret is unreadable', () => {

@@ -5418,6 +5418,7 @@
         "losesShared_other": "您在 {{team}} 以外分享過的 {{count}} 人將失去存取權：{{names}}。",
         "onlyYou": "在您分享之前，只有您可以使用。"
       },
+      "anotherTeam": "另一個團隊",
       "borrow": {
         "in_one": "{{names}} 可從團隊外部存取，並使用了此次移動帶入團隊的內容，而外部存取不得提供這些內容。請將其一併移動、關閉其外部存取，或先從中移除這些項目。",
         "in_other": "{{names}} 可從團隊外部存取，並使用了此次移動帶入團隊的內容，而外部存取不得提供這些內容。請將其一併移動、關閉其外部存取，或先從中移除這些項目。",
@@ -5440,6 +5441,11 @@
         "team": "「{{name}}」現在屬於 {{team}}。"
       },
       "doneButton": "完成",
+      "droppedShares": {
+        "description": "這些團隊中使用它們的內容將停止運作。",
+        "title": "與其他團隊的分享將結束",
+        "with": "已與 {{team}} 分享"
+      },
       "effects": {
         "removed_from_holder": "它將從使用它的地方移除。",
         "stays": "它會留在原處。"
@@ -5460,6 +5466,7 @@
         "not_a_person": "只有人員才能移動項目。",
         "not_found": "它已不存在。",
         "nothing_to_move": "這些項目都無法移動。",
+        "team_locked": "{{team}} 已鎖定，因此其中的任何內容都不能移出。只有其擁有者才能解除鎖定。",
         "workspace_not_found": "該團隊已無法使用。",
         "workspace_role_required": "您在那裡的角色不允許此次移動。"
       },
@@ -5516,9 +5523,15 @@
         "slug": "代理位址「{{from}}」將變為「{{to}}」",
         "title": "為避免重名而重新命名"
       },
+      "sharedRefs": {
+        "from": "透過 {{team}} 的分享使用",
+        "title": "透過另一個團隊的分享保留"
+      },
       "someone": "某人",
       "submit": "移至 {{name}}",
       "teamLabel": "團隊",
+      "teamLocked_one": "{{names}} 可從團隊外部存取（金鑰、公開連結或 Webhook），而 {{team}} 已鎖定，因此無法移入。請先關閉其外部存取。",
+      "teamLocked_other": "{{names}} 可從團隊外部存取（金鑰、公開連結或 Webhook），而 {{team}} 已鎖定，因此無法移入。請先關閉其外部存取。",
       "titleToPersonal": "將「{{name}}」移至個人",
       "titleToTeam": "將「{{name}}」移至團隊",
       "unnamed": "您無法開啟的項目",

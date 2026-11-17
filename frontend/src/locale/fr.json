@@ -5656,6 +5656,7 @@
         "losesShared_other": "{{count}} personnes avec qui vous l’avez partagé hors de {{team}} perdront l’accès : {{names}}.",
         "onlyYou": "Vous seul y aurez accès, jusqu’à ce que vous le partagiez."
       },
+      "anotherTeam": "une autre équipe",
       "borrow": {
         "in_many": "{{names}} sont accessibles depuis l’extérieur de l’équipe et utilisent ce que ce déplacement apporte à l’équipe, qu’un accès externe ne doit pas servir. Déplacez-les aussi, désactivez leur accès externe ou retirez-leur d’abord ces éléments.",
         "in_one": "{{names}} est accessible depuis l’extérieur de l’équipe et utilise ce que ce déplacement apporte à l’équipe, qu’un accès externe ne doit pas servir. Déplacez-le aussi, désactivez son accès externe ou retirez-lui d’abord ces éléments.",
@@ -5683,6 +5684,11 @@
         "team": "« {{name}} » appartient désormais à {{team}}."
       },
       "doneButton": "Terminé",
+      "droppedShares": {
+        "description": "Ce qui les utilise dans ces équipes s’arrête.",
+        "title": "Le partage avec d’autres équipes prend fin",
+        "with": "Partagé avec {{team}}"
+      },
       "effects": {
         "removed_from_holder": "Il sera retiré de ce qui l’utilise.",
         "stays": "Il reste où il est."
@@ -5704,6 +5710,7 @@
         "not_a_person": "Seule une personne peut déplacer des éléments.",
         "not_found": "Il n’existe plus.",
         "nothing_to_move": "Aucun de ces éléments ne peut être déplacé.",
+        "team_locked": "{{team}} est verrouillée, rien n’en sort donc. Seul son propriétaire peut la déverrouiller.",
         "workspace_not_found": "Cette équipe n’est plus disponible.",
         "workspace_role_required": "Votre rôle dans cet espace ne permet pas ce déplacement."
       },
@@ -5763,9 +5770,16 @@
         "slug": "L’adresse de l’agent « {{from}} » devient « {{to}} »",
         "title": "Renommé pour éviter un doublon"
       },
+      "sharedRefs": {
+        "from": "Utilisé grâce au partage de {{team}}",
+        "title": "Conservé grâce au partage d’une autre équipe"
+      },
       "someone": "quelqu’un",
       "submit": "Déplacer vers {{name}}",
       "teamLabel": "Équipe",
+      "teamLocked_many": "{{names}} sont accessibles depuis l’extérieur de l’équipe (clé, lien public ou webhook) et {{team}} est verrouillée ; ils ne peuvent donc pas y entrer. Désactivez d’abord leur accès externe.",
+      "teamLocked_one": "{{names}} est accessible depuis l’extérieur de l’équipe (clé, lien public ou webhook) et {{team}} est verrouillée ; il ne peut donc pas y entrer. Désactivez d’abord son accès externe.",
+      "teamLocked_other": "{{names}} sont accessibles depuis l’extérieur de l’équipe (clé, lien public ou webhook) et {{team}} est verrouillée ; ils ne peuvent donc pas y entrer. Désactivez d’abord leur accès externe.",
       "titleToPersonal": "Déplacer « {{name}} » vers Personnel",
       "titleToTeam": "Déplacer « {{name}} » vers une équipe",
       "unnamed": "Un élément que vous ne pouvez pas ouvrir",

@@ -5656,6 +5656,7 @@
         "losesShared_other": "{{count}} personas con las que lo compartiste fuera de {{team}} perderán el acceso: {{names}}.",
         "onlyYou": "Solo tú lo tendrás, hasta que lo compartas."
       },
+      "anotherTeam": "otro equipo",
       "borrow": {
         "in_many": "{{names}} son accesibles desde fuera del equipo y usan lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelos también, desactiva su acceso externo o quítales antes esos elementos.",
         "in_one": "{{names}} es accesible desde fuera del equipo y usa lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelo también, desactiva su acceso externo o quítale antes esos elementos.",
@@ -5683,6 +5684,11 @@
         "team": "\"{{name}}\" ahora pertenece a {{team}}."
       },
       "doneButton": "Listo",
+      "droppedShares": {
+        "description": "Lo que los use en esos equipos dejará de funcionar.",
+        "title": "Se deja de compartir con otros equipos",
+        "with": "Compartido con {{team}}"
+      },
       "effects": {
         "removed_from_holder": "Se quitará de lo que lo usa.",
         "stays": "Se queda donde está."
@@ -5704,6 +5710,7 @@
         "not_a_person": "Solo una persona puede mover elementos.",
         "not_found": "Ya no está ahí.",
         "nothing_to_move": "Ninguno de estos elementos se puede mover.",
+        "team_locked": "{{team}} está bloqueado, así que nada sale de él. Solo su propietario puede desbloquearlo.",
         "workspace_not_found": "Ese equipo ya no está disponible.",
         "workspace_role_required": "Tu rol allí no permite este movimiento."
       },
@@ -5763,9 +5770,16 @@
         "slug": "La dirección del agente \"{{from}}\" pasa a ser \"{{to}}\"",
         "title": "Renombrado para evitar un conflicto"
       },
+      "sharedRefs": {
+        "from": "Se usa porque {{team}} lo comparte",
+        "title": "Se mantiene gracias a lo que comparte otro equipo"
+      },
       "someone": "alguien",
       "submit": "Mover a {{name}}",
       "teamLabel": "Equipo",
+      "teamLocked_many": "{{names}} son accesibles desde fuera del equipo (clave, enlace público o webhook) y {{team}} está bloqueado, así que no pueden entrar. Desactiva primero su acceso externo.",
+      "teamLocked_one": "{{names}} es accesible desde fuera del equipo (clave, enlace público o webhook) y {{team}} está bloqueado, así que no puede entrar. Desactiva primero su acceso externo.",
+      "teamLocked_other": "{{names}} son accesibles desde fuera del equipo (clave, enlace público o webhook) y {{team}} está bloqueado, así que no pueden entrar. Desactiva primero su acceso externo.",
       "titleToPersonal": "Mover \"{{name}}\" a Personal",
       "titleToTeam": "Mover \"{{name}}\" a un equipo",
       "unnamed": "Un elemento que no puedes abrir",

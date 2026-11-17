@@ -63,6 +63,7 @@ import {
   moveWithReasonKey,
   nameList,
   payerName,
+  teamLockedMessage,
 } from './movePlanCopy';
 import useMovePlan, { type MoveFailure } from './useMovePlan';
 import {
@@ -244,8 +245,12 @@ export default function MoveToWorkspaceModal({
       ? plan.borrowing_agents.filter((agent) => !agent.published)
       : [];
   const needsAdmin = plan?.needs_admin ?? [];
+  const teamLocked = plan?.team_locked_agents ?? [];
   const blocked =
-    blocking.length > 0 || hiddenBlocking > 0 || needsAdmin.length > 0;
+    blocking.length > 0 ||
+    hiddenBlocking > 0 ||
+    needsAdmin.length > 0 ||
+    teamLocked.length > 0;
 
   const submit = async () => {
     if (applying || !plan || blocked) return;
@@ -558,8 +563,23 @@ function PlanBody({
 
   const kind = (type: string) => t(moveKindKey(type));
 
+  const teamLocked = plan.team_locked_agents ?? [];
+  const sharedRefs = plan.shared_refs ?? [];
+  const droppedShares = plan.dropped_shares ?? [];
+
   return (
     <>
+      {teamLocked.length > 0 ? (
+        <Alert variant="warning">
+          <AlertDescription>
+            {teamLockedMessage(
+              t,
+              teamLocked.map((agent) => named(agent.name)),
+              teamName,
+            )}
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {plan.needs_admin.length > 0 ? (
         <Alert variant="warning">
           <AlertDescription>
@@ -677,6 +697,67 @@ function PlanBody({
           </section>
         );
       })}
+
+      {sharedRefs.length > 0 ? (
+        // Another team's items the agent keeps using in the team, through
+        // that team's share.
+        <section className="flex flex-col gap-1">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('workspace.move.sharedRefs.title')}
+            count={sharedRefs.length}
+          />
+          <ListRows>
+            {sharedRefs.map((row) => (
+              <ListRow
+                key={`${row.type}:${row.id}`}
+                wrap
+                leading={<span className="mt-0.5">{kindIcon(row.type)}</span>}
+                title={named(row.name)}
+                description={`${kind(row.type)} · ${t(
+                  'workspace.move.sharedRefs.from',
+                  {
+                    team:
+                      row.shared_from.name || t('workspace.move.anotherTeam'),
+                    ...noEscape,
+                  },
+                )}`}
+              />
+            ))}
+          </ListRows>
+        </section>
+      ) : null}
+
+      {droppedShares.length > 0 ? (
+        // Moving out ends the team's shares of what moves with other teams.
+        <section className="flex flex-col gap-1">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('workspace.move.droppedShares.title')}
+            description={t('workspace.move.droppedShares.description')}
+            count={droppedShares.length}
+          />
+          <ListRows>
+            {droppedShares.map((row) => (
+              <ListRow
+                key={`${row.type}:${row.id}:${row.team_id}`}
+                wrap
+                leading={<span className="mt-0.5">{kindIcon(row.type)}</span>}
+                title={named(row.name)}
+                description={`${kind(row.type)} · ${t(
+                  'workspace.move.droppedShares.with',
+                  {
+                    team: row.team_name || t('workspace.move.anotherTeam'),
+                    ...noEscape,
+                  },
+                )}`}
+              />
+            ))}
+          </ListRows>
+        </section>
+      ) : null}
 
       {plan.cannot_move.length > 0 ? (
         <section className="flex flex-col gap-1">
