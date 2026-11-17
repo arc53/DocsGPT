@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
+import { TEAM_ERROR_KEYS } from '../api/services/teamsService';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -27,6 +28,10 @@ import {
 } from '../components/folders/folderTree';
 import { importFolderRefs } from '../components/folders/importFolderRef';
 import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from '../connectors/connectionErrors';
 import { CUSTOM_MODEL_ERROR_KEYS } from '../models/customModelErrors';
 import { ActiveState } from '../models/misc';
 import type { ImportModelRefusal } from '../models/types';
@@ -281,6 +286,20 @@ export default function ImportAgentModal({
     );
   };
 
+  // An import over an agent that reaches outside its team is refused as
+  // its save would be: said in the app's words, not the server's English.
+  const importRefusal = (data: Record<string, unknown>): string => {
+    const code = connectionErrorCode(data) ?? data.code;
+    if (code === 'team_connection_outside')
+      return connectionErrorMessage(t, data);
+    if (code === 'team_item_shared_outside')
+      return t(TEAM_ERROR_KEYS.team_item_shared_outside);
+    return (
+      (typeof data.message === 'string' && data.message) ||
+      t('modals.importAgent.importError')
+    );
+  };
+
   const handleImport = async () => {
     if (!plan) return;
     setImporting(true);
@@ -329,7 +348,7 @@ export default function ImportAgentModal({
       );
       const data = await response.json();
       if (!response.ok || !data.success) {
-        setError(data.message || t('modals.importAgent.importError'));
+        setError(importRefusal(data));
         return;
       }
       const agentId = data.agent_id as string;

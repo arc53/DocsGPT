@@ -224,6 +224,55 @@ describe('ImportAgentModal', () => {
     );
   });
 
+  it.each([
+    [
+      {
+        success: false,
+        error: "This agent is shared with people who can't use it.",
+        code: 'team_item_shared_outside',
+        message: "This agent is shared with people who can't use it.",
+      },
+      'settings.teams.errors.teamItemSharedOutside',
+    ],
+    [
+      {
+        success: false,
+        error: 'team_connection_outside',
+        code: 'team_connection_outside',
+        message: 'It uses a tool on an account connected for the team.',
+      },
+      'settings.connectors.team.errors.teamConnectionOutside',
+    ],
+  ])(
+    'words an import over an agent reaching outside its team by its code',
+    async (body, key) => {
+      service.importAgent.mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => body,
+      } as Response);
+      act(() => {
+        root.render(
+          <ImportAgentModal
+            modalState="ACTIVE"
+            setModalState={() => undefined}
+          />,
+        );
+      });
+      const file = new File(['name: Agent\n'], 'agent.yaml', {
+        type: 'application/x-yaml',
+      });
+      await act(async () => dropzone.onDrop!([file], []));
+      await flush();
+      await clickButton('modals.importAgent.review');
+      await clickButton('modals.importAgent.import');
+      const error = document.querySelector(
+        '[data-slot="alert"][data-variant="destructive"]',
+      );
+      expect(error?.textContent).toBe(key);
+    },
+  );
+
   it('lists folder entries, the plan warnings, and maps a missing folder', async () => {
     service.planImportAgent.mockResolvedValue(
       jsonResponse({
