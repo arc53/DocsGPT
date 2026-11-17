@@ -2794,8 +2794,8 @@
       "takeOver": {
         "access": {
           "youPay": "Ab jetzt bezahlen Sie die Nutzung von außen",
-          "youPayDetail": "Anfragen über API-Schlüssel, öffentlichen Link und Webhook zählen gegen Ihr Kontingent, nicht gegen das von {{name}}. Was bisher verbraucht wurde, bleibt bei {{name}}.",
-          "youPayUnnamed": "Anfragen über API-Schlüssel, öffentlichen Link und Webhook zählen gegen Ihr Kontingent."
+          "youPayDetail": "Anfragen über API-Schlüssel und Webhook sowie von nicht angemeldeten Besuchern über den öffentlichen Link zählen gegen Ihr Kontingent, nicht gegen das von {{name}}. Angemeldete Besucher des Links zahlen ihre Chats selbst. Was bisher verbraucht wurde, bleibt bei {{name}}.",
+          "youPayUnnamed": "Anfragen über API-Schlüssel und Webhook sowie von nicht angemeldeten Besuchern über den öffentlichen Link zählen gegen Ihr Kontingent. Angemeldete Besucher des Links zahlen ihre Chats selbst."
         },
         "failed": "Die Übernahme ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
         "limitApplies": "Das Limit des Agenten gilt weiterhin",
@@ -2826,6 +2826,7 @@
           "all": "Es umfasst Ihre Chats in jedem Arbeitsbereich, die Zeitpläne, die Sie angelegt haben, und die Agenten, die Sie veröffentlicht haben.",
           "direct": "Es umfasst Ihre Chats ohne Agent, in jedem Arbeitsbereich."
         },
+        "publicLinkSignedOut": "öffentlichen Link (für nicht angemeldete Besucher)",
         "published": "{{name}} antwortet nicht mehr über {{access}}.",
         "schedules_one": "{{count}} Zeitplan, den Sie angelegt haben, ist pausiert.",
         "schedules_other": "{{count}} Zeitpläne, die Sie angelegt haben, sind pausiert.",

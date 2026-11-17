@@ -30,7 +30,9 @@ type RootLike = {
 
 const ACCESS_KEYS: Record<OutsideAccessKind, string> = {
   api_key: 'payer.common.access.apiKey',
-  public_link: 'payer.common.access.publicLink',
+  // The publisher pays only for link visitors who aren't signed in; signed-in
+  // visitors pay for their own chats, so the link keeps answering them.
+  public_link: 'payer.notice.reached.publicLinkSignedOut',
   webhook: 'payer.common.access.webhook',
 };
 

@@ -2767,8 +2767,8 @@
       "takeOver": {
         "access": {
           "youPay": "从现在起由您为其外部使用付费",
-          "youPayDetail": "通过其 API 密钥、公开链接和 Webhook 的请求计入您的额度，而不是 {{name}} 的。此前的用量仍归 {{name}}。",
-          "youPayUnnamed": "通过其 API 密钥、公开链接和 Webhook 的请求计入您的额度。"
+          "youPayDetail": "通过其 API 密钥和 Webhook 的请求，以及未登录访客通过其公开链接发出的请求，计入您的额度，而不是 {{name}} 的。已登录的访客自行支付其聊天费用。此前的用量仍归 {{name}}。",
+          "youPayUnnamed": "通过其 API 密钥和 Webhook 的请求，以及未登录访客通过其公开链接发出的请求，计入您的额度。已登录的访客自行支付其聊天费用。"
         },
         "failed": "未能接管。请重试。",
         "limitApplies": "智能体的限额仍然有效",
@@ -2799,6 +2799,7 @@
           "all": "它涵盖您在所有工作区的聊天、您设置的计划任务以及您发布的智能体。",
           "direct": "它涵盖您在所有工作区中不使用智能体的聊天。"
         },
+        "publicLinkSignedOut": "公开链接（面向未登录的访客）",
         "published": "{{name}} 已停止通过其{{access}}回答。",
         "schedules_one": "您设置的 {{count}} 个计划任务已暂停。",
         "schedules_other": "您设置的 {{count}} 个计划任务已暂停。",

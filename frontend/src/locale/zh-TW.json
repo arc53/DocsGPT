@@ -2768,8 +2768,8 @@
       "takeOver": {
         "access": {
           "youPay": "從現在起由您為其外部使用付費",
-          "youPayDetail": "透過其 API 金鑰、公開連結和 Webhook 的請求計入您的額度，而不是 {{name}} 的。先前的用量仍歸 {{name}}。",
-          "youPayUnnamed": "透過其 API 金鑰、公開連結和 Webhook 的請求計入您的額度。"
+          "youPayDetail": "透過其 API 金鑰和 Webhook 的請求，以及未登入訪客透過其公開連結發出的請求，計入您的額度，而不是 {{name}} 的。已登入的訪客自行支付其聊天費用。先前的用量仍歸 {{name}}。",
+          "youPayUnnamed": "透過其 API 金鑰和 Webhook 的請求，以及未登入訪客透過其公開連結發出的請求，計入您的額度。已登入的訪客自行支付其聊天費用。"
         },
         "failed": "無法接手。請再試一次。",
         "limitApplies": "代理的限額仍然有效",
@@ -2800,6 +2800,7 @@
           "all": "它涵蓋您在所有工作區的聊天、您設定的排程以及您發布的代理。",
           "direct": "它涵蓋您在所有工作區中不使用代理的聊天。"
         },
+        "publicLinkSignedOut": "公開連結（針對未登入的訪客）",
         "published": "{{name}} 已停止透過其{{access}}回答。",
         "schedules_one": "您設定的 {{count}} 個排程已暫停。",
         "schedules_other": "您設定的 {{count}} 個排程已暫停。",

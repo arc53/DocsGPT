@@ -2815,8 +2815,8 @@
       "takeOver": {
         "access": {
           "youPay": "You pay for its outside use from now on",
-          "youPayDetail": "Requests through its API key, public link and webhook count against your allowance, not {{name}}'s. What they used so far stays with {{name}}.",
-          "youPayUnnamed": "Requests through its API key, public link and webhook count against your allowance."
+          "youPayDetail": "Requests through its API key and webhook, and from visitors on its public link who aren't signed in, count against your allowance, not {{name}}'s. Signed-in visitors on the link pay for their own chats. What was used so far stays with {{name}}.",
+          "youPayUnnamed": "Requests through its API key and webhook, and from visitors on its public link who aren't signed in, count against your allowance. Signed-in visitors on the link pay for their own chats."
         },
         "failed": "Couldn't take it over. Please try again.",
         "limitApplies": "The agent's limit still applies",
@@ -2847,6 +2847,7 @@
           "all": "It covers your chats in every workspace, the schedules you set and the agents you published.",
           "direct": "It covers your chats without an agent, in every workspace."
         },
+        "publicLinkSignedOut": "public link (for visitors who aren't signed in)",
         "published": "{{name}} has stopped answering through its {{access}}.",
         "schedules_one": "{{count}} schedule you set is paused.",
         "schedules_other": "{{count}} schedules you set are paused.",

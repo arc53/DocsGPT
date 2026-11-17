@@ -140,7 +140,8 @@ describe('UsageNotice', () => {
     expect(text).toContain('payer.notice.resets.date(date=1 Dec)');
     expect(text).toContain('payer.notice.reached.schedules(count=2)');
     expect(text).toContain(
-      'payer.notice.reached.published(name=Tender helper,access=payer.common.access.apiKey and payer.common.access.publicLink)',
+      // The publisher pays only for link visitors who aren't signed in, so the link stops only for them.
+      'payer.notice.reached.published(name=Tender helper,access=payer.common.access.apiKey and payer.notice.reached.publicLinkSignedOut)',
     );
     const link = card?.querySelector('a');
     expect(link?.getAttribute('href')).toBe('/settings/analytics');

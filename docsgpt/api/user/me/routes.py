@@ -174,7 +174,8 @@ def stopped_for_allowance(conn: Connection, user_id: str) -> dict:
     Returns:
         ``{schedules: n, published: [{agent_id, name, access: [api_key|public_link|webhook]}]}``: the
         running schedules they set, and the agents whose outside access they pay for, that are paused
-        because they are out of allowance (not for another reason).
+        because they are out of allowance (not for another reason). A ``public_link`` there is stopped
+        only for visitors who aren't signed in: a signed-in visitor pays for their own chat.
     """
     checks = PayerChecks()
     schedules = conn.execute(

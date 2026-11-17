@@ -136,7 +136,7 @@ Every admin endpoint requires the admin role, and every change is written to the
 | `PUT` `DELETE` | `/api/admin/quotas/instance` | The instance default. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/teams/<team_id>` | A team's per-member allowance. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/users/<user_id>` | A user's override; the user must already exist (SCIM-provisioned, or signed in once), otherwise `404`. `GET` also returns the limits the user ends up with, the layer each came from, and their usage. |
-| `GET` | `/api/user/quota` | The caller's own limits, usage and reset time. With a limit set it also returns `notice` (`{level, percent, bucket, budget, resets_at}` from 80% used, `level` `near` or `reached`; otherwise `null`) and `parts` (this period's use as `chat`, `schedule`, `published` and `other`), and once a limit is reached, `paused` (`{schedules, published}`: what the caller pays for that has stopped). |
+| `GET` | `/api/user/quota` | The caller's own limits, usage and reset time. With a limit set it also returns `notice` (`{level, percent, bucket, budget, resets_at}` from 80% used, `level` `near` or `reached`; otherwise `null`) and `parts` (this period's use as `chat`, `schedule`, `published` and `other`), and once a limit is reached, `paused` (`{schedules, published}`: what the caller pays for that has stopped; a `public_link` in an agent's `access` has stopped only for visitors who aren't signed in). |
 
 A `PUT` body sets, per budget, a limit or the unlimited flag; leave both out to defer to the next layer:
 

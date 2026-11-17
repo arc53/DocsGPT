@@ -2888,8 +2888,8 @@
       "takeOver": {
         "access": {
           "youPay": "A partir de ahora pagas su uso externo",
-          "youPayDetail": "Las solicitudes por su clave de API, enlace público y webhook cuentan contra tu asignación, no la de {{name}}. Lo que usaron hasta ahora queda con {{name}}.",
-          "youPayUnnamed": "Las solicitudes por su clave de API, enlace público y webhook cuentan contra tu asignación."
+          "youPayDetail": "Las solicitudes por su clave de API y su webhook, y las de quienes usan su enlace público sin haber iniciado sesión, cuentan contra tu asignación, no la de {{name}}. Quienes usan el enlace con la sesión iniciada pagan sus propios chats. Lo usado hasta ahora queda con {{name}}.",
+          "youPayUnnamed": "Las solicitudes por su clave de API y su webhook, y las de quienes usan su enlace público sin haber iniciado sesión, cuentan contra tu asignación. Quienes usan el enlace con la sesión iniciada pagan sus propios chats."
         },
         "failed": "No se pudo asumir. Inténtalo de nuevo.",
         "limitApplies": "El límite del agente sigue aplicándose",
@@ -2920,6 +2920,7 @@
           "all": "Cubre tus chats en todos los espacios de trabajo, las programaciones que creaste y los agentes que publicaste.",
           "direct": "Cubre tus chats sin agente, en todos los espacios de trabajo."
         },
+        "publicLinkSignedOut": "enlace público (para quienes no han iniciado sesión)",
         "published": "{{name}} ha dejado de responder por su {{access}}.",
         "schedules_many": "{{count}} programaciones que creaste están en pausa.",
         "schedules_one": "{{count}} programación que creaste está en pausa.",

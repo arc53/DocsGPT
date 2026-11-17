@@ -37,7 +37,11 @@ export type QuotaNotice = {
 export type QuotaPartKind = 'chat' | 'schedule' | 'published' | 'other';
 export type QuotaPart = { kind: QuotaPartKind; tokens: number; cost: number };
 
-/** What the caller pays for that their used-up allowance stopped. */
+/**
+ * What the caller pays for that their used-up allowance stopped. A
+ * `public_link` in `access` is stopped only for visitors who aren't signed
+ * in: signed-in visitors pay for their own chats.
+ */
 export type QuotaPaused = {
   schedules: number;
   published: { agent_id: string; name: string; access: OutsideAccessKind[] }[];
