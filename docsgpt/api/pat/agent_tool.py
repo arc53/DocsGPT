@@ -781,6 +781,9 @@ LEFT_OUT: dict[str, tuple[tuple[str, str], ...]] = {
         ("/api/user/preferences", "PUT"),
         ("/api/mcp_server/oauth_cancel", "POST"),
     ),
+    "a team tool on each person's own account needs its creator signed in to the service first, in the app": (
+        ("/api/tools/member", "POST"),
+    ),
     "covered by update_tool": (
         ("/api/update_tool_config", "POST"),
         ("/api/update_tool_actions", "POST"),
