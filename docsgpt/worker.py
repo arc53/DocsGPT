@@ -1715,21 +1715,86 @@ def _team_payer(conn: Any, owner: str, created_by: Optional[str]) -> Optional[st
     return person if role_at_least(team_role_for(conn, person, team_id), "editor") else None
 
 
-def _knowledge_payer(conn: Any, owner: str, actor_id: Optional[str], created_by: Optional[str]) -> Optional[str]:
+def _team_connection(conn: Any, owner: str, connection_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The team connection a team's source reads through, or None when it reads through none.
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner.
+        connection_id: ``sources.connection_id``.
+
+    Returns:
+        The ``connector_sessions`` row when ``owner`` is a team's principal and the
+        connection is that team's own; else None (no connection, a personal one, or
+        another owner's, which the source's own rule then refuses).
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    if not connection_id or not is_principal_id(owner):
+        return None
+    row = ConnectorSessionsRepository(conn).get(str(connection_id))
+    if row is None or str(row.get("user_id")) != str(owner):
+        return None
+    return row
+
+
+def _scheduled_connection_payer(
+    conn: Any, connection: Dict[str, Any], *, checks: Optional[Any] = None,
+) -> Optional[str]:
+    """Who a scheduled sync through a team's connection bills: the person who connected it, read now.
+
+    Nobody while its account is paused or that person is out of allowance
+    (``connection_pause(..., allowance=True)``): the sync waits for the next
+    schedule. Nothing is written either way; the pause is derived on every read.
+
+    Args:
+        conn: Open connection.
+        connection: The team's ``connector_sessions`` row.
+        checks: The tick's ``PayerChecks``, so each person is looked up once.
+
+    Returns:
+        The payer, or None to skip the sync.
+    """
+    from docsgpt.quotas.pause import PayerChecks, connection_pause
+    from docsgpt.quotas.payer import connection_payer
+
+    checks = checks or PayerChecks()
+    if connection_pause(conn, connection, checks=checks, allowance=True) is not None:
+        return None
+    return connection_payer(conn, connection, checks=checks)
+
+
+def _knowledge_payer(
+    conn: Any, owner: str, actor_id: Optional[str], created_by: Optional[str], connection_id: Optional[str] = None,
+) -> Optional[str]:
     """Who pays for model use a source's knowledge needs (graph extraction): a person, never a team.
 
     The person who started it; with nobody (a scheduled sync, a task queued
-    before ``actor_id`` existed), a person's source bills its owner and a
-    team's source the person who added it, while still an Editor there.
+    before ``actor_id`` existed), a person's source bills its owner. A team's
+    source that reads through the team's connection bills the person who
+    connected it, while its account isn't paused; any other team source bills
+    the person who added it, while still an Editor there.
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner.
+        actor_id: The person who started the work, if any.
+        created_by: ``sources.created_by``.
+        connection_id: ``sources.connection_id``.
 
     Returns:
         The payer, or ``None`` for a team's source nobody can pay for (never the principal).
     """
+    from docsgpt.quotas.payer import connection_payer
+
     actor = _person(actor_id)
     if actor:
         return actor
     if not is_principal_id(owner):
         return owner
+    connection = _team_connection(conn, owner, connection_id)
+    if connection is not None:
+        return connection_payer(conn, connection)
     return _team_payer(conn, owner, created_by)
 
 
@@ -1848,7 +1913,7 @@ def remote_worker(
         remote_loader = RemoteCreator.create_loader(loader)
         loader_input = source_data
         if connection_id:
-            loader_input = _with_connection_credentials(source_data, connection_id)
+            loader_input = _with_connection_credentials(source_data, connection_id, owner=user)
             if loader_input is None:
                 from docsgpt.connectors.service import ConnectionUnavailable
 
@@ -1860,7 +1925,7 @@ def remote_worker(
                 with connection_fetch_lock(str(connection_id)):
                     # Read the credentials again: the connection may have been
                     # removed or its token replaced while this waited.
-                    loader_input = _with_connection_credentials(source_data, connection_id)
+                    loader_input = _with_connection_credentials(source_data, connection_id, owner=user)
                     if loader_input is None:
                         from docsgpt.connectors.service import ConnectionUnavailable
 
@@ -2448,8 +2513,36 @@ def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any) -> Optional[str]:
     return payer
 
 
+def _connection_sync_actor(doc: Dict[str, Any], checks: Any) -> Tuple[bool, Optional[str]]:
+    """Whether a team's source syncs through the team's connection, and who its scheduled sync bills.
+
+    Never raises: a failed lookup reads as nobody to bill, so the source waits
+    for the next schedule instead of stopping the tick.
+
+    Args:
+        doc: The source row (``id``, ``user_id``, ``connection_id``).
+        checks: The tick's ``PayerChecks``.
+
+    Returns:
+        ``(False, None)`` when it reads through no connection of its team (the
+        source's own payer rule applies); ``(True, person)`` when the person who
+        connected the account pays; ``(True, None)`` while nobody can.
+    """
+    try:
+        with db_readonly() as conn:
+            connection = _team_connection(conn, doc.get("user_id"), doc.get("connection_id"))
+            if connection is None:
+                return False, None
+            return True, _scheduled_connection_payer(conn, connection, checks=checks)
+    except Exception:  # noqa: BLE001 - one source must not stop the tick
+        logging.exception("Could not find who pays for the sync of source %s", doc.get("id"))
+        return True, None
+
+
 def sync_worker(self, frequency):
     from sqlalchemy import text as sql_text
+
+    from docsgpt.quotas.pause import PayerChecks
 
     sync_counts = Counter()
     with db_readonly() as conn:
@@ -2462,6 +2555,8 @@ def sync_worker(self, frequency):
         )
         rows = result.fetchall()
 
+    # One tick asks about each person (role, account, allowance) once.
+    checks = PayerChecks()
     for row in rows:
         doc = dict(row._mapping)
         name = doc.get("name")
@@ -2479,15 +2574,21 @@ def sync_worker(self, frequency):
 
         # Connector sources sync from their connection, whose token the
         # worker can refresh. Legacy ones with no connection still need the
-        # browser, so they are skipped as before.
+        # browser, so they are skipped as before. A team's source waits while
+        # the person who connected the team's account can't pay for it.
         if source_type and source_type.startswith("connector"):
-            if doc.get("connection_id") and not is_principal_id(user):
+            through_connection, payer = (
+                _connection_sync_actor(doc, checks) if is_principal_id(user) else (False, user)
+            )
+            if not doc.get("connection_id") or payer is None:
+                sync_counts["sync_skipped"] += 1
+                if through_connection:
+                    sync_counts[SYNC_NO_PAYER] += 1
+            else:
                 from docsgpt.api.user.tasks import sync_connector_source as sync_task
 
                 sync_task.delay(doc_id)
                 sync_counts["sync_dispatched"] += 1
-            else:
-                sync_counts["sync_skipped"] += 1
             continue
 
         metadata = doc.get("metadata")
@@ -2520,12 +2621,16 @@ def sync_worker(self, frequency):
             continue
 
         # A team's source runs as its principal, which never pays: the sync bills
-        # (and tells) the person who added it, or doesn't run.
+        # (and tells) the person who connected the team's account it reads
+        # through, else the person who added it, or doesn't run.
         actor = None
         if is_principal_id(user):
             try:
-                actor = _scheduled_sync_payer(doc, metadata)
+                through_connection, actor = _connection_sync_actor(doc, checks)
+                if not through_connection:
+                    actor = _scheduled_sync_payer(doc, metadata)
             except Exception:  # noqa: BLE001 - one source must not stop the tick
+                actor = None
                 logging.exception("Could not find who pays for the sync of source %s", doc_id)
             if actor is None:
                 sync_counts["sync_skipped"] += 1
@@ -4618,7 +4723,7 @@ def _webhook_tool_allowlist(agent_config):
     return []
 
 
-def _with_connection_credentials(source_data, connection_id: str):
+def _with_connection_credentials(source_data, connection_id: str, owner: Optional[str] = None):
     """Loader input with the connection's stored keys merged in, or None.
 
     S3, Reddit and GitHub sources made from a connection keep their keys on
@@ -4627,7 +4732,13 @@ def _with_connection_credentials(source_data, connection_id: str):
     repository URL) becomes ``{"url": ...}`` next to the keys. An MCP
     sign-in (Linear) gets its ``connection_id`` instead: its tokens stay
     with the MCP client, which renews them. Returns None when the
-    connection is gone, needs reconnecting, or its connector is turned off.
+    connection is gone, needs reconnecting, its connector is turned off, or
+    it belongs to someone other than ``owner`` (a source only ever reads
+    through its own owner's connection).
+
+    Raises:
+        ConnectionUnavailable: ``status="paused"`` for a team's account the
+            person who connected it can't use now.
     """
     from docsgpt.connectors import service
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -4637,14 +4748,19 @@ def _with_connection_credentials(source_data, connection_id: str):
         enabled = row is not None and service.connector_enabled(conn, row)
     if row is None or not enabled:
         return None
+    if owner is not None and str(row.get("user_id")) != str(owner):
+        return None
     if (row.get("auth_kind") or "") == "mcp_oauth":
         if service.normalize_status(row) != service.STATUS_CONNECTED:
             return None
+        service.ensure_account_usable(None, row)
         credentials = {"connection_id": str(row["id"])}
     else:
         try:
             credentials = service.access_credentials(row)
-        except service.ConnectionUnavailable:
+        except service.ConnectionUnavailable as err:
+            if err.status == service.STATUS_PAUSED:
+                raise
             return None
     if isinstance(source_data, str):
         try:
@@ -4724,6 +4840,28 @@ def _file_new_source(user: str, source_id: str, folder_id: Optional[str]) -> Non
             failure = err
             break
     logging.warning("Could not file source %s into folder %s", source_id, folder_id, exc_info=failure)
+
+
+def _require_own_connection(connection_id: Any, owner: str) -> None:
+    """Refuse to read a source's files through a connection its owner doesn't own.
+
+    A team's source reads only through the team's own connection and a
+    person's only through their own; a task queued with any other (a personal
+    connection for a team's source, say) stops before the account is touched.
+
+    Args:
+        connection_id: The connection the ingest was asked to read through.
+        owner: The source's owner.
+
+    Raises:
+        ValueError: The connection is gone or belongs to someone else.
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).get(str(connection_id)) if connection_id else None
+    if row is None or str(row.get("user_id")) != str(owner):
+        raise ValueError("This source can't read through that connection")
 
 
 def _link_source_to_connection(source_id: str, connection_id: str) -> None:
@@ -4878,7 +5016,17 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             if source and source.get("connection_id")
             else None
         )
+        if connection is not None and str(connection.get("user_id")) != str(source.get("user_id")):
+            # A source only ever reads through its own owner's connection.
+            connection = None
         enabled = connection is not None and connector_enabled(conn, connection)
+        # A team's source bills the person who connected the team's account,
+        # read now: a Reconnect by another Admin moves the bill to them.
+        payer = (
+            _scheduled_connection_payer(conn, connection)
+            if connection is not None and is_principal_id(source.get("user_id"))
+            else None
+        )
     if not source or not connection:
         return {"status": "skipped"}
     if _is_wiki_config(source.get("config")):
@@ -4887,6 +5035,9 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
     if not enabled:
         return {"status": "disabled"}
     if normalize_status(connection) != "connected":
+        return {"status": "paused"}
+    if is_principal_id(source.get("user_id")) and payer is None:
+        # Its account is paused, or whoever connected it is out of allowance.
         return {"status": "paused"}
     remote_data = source.get("remote_data") or {}
     if isinstance(remote_data, str):
@@ -4912,6 +5063,8 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             config=source.get("config") or None,
             # A scheduled run: nobody waits on it, so a skip goes unannounced.
             notify_skip=False,
+            # The payer of a team's sync hears its events and pays for its graph.
+            **_actor_kwargs(payer),
         )
     except ConnectionUnavailable:
         return {"status": "paused"}
@@ -5088,6 +5241,8 @@ def _ingest_connector(
 
             if not session_token and not connection_id:
                 raise ValueError(f"{source_type} connector requires a connection")
+            if connection_id:
+                _require_own_connection(connection_id, user)
 
             if not ConnectorCreator.is_supported(source_type):
                 raise ValueError(
@@ -5097,6 +5252,9 @@ def _ingest_connector(
             remote_loader = ConnectorCreator.create_connector(
                 source_type, session_token, connection_id=connection_id
             )
+            if remote_loader.connection_id and str(remote_loader.connection_id) != str(connection_id or ""):
+                # Named by a legacy session token: checked once it is known.
+                _require_own_connection(remote_loader.connection_id, user)
             connection_id = remote_loader.connection_id
 
             # Create a clean config for storage
@@ -6887,7 +7045,10 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False, acto
 
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)
-        payer = _knowledge_payer(conn, user, actor_id, source.get("created_by")) if source else None
+        payer = (
+            _knowledge_payer(conn, user, actor_id, source.get("created_by"), source.get("connection_id"))
+            if source else None
+        )
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
