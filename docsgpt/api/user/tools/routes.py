@@ -38,6 +38,7 @@ from docsgpt.api.user.resource_access import (
     ResourceAccess,
     settings_many,
 )
+from docsgpt.api.user.received_shares import received_into
 from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.connectors.catalog import base_url, definition_for_tool
@@ -880,7 +881,8 @@ class GetTools(Resource):
     @api.doc(
         description=(
             "Get the tools of the workspace the request names (header X-DocsGPT-Workspace, default Personal): "
-            "in a team, the team's tools with the caller's team role; in Personal, the caller's own and those "
+            "in a team, the team's tools with the caller's team role, then those other teams share with it (origin "
+            "team_shared, shared_from {team_id, name}, the receiver's actions); in Personal, the caller's own and those "
             "shared with them, never a team's. Each row carries workspace, created_by {user_id, label}, access, "
             "allowed_actions, team_role, origin and its filing in the workspace's folder tree (folder_id, "
             "folder_path [{id, name}] from the top-level folder down; built-in tools have none); the response "
@@ -898,15 +900,19 @@ class GetTools(Resource):
                 tools_repo = UserToolsRepository(conn)
                 user_doc = UsersRepository(conn).get(user)
                 if workspace.is_team:
-                    # The team's tools only, by the caller's role; nobody's personal ones.
+                    # The team's tools by the caller's role, then those other teams share with it; nobody's
+                    # personal ones.
                     rows = []
                     team_rows = tools_repo.list_for_user(workspace.owner_id)
-                    team_ids = [str(r["id"]) for r in team_rows]
+                    received = received_into(conn, workspace, "tool")
+                    received_rows = tools_repo.list_by_ids(list(received))
+                    team_ids = [str(r["id"]) for r in [*team_rows, *received_rows]]
                     shared_rows, shared_ids, team_shared = [], [], {}
                     owner_labels = _owner_labels(conn, [workspace.owner_id])
                 else:
                     rows = [r for r in tools_repo.list_for_user(user) if not is_principal_id(r.get("user_id"))]
                     team_rows, team_ids = [], []
+                    received, received_rows = {}, []
                     owned_ids = {str(r["id"]) for r in rows}
                     # Tools shared with the caller's teams. Secrets are stripped
                     # unconditionally below — a grantee never sees the owner's
@@ -921,12 +927,12 @@ class GetTools(Resource):
                     owner_labels = _owner_labels(conn, [r.get("user_id") for r in shared_rows])
                 owned_ids = {str(r["id"]) for r in rows}
                 # "Telegram · Alerts bot" when the owner has several bots.
-                account_names = account_tool_names(conn, [*rows, *shared_rows, *team_rows])
+                account_names = account_tool_names(conn, [*rows, *shared_rows, *team_rows, *received_rows])
                 switches = settings_many(conn, "tool", [*owned_ids, *shared_ids])
                 # A member's "In my chats" switch is theirs, for shared and team tools alike.
                 prefs = UserToolPreferencesRepository(conn).in_chat_many(user, [*shared_ids, *team_ids])
                 shared_via = _shared_via(conn, user, shared_ids)
-                creators = creator_payloads(conn, user, [*rows, *shared_rows, *team_rows])
+                creators = creator_payloads(conn, user, [*rows, *shared_rows, *team_rows, *received_rows])
                 # Each tool's filing in this workspace's folder tree.
                 filing = ItemFiling(conn, workspace.owner_id, "tool")
             user_tools = []
@@ -990,6 +996,17 @@ class GetTools(Resource):
                 # ``status`` is nobody's switch on a team tool: each member has their own.
                 shaped["in_chat"] = prefs.get(tid, False)
                 shaped["owner_label"] = owner_labels.get(row.get("user_id"))
+                user_tools.append(shaped)
+            for row in received_rows:
+                tid = str(row["id"])
+                access = received[tid.lower()]
+                # As a team row (secrets stripped), named by the team that shares it; filed in no tree here.
+                shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
+                shaped.update({"folder_id": None, "folder_path": []})
+                shaped["team_access"] = "viewer"
+                shaped.update(access)
+                shaped["in_chat"] = prefs.get(tid, False)
+                shaped["owner_label"] = access["shared_from"]["name"]
                 user_tools.append(shaped)
 
             # ``scheduler`` is dual-registered (default chat tool + agent-

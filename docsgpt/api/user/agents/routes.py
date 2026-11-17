@@ -101,6 +101,7 @@ from docsgpt.api.user.folder_knowledge import (
     unattachable_folder,
 )
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+from docsgpt.api.user.received_shares import in_request_workspace, is_received, received_into
 from docsgpt.api.user.agents.graph_checks import (
     agent_borrowed_refs as _agent_borrowed_refs,
     graph_validation_failed as _graph_validation_failed,
@@ -638,6 +639,9 @@ def _format_agent_output(
         "origin": access.get("origin"),
         "created_by": created_by,
     }
+    # An agent another team shares with the caller's team names that team.
+    if access.get("shared_from"):
+        out["shared_from"] = access["shared_from"]
     # Guardrail policy is edit-page config; a chat-only caller doesn't need it
     # (and reading the banned-term list makes evading it trivial).
     if "view" not in allowed:
@@ -847,11 +851,13 @@ class GetAgent(Resource):
             with db_readonly() as conn, cached_resolves():
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
-                ra = resolve(conn, "agent", agent_id, user)
+                ra = in_request_workspace(conn, resolve(conn, "agent", agent_id, user), user)
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
-                if agent:
+                # Another team's agent shared with the caller's team is filed in no tree of theirs.
+                if agent and not is_received(ra):
                     folder_id = FolderItemsRepository(conn).filing(filing_owner(ra, user), "agent", str(agent["id"]))
+                if agent:
                     owner_inactive = bool(UsersRepository(conn).deactivated_among([agent.get("user_id")]))
                     creator = created_by_payload(agent, creator_payloads(conn, user, [agent]))
                     # Who pays for its key, link and webhook, and why they are paused: for
@@ -908,7 +914,8 @@ class GetAgents(Resource):
         description=(
             "Retrieve the agents of the current workspace (X-DocsGPT-Workspace: personal or a team id). "
             "Personal: the caller's own plus those shared with their teams; a team: the team's agents, each "
-            "with the caller's role. Every row carries workspace, team_role, origin and created_by."
+            "with the caller's role, then those other teams share with it (origin team_shared, shared_from "
+            "{team_id, name}, the receiver's actions). Every row carries workspace, team_role, origin and created_by."
         )
     )
     def get(self):
@@ -930,10 +937,12 @@ class GetAgents(Resource):
                 )
                 agents_repo = AgentsRepository(conn)
                 if workspace.is_team:
-                    # The team's own agents, each with the caller's team role; a list shows one workspace.
+                    # The team's own agents, each with the caller's team role, then those other teams
+                    # share with it; a list shows one workspace.
                     agents = agents_repo.list_for_user(workspace.owner_id)
                     team_shared: dict = {}
-                    shared_agents: list = []
+                    received = received_into(conn, workspace, "agent")
+                    shared_agents = agents_repo.list_by_ids(list(received))
                     switches: dict = {}
                 else:
                     agents = agents_repo.list_for_user(user)
@@ -971,6 +980,17 @@ class GetAgents(Resource):
                         created_by=created_by_payload(agent, creators),
                     )
                     for agent in agents
+                ]
+                list_agents += [
+                    _format_agent_output(
+                        agent,
+                        pinned=str(agent["id"]) in pinned_ids,
+                        ownership="team",
+                        team_access="viewer",
+                        access=received[str(agent["id"]).lower()],
+                        created_by=created_by_payload(agent, creators),
+                    )
+                    for agent in shared_agents
                 ]
             else:
                 list_agents = [
@@ -2553,19 +2573,23 @@ def _user_may_pin(conn, agent: dict, user_id: str, shared_with_me: set) -> bool:
     return can_access(conn, "agent", agent_id, user_id)
 
 
-def _pin_in_workspace(agent: dict, workspace) -> bool:
-    """Whether a pinned agent shows in ``workspace``: a team's agent in that team only, any other in Personal.
+def _pin_in_workspace(agent: dict, workspace, received: Optional[dict] = None) -> bool:
+    """Whether a pinned agent shows in ``workspace``.
+
+    A team's agent shows in that team, and in each team it is shared with while the share is live; any
+    other agent in Personal.
 
     Args:
-        agent: The agent row (needs ``user_id``).
+        agent: The agent row (needs ``id`` and ``user_id``).
         workspace: The request's :class:`~docsgpt.workspaces.context.Workspace`.
+        received: The agents other teams share with this team workspace (``received_into``).
 
     Returns:
         bool: True when the pin belongs to this workspace's list.
     """
     owner = agent.get("user_id")
     if workspace.is_team:
-        return owner == workspace.owner_id
+        return owner == workspace.owner_id or str(agent["id"]).lower() in (received or {})
     return not is_principal_id(owner)
 
 
@@ -2574,7 +2598,8 @@ class PinnedAgents(Resource):
     @api.doc(
         description=(
             "Get the caller's pinned agents in the current workspace: a pin shows in the workspace its agent "
-            "lives in (a team's agents in that team, every other agent in Personal)"
+            "lives in (a team's agents in that team and in each team it is shared with, every other agent in "
+            "Personal)"
         )
     )
     def get(self):
@@ -2627,16 +2652,21 @@ class PinnedAgents(Resource):
                 # A pin is not proof of access: a share or team grant can be
                 # revoked long after the agent was pinned, so re-check every
                 # row on read rather than trusting the stored id list.
+                received = received_into(conn, workspace, "agent")
                 pinned_agents = [
                     agent
                     for agent in pinned_agents
-                    if _pin_in_workspace(agent, workspace)
+                    if _pin_in_workspace(agent, workspace, received)
                     and _user_may_pin(conn, agent, user_id, shared_with_me)
                 ]
                 # A pin reached only through a share link (or a template)
                 # has no grant: chat + pin, nothing more.
                 access_by_id = {}
                 for agent in pinned_agents:
+                    # Another team's agent shows as this team receives it, even to a member of both.
+                    if agent.get("user_id") != workspace.owner_id and str(agent["id"]).lower() in received:
+                        access_by_id[str(agent["id"])] = received[str(agent["id"]).lower()]
+                        continue
                     ra = resolve(conn, "agent", str(agent["id"]), user_id)
                     access_by_id[str(agent["id"])] = (
                         ra.payload() if ra is not None else dict(LINK_SHARED_ACCESS)

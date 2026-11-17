@@ -19,6 +19,7 @@ from docsgpt.api.user.resource_access import (
     require,
     settings_many,
 )
+from docsgpt.api.user.received_shares import in_request_workspace, is_received, received_into
 from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.drafter.prompt_checks import prompt_checks
@@ -129,7 +130,8 @@ class GetPrompts(Resource):
     @api.doc(
         description=(
             "Get the prompts of the workspace the request names (header X-DocsGPT-Workspace, default Personal), "
-            "after the built-in presets: in a team, the team's prompts with the caller's team role; in Personal, "
+            "after the built-in presets: in a team, the team's prompts with the caller's team role, then those other "
+            "teams share with it (origin team_shared, shared_from {team_id, name}, the receiver's actions); in Personal, "
             "the caller's own and those shared with them, never a team's. Each row carries workspace, created_by "
             "{user_id, label}, access, allowed_actions, team_role, origin and its filing in the workspace's "
             "folder tree (folder_id, folder_path [{id, name}] from the top-level folder down; presets have none)"
@@ -145,12 +147,16 @@ class GetPrompts(Resource):
                 workspace = current_workspace(conn)
                 repo = PromptsRepository(conn)
                 if workspace.is_team:
-                    # The team's prompts only, by the caller's role; nobody's personal ones.
+                    # The team's prompts by the caller's role, then those other teams share with it; nobody's
+                    # personal ones.
                     prompts, shared_prompts, team_shared = [], [], {}
                     team_prompts = repo.list_for_user(workspace.owner_id)
                     team_label = _user_labels(conn, [workspace.owner_id]).get(workspace.owner_id)
+                    received = received_into(conn, workspace, "prompt")
+                    received_prompts = repo.list_by_ids(list(received))
                 else:
                     team_prompts, team_label = [], None
+                    received, received_prompts = {}, []
                     prompts = [p for p in repo.list_for_user(user) if not is_principal_id(p.get("user_id"))]
                     owned_ids = {str(p["id"]) for p in prompts}
                     team_shared = visible_with_access(conn, user, "prompt")
@@ -162,7 +168,7 @@ class GetPrompts(Resource):
                 switches = settings_many(
                     conn, "prompt", [*(str(p["id"]) for p in prompts), *(str(p["id"]) for p in shared_prompts)]
                 )
-                creators = creator_payloads(conn, user, [*prompts, *shared_prompts, *team_prompts])
+                creators = creator_payloads(conn, user, [*prompts, *shared_prompts, *team_prompts, *received_prompts])
                 # Each prompt's filing in this workspace's folder tree.
                 filing = ItemFiling(conn, workspace.owner_id, "prompt")
             list_prompts = [{"id": name, "name": name, "type": "public"} for name in PRESET_PROMPTS]
@@ -214,6 +220,25 @@ class GetPrompts(Resource):
                         ),
                     }
                 )
+            for prompt in received_prompts:
+                pid = str(prompt["id"])
+                access = received[pid.lower()]
+                list_prompts.append(
+                    {
+                        "id": pid,
+                        "name": prompt["name"],
+                        "type": "team",
+                        "team_access": "viewer",
+                        "owner_label": access["shared_from"]["name"],
+                        "preview": prompt_preview(prompt.get("content")),
+                        "updated_at": _iso(prompt.get("updated_at")),
+                        "created_by": created_by_payload(prompt, creators),
+                        # Filed in no tree of this team's: it can't be filed here.
+                        "folder_id": None,
+                        "folder_path": [],
+                        **access,
+                    }
+                )
             # Presets (default/creative/strict) have no row id and stay visible to a restricted token.
             list_prompts = filter_listing(request, "prompts", list_prompts)
             with db_readonly() as conn:
@@ -248,10 +273,14 @@ class GetSinglePrompt(Resource):
                     jsonify({"content": compose_preset(prompt_id)}), 200
                 )
             with db_readonly() as conn:
-                ra = require(conn, "prompt", prompt_id, user, "use")
+                ra = in_request_workspace(conn, require(conn, "prompt", prompt_id, user, "use"), user)
                 prompt = PromptsRepository(conn).get_any(ra.resource_id, ra.owner_id)
                 creators = creator_payloads(conn, user, [prompt] if prompt else [])
-                filed = ItemFiling(conn, filing_owner(ra, user), "prompt").fields(ra.resource_id) if prompt else {}
+                if is_received(ra):
+                    # Another team's prompt shared with the caller's team is filed in no tree of theirs.
+                    filed = {"folder_id": None, "folder_path": []}
+                else:
+                    filed = ItemFiling(conn, filing_owner(ra, user), "prompt").fields(ra.resource_id) if prompt else {}
             if not prompt:
                 return make_response(
                     jsonify({"success": False, "message": "Prompt not found"}), 404

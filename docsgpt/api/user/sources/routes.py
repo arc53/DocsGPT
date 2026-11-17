@@ -48,6 +48,7 @@ from docsgpt.api.user.sources.upload import (
     reingest_idempotency_key,
     request_workspace,
 )
+from docsgpt.api.user.received_shares import in_request_workspace, received_into
 from docsgpt.api.user.resource_usage import (
     attach_used_by,
     deletable_ids_of,
@@ -212,7 +213,11 @@ def _sync_paused(row: dict) -> Optional[dict]:
 
 
 def _with_access(
-    entry: dict, access: Optional[str], switches: Optional[dict], workspace: Optional[Workspace] = None
+    entry: dict,
+    access: Optional[str],
+    switches: Optional[dict],
+    workspace: Optional[Workspace] = None,
+    received: Optional[dict] = None,
 ) -> dict:
     """Add ``access`` + ``allowed_actions`` to a listed source row.
 
@@ -226,11 +231,16 @@ def _with_access(
         access: ``owner`` / ``editor`` / ``viewer`` (a personal row).
         switches: The source's owner switches (``settings_many`` output; a personal row).
         workspace: The team workspace a team row is listed in; its role decides, switches don't apply.
+        received: For a source another team shares with that workspace, its access payload
+            (``received_into``); it decides instead of the role, and the row is filed in no tree here.
 
     Returns:
         dict: ``entry`` with the access payload merged in.
     """
-    if workspace is not None and workspace.is_team:
+    if received is not None:
+        payload = received
+        entry.update({"folder_id": None, "folder_path": []})
+    elif workspace is not None and workspace.is_team:
         payload = payload_for(
             "source", None, None, team_id=workspace.team_id, team_role=workspace.role,
             policy=workspace.outside_policy,
@@ -347,12 +357,16 @@ class CombinedJson(Resource):
                     return err.response()
                 repo = SourcesRepository(conn)
                 if workspace.is_team:
-                    # The team's own sources, each with the caller's team role; no grants count.
+                    # The team's own sources, each with the caller's team role, then those other teams share
+                    # with it; no grants count.
                     team_shared: dict = {}
-                    indexes = repo.list_for_user(workspace.owner_id)
-                    shared_sources: list = []
+                    received = received_into(conn, workspace, "source")
+                    rows = repo.list_for_user(workspace.owner_id, received_ids=list(received))
+                    indexes = [r for r in rows if str(r.get("user_id")) == workspace.owner_id]
+                    shared_sources = [r for r in rows if str(r.get("user_id")) != workspace.owner_id]
                     switches: dict = {}
                 else:
+                    received = {}
                     # Sources shared with the caller's teams — surfaced here so they
                     # are attachable to the member's own agents (direct sharing).
                     # One query for both, so the team's rows carry ``ingest_status`` too.
@@ -409,6 +423,7 @@ class CombinedJson(Resource):
                     "owner" if ownership == "user" else team_access,
                     switches.get(str(index["id"])),
                     workspace,
+                    received.get(str(index["id"]).lower()) if ownership != "user" else None,
                 )
 
             for index in indexes:
@@ -418,7 +433,7 @@ class CombinedJson(Resource):
                     _source_entry(
                         index,
                         ownership="team",
-                        team_access=team_shared.get(str(index["id"])),
+                        team_access=team_shared.get(str(index["id"])) or ("viewer" if received else None),
                     )
                 )
             data = filter_listing(request, "sources", data)
@@ -459,8 +474,8 @@ class PaginatedSources(Resource):
             ),
             "usage": "all (default), in_use (some agent uses it) or unused",
             "origin": (
-                "all (default), own (the workspace's own sources) or shared (sources a team shares with "
-                "the caller; always empty in a team workspace)"
+                "all (default), own (the workspace's own sources) or shared (in Personal, sources a team shares "
+                "with the caller; in a team, sources other teams share with it)"
             ),
             "folder": (
                 "root, or one of the caller's source folders: counts cover that folder and every folder "
@@ -508,14 +523,19 @@ class PaginatedSources(Resource):
                 scope_owner = workspace.owner_id
                 repo = SourcesRepository(conn)
                 if workspace.is_team:
-                    # A team's own sources only: no grant brings anything into a team list.
+                    # A team's own sources, and those other teams share with it: no grant brings anything
+                    # into a team list.
                     team_shared: dict = {}
+                    received = received_into(conn, workspace, "source")
+                    extra_ids = []
                 else:
                     # Include sources shared with the caller's teams so the settings
                     # list matches the /api/sources dropdown. Unioned into the query
                     # by id so count/sort/search/pagination stay correct.
                     team_shared = visible_with_access(conn, user, "source")
-                extra_ids = list(team_shared.keys())
+                    received = {}
+                    extra_ids = list(team_shared.keys())
+                received_ids = list(received)
                 # Kind and usage are judged in Python over every row the search
                 # matches (light columns only); the window is then read in SQL,
                 # narrowed to the ids that pass, so sorting and paging stay there.
@@ -527,13 +547,16 @@ class PaginatedSources(Resource):
                     if folder_key not in filing.paths:
                         return folder_error(404, "folder_not_found", "Folder not found")
                     subtree = subtree_ids(filing.folders, folder_key)
-                facets = repo.list_facets_for_user(scope_owner, search_term=search_term, extra_ids=extra_ids)
+                facets = repo.list_facets_for_user(
+                    scope_owner, search_term=search_term, extra_ids=extra_ids, received_ids=received_ids
+                )
                 if subtree is not None:
                     facets = [row for row in facets if filing.folder_of(row["id"]) in subtree]
                 ids = [str(row["id"]) for row in facets]
                 if workspace.is_team:
                     actions = workspace_allowed_actions("source", workspace.role, policy=workspace.outside_policy)
-                    deletable = ids if "delete" in actions else []
+                    # Never a source another team shares: the team may not delete it.
+                    deletable = [i for i in ids if i.lower() not in received] if "delete" in actions else []
                 else:
                     deletable = deletable_row_ids(conn, user, "source", facets, team_shared)
                 used_by = used_by_many(
@@ -590,6 +613,7 @@ class PaginatedSources(Resource):
                     sort_order=sort_order,
                     extra_ids=extra_ids,
                     only_ids=matching if filtered else None,
+                    received_ids=received_ids,
                 )
                 switches = settings_many(
                     conn, "source", [str(doc["id"]) for doc in window]
@@ -624,7 +648,7 @@ class PaginatedSources(Resource):
                     "ingestStatus": doc.get("ingest_status"),
                     "ownership": "user" if owned else "team",
                     "team_access": (
-                        None if owned else team_shared.get(str(doc["id"]))
+                        None if owned else team_shared.get(str(doc["id"])) or ("viewer" if received else None)
                     ),
                     "connectionId": _connection_id(doc),
                     "website": _website_summary(doc),
@@ -641,6 +665,7 @@ class PaginatedSources(Resource):
                         "owner" if owned else team_shared.get(str(doc["id"])),
                         switches.get(str(doc["id"])),
                         workspace,
+                        None if owned else received.get(str(doc["id"]).lower()),
                     )
                 )
             response = {
@@ -1368,8 +1393,9 @@ class SourceWorkspace(Resource):
     @api.doc(
         description=(
             "The workspace a source lives in (``{kind, team_id}``), so a link to it "
-            "opened from another workspace can go there first. 404 when the caller "
-            "cannot see the source."
+            "opened from another workspace can go there first. A source another team "
+            "shares with the caller's team lives in that receiving team. 404 when the "
+            "caller cannot see the source."
         )
     )
     def get(self, source_id: str) -> Response:
@@ -1388,6 +1414,8 @@ class SourceWorkspace(Resource):
         try:
             with db_readonly() as conn:
                 _, ra = load_source(conn, source_id, decoded_token.get("sub"), "use")
+                # A source another team shares lives in the receiving team (the request's, when several are).
+                ra = in_request_workspace(conn, ra, decoded_token.get("sub"))
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:

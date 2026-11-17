@@ -21,6 +21,7 @@ from docsgpt.api.user.resource_access import (
     require,
     resolve,
 )
+from docsgpt.api.user.received_shares import in_request_workspace
 from docsgpt.quotas.pause import PayerChecks, outside_access_pause
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_to_dict, expose_prompt_preset
@@ -140,10 +141,12 @@ def _link_access(conn, agent_id: str, user_id) -> dict:
 
     Returns:
         The caller's own access (owner or a team grant) when they have one,
-        else viewer with ``pin`` and ``use``.
+        else viewer with ``pin`` and ``use``. Another team's agent shared
+        with the caller's team lives in that team (the one the request is
+        made from, when several receive it), so the page follows it there.
     """
     if user_id:
-        ra = resolve(conn, "agent", agent_id, user_id)
+        ra = in_request_workspace(conn, resolve(conn, "agent", agent_id, user_id), user_id)
         if ra is not None:
             return ra.payload()
     return dict(LINK_SHARED_ACCESS)

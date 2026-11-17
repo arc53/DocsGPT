@@ -48,23 +48,25 @@ def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
 _PRINCIPAL_PREFIX = "__team__"
 
 
-def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
-    """WHERE predicate matching the owner's rows plus any ``extra_ids``.
+def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list], received_ids: Optional[list] = None):
+    """WHERE predicate matching the owner's rows plus any ``extra_ids`` and ``received_ids``.
 
     Lets the paginated/count queries include team-shared sources (passed by id)
     alongside owned ones in a single query, so count/sort/search/pagination
     stay correct across the union. An extra id never brings in a row a team
     workspace owns: those are listed in their team, never by a grant (a stale
-    grant row must not open one to a Personal list).
+    grant row must not open one to a Personal list). ``received_ids`` are
+    another team's sources that team shares with the team workspace being
+    listed, already checked live by the caller; only teams' rows match them.
     """
     scope = sources_table.c.user_id == user_id
+    is_team_row = func.left(sources_table.c.user_id, len(_PRINCIPAL_PREFIX)) == _PRINCIPAL_PREFIX
     ids = _coerce_uuid_ids(extra_ids)
     if ids:
-        shared = and_(
-            sources_table.c.id.in_(ids),
-            func.left(sources_table.c.user_id, len(_PRINCIPAL_PREFIX)) != _PRINCIPAL_PREFIX,
-        )
-        scope = or_(scope, shared)
+        scope = or_(scope, and_(sources_table.c.id.in_(ids), ~is_team_row))
+    received = _coerce_uuid_ids(received_ids)
+    if received:
+        scope = or_(scope, and_(sources_table.c.id.in_(received), is_team_row))
     return scope
 
 
@@ -407,6 +409,7 @@ class SourcesRepository:
         sort_order: str = "desc",
         extra_ids: Optional[list] = None,
         only_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
     ) -> list[dict]:
         """Return sources owned by ``user_id``, paginated and optionally filtered.
 
@@ -432,6 +435,8 @@ class SourcesRepository:
             extra_ids: Ids of other users' sources (team-shared) to list too.
             only_ids: When given, keep only these ids (an empty list keeps
                 none); the paginated listing narrows by kind and usage this way.
+            received_ids: Ids of other teams' sources shared with the team
+                workspace ``user_id`` (its principal), to list too.
 
         Returns:
             A list of source rows as plain dicts (via ``row_to_dict``),
@@ -451,7 +456,7 @@ class SourcesRepository:
                     == sources_table.c.id,
                 )
             )
-            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
         )
         search = _name_search(search_term)
         if search is not None:
@@ -580,6 +585,7 @@ class SourcesRepository:
         *,
         search_term: Optional[str] = None,
         extra_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
     ) -> list[dict]:
         """Every row ``list_for_user`` would match, with only the columns that decide its kind.
 
@@ -591,6 +597,7 @@ class SourcesRepository:
             user_id: Scope rows to this owner.
             search_term: Same substring filter as ``list_for_user``.
             extra_ids: Same union of team-shared ids as ``list_for_user``.
+            received_ids: Same union of other teams' shared ids as ``list_for_user``.
 
         Returns:
             Dicts with ``id``, ``user_id``, ``type``, ``remote_data``,
@@ -599,7 +606,7 @@ class SourcesRepository:
         t = sources_table
         stmt = select(
             t.c.id, t.c.user_id, t.c.type, t.c.remote_data, t.c.config, t.c.sync_frequency, t.c.connection_id,
-        ).where(_owned_or_shared_scope(user_id, extra_ids))
+        ).where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
         search = _name_search(search_term)
         if search is not None:
             stmt = stmt.where(search)
