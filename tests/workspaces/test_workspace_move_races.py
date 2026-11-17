@@ -16,10 +16,11 @@ import pytest
 from flask import Flask
 from sqlalchemy import text
 
-from docsgpt.api.user.folders.service import FolderError, create_folder
+from docsgpt.api.user.folders.service import FolderError, create_folder, delete_folder, file_items
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 from docsgpt.workspaces.move import MoveError, apply_move, parse_move_request
-from tests.workspaces.move_support import agent, body, folder, owner_of, plan, source, team
+from tests.workspaces.move_support import agent, body, file, folder, owner_of, plan, prompt, source, team
 
 
 def _waiting_on_advisory_lock(engine) -> bool:
@@ -103,6 +104,53 @@ class TestFolderCreatedDuringAMove:
         with pg_engine.connect() as conn:
             assert owner_of(conn, "folder", parent) == principal
             assert conn.execute(text("SELECT count(*) FROM folders WHERE user_id = 'eddie'")).scalar() == 0
+
+
+@pytest.mark.fresh_db
+class TestFolderWritesDuringAMove:
+    def test_a_filing_made_while_the_item_moves_waits_and_is_refused(self, pg_engine):
+        with pg_engine.begin() as conn:
+            tid, principal = team(conn)
+            mine = folder(conn, "eddie", "Mine")
+            pr = prompt(conn, "eddie")
+            request = body(tid, [("prompt", pr)])
+            fingerprint = plan(conn, "eddie", request)["fingerprint"]
+
+        def move(conn) -> None:
+            apply_move(conn, "eddie", parse_move_request({**request, "fingerprint": fingerprint}))
+
+        out = _race(pg_engine, move, lambda conn: file_items(conn, "eddie", "prompt", mine, [pr]))
+
+        # The filing waited for the move, then found a team's item, which a personal folder doesn't take.
+        assert isinstance(out.get("error"), FolderError), out
+        assert out["error"].status == 409
+        with pg_engine.connect() as conn:
+            assert owner_of(conn, "prompt", pr) == principal
+            assert conn.execute(
+                text("SELECT count(*) FROM folder_items WHERE resource_id = CAST(:i AS uuid)"), {"i": pr}
+            ).scalar() == 0
+
+    def test_a_folder_delete_waiting_on_the_move_finds_the_folder_gone(self, pg_engine):
+        with pg_engine.begin() as conn:
+            tid, principal = team(conn)
+            top = folder(conn, "eddie", "Project")
+            pr = prompt(conn, "eddie")
+            file(conn, "eddie", "prompt", pr, top)
+            request = body(tid, [("folder", top)])
+            fingerprint = plan(conn, "eddie", request)["fingerprint"]
+            # The row the delete route read before the move.
+            row = FoldersRepository(conn).get(top, "eddie")
+
+        def move(conn) -> None:
+            apply_move(conn, "eddie", parse_move_request({**request, "fingerprint": fingerprint}))
+
+        out = _race(pg_engine, move, lambda conn: delete_folder(conn, row))
+
+        assert isinstance(out.get("error"), FolderError), out
+        assert (out["error"].status, out["error"].code) == (404, "folder_not_found")
+        with pg_engine.connect() as conn:
+            assert owner_of(conn, "folder", top) == principal
+            assert FolderItemsRepository(conn).filing(principal, "prompt", pr) == top
 
 
 _ROUTE_MODULES = ("docsgpt.api.user.agents.routes", "docsgpt.api.user.agents.sharing",

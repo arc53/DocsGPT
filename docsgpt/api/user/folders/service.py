@@ -421,10 +421,17 @@ def delete_folder(conn: Connection, folder: dict) -> dict[str, Any]:
     Returns:
         dict: ``{"moved_items": n, "moved_folders": n, "renamed": [{"id", "from", "to"}]}`` (child folders
         renamed so their names stay unique where they land).
+
+    Raises:
+        FolderError: 404 ``folder_not_found`` when the folder left its tree (a move) or is gone.
     """
     repo = FoldersRepository(conn)
     repo.lock_tree(folder["user_id"])
-    return repo.delete_into_parent(folder)
+    # Read again under the lock: a move that held it may have taken the folder to another tree.
+    current = repo.get(str(folder["id"]), folder["user_id"])
+    if current is None:
+        raise FolderError(404, "folder_not_found", "Folder not found")
+    return repo.delete_into_parent(current)
 
 
 def visible_item_id(conn: Connection, resource_type: str, resource_id: Any, user: str) -> Optional[str]:
@@ -490,6 +497,11 @@ def file_items(
         tree = tree or FolderTree(user)
         folder_pg = None
     tree.require("file")
+    # Held until the request commits, as a move holds it: an item or folder moving meanwhile is read moved,
+    # so its filing never lands in the tree it just left.
+    FoldersRepository(conn).lock_tree(tree.owner_id)
+    if folder_pg is not None and FoldersRepository(conn).get(folder_pg, tree.owner_id) is None:
+        raise FolderError(404, "folder_not_found", "Folder not found")
     planned: list[tuple[str, str]] = []
     skipped: list[str] = []
     misfiled: list[str] = []
