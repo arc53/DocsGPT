@@ -14,8 +14,9 @@
   ``team_resource_grants.owner_id`` refuse principal ids: a principal is never
   a member, and a team's own items are never granted.
 * ``created_by`` (a person's id, no FK) on agents, sources, user_tools,
-  prompts, workflows and folders, backfilled from ``user_id`` without moving
-  ``updated_at``; on insert it defaults to a person owner (never a principal).
+  prompts, workflows, folders and user_custom_models, backfilled from
+  ``user_id`` without moving ``updated_at``; on insert it defaults to a person
+  owner (never a principal).
 * ``agents.access_payer_id``: who pays for outside traffic (key, link,
   webhook) on a team agent; always a person. It is bookkeeping for
   ``agents_set_updated_at``.
@@ -78,7 +79,7 @@ depends_on = None
 _PREFIX = "__team__"
 
 #: Tables that record who created each row.
-_PROVENANCE_TABLES = ("agents", "sources", "user_tools", "prompts", "workflows", "folders")
+_PROVENANCE_TABLES = ("agents", "sources", "user_tools", "prompts", "workflows", "folders", "user_custom_models")
 
 #: Bookkeeping agent columns the ``agents_set_updated_at`` trigger skips: 0064's, then with the payer.
 _BOOKKEEPING = (

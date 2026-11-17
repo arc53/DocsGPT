@@ -613,6 +613,8 @@ user_custom_models_table = Table(
     Column("enabled", Boolean, nullable=False, server_default="true"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # The person who added it; on a team's model, the Admin who did (migration 0065).
+    Column("created_by", Text),
 )
 
 attachments_table = Table(
