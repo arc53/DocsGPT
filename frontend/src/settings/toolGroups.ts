@@ -9,6 +9,8 @@ export type GroupableTool = {
   customName?: string | null;
   connection_id?: string | null;
   config?: unknown;
+  credential_mode?: 'owner' | 'member' | null;
+  connector_key?: string | null;
   default?: boolean;
   builtin?: boolean;
 };

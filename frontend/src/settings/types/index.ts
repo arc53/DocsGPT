@@ -233,6 +233,9 @@ export type UserToolType = {
   connection_id?: string | null;
   // Whether team members use the owner's account or their own.
   credential_mode?: 'owner' | 'member';
+  // The service a team tool on each person's own account (no connection)
+  // signs in to; it groups the tool with that service.
+  connector_key?: string | null;
   // Caller's role and what it may do (`utils/accessUtils` `can`).
   access?: Access | null;
   allowed_actions?: string[];

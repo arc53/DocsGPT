@@ -296,6 +296,24 @@ class TestCreateMemberTool:
         assert "connection_id" not in (row["config"] or {})
 
 
+class TestListedMemberTool:
+    def test_get_tools_names_the_service_of_a_tool_without_a_connection(self, app, pg_conn, team):
+        """The Tools page and the pickers group such a tool with its service by ``connector_key``."""
+        from docsgpt.api.user.tools.routes import GetTools
+
+        tid, _ = team
+        tool_id = _post_member(app, pg_conn, "eddie", {"connector_key": "telegram"}, tid).json["id"]
+        with _db(pg_conn), app.test_request_context("/api/get_tools", headers={WORKSPACE_HEADER: tid}):
+            from flask import request
+
+            request.decoded_token = {"sub": "vi"}
+            resp = GetTools().get()
+        row = next(t for t in resp.json["tools"] if t["id"] == tool_id)
+        assert row["connector_key"] == "telegram"
+        assert row["credential_mode"] == "member"
+        assert row["connection_id"] is None
+
+
 class TestAvailableToolsInATeam:
     def _available(self, app, conn, user, tid):
         from docsgpt.api.user.tools.routes import AvailableTools

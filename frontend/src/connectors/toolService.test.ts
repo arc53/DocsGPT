@@ -124,4 +124,73 @@ describe('toolServiceOf', () => {
     );
     expect(service).toEqual({ name: 'Carrier Rates', icon: null });
   });
+
+  describe("a team tool on each person's own account (no connection)", () => {
+    const member = (overrides: Record<string, unknown>) => ({
+      name: 'telegram',
+      displayName: 'Telegram',
+      connection_id: null,
+      credential_mode: 'member' as const,
+      ...overrides,
+    });
+
+    it('goes with its service, found by the service it records', () => {
+      expect(
+        toolServiceOf(member({ connector_key: 'telegram' }), [], CATALOG),
+      ).toEqual({
+        name: 'Telegram',
+        icon: 'tool_telegram',
+        connector: CATALOG[0],
+      });
+    });
+
+    it('names the same group as a tool on an account for that service', () => {
+      const onAccount = toolServiceOf(
+        { name: 'telegram', displayName: 'Telegram', connection_id: 'conn-1' },
+        [connection({})],
+        CATALOG,
+      );
+      expect(
+        toolServiceOf(member({ connector_key: 'telegram' }), [], CATALOG)?.name,
+      ).toBe(onAccount?.name);
+    });
+
+    it('goes with an MCP preset', () => {
+      const service = toolServiceOf(
+        member({
+          name: 'mcp_tool',
+          displayName: 'Linear',
+          connector_key: 'linear',
+          config: { server_url: 'https://mcp.linear.app/mcp' },
+        }),
+        [],
+        CATALOG,
+      );
+      expect(service).toEqual({
+        name: 'Linear',
+        icon: 'linear',
+        connector: CATALOG[1],
+      });
+    });
+
+    it('groups a custom MCP server under its own name', () => {
+      const service = toolServiceOf(
+        member({
+          name: 'mcp_tool',
+          displayName: 'Carrier Rates',
+          connector_key: 'custom_mcp',
+          config: { server_url: 'https://rates.example.com/mcp' },
+        }),
+        [],
+        CATALOG,
+      );
+      expect(service).toEqual({ name: 'Carrier Rates', icon: null });
+    });
+
+    it('is undefined without a recorded service', () => {
+      expect(
+        toolServiceOf(member({ connector_key: null }), [], CATALOG),
+      ).toBeUndefined();
+    });
+  });
 });
