@@ -162,10 +162,12 @@ def refuse_unfinished_graph(conn, agent: dict) -> Optional[object]:
 
 
 def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list:
-    """The tools and sources an agent uses that its owner reaches only through a grant.
+    """The tools and sources an agent uses that its owner reaches only through a grant, and another team's prompt.
 
     Its own tools and sources, the sources of its knowledge folders, and for
     a workflow agent those of its nodes (see ``resource_access.borrowed_refs``).
+    A prompt counts only when another team owns it: a team's items stay with
+    the people who reach them, while a prompt a person lends never did.
     Such an agent may not get a key, a public link or a webhook.
 
     Args:
@@ -184,6 +186,15 @@ def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list
         conn, owner, agent_refs(agent), agent.get("knowledge_folder_ids") or [],
         holder_type="agent" if holder else None, holder=holder,
     )
+    prompt_id = str(agent.get("prompt_id") or "").lower()
+    if looks_like_uuid(prompt_id):
+        prompt_owner = resource_owner(conn, "prompt", prompt_id)
+        if (
+            is_principal_id(prompt_owner)
+            and prompt_owner != owner
+            and can_use_ref(conn, "prompt", prompt_id, owner)
+        ):
+            found.append(("prompt", prompt_id))
     if agent.get("agent_type") != "workflow":
         return found
     workflow = WorkflowsRepository(conn).get(str(agent["workflow_id"]), owner) if agent.get("workflow_id") else None

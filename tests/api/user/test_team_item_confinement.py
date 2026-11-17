@@ -11,6 +11,8 @@ today's behaviour. Uses real repositories on ``pg_conn``.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from flask import Flask
 from sqlalchemy import text
@@ -424,3 +426,63 @@ class TestShareRoute:
         resp = self._share(client, w["dev"], aid, target_user_id="dan")
         assert resp.status_code == 409, resp.get_json()
         assert [row[1] for row in self._grants(pg_conn, aid)] == ["eddie"]
+
+
+class TestTeamPromptOutsideAccess:
+    """A team's prompt counts as the team's item: a personal agent using one gets no key, public link or
+    webhook, and one can't be added to an agent that has one. A prompt a person lends keeps today's rule."""
+
+    @staticmethod
+    def _published(conn, **refs) -> str:
+        return agent(conn, "vera", status="published", agent_type="classic", chunks=6, description="d", **refs)
+
+    @staticmethod
+    def _assert_refused(resp, name="Ops voice"):
+        assert _status(resp) == 403, _json(resp)
+        assert _json(resp)["code"] == "borrowed_resource"
+        assert name in _json(resp)["message"]
+
+    def test_no_public_link(self, app, pg_conn, w):
+        from docsgpt.api.user.agents.sharing import ShareAgent
+
+        aid = self._published(pg_conn, prompt_id=w["prompt"])
+        resp = _call(app, pg_conn, ShareAgent, "put", "/api/share_agent", "vera", json={"id": aid, "shared": True})
+        self._assert_refused(resp)
+        assert not _row(pg_conn, aid).get("shared")
+
+    def test_no_webhook(self, app, pg_conn, w):
+        from docsgpt.api.user.agents.webhooks import AgentWebhook
+
+        aid = self._published(pg_conn, prompt_id=w["prompt"])
+        self._assert_refused(_call(app, pg_conn, AgentWebhook, "get", "/api/agent_webhook", "vera",
+                                   query={"id": aid}))
+        assert not _row(pg_conn, aid).get("incoming_webhook_token")
+
+    def test_no_new_key(self, app, pg_conn, w):
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
+
+        aid = self._published(pg_conn, prompt_id=w["prompt"])
+        self._assert_refused(_call(app, pg_conn, RegenerateAgentKey, "post", f"/api/regenerate_agent_key/{aid}",
+                                   "vera", args=(aid,)))
+        assert not _row(pg_conn, aid).get("key")
+
+    def test_publishing_mints_no_key(self, app, pg_conn, w):
+        aid = agent(pg_conn, "vera", agent_type="classic", chunks=6, description="d", prompt_id=w["prompt"])
+        resp = _put(app, pg_conn, aid, {"status": "published"})
+        assert _status(resp) == 200, _json(resp)
+        assert _row(pg_conn, aid)["status"] == "published" and not _row(pg_conn, aid).get("key")
+
+    def test_cant_be_added_to_an_agent_with_a_key(self, app, pg_conn, w):
+        aid = self._published(pg_conn, key=f"k-{uuid.uuid4().hex}")
+        self._assert_refused(_put(app, pg_conn, aid, {"prompt_id": w["prompt"]}))
+        assert not _row(pg_conn, aid).get("prompt_id")
+
+    def test_a_personally_lent_prompt_keeps_todays_rule(self, app, pg_conn, w):
+        from docsgpt.api.user.agents.sharing import ShareAgent
+
+        TeamMembersRepository(pg_conn).add_member(w["dev"], LENDER, role="team_viewer")
+        lent = prompt(pg_conn, LENDER, "Lent voice")
+        grant(pg_conn, w["dev"], "prompt", lent, LENDER, target="vera")
+        aid = self._published(pg_conn, prompt_id=lent)
+        resp = _call(app, pg_conn, ShareAgent, "put", "/api/share_agent", "vera", json={"id": aid, "shared": True})
+        assert _status(resp) == 200, _json(resp)
