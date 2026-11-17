@@ -16,7 +16,8 @@ note.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from contextlib import nullcontext
+from typing import Any, ContextManager, Dict, Optional, Tuple
 
 from docsgpt.background import jobs, pool
 from docsgpt.quotas.payer import RUN_KINDS, billed_to, current_run_billing, payer_for
@@ -43,11 +44,18 @@ def worker_payload(executor: Any, tool_data: Dict[str, Any], action_name: str, a
         A JSON-safe dict. ``payer``, ``run_kind`` and ``team_id`` are the
         turn's billing (``billed_to``; every chat and run opens one), each None
         when the turn set none: the identity then pays. ``workspace_team_id``
-        is the chat's workspace, whose tools the worker offers.
+        is the chat's workspace, whose tools the worker offers. ``reader`` is
+        who reads the turn's answers (``resource_access.current_run_reader``),
+        so the worker leaves out the team items they can't use, as the turn
+        does.
     """
+    # Lazy: docsgpt.api's package import pulls in every route module.
+    from docsgpt.api.user.resource_access import current_run_reader
+
     billing = current_run_billing()
     return {
         "user": executor.user,
+        "reader": current_run_reader(),
         "payer": billing.payer if billing is not None and billing.payer else None,
         "run_kind": billing.kind if billing is not None else None,
         "team_id": billing.team_id if billing is not None else None,
@@ -148,8 +156,32 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         team_id=team_id if isinstance(team_id, str) else None,
         limits=limits,
     )
-    with billing:
+    with billing, _read_as(payload):
         return _run_job(job_id, payload)
+
+
+def _read_as(payload: Dict[str, Any]) -> ContextManager[None]:
+    """The turn's reader around the worker's call, so a team item they can't use stays out, as in the turn.
+
+    A payload queued before the reader travelled with it: an agent's job reads
+    as an outside caller nobody signed in as, which leaves out any other team's
+    item (the call then fails as no longer available rather than run for
+    someone who may have lost it); an agentless job has no holder refs to judge.
+
+    Args:
+        payload: From :func:`worker_payload`.
+
+    Returns:
+        The context to run the call in.
+    """
+    from docsgpt.api.user.resource_access import run_reader
+
+    if "reader" in payload:
+        reader = payload["reader"]
+    else:
+        reader = "" if payload.get("agent_id") else None
+    # None: the turn ran outside any run's reader, so nothing was left out there either.
+    return run_reader(reader) if reader is not None else nullcontext()
 
 
 def _run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
