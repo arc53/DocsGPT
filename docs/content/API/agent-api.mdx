@@ -645,7 +645,7 @@ On an update the file is authoritative: fields it sets are written even when tha
 | `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached). A Knowledge folder the agent uses is an entry with `"type": "folder"` and a `key` (`folder-0`, `folder-1`, ...), matched to one of your own folders by its path, then by its name. The path is exported only for the exporter's own folder: someone else's folder, such as the owner's folder when an editor exports, or a teammate's folder on your agent, carries its name alone |
 | `tools` | `builtin`, `reuse` (one of your tools matches its type and name), `create` (a new tool is created; `requires_secrets` lists what you must supply) or `unavailable` |
 | `prompt` | `reuse`, `create` or `default` |
-| `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`) |
+| `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`). Into a team, a custom model is reused only from the team's own, matched by base URL and model ID; one the team doesn't have is created only by a team Admin, and is otherwise `unavailable` with `reason` `custom_model_admin_required` (`not_available_to_tokens` for a token) and left off |
 | `workflow` | For a workflow agent: `create` or `update` with node and edge counts, `delete` when the import would remove the workflow, or `null` |
 
 Each tool in the plan has a `key` (`tool-0`, `tool-1`, ... in file order) that the resolution refers to.
