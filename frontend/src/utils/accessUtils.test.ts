@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { can, canOpenShare, isOwner, roleOf } from './accessUtils';
+import { can, canOpenShare, canPublish, isOwner, roleOf } from './accessUtils';
 
 describe('can', () => {
   it('reads allowed_actions from the server', () => {
@@ -85,5 +85,37 @@ describe('canOpenShare', () => {
         allowed_actions: ['use', 'edit'],
       }),
     ).toBe(true);
+  });
+});
+
+describe('canPublish', () => {
+  it('follows the server on an agent read with its access fields', () => {
+    expect(canPublish({ access: 'editor', allowed_actions: [] }, 'admin')).toBe(
+      false,
+    );
+    expect(
+      canPublish({ access: 'editor', allowed_actions: ['publish'] }, 'viewer'),
+    ).toBe(true);
+  });
+
+  it('lets anyone publish a new agent in Personal', () => {
+    expect(canPublish({}, 'owner', null)).toBe(true);
+    expect(canPublish({}, null)).toBe(true);
+  });
+
+  it("follows the team's outside policy on a new team agent", () => {
+    // Admins only: Editors don't publish.
+    expect(canPublish({}, 'editor', 'admins')).toBe(false);
+    expect(canPublish({}, 'admin', 'admins')).toBe(true);
+    // Editors too.
+    expect(canPublish({}, 'editor', 'editors')).toBe(true);
+    expect(canPublish({}, 'viewer', 'editors')).toBe(false);
+    // Locked keeps publishing with Admins (a draft goes live without a key).
+    expect(canPublish({}, 'editor', 'locked')).toBe(false);
+    expect(canPublish({}, 'admin', 'locked')).toBe(true);
+    expect(canPublish({}, 'owner', 'locked')).toBe(true);
+    // A row that doesn't say reads as Admins only.
+    expect(canPublish({}, 'editor', null)).toBe(false);
+    expect(canPublish({}, 'admin')).toBe(true);
   });
 });

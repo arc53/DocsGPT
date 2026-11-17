@@ -36,7 +36,10 @@ import { ActiveState } from '../../models/misc';
 import { isCatalogModel } from '../../models/modelGroups';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can, canOpenShare, canPublish } from '../../utils/accessUtils';
-import { selectWorkspaceRoleOrNull } from '../../workspace/workspaceSlice';
+import {
+  selectCurrentOutsidePolicyOrNull,
+  selectWorkspaceRoleOrNull,
+} from '../../workspace/workspaceSlice';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
@@ -341,6 +344,7 @@ function WorkflowBuilderInner() {
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const workspaceRole = useSelector(selectWorkspaceRoleOrNull);
+  const outsidePolicy = useSelector(selectCurrentOutsidePolicyOrNull);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
@@ -2189,11 +2193,12 @@ function WorkflowBuilderInner() {
 
   // Save on a published workflow is an edit and needs a change; Publish on a
   // new or draft one doesn't. A new workflow has no access fields: it is the
-  // workspace's, which in a team only an Admin publishes. Without the right
-  // the button isn't rendered, and Save draft is the main button instead.
+  // workspace's, which in a team its outside policy says who publishes.
+  // Without the right the button isn't rendered, and Save draft is the main
+  // button instead.
   const canSubmit = isPublished
     ? can(currentAgent, 'edit')
-    : canPublish(currentAgent, workspaceRole);
+    : canPublish(currentAgent, workspaceRole, outsidePolicy);
   const isPrimaryActionDisabled =
     isPublishing || !canSave || (isPublished && !hasUnsavedWork);
   const primaryActionLabel = isPublished

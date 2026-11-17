@@ -210,6 +210,7 @@ import { groupModels } from '../models/modelGroups';
 import type { Model } from '../models/types';
 import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
 import {
+  selectCurrentOutsidePolicyOrNull,
   selectCurrentWorkspace,
   selectWorkspaceRoleOrNull,
   type WorkspaceState,
@@ -394,6 +395,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   );
   const teamName = useSelector(selectTeamName);
   const workspaceRole = useSelector(selectWorkspaceRoleOrNull);
+  const outsidePolicy = useSelector(selectCurrentOutsidePolicyOrNull);
   // The agent's folder (a new one's, from the address it was started in):
   // the pickers list what is filed there first.
   const holderFolder = pickerScope.holderElsewhere
@@ -2194,8 +2196,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // What the caller's role allows on this agent (`allowed_actions` from the
   // API). A new agent carries no access fields, so it reads as the owner's.
   const canEditPolicy = can(agent, 'edit_policy');
-  // A new agent is the workspace's: in a team only an Admin publishes it.
-  const mayPublish = canPublish(agent, workspaceRole);
+  // A new agent is the workspace's: in a team its outside policy says who
+  // publishes it.
+  const mayPublish = canPublish(agent, workspaceRole, outsidePolicy);
   // Save on a published agent is an edit; on a draft or a new agent the main
   // button publishes it.
   const canSubmit = effectiveMode === 'edit' ? can(agent, 'edit') : mayPublish;

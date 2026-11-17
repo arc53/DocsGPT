@@ -265,6 +265,18 @@ describe('NewAgent in a workspace', () => {
     }
   });
 
+  it("offers Publish to a team's Editor when its outside policy lets Editors publish", async () => {
+    inTeam();
+    const row = mockState.workspace.workspaces[1] as Record<string, unknown>;
+    row.outside_policy = 'editors';
+    try {
+      await mountNew();
+      expect(buttonsNamed('agents.form.buttons.publish')).toHaveLength(1);
+    } finally {
+      delete row.outside_policy;
+    }
+  });
+
   it("asks for the tools and models of the team it's in", async () => {
     inTeam();
     await mountNew();

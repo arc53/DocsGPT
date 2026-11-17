@@ -278,6 +278,15 @@ export const selectCurrentOutsidePolicy = (
   return row.kind === 'team' ? (row.outside_policy ?? null) : null;
 };
 
+/**
+ * The current team's outside policy, or null in a store without the
+ * workspace slice (a component test's), which callers read as Personal.
+ */
+export const selectCurrentOutsidePolicyOrNull = (state: {
+  workspace?: WorkspaceState;
+}): OutsidePolicy | null =>
+  state.workspace ? selectCurrentOutsidePolicy(state as RootLike) : null;
+
 /** Whether the current team is locked: nothing in it is taken outside. */
 export const selectIsCurrentTeamLocked = (state: RootLike): boolean =>
   selectCurrentOutsidePolicy(state) === 'locked';

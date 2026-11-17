@@ -97,16 +97,23 @@ export function can(
   return role === 'owner' || ROLE_DEFAULTS[role].has(action);
 }
 
+// Team roles from weakest to strongest, to compare against a minimum.
+const TEAM_ROLE_RANK = ['viewer', 'editor', 'admin', 'owner'];
+
 /**
  * Whether the caller may publish an agent or workflow. One read from the
  * server answers with its own access fields; a new one, or one saved in this
- * session, carries none and lands in the current workspace, where publishing
- * a team's agent is an Admin's (outward exposure belongs to the team).
+ * session, carries none and lands in the current workspace. There, as the
+ * server rules, publishing a team's agent is an Admin's, or an Editor's too
+ * when the team's outside policy is "Editors too"; a locked team keeps it
+ * with its Admins (the agent goes live for members, without a key).
  *
  * Args:
  *   item: The agent, with its access fields when it has them.
  *   workspaceRole: The caller's role in the current workspace (`owner` in
  *     Personal); null without a workspace, which reads as Personal.
+ *   outsidePolicy: The current team's outside policy; null in Personal or
+ *     when the team's row doesn't say, which reads as Admins only.
  *
  * Returns:
  *   True when the server would let the caller publish it.
@@ -114,12 +121,15 @@ export function can(
 export function canPublish(
   item: AccessFields | null | undefined,
   workspaceRole: string | null | undefined,
+  outsidePolicy?: string | null,
 ): boolean {
   if (!item) return false;
   if (item.allowed_actions || item.access || item.ownership)
     return can(item, 'publish');
+  if (!workspaceRole) return true;
+  const minimum = outsidePolicy === 'editors' ? 'editor' : 'admin';
   return (
-    !workspaceRole || workspaceRole === 'owner' || workspaceRole === 'admin'
+    TEAM_ROLE_RANK.indexOf(workspaceRole) >= TEAM_ROLE_RANK.indexOf(minimum)
   );
 }
 
