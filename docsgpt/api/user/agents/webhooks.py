@@ -19,6 +19,7 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.locks import lock_owner_items
 
 
 agents_webhooks_ns = Namespace(
@@ -83,30 +84,38 @@ class AgentWebhook(Resource):
                         jsonify({"success": False, "message": denied.message}), denied.status
                     )
                 agent = AgentsRepository(conn).get_by_id(ra.resource_id)
-                # A new token runs the agent's graph headless: a workflow
-                # agent's must be a finished one, and it must not use someone
-                # else's tool or source (the sender never had it shared).
-                refusal = None
-                if agent and not agent.get("incoming_webhook_token"):
-                    refusal = refuse_unfinished_graph(conn, agent)
-                    if refusal is None:
-                        refusal = refuse_borrowed_outside_access(conn, agent, user)
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
-            if refusal is not None:
-                return refusal
             webhook_token = agent.get("incoming_webhook_token")
             if not webhook_token:
-                webhook_token = secrets.token_urlsafe(32)
                 with db_session() as conn:
-                    AgentsRepository(conn).update(
-                        str(agent["id"]), ra.owner_id,
-                        # A team Admin who turns the webhook on pays for its runs.
-                        {"incoming_webhook_token": webhook_token,
-                         **access_payer_fields(ra, agent, user, turning_on=True)},
-                    )
+                    # The checks and the new token share one transaction, so a move of the owner's
+                    # items runs wholly before the checks or after the token.
+                    lock_owner_items(conn, ra.owner_id)
+                    agent = AgentsRepository(conn).get_by_id(ra.resource_id)
+                    if not agent:
+                        return make_response(
+                            jsonify({"success": False, "message": "Agent not found"}), 404
+                        )
+                    webhook_token = agent.get("incoming_webhook_token")
+                    if not webhook_token:
+                        # A new token runs the agent's graph headless: a workflow
+                        # agent's must be a finished one, and it must not use someone
+                        # else's tool or source (the sender never had it shared).
+                        refusal = refuse_unfinished_graph(conn, agent)
+                        if refusal is None:
+                            refusal = refuse_borrowed_outside_access(conn, agent, user)
+                        if refusal is not None:
+                            return refusal
+                        webhook_token = secrets.token_urlsafe(32)
+                        AgentsRepository(conn).update(
+                            str(agent["id"]), ra.owner_id,
+                            # A team Admin who turns the webhook on pays for its runs.
+                            {"incoming_webhook_token": webhook_token,
+                             **access_payer_fields(ra, agent, user, turning_on=True)},
+                        )
             base_url = settings.API_URL.rstrip("/")
             full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"
         except Exception as err:

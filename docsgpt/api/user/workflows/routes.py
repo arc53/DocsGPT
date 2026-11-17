@@ -48,6 +48,7 @@ from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesReposito
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
+from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import team_role_for
 from docsgpt.core.json_schema_utils import (
@@ -590,6 +591,10 @@ def plan_graph_save(
         The :class:`GraphSave`, or the :class:`AccessDenied` to answer with.
     """
     if workflow is not None:
+        if holder_has_outside_access(conn, "workflow", workflow):
+            # The borrowed-item check below runs wholly before or after a move of the owner's items. Taken
+            # before the row lock, which a move waits on too.
+            lock_owner_items(conn, owner_id)
         workflow = WorkflowsRepository(conn).get_for_update(str(workflow["id"])) or workflow
     nodes = normalize_agent_node_json_schemas(graph["nodes"])
     previous_nodes = stored_graph(conn, workflow)[0] if workflow is not None else []

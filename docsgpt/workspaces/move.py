@@ -88,6 +88,7 @@ from docsgpt.storage.db.repositories.folders import FolderItemsRepository, Folde
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.workspaces.context import PERSONAL, Workspace, WorkspaceError, require_workspace_role
+from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 from docsgpt.workspaces.roles import from_stored_role, role_at_least, role_rank, team_role_for
 
@@ -1077,8 +1078,12 @@ def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
     """
     if not request.fingerprint:
         raise MoveError(400, "fingerprint_required", "Send the fingerprint of the plan you agreed to")
+    sides = _sides_to_lock(conn, mover, request)
+    # Before planning: turning on a key, link or webhook meanwhile, or saving refs on an agent that has one,
+    # either lands first (and the plan sees it) or waits and sees the items moved.
+    lock_owner_items(conn, *sides)
     folders = FoldersRepository(conn)
-    for owner in _sides_to_lock(conn, mover, request):
+    for owner in sides:
         # The folder service's lock on each tree, taken before planning: a folder created in a moving one
         # meanwhile is either planned along or finds its parent gone, never left behind under a team's.
         folders.lock_tree(owner)

@@ -111,6 +111,7 @@ from docsgpt.api.user.agents.graph_checks import (
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
+from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.principal import is_principal_id
 from docsgpt.utils import (
     check_required_fields,
@@ -1256,6 +1257,10 @@ class CreateAgent(Resource):
                     ).response()
                 if key and team_actions is not None and "manage_access_details" not in team_actions:
                     key = ""
+                if key:
+                    # The borrowed-item check before the key runs wholly before or after a move of the
+                    # owner's items.
+                    lock_owner_items(conn, owner_id)
                 # Resolve folder.
                 pg_folder_id = None
                 if data.get("folder_id"):
@@ -1969,6 +1974,10 @@ class UpdateAgent(Resource):
                     ):
                         newly_generated_key = str(uuid.uuid4())
                         update_fields["key"] = newly_generated_key
+                if newly_generated_key or has_outside_access(existing_agent):
+                    # The borrowed-item checks below run wholly before or after a move of the owner's
+                    # items. Taken before the graph save locks its workflow row, which a move updates.
+                    lock_owner_items(conn, owner_id)
 
                 # A workflow agent's graph: an inline one is checked for shape
                 # on a draft and in full on an agent that runs. Without one, an

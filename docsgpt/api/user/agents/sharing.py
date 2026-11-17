@@ -27,6 +27,7 @@ from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_t
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
+from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.principal import is_principal_id
 
 agents_sharing_ns = Namespace(
@@ -403,6 +404,8 @@ class ShareAgent(Resource):
                     # not for an agent using someone else's tool or source.
                     # Replacing a link it has opens nothing new.
                     if refusal is None and not (agent.get("shared") and agent.get("shared_token")):
+                        # A move of the owner's items runs wholly before this check or after this link.
+                        lock_owner_items(conn, owner_id)
                         refusal = refuse_borrowed_outside_access(conn, agent, user)
                     if refusal is not None:
                         return refusal
