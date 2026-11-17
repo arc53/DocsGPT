@@ -592,15 +592,17 @@ def plan_graph_save(
     Returns:
         The :class:`GraphSave`, or the :class:`AccessDenied` to answer with.
     """
-    team_items = False
+    team_items = connection_tools = False
     if workflow is not None:
         # Lazy: graph_checks imports this module.
-        from docsgpt.api.user.agents.graph_checks import workflow_team_refs
+        from docsgpt.api.user.agents.graph_checks import node_team_connection_tools, workflow_team_refs
 
         # Another team's item on a node is checked below against who the workflow's agents are shared with;
         # a share made at the same time takes the same lock.
         team_items = bool(workflow_team_refs(conn, workflow, owner_id, graph["nodes"]))
-        if team_items or holder_has_outside_access(conn, "workflow", workflow):
+        # A tool on a team's account is checked below against who the workflow's agents reach.
+        connection_tools = bool(node_team_connection_tools(conn, graph["nodes"]))
+        if team_items or connection_tools or holder_has_outside_access(conn, "workflow", workflow):
             # The borrowed-item check below runs wholly before or after a move of the owner's items. Taken
             # before the row lock, which a move waits on too.
             lock_owner_items(conn, owner_id)
@@ -622,6 +624,13 @@ def plan_graph_save(
         from docsgpt.api.user.agents.graph_checks import workflow_team_items_refusal
 
         refusal = workflow_team_items_refusal(conn, workflow, owner_id, previous_nodes, nodes, caller)
+        if refusal is not None:
+            return GraphRefused(*refusal)
+    # A tool on a team's account stays inside the team: none is added to a graph whose agents reach outside it.
+    if workflow is not None and connection_tools:
+        from docsgpt.api.user.agents.graph_checks import workflow_team_connection_refusal
+
+        refusal = workflow_team_connection_refusal(conn, workflow, previous_nodes, nodes)
         if refusal is not None:
             return GraphRefused(*refusal)
     # Someone else's tool or source, reached through a grant, never goes out

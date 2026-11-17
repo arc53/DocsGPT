@@ -104,10 +104,13 @@ from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.api.user.received_shares import in_request_workspace, is_received, received_into
 from docsgpt.api.user.agents.graph_checks import (
     agent_borrowed_refs as _agent_borrowed_refs,
+    agent_team_connection_tools as _agent_team_connection_tools,
     graph_validation_failed as _graph_validation_failed,
     refuse_borrowed_outside_access as _refuse_borrowed_outside_access,
     runs_outside_builder as _runs_outside_builder,
     stored_graph_errors as _stored_graph_errors,
+    team_connection_added_refusal as _team_connection_added_refusal,
+    team_connection_tools_by_save as _team_connection_tools_by_save,
     team_items_shared_outside_refusal as _team_items_shared_outside_refusal,
     team_refs_added_by_save as _team_refs_added_by_save,
     workflow_runs_elsewhere as _workflow_runs_elsewhere,
@@ -1430,12 +1433,14 @@ class CreateAgent(Resource):
                     )
                     build_data["workflow_id"] = pg_workflow_id
 
-                # Someone else's tool or source goes out through no key: the
-                # agent is published for its owner's own chats, keyless.
-                if key and _agent_borrowed_refs(
-                    conn,
-                    {**build_data, "user_id": owner_id},
-                    nodes=graph_save.graph["nodes"] if graph_save is not None else None,
+                # Someone else's tool or source, or a tool on the team's account,
+                # goes out through no key: the agent is published for its
+                # owner's own chats, keyless.
+                key_view = {**build_data, "user_id": owner_id}
+                key_nodes = graph_save.graph["nodes"] if graph_save is not None else None
+                if key and (
+                    _agent_borrowed_refs(conn, key_view, nodes=key_nodes)
+                    or _agent_team_connection_tools(conn, key_view, nodes=key_nodes)
                 ):
                     key = ""
                     build_data["key"] = key
@@ -2007,7 +2012,13 @@ class UpdateAgent(Resource):
                 team_added = _team_refs_added_by_save(
                     conn, existing_agent, update_fields, inline_graph["nodes"] if inline_graph is not None else None,
                 )
-                if newly_generated_key or has_outside_access(existing_agent) or team_added:
+                # A tool on the team's account stays inside the team (checked below, under the same lock).
+                connection_tools, connection_tools_added = _team_connection_tools_by_save(
+                    conn, existing_agent, update_fields,
+                    inline_graph["nodes"] if inline_graph is not None else None,
+                    with_current=bool(newly_generated_key),
+                )
+                if newly_generated_key or has_outside_access(existing_agent) or team_added or connection_tools_added:
                     # The borrowed-item checks below run wholly before or after a move of the owner's
                     # items. Taken before the graph save locks its workflow row, which a move updates.
                     lock_owner_items(conn, owner_id)
@@ -2200,6 +2211,14 @@ class UpdateAgent(Resource):
                     if refusal is not None:
                         body, status = refusal
                         return make_response(jsonify(body), status)
+                refusal = _team_connection_added_refusal(conn, [existing_agent], connection_tools_added)
+                if refusal is not None:
+                    body, status = refusal
+                    return make_response(jsonify(body), status)
+                if newly_generated_key and connection_tools:
+                    # Published for the team's own chats, keyless, as with a borrowed item below.
+                    update_fields.pop("key", None)
+                    newly_generated_key = None
                 # Someone else's tool or source, reached through a grant, never
                 # goes out through a key, link or webhook: none is added to an
                 # agent that has one (those already on it stay), and an agent

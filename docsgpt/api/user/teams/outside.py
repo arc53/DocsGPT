@@ -272,7 +272,8 @@ def _warning_kind(conn, ra: ResourceAccess) -> str:
     def _mode() -> str:
         tool = UserToolsRepository(conn).get_by_id(ra.resource_id) or {}
         if not tool.get("connection_id"):
-            return "tool_stored"
+            # A team's member-mode tool names only its service: each person signs in with their own account.
+            return "tool_member" if tool.get("credential_mode") == "member" else "tool_stored"
         from docsgpt.connectors import service
         from docsgpt.connectors.resolve import MODE_MEMBER, resolve_connection
 
@@ -355,6 +356,38 @@ def _borrowed_agent_refusal(conn, agent_id: str, user: str) -> Optional[Response
     return make_response(jsonify(body), status)
 
 
+def _team_connection_refusal(conn, resource_type: str, resource_id: str) -> Optional[Response]:
+    """The 409 that keeps a tool on the team's account, or an agent using one, from another team.
+
+    Args:
+        conn: Open connection.
+        resource_type: The shared item's kind.
+        resource_id: The item.
+
+    Returns:
+        The refusal, or None for an item that runs on no team account.
+    """
+    # Lazy: graph_checks imports the workflow routes, which import most of the user API.
+    from docsgpt.api.user.agents.graph_checks import (
+        agent_team_connection_tools,
+        team_connection_outside_body,
+        team_connection_tools,
+    )
+
+    if resource_type == "tool":
+        tools = team_connection_tools(conn, [resource_id])
+    elif resource_type == "agent":
+        tools = agent_team_connection_tools(conn, AgentsRepository(conn).get_by_id(resource_id) or {})
+    else:
+        return None
+    if not tools:
+        return None
+    body = team_connection_outside_body(tools)
+    if resource_type == "tool":
+        body["message"] = f'"{tools[0]["name"]}" is signed in to the team\'s account, so it stays inside the team.'
+    return make_response(jsonify(body), 409)
+
+
 def share_team_item(
     conn, user: str, team_id: str, resource_type: str, resource_id: str, access_level: str,
     target_user_id: Optional[str],
@@ -405,6 +438,9 @@ def share_team_item(
         return _error(403, CODE_ROLE_REQUIRED, "Only the team that owns this item can share it"), None
     if team_role_for(conn, user, receiving) is None:
         return _error(403, CODE_NOT_MEMBER, "You can only share with a team you are in"), None
+    refusal = _team_connection_refusal(conn, resource_type, ra.resource_id)
+    if refusal is not None:
+        return refusal, None
     if resource_type == "agent":
         refusal = _borrowed_agent_refusal(conn, ra.resource_id, user)
         if refusal is not None:

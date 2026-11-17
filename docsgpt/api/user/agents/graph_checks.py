@@ -23,6 +23,7 @@ from docsgpt.api.user.resource_access import (
     borrowed_refs,
     borrowed_refusal,
     can_use_ref,
+    has_outside_access,
     ref_names,
     resolve,
     resource_owner,
@@ -34,6 +35,7 @@ from docsgpt.api.user.workflows.routes import (
     stored_graph,
     validate_workflow_structure,
 )
+from docsgpt.connectors.team import TEAM_CONNECTION_OUTSIDE
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
@@ -220,11 +222,213 @@ def refuse_borrowed_outside_access(conn, agent: dict, user: str) -> Optional[obj
     Returns:
         The error response, or None when the agent may get one.
     """
+    tools = agent_team_connection_tools(conn, agent)
+    if tools:
+        return make_response(jsonify(team_connection_outside_body(tools)), 409)
     borrowed = agent_borrowed_refs(conn, agent)
     if not borrowed:
         return None
     body, status = borrowed_refusal(conn, borrowed, user, agent)
     return make_response(jsonify(body), status)
+
+
+# --- A tool signed in to a team's account -----------------------------------------
+#
+# A team's owner-mode tool on a connection the team owns runs on that account for
+# every member. The account was connected for the team, so nothing takes it outside:
+# no share with another team, and no key, widget, public link or webhook on an agent
+# that uses it. A member-mode tool runs on each person's own account, and a source
+# synced from the account is plain team knowledge, so neither counts.
+
+
+def team_connection_tools(conn, tool_ids) -> list[dict]:
+    """The tools among ``tool_ids`` that run on a team's account: owner mode, on a connection a team owns.
+
+    Args:
+        conn: Open database connection.
+        tool_ids: ``user_tools`` ids; anything that isn't a UUID is skipped.
+
+    Returns:
+        list[dict]: ``{id, name, connector_name}`` in the order given, each once.
+    """
+    ids = []
+    for raw in tool_ids or []:
+        tid = str(raw or "").strip().lower()
+        if looks_like_uuid(tid) and tid not in ids:
+            ids.append(tid)
+    if not ids:
+        return []
+    rows = conn.execute(
+        text(
+            "SELECT t.id::text AS id, "
+            "COALESCE(NULLIF(t.custom_name, ''), NULLIF(t.display_name, ''), t.name) AS name, "
+            "c.connector_key, c.provider, c.server_url, c.display_name AS connection_name "
+            "FROM user_tools t JOIN connector_sessions c ON c.id = t.connection_id "
+            "WHERE t.id = ANY(CAST(:ids AS uuid[])) AND t.credential_mode <> 'member' "
+            "AND left(c.user_id, 8) = '__team__'"
+        ),
+        {"ids": ids},
+    ).mappings().all()
+    # Lazy: the connector catalog loads the preset files.
+    from docsgpt.connectors.catalog import connector_key_for_row, get_definition
+
+    found = {}
+    for row in rows:
+        definition = get_definition(connector_key_for_row(dict(row)))
+        connector_name = definition.name if definition else (row["connection_name"] or row["provider"])
+        found[row["id"]] = {"id": row["id"], "name": row["name"], "connector_name": connector_name}
+    return [found[tid] for tid in ids if tid in found]
+
+
+def agent_team_connection_tools(conn, agent: dict, nodes: Optional[list] = None) -> list[dict]:
+    """The tools on a team's account that an agent uses: its own, and a workflow agent's node tools.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row, or the row as a save would leave it.
+        nodes: A workflow agent's nodes in builder shape, when the save brings them; else its stored graph.
+
+    Returns:
+        list[dict]: See :func:`team_connection_tools`.
+    """
+    tool_ids = [rid for kind, rid in agent_refs(agent) if kind == "tool"]
+    if agent.get("agent_type") == "workflow":
+        if nodes is None:
+            owner = agent.get("user_id")
+            workflow = (
+                WorkflowsRepository(conn).get(str(agent["workflow_id"]), owner) if agent.get("workflow_id") else None
+            )
+            nodes = stored_graph(conn, workflow)[0] if workflow else []
+        tool_ids += [rid for kind, rid in _node_refs(nodes) if kind == "tool"]
+    return team_connection_tools(conn, tool_ids)
+
+
+def team_connection_outside_body(tools: list[dict], *, attaching: bool = False) -> dict:
+    """The 409 body that keeps a team's account inside the team.
+
+    Args:
+        tools: The tools on a team's account (see :func:`team_connection_tools`).
+        attaching: True when a save adds them to something that already reaches outside the team.
+
+    Returns:
+        dict: ``success``, ``error`` and ``code`` (``team_connection_outside``), ``message`` and ``tools``.
+    """
+    names = [f'"{t["name"]}"' for t in tools]
+    listed = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+    them = "it" if len(tools) == 1 else "them"
+    rule = "a tool signed in to the team's account stays inside the team"
+    if attaching:
+        message = (
+            f"{listed} can't be added: this agent reaches people outside the team (an API key, public link, "
+            f"webhook or another team), and {rule}."
+        )
+    else:
+        message = f"This agent uses {listed}, and {rule}. Remove {them} from the agent first."
+    return {
+        "success": False,
+        "error": TEAM_CONNECTION_OUTSIDE,
+        "code": TEAM_CONNECTION_OUTSIDE,
+        "message": message,
+        "tools": tools,
+    }
+
+
+def reaches_outside_team(conn, agents: list[dict]) -> bool:
+    """Whether any of the agents reaches people outside its team: a key, link or webhook, or another team.
+
+    Args:
+        conn: Open database connection.
+        agents: Agent rows.
+
+    Returns:
+        bool: True when one of them does.
+    """
+    for agent in agents:
+        if has_outside_access(agent):
+            return True
+        if agent.get("id") and TeamItemSharesRepository(conn).teams_for("agent", str(agent["id"])):
+            return True
+    return False
+
+
+def team_connection_tools_by_save(
+    conn, agent: dict, fields: dict, nodes: Optional[list] = None, *, with_current: bool = False,
+) -> tuple[list[dict], list[dict]]:
+    """The tools on a team's account an agent uses after a save, and those the save adds.
+
+    Args:
+        conn: Open database connection.
+        agent: The stored agent row.
+        fields: The columns the save writes.
+        nodes: The workflow nodes the save brings (an inline graph), if any.
+        with_current: Read what the agent uses even when the save changes none of its items.
+
+    Returns:
+        ``(after, added)``; both empty when the save changes no items and ``with_current`` is off.
+    """
+    touched = nodes is not None or any(f in fields for f in _REF_FIELDS)
+    if not touched and not with_current:
+        return [], []
+    before = agent_team_connection_tools(conn, agent)
+    if not touched:
+        return before, []
+    after = agent_team_connection_tools(
+        conn, {**agent, **{f: fields[f] for f in _REF_FIELDS if f in fields}}, nodes=nodes,
+    )
+    had = {t["id"] for t in before}
+    return after, [t for t in after if t["id"] not in had]
+
+
+def team_connection_added_refusal(conn, agents: list[dict], added: list[dict]) -> Optional[tuple[dict, int]]:
+    """The 409 that refuses a save adding a tool on a team's account to agents that reach outside the team.
+
+    One already on the agent keeps saving. Call it holding ``lock_owner_items`` for the agents' owner, so a
+    share with another team made at the same time is either seen here or sees this save.
+
+    Args:
+        conn: Open database connection.
+        agents: The agents the save changes what they run.
+        added: The tools on a team's account the save adds.
+
+    Returns:
+        ``(body, 409)`` (see :func:`team_connection_outside_body`), or None.
+    """
+    if not added or not reaches_outside_team(conn, agents):
+        return None
+    return team_connection_outside_body(added, attaching=True), 409
+
+
+def node_team_connection_tools(conn, nodes: list) -> list[dict]:
+    """The tools on a team's account that a workflow's agent nodes use (see :func:`team_connection_tools`)."""
+    return team_connection_tools(conn, [rid for kind, rid in _node_refs(nodes) if kind == "tool"])
+
+
+def workflow_team_connection_refusal(
+    conn, workflow: dict, previous_nodes: list, nodes: list,
+) -> Optional[tuple[dict, int]]:
+    """:func:`team_connection_added_refusal` for a graph save, judged for every agent that runs the workflow.
+
+    Args:
+        conn: Open database connection.
+        workflow: The saved workflow row.
+        previous_nodes: The stored graph's nodes.
+        nodes: The nodes being saved.
+
+    Returns:
+        ``(body, 409)``, or None.
+    """
+    had = {t["id"] for t in node_team_connection_tools(conn, previous_nodes)}
+    added = [t for t in node_team_connection_tools(conn, nodes) if t["id"] not in had]
+    if not added:
+        return None
+    agents = conn.execute(
+        text(
+            "SELECT id, key, shared, shared_token, incoming_webhook_token FROM agents "
+            "WHERE workflow_id = CAST(:wid AS uuid)"
+        ),
+        {"wid": str(workflow["id"])},
+    ).mappings().all()
+    return team_connection_added_refusal(conn, [dict(a) for a in agents], added)
 
 
 # --- A team's items on an agent another team or person reaches -------------------
