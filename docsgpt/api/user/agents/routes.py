@@ -79,12 +79,11 @@ from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.api.user.workflows.routes import (
-    CODE_CUSTOM_MODEL_PERSONAL_ONLY,
-    CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE,
+    custom_model_refusal,
     graph_model_ids,
     parse_workflow_graph,
-    personal_custom_models,
     plan_graph_save,
+    refused_custom_models,
     workflow_graph_errors,
     write_graph_save,
 )
@@ -475,12 +474,12 @@ def _drops_controls(new, old) -> bool:
     return not _controls(old) <= _controls(new)
 
 
-def _personal_model_refusal(conn, owner_id: str, data: dict, graph: Optional[dict], user: str):
+def _custom_model_refusal(conn, owner_id: str, data: dict, graph: Optional[dict], user: str):
     """The 400 that refuses a save naming a custom model the agent's owner can't run with, or None.
 
-    An agent runs with its owner's models, and a team's principal has no
-    custom models: a team agent (or its inline graph) that names a person's
-    custom model would fail on every run, so it is refused at save.
+    An agent runs with its owner's models: a team agent (or its inline graph)
+    on a person's custom model, or a personal or other team's agent on a
+    team's model, would fail on every run, so it is refused at save.
 
     Args:
         conn: Open database connection.
@@ -490,8 +489,9 @@ def _personal_model_refusal(conn, owner_id: str, data: dict, graph: Optional[dic
         user: The caller, for the log line.
 
     Returns:
-        A 400 response with ``error: custom_model_personal_only`` and the
-        offending ``models``, or None when the save may go ahead.
+        A 400 response with ``error`` ``custom_model_personal_only`` or
+        ``custom_model_team_only``, its ``message`` and the offending
+        ``models``, or None when the save may go ahead.
     """
     model_ids: list = []
     if isinstance(data.get("default_model_id"), str):
@@ -500,19 +500,12 @@ def _personal_model_refusal(conn, owner_id: str, data: dict, graph: Optional[dic
         model_ids += [m for m in data["models"] if isinstance(m, str)]
     if graph:
         model_ids += graph_model_ids(graph.get("nodes"))
-    bad = personal_custom_models(conn, owner_id, model_ids)
-    if not bad:
+    refusal = custom_model_refusal(conn, owner_id, model_ids)
+    if refusal is None:
         return None
-    current_app.logger.warning("Agent save rejected: personal custom model on a team agent (user=%s)", user)
+    current_app.logger.warning("Agent save rejected: %s (user=%s)", refusal.code, user)
     return make_response(
-        jsonify(
-            {
-                "success": False,
-                "message": CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE,
-                "error": CODE_CUSTOM_MODEL_PERSONAL_ONLY,
-                "models": bad,
-            }
-        ),
+        jsonify({"success": False, "message": refusal.message, "error": refusal.code, "models": refusal.models}),
         400,
     )
 
@@ -1273,7 +1266,7 @@ class CreateAgent(Resource):
                 except WorkspaceError as err:
                     return err.response()
                 owner_id, created_by = workspace.owner_for_create(user)
-                model_refusal = _personal_model_refusal(conn, owner_id, data, inline_graph, user)
+                model_refusal = _custom_model_refusal(conn, owner_id, data, inline_graph, user)
                 if model_refusal is not None:
                     return model_refusal
                 # Publishing a team agent (and the key that comes with it) is
@@ -1664,7 +1657,7 @@ class UpdateAgent(Resource):
                 )
                 if graph_error is not None:
                     return graph_error
-                model_refusal = _personal_model_refusal(conn, owner_id, data, inline_graph, user)
+                model_refusal = _custom_model_refusal(conn, owner_id, data, inline_graph, user)
                 if model_refusal is not None:
                     return model_refusal
                 # The image is stored only once the save is known to go
@@ -2983,17 +2976,17 @@ class AdoptAgent(Resource):
                 for col in ("json_schema", "models", "shared_metadata", "config", "starters"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
-                # A team's agent runs as the team, which has no custom models:
-                # a custom model the template names (anyone's, the adopter's
-                # too) would fail every run, so the team's copy drops it.
-                if workspace.is_team:
-                    named = [create_kwargs.get("default_model_id")] + list(create_kwargs.get("models") or [])
-                    personal = {str(m).lower() for m in personal_custom_models(conn, owner_id, named)}
-                    if str(create_kwargs.get("default_model_id") or "").lower() in personal:
+                # The copy runs on its owner's models: a custom model the save
+                # rule refuses (a person's on a team's copy, a team's on a
+                # personal or other team's copy) would fail every run, so it is dropped.
+                named = [create_kwargs.get("default_model_id")] + list(create_kwargs.get("models") or [])
+                refused = {str(m).lower() for m in refused_custom_models(conn, owner_id, named)}
+                if refused:
+                    if str(create_kwargs.get("default_model_id") or "").lower() in refused:
                         create_kwargs.pop("default_model_id")
                     if isinstance(create_kwargs.get("models"), list):
                         create_kwargs["models"] = [
-                            m for m in create_kwargs["models"] if str(m).lower() not in personal
+                            m for m in create_kwargs["models"] if str(m).lower() not in refused
                         ]
                 # The adopted agent starts from the admin's default guardrails,
                 # under any the template sets.

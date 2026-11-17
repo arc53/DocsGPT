@@ -838,7 +838,13 @@ def _editor_only_model(model_id: Any, owner_id: str | None, editor_id: str | Non
 #: The refusal code of a team item that names a person's custom model.
 CODE_CUSTOM_MODEL_PERSONAL_ONLY = "custom_model_personal_only"
 CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE = (
-    "A team's agents and workflows can't use a personal custom model yet. Pick a model the whole instance offers."
+    "A team's agents and workflows can use the team's custom models only. "
+    "Pick one of the team's models or a model the whole instance offers."
+)
+#: The refusal of a personal item, or another team's, that names a team's custom model.
+CUSTOM_MODEL_TEAM_ONLY_MESSAGE = (
+    "A team's custom model can be used only by that team's agents and workflows. "
+    "Pick one of your own models or a model the whole instance offers."
 )
 
 
@@ -884,6 +890,98 @@ def personal_custom_models(conn, owner_id: Optional[str], model_ids: List[Any]) 
     from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
 
     return UserCustomModelsRepository(conn).existing_ids([m for m in model_ids if isinstance(m, str) and m])
+
+
+@dataclass(frozen=True)
+class CustomModelRefusal:
+    """Why a save that names custom models its owner can't run with is refused.
+
+    Attributes:
+        code: ``custom_model_personal_only`` or ``custom_model_team_only``.
+        message: The message shown to the person saving.
+        models: The offending model ids, as given.
+    """
+
+    code: str
+    message: str
+    models: List[str]
+
+
+def _refused_custom_models(conn, owner_id: Optional[str], model_ids: List[Any]) -> Tuple[List[str], List[str]]:
+    """The custom models an item owned by ``owner_id`` may not name: ``(people's, teams')``.
+
+    A custom model resolves in its owner's account, so an item runs only on
+    its own owner's. A team's item may name none of a person's, and no item
+    may name a team's model unless it is that team's. A person's item naming
+    someone else's personal model is left to the checks it had before (a
+    personal workflow's editor gets a validation error).
+
+    Args:
+        conn: Open database connection.
+        owner_id: The item's owner: a person or a team's principal.
+        model_ids: Model ids the item names (blank, non-string and catalog ids are ignored).
+
+    Returns:
+        The refused ids, as given: people's models and teams' models.
+    """
+    from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
+    from docsgpt.workspaces.team_models import is_team_model, unowned_custom_models
+
+    unowned = unowned_custom_models(conn, owner_id, model_ids)
+    if not unowned:
+        return [], []
+    repo = UserCustomModelsRepository(conn)
+    teams = [m for m in unowned if is_team_model(repo.get_by_id(m))]
+    people = [m for m in unowned if m not in teams] if is_principal_id(owner_id) else []
+    return people, teams
+
+
+def refused_custom_models(conn, owner_id: Optional[str], model_ids: List[Any]) -> List[str]:
+    """Every custom model among ``model_ids`` that an item owned by ``owner_id`` may not name.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The item's owner: a person or a team's principal.
+        model_ids: Model ids the item names.
+
+    Returns:
+        The refused ids, as given (see :func:`custom_model_refusal`).
+    """
+    people, teams = _refused_custom_models(conn, owner_id, model_ids)
+    return people + teams
+
+
+def custom_model_refusal(conn, owner_id: Optional[str], model_ids: List[Any]) -> Optional[CustomModelRefusal]:
+    """Why a save naming ``model_ids`` on an item owned by ``owner_id`` is refused, or None.
+
+    A person's model on a team's item is ``custom_model_personal_only``; a
+    team's model on a personal item or on another team's item is
+    ``custom_model_team_only``. When both kinds are named, the person's
+    models are reported first.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The item's owner: a person or a team's principal.
+        model_ids: Model ids the item names.
+
+    Returns:
+        The :class:`CustomModelRefusal`, or None when the save may go ahead.
+    """
+    from docsgpt.workspaces.team_models import CODE_CUSTOM_MODEL_TEAM_ONLY
+
+    people, teams = _refused_custom_models(conn, owner_id, model_ids)
+    if people:
+        return CustomModelRefusal(CODE_CUSTOM_MODEL_PERSONAL_ONLY, CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE, people)
+    if teams:
+        return CustomModelRefusal(CODE_CUSTOM_MODEL_TEAM_ONLY, CUSTOM_MODEL_TEAM_ONLY_MESSAGE, teams)
+    return None
+
+
+def _model_refusal_response(refusal: CustomModelRefusal):
+    """The 400 of a workflow save refused for its custom models: ``code``, ``message``, ``errors`` and ``models``."""
+    return error_response(
+        refusal.message, code=refusal.code, message=refusal.message, errors=[refusal.message], models=refusal.models,
+    )
 
 
 #: What a team editor's node model picker reads of the owner's custom models: what
@@ -1321,14 +1419,11 @@ class WorkflowList(Resource):
                 workspace = current_workspace(conn)
                 require_workspace_role(workspace, "editor")
                 owner_id, created_by = workspace.owner_for_create(user_id)
-                personal_models = personal_custom_models(conn, owner_id, graph_model_ids(nodes_data))
+                model_refusal = custom_model_refusal(conn, owner_id, graph_model_ids(nodes_data))
         except WorkspaceError as err:
             return err.response()
-        if personal_models:
-            return error_response(
-                CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE, code=CODE_CUSTOM_MODEL_PERSONAL_ONLY,
-                errors=[CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE], models=personal_models,
-            )
+        if model_refusal is not None:
+            return _model_refusal_response(model_refusal)
         validation_errors = workflow_graph_errors(graph, draft=False, user_id=owner_id, editor_id=user_id)
         if validation_errors:
             return error_response(
@@ -1439,12 +1534,9 @@ class WorkflowDetail(Resource):
                 graph = {"nodes": nodes_data, "edges": edges_data}
                 if "retry_defaults" in data:
                     graph["retry_defaults"] = data.get("retry_defaults")
-                personal_models = personal_custom_models(conn, acting, graph_model_ids(nodes_data))
-                if personal_models:
-                    return error_response(
-                        CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE, code=CODE_CUSTOM_MODEL_PERSONAL_ONLY,
-                        errors=[CUSTOM_MODEL_PERSONAL_ONLY_MESSAGE], models=personal_models,
-                    )
+                model_refusal = custom_model_refusal(conn, acting, graph_model_ids(nodes_data))
+                if model_refusal is not None:
+                    return _model_refusal_response(model_refusal)
                 validation_errors = workflow_graph_errors(
                     graph, draft=False, user_id=acting, editor_id=user_id
                 )
