@@ -64,6 +64,7 @@ import type { AppDispatch } from '../store';
 import { agentChatPath, agentEditPath } from '../agents/paths';
 import { agentUseCount } from '../utils/resourceUsage';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { captureWorkspace } from '../workspace/requestWorkspace';
 import WorkspaceLine from '../workspace/WorkspaceLine';
 import {
@@ -87,9 +88,10 @@ type ListedPrompt = Prompt & AccessFields & FiledItem;
 
 /**
  * The page's sections: the built-in prompts, the workspace's own (yours in
- * Personal, the team's in a team), and those shared with the caller.
+ * Personal, the team's in a team), those other teams shared with the team,
+ * and those shared with the caller.
  */
-const SECTIONS = ['included', 'yours', 'shared'] as const;
+const SECTIONS = ['included', 'yours', 'teamShared', 'shared'] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 /**
@@ -101,7 +103,9 @@ const sectionOf = (prompt: ListedPrompt): SectionKey =>
     ? 'included'
     : prompt.origin === 'shared'
       ? 'shared'
-      : 'yours';
+      : prompt.origin === 'team_shared'
+        ? 'teamShared'
+        : 'yours';
 
 /** The kind track's values: All, then one per section. */
 const KINDS = ['all', ...SECTIONS] as const;
@@ -318,9 +322,11 @@ export default function Prompts() {
   const sectionTitle = (key: SectionKey) =>
     key === 'shared'
       ? t('workspace.page.sharedWithYou')
-      : key === 'yours' && inTeam
-        ? t('settings.prompts.sections.team')
-        : t(`settings.prompts.sections.${key}`);
+      : key === 'teamShared'
+        ? t('workspace.page.sharedFromTeams.title')
+        : key === 'yours' && inTeam
+          ? t('settings.prompts.sections.team')
+          : t(`settings.prompts.sections.${key}`);
 
   const renderCard = (prompt: ListedPrompt) => {
     const inChats = prompt.id === chatPrompt.id;
@@ -380,6 +386,7 @@ export default function Prompts() {
               </MetaItem>
             ) : null}
             {showsCreator(prompt) ? <CreatorMeta item={prompt} /> : null}
+            {showsSharedFrom(prompt) ? <SharedFromMeta item={prompt} /> : null}
             {showsRole(prompt) ? <RoleMeta item={prompt} /> : null}
             {agentUseCount(prompt.used_by) > 0 ? (
               <UsedByAgents usage={prompt.used_by} />

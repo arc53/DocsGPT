@@ -15,17 +15,25 @@ export type PickerPrompt = Prompt &
   Pick<AccessFields, 'origin' | 'workspace'>;
 
 /** The Prompt picker's kinds (the Prompts page's sections), All first. */
-export const PROMPT_KINDS = ['all', 'included', 'yours', 'shared'] as const;
+export const PROMPT_KINDS = [
+  'all',
+  'included',
+  'yours',
+  'teamShared',
+  'shared',
+] as const;
 export type PromptKind = (typeof PROMPT_KINDS)[number];
 
 /**
  * Where a prompt goes: a preset is `included`; the workspace's own (the
- * caller's in Personal, the team's in a team) is `yours`; one shared with
- * the caller is `shared`. Read from `origin`, else from the older `type`.
+ * caller's in Personal, the team's in a team) is `yours`; another team's
+ * shared with the team is `teamShared`; one shared with the caller is
+ * `shared`. Read from `origin`, else from the older `type`.
  */
 export function promptKindOf(prompt: PickerPrompt): Exclude<PromptKind, 'all'> {
   if (prompt.type === 'public') return 'included';
   if (prompt.origin === 'own' || prompt.origin === 'team') return 'yours';
+  if (prompt.origin === 'team_shared') return 'teamShared';
   if (prompt.origin === 'shared') return 'shared';
   return prompt.type === 'team' ? 'shared' : 'yours';
 }

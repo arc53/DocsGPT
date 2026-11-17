@@ -151,6 +151,22 @@ const teamPrompt = {
   allowed_actions: ['use', 'duplicate', 'edit', 'move_folder'],
 };
 
+// Another team's prompt shared with this team: use only.
+const received = {
+  id: 'p-received',
+  name: 'Sales tone',
+  type: 'team',
+  access: 'viewer',
+  team_access: 'viewer',
+  origin: 'team_shared',
+  workspace: team,
+  shared_from: { team_id: 'sales', name: 'Sales' },
+  owner_label: 'Sales',
+  allowed_actions: ['use'],
+  folder_id: null,
+  folder_path: [],
+};
+
 const folders: Folder[] = [
   {
     id: 'f-onboarding',
@@ -498,6 +514,37 @@ describe('Prompts page in a workspace', () => {
     const loads = service.getPrompts.mock.calls.length;
     await act(async () => share.props!.onMoved!());
     expect(service.getPrompts.mock.calls.length).toBeGreaterThan(loads);
+  });
+
+  it("lists another team's prompts under Shared with this team, naming the team, to read and use only", async () => {
+    service.getPrompts.mockImplementation(() =>
+      response([...presets, teamPrompt, received]),
+    );
+    await render('editor');
+    expect(headings()).toEqual([
+      'settings.prompts.sections.folders2',
+      'settings.prompts.sections.included3',
+      'settings.prompts.sections.team1',
+      'workspace.page.sharedFromTeams.title1',
+    ]);
+    expect(
+      cardTitles(section('workspace.page.sharedFromTeams.title')!),
+    ).toEqual(['Sales tone']);
+    const tile = card('Sales tone');
+    expect(
+      tile.querySelector('[data-testid="shared-from-meta"]')?.textContent,
+    ).toBe('workspace.page.sharedFromTeams.from:{"team":"Sales"}');
+    expect(tile.querySelector('[data-testid="role-meta"]')).toBeNull();
+    // It opens to read; nothing edits, copies, files, moves or deletes it.
+    const labels = menuLabels('Sales tone');
+    expect(labels).toContain('settings.prompts.view');
+    for (const refused of [
+      'settings.prompts.edit',
+      'settings.prompts.duplicate',
+      'folders.moveToFolder',
+      'settings.prompts.delete',
+    ])
+      expect(labels).not.toContain(refused);
   });
 
   it("keeps a list that answers after a workspace switch out of the new workspace's pickers", async () => {

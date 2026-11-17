@@ -615,9 +615,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ? t('settings.prompts.filters.all')
         : kind === 'shared'
           ? t('settings.prompts.kinds.shared')
-          : kind === 'yours' && teamLabel !== null
-            ? teamLabel
-            : t(`settings.prompts.sections.${kind}`),
+          : kind === 'teamShared'
+            ? t('workspace.page.sharedFromTeams.title')
+            : kind === 'yours' && teamLabel !== null
+              ? teamLabel
+              : t(`settings.prompts.sections.${kind}`),
     ariaLabel: t('settings.prompts.kindFilterLabel'),
   });
   // The prompt picker's search: while one is typed the folder groups give
@@ -630,11 +632,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (isPromptPickerOpen) setPromptSearch('');
   }
   // A row's line, as its Prompts page card says it: a preset's purpose, else
-  // the start of the prompt (the list names no sharer for a teammate's).
+  // the start of the prompt (the list names no sharer for a teammate's), led
+  // by the team another team's prompt comes from.
   const promptLine = (prompt: Prompt): string | undefined =>
     PRESET_PROMPT_IDS.includes(prompt.id) && prompt.type === 'public'
       ? t(`settings.prompts.presets.${prompt.id}`)
-      : prompt.preview || undefined;
+      : [
+          prompt.origin === 'team_shared' && prompt.shared_from?.name
+            ? t('workspace.page.sharedFromTeams.from', {
+                team: prompt.shared_from.name,
+                interpolation: { escapeValue: false },
+              })
+            : null,
+          prompt.preview,
+        ]
+          .filter(Boolean)
+          .join(' · ') || undefined;
   // The prompt picker's groups: the agent's folder first, then other
   // folders, then the kinds as the Prompts page has them.
   const promptGroups: ComboboxGroup[] = promptPickerGroups({
@@ -642,7 +655,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     headingOf: (kind) =>
       kind === 'yours' && teamLabel !== null
         ? teamLabel
-        : t(`settings.prompts.sections.${kind}`),
+        : kind === 'teamShared'
+          ? t('workspace.page.sharedFromTeams.title')
+          : t(`settings.prompts.sections.${kind}`),
     lineOf: promptLine,
     holderFolder,
     otherFoldersHeading: t('workspace.pickers.otherFolders'),

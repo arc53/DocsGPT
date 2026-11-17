@@ -24,6 +24,11 @@ const PROMPTS: PickerPrompt[] = [
   prompt('mine', { folder_id: 'f1', folder_path: [carriers] }),
   prompt('deeper', { folder_id: 'f2', folder_path: [carriers, rates] }),
   prompt('theirs', { type: 'team', origin: 'shared' }),
+  prompt('received', {
+    type: 'team',
+    origin: 'team_shared',
+    shared_from: { team_id: 'sales', name: 'Sales' },
+  }),
 ];
 
 const build = (searching = false, holder = true) =>
@@ -49,6 +54,7 @@ describe('promptPickerGroups', () => {
       ['In other folders', ['deeper']],
       ['kind:included', ['default']],
       ['kind:yours', ['loose']],
+      ['kind:teamShared', ['received']],
       ['kind:shared', ['theirs']],
     ]);
     // Under other folders each row says which one.
@@ -59,6 +65,7 @@ describe('promptPickerGroups', () => {
     expect(shape(build(false, false))).toEqual([
       ['kind:included', ['default']],
       ['kind:yours', ['loose', 'mine', 'deeper']],
+      ['kind:teamShared', ['received']],
       ['kind:shared', ['theirs']],
     ]);
   });
@@ -82,6 +89,10 @@ describe('promptKindOf', () => {
     expect(promptKindOf(prompt('s', { type: 'team', origin: 'shared' }))).toBe(
       'shared',
     );
+    // Another team's prompt shared with this team is neither.
+    expect(
+      promptKindOf(prompt('r', { type: 'team', origin: 'team_shared' })),
+    ).toBe('teamShared');
     // An older server sends no origin: the type decides.
     expect(promptKindOf(prompt('o', { type: 'team', origin: undefined }))).toBe(
       'shared',
