@@ -349,6 +349,27 @@ class TestSaveTeamServer:
         assert actor == "adam"
         assert meta["replaced"] is True and meta["previous_connected_by"] == "ana"
 
+    def test_an_editors_new_server_never_overwrites_the_teams_tool_at_that_address(self, app, pg_conn, team):
+        """A save with no id in a team adds a server: it never takes over the team's tool by its address."""
+        tid, principal = team
+        row = _mcp_row(pg_conn, principal, connected_by="adam")
+        tool = UserToolsRepository(pg_conn).create(
+            principal, "mcp_tool", config=_config(), display_name="Example", custom_name="Example",
+            actions=[], connection_id=row, created_by="adam",
+        )
+        body = {"displayName": "Mine", "config": {**_config(auth_type="bearer"), "bearer_token": "eddie-token"}}
+        discovered = MagicMock()
+        discovered.get_actions_metadata.return_value = [{"name": "search", "description": "Search"}]
+        with patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=discovered):
+            resp, _ = _save(app, pg_conn, "eddie", body, tid, {})
+
+        assert resp.status_code == 200, resp.json
+        assert resp.json["id"] != str(tool["id"])
+        kept = UserToolsRepository(pg_conn).get(str(tool["id"]), principal)
+        assert str(kept["connection_id"]) == row
+        assert "encrypted_credentials" not in (kept["config"] or {})
+        assert kept["display_name"] == "Example"
+
 
 # ---------------------------------------------------------------------------
 # The sign-in task

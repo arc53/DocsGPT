@@ -928,6 +928,10 @@ class MCPServerSave(Resource):
                             t for t in repo.list_for_user(owner_id)
                             if t.get("name") == "mcp_tool" and str(t.get("connection_id") or "") == connection_id
                         ), None)
+                    elif team_owned:
+                        # A new server in a team is added, never matched by its address: the team's tool
+                        # there may run on an Admin's sign-in, which a member's save must not take over.
+                        existing_by_name = None
                     else:
                         # Fall back to find_by_user_and_name — the original
                         # dual-write path also ran an existence check before
