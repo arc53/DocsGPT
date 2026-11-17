@@ -5564,7 +5564,9 @@ def _ingest_connector(
         raise
 
 
-def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, Any]:
+def mcp_oauth(
+    self, config: Dict[str, Any], user_id: str = None, actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Worker to handle MCP OAuth flow asynchronously.
 
     Publishes SSE events at each phase boundary so the frontend can
@@ -5572,6 +5574,21 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     ``mcp.oauth.awaiting_redirect`` envelope carries the
     ``authorization_url`` once the upstream OAuth client surfaces it,
     eliminating the prior polling-only path for that URL.
+
+    A team's sign-in is owned by the team (``user_id`` is its principal)
+    and run for the Admin signing in (``actor_id``): its events go to that
+    Admin's stream only, its tokens are written naming them, and the
+    ``completed`` event names the team's connection the save picks up.
+    A team's sign-in without an Admin never runs.
+
+    Args:
+        self: The bound Celery task.
+        config: The MCP server config.
+        user_id: Who owns the sign-in: the person, or a team's principal.
+        actor_id: For a team's sign-in, the Admin signing in.
+
+    Returns:
+        ``{success, tools, tools_count}`` or ``{success: False, error}``.
     """
 
     # Bind ``task_id`` and the publish helpers OUTSIDE the outer try so
@@ -5579,16 +5596,23 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     # early statement raises. Without this, ``publish_oauth`` would
     # UnboundLocalError on top of the original failure.
     task_id = self.request.id if getattr(self, "request", None) else None
+    team = is_principal_id(user_id)
+    actor_id = actor_id if team and actor_id and not is_principal_id(actor_id) else None
+    if team and actor_id is None:
+        logging.error("MCP OAuth for a team without the person signing in; not started")
+        return {"success": False, "error": "OAuth init failed: nobody is signing in for the team"}
+    # Events go to whoever is signing in, never to a team's own stream.
+    recipient = actor_id or user_id
 
     def publish_oauth(event_type: str, payload: Dict[str, Any]) -> None:
         # MCP OAuth can be invoked without a route-bound user_id by
         # legacy paths. Skip the SSE publish in that case \u2014 the caller
         # has no per-user channel to subscribe to, and the status is
         # surfaced via the task's return value.
-        if not user_id or task_id is None:
+        if not recipient or task_id is None:
             return
         publish_user_event(
-            user_id,
+            recipient,
             event_type,
             {"task_id": task_id, **payload},
             scope={"kind": "mcp_oauth", "id": task_id},
@@ -5624,6 +5648,11 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         # the publish fires synchronously from inside
         # ``redirect_handler`` \u2014 the only point where the URL is known.
         tool_config["oauth_redirect_publish"] = publish_awaiting_redirect
+        # Who connected a team's account comes from the route, never the client's config.
+        tool_config.pop("oauth_connected_by", None)
+        previous_connected_by = tool_config.pop("oauth_previous_connected_by", None)
+        if actor_id:
+            tool_config["oauth_connected_by"] = actor_id
         mcp_tool = MCPTool(tool_config, user_id)
 
         async def run_oauth_discovery():
@@ -5637,10 +5666,14 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         try:
             loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
+            # A team's save finds the connection its sign-in wrote here.
+            written = {
+                "connection_id": mcp_tool.oauth_connection_id, "previous_connected_by": previous_connected_by,
+            } if actor_id else {}
 
             publish_oauth(
                 "mcp.oauth.completed",
-                {"tools": tools, "tools_count": len(tools)},
+                {"tools": tools, "tools_count": len(tools), **written},
             )
 
             return {"success": True, "tools": tools, "tools_count": len(tools)}

@@ -1488,6 +1488,7 @@ def update_mcp_secrets(
     *,
     connection_id: Optional[str] = None,
     status: Optional[str] = None,
+    connected_by: Optional[str] = None,
 ) -> dict:
     """Merge ``patch`` into an MCP connection's secrets (``None`` drops a key).
 
@@ -1496,22 +1497,59 @@ def update_mcp_secrets(
     client or sync still running when its connection was removed would
     otherwise bring it back, holding the tokens it just renewed.
 
+    A team's sign-in is written by its connection's id, or, for a new one,
+    by the Admin signing in for the team (``connected_by``): a team row is
+    never made without them. Their finished sign-in names them as who
+    connected it, also when it takes over another Admin's connection, and
+    is kept only while they may connect for the team.
+
+    Args:
+        user_id: The connection's owner: a person, or a team's principal.
+        base_url: The MCP server (``scheme://host``).
+        patch: Secrets to merge.
+        connection_id: The connection to write, when known.
+        status: A status to set.
+        connected_by: For a team's connection only, the person whose
+            sign-in this is.
+
     Returns:
         The connection row after the update.
 
     Raises:
         ConnectionUnavailable: ``connection_id`` names no connection of this
-            user for this server (removed, or another server's), or the
-            connection is a paused team account.
+            user for this server (removed, or another server's), a team's
+            row is written by neither id nor person, or the connection is a
+            paused team account (also when ``connected_by`` can't connect
+            for the team).
+        ValueError: ``connected_by`` for a person's own connection.
     """
     from docsgpt.security.encryption import CredentialDecryptionError
+    from docsgpt.workspaces.principal import is_principal_id
 
+    team = is_principal_id(user_id)
+    if connected_by is not None and not team:
+        raise ValueError("Only a team's connection names who connected it")
     with db_session() as conn:
         repo = ConnectorSessionsRepository(conn)
         row = _mcp_row(conn, user_id, base_url, connection_id, lock=True)
-        if row is None and connection_id:
+        if (row is None and connection_id) or (
+            row is not None and connected_by is not None and row.get("user_id") != user_id
+        ):
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
+        if row is None and team:
+            if connected_by is None:
+                # Never a team row without the person who signed in.
+                raise ConnectionUnavailable("Connection not found", status="missing")
+            row = repo.merge_session_data(
+                user_id, mcp_provider(base_url), base_url, {}, connected_by=connected_by,
+            )
+        taking_over = connected_by is not None and row.get("connected_by") != connected_by
+        if taking_over:
+            # The account becomes this person's: the pause check is theirs.
+            row = {**row, "connected_by": connected_by}
         ensure_account_usable(conn, row)
+        if taking_over:
+            repo.set_connected_by(str(row["id"]), connected_by)
         if row is None:
             row = repo.merge_session_data(user_id, mcp_provider(base_url), base_url, {})
         try:

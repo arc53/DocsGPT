@@ -1067,8 +1067,19 @@ def setup_periodic_tasks(sender, **kwargs):
 # terminal ``mcp.oauth.failed``; the hard limit is the prefork backstop.
 # Generous so a human actively clicking through OAuth isn't cut off.
 @celery.task(bind=True, soft_time_limit=600, time_limit=660)
-def mcp_oauth_task(self, config, user):
-    resp = mcp_oauth(self, config, user)
+def mcp_oauth_task(self, config, user, actor=None):
+    """Sign in to an MCP server; ``user`` owns the sign-in, ``actor`` is the Admin signing in for a team.
+
+    Args:
+        self: The bound task.
+        config: The MCP server config.
+        user: The person, or a team's principal.
+        actor: For a team's sign-in, the Admin who follows it (its events and status are theirs).
+
+    Returns:
+        What :func:`docsgpt.worker.mcp_oauth` returns.
+    """
+    resp = mcp_oauth(self, config, user, actor)
     return resp
 
 

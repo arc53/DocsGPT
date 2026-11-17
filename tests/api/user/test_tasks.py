@@ -501,7 +501,7 @@ class TestMcpOauthTask:
 
         result = mcp_oauth_task({"server": "mcp"}, "user1")
 
-        mock_worker.assert_called_once_with(ANY, {"server": "mcp"}, "user1")
+        mock_worker.assert_called_once_with(ANY, {"server": "mcp"}, "user1", None)
         assert result == {"url": "http://auth"}
 
 

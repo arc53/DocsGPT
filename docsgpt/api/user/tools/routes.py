@@ -1269,6 +1269,15 @@ class CreateMemberTool(Resource):
                 "connector_key": fields.String(
                     required=True, description="The service each person signs in to (a catalog key)"
                 ),
+                "server_url": fields.String(
+                    required=False,
+                    description="For custom_mcp: the sign-in MCP server each person signs in to (a preset's "
+                    "server counts as that preset)",
+                ),
+                "transport_type": fields.String(
+                    required=False, description="For custom_mcp: auto (default), http or sse"
+                ),
+                "displayName": fields.String(required=False, description="For custom_mcp: the tool's name"),
                 "permissions": fields.Raw(
                     required=False, description="Per-action permission overrides: {action: always|ask|off}"
                 ),
@@ -1287,7 +1296,8 @@ class CreateMemberTool(Resource):
             "Editor and up in the team the workspace header names. No secret is stored: each run uses "
             "the caller's own connection. An MCP service's actions are read with the creator's own "
             "connection (409 connect_personal_first without one). 409 member_mode_not_allowed when an "
-            "admin makes every tool of that service run on its owner's account."
+            "admin makes every tool of that service run on its owner's account. A custom sign-in MCP server "
+            "(connector_key custom_mcp with server_url) is read with the creator's own sign-in to that server."
         )
     )
     def post(self):
@@ -1302,6 +1312,15 @@ class CreateMemberTool(Resource):
         from docsgpt.connectors.resolve import MODE_OWNER, own_connection
 
         key = str(data.get("connector_key") or "").strip()
+        server_url = None
+        if key == "custom_mcp":
+            server_url, refused = _member_custom_server(data)
+            if refused is not None:
+                return refused
+            preset = connector_catalog.preset_for_url(server_url)
+            if preset is not None:
+                # A preset's server is that preset, with its own tool.
+                key, server_url = preset.key, None
         definition = connector_catalog.get_definition(key) if key else None
         permissions = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}
         try:
@@ -1313,7 +1332,10 @@ class CreateMemberTool(Resource):
                     )
                 owner_id, created_by = workspace.owner_for_create(user)
                 folder_pg = filing_folder(conn, owner_id, data.get("folder_id"))
-                if definition is None or not definition.tool_templates or definition.publisher == "custom":
+                custom_server = server_url is not None
+                if definition is None or not definition.tool_templates or (
+                    definition.publisher == "custom" and not custom_server
+                ):
                     return make_response(
                         jsonify({"success": False, "message": "This service has no tool to add"}), 400,
                     )
@@ -1334,18 +1356,26 @@ class CreateMemberTool(Resource):
                 mine = None
                 if template == "mcp_tool":
                     probe = {"name": template, "connector_key": definition.key,
-                             "config": {"server_url": definition.mcp_url}}
+                             "config": {"server_url": server_url if custom_server else definition.mcp_url}}
                     mine = own_connection(conn, user, probe)
+                    if custom_server and mine is not None and mine.get("auth_kind") != "mcp_oauth":
+                        # A custom server on each person's account is one each person signs in to.
+                        mine = None
         except WorkspaceError as err:
             return err.response()
         except FolderError as err:
             return err.response()
         description = (tool_instance.__doc__ or template).strip().split("\n", 1)
         description = description[1].strip() if len(description) > 1 else ""
+        display_name = definition.name
         if template == "mcp_tool":
             if mine is None:
                 return _connect_personal_first(definition.key)
-            config = connection_service.connection_mcp_config(definition, connection=mine)
+            if custom_server:
+                config = _custom_member_config(server_url, data.get("transport_type"))
+                display_name = str(data.get("displayName") or "").strip() or urlparse(server_url).netloc
+            else:
+                config = connection_service.connection_mcp_config(definition, connection=mine)
             if config is None:
                 return make_response(
                     jsonify({"success": False, "message": "This service needs its server address first"}), 400,
@@ -1354,7 +1384,10 @@ class CreateMemberTool(Resource):
 
             try:
                 # Read with the creator's own sign-in; none of its tokens are kept on the tool.
-                discovered = connector_mcp.discover_connection_actions(user, mine)
+                if custom_server:
+                    discovered = connector_mcp.discover_server_actions(user, mine, config)
+                else:
+                    discovered = connector_mcp.discover_connection_actions(user, mine)
             except connection_service.ConnectionUnavailable:
                 return _connect_personal_first(definition.key)
             except Exception as err:
@@ -1363,7 +1396,7 @@ class CreateMemberTool(Resource):
                     jsonify({"success": False, "message": "Could not read the service's actions"}), 502,
                 )
             actions = transform_actions(copy.deepcopy(discovered))
-            if definition.publisher == "preset":
+            if definition.publisher == "preset" or custom_server:
                 description = connection_service.mcp_tool_description(config)
         else:
             actions = transform_actions(copy.deepcopy(tool_instance.get_actions_metadata()))
@@ -1382,8 +1415,8 @@ class CreateMemberTool(Resource):
                     owner_id,
                     template,
                     config=config,
-                    custom_name=definition.name,
-                    display_name=definition.name,
+                    custom_name=display_name,
+                    display_name=display_name,
                     description=description,
                     config_requirements=tool_instance.get_config_requirements(),
                     actions=actions,
@@ -1401,6 +1434,41 @@ class CreateMemberTool(Resource):
             current_app.logger.error(f"Error creating member tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True, "id": str(created["id"])}), 200)
+
+
+_MEMBER_MCP_TRANSPORTS = ("auto", "http", "sse")
+
+
+def _member_custom_server(data: dict):
+    """The custom MCP server a member-mode tool names, checked against the outbound URL rules.
+
+    Args:
+        data: The request body (``server_url``, ``transport_type``).
+
+    Returns:
+        ``(server_url, None)``, or ``(None, response)`` with a 400 to return.
+    """
+    server_url = str(data.get("server_url") or "").strip()
+    if not server_url:
+        return None, make_response(jsonify({"success": False, "message": "server_url is required"}), 400)
+    if (data.get("transport_type") or "auto").lower() not in _MEMBER_MCP_TRANSPORTS:
+        return None, make_response(jsonify({"success": False, "message": "Unsupported transport_type"}), 400)
+    try:
+        validate_url(server_url)
+    except SSRFError as exc:
+        message = f"Invalid server URL: {exc}"
+        return None, make_response(jsonify({"success": False, "error": message, "message": message}), 400)
+    return server_url, None
+
+
+def _custom_member_config(server_url: str, transport_type: Optional[str]) -> dict:
+    """The stored config of a custom sign-in server's tool on each person's own account: no secret, no account."""
+    return {
+        "server_url": server_url,
+        "auth_type": "oauth",
+        "transport_type": (transport_type or "auto").lower(),
+        "timeout": 30,
+    }
 
 
 def _connect_personal_first(connector_key: str):
