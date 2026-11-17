@@ -870,28 +870,6 @@ def graph_model_ids(nodes: Any) -> List[str]:
     return out
 
 
-def personal_custom_models(conn, owner_id: Optional[str], model_ids: List[Any]) -> List[str]:
-    """The custom models among ``model_ids`` that an item owned by ``owner_id`` can't run with.
-
-    A team's item runs as the team's principal, which has no custom models:
-    a custom model is one person's, so naming anyone's on a team item fails
-    at run time. A person's own items are not checked here.
-
-    Args:
-        conn: Open database connection.
-        owner_id: The item's owner.
-        model_ids: Model ids the item names (blank and non-string ones are ignored).
-
-    Returns:
-        The offending ids; empty for a person's item.
-    """
-    if not is_principal_id(owner_id):
-        return []
-    from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
-
-    return UserCustomModelsRepository(conn).existing_ids([m for m in model_ids if isinstance(m, str) and m])
-
-
 @dataclass(frozen=True)
 class CustomModelRefusal:
     """Why a save that names custom models its owner can't run with is refused.
