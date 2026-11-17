@@ -385,6 +385,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/available_tools", "GET"): _rule("tools:read", open=True),
     ("/api/get_tools", "GET"): _rule("tools:read", listing=True),
     ("/api/create_tool", "POST"): _rule("tools:write"),
+    ("/api/tools/member", "POST"): _rule("tools:write"),
     ("/api/parse_spec", "POST"): _rule("tools:write", open=True),
     ("/api/update_tool", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/update_tool_config", "POST"): _rule("tools:write", (JSON, "id")),
