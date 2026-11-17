@@ -302,3 +302,76 @@ class TestPersonalAgents:
         _set_role(db, tid, "adam", "team_viewer")
 
         GATES[gate](db, agent)
+
+
+def _link_chat_signed_out(conn, agent):
+    from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+    data = {"question": "q", "agent_id": str(agent["id"]), "shared_token": agent["shared_token"]}
+    StreamProcessor(data, None)._configure_agent()
+
+
+def _policy(conn, team_id, policy):
+    conn.execute(
+        text("UPDATE teams SET outside_policy = :p WHERE id = CAST(:t AS uuid)"), {"p": policy, "t": team_id}
+    )
+
+
+class TestALockedTeam:
+    """A locked team pauses outside access on its agents for every caller, whoever pays; unlocking resumes it."""
+
+    @pytest.mark.parametrize("gate", [*GATES, "link_signed_out"])
+    def test_every_way_in_is_refused_until_it_unlocks(self, db, gate):
+        call = GATES.get(gate, _link_chat_signed_out)
+        tid, principal = _team(db)
+        agent = _published(db, principal)
+        call(db, agent)
+        _policy(db, tid, "locked")
+
+        with pytest.raises(AgentPausedError):
+            call(db, _fresh(db, agent))
+
+        _policy(db, tid, "admins")
+        call(db, _fresh(db, agent))
+
+    def test_the_refusal_says_only_that_the_agent_is_paused(self, db):
+        from docsgpt.api.owner_pause import AgentTeamLockedError
+
+        tid, principal = _team(db)
+        agent = _published(db, principal)
+        _policy(db, tid, "locked")
+
+        refusal = outside_access_refusal(db, agent)
+
+        assert isinstance(refusal, AgentTeamLockedError) and isinstance(refusal, AgentPausedError)
+        assert refusal.code == PAUSED_CODE and refusal.message == PAUSED_MESSAGE
+        assert refusal.reason == "team_locked"
+
+    def test_a_deactivated_payer_still_reads_as_paused(self, db):
+        from docsgpt.api.owner_pause import AgentTeamLockedError
+
+        tid, principal = _team(db)
+        agent = _published(db, principal)
+        _policy(db, tid, "locked")
+        UsersRepository(db).upsert("adam")
+        db.execute(text("UPDATE users SET active = false WHERE user_id = 'adam'"))
+
+        refusal = outside_access_refusal(db, agent)
+        assert refusal.code == PAUSED_CODE and not isinstance(refusal, AgentTeamLockedError)
+
+    @pytest.mark.parametrize("gate", ["key", "link", "v1"])
+    def test_an_editor_pays_under_editors_too_and_pauses_once_it_narrows(self, db, gate):
+        tid, principal = _team(db)
+        _policy(db, tid, "editors")
+        agent = _published(db, principal, payer="eddie")
+        GATES[gate](db, agent)
+
+        _policy(db, tid, "admins")
+        with pytest.raises(AgentPausedError):
+            GATES[gate](db, _fresh(db, agent))
+        assert isinstance(outside_access_refusal(db, _fresh(db, agent)), AgentPayerLeftError)
+
+    def test_a_personal_agent_is_never_paused_by_a_teams_lock(self, db):
+        tid, _ = _team(db)
+        _policy(db, tid, "locked")
+        assert outside_access_refusal(db, _published(db, "eddie", payer=None)) is None

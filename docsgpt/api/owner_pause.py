@@ -14,8 +14,11 @@ The same pause applies while the agent's published-access payer
 deactivated. A team agent (owned by its team's principal, which is never
 "deactivated") whose published access names no payer is refused with
 ``no_payer`` instead: nobody can be billed for it. It also pauses while that
-payer no longer holds the Admin role in the agent's team (demoted, or left it),
-and works again once they have the role back or someone else takes it over.
+payer no longer holds the role the team's outside policy gives outside access
+(Admin, or Editor under "Editors too"; demoted, or left the team), and works
+again once they have the role back or someone else takes it over. And it pauses
+for everyone while the agent's team is locked (its outside policy is "No one"),
+until the team unlocks.
 
 An outside caller is told only that the agent is paused, never whose account it
 is or why.
@@ -26,7 +29,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from docsgpt.quotas.pause import NO_PAYER, PAYER_LEFT, PayerChecks, outside_access_pause
+from docsgpt.quotas.pause import NO_PAYER, PAYER_LEFT, TEAM_LOCKED, PayerChecks, outside_access_pause
 from docsgpt.quotas.payer import NO_PAYER_CODE, NO_PAYER_MESSAGE
 from docsgpt.storage.db.repositories.users import UsersRepository
 
@@ -66,6 +69,16 @@ class AgentPayerLeftError(AgentPausedError):
     """
 
     reason = PAYER_LEFT
+
+
+class AgentTeamLockedError(AgentPausedError):
+    """An outside run of a team agent while its team is locked (no one may take its items outside).
+
+    Outside callers get the plain ``agent_paused`` code and message; ``reason``
+    is for logs only.
+    """
+
+    reason = TEAM_LOCKED
 
 
 def any_deactivated(conn: Any, *user_ids: Optional[str]) -> bool:
@@ -110,9 +123,10 @@ def outside_access_refusal(conn: Any, agent: Optional[dict]) -> Optional[AgentPa
         :class:`AgentNoPayerError` when nobody pays for the agent's outside
         traffic (a team agent with no published-access payer),
         :class:`AgentPausedError` when its owner or that payer is deactivated,
+        :class:`AgentTeamLockedError` when the agent's team is locked,
         :class:`AgentPayerLeftError` when the payer of a team agent's outside
-        access is no longer an Admin there (demoted or left), else None. The
-        payer's allowance is not checked here.
+        access no longer holds the role the team's policy gives it (demoted or
+        left), else None. The payer's allowance is not checked here.
     """
     if not agent:
         return None
@@ -125,6 +139,8 @@ def outside_access_refusal(conn: Any, agent: Optional[dict]) -> Optional[AgentPa
         return None
     if pause.reason == NO_PAYER:
         return AgentNoPayerError()
+    if pause.reason == TEAM_LOCKED:
+        return AgentTeamLockedError()
     if pause.reason == PAYER_LEFT:
         return AgentPayerLeftError()
     return AgentPausedError()

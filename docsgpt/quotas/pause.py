@@ -10,10 +10,15 @@ The reasons, strongest first (:data:`PAUSE_REASONS`):
 
 * ``owner_inactive``: an account it runs on is deactivated (the agent's
   person owner, the schedule's setter, the outside access's payer).
+* ``team_locked``: outside access only: the agent's team is locked (its
+  outside policy, ``docsgpt/workspaces/outside.py``), which pauses every way
+  in from outside for everyone, signed-in link visitors included, until it
+  unlocks.
 * ``payer_left``: on a team agent, the payer no longer holds the role that
   pays for it: the setter of a schedule ``manage_schedules`` (Editor and up),
-  the payer of outside access ``manage_access_details`` (Admin and up). A
-  personal agent never has this reason.
+  the payer of outside access ``manage_access_details`` (the role the team's
+  outside policy gives it: Admin and up, or Editor and up). A personal agent
+  never has this reason.
 * ``no_payer``: nobody can be billed: a schedule stored under a team's
   principal, or a team agent with outside access on and no payer.
 * ``payer_out_of_allowance``: the payer's allowance is used up, until the
@@ -31,16 +36,19 @@ from typing import Any, Mapping, Optional
 from docsgpt.quotas.payer import published_access_payer
 from docsgpt.quotas.service import QuotaExceeded, QuotaService
 from docsgpt.storage.db.repositories.users import UsersRepository
+from docsgpt.workspaces.outside import POLICY_LOCKED
+from docsgpt.workspaces.outside import team_policy as _team_policy
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least, team_role_for
 
 OWNER_INACTIVE = "owner_inactive"
+TEAM_LOCKED = "team_locked"
 PAYER_LEFT = "payer_left"
 NO_PAYER = "no_payer"
 PAYER_OUT_OF_ALLOWANCE = "payer_out_of_allowance"
 
 #: Every pause reason, strongest first: when several hold, the first is reported.
-PAUSE_REASONS = (OWNER_INACTIVE, PAYER_LEFT, NO_PAYER, PAYER_OUT_OF_ALLOWANCE)
+PAUSE_REASONS = (OWNER_INACTIVE, TEAM_LOCKED, PAYER_LEFT, NO_PAYER, PAYER_OUT_OF_ALLOWANCE)
 
 #: Agent columns that say whether outside access is on (``has_outside_access``).
 _ACCESS_COLUMNS = ("key", "shared_token", "incoming_webhook_token")
@@ -80,8 +88,8 @@ class Pause:
 class PayerChecks:
     """What one request has already learned about payers, so a list checks each distinct payer once.
 
-    Caches each payer's allowance check, each person's team role and each
-    account's deactivation. Make one per request (or per list) and pass it to
+    Caches each payer's allowance check, each person's team role, each team's
+    outside policy and each account's deactivation. Make one per request (or per list) and pass it to
     every :func:`schedule_pause` and :func:`outside_access_pause` call; never
     keep it across requests, since roles and allowances change.
     """
@@ -89,6 +97,7 @@ class PayerChecks:
     def __init__(self) -> None:
         self._quota: dict[tuple, Optional[QuotaExceeded]] = {}
         self._roles: dict[tuple, Optional[str]] = {}
+        self._policies: dict[str, str] = {}
         self._inactive: dict[str, bool] = {}
 
     def quota(self, user_id: str, bucket: str, now: Optional[datetime] = None) -> Optional[QuotaExceeded]:
@@ -123,6 +132,20 @@ class PayerChecks:
             self._roles[key] = team_role_for(conn, user_id, team_id)
         return self._roles[key]
 
+    def policy(self, conn: Any, team_id: str) -> str:
+        """A team's outside policy (``outside.team_policy``), once per team.
+
+        Args:
+            conn: Open connection.
+            team_id: The team.
+
+        Returns:
+            ``admins``, ``editors`` or ``locked`` (``locked`` for a team that can't be read).
+        """
+        if team_id not in self._policies:
+            self._policies[team_id] = _team_policy(conn, team_id)
+        return self._policies[team_id]
+
     def deactivated(self, conn: Any, *user_ids: Optional[str]) -> bool:
         """Whether any of ``user_ids`` is a deactivated account; each id is looked up once.
 
@@ -143,11 +166,12 @@ class PayerChecks:
 
 
 def _holds(checks: PayerChecks, conn: Any, user_id: str, team_id: str, action: str) -> bool:
-    """Whether a person's team role still allows ``action`` on the team's agents (``WORKSPACE_ACTIONS``)."""
+    """Whether a person's team role still allows ``action`` on the team's agents under the team's outside policy."""
     # Imported here: the access module pulls in the whole API layer.
-    from docsgpt.api.user.resource_access import WORKSPACE_ACTIONS
+    from docsgpt.api.user.resource_access import workspace_minimum
 
-    return role_at_least(checks.team_role(conn, user_id, team_id), WORKSPACE_ACTIONS["agent"][action])
+    minimum = workspace_minimum("agent", action, policy=checks.policy(conn, team_id))
+    return minimum is not None and role_at_least(checks.team_role(conn, user_id, team_id), minimum)
 
 
 def _person(user_id: Any) -> Optional[str]:
@@ -247,6 +271,8 @@ def outside_access_pause(
     if checks.deactivated(conn, _person(owner), payer):
         return Pause(OWNER_INACTIVE, payer)
     team_id = team_of_principal(owner)
+    if team_id and checks.policy(conn, team_id) == POLICY_LOCKED:
+        return Pause(TEAM_LOCKED, payer)
     if team_id and payer and not _holds(checks, conn, payer, team_id, "manage_access_details"):
         return Pause(PAYER_LEFT, payer, left_team=checks.team_role(conn, payer, team_id) is None)
     if payer is None:

@@ -89,7 +89,13 @@ def _out_of_allowance(conn, user_id):
 
 
 def test_the_reasons_strongest_first():
-    assert PAUSE_REASONS == ("owner_inactive", "payer_left", "no_payer", "payer_out_of_allowance")
+    assert PAUSE_REASONS == ("owner_inactive", "team_locked", "payer_left", "no_payer", "payer_out_of_allowance")
+
+
+def _policy(conn, team_id, policy):
+    conn.execute(
+        text("UPDATE teams SET outside_policy = :p WHERE id = CAST(:t AS uuid)"), {"p": policy, "t": team_id}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -381,3 +387,102 @@ class TestPayerChecks:
 
         assert schedule_pause(conn, _schedule(agent, principal), agent, now=NOW).reason == "no_payer"
         assert outside_access_pause(conn, agent, now=NOW).reason == "no_payer"
+
+
+# ---------------------------------------------------------------------------
+# The team's outside policy
+# ---------------------------------------------------------------------------
+
+
+class TestTeamLocked:
+    def test_a_locked_teams_outside_access_pauses_for_its_payer(self, conn):
+        team, principal = _team(conn)
+        agent = _team_agent(conn, principal)
+        _policy(conn, team, "locked")
+
+        pause = outside_access_pause(conn, agent, now=NOW)
+
+        assert pause == Pause("team_locked", "adam", None)
+        assert pause.payload() == {"reason": "team_locked", "until": None}
+
+    def test_unlocking_resumes_it_with_nothing_written(self, conn):
+        team, principal = _team(conn)
+        agent = _team_agent(conn, principal)
+        _policy(conn, team, "locked")
+        assert outside_access_pause(conn, agent, now=NOW).reason == "team_locked"
+
+        _policy(conn, team, "admins")
+
+        assert outside_access_pause(conn, AgentsRepository(conn).get_by_id(str(agent["id"])), now=NOW) is None
+
+    def test_a_deactivated_account_comes_first(self, conn):
+        team, principal = _team(conn)
+        agent = _team_agent(conn, principal)
+        _policy(conn, team, "locked")
+        _deactivate(conn, "adam")
+
+        assert outside_access_pause(conn, agent, now=NOW).reason == "owner_inactive"
+
+    @pytest.mark.parametrize("change", ["left", "no_payer", "allowance"])
+    def test_it_comes_before_the_payer_reasons(self, conn, change):
+        team, principal = _team(conn)
+        agent = _team_agent(conn, principal, payer=None if change == "no_payer" else "adam")
+        if change == "left":
+            _set_role(conn, team, "adam", None)
+        if change == "allowance":
+            _out_of_allowance(conn, "adam")
+        _policy(conn, team, "locked")
+
+        assert outside_access_pause(conn, agent, now=NOW).reason == "team_locked"
+
+    def test_nothing_on_nothing_paused(self, conn):
+        team, principal = _team(conn)
+        _policy(conn, team, "locked")
+
+        assert outside_access_pause(conn, _team_agent(conn, principal, key=False), now=NOW) is None
+
+    def test_a_schedule_is_not_outside_access(self, conn):
+        team, principal = _team(conn)
+        agent = _team_agent(conn, principal)
+        _policy(conn, team, "locked")
+
+        assert schedule_pause(conn, _schedule(agent, "eddie"), agent, now=NOW) is None
+
+
+class TestEditorsToo:
+    def test_an_editor_pays_under_editors_too(self, conn):
+        team, principal = _team(conn)
+        _policy(conn, team, "editors")
+
+        assert outside_access_pause(conn, _team_agent(conn, principal, payer="eddie"), now=NOW) is None
+
+    def test_narrowing_to_admins_pauses_the_editor_who_still_is_in_the_team(self, conn):
+        team, principal = _team(conn)
+        _policy(conn, team, "editors")
+        agent = _team_agent(conn, principal, payer="eddie")
+        _policy(conn, team, "admins")
+
+        assert outside_access_pause(conn, agent, now=NOW) == Pause("payer_left", "eddie", None, left_team=False)
+
+    def test_a_viewer_never_pays(self, conn):
+        team, principal = _team(conn)
+        _policy(conn, team, "editors")
+
+        assert outside_access_pause(conn, _team_agent(conn, principal, payer="tomas"), now=NOW).reason == "payer_left"
+
+    def test_one_list_reads_each_teams_policy_once(self, conn, monkeypatch):
+        team, principal = _team(conn)
+        agents = [_team_agent(conn, principal) for _ in range(3)]
+        reads = []
+        real = pause_mod._team_policy
+
+        def _counting(conn_, team_id):
+            reads.append(team_id)
+            return real(conn_, team_id)
+
+        monkeypatch.setattr(pause_mod, "_team_policy", _counting)
+        checks = PayerChecks()
+        for agent in agents:
+            outside_access_pause(conn, agent, checks=checks, now=NOW)
+
+        assert reads == [team]
