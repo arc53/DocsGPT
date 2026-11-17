@@ -401,6 +401,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
     ("/api/user/models", "GET"): _rule("models:read"),
     ("/api/user/models/<string:model_id>", "GET"): _rule("models:read"),
+    ("/api/user/models/<string:model_id>/usage", "GET"): _rule("models:read"),
     ("/api/user/models", "POST"): _rule("models:write"),
     ("/api/user/models/<string:model_id>", "PATCH"): _rule("models:write"),
     ("/api/user/models/<string:model_id>", "DELETE"): _rule("models:write"),

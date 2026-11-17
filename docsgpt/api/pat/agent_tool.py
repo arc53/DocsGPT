@@ -753,6 +753,9 @@ CATALOG = tuple(
 #: Token routes that are not actions, by reason. Every route in ``RULES`` is here or in ``CATALOG``.
 LEFT_OUT: dict[str, tuple[tuple[str, str], ...]] = {
     "wipes the whole account's history in one call": (("/api/delete_all_conversations", "GET"),),
+    "read only by the app's delete confirm, and a token can't delete a custom model": (
+        ("/api/user/models/<string:model_id>/usage", "GET"),
+    ),
     "custom models carry a provider key and a base URL that every chat is sent to": (
         ("/api/user/models", "POST"),
         ("/api/user/models/<string:model_id>", "PATCH"),

@@ -548,6 +548,39 @@ class UserModelResource(Resource):
         return make_response(jsonify(body), 200)
 
 
+@models_ns.route("/user/models/<string:model_id>/usage")
+class UserModelUsageResource(Resource):
+    @api.doc(
+        description=(
+            "The owner's agents and workflows that name a custom model, which fall back to the default model "
+            "if it is deleted: {usage: {agents: [{id, name}], workflows: [{id, name}]}}. Anyone who may see "
+            "the model: every member for a team's model, only its owner for a person's own."
+        )
+    )
+    def get(self, model_id):
+        """Answer which of the owner's agents and workflows use the model, so a delete confirm can name them.
+
+        Args:
+            model_id: The model's id.
+
+        Returns:
+            200 ``{success, usage}``; 404 ``model_not_found`` to anyone who may not see the model.
+        """
+        user_id, err = _user_id_or_401()
+        if err:
+            return err
+        try:
+            with db_readonly() as conn:
+                access = authorize_model(conn, model_id, user_id, "view")
+                usage = UserCustomModelsRepository(conn).usage(access.owner_id, str(access.row["id"]))
+        except ModelDenied as e:
+            return e.response()
+        except Exception as e:
+            current_app.logger.error(f"Error reading custom model usage: {e}", exc_info=True)
+            return make_response(jsonify({"success": False}), 500)
+        return make_response(jsonify({"success": True, "usage": usage}), 200)
+
+
 @models_ns.route("/user/models/<string:model_id>/copy")
 class UserModelCopyResource(Resource):
     @api.doc(
