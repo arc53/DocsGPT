@@ -332,6 +332,8 @@ export default function UsageTab({ team, role }: UsageTabProps) {
     let kindLine: string;
     let reason: string;
     let target: string | null = null;
+    // A team account opens on Connectors, where an Admin reconnects it.
+    let connectionPath: string | null = null;
     if (item.type === 'source_sync') {
       title = item.name?.trim() || t('payer.team.paused.unnamed');
       kindLine = t('payer.team.paused.sync');
@@ -345,6 +347,10 @@ export default function UsageTab({ team, role }: UsageTabProps) {
         you: payer.you,
         language,
       });
+      const params = new URLSearchParams();
+      if (item.connector_key) params.set('connector', item.connector_key);
+      params.set('connection', item.id);
+      connectionPath = `/settings/connectors?${params.toString()}`;
     } else {
       const payer = payerOf(item.paid_by, me);
       reason = pauseReasonText(t, item.paused_for, payer.label, team.name, {
@@ -393,7 +399,20 @@ export default function UsageTab({ team, role }: UsageTabProps) {
           </>
         }
         trailing={
-          target ? (
+          connectionPath ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              aria-label={t('payer.team.paused.openConnectionLabel', {
+                name: title,
+                ...noEscape,
+              })}
+              onClick={() => connectionPath && openInTeam(connectionPath)}
+            >
+              {t('payer.team.paused.openConnection')}
+            </Button>
+          ) : target ? (
             <Button
               variant="outline"
               size="sm"

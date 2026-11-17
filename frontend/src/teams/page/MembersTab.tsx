@@ -5,6 +5,7 @@ import {
   LogOut,
   type LucideIcon,
   MessageSquare,
+  Plug,
   Plus,
   Trash2,
   Wallet,
@@ -71,7 +72,11 @@ const MEMBERS_PAGE_SIZE = 25;
 type Member = TeamMember & { source?: string };
 
 /** What a change of membership pauses of what the member pays for. */
-type PausedCounts = { schedules: number; outside_access: number };
+type PausedCounts = {
+  schedules: number;
+  outside_access: number;
+  connections: number;
+};
 
 const ROLE_RANK: Record<TeamRole, number> = {
   viewer: 0,
@@ -83,8 +88,10 @@ const ROLE_RANK: Record<TeamRole, number> = {
 /**
  * What a role change or a removal pauses of what a member pays for on the
  * team's agents: the schedules they set once they drop below Editor, the
- * outside access they pay for once they drop below Admin. The counts come
- * from the server (`pays_for`, sent to owners and admins only).
+ * outside access they pay for once they drop below Admin, and the team
+ * accounts they connected, which are used only while they are an Admin.
+ * The counts come from the server (`pays_for`, sent to owners and admins
+ * only).
  *
  * Args:
  *   member: The member, with `pays_for`.
@@ -98,7 +105,7 @@ function pausedByChange(
   next: TeamRole | null,
 ): PausedCounts {
   const pays = member.pays_for;
-  if (!pays) return { schedules: 0, outside_access: 0 };
+  if (!pays) return { schedules: 0, outside_access: 0, connections: 0 };
   const before = memberTeamRole(member);
   const loses = (needed: TeamRole): boolean =>
     ROLE_RANK[before] >= ROLE_RANK[needed] &&
@@ -106,11 +113,12 @@ function pausedByChange(
   return {
     schedules: loses('editor') ? pays.schedules || 0 : 0,
     outside_access: loses('admin') ? pays.outside_access || 0 : 0,
+    connections: loses('admin') ? pays.connections || 0 : 0,
   };
 }
 
 const pausesAnything = (counts: PausedCounts): boolean =>
-  counts.schedules > 0 || counts.outside_access > 0;
+  counts.schedules > 0 || counts.outside_access > 0 || counts.connections > 0;
 
 /** One consequence line in a confirm: an icon, what happens, and why. */
 function Consequence({
@@ -388,6 +396,22 @@ export default function MembersTab({
             count: paused.outside_access,
           })}
           detail={t('payer.team.remove.accessDetail', {
+            name,
+            interpolation: { escapeValue: false },
+          })}
+        />,
+      );
+    if (paused.connections > 0)
+      lines.push(
+        <Consequence
+          key="connections"
+          icon={Plug}
+          title={t('payer.team.remove.connections', {
+            count: paused.connections,
+            name,
+            interpolation: { escapeValue: false },
+          })}
+          detail={t('payer.team.remove.connectionsDetail', {
             name,
             interpolation: { escapeValue: false },
           })}

@@ -578,6 +578,8 @@
         "reason": {
           "connectionNeedsReconnect": "{{name}} 的 {{service}} 账户需要重新登录。",
           "connectionNeedsReconnectNoService": "{{name}} 需要重新登录。",
+          "connectionPaused": "{{name}} 使用团队的 {{service}} 账号，该账号已暂停。团队管理员可以在连接器页面重新连接它。",
+          "connectionPausedNoService": "{{name}} 使用的团队账号已暂停。团队管理员可以在连接器页面重新连接它。",
           "connectionRemoved": "{{name}} 使用的 {{service}} 账户已被移除。",
           "connectionRemovedNoService": "{{name}} 使用的账户已被移除。",
           "connectorDisabled": "管理员已关闭 {{service}}，因此 {{name}} 无法运行。",
@@ -2869,6 +2871,8 @@
         "access": "通过{{access}}的外部访问",
         "accessAll": "外部访问",
         "description": "在有人接管或付费人的额度重置之前，它们会保持暂停。",
+        "openConnection": "打开",
+        "openConnectionLabel": "在连接器页面打开“{{name}}”",
         "schedule": "{{agent}} 的计划任务",
         "scheduleNoAgent": "计划任务",
         "sync": "定时同步",
@@ -2895,6 +2899,9 @@
         "accessDetail": "由 {{name}} 付费。管理员可以在智能体页面上接管。",
         "access_one": "{{count}} 个智能体的外部访问将暂停",
         "access_other": "{{count}} 个智能体的外部访问将暂停",
+        "connectionsDetail": "在另一位团队管理员于连接器页面用自己的账号重新连接之前，团队无法将这些账号用于同步或工具。",
+        "connections_one": "{{name}} 连接的 {{count}} 个团队账号将暂停",
+        "connections_other": "{{name}} 连接的 {{count}} 个团队账号将暂停",
         "schedulesDetail": "由 {{name}} 付费。编辑者或管理员可以在智能体的计划任务页面上接管。",
         "schedules_one": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停",
         "schedules_other": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停"
@@ -4920,9 +4927,12 @@
       "noMembers": "暂无成员。使用“添加成员”通过邮箱邀请他人。",
       "noTeams": "暂无团队。",
       "notEmpty": {
+        "connectionsHint": "连接无法移动。团队管理员可在团队的连接器页面上移除它们。",
         "counts": {
           "agent_one": "{{count}} 个智能体",
           "agent_other": "{{count}} 个智能体",
+          "connection_one": "{{count}} 个连接",
+          "connection_other": "{{count}} 个连接",
           "folder_one": "{{count}} 个文件夹",
           "folder_other": "{{count}} 个文件夹",
           "other_one": "{{count}} 条其他记录",
@@ -4938,6 +4948,7 @@
         },
         "hint": "将它们移到个人空间或删除，然后再删除团队。",
         "open": "打开 {{name}}",
+        "openConnectors": "打开连接器",
         "title": "{{name}} 仍拥有一些项目"
       },
       "openTeamError": "无法加载团队详情。",
@@ -5120,6 +5131,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "已退出 {{service}}",
             "connectionNeedsReconnectNoService": "已退出登录",
+            "connectionPaused": "团队的 {{service}} 账号已暂停",
+            "connectionPausedNoService": "团队账号已暂停",
             "connectionRemoved": "{{service}} 账号已移除",
             "connectionRemovedNoService": "账号已移除",
             "connectorDisabled": "{{service}} 已被管理员关闭",

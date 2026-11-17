@@ -163,6 +163,10 @@ const EVENT_LABELS: Record<string, string> = {
   'team.outside_policy_changed': 'Outside policy changed',
   'team.item_shared_with_team': 'Item shared with another team',
   'team.item_unshared_from_team': 'Item unshared from another team',
+  'team.connection_added': 'Team account connected',
+  'team.connection_reconnected': 'Team account reconnected',
+  'team.connection_disconnected': 'Team account disconnected',
+  'team.connection_removed': 'Team account removed',
   'source.created': 'Source created',
   'source.deleted': 'Source deleted',
   'source.reingested': 'Source reingested',
@@ -208,6 +212,8 @@ const WARNING_EVENTS = new Set([
   'team.member_remove',
   'team.unshare',
   'team.item_unshared_from_team',
+  'team.connection_disconnected',
+  'team.connection_removed',
 ]);
 
 export function eventTone(event: string): Tone {

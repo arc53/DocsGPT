@@ -600,6 +600,8 @@
         "reason": {
           "connectionNeedsReconnect": "{{name}} needs its {{service}} account signed in again.",
           "connectionNeedsReconnectNoService": "{{name}} needs signing in again.",
+          "connectionPaused": "{{name}} uses the team's {{service}} account, which is paused. A team Admin can reconnect it on the Connectors page.",
+          "connectionPausedNoService": "{{name}} uses a team account that is paused. A team Admin can reconnect it on the Connectors page.",
           "connectionRemoved": "The {{service}} account {{name}} used was removed.",
           "connectionRemovedNoService": "The account {{name}} used was removed.",
           "connectorDisabled": "An admin turned off {{service}}, so {{name}} can't run.",
@@ -2917,6 +2919,8 @@
         "access": "Outside access through its {{access}}",
         "accessAll": "Outside access",
         "description": "They stay paused until someone takes them over, or until the payer's allowance resets.",
+        "openConnection": "Open",
+        "openConnectionLabel": "Open \"{{name}}\" on the Connectors page",
         "schedule": "Schedule on {{agent}}",
         "scheduleNoAgent": "Schedule",
         "sync": "Scheduled sync",
@@ -2943,6 +2947,9 @@
         "accessDetail": "{{name}} pays for it. An admin can take it over on the agent's page.",
         "access_one": "Outside access on {{count}} agent pauses",
         "access_other": "Outside access on {{count}} agents pauses",
+        "connectionsDetail": "The team can't use them, for syncs or tools, until another team Admin reconnects them with their own account on the Connectors page.",
+        "connections_one": "{{count}} team account {{name}} connected pauses",
+        "connections_other": "{{count}} team accounts {{name}} connected pause",
         "schedulesDetail": "{{name}} pays for them. An editor or admin can take them over on the agent's Schedules page.",
         "schedules_one": "{{count}} schedule {{name}} set on team agents pauses",
         "schedules_other": "{{count}} schedules {{name}} set on team agents pause"
@@ -4978,9 +4985,12 @@
       "noMembers": "No members yet. Use “Add member” to invite someone by email.",
       "noTeams": "No teams yet.",
       "notEmpty": {
+        "connectionsHint": "Connections can't be moved. A team Admin removes them on the team's Connectors page.",
         "counts": {
           "agent_one": "{{count}} agent",
           "agent_other": "{{count}} agents",
+          "connection_one": "{{count}} connection",
+          "connection_other": "{{count}} connections",
           "folder_one": "{{count}} folder",
           "folder_other": "{{count}} folders",
           "other_one": "{{count}} other record",
@@ -4996,6 +5006,7 @@
         },
         "hint": "Move them to Personal or delete them, then delete the team.",
         "open": "Open {{name}}",
+        "openConnectors": "Open Connectors",
         "title": "{{name}} still owns items"
       },
       "openTeamError": "Could not load team details.",
@@ -5178,6 +5189,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "Signed out of {{service}}",
             "connectionNeedsReconnectNoService": "Signed out",
+            "connectionPaused": "Team's {{service}} account paused",
+            "connectionPausedNoService": "Team account paused",
             "connectionRemoved": "{{service}} account removed",
             "connectionRemovedNoService": "Account removed",
             "connectorDisabled": "{{service}} turned off by an admin",

@@ -578,6 +578,8 @@
         "reason": {
           "connectionNeedsReconnect": "{{name}} 的 {{service}} 帳戶需要重新登入。",
           "connectionNeedsReconnectNoService": "{{name}} 需要重新登入。",
+          "connectionPaused": "{{name}} 使用團隊的 {{service}} 帳號，該帳號已暫停。團隊管理員可以在連接器頁面重新連線它。",
+          "connectionPausedNoService": "{{name}} 使用的團隊帳號已暫停。團隊管理員可以在連接器頁面重新連線它。",
           "connectionRemoved": "{{name}} 使用的 {{service}} 帳戶已被移除。",
           "connectionRemovedNoService": "{{name}} 使用的帳戶已被移除。",
           "connectorDisabled": "管理員已關閉 {{service}}，因此 {{name}} 無法執行。",
@@ -2870,6 +2872,8 @@
         "access": "透過{{access}}的外部存取",
         "accessAll": "外部存取",
         "description": "在有人接手或付費者的額度重設之前，它們會保持暫停。",
+        "openConnection": "開啟",
+        "openConnectionLabel": "在連接器頁面開啟「{{name}}」",
         "schedule": "{{agent}} 的排程",
         "scheduleNoAgent": "排程",
         "sync": "排定的同步",
@@ -2896,6 +2900,9 @@
         "accessDetail": "由 {{name}} 付費。管理員可以在代理頁面上接手。",
         "access_one": "{{count}} 個代理的外部存取將暫停",
         "access_other": "{{count}} 個代理的外部存取將暫停",
+        "connectionsDetail": "在另一位團隊管理員於連接器頁面用自己的帳號重新連線之前，團隊無法將這些帳號用於同步或工具。",
+        "connections_one": "{{name}} 連線的 {{count}} 個團隊帳號將暫停",
+        "connections_other": "{{name}} 連線的 {{count}} 個團隊帳號將暫停",
         "schedulesDetail": "由 {{name}} 付費。編輯者或管理員可以在代理的排程頁面上接手。",
         "schedules_one": "{{name}} 在團隊代理上設定的 {{count}} 個排程將暫停",
         "schedules_other": "{{name}} 在團隊代理上設定的 {{count}} 個排程將暫停"
@@ -4922,9 +4929,12 @@
       "noMembers": "尚無成員。使用「新增成員」以電子郵件邀請。",
       "noTeams": "尚無團隊。",
       "notEmpty": {
+        "connectionsHint": "連線無法移動。團隊管理員可在團隊的連接器頁面上移除它們。",
         "counts": {
           "agent_one": "{{count}} 個代理",
           "agent_other": "{{count}} 個代理",
+          "connection_one": "{{count}} 個連線",
+          "connection_other": "{{count}} 個連線",
           "folder_one": "{{count}} 個資料夾",
           "folder_other": "{{count}} 個資料夾",
           "other_one": "{{count}} 筆其他記錄",
@@ -4940,6 +4950,7 @@
         },
         "hint": "將它們移到個人空間或刪除，然後再刪除團隊。",
         "open": "開啟 {{name}}",
+        "openConnectors": "開啟連接器",
         "title": "{{name}} 仍擁有一些項目"
       },
       "openTeamError": "無法載入團隊詳細資訊。",
@@ -5122,6 +5133,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "已登出 {{service}}",
             "connectionNeedsReconnectNoService": "已登出",
+            "connectionPaused": "團隊的 {{service}} 帳號已暫停",
+            "connectionPausedNoService": "團隊帳號已暫停",
             "connectionRemoved": "{{service}} 帳號已移除",
             "connectionRemovedNoService": "帳號已移除",
             "connectorDisabled": "{{service}} 已被管理員關閉",

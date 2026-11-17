@@ -180,7 +180,10 @@ const usage = (over: Partial<TeamUsage> = {}): TeamUsage => ({
 });
 
 function Where() {
-  return <div data-testid="where">{useLocation().pathname}</div>;
+  const location = useLocation();
+  return (
+    <div data-testid="where">{`${location.pathname}${location.search}`}</div>
+  );
 }
 
 describe('the Usage tab config', () => {
@@ -433,6 +436,49 @@ describe('UsageTab', () => {
       'payer.common.pause.outOfAllowanceYou',
     );
     expect(button('payer.common.takeOver.submit', schedule)).toBeUndefined();
+  });
+
+  it("opens a paused team account on the team's Connectors page", async () => {
+    getTeamUsage.mockResolvedValue(
+      usage({
+        paused: [
+          {
+            type: 'connection',
+            id: 'c1',
+            name: 'lena@x.io',
+            connector_key: 'google_drive',
+            paused_for: { reason: 'payer_left', left_team: true },
+            paid_by: { user_id: 'lena', label: 'lena@x.io' },
+          },
+        ],
+      }),
+    );
+    await render();
+    const [connection] = rows('usage-paused');
+    expect(connection.textContent).toContain('lena@x.io');
+    expect(connection.textContent).toContain(
+      'settings.connectors.team.teamAccount',
+    );
+    expect(connection.textContent).toContain(
+      'payer.common.pause.payerLeftTeam(name=lena@x.io,team=Operations)',
+    );
+    // Nothing to take over: an Admin reconnects it on the Connectors page.
+    expect(button('payer.common.takeOver.submit', connection)).toBeUndefined();
+    const open = connection.querySelector<HTMLButtonElement>(
+      'button[aria-label="payer.team.paused.openConnectionLabel(name=lena@x.io)"]',
+    )!;
+    expect(open.textContent).toBe('payer.team.paused.openConnection');
+    act(() => open.click());
+    await flush();
+    expect(where()).toBe(
+      '/settings/connectors?connector=google_drive&connection=c1',
+    );
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspace/switched',
+        payload: expect.objectContaining({ id: 't1' }),
+      }),
+    );
   });
 
   it('leaves the paused list out when nothing is paused', async () => {

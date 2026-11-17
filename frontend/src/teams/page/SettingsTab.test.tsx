@@ -244,6 +244,66 @@ describe('SettingsTab', () => {
     );
   });
 
+  it("names the team's connections, which only a removal on Connectors ends", async () => {
+    mockUnwrap.mockImplementation(() =>
+      Promise.reject({
+        name: 'TeamsApiError',
+        message: 'Move or delete the team items first',
+        code: 'team_not_empty',
+        counts: { connection: 2 },
+      }),
+    );
+    await render();
+    await deleteAndConfirm();
+    const alert = body().querySelector('[data-slot="alert"]')!;
+    expect(alert.textContent).toContain(
+      'settings.teams.notEmpty.counts.connection(count=2)',
+    );
+    expect(alert.textContent).not.toContain(
+      'settings.teams.notEmpty.counts.other',
+    );
+    expect(alert.textContent).toContain(
+      'settings.teams.notEmpty.connectionsHint',
+    );
+    // Connections never move: no "Move them to Personal" for them alone.
+    expect(alert.textContent).not.toContain('settings.teams.notEmpty.hint');
+    act(() => button('settings.teams.notEmpty.openConnectors', alert)!.click());
+    await flush();
+    expect(actions()).toContainEqual(
+      expect.objectContaining({
+        type: 'workspace/switched',
+        payload: { id: 't1', reason: 'user' },
+      }),
+    );
+    expect(body().querySelector('[data-testid="where"]')?.textContent).toBe(
+      '/settings/connectors',
+    );
+  });
+
+  it('says both what to move and what to remove when it holds both', async () => {
+    mockUnwrap.mockImplementation(() =>
+      Promise.reject({
+        name: 'TeamsApiError',
+        message: 'Move or delete the team items first',
+        code: 'team_not_empty',
+        counts: { agent: 1, connection: 1 },
+      }),
+    );
+    await render();
+    await deleteAndConfirm();
+    const alert = body().querySelector('[data-slot="alert"]')!;
+    expect(alert.textContent).toContain('settings.teams.notEmpty.hint');
+    expect(alert.textContent).toContain(
+      'settings.teams.notEmpty.connectionsHint',
+    );
+    expect(
+      button('settings.teams.notEmpty.open(name=Operations)', alert),
+    ).toBeDefined();
+    expect(
+      button('settings.teams.notEmpty.openConnectors', alert),
+    ).toBeDefined();
+  });
+
   it('keeps any other refusal in the dialog', async () => {
     mockUnwrap.mockImplementation(() =>
       Promise.reject({ name: 'TeamsApiError', message: 'Only the owner' }),

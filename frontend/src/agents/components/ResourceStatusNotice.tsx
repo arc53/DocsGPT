@@ -86,6 +86,10 @@ export function stoppedReason(
       return `connectionRemoved${service}`;
     case 'connector_disabled':
       return `connectorDisabled${service}`;
+    // A team's account whoever connected it can't use now: a team Admin
+    // reconnects it on the Connectors page, so the line says so itself.
+    case 'connection_paused':
+      return `connectionPaused${service}`;
     default:
       return 'unknown';
   }

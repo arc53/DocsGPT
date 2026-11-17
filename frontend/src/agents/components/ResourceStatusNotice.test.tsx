@@ -233,11 +233,38 @@ describe('ResourceStatusNotice', () => {
     ['connection_needs_reconnect', 'reason.connectionNeedsReconnect'],
     ['connection_removed', 'reason.connectionRemoved'],
     ['connector_disabled', 'reason.connectorDisabled'],
+    ['connection_paused', 'reason.connectionPaused'],
   ] as const)('says why an item stopped: %s', async (reason, key) => {
     await render(baseAgent, [stoppedItem({ reason })]);
     expect(container.textContent).toContain(
       `agents.form.resourceStates.${key}`,
     );
+  });
+
+  it("says a team's account is paused, with no Reconnect or ask line", async () => {
+    const drive = { id: null, connector_key: 'github', name: 'GitHub' };
+    await render(editorAgent, [
+      stoppedItem({
+        name: 'Create issue',
+        reason: 'connection_paused',
+        connection: drive,
+      }),
+      stoppedItem({
+        key: 'tool:t2',
+        id: 't2',
+        name: 'GitHub',
+        reason: 'connection_paused',
+        connection: drive,
+      }),
+    ]);
+    const [named, same] = Array.from(container.querySelectorAll('li')).map(
+      (li) => li.textContent ?? '',
+    );
+    expect(named).toMatch(/reason\.connectionPaused(?!NoService)/);
+    expect(same).toContain('reason.connectionPausedNoService');
+    expect(container.textContent).not.toContain('reason.unknown');
+    // A team Admin reconnects it on the Connectors page, not from here.
+    expect(buttonWith('settings.connectors.status.reconnect')).toHaveLength(0);
   });
 
   it('says someone else for a sponsor the reader does not know', async () => {

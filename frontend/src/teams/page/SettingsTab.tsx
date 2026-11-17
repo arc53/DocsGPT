@@ -66,7 +66,11 @@ const ITEM_KINDS = [
   'tool',
   'prompt',
   'folder',
+  'connection',
 ] as const;
+
+/** Where a team Admin removes the team's connections. */
+const CONNECTORS_PATH = '/settings/connectors';
 
 /**
  * The most members one answer of the transfer picker lists (the server's
@@ -283,11 +287,20 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
     navigate(TEAMS_ROOT);
   };
 
-  // Moving or deleting the team's items happens inside the team.
-  const openTeam = () => {
-    navigate(AGENTS_MANAGE_ROOT);
+  // Moving or deleting the team's items happens inside the team, and so
+  // does removing its connections.
+  const openTeam = (path: string = AGENTS_MANAGE_ROOT) => {
+    navigate(path);
     if (workspaceId !== team.id) dispatch(switchWorkspace(team.id));
   };
+
+  // Connections never move: they are removed, so they get their own line.
+  const holdsConnections = !!notEmpty?.connection;
+  const holdsItems =
+    !!notEmpty &&
+    Object.entries(notEmpty).some(
+      ([kind, count]) => kind !== 'connection' && count > 0,
+    );
 
   const countLines = (counts: Record<string, number>): string[] => {
     const lines: string[] = [];
@@ -502,15 +515,25 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
-                <p>
-                  {t('settings.teams.notEmpty.hint')}{' '}
-                  <AlertAction onClick={openTeam}>
-                    {t('settings.teams.notEmpty.open', {
-                      interpolation: { escapeValue: false },
-                      name: team.name,
-                    })}
-                  </AlertAction>
-                </p>
+                {holdsItems || !holdsConnections ? (
+                  <p>
+                    {t('settings.teams.notEmpty.hint')}{' '}
+                    <AlertAction onClick={() => openTeam()}>
+                      {t('settings.teams.notEmpty.open', {
+                        interpolation: { escapeValue: false },
+                        name: team.name,
+                      })}
+                    </AlertAction>
+                  </p>
+                ) : null}
+                {holdsConnections ? (
+                  <p>
+                    {t('settings.teams.notEmpty.connectionsHint')}{' '}
+                    <AlertAction onClick={() => openTeam(CONNECTORS_PATH)}>
+                      {t('settings.teams.notEmpty.openConnectors')}
+                    </AlertAction>
+                  </p>
+                ) : null}
               </AlertDescription>
             </Alert>
           )}

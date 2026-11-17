@@ -253,6 +253,64 @@ describe('MembersTab: what a change pauses of what a member pays for', () => {
     expect(text).not.toContain('payer.team.remove.access');
   });
 
+  it("says which of the team's connections a removal pauses", async () => {
+    setMembers([
+      member('lena', 'owner', { schedules: 0, outside_access: 0 }),
+      member('ana', 'admin', {
+        schedules: 0,
+        outside_access: 0,
+        connections: 2,
+      }),
+    ]);
+    await render();
+    await openRemove('ana@x.io');
+    const text = confirm()!.textContent;
+    expect(text).toContain(
+      'payer.team.remove.connections(count=2,name=ana@x.io)',
+    );
+    expect(text).toContain(
+      'payer.team.remove.connectionsDetail(name=ana@x.io)',
+    );
+  });
+
+  it('asks first when a demotion below Admin pauses the connections', async () => {
+    setMembers([
+      member('lena', 'owner', { schedules: 0, outside_access: 0 }),
+      member('ana', 'admin', {
+        schedules: 0,
+        outside_access: 0,
+        connections: 1,
+      }),
+    ]);
+    await render();
+    await pickRole('ana@x.io', 'editor');
+    expect(setMemberRole).not.toHaveBeenCalled();
+    expect(confirm()!.textContent).toContain(
+      'payer.team.remove.connections(count=1,name=ana@x.io)',
+    );
+  });
+
+  it('counts no connections of someone already below Admin', async () => {
+    // Their accounts paused when they lost Admin; leaving changes nothing.
+    setMembers([
+      member('lena', 'owner', { schedules: 0, outside_access: 0 }),
+      member('ed', 'editor', {
+        schedules: 0,
+        outside_access: 0,
+        connections: 1,
+      }),
+    ]);
+    await render();
+    await openRemove('ed@x.io');
+    expect(confirm()!.textContent).not.toContain(
+      'payer.team.remove.connections',
+    );
+    act(() => button('cancel', confirm()!)!.click());
+    await flush();
+    await pickRole('ed@x.io', 'viewer');
+    expect(confirm()).toBeNull();
+  });
+
   it('adds no payer lines for a member who pays for nothing', async () => {
     await render();
     await openRemove('priya@x.io');

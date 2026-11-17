@@ -48,6 +48,17 @@ describe('eventLabel', () => {
     );
   });
 
+  it("names the events of a team's connections", () => {
+    expect(eventLabel('team.connection_added')).toBe('Team account connected');
+    expect(eventLabel('team.connection_reconnected')).toBe(
+      'Team account reconnected',
+    );
+    expect(eventLabel('team.connection_disconnected')).toBe(
+      'Team account disconnected',
+    );
+    expect(eventLabel('team.connection_removed')).toBe('Team account removed');
+  });
+
   it('stays legible for an event a newer release added', () => {
     expect(eventLabel('source.archived')).toBe('Source archived');
     expect(eventLabel('brand_new_event')).toBe('Brand new event');
@@ -64,6 +75,12 @@ describe('eventTone', () => {
     expect(eventTone('role_revoked')).toBe('warning');
     expect(eventTone('agent.key_regenerated')).toBe('warning');
     expect(eventTone('team.item_unshared_from_team')).toBe('warning');
+  });
+
+  it("flags a team account's removal and its disconnect", () => {
+    expect(eventTone('team.connection_removed')).toBe('warning');
+    expect(eventTone('team.connection_disconnected')).toBe('warning');
+    expect(eventTone('team.connection_added')).toBe('neutral');
   });
 
   it('marks an admin grant with the brand (default) variant', () => {

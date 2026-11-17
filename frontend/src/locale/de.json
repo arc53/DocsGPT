@@ -579,6 +579,8 @@
         "reason": {
           "connectionNeedsReconnect": "Für {{name}} muss das {{service}}-Konto erneut angemeldet werden.",
           "connectionNeedsReconnectNoService": "Für {{name}} ist eine erneute Anmeldung nötig.",
+          "connectionPaused": "{{name}} nutzt das {{service}}-Konto des Teams, das pausiert ist. Ein Team-Admin kann es auf der Seite „Konnektoren“ neu verbinden.",
+          "connectionPausedNoService": "{{name}} nutzt ein Team-Konto, das pausiert ist. Ein Team-Admin kann es auf der Seite „Konnektoren“ neu verbinden.",
           "connectionRemoved": "Das {{service}}-Konto, das {{name}} verwendet hat, wurde entfernt.",
           "connectionRemovedNoService": "Das Konto, das {{name}} verwendet hat, wurde entfernt.",
           "connectorDisabled": "Ein Admin hat {{service}} deaktiviert, daher kann {{name}} nicht laufen.",
@@ -2896,6 +2898,8 @@
         "access": "Zugriff von außen über {{access}}",
         "accessAll": "Zugriff von außen",
         "description": "Sie bleiben pausiert, bis jemand sie übernimmt oder das Kontingent der zahlenden Person zurückgesetzt wird.",
+        "openConnection": "Öffnen",
+        "openConnectionLabel": "\"{{name}}\" auf der Seite „Konnektoren“ öffnen",
         "schedule": "Zeitplan von {{agent}}",
         "scheduleNoAgent": "Zeitplan",
         "sync": "Geplante Synchronisierung",
@@ -2922,6 +2926,9 @@
         "accessDetail": "{{name}} bezahlt dafür. Ein Admin kann ihn auf der Seite des Agenten übernehmen.",
         "access_one": "Zugriff von außen auf {{count}} Agenten wird pausiert",
         "access_other": "Zugriff von außen auf {{count}} Agenten wird pausiert",
+        "connectionsDetail": "Das Team kann sie weder für Synchronisierungen noch für Werkzeuge nutzen, bis ein anderer Team-Admin sie auf der Seite „Konnektoren“ mit dem eigenen Konto neu verbindet.",
+        "connections_one": "{{count}} Team-Konto, das {{name}} verbunden hat, wird pausiert",
+        "connections_other": "{{count}} Team-Konten, die {{name}} verbunden hat, werden pausiert",
         "schedulesDetail": "{{name}} bezahlt dafür. Ein Bearbeiter oder Admin kann sie auf der Zeitplan-Seite des Agenten übernehmen.",
         "schedules_one": "{{count}} Zeitplan, den {{name}} für Team-Agenten angelegt hat, wird pausiert",
         "schedules_other": "{{count}} Zeitpläne, die {{name}} für Team-Agenten angelegt hat, werden pausiert"
@@ -4957,9 +4964,12 @@
       "noMembers": "Noch keine Mitglieder. Nutze „Mitglied hinzufügen“, um jemanden per E-Mail einzuladen.",
       "noTeams": "Noch keine Teams.",
       "notEmpty": {
+        "connectionsHint": "Verbindungen lassen sich nicht verschieben. Ein Team-Admin entfernt sie auf der Seite „Konnektoren“ des Teams.",
         "counts": {
           "agent_one": "{{count}} Agent",
           "agent_other": "{{count}} Agenten",
+          "connection_one": "{{count}} Verbindung",
+          "connection_other": "{{count}} Verbindungen",
           "folder_one": "{{count}} Ordner",
           "folder_other": "{{count}} Ordner",
           "other_one": "{{count}} weiterer Eintrag",
@@ -4975,6 +4985,7 @@
         },
         "hint": "Verschiebe sie nach „Persönlich“ oder lösche sie, dann lösche das Team.",
         "open": "{{name}} öffnen",
+        "openConnectors": "Konnektoren öffnen",
         "title": "{{name}} gehören noch Elemente"
       },
       "openTeamError": "Team-Details konnten nicht geladen werden.",
@@ -5157,6 +5168,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "Von {{service}} abgemeldet",
             "connectionNeedsReconnectNoService": "Abgemeldet",
+            "connectionPaused": "{{service}}-Konto des Teams pausiert",
+            "connectionPausedNoService": "Team-Konto pausiert",
             "connectionRemoved": "{{service}}-Konto entfernt",
             "connectionRemovedNoService": "Konto entfernt",
             "connectorDisabled": "{{service}} von einem Admin deaktiviert",
