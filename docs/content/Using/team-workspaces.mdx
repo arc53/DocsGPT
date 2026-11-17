@@ -130,7 +130,7 @@ The account, its sources and the team's [Usage](#usage) tab say why it is paused
 To bring an account back, an Admin opens it on **Connectors** and chooses **Reconnect**:
 
 - **Whoever connected it** signs in again, as with a personal account.
-- **Another Admin** is asked **Reconnect with your account?**: the team uses their account from then on, and they pay for its syncs. The dialog lists the sources that sync from it. After they sign in, the account reads "Connected by" them, and its sources and tools keep working on it. If the new sign-in is a different account, DocsGPT revokes the previous person's sign-in at the service.
+- **Another Admin** is asked **Reconnect with your account?**: the team uses their account from then on, and they pay for its syncs. The dialog lists the sources that sync from it. After they sign in, the account reads "Connected by" them, and its sources and tools keep working on it. If the new sign-in is a different account, DocsGPT revokes the previous person's sign-in at the service, unless another connection in DocsGPT still uses that account, such as their own Google Drive in Personal.
 
 <Callout type="warning">
   Reconnecting with another account changes what the team can read. Files the new account can't open drop out of the sources at their next sync; the person who now holds the account can pick them again from the source. For Google Drive, see [Team accounts on Google Drive](/Sources/Connectors/google-drive#team-accounts).

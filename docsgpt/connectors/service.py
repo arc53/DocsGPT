@@ -449,8 +449,9 @@ def catalog_for_user(
 def disconnect(conn, row: dict) -> dict:
     """Forget a connection's credentials but keep the row and what it feeds.
 
-    Revokes the grant at the provider where that is supported (Google);
-    a failed revocation never blocks forgetting the tokens here. Sources keep
+    Revokes the grant at the provider where that is supported (Google),
+    unless another connection to the same account still holds it; a failed
+    revocation never blocks forgetting the tokens here. Sources keep
     their indexed content and pause syncing; tools stop working until the
     account is reconnected. An MCP server's client registration is kept so
     reconnecting skips dynamic client registration.
@@ -470,7 +471,7 @@ def disconnect(conn, row: dict) -> dict:
         secrets = read_secrets(row)
     except CredentialDecryptionError:
         secrets = {}
-    revoke_at_provider(row, secrets)
+    _revoke_unless_shared(conn, row, secrets)
     _forget_mcp_clients(row)
     kept = {"client_info": secrets["client_info"]} if secrets.get("client_info") else {}
     write_secrets(
@@ -484,6 +485,44 @@ def disconnect(conn, row: dict) -> dict:
         {"id": str(row["id"])},
     )
     return serialize_connection(ConnectorSessionsRepository(conn).get(str(row["id"])))
+
+
+def grant_held_elsewhere(conn, row: dict) -> bool:
+    """Whether another connection still holds credentials for the same account of the same service.
+
+    Google revokes a person's whole grant to the app (every connection signs in through the one
+    client the server is set up with), so revoking for one of their connections, a team's say,
+    would sign out their personal one too, and the reverse.
+
+    Args:
+        conn: Open connection.
+        row: The connection whose credentials are being forgotten.
+
+    Returns:
+        True while another row with the same provider and account holds credentials.
+    """
+    from sqlalchemy import text
+
+    label = account_label(row)
+    if not label or not row.get("provider"):
+        return False
+    return conn.execute(
+        text(
+            "SELECT 1 FROM connector_sessions WHERE provider = :provider AND id <> CAST(:id AS uuid) "
+            "AND COALESCE(account_label, user_email) = :label "
+            "AND (encrypted_credentials IS NOT NULL OR token_info IS NOT NULL) LIMIT 1"
+        ),
+        {"provider": row["provider"], "id": str(row["id"]), "label": label},
+    ).first() is not None
+
+
+def _revoke_unless_shared(conn, row: dict, secrets: dict) -> None:
+    """Revoke the grant at the provider unless another connection still uses it.
+
+    See :func:`grant_held_elsewhere`; the local credentials are forgotten by the caller either way.
+    """
+    if not grant_held_elsewhere(conn, row):
+        revoke_at_provider(row, secrets)
 
 
 def revoke_at_provider(row: dict, secrets: dict) -> bool:
@@ -1342,7 +1381,7 @@ def _replace_account(
             old = read_secrets(row)
         except CredentialDecryptionError:
             old = {}
-        revoke_at_provider(row, old)
+        _revoke_unless_shared(conn, row, old)
     _forget_mcp_clients(row)
     write_secrets(
         conn,
@@ -2016,7 +2055,7 @@ def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "d
     _forget_mcp_clients(row)
     linked_sources = repo.list_sources(connection_id)
     try:
-        revoke_at_provider(row, read_secrets(row))
+        _revoke_unless_shared(conn, row, read_secrets(row))
     except CredentialDecryptionError:
         pass
     if tools == "delete":

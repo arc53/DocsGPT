@@ -655,6 +655,71 @@ class TestRevoke:
             assert not service.revoke_at_provider({"provider": "google_drive"}, {"token_info": {"access_token": "a"}})
 
 
+def _team_principal(conn) -> str:
+    """A team's principal, which owns the team's connections."""
+    import uuid
+
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
+    from docsgpt.workspaces.principal import principal_id
+
+    return principal_id(TeamsRepository(conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", "alice")["id"])
+
+
+class TestSharedGoogleGrant:
+    """Google revokes a person's whole grant to the app, so one of their connections never signs out another."""
+
+    _SECRETS = {"token_info": {"access_token": "at", "refresh_token": "rt"}}
+
+    def _pair(self, conn):
+        personal = _connection(conn, user="adam", account_label="adam@example.com", secrets=self._SECRETS)
+        team = _connection(conn, user=_team_principal(conn), connected_by="adam",
+                           account_label="adam@example.com", secrets=self._SECRETS)
+        return personal, team
+
+    def test_disconnecting_one_keeps_the_grant_the_other_holds(self, pg_conn):
+        personal, team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.disconnect(pg_conn, _row(pg_conn, team))
+        revoke.assert_not_called()
+        assert _row(pg_conn, team)["encrypted_credentials"] is None
+        assert _row(pg_conn, personal)["encrypted_credentials"] is not None
+
+    def test_removing_one_keeps_the_grant_the_other_holds(self, pg_conn):
+        personal, _team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.remove_connection(pg_conn, _row(pg_conn, personal))
+        revoke.assert_not_called()
+        assert _row(pg_conn, personal) is None
+
+    def test_the_last_connection_holding_it_revokes(self, pg_conn):
+        personal, team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.disconnect(pg_conn, _row(pg_conn, team))
+            revoke.assert_not_called()
+            service.disconnect(pg_conn, _row(pg_conn, personal))
+        revoke.assert_called_once()
+
+    def test_another_account_or_service_does_not_count(self, pg_conn):
+        team = _connection(pg_conn, user=_team_principal(pg_conn), connected_by="adam",
+                           account_label="adam@example.com", secrets=self._SECRETS)
+        _connection(pg_conn, user="adam", account_label="ana@example.com", secrets=self._SECRETS)
+        _connection(pg_conn, user="adam", provider="share_point", account_label="adam@example.com",
+                    secrets=self._SECRETS)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.disconnect(pg_conn, _row(pg_conn, team))
+        revoke.assert_called_once()
+
+    def test_another_admins_reconnect_keeps_the_grant_the_old_account_still_uses(self, pg_conn):
+        personal, team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service._replace_account(
+                pg_conn, _row(pg_conn, team), "google_drive", {"access_token": "new"}, "ana@example.com", "ana",
+            )
+        revoke.assert_not_called()
+        assert _row(pg_conn, team)["account_label"] == "ana@example.com"
+        assert _row(pg_conn, personal)["encrypted_credentials"] is not None
+
+
 class TestMcpConnectionScope:
     def _mcp(self, conn, user="alice", base="https://mcp.notion.com"):
         return _connection(
