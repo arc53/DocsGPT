@@ -41,6 +41,7 @@ import {
   toSendableAttachments,
 } from '../upload/uploadSlice';
 import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
 import { selectWorkspaceId } from '../workspace/workspaceSlice';
 import SharedAgentCard from './SharedAgentCard';
 import { Agent } from './types';
@@ -49,9 +50,7 @@ export default function SharedAgent() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const dispatch = useDispatch<AppDispatch>();
-  // A shared agent is someone's personal agent: for a link user it lives in
-  // Personal, and a chat with it from a team would be refused.
-  const inPersonal = useSelector(selectWorkspaceId) === PERSONAL_WORKSPACE;
+  const currentWorkspace = useSelector(selectWorkspaceId);
 
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
@@ -206,19 +205,42 @@ export default function SharedAgent() {
   };
 
   useEffect(() => {
-    if (!inPersonal) void dispatch(followItemWorkspace({ kind: 'personal' }));
-  }, [inPersonal, dispatch]);
+    if (agentId) getSharedAgent();
+  }, [agentId, token]);
 
-  // Nothing is asked from a team: the switch to Personal comes first.
+  // The chat runs in the agent's workspace, and the server refuses it from
+  // any other: a member of the agent's team chats in that team, anyone else
+  // (the agent says no workspace to them) in Personal. When the app can't
+  // go there (the workspace list failed), the chat shows where it is.
+  const agentWorkspace: ItemWorkspace | null = sharedAgent
+    ? (sharedAgent.workspace ?? { kind: 'personal' })
+    : null;
+  const target = !agentWorkspace
+    ? null
+    : agentWorkspace.kind === 'personal'
+      ? PERSONAL_WORKSPACE
+      : (agentWorkspace.team_id ?? PERSONAL_WORKSPACE);
+  const [unreachable, setUnreachable] = useState<string | null>(null);
   useEffect(() => {
-    if (agentId && inPersonal) getSharedAgent();
-  }, [agentId, token, inPersonal]);
+    if (!agentWorkspace || !target || target === currentWorkspace) return;
+    let cancelled = false;
+    void dispatch(followItemWorkspace(agentWorkspace)).then((switched) => {
+      if (!cancelled && !switched) setUnreachable(target);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [target, currentWorkspace, dispatch]);
+  const inAgentWorkspace =
+    target !== null && (target === currentWorkspace || target === unreachable);
 
+  // A switch clears the selected agent, so it is set once the page is there.
   useEffect(() => {
-    if (sharedAgent) dispatch(setSelectedAgent(sharedAgent));
-  }, [sharedAgent, dispatch]);
+    if (sharedAgent && inAgentWorkspace)
+      dispatch(setSelectedAgent(sharedAgent));
+  }, [sharedAgent, inAgentWorkspace, dispatch]);
 
-  if (isLoading || !inPersonal) return <LoadingState fill="parent" />;
+  if (isLoading) return <LoadingState fill="parent" />;
   if (loadFailed)
     return (
       <EmptyState
@@ -233,6 +255,7 @@ export default function SharedAgent() {
     return (
       <EmptyState className="h-full" title={t('agents.shared.notFound')} />
     );
+  if (!inAgentWorkspace) return <LoadingState fill="parent" />;
   return (
     <div className="relative h-full w-full">
       <div className="absolute top-5 left-4 hidden items-center gap-3 sm:flex">

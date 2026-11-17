@@ -95,6 +95,14 @@ vi.mock('../conversation/conversationSlice', () => ({
   selectStatus: () => 'idle',
 }));
 
+// The follow into the agent's workspace, as a plain action to look for.
+vi.mock('../conversation/followWorkspace', () => ({
+  followItemWorkspace: vi.fn((workspace: unknown) => ({
+    type: 'test/follow',
+    workspace,
+  })),
+}));
+
 const getSharedAgent = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
@@ -233,6 +241,68 @@ describe('SharedAgent', () => {
     await render();
     await act(async () => props().onSubmit(question));
     expect(addQuery).toHaveBeenCalledWith({ prompt: question });
+  });
+
+  // The chat runs in the agent's workspace: a member of its team chats in
+  // that team, anyone else in Personal; the server refuses any other.
+  describe("the agent's workspace", () => {
+    const follows = () =>
+      redux.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action?.type === 'test/follow')
+        .map((action) => action.workspace);
+    const serve = (workspace?: unknown) =>
+      getSharedAgent.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'a1', name: 'Vendor', workspace }),
+      });
+    // `switched` is what the follow resolves to.
+    const following = (switched: boolean) =>
+      redux.dispatch.mockImplementation((action) =>
+        action?.type === 'test/follow' ? Promise.resolve(switched) : action,
+      );
+    const team = { kind: 'team', team_id: 't1' };
+
+    it("takes a member of the agent's team there before the chat shows", async () => {
+      following(true);
+      serve(team);
+      await render();
+      expect(follows()).toEqual([team]);
+      expect(composer.props).toBeNull();
+
+      redux.values.set(selectWorkspaceId, 't1');
+      await render();
+      expect(composer.props).not.toBeNull();
+      expect(redux.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'preference/setSelectedAgent' }),
+      );
+    });
+
+    it("lets a member chat at once from the agent's team", async () => {
+      redux.values.set(selectWorkspaceId, 't1');
+      serve(team);
+      await render();
+      expect(follows()).toEqual([]);
+      expect(composer.props).not.toBeNull();
+    });
+
+    it('keeps anyone else in Personal, switching there from a team', async () => {
+      following(true);
+      redux.values.set(selectWorkspaceId, 't1');
+      serve();
+      await render();
+      expect(follows()).toEqual([{ kind: 'personal' }]);
+      expect(composer.props).toBeNull();
+    });
+
+    it('shows the chat where it is when the app cannot follow', async () => {
+      following(false);
+      serve(team);
+      await render();
+      expect(follows()).toEqual([team]);
+      expect(composer.props).not.toBeNull();
+    });
   });
 
   // The page asks for question cards (it sends through the chat's slice), so
