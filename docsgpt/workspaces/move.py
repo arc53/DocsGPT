@@ -20,9 +20,13 @@ What a move takes along, and what it can't:
   and prompts filed in it stay where they are, unfiled.
 - Anything the agent uses that the owner doesn't hold (a teammate's tool, a
   shared source), or that can't live in a team (a tool on someone's connected
-  account or paired device, a connector-synced source, a personal custom
-  model, a tool whose saved secret no longer opens), is removed from the agent
-  and listed. A dragged item the mover doesn't own is listed and never re-owned.
+  account or paired device, a connector-synced source, a tool whose saved
+  secret no longer opens), is removed from the agent and listed. A dragged
+  item the mover doesn't own is listed and never re-owned.
+- A custom model never moves. An agent or workflow node that names one of the
+  old owner's goes to the new owner's model with the same endpoint and
+  upstream id (``model_remaps``); without one, and for anyone else's model,
+  the reference is removed and listed.
 - Grants and share switches on moved items are deleted, sponsors cleared, and
   stored secrets re-sealed for the new owner. Someone else's personal filing of
   a moved item is deleted; the mover's own filing goes to the chosen folder.
@@ -95,12 +99,14 @@ from docsgpt.storage.db.repositories.conversations import ConversationsRepositor
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
+from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.workspaces.context import PERSONAL, Workspace, WorkspaceError, require_workspace_role
 from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_LOCKED, may_take_outside, team_policy
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 from docsgpt.workspaces.roles import from_stored_role, role_rank, team_role_for
+from docsgpt.workspaces.team_models import owners_matching_model, unowned_custom_models
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +306,7 @@ class MovePlan:
         legacy_sources: A node's source refs that still name a source by its Mongo id: ``old id -> uuid``.
         shared_refs: Refs the moved agents keep because another team shares them with the target team:
             ``(type, id) -> owning team id``.
+        model_remaps: Custom models swapped for the new owner's match: ``lower-case old id -> new id``.
     """
 
     body: dict
@@ -322,6 +329,7 @@ class MovePlan:
     legacy_tools: dict = field(default_factory=dict)
     legacy_sources: dict = field(default_factory=dict)
     shared_refs: dict = field(default_factory=dict)
+    model_remaps: dict = field(default_factory=dict)
 
     def ids(self, kind: str) -> list[str]:
         """The ids of one kind that move, in plan order."""
@@ -451,6 +459,8 @@ class _Planner:
         self.legacy_tools: dict[str, str] = {}
         self.legacy_sources: dict[str, str] = {}
         self.shared_refs: dict[tuple[str, str], str] = {}
+        # Custom models swapped for the new owner's match: lower-case old id -> the plan's remap entry.
+        self.model_remaps: dict[str, dict] = {}
         self.policy: Optional[str] = None
         # Folders that take every item filed in them: the dragged ones and their sub-folders.
         self.whole_folders: set[str] = set()
@@ -717,18 +727,35 @@ class _Planner:
                 models.extend(node_models)
         for kind, item_id in refs:
             self._dependency(kind, item_id, via)
-        if self.direction == "in" and models:
-            # Lazy: the workflow routes import much of the API.
-            from docsgpt.api.user.workflows.routes import personal_custom_models
+        if models:
+            self._plan_models(models)
 
-            for model_id in personal_custom_models(conn, self.new_owner, models):
-                model = conn.execute(
-                    text("SELECT user_id, display_name FROM user_custom_models WHERE id = CAST(:i AS uuid)"),
-                    {"i": model_id},
-                ).fetchone()
-                key = ("model", str(model_id).lower())
-                self.referenced.add(key)
-                self._cannot(key, CANT_CUSTOM_MODEL, model[1] if model and model[0] == self.mover else None)
+    def _plan_models(self, models: list[str]) -> None:
+        """Swap or list the custom models the moving agents name that the new owner doesn't own.
+
+        A model never moves: the old owner's may serve other items. Its references go to the new owner's
+        model with the same endpoint and upstream id; without one, or for a model the old owner doesn't
+        hold (someone else's, another team's), they are listed and removed.
+
+        Args:
+            models: Model ids named by an agent or its workflow's nodes.
+        """
+        repo = UserCustomModelsRepository(self.conn)
+        for model_id in unowned_custom_models(self.conn, self.new_owner, models):
+            key = ("model", str(model_id).lower())
+            if key[1] in self.model_remaps or key in self.cannot:
+                continue
+            self.referenced.add(key)
+            row = repo.get_by_id(model_id)
+            held = row is not None and row.get("user_id") == self.old_owner
+            match = owners_matching_model(self.conn, self.new_owner, row) if held else None
+            if match is not None:
+                self.model_remaps[key[1]] = {
+                    "from_id": str(row["id"]), "from_name": row.get("display_name"),
+                    "to_id": str(match["id"]), "to_name": match.get("display_name"),
+                }
+                continue
+            self._cannot(key, CANT_CUSTOM_MODEL, row.get("display_name") if held else None)
 
     def _expand_folder(self, entry: _Entry) -> None:
         conn, via = self.conn, ("folder", entry.id)
@@ -1093,6 +1120,9 @@ class _Planner:
             "dropped_shares": self._dropped_shares(),
             "conversations_switched": self._chats(),
             "renames": renames,
+            "model_remaps": sorted(
+                self.model_remaps.values(), key=lambda r: (str(r["from_name"] or ""), r["from_id"])
+            ),
         }
         body["fingerprint"] = hashlib.sha256(
             json.dumps(body, sort_keys=True, default=str).encode()
@@ -1117,6 +1147,7 @@ class _Planner:
             legacy_tools=self.legacy_tools,
             legacy_sources=self.legacy_sources,
             shared_refs=self.shared_refs,
+            model_remaps={old: remap["to_id"] for old, remap in self.model_remaps.items()},
         )
 
 
@@ -1492,19 +1523,40 @@ class _Executor:
             folders = [f for f in row.get("knowledge_folder_ids") or [] if self._kept("folder", f)]
             if len(folders) != len(row.get("knowledge_folder_ids") or []):
                 fields["knowledge_folder_ids"] = folders
-            if self.plan.direction == "in":
-                from docsgpt.api.user.workflows.routes import personal_custom_models
-
-                models = [m for m in row.get("models") or [] if isinstance(m, str)]
-                custom = {m.lower() for m in personal_custom_models(
-                    self.conn, self.new, [row.get("default_model_id"), *models])}
-                if str(row.get("default_model_id") or "").lower() in custom:
-                    fields["default_model_id"] = None
-                kept_models = [m for m in models if m.lower() not in custom]
-                if len(kept_models) != len(models):
-                    fields["models"] = kept_models
+            fields.update(self._agent_models(row))
             if fields:
                 repo.update(agent_id, self.new, fields)
+
+    def _remapped(self, model_id: Any) -> Any:
+        """The model the plan swaps ``model_id`` for, or ``model_id`` itself."""
+        if not isinstance(model_id, str) or not model_id:
+            return model_id
+        return self.plan.model_remaps.get(model_id.lower(), model_id)
+
+    def _agent_models(self, row: dict) -> dict:
+        """An agent's model fields after the move: swapped to the plan's matches, the rest of the new
+        owner's own kept, any other custom model removed.
+
+        Args:
+            row: The agent's row.
+
+        Returns:
+            The ``default_model_id`` and ``models`` values that change, or nothing.
+        """
+        default = row.get("default_model_id")
+        models = [m for m in row.get("models") or [] if isinstance(m, str)]
+        new_default = self._remapped(default)
+        new_models = list(dict.fromkeys(self._remapped(m) for m in models))
+        bad = {m.lower() for m in unowned_custom_models(self.conn, self.new, [new_default, *new_models])}
+        if isinstance(new_default, str) and new_default.lower() in bad:
+            new_default = None
+        new_models = [m for m in new_models if m.lower() not in bad]
+        fields: dict[str, Any] = {}
+        if new_default != default:
+            fields["default_model_id"] = new_default
+        if new_models != models:
+            fields["models"] = new_models
+        return fields
 
     def _strip_nodes(self) -> None:
         if not self.plan.workflows:
@@ -1520,7 +1572,7 @@ class _Executor:
         for node_id, node_type, config in rows:
             if not isinstance(config, dict):
                 continue
-            prepared = self._uuid_node_refs(node_type, copy.deepcopy(config))
+            prepared = self._remap_node_model(node_type, self._uuid_node_refs(node_type, copy.deepcopy(config)))
             before = copy.deepcopy(prepared)
             stripped = self._keep_shared(node_type, before, transform(node_type, prepared))
             if stripped != config:
@@ -1570,6 +1622,19 @@ class _Executor:
                 continue
             values = values if isinstance(values, list) else [values]
             cfg[key] = [legacy.get(str(v).lower(), v) if v else v for v in values]
+        return config
+
+    def _remap_node_model(self, node_type: str, config: dict) -> dict:
+        """Point an agent node at the new owner's match of its custom model, as the plan listed.
+
+        The strip that follows removes any custom model the new owner doesn't own.
+        """
+        if node_type != "agent" or not self.plan.model_remaps:
+            return config
+        nested = config.get("config")
+        cfg = nested if isinstance(nested, dict) else config
+        if cfg.get("model_id"):
+            cfg["model_id"] = self._remapped(cfg["model_id"])
         return config
 
     def _refile(self, in_moving_folder: set) -> None:

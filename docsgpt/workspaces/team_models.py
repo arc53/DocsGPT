@@ -332,3 +332,57 @@ def unowned_custom_models(conn: Any, owner_id: Optional[str], ids: Iterable[Any]
         return []
     owned = {m.lower() for m in repo.owned_ids(owner_id, existing)} if owner_id else set()
     return [m for m in existing if m.lower() not in owned]
+
+
+def endpoint_key(base_url: Any, upstream_model_id: Any) -> tuple[str, str]:
+    """What makes two custom models the same model: where they point and which model they ask for.
+
+    The base URL ignores case and trailing slashes; the name never counts, so a team's copy named
+    differently still matches.
+
+    Args:
+        base_url: The OpenAI-compatible endpoint.
+        upstream_model_id: The id sent to the provider.
+
+    Returns:
+        ``(base_url, upstream_model_id)``, normalized.
+    """
+    return str(base_url or "").strip().rstrip("/").lower(), str(upstream_model_id or "").strip()
+
+
+def matching_model(rows: Iterable[Mapping[str, Any]], base_url: Any, upstream_model_id: Any) -> Optional[dict]:
+    """The row among ``rows`` that is the same model as the given endpoint, or None.
+
+    Enabled rows come first, then the oldest, so the pick is stable.
+
+    Args:
+        rows: ``user_custom_models`` rows of one owner.
+        base_url: The endpoint to match.
+        upstream_model_id: The upstream id to match.
+
+    Returns:
+        The matching row, or None.
+    """
+    key = endpoint_key(base_url, upstream_model_id)
+    if not key[0] or not key[1]:
+        return None
+    found = [dict(r) for r in rows if endpoint_key(r.get("base_url"), r.get("upstream_model_id")) == key]
+    found.sort(key=lambda r: (not r.get("enabled", True), str(r.get("created_at") or ""), str(r.get("id"))))
+    return found[0] if found else None
+
+
+def owners_matching_model(conn: Any, owner_id: Optional[str], row: Optional[Mapping[str, Any]]) -> Optional[dict]:
+    """``owner_id``'s own model that is the same as ``row`` (same endpoint and upstream id), or None.
+
+    Args:
+        conn: Open connection.
+        owner_id: A person or a team's principal.
+        row: The model to match.
+
+    Returns:
+        The owner's matching row, or None.
+    """
+    if not owner_id or not row:
+        return None
+    rows = UserCustomModelsRepository(conn).list_for_user(owner_id)
+    return matching_model(rows, row.get("base_url"), row.get("upstream_model_id"))
