@@ -664,9 +664,11 @@ class TestPutRunAt:
 
     def test_naive_run_at_uses_the_effective_timezone(self, app, pg_conn):
         s = self._once(pg_conn, tz="UTC")
+        # Noon is never ambiguous or skipped: a run two days out can land on a
+        # DST transition, where the 1-3am wall clock reads as two UTC instants.
         local = (_now() + timedelta(days=2)).astimezone(
             __import__("zoneinfo").ZoneInfo("America/New_York"),
-        ).replace(microsecond=0, tzinfo=None)
+        ).replace(hour=12, minute=0, second=0, microsecond=0, tzinfo=None)
         resp = self._put(
             app, pg_conn, str(s["id"]),
             {"run_at": local.isoformat(), "timezone": "America/New_York"},
