@@ -58,20 +58,15 @@ Once enabled, the agent can call these tools during conversations. Queries, requ
 
 ## Supabase
 
-Supabase's hosted MCP server accepts optional query parameters that narrow what it can reach:
+The Supabase preset asks for a project ID before you sign in, and the connection reaches that project only. Copy the ID from **Project Settings** > **General** in your Supabase dashboard. Signing in again keeps the connection on the same project, and a Supabase tool removed from Tools comes back on it too. Project-scoped mode drops Supabase's account-management tools, such as listing and managing projects.
 
-- `read_only=true` runs SQL with read-only database access.
-- `project_ref=<project-ref>` scopes the server to a single Supabase project and limits it to that project's resources. Project-scoped mode drops Supabase's account-management tools, such as listing and managing projects.
-
-The two combine:
+Supabase's plain URL reaches every project the signed-in account can see, so DocsGPT refuses it: a custom MCP server at `mcp.supabase.com` needs `project_ref` as well. To also run SQL with read-only database access, add Supabase as a custom MCP server with both parameters:
 
 ```
 https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true
 ```
 
-Use a development project for testing rather than a production one. When working with production data, prefer project scoping and read-only access where possible. Add the parameters to the URL when you connect Supabase as a custom MCP server.
-
-The curated Supabase preset currently connects to the plain `https://mcp.supabase.com/mcp` URL. The parameters above can be used when configuring Supabase as a custom MCP server.
+Use a development project for testing rather than a production one.
 
 ## Authentication Types
 

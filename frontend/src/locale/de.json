@@ -3185,6 +3185,7 @@
       },
       "fieldHints": {
         "github_access_token": "Feingranular, mit Lesezugriff auf „Contents“ und „Metadata“. Für Änderungen durch Agenten außerdem Lese- und Schreibzugriff auf „Issues“ und „Pull requests“. <link>Token auf GitHub erstellen</link>",
+        "mcp_supabase_project_ref": "Kopiere sie in deinem Supabase-Dashboard unter Project Settings > General. Die Verbindung erreicht nur dieses Projekt.",
         "telegram_chat_id": "Nachrichten gehen nur an diesen Chat. Füge den Bot hinzu, sende ihm eine Nachricht und finde die Chat-ID mit <link>getUpdates</link>."
       },
       "fields": {
@@ -3196,6 +3197,7 @@
         "client_secret": "Client-Secret",
         "endpoint_url": "Eigene Endpunkt-URL",
         "github_access_token": "Persönliches Zugriffstoken",
+        "mcp_supabase_project_ref": "Projekt-ID",
         "ntfy_token": "Zugriffstoken",
         "number_posts": "Anzahl der Beiträge",
         "postgres_token": "Verbindungszeichenfolge",

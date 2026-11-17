@@ -3159,6 +3159,7 @@
       },
       "fieldHints": {
         "github_access_token": "細部權杖，授予 Contents 和 Metadata 的讀取權限。如要讓代理進行變更，還需授予 Issues 和 Pull requests 的讀寫權限。<link>在 GitHub 上建立權杖</link>",
+        "mcp_supabase_project_ref": "在 Supabase 控制台的 Project Settings > General 中複製。此連線只能存取該專案。",
         "telegram_chat_id": "訊息只會傳送到此聊天。加入機器人並傳送一則訊息給它，然後用 <link>getUpdates</link> 找到聊天 ID。"
       },
       "fields": {
@@ -3170,6 +3171,7 @@
         "client_secret": "用戶端密鑰",
         "endpoint_url": "自訂端點 URL",
         "github_access_token": "個人存取權杖",
+        "mcp_supabase_project_ref": "專案 ID",
         "ntfy_token": "存取權杖",
         "number_posts": "貼文數量",
         "postgres_token": "連線字串",

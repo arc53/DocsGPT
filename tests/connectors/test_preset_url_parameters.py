@@ -351,3 +351,13 @@ def _tools_db(conn):
 
     with patch.multiple("docsgpt.api.user.tools.routes", db_session=_yield, db_readonly=_yield):
         yield
+
+
+def test_supabase_connects_to_one_project():
+    """Its plain URL reaches every project the account can see."""
+    supabase = catalog.get_definition("mcp:supabase")
+
+    with pytest.raises(catalog.UrlParametersRequired, match="Supabase needs a Project ID"):
+        catalog.check_url_parameters(supabase.mcp_url)
+    catalog.check_url_parameters(f"{supabase.mcp_url}?project_ref={_REF}")
+    catalog.check_url_parameters(f"{supabase.mcp_url}?project_ref={_REF}&read_only=true")

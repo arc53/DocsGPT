@@ -3397,6 +3397,7 @@
       },
       "fieldHints": {
         "github_access_token": "Детализированный, с доступом на чтение к Contents и Metadata. Чтобы агенты вносили изменения, также чтение и запись для Issues и Pull requests. <link>Создать токен на GitHub</link>",
+        "mcp_supabase_project_ref": "Скопируйте его в панели Supabase: Project Settings > General. Подключение получает доступ только к этому проекту.",
         "telegram_chat_id": "Сообщения уходят только в этот чат. Добавьте бота, отправьте ему сообщение и найдите ID чата через <link>getUpdates</link>."
       },
       "fields": {
@@ -3408,6 +3409,7 @@
         "client_secret": "Секрет клиента",
         "endpoint_url": "Свой URL эндпоинта",
         "github_access_token": "Персональный токен доступа",
+        "mcp_supabase_project_ref": "ID проекта",
         "ntfy_token": "Токен доступа",
         "number_posts": "Количество постов",
         "postgres_token": "Строка подключения",
