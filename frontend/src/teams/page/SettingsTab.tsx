@@ -5,9 +5,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import teamsService, {
+  isOutsidePolicy,
   memberTeamRole,
+  OUTSIDE_POLICIES,
+  type OutsidePolicy,
   teamErrorMessage,
   type TeamMember,
+  type TeamOutside,
   type TeamRole,
 } from '../../api/services/teamsService';
 import { AGENTS_MANAGE_ROOT } from '../../agents/paths';
@@ -24,6 +28,8 @@ import { Button } from '../../components/ui/button';
 import { Combobox } from '../../components/ui/combobox';
 import { FormField } from '../../components/ui/form-field';
 import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { RadioGroup, RadioGroupItem } from '../../components/ui/radio-group';
 import { SectionHeader } from '../../components/ui/section-header';
 import { Textarea } from '../../components/ui/textarea';
 import { useDebouncedValue } from '../../hooks';
@@ -45,8 +51,10 @@ import {
   deleteTeam,
   type DeleteTeamError,
   loadTeams,
+  setTeamOutsidePolicy,
   type Team,
 } from '../teamsSlice';
+import OutsidePolicyConfirm from './OutsidePolicyConfirm';
 import { truncateSub } from './teamGrants';
 import { TEAMS_ROOT } from './teamTabs';
 
@@ -77,9 +85,9 @@ type SettingsTabProps = {
 };
 
 /**
- * The team's own settings: name and description for its admins, and the
- * chat export when the instance allows it; transfer and delete for its
- * owner. A team that still owns items can't be deleted: the page says what
+ * The team's own settings: name and description for its admins, who may
+ * take the team's items outside, and the chat export when the instance
+ * allows it; transfer and delete for its owner. A team that still owns items can't be deleted: the page says what
  * it owns and offers to open the team to move them.
  */
 export default function SettingsTab({ team, role }: SettingsTabProps) {
@@ -108,6 +116,11 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
   const debouncedQuery = useDebouncedValue(memberQuery.trim(), 250);
   const [newOwnerRow, setNewOwnerRow] = useState<TeamMember | null>(null);
   const [transferState, setTransferState] = useState<ActiveState>('INACTIVE');
+
+  // The policy picked and waiting on its confirm, and what the team has
+  // outside (the confirm counts it).
+  const [policyPick, setPolicyPick] = useState<OutsidePolicy | null>(null);
+  const [outside, setOutside] = useState<TeamOutside | null>(null);
 
   const [deleteState, setDeleteState] = useState<ActiveState>('INACTIVE');
   const [notEmpty, setNotEmpty] = useState<Record<string, number> | null>(null);
@@ -223,6 +236,30 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
     }
   };
 
+  const policy = isOutsidePolicy(team.outside_policy)
+    ? team.outside_policy
+    : null;
+  // The server decides who may change it: the Owner, or an Admin while the
+  // team isn't locked.
+  const canSetPolicy = team.can_set_outside_policy === true;
+
+  const pickPolicy = (value: string) => {
+    if (!isOutsidePolicy(value) || value === policy || !canSetPolicy) return;
+    setPolicyPick(value);
+    setOutside(null);
+    teamsService
+      .getOutside(team.id, token)
+      .then((res) => setOutside(res))
+      .catch(() => {
+        // The confirm says what pauses without the numbers.
+      });
+  };
+
+  const confirmPolicy = (next: OutsidePolicy) =>
+    dispatch(
+      setTeamOutsidePolicy({ teamId: team.id, policy: next, token }),
+    ).unwrap();
+
   const confirmTransfer = async () => {
     if (!newOwnerRow) return;
     await teamsService.transferOwner(team.id, newOwnerRow.user_id, token);
@@ -311,6 +348,61 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
           </Button>
         </div>
       </section>
+
+      {policy && (
+        <section className="border-border flex flex-col gap-4 border-t pt-6">
+          <SectionHeader
+            as="h4"
+            size="sm"
+            title={t('settings.teams.outside.title')}
+            description={t('settings.teams.outside.description')}
+          />
+          <RadioGroup
+            value={policy}
+            onValueChange={pickPolicy}
+            aria-label={t('settings.teams.outside.label')}
+            aria-describedby={
+              canSetPolicy ? undefined : 'team-outside-policy-reason'
+            }
+          >
+            {OUTSIDE_POLICIES.map((option) => {
+              const id = `team-outside-policy-${option}`;
+              return (
+                <div key={option} className="flex items-start gap-3">
+                  <RadioGroupItem
+                    id={id}
+                    value={option}
+                    disabled={!canSetPolicy}
+                    aria-describedby={`${id}-hint`}
+                    className="mt-0.5"
+                  />
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <Label htmlFor={id}>
+                      {t(`settings.teams.outside.policy.${option}`)}
+                    </Label>
+                    <p
+                      id={`${id}-hint`}
+                      className="text-muted-foreground text-sm"
+                    >
+                      {t(`settings.teams.outside.hint.${option}`)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </RadioGroup>
+          {!canSetPolicy && (
+            <p
+              id="team-outside-policy-reason"
+              className="text-muted-foreground text-sm"
+            >
+              {policy === 'locked'
+                ? t('settings.teams.outside.ownerOnly')
+                : t('settings.teams.errors.roleRequired')}
+            </p>
+          )}
+        </section>
+      )}
 
       {chatExport && (
         <section className="border-border flex flex-col gap-4 border-t pt-6">
@@ -435,6 +527,24 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
         </section>
       )}
 
+      {policy && (
+        <OutsidePolicyConfirm
+          teamName={team.name}
+          from={policy}
+          to={policyPick}
+          isOwner={isOwner}
+          counts={
+            outside
+              ? {
+                  shares: outside.shares?.length ?? 0,
+                  published: outside.published?.length ?? 0,
+                }
+              : null
+          }
+          onClose={() => setPolicyPick(null)}
+          onConfirm={confirmPolicy}
+        />
+      )}
       <ConfirmationModal
         message={t('settings.teams.transfer.confirm', {
           interpolation: { escapeValue: false },

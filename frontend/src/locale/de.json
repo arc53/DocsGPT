@@ -4932,13 +4932,56 @@
       },
       "openTeamError": "Team-Details konnten nicht geladen werden.",
       "outside": {
+        "confirm": {
+          "changeTitle": "Ändern, wer Elemente nach außen geben darf?",
+          "kept": "Nichts wird gelöscht: Beim Entsperren kommt alles zurück.",
+          "lockIntro": "Solange es gesperrt ist:",
+          "lockStops": "Niemand kann seine Elemente mit anderen Teams teilen, seine Agenten nach außen veröffentlichen, Elemente hinausverschieben oder seine Agenten exportieren.",
+          "lockTitle": "{{team}} sperren?",
+          "ownerUnlocks": "Nur der Eigentümer kann es wieder entsperren.",
+          "pauses": {
+            "chatLinks": "Die geteilten Chat-Links des Teams öffnen sich nicht mehr",
+            "publishedAny": "Agenten antworten nicht mehr über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_one": "{{formatted}} Agent antwortet nicht mehr über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_other": "{{formatted}} Agenten antworten nicht mehr über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "sharesAny": "Freigaben für andere Teams pausieren",
+            "shares_one": "{{formatted}} Freigabe für ein anderes Team pausiert",
+            "shares_other": "{{formatted}} Freigaben für andere Teams pausieren"
+          },
+          "returns": {
+            "chatLinks": "Die geteilten Chat-Links des Teams öffnen sich wieder",
+            "publishedAny": "Agenten antworten wieder über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_one": "{{formatted}} Agent antwortet wieder über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_other": "{{formatted}} Agenten antworten wieder über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "sharesAny": "Freigaben für andere Teams gelten wieder",
+            "shares_one": "{{formatted}} Freigabe für ein anderes Team gilt wieder",
+            "shares_other": "{{formatted}} Freigaben für andere Teams gelten wieder"
+          },
+          "submit": {
+            "change": "Ändern",
+            "lock": "Sperren",
+            "unlock": "Entsperren"
+          },
+          "toAdmins": "Bearbeiter können keine Elemente mehr nach außen geben. Zugriff von außen, den ein Bearbeiter bezahlt, pausiert, bis ein Admin ihn übernimmt. Freigaben von Bearbeitern bleiben.",
+          "toEditors": "Bearbeiter können dann die Elemente dieses Teams mit anderen Teams teilen und für einen Agenten API-Schlüssel, Widget, öffentlichen Link oder Webhook einschalten.",
+          "unlockIntro": "Das kommt so zurück, wie es war:",
+          "unlockTitle": "{{team}} entsperren?"
+        },
+        "description": "Außerhalb heißt: ein anderes Team oder der API-Schlüssel, das Widget, der öffentliche Link oder der Webhook eines Agenten.",
         "fromAnotherTeam": "Von einem anderen Team",
+        "hint": {
+          "admins": "Admins und der Eigentümer können die Elemente dieses Teams mit anderen Teams teilen und für einen Agenten API-Schlüssel, Widget, öffentlichen Link oder Webhook einschalten.",
+          "editors": "Bearbeiter können das auch. Betrachter nie.",
+          "locked": "Niemand. Was schon draußen ist, pausiert, und Elemente lassen sich weder hinausverschieben noch exportieren, bis der Eigentümer das Team entsperrt."
+        },
         "label": "Wer die Elemente dieses Teams nach außen geben darf",
+        "ownerOnly": "Nur der Eigentümer des Teams kann es entsperren.",
         "policy": {
           "admins": "Admins und Eigentümer",
           "editors": "Auch Bearbeiter",
           "locked": "Niemand (gesperrt)"
         },
+        "policyError": "Konnte nicht ändern, wer Elemente nach außen geben darf.",
         "title": "Außerhalb des Teams"
       },
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",

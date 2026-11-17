@@ -4896,13 +4896,56 @@
       },
       "openTeamError": "无法加载团队详情。",
       "outside": {
+        "confirm": {
+          "changeTitle": "更改谁可以将项目带到团队外部？",
+          "kept": "不会删除任何内容：解除锁定后一切都会恢复。",
+          "lockIntro": "锁定期间：",
+          "lockStops": "任何人都不能与其他团队共享其项目、向外部发布其智能体、将项目移出团队或导出其智能体。",
+          "lockTitle": "锁定 {{team}}？",
+          "ownerUnlocks": "只有所有者才能再次解除锁定。",
+          "pauses": {
+            "chatLinks": "团队共享的聊天链接将无法打开",
+            "publishedAny": "智能体将不再通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_one": "{{formatted}} 个智能体将不再通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_other": "{{formatted}} 个智能体将不再通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "sharesAny": "与其他团队的共享将暂停",
+            "shares_one": "与其他团队的 {{formatted}} 项共享将暂停",
+            "shares_other": "与其他团队的 {{formatted}} 项共享将暂停"
+          },
+          "returns": {
+            "chatLinks": "团队共享的聊天链接将恢复打开",
+            "publishedAny": "智能体将恢复通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_one": "{{formatted}} 个智能体将恢复通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_other": "{{formatted}} 个智能体将恢复通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "sharesAny": "与其他团队的共享将恢复",
+            "shares_one": "与其他团队的 {{formatted}} 项共享将恢复",
+            "shares_other": "与其他团队的 {{formatted}} 项共享将恢复"
+          },
+          "submit": {
+            "change": "更改",
+            "lock": "锁定",
+            "unlock": "解除锁定"
+          },
+          "toAdmins": "编辑者将不能再把项目带到团队外部。由编辑者付费的外部访问会暂停，直到管理员接管。编辑者已做的共享保持不变。",
+          "toEditors": "编辑者将可以与其他团队共享此团队的项目，并为智能体开启 API 密钥、小组件、公开链接或 Webhook。",
+          "unlockIntro": "以下内容将恢复原样：",
+          "unlockTitle": "解除 {{team}} 的锁定？"
+        },
+        "description": "团队外部指其他团队，或智能体的 API 密钥、小组件、公开链接或 Webhook。",
         "fromAnotherTeam": "来自其他团队",
+        "hint": {
+          "admins": "管理员和所有者可以与其他团队共享此团队的项目，并为智能体开启 API 密钥、小组件、公开链接或 Webhook。",
+          "editors": "编辑者也可以。查看者始终不可以。",
+          "locked": "任何人都不可以。已在团队外部的内容会暂停；在所有者解除锁定之前，项目不能移出团队或导出。"
+        },
         "label": "谁可以将此团队的项目带到团队外部",
+        "ownerOnly": "只有团队所有者才能解除锁定。",
         "policy": {
           "admins": "管理员和所有者",
           "editors": "编辑者也可以",
           "locked": "任何人都不可以（已锁定）"
         },
+        "policyError": "无法更改谁可以将项目带到团队外部。",
         "title": "团队外部"
       },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",

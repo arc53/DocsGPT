@@ -4898,13 +4898,56 @@
       },
       "openTeamError": "無法載入團隊詳細資訊。",
       "outside": {
+        "confirm": {
+          "changeTitle": "要變更誰可以將項目帶到團隊外部嗎？",
+          "kept": "不會刪除任何內容：解除鎖定後一切都會恢復。",
+          "lockIntro": "鎖定期間：",
+          "lockStops": "任何人都不能與其他團隊分享其項目、向外部發布其代理、將項目移出團隊或匯出其代理。",
+          "lockTitle": "要鎖定 {{team}} 嗎？",
+          "ownerUnlocks": "只有擁有者才能再次解除鎖定。",
+          "pauses": {
+            "chatLinks": "團隊分享的聊天連結將無法開啟",
+            "publishedAny": "代理將不再透過 API 金鑰、小工具、公開連結或 Webhook 回答",
+            "published_one": "{{formatted}} 個代理將不再透過 API 金鑰、小工具、公開連結或 Webhook 回答",
+            "published_other": "{{formatted}} 個代理將不再透過 API 金鑰、小工具、公開連結或 Webhook 回答",
+            "sharesAny": "與其他團隊的分享將暫停",
+            "shares_one": "與其他團隊的 {{formatted}} 項分享將暫停",
+            "shares_other": "與其他團隊的 {{formatted}} 項分享將暫停"
+          },
+          "returns": {
+            "chatLinks": "團隊分享的聊天連結將恢復開啟",
+            "publishedAny": "代理將恢復透過 API 金鑰、小工具、公開連結或 Webhook 回答",
+            "published_one": "{{formatted}} 個代理將恢復透過 API 金鑰、小工具、公開連結或 Webhook 回答",
+            "published_other": "{{formatted}} 個代理將恢復透過 API 金鑰、小工具、公開連結或 Webhook 回答",
+            "sharesAny": "與其他團隊的分享將恢復",
+            "shares_one": "與其他團隊的 {{formatted}} 項分享將恢復",
+            "shares_other": "與其他團隊的 {{formatted}} 項分享將恢復"
+          },
+          "submit": {
+            "change": "變更",
+            "lock": "鎖定",
+            "unlock": "解除鎖定"
+          },
+          "toAdmins": "編輯者將不能再把項目帶到團隊外部。由編輯者付費的外部存取會暫停，直到管理員接手。編輯者已做的分享保持不變。",
+          "toEditors": "編輯者將可以與其他團隊分享此團隊的項目，並為代理開啟 API 金鑰、小工具、公開連結或 Webhook。",
+          "unlockIntro": "以下內容將恢復原樣：",
+          "unlockTitle": "要解除 {{team}} 的鎖定嗎？"
+        },
+        "description": "團隊外部指其他團隊，或代理的 API 金鑰、小工具、公開連結或 Webhook。",
         "fromAnotherTeam": "來自其他團隊",
+        "hint": {
+          "admins": "管理員和擁有者可以與其他團隊分享此團隊的項目，並為代理開啟 API 金鑰、小工具、公開連結或 Webhook。",
+          "editors": "編輯者也可以。檢視者始終不可以。",
+          "locked": "任何人都不可以。已在團隊外部的內容會暫停；在擁有者解除鎖定之前，項目不能移出團隊或匯出。"
+        },
         "label": "誰可以將此團隊的項目帶到團隊外部",
+        "ownerOnly": "只有團隊擁有者才能解除鎖定。",
         "policy": {
           "admins": "管理員和擁有者",
           "editors": "編輯者也可以",
           "locked": "任何人都不可以（已鎖定）"
         },
+        "policyError": "無法變更誰可以將項目帶到團隊外部。",
         "title": "團隊外部"
       },
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",

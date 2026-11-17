@@ -5114,13 +5114,60 @@
       },
       "openTeamError": "No se pudieron cargar los detalles del equipo.",
       "outside": {
+        "confirm": {
+          "changeTitle": "¿Cambiar quién puede sacar elementos fuera?",
+          "kept": "No se borra nada: al desbloquearlo, todo vuelve.",
+          "lockIntro": "Mientras esté bloqueado:",
+          "lockStops": "Nadie puede compartir sus elementos con otros equipos, publicar sus agentes fuera, sacar elementos del equipo ni exportar sus agentes.",
+          "lockTitle": "¿Bloquear {{team}}?",
+          "ownerUnlocks": "Solo el propietario podrá desbloquearlo de nuevo.",
+          "pauses": {
+            "chatLinks": "Los enlaces de chat compartidos del equipo dejan de abrirse",
+            "publishedAny": "Los agentes dejan de responder a través de su clave de API, widget, enlace público o webhook",
+            "published_many": "{{formatted}} agentes dejan de responder a través de su clave de API, widget, enlace público o webhook",
+            "published_one": "{{formatted}} agente deja de responder a través de su clave de API, widget, enlace público o webhook",
+            "published_other": "{{formatted}} agentes dejan de responder a través de su clave de API, widget, enlace público o webhook",
+            "sharesAny": "Los elementos compartidos con otros equipos quedan en pausa",
+            "shares_many": "{{formatted}} elementos compartidos con otros equipos quedan en pausa",
+            "shares_one": "{{formatted}} elemento compartido con otro equipo queda en pausa",
+            "shares_other": "{{formatted}} elementos compartidos con otros equipos quedan en pausa"
+          },
+          "returns": {
+            "chatLinks": "Los enlaces de chat compartidos del equipo vuelven a abrirse",
+            "publishedAny": "Los agentes vuelven a responder a través de su clave de API, widget, enlace público o webhook",
+            "published_many": "{{formatted}} agentes vuelven a responder a través de su clave de API, widget, enlace público o webhook",
+            "published_one": "{{formatted}} agente vuelve a responder a través de su clave de API, widget, enlace público o webhook",
+            "published_other": "{{formatted}} agentes vuelven a responder a través de su clave de API, widget, enlace público o webhook",
+            "sharesAny": "Los elementos compartidos con otros equipos vuelven a funcionar",
+            "shares_many": "{{formatted}} elementos compartidos con otros equipos vuelven a funcionar",
+            "shares_one": "{{formatted}} elemento compartido con otro equipo vuelve a funcionar",
+            "shares_other": "{{formatted}} elementos compartidos con otros equipos vuelven a funcionar"
+          },
+          "submit": {
+            "change": "Cambiar",
+            "lock": "Bloquear",
+            "unlock": "Desbloquear"
+          },
+          "toAdmins": "Los editores ya no podrán sacar elementos fuera. El acceso externo que paga un editor se pausa hasta que un administrador lo asuma. Lo que compartieron los editores se mantiene.",
+          "toEditors": "Los editores podrán compartir los elementos de este equipo con otros equipos y activar la clave de API, el widget, el enlace público o el webhook de un agente.",
+          "unlockIntro": "Esto vuelve tal como estaba:",
+          "unlockTitle": "¿Desbloquear {{team}}?"
+        },
+        "description": "Fuera significa otro equipo, o la clave de API, el widget, el enlace público o el webhook de un agente.",
         "fromAnotherTeam": "De otro equipo",
+        "hint": {
+          "admins": "Los administradores y el propietario pueden compartir los elementos de este equipo con otros equipos y activar la clave de API, el widget, el enlace público o el webhook de un agente.",
+          "editors": "Los editores también pueden. Los lectores, nunca.",
+          "locked": "Nadie puede. Lo que ya está fuera se pausa, y los elementos no se pueden sacar del equipo ni exportar, hasta que el propietario desbloquee el equipo."
+        },
         "label": "Quién puede sacar los elementos de este equipo fuera de él",
+        "ownerOnly": "Solo el propietario del equipo puede desbloquearlo.",
         "policy": {
           "admins": "Administradores y propietario",
           "editors": "También los editores",
           "locked": "Nadie (bloqueado)"
         },
+        "policyError": "No se pudo cambiar quién puede sacar elementos fuera.",
         "title": "Fuera del equipo"
       },
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} equipos",

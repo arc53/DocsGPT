@@ -4953,13 +4953,56 @@
       },
       "openTeamError": "Could not load team details.",
       "outside": {
+        "confirm": {
+          "changeTitle": "Change who can take items outside?",
+          "kept": "Nothing is deleted: unlocking brings it all back.",
+          "lockIntro": "While it's locked:",
+          "lockStops": "Nobody can share its items with other teams, publish its agents outside, move items out of it or export its agents.",
+          "lockTitle": "Lock {{team}}?",
+          "ownerUnlocks": "Only the Owner can unlock it again.",
+          "pauses": {
+            "chatLinks": "The team's shared chat links stop opening",
+            "publishedAny": "Agents stop answering through their API key, widget, public link or webhook",
+            "published_one": "{{formatted}} agent stops answering through its API key, widget, public link or webhook",
+            "published_other": "{{formatted}} agents stop answering through their API key, widget, public link or webhook",
+            "sharesAny": "Shares with other teams pause",
+            "shares_one": "{{formatted}} share with another team pauses",
+            "shares_other": "{{formatted}} shares with other teams pause"
+          },
+          "returns": {
+            "chatLinks": "The team's shared chat links open again",
+            "publishedAny": "Agents answer through their API key, widget, public link or webhook again",
+            "published_one": "{{formatted}} agent answers through its API key, widget, public link or webhook again",
+            "published_other": "{{formatted}} agents answer through their API key, widget, public link or webhook again",
+            "sharesAny": "Shares with other teams work again",
+            "shares_one": "{{formatted}} share with another team works again",
+            "shares_other": "{{formatted}} shares with other teams work again"
+          },
+          "submit": {
+            "change": "Change",
+            "lock": "Lock",
+            "unlock": "Unlock"
+          },
+          "toAdmins": "Editors can no longer take items outside. Outside access an Editor pays for pauses until an Admin takes it over. Shares Editors made stay.",
+          "toEditors": "Editors will be able to share this team's items with other teams and turn on an agent's API key, widget, public link or webhook.",
+          "unlockIntro": "These come back as they were:",
+          "unlockTitle": "Unlock {{team}}?"
+        },
+        "description": "Outside means another team, or an agent's API key, widget, public link or webhook.",
         "fromAnotherTeam": "From another team",
+        "hint": {
+          "admins": "Admins and the Owner can share this team's items with other teams and turn on an agent's API key, widget, public link or webhook.",
+          "editors": "Editors can do this too. Viewers never can.",
+          "locked": "Nobody can. What is already outside pauses, and items can't be moved out or exported, until the Owner unlocks the team."
+        },
         "label": "Who can take this team's items outside",
+        "ownerOnly": "Only the team's Owner can unlock it.",
         "policy": {
           "admins": "Admins and Owner",
           "editors": "Editors too",
           "locked": "No one (locked)"
         },
+        "policyError": "Couldn't change who can take items outside.",
         "title": "Outside the team"
       },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",

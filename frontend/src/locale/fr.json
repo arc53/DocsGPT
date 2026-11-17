@@ -5114,13 +5114,60 @@
       },
       "openTeamError": "Impossible de charger les détails de l’équipe.",
       "outside": {
+        "confirm": {
+          "changeTitle": "Changer qui peut sortir des éléments ?",
+          "kept": "Rien n’est supprimé : le déverrouillage rétablit tout.",
+          "lockIntro": "Tant qu’elle est verrouillée :",
+          "lockStops": "Personne ne peut partager ses éléments avec d’autres équipes, publier ses agents à l’extérieur, sortir des éléments de l’équipe ni exporter ses agents.",
+          "lockTitle": "Verrouiller {{team}} ?",
+          "ownerUnlocks": "Seul le propriétaire pourra la déverrouiller.",
+          "pauses": {
+            "chatLinks": "Les liens de chat partagés de l’équipe ne s’ouvrent plus",
+            "publishedAny": "Les agents ne répondent plus par leur clé d’API, leur widget, leur lien public ou leur webhook",
+            "published_many": "{{formatted}} agents ne répondent plus par leur clé d’API, leur widget, leur lien public ou leur webhook",
+            "published_one": "{{formatted}} agent ne répond plus par sa clé d’API, son widget, son lien public ou son webhook",
+            "published_other": "{{formatted}} agents ne répondent plus par leur clé d’API, leur widget, leur lien public ou leur webhook",
+            "sharesAny": "Les partages avec d’autres équipes sont mis en pause",
+            "shares_many": "{{formatted}} partages avec d’autres équipes sont mis en pause",
+            "shares_one": "{{formatted}} partage avec une autre équipe est mis en pause",
+            "shares_other": "{{formatted}} partages avec d’autres équipes sont mis en pause"
+          },
+          "returns": {
+            "chatLinks": "Les liens de chat partagés de l’équipe s’ouvrent à nouveau",
+            "publishedAny": "Les agents répondent à nouveau par leur clé d’API, leur widget, leur lien public ou leur webhook",
+            "published_many": "{{formatted}} agents répondent à nouveau par leur clé d’API, leur widget, leur lien public ou leur webhook",
+            "published_one": "{{formatted}} agent répond à nouveau par sa clé d’API, son widget, son lien public ou son webhook",
+            "published_other": "{{formatted}} agents répondent à nouveau par leur clé d’API, leur widget, leur lien public ou leur webhook",
+            "sharesAny": "Les partages avec d’autres équipes fonctionnent à nouveau",
+            "shares_many": "{{formatted}} partages avec d’autres équipes fonctionnent à nouveau",
+            "shares_one": "{{formatted}} partage avec une autre équipe fonctionne à nouveau",
+            "shares_other": "{{formatted}} partages avec d’autres équipes fonctionnent à nouveau"
+          },
+          "submit": {
+            "change": "Changer",
+            "lock": "Verrouiller",
+            "unlock": "Déverrouiller"
+          },
+          "toAdmins": "Les éditeurs ne pourront plus sortir d’éléments. L’accès extérieur payé par un éditeur est mis en pause jusqu’à ce qu’un administrateur le reprenne. Les partages faits par les éditeurs restent.",
+          "toEditors": "Les éditeurs pourront partager les éléments de cette équipe avec d’autres équipes et activer la clé d’API, le widget, le lien public ou le webhook d’un agent.",
+          "unlockIntro": "Ceci revient tel quel :",
+          "unlockTitle": "Déverrouiller {{team}} ?"
+        },
+        "description": "Hors de l’équipe veut dire une autre équipe, ou la clé d’API, le widget, le lien public ou le webhook d’un agent.",
         "fromAnotherTeam": "D’une autre équipe",
+        "hint": {
+          "admins": "Les administrateurs et le propriétaire peuvent partager les éléments de cette équipe avec d’autres équipes et activer la clé d’API, le widget, le lien public ou le webhook d’un agent.",
+          "editors": "Les éditeurs le peuvent aussi. Les lecteurs, jamais.",
+          "locked": "Personne. Ce qui est déjà à l’extérieur est mis en pause, et les éléments ne peuvent être ni sortis de l’équipe ni exportés, jusqu’à ce que le propriétaire déverrouille l’équipe."
+        },
         "label": "Qui peut sortir les éléments de cette équipe",
+        "ownerOnly": "Seul le propriétaire de l’équipe peut la déverrouiller.",
         "policy": {
           "admins": "Administrateurs et propriétaire",
           "editors": "Les éditeurs aussi",
           "locked": "Personne (verrouillé)"
         },
+        "policyError": "Impossible de changer qui peut sortir des éléments.",
         "title": "Hors de l’équipe"
       },
       "pageRange_many": "{{from}}–{{to}} sur {{formatted}} équipes",
