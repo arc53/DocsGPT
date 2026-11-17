@@ -499,6 +499,23 @@ class TestShareDialog:
         assert body["outside_shares"] == [] and body["share_targets"] == []
 
 
+class TestUsage:
+    def test_a_shared_agents_spend_in_the_receiving_team_names_where_it_comes_from(self, client, db, world):
+        from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
+
+        assert _share(client, world, "agent").status_code == 201
+        TokenUsageRepository(db).insert(
+            user_id="rita", prompt_tokens=10, team_id=world["dev"], run_kind="chat",
+            agent_id=world["items"]["agent"], cost=0.0, request_id="r-1",
+        )
+        with _as("dan"):
+            body = _body(client.get(f"/api/teams/{world['dev']}/usage"))
+        (row,) = body["by_agent"]
+        assert row["shared_from"] == {"team_id": world["ops"], "name": "Ops"}
+        assert row["name"] == "Helper" and row["moved_out"] is False
+        assert row["published"] is None and row["limit_on"] is False
+
+
 class TestPersonalAgentUsingTeamItems:
     """vera's own agent reads Ops' source: it goes only to people who reach that source."""
 

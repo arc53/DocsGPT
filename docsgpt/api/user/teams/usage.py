@@ -108,6 +108,38 @@ def _agents(conn, agent_ids: list[str]) -> dict[str, dict]:
     return {str(row["id"]): dict(row) for row in rows}
 
 
+def _shared_in(conn, team_id: str, agents: dict[str, dict]) -> dict[str, dict]:
+    """``agent_id -> {team_id, name}`` for the agents another team shares with this one (``shared_from``).
+
+    Their chats here are this team's spend; the agent stays the owning team's, so only its name is read.
+
+    Args:
+        conn: Open connection.
+        team_id: The receiving team.
+        agents: The agents on the list that this team doesn't own, by id.
+
+    Returns:
+        dict: The owning team of each agent shared with this team now, by id.
+    """
+    if not agents:
+        return {}
+    rows = conn.execute(
+        text(
+            "SELECT s.resource_id::text AS agent_id, s.owner_team_id::text AS owner_team_id, t.name "
+            "FROM team_item_shares s JOIN teams t ON t.id = s.owner_team_id "
+            "WHERE s.team_id = CAST(:team AS uuid) AND s.resource_type = 'agent' "
+            "AND s.resource_id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"team": team_id, "ids": list(agents)},
+    ).mappings().fetchall()
+    return {
+        row["agent_id"]: {"team_id": row["owner_team_id"], "name": row["name"]}
+        for row in rows
+        # Still that team's agent: a row left behind by a move names nobody.
+        if agents[row["agent_id"]].get("user_id") == principal_id(row["owner_team_id"])
+    }
+
+
 def _published_payer(agent: dict) -> Optional[str]:
     payer = published_access_payer(agent)
     return payer if payer and not is_principal_id(payer) else None
@@ -208,19 +240,26 @@ def team_usage_body(conn, team_id: str, period: str) -> dict:
     Returns:
         ``{success, period {kind, start, end, current}, totals {tokens, cost, people}, split {chats, runs},
         by_person [{user_id, label, role, tokens, cost}], by_agent [{agent_id, name, tokens, cost, requests,
-        people, limit_on, published, moved_out}], paused [...]}``. ``role`` is None for someone no longer in
-        the team; ``name`` None for an agent that can't be read or has moved out; ``published`` is
-        ``{paid_by}`` while the team's agent has outside access on, else None; ``moved_out`` is True for an
-        agent the team no longer owns, whose spend here stays but whose name, owner and payer now are
-        someone else's.
+        people, limit_on, published, moved_out, shared_from}], paused [...]}``. ``role`` is None for someone
+        no longer in the team; ``name`` None for an agent that can't be read or has moved out; ``published``
+        is ``{paid_by}`` while the team's agent has outside access on, else None; ``moved_out`` is True for
+        an agent the team no longer owns, whose spend here stays but whose name, owner and payer now are
+        someone else's. ``shared_from`` (``{team_id, name}``) marks another team's agent shared with this
+        team, whose members' chats count here: named, never moved out, its payer and limit not shown.
     """
     start, end = period_bounds(period)
     usage = TokenUsageRepository(conn).team_usage(team_id, start, end, limit=LIST_LIMIT)
     people = {row["user_id"] for row in usage["by_person"]}
     found = _agents(conn, [row["agent_id"] for row in usage["by_agent"]])
     principal = principal_id(team_id)
-    moved_out = {agent_id for agent_id, agent in found.items() if agent.get("user_id") != principal}
-    agents = {agent_id: agent for agent_id, agent in found.items() if agent_id not in moved_out}
+    shared_from = _shared_in(
+        conn, team_id, {agent_id: agent for agent_id, agent in found.items() if agent.get("user_id") != principal}
+    )
+    moved_out = {
+        agent_id for agent_id, agent in found.items()
+        if agent.get("user_id") != principal and agent_id not in shared_from
+    }
+    agents = {agent_id: agent for agent_id, agent in found.items() if agent.get("user_id") == principal}
     payers = {_published_payer(agent) for agent in agents.values() if access_on(agent)}
     labels = _user_labels(conn, people | {p for p in payers if p})
     roles = _roles_in_team(conn, team_id, people)
@@ -236,6 +275,13 @@ def team_usage_body(conn, team_id: str, period: str) -> dict:
     ]
     by_agent = []
     for row in usage["by_agent"]:
+        origin = shared_from.get(row["agent_id"])
+        if origin is not None:
+            by_agent.append({
+                **row, "moved_out": False, "name": found[row["agent_id"]].get("name"), "limit_on": False,
+                "published": None, "shared_from": origin,
+            })
+            continue
         agent = agents.get(row["agent_id"]) or {}
         by_agent.append({
             **row,
@@ -245,6 +291,7 @@ def team_usage_body(conn, team_id: str, period: str) -> dict:
             "published": (
                 {"paid_by": person_ref(_published_payer(agent), labels)} if agent and access_on(agent) else None
             ),
+            "shared_from": None,
         })
     return {
         "success": True,
