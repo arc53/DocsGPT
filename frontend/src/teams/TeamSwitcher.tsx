@@ -95,7 +95,7 @@ export default function TeamSwitcher({
     <TeamInitial name={workspace.name} className="mx-1" />
   ) : (
     <img
-      className="h-8 w-auto shrink-0"
+      className="h-6 w-auto shrink-0"
       src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
       alt={t('teams.switcher.logoAlt')}
     />
