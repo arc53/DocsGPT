@@ -283,7 +283,8 @@ class MovePlan:
         members: Everyone in the team (the owner included).
         blocking: Agents left behind that refuse the move (``borrowing_agents`` entries the mover can open).
         blocking_hidden: How many more refuse it that the mover can't open.
-        legacy_tools: An agent's tool refs that still name a tool by its Mongo id: ``old id -> uuid``.
+        legacy_tools: An agent's or node's tool refs that still name a tool by its Mongo id: ``old id -> uuid``.
+        legacy_sources: A node's source refs that still name a source by its Mongo id: ``old id -> uuid``.
     """
 
     body: dict
@@ -304,6 +305,7 @@ class MovePlan:
     blocking: list = field(default_factory=list)
     blocking_hidden: int = 0
     legacy_tools: dict = field(default_factory=dict)
+    legacy_sources: dict = field(default_factory=dict)
 
     def ids(self, kind: str) -> list[str]:
         """The ids of one kind that move, in plan order."""
@@ -431,6 +433,7 @@ class _Planner:
         self.stays: list[tuple[str, str]] = []
         self.dragged: list[tuple[str, str]] = []
         self.legacy_tools: dict[str, str] = {}
+        self.legacy_sources: dict[str, str] = {}
         # Folders that take every item filed in them: the dragged ones and their sub-folders.
         self.whole_folders: set[str] = set()
         self._queue: list[tuple[str, str]] = []
@@ -589,16 +592,17 @@ class _Planner:
                 self.whole_folders.update(FoldersRepository(self.conn).subtree_levels(key[1], self.old_owner))
 
     def _dependency(self, kind: str, item_id: str, via: tuple[str, str]) -> None:
-        if kind == "tool" and not looks_like_uuid(item_id):
-            # Installs migrated from Mongo may still name a tool by its old id: it is planned (and the agent's
-            # ref rewritten) as the tool it names, so it doesn't stay behind unresolvable.
-            tool_id = self.conn.execute(
-                text("SELECT id::text FROM user_tools WHERE lower(legacy_mongo_id) = :legacy LIMIT 1"),
+        if kind in ("tool", "source") and not looks_like_uuid(item_id):
+            # Installs migrated from Mongo may still name a tool or source by its old id: it is planned (and the
+            # agent's or node's ref rewritten) as the item it names, so it doesn't stay behind unresolvable.
+            legacy = self.legacy_tools if kind == "tool" else self.legacy_sources
+            uuid_id = self.conn.execute(
+                text(f"SELECT id::text FROM {_TABLES[kind]} WHERE lower(legacy_mongo_id) = :legacy LIMIT 1"),
                 {"legacy": item_id.lower()},
             ).scalar()
-            if tool_id:
-                self.legacy_tools[item_id] = tool_id
-                item_id = tool_id
+            if uuid_id:
+                legacy[item_id] = uuid_id
+                item_id = uuid_id
         key = (kind, item_id)
         self.referenced.add(key)
         if key in self.moving or not looks_like_uuid(item_id):
@@ -990,6 +994,7 @@ class _Planner:
             blocking=blocking,
             blocking_hidden=hidden,
             legacy_tools=self.legacy_tools,
+            legacy_sources=self.legacy_sources,
         )
 
 
@@ -1334,12 +1339,29 @@ class _Executor:
         for node_id, node_type, config in rows:
             if not isinstance(config, dict):
                 continue
-            stripped = transform(node_type, copy.deepcopy(config))
+            stripped = transform(node_type, self._uuid_node_refs(node_type, copy.deepcopy(config)))
             if stripped != config:
                 self.conn.execute(
                     text("UPDATE workflow_nodes SET config = CAST(:c AS jsonb) WHERE id = CAST(:i AS uuid)"),
                     {"c": json.dumps(stripped), "i": node_id},
                 )
+
+    def _uuid_node_refs(self, node_type: str, config: dict) -> dict:
+        """Rewrite an agent node's tool and source refs that name an item by its Mongo id to the item's uuid.
+
+        The strip that follows keeps only uuids, so an old id the plan resolved would otherwise be dropped.
+        """
+        if node_type != "agent":
+            return config
+        nested = config.get("config")
+        cfg = nested if isinstance(nested, dict) else config
+        for key, legacy in (("tools", self.plan.legacy_tools), ("sources", self.plan.legacy_sources)):
+            values = cfg.get(key)
+            if not values or not legacy:
+                continue
+            values = values if isinstance(values, list) else [values]
+            cfg[key] = [legacy.get(str(v).lower(), v) if v else v for v in values]
+        return config
 
     def _refile(self, in_moving_folder: set) -> None:
         target = self.plan.target_folder_id

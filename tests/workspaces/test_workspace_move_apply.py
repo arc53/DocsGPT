@@ -538,3 +538,49 @@ class TestLegacyToolRefs:
 
         assert owner_of(pg_conn, "tool", theirs) == "olga"
         assert _row(pg_conn, "agents", ag)["tools"] == []
+
+
+class TestLegacyNodeRefs:
+    """A migrated workflow's agent nodes may still name a tool or source by its Mongo id."""
+
+    def _legacy(self, conn, table, item_id, legacy) -> None:
+        conn.execute(text(f"UPDATE {table} SET legacy_mongo_id = :l WHERE id = CAST(:i AS uuid)"),
+                     {"l": legacy, "i": item_id})
+
+    def _node(self, conn, wid) -> dict:
+        return conn.execute(text("SELECT config FROM workflow_nodes WHERE workflow_id = CAST(:w AS uuid)"),
+                            {"w": wid}).scalar()["config"]
+
+    def test_the_items_move_and_the_node_names_them_by_uuid(self, pg_conn):
+        tid, principal = team(pg_conn)
+        tl, src = tool(pg_conn, "eddie"), source(pg_conn, "eddie")
+        self._legacy(pg_conn, "user_tools", tl, "65a1b2c3d4e5f60718293a50")
+        self._legacy(pg_conn, "sources", src, "65A1B2C3D4E5F60718293A51")
+        wid = workflow(pg_conn, "eddie", nodes=[{"config": {
+            "tools": ["65a1b2c3d4e5f60718293a50"], "sources": ["65A1B2C3D4E5F60718293A51"]}}])
+        ag = agent(pg_conn, "eddie", agent_type="workflow", workflow_id=wid)
+
+        planned = plan(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
+
+        moving = {(m["type"], m["id"]) for m in planned["moves_with"]}
+        assert {("tool", tl), ("source", src)} <= moving
+        assert owner_of(pg_conn, "tool", tl) == principal
+        assert owner_of(pg_conn, "source", src) == principal
+        cfg = self._node(pg_conn, wid)
+        assert (cfg["tools"], cfg["sources"]) == ([tl], [src])
+
+    def test_someone_elses_source_named_by_its_old_id_is_listed_and_taken_off(self, pg_conn):
+        tid, _ = team(pg_conn)
+        theirs = source(pg_conn, "olga")
+        self._legacy(pg_conn, "sources", theirs, "65a1b2c3d4e5f60718293a52")
+        wid = workflow(pg_conn, "eddie", nodes=[{"config": {"sources": ["65a1b2c3d4e5f60718293a52"]}}])
+        ag = agent(pg_conn, "eddie", agent_type="workflow", workflow_id=wid)
+
+        planned = plan(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
+
+        cannot = {(c["type"], c["id"]): c for c in planned["cannot_move"]}
+        assert cannot[("source", theirs)]["effect"] == "removed_from_holder"
+        assert owner_of(pg_conn, "source", theirs) == "olga"
+        assert self._node(pg_conn, wid)["sources"] == []
