@@ -134,6 +134,9 @@ teams_table = Table(
     Column("owner_id", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Who may take the team's items outside the team (migration 0065, ``docsgpt/workspaces/outside.py``).
+    Column("outside_policy", Text, nullable=False, server_default="admins"),
+    CheckConstraint("outside_policy IN ('admins', 'editors', 'locked')", name="teams_outside_policy_chk"),
 )
 
 Index("teams_owner_idx", teams_table.c.owner_id)
@@ -216,6 +219,38 @@ Index(
     team_resource_grants_table.c.resource_type,
     team_resource_grants_table.c.resource_id,
 )
+
+# A team's agent, source, tool or prompt shared with a whole other team (migration 0065). Separate from
+# ``team_resource_grants``, whose readers assume a person's item: a team's share outlives its sharer.
+# ``resource_id`` has no FK (polymorphic); triggers drop the rows when the item is deleted or re-owned.
+team_item_shares_table = Table(
+    "team_item_shares",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("owner_team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False),
+    Column("team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False),
+    Column("resource_type", Text, nullable=False),
+    Column("resource_id", UUID(as_uuid=True), nullable=False),
+    Column("shared_by", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("resource_type IN ('agent', 'source', 'tool', 'prompt')", name="team_item_shares_type_chk"),
+    CheckConstraint("owner_team_id <> team_id", name="team_item_shares_other_team_chk"),
+    CheckConstraint("left(shared_by, 8) <> '__team__'", name="team_item_shares_person_chk"),
+)
+
+Index(
+    "team_item_shares_team_resource_uidx",
+    team_item_shares_table.c.team_id,
+    team_item_shares_table.c.resource_type,
+    team_item_shares_table.c.resource_id,
+    unique=True,
+)
+Index(
+    "team_item_shares_resource_idx",
+    team_item_shares_table.c.resource_type,
+    team_item_shares_table.c.resource_id,
+)
+Index("team_item_shares_owner_team_idx", team_item_shares_table.c.owner_team_id)
 
 # Per-asset sharing switches set by the owner (migration 0038). A missing row
 # means every switch is at its default; keys are validated in

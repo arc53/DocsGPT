@@ -14,9 +14,12 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import like_escape, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.workspaces.principal import principal_id
+
+#: The outside policies a team may have (``docsgpt/workspaces/outside.py::POLICIES``).
+_OUTSIDE_POLICIES = ("admins", "editors", "locked")
 
 #: The item tables a team workspace owns, by kind (the counts of a refused delete).
 _ITEM_KINDS = {
@@ -232,6 +235,53 @@ class TeamsRepository:
             params,
         )
         return result.rowcount > 0
+
+    def get_outside_policy(self, team_id: str, *, lock: Optional[str] = None) -> Optional[str]:
+        """A team's outside policy as stored, or None for no such team.
+
+        Args:
+            team_id: The team.
+            lock: ``share`` or ``update`` to lock the team row until the transaction ends.
+
+        Returns:
+            Optional[str]: ``admins``, ``editors`` or ``locked``.
+        """
+        if not looks_like_uuid(str(team_id)):
+            return None
+        suffix = {"share": " FOR SHARE", "update": " FOR UPDATE"}.get(lock or "", "")
+        return self._conn.execute(
+            text(f"SELECT outside_policy FROM teams WHERE id = CAST(:id AS uuid){suffix}"), {"id": str(team_id)}
+        ).scalar()
+
+    def set_outside_policy(self, team_id: str, policy: str) -> Optional[str]:
+        """Set a team's outside policy (who may check is the caller's business).
+
+        Args:
+            team_id: The team.
+            policy: ``admins``, ``editors`` or ``locked``.
+
+        Returns:
+            Optional[str]: The policy before, or None when there is no such team.
+
+        Raises:
+            ValueError: An unknown policy.
+        """
+        if policy not in _OUTSIDE_POLICIES:
+            raise ValueError(f"not an outside policy: {policy!r}")
+        if not looks_like_uuid(str(team_id)):
+            return None
+        row = self._conn.execute(
+            text(
+                """
+                UPDATE teams t SET outside_policy = :policy
+                FROM (SELECT id, outside_policy FROM teams WHERE id = CAST(:id AS uuid) FOR UPDATE) before
+                WHERE t.id = before.id
+                RETURNING before.outside_policy
+                """
+            ),
+            {"id": str(team_id), "policy": policy},
+        ).fetchone()
+        return row[0] if row is not None else None
 
     def reassign_owner(self, team_id: str, new_owner_id: str) -> bool:
         """Transfer the deletion-anchor owner to another user (team_admin action)."""

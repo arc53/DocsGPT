@@ -461,3 +461,131 @@ def test_downgrade_clears_the_payer_reasons_and_the_attribution(pg_conn):
             _run(pg_conn, schedule, "payer_left", 10)
         migration.upgrade()
     _run(pg_conn, schedule, "payer_left", 11)
+
+
+# ---------------------------------------------------------------------------
+# Taking a team's items outside: the policy and shares with other teams
+# ---------------------------------------------------------------------------
+
+#: The item tables a team can share with another team, and the kind each one is.
+_SHAREABLE = {"agents": "agent", "sources": "source", "user_tools": "tool", "prompts": "prompt"}
+
+
+def _item(conn, table: str, owner: str) -> str:
+    """One row of ``table`` owned by ``owner``."""
+    sql = {
+        "agents": "INSERT INTO agents (user_id, name, status) VALUES (:u, 'A', 'draft') RETURNING id",
+        "sources": "INSERT INTO sources (user_id, name) VALUES (:u, 'S') RETURNING id",
+        "user_tools": "INSERT INTO user_tools (user_id, name) VALUES (:u, 'api_tool') RETURNING id",
+        "prompts": "INSERT INTO prompts (user_id, name, content) VALUES (:u, 'P', 'Be brief.') RETURNING id",
+    }[table]
+    return str(conn.execute(text(sql), {"u": owner}).scalar())
+
+
+def _share(conn, owner_team: str, team: str, kind: str, item: str, by: str = "alice") -> None:
+    conn.execute(
+        text(
+            "INSERT INTO team_item_shares (owner_team_id, team_id, resource_type, resource_id, shared_by) "
+            "VALUES (CAST(:o AS uuid), CAST(:t AS uuid), :k, CAST(:i AS uuid), :b)"
+        ),
+        {"o": owner_team, "t": team, "k": kind, "i": item, "b": by},
+    )
+
+
+def _shares(conn, item: str) -> int:
+    return conn.execute(
+        text("SELECT count(*) FROM team_item_shares WHERE resource_id = CAST(:i AS uuid)"), {"i": item}
+    ).scalar()
+
+
+def _functions(conn) -> set:
+    return {r[0] for r in conn.execute(text("SELECT proname FROM pg_proc"))}
+
+
+def _triggers(conn) -> set:
+    return {r[0] for r in conn.execute(text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal"))}
+
+
+def test_teams_take_items_outside_through_admins_by_default(pg_conn):
+    team = _team(pg_conn)
+    assert pg_conn.execute(
+        text("SELECT outside_policy FROM teams WHERE id = CAST(:t AS uuid)"), {"t": team}
+    ).scalar() == "admins"
+    for policy in ("editors", "locked", "admins"):
+        pg_conn.execute(
+            text("UPDATE teams SET outside_policy = :p WHERE id = CAST(:t AS uuid)"), {"p": policy, "t": team}
+        )
+    with pytest.raises(IntegrityError), pg_conn.begin_nested():
+        pg_conn.execute(
+            text("UPDATE teams SET outside_policy = 'everyone' WHERE id = CAST(:t AS uuid)"), {"t": team}
+        )
+
+
+def test_a_share_names_a_kind_another_team_and_a_person(pg_conn):
+    one, two = _team(pg_conn, "One"), _team(pg_conn, "Two")
+    item = str(uuid.uuid4())
+    _share(pg_conn, one, two, "source", item)
+    # One row per receiving team and item.
+    with pytest.raises(IntegrityError), pg_conn.begin_nested():
+        _share(pg_conn, one, two, "source", item, by="adam")
+    with pytest.raises(IntegrityError), pg_conn.begin_nested():
+        _share(pg_conn, one, two, "workflow", str(uuid.uuid4()))
+    with pytest.raises(IntegrityError), pg_conn.begin_nested():
+        _share(pg_conn, one, one, "source", str(uuid.uuid4()))
+    with pytest.raises(IntegrityError), pg_conn.begin_nested():
+        _share(pg_conn, one, two, "tool", str(uuid.uuid4()), by=f"__team__{one}")
+    assert {"team_item_shares_resource_idx", "team_item_shares_owner_team_idx"} <= _indexes(pg_conn)
+
+
+@pytest.mark.parametrize("which", ["owner", "receiver"])
+def test_a_share_goes_with_either_team(pg_conn, which):
+    one, two = _team(pg_conn, "One"), _team(pg_conn, "Two")
+    item = str(uuid.uuid4())
+    _share(pg_conn, one, two, "prompt", item)
+    pg_conn.execute(text("DELETE FROM teams WHERE id = CAST(:t AS uuid)"), {"t": one if which == "owner" else two})
+    assert _shares(pg_conn, item) == 0
+
+
+@pytest.mark.parametrize("table", list(_SHAREABLE))
+def test_deleting_or_moving_the_item_drops_its_shares(pg_conn, table):
+    kind = _SHAREABLE[table]
+    one, two = _team(pg_conn, "One"), _team(pg_conn, "Two")
+    principal = _principal(pg_conn, one)
+    deleted, moved, renamed = (_item(pg_conn, table, principal) for _ in range(3))
+    for item in (deleted, moved, renamed):
+        _share(pg_conn, one, two, kind, item)
+
+    pg_conn.execute(text(f"DELETE FROM {table} WHERE id = CAST(:i AS uuid)"), {"i": deleted})
+    # A move out re-owns the row: the team's shares of it end.
+    pg_conn.execute(text(f"UPDATE {table} SET user_id = 'alice' WHERE id = CAST(:i AS uuid)"), {"i": moved})
+    # Any other change, or a write that keeps the owner, leaves them.
+    pg_conn.execute(text(f"UPDATE {table} SET name = 'Renamed' WHERE id = CAST(:i AS uuid)"), {"i": renamed})
+    pg_conn.execute(text(f"UPDATE {table} SET user_id = user_id WHERE id = CAST(:i AS uuid)"), {"i": renamed})
+
+    assert (_shares(pg_conn, deleted), _shares(pg_conn, moved), _shares(pg_conn, renamed)) == (0, 0, 1)
+
+
+def test_upgrade_twice_and_downgrade_for_shares_and_the_policy(pg_conn):
+    one, two = _team(pg_conn, "One"), _team(pg_conn, "Two")
+    _share(pg_conn, one, two, "agent", str(uuid.uuid4()))
+    with _ops(pg_conn) as migration:
+        migration.upgrade()
+        migration.upgrade()
+        assert "outside_policy" in _columns(pg_conn, "teams")
+        assert pg_conn.execute(text("SELECT count(*) FROM team_item_shares")).scalar() == 1
+        assert {f"{t}_cleanup_team_item_shares" for t in _SHAREABLE} <= _triggers(pg_conn)
+        assert {f"{t}_reown_team_item_shares" for t in _SHAREABLE} <= _triggers(pg_conn)
+
+        migration.downgrade()
+        migration.downgrade()
+        assert "outside_policy" not in _columns(pg_conn, "teams")
+        assert "teams_outside_policy_chk" not in _constraints(pg_conn, "teams")
+        assert not _columns(pg_conn, "team_item_shares")
+        assert "cleanup_team_item_shares" not in _functions(pg_conn)
+        assert not {t for t in _triggers(pg_conn) if "team_item_shares" in t}
+
+        migration.upgrade()
+    assert pg_conn.execute(
+        text("SELECT outside_policy FROM teams WHERE id = CAST(:t AS uuid)"), {"t": one}
+    ).scalar() == "admins"
+    _share(pg_conn, one, two, "agent", str(uuid.uuid4()))
