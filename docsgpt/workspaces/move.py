@@ -40,9 +40,16 @@ What a move takes along, and what it can't:
   Moving out, a team agent left behind can't use a personal item at all, so
   any team agent that uses a moved item, or reads one through a folder it
   stays in, refuses the move.
-- Publishing in a team is an Admin's call, so bringing in an agent with
-  outside access takes a team Admin (403 ``move_needs_admin``); an Editor
-  turns its outside access off first, or asks an Admin.
+- Bringing in an agent with outside access takes the role the target team's
+  outside policy names for it: an Admin, or an Editor too under ``editors``
+  (403 ``move_needs_admin``); into a locked team nobody may (403
+  ``team_locked``), so its outside access is turned off first.
+- A locked team keeps its items in: moving them out is refused for everyone,
+  its Owner included (403 ``team_locked``).
+- An agent moving into a team keeps what another team shares with that team
+  (its source, tool or prompt is used through the share there), and the plan
+  lists those. Moving a team's item out drops its shares with other teams;
+  the plan lists those too.
 """
 
 from __future__ import annotations
@@ -85,13 +92,14 @@ from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.workspaces.context import PERSONAL, Workspace, WorkspaceError, require_workspace_role
 from docsgpt.workspaces.locks import lock_owner_items
-from docsgpt.workspaces.outside import team_policy
+from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_LOCKED, may_take_outside, team_policy
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
-from docsgpt.workspaces.roles import from_stored_role, role_at_least, role_rank, team_role_for
+from docsgpt.workspaces.roles import from_stored_role, role_rank, team_role_for
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +139,8 @@ ITEM_EVENTS = {"in": "team.item_moved_in", "out": "team.item_moved_out"}
 FOLDER_EVENTS = {"in": "team.folder_moved_in", "out": "team.folder_moved_out"}
 
 _ITEM_KINDS = ("agent", "source", "tool", "prompt")
+# What a team may use from another team through a share with it (an agent shared in is chatted with, not used).
+_SHARED_IN_KINDS = ("source", "tool", "prompt")
 _TABLES = {
     "agent": "agents", "source": "sources", "tool": "user_tools", "prompt": "prompts", "folder": "folders",
     "workflow": "workflows",
@@ -287,6 +297,8 @@ class MovePlan:
         blocking_hidden: How many more refuse it that the mover can't open.
         legacy_tools: An agent's or node's tool refs that still name a tool by its Mongo id: ``old id -> uuid``.
         legacy_sources: A node's source refs that still name a source by its Mongo id: ``old id -> uuid``.
+        shared_refs: Refs the moved agents keep because another team shares them with the target team:
+            ``(type, id) -> owning team id``.
     """
 
     body: dict
@@ -308,6 +320,7 @@ class MovePlan:
     blocking_hidden: int = 0
     legacy_tools: dict = field(default_factory=dict)
     legacy_sources: dict = field(default_factory=dict)
+    shared_refs: dict = field(default_factory=dict)
 
     def ids(self, kind: str) -> list[str]:
         """The ids of one kind that move, in plan order."""
@@ -436,6 +449,8 @@ class _Planner:
         self.dragged: list[tuple[str, str]] = []
         self.legacy_tools: dict[str, str] = {}
         self.legacy_sources: dict[str, str] = {}
+        self.shared_refs: dict[tuple[str, str], str] = {}
+        self.policy: Optional[str] = None
         # Folders that take every item filed in them: the dragged ones and their sub-folders.
         self.whole_folders: set[str] = set()
         self._queue: list[tuple[str, str]] = []
@@ -457,6 +472,7 @@ class _Planner:
                 raise MoveError(err.status, err.code, err.message) from err
             self.direction, self.team_id, self.role = "in", team_id, role
             self.old_owner, self.new_owner = mover, principal_id(team_id)
+            self.policy = team_policy(conn, team_id)
             return
         principal = None
         for kind, item_id in self.request.items:
@@ -472,8 +488,10 @@ class _Planner:
         role = team_role_for(conn, mover, team_id)
         if role is None:
             raise MoveError(404, "not_found", "Item not found")
+        self.policy = team_policy(conn, team_id)
         try:
-            FolderTree(principal, team_id, role, team_policy(conn, team_id)).require("move_out")
+            # A locked team keeps its items in (403 team_locked), whatever the mover's role.
+            FolderTree(principal, team_id, role, self.policy).require("move_out")
         except FolderError as err:
             raise MoveError(err.status, err.code, err.message) from err
         self.direction, self.team_id, self.role = "out", team_id, role
@@ -614,6 +632,11 @@ class _Planner:
             # A preset, a builtin tool, or a reference to something deleted.
             return
         if owner != self.old_owner:
+            shared_from = self._shared_into_target(kind, item_id, owner)
+            if shared_from is not None:
+                # The target team uses it through that share: the agent keeps it.
+                self.shared_refs[key] = shared_from
+                return
             self._cannot(key, CANT_NOT_YOURS, self._visible_name(kind, item_id))
             return
         row, reason = self._owned_candidate(kind, item_id)
@@ -623,6 +646,19 @@ class _Planner:
             self._cannot(key, reason, _Entry(kind, item_id, row).name)
             return
         self._add(kind, item_id, row, via, REASON_USED_BY_AGENT)
+
+    def _shared_into_target(self, kind: str, item_id: str, owner: str) -> Optional[str]:
+        """The team that shares this item with the target team, when moving in and it does; else None.
+
+        The share row must name the item's owning team, as reading it through the share does. A share
+        paused by its team's lock still counts, as it does for a team agent's save: the item just doesn't
+        run until that team unlocks.
+        """
+        owner_team = team_of_principal(owner)
+        if self.direction != "in" or kind not in _SHARED_IN_KINDS or owner_team is None:
+            return None
+        row = TeamItemSharesRepository(self.conn).get(self.team_id, kind, item_id)
+        return owner_team if row is not None and str(row.get("owner_team_id")) == owner_team else None
 
     def _expand_agent(self, entry: _Entry) -> None:
         conn, row, via = self.conn, entry.row, ("agent", entry.id)
@@ -903,14 +939,70 @@ class _Planner:
         blocking.sort(key=lambda a: (a["name"] or "", a["id"]))
         return listed, blocking, hidden
 
-    def _needs_admin(self) -> list[dict]:
-        """Moving agents with outside access, when the mover isn't an Admin of the target team."""
-        if self.direction != "in" or role_at_least(self.role, "admin"):
-            return []
+    def _outside_agents(self) -> list[dict]:
+        """Moving agents with outside access (a key, live link or webhook)."""
         return [
             {"id": e.id, "name": e.name} for e in self.moving.values()
             if e.kind == "agent" and has_outside_access(e.row)
         ]
+
+    def _needs_admin(self) -> list[dict]:
+        """Moving agents with outside access, when the target team's policy doesn't let the mover's role bring it.
+
+        A locked target is :meth:`_team_locked_agents`: there no role may, so asking an Admin wouldn't help.
+        """
+        if self.direction != "in" or self.policy == POLICY_LOCKED or may_take_outside(self.role, self.policy):
+            return []
+        return self._outside_agents()
+
+    def _team_locked_agents(self) -> list[dict]:
+        """Moving agents with outside access, when the target team is locked."""
+        if self.direction != "in" or self.policy != POLICY_LOCKED:
+            return []
+        return self._outside_agents()
+
+    def _shared_refs(self) -> list[dict]:
+        """The refs the moved agents keep through a share with the target team, with the team sharing each."""
+        by_kind: dict[str, list[str]] = {}
+        for kind, item_id in self.shared_refs:
+            by_kind.setdefault(kind, []).append(item_id)
+        names = {kind: _names(self.conn, kind, ids) for kind, ids in by_kind.items()}
+        teams = TeamsRepository(self.conn)
+        team_names = {t: (teams.get(t) or {}).get("name") for t in set(self.shared_refs.values())}
+        out = [
+            {"type": kind, "id": item_id, "name": names[kind].get(item_id),
+             "shared_from": {"team_id": team, "name": team_names[team]}}
+            for (kind, item_id), team in self.shared_refs.items()
+        ]
+        return sorted(out, key=lambda r: (r["type"], r["name"] or "", r["id"]))
+
+    def _dropped_shares(self) -> list[dict]:
+        """Moving out: the team's shares of the moving items with other teams, which the move ends."""
+        if self.direction != "out":
+            return []
+        out: list[dict] = []
+        for kind in _ITEM_KINDS:
+            ids = self.ids(kind)
+            if not ids:
+                continue
+            rows = self.conn.execute(
+                text(
+                    """
+                    SELECT s.resource_id::text, s.team_id::text, t.name FROM team_item_shares s
+                    JOIN teams t ON t.id = s.team_id
+                    WHERE s.owner_team_id = CAST(:owner AS uuid) AND s.resource_type = :k
+                      AND s.resource_id = ANY(CAST(:ids AS uuid[]))
+                    ORDER BY t.name, s.team_id, s.resource_id
+                    """
+                ),
+                {"owner": self.team_id, "k": kind, "ids": ids},
+            ).fetchall()
+            out.extend(
+                {"type": kind, "id": item_id, "name": self.moving[(kind, item_id)].name,
+                 "team_id": team_id, "team_name": name}
+                for item_id, team_id, name in rows
+            )
+        return out
 
     def _chats(self) -> int:
         """How many of the mover's own chats with the moving agents switch workspace."""
@@ -972,6 +1064,9 @@ class _Planner:
             "borrowing_agents": borrowing,
             "borrowing_others": hidden,
             "needs_admin": self._needs_admin(),
+            "team_locked_agents": self._team_locked_agents(),
+            "shared_refs": self._shared_refs(),
+            "dropped_shares": self._dropped_shares(),
             "conversations_switched": self._chats(),
             "renames": renames,
         }
@@ -997,6 +1092,7 @@ class _Planner:
             blocking_hidden=hidden,
             legacy_tools=self.legacy_tools,
             legacy_sources=self.legacy_sources,
+            shared_refs=self.shared_refs,
         )
 
 
@@ -1072,8 +1168,9 @@ def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
 
     Raises:
         MoveError: Everything :func:`plan_move` raises; 400 ``fingerprint_required`` or ``nothing_to_move``;
-            403 ``move_needs_admin`` (with ``agents``: moving agents with outside access, the mover below
-            Admin); 409 ``move_plan_changed`` (with ``plan``, the fresh one), ``move_would_borrow`` (with
+            403 ``move_needs_admin`` (with ``agents``: moving agents with outside access, the mover's role
+            below what the target team's policy asks) or ``team_locked`` (with ``agents``: the same, into a
+            locked team; or anything moving out of one); 409 ``move_plan_changed`` (with ``plan``, the fresh one), ``move_would_borrow`` (with
             ``agents`` and ``others``, a count of those the mover can't open) or ``credentials_unreadable``
             (with ``tools``). Any other error rolls the whole move back and propagates.
     """
@@ -1088,17 +1185,29 @@ def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
         # The folder service's lock on each tree, taken before planning: a folder created in a moving one
         # meanwhile is either planned along or finds its parent gone, never left behind under a team's.
         folders.lock_tree(owner)
+    for owner in sides:
+        # Each team's outside policy, held until the move commits: a lock set meanwhile either lands first
+        # (and the plan refuses) or waits for the move.
+        if (team_id := team_of_principal(owner)) is not None:
+            team_policy(conn, team_id, lock="share")
     with conn.begin_nested():
         plan = plan_move(conn, mover, request)
         if plan.body["fingerprint"] != request.fingerprint:
             raise MoveError(409, CODE_PLAN_CHANGED, "Something changed since the plan was made. Check the new plan.",
                             plan=plan.body)
+        locked_out = plan.body.get("team_locked_agents") or []
+        if locked_out:
+            names = ", ".join(f'"{a["name"]}"' for a in locked_out)
+            raise MoveError(403, CODE_TEAM_LOCKED,
+                            f"{names} can be reached from outside (a key, public link or webhook), and this team "
+                            "is locked: nothing in it is reached from outside. Turn that off first.",
+                            agents=locked_out)
         needs_admin = plan.body.get("needs_admin") or []
         if needs_admin:
             names = ", ".join(f'"{a["name"]}"' for a in needs_admin)
             raise MoveError(403, CODE_NEEDS_ADMIN,
-                            f"{names} can be reached from outside (a key, public link or webhook), and only a "
-                            "team Admin brings outside access into a team. Turn it off first, or ask an Admin.",
+                            f"{names} can be reached from outside (a key, public link or webhook), and your role "
+                            "in this team doesn't bring outside access in. Turn it off first, or ask an Admin.",
                             agents=needs_admin)
         if plan.blocking or plan.blocking_hidden:
             raise MoveError(409, CODE_WOULD_BORROW,
@@ -1323,9 +1432,12 @@ class _Executor:
             )
 
     def _kept(self, kind: str, item_id: Any) -> bool:
-        """Whether an agent may keep a reference: the new owner's, or nobody's (a preset, a builtin tool)."""
+        """Whether an agent may keep a reference: the new owner's, nobody's (a preset, a builtin tool), or one
+        the plan keeps because another team shares it with the target team."""
         value = str(item_id or "").lower()
         if not looks_like_uuid(value):
+            return True
+        if (kind, value) in self.plan.shared_refs:
             return True
         owner = resource_owner(self.conn, kind, value)
         return owner is None or owner == self.new
@@ -1378,12 +1490,40 @@ class _Executor:
         for node_id, node_type, config in rows:
             if not isinstance(config, dict):
                 continue
-            stripped = transform(node_type, self._uuid_node_refs(node_type, copy.deepcopy(config)))
+            prepared = self._uuid_node_refs(node_type, copy.deepcopy(config))
+            before = copy.deepcopy(prepared)
+            stripped = self._keep_shared(node_type, before, transform(node_type, prepared))
             if stripped != config:
                 self.conn.execute(
                     text("UPDATE workflow_nodes SET config = CAST(:c AS jsonb) WHERE id = CAST(:i AS uuid)"),
                     {"c": json.dumps(stripped), "i": node_id},
                 )
+
+    def _keep_shared(self, node_type: str, before: dict, after: dict) -> dict:
+        """Put back an agent node's refs the plan keeps through a share; the strip keeps only the new owner's.
+
+        Args:
+            node_type: The node's type.
+            before: The node config before the strip.
+            after: The stripped config (changed in place).
+
+        Returns:
+            dict: ``after``, with each kept ref in its first place.
+        """
+        if node_type != "agent" or not self.plan.shared_refs:
+            return after
+        cfg_before = before.get("config") if isinstance(before.get("config"), dict) else before
+        cfg_after = after.get("config") if isinstance(after.get("config"), dict) else after
+        for key, kind in (("tools", "tool"), ("sources", "source")):
+            values = cfg_before.get(key)
+            values = values if isinstance(values, list) else [values] if values else []
+            if not any((kind, str(v).lower()) in self.plan.shared_refs for v in values if v):
+                continue
+            stayed = {str(v) for v in cfg_after.get(key) or []}
+            cfg_after[key] = [
+                str(v) for v in values if v and (str(v) in stayed or (kind, str(v).lower()) in self.plan.shared_refs)
+            ]
+        return after
 
     def _uuid_node_refs(self, node_type: str, config: dict) -> dict:
         """Rewrite an agent node's tool and source refs that name an item by its Mongo id to the item's uuid.
