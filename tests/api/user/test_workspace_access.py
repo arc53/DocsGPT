@@ -49,22 +49,22 @@ EXPECTED = {
     "agent": {
         "viewer": {"use", "pin"},
         "editor": {"view", "edit", "edit_policy", "view_logs", "manage_schedules", "export", "move_folder"},
-        "admin": {"publish", "manage_access_details", "delete", "move_out"},
+        "admin": {"publish", "manage_access_details", "share_outside", "delete", "move_out"},
     },
     "source": {
         "viewer": {"use", "view_config"},
         "editor": {"edit", "move_folder"},
-        "admin": {"reconnect", "delete", "move_out"},
+        "admin": {"reconnect", "share_outside", "delete", "move_out"},
     },
     "tool": {
         "viewer": {"use", "use_in_own"},
         "editor": {"edit", "edit_credentials", "move_folder"},
-        "admin": {"delete", "move_out"},
+        "admin": {"share_outside", "delete", "move_out"},
     },
     "prompt": {
         "viewer": {"use", "duplicate"},
         "editor": {"edit", "move_folder"},
-        "admin": {"delete", "move_out"},
+        "admin": {"share_outside", "delete", "move_out"},
     },
 }
 
@@ -321,7 +321,7 @@ class TestPayload:
 
     def test_payload_for_lists(self):
         tid = str(uuid.uuid4())
-        team = payload_for("prompt", None, None, team_id=tid, team_role="owner")
+        team = payload_for("prompt", None, None, team_id=tid, team_role="owner", policy="admins")
         assert team["access"] == "admin"
         assert team["team_role"] == "owner"
         assert team["origin"] == "team"
@@ -332,7 +332,7 @@ class TestPayload:
         assert "move_to_team" in personal["allowed_actions"]
         assert payload_for("prompt", "viewer", {})["origin"] == "shared"
         # No role in the team, no actions: fails closed.
-        assert payload_for("prompt", None, None, team_id=tid, team_role=None)["allowed_actions"] == []
+        assert payload_for("prompt", None, None, team_id=tid, team_role=None, policy="admins")["allowed_actions"] == []
 
 
 class TestSponsorsOnTeamHolders:

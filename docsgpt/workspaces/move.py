@@ -89,6 +89,7 @@ from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.workspaces.context import PERSONAL, Workspace, WorkspaceError, require_workspace_role
 from docsgpt.workspaces.locks import lock_owner_items
+from docsgpt.workspaces.outside import team_policy
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 from docsgpt.workspaces.roles import from_stored_role, role_at_least, role_rank, team_role_for
 
@@ -472,7 +473,7 @@ class _Planner:
         if role is None:
             raise MoveError(404, "not_found", "Item not found")
         try:
-            FolderTree(principal, team_id, role).require("move_out")
+            FolderTree(principal, team_id, role, team_policy(conn, team_id)).require("move_out")
         except FolderError as err:
             raise MoveError(err.status, err.code, err.message) from err
         self.direction, self.team_id, self.role = "out", team_id, role
@@ -1243,7 +1244,10 @@ class _Executor:
                 image = copied
             payer = None
             if self.plan.direction == "in" and has_outside_access(row):
-                ra = build_team("agent", agent_id, self.new, self.plan.role)
+                ra = build_team(
+                    "agent", agent_id, self.new, self.plan.role,
+                    policy=team_policy(self.conn, team_of_principal(self.new)),
+                )
                 # The mover pays for the outside access they bring in, whatever the row recorded before.
                 fresh = {**row, "access_payer_id": None}
                 payer = access_payer_fields(ra, fresh, self.plan.mover, turning_on=True).get("access_payer_id")

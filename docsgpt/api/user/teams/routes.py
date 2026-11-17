@@ -42,7 +42,6 @@ from sqlalchemy import text
 from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.api.user.resource_access import (
     RESOURCE_TYPES,
-    WORKSPACE_ACTIONS,
     AccessDenied,
     ResourceAccess,
     build,
@@ -52,6 +51,7 @@ from docsgpt.api.user.resource_access import (
     resource_owner,
     set_settings,
     settings_many,
+    workspace_minimum,
 )
 from docsgpt.api.user.team_authz import (
     has_team_role,
@@ -79,6 +79,7 @@ from docsgpt.storage.db.repositories.teams import TeamNotEmpty, TeamsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.outside import team_policy
 from docsgpt.workspaces.principal import is_principal_id, principal_id
 from docsgpt.workspaces.roles import (
     from_stored_role,
@@ -425,8 +426,9 @@ def _paused_by_change(conn, team_id: str, member: str, before: str | None, after
     """What a membership change pauses of what ``member`` pays for in the team.
 
     A schedule pauses when its setter drops below the role that manages
-    schedules, outside access when its payer drops below the role that
-    manages access details; whatever was paused already is not counted again.
+    schedules, outside access when its payer drops below the role the team's
+    outside policy gives access details to; whatever was paused already (all
+    outside access of a locked team) is not counted again.
 
     Args:
         conn: Open connection.
@@ -439,10 +441,11 @@ def _paused_by_change(conn, team_id: str, member: str, before: str | None, after
         ``{"schedules": n, "outside_access": n}``.
     """
     counts = pays_for(conn, team_id, [member])[member]
+    policy = team_policy(conn, team_id)
     paused = {}
     for key, action in (("schedules", "manage_schedules"), ("outside_access", "manage_access_details")):
-        needed = WORKSPACE_ACTIONS["agent"][action]
-        lost = role_at_least(before, needed) and not role_at_least(after, needed)
+        needed = workspace_minimum("agent", action, policy=policy)
+        lost = needed is not None and role_at_least(before, needed) and not role_at_least(after, needed)
         paused[key] = counts[key] if lost else 0
     return paused
 

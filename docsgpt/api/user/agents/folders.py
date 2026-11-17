@@ -130,7 +130,9 @@ class AgentFolder(Resource):
                     agent = row._mapping
                     aid = str(agent["id"])
                     if tree.is_team:
-                        access = payload_for("agent", None, None, team_id=tree.team_id, team_role=tree.role)
+                        access = payload_for(
+                            "agent", None, None, team_id=tree.team_id, team_role=tree.role, policy=tree.policy
+                        )
                     else:
                         access = payload_for(
                             "agent", "owner" if agent["user_id"] == user else team.get(aid), switches[aid]

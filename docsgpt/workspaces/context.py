@@ -20,6 +20,7 @@ from flask import Response, g, has_request_context, jsonify, make_response, requ
 from sqlalchemy import Connection
 
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.outside import team_policy
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least, team_role_for
 
@@ -59,12 +60,16 @@ class Workspace:
         owner_id: Who owns items created here: the caller in Personal, the team's principal in a team.
         role: The caller's role: ``owner`` in Personal; ``owner``, ``admin``, ``editor`` or ``viewer`` in a
             team; None for a team principal acting as itself.
+        outside_policy: The team's outside policy (``admins``, ``editors`` or ``locked``,
+            ``docsgpt/workspaces/outside.py``), read with the membership; None in Personal. Team
+            action checks raise without it, so a Workspace built by hand for a team must name it.
     """
 
     kind: str
     team_id: Optional[str]
     owner_id: str
     role: Optional[str]
+    outside_policy: Optional[str] = None
 
     @property
     def is_personal(self) -> bool:
@@ -121,14 +126,20 @@ def _caller() -> Optional[str]:
 def _resolve(conn: Connection, caller: str, ref: Optional[str]) -> Workspace:
     if is_principal_id(caller):
         # A run acting as a team (an agent key) works in that team only, whatever it sends.
-        return Workspace(kind="team", team_id=team_of_principal(caller), owner_id=caller, role=None)
+        team_id = team_of_principal(caller)
+        return Workspace(
+            kind="team", team_id=team_id, owner_id=caller, role=None, outside_policy=team_policy(conn, team_id)
+        )
     if ref is None:
         return Workspace(kind=PERSONAL, team_id=None, owner_id=caller, role="owner")
     team_id = canonical_team_id(ref)
     role = team_role_for(conn, caller, team_id) if team_id else None
     if role is None:
         raise WorkspaceError(404, "workspace_not_found", "Workspace not found")
-    return Workspace(kind="team", team_id=team_id, owner_id=principal_id(team_id), role=role)
+    return Workspace(
+        kind="team", team_id=team_id, owner_id=principal_id(team_id), role=role,
+        outside_policy=team_policy(conn, team_id),
+    )
 
 
 def current_workspace(conn: Optional[Connection] = None) -> Workspace:

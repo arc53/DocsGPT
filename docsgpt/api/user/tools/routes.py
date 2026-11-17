@@ -983,7 +983,10 @@ class GetTools(Resource):
                 # Compat: today's UI reads a team row like a shared one (secrets stripped, owner named).
                 shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
                 shaped["team_access"] = team_access_compat(workspace.role)
-                shaped.update(payload_for("tool", None, None, team_id=workspace.team_id, team_role=workspace.role))
+                shaped.update(payload_for(
+                    "tool", None, None, team_id=workspace.team_id, team_role=workspace.role,
+                    policy=workspace.outside_policy,
+                ))
                 # ``status`` is nobody's switch on a team tool: each member has their own.
                 shaped["in_chat"] = prefs.get(tid, False)
                 shaped["owner_label"] = owner_labels.get(row.get("user_id"))

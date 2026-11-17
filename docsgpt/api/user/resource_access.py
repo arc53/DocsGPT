@@ -23,7 +23,15 @@ role in that team decides (``WORKSPACE_ACTIONS``), switches don't apply, and
 grants are never consulted, so a non-member gets nothing whatever grant rows
 exist. Its ``access`` is ``viewer``, ``editor`` or ``admin`` (the team Owner
 included), never ``owner``, so every ``access == "owner"`` check keeps
-meaning "the person who owns the row".
+meaning "the person who owns the row". The team's outside policy
+(``docsgpt/workspaces/outside.py``) moves the actions that take items outside
+the team between Admin and Editor, or takes them from everyone.
+
+A team may share an item with a whole other team (``team_item_shares``). A
+person in the receiving team who has no role in the owning team, or the
+receiving team's principal, then gets the receiver's fixed actions
+(``outside.RECEIVER_ACTIONS``: use it, nothing more) while the share is live:
+the owning team isn't locked and still owns the item.
 """
 
 from __future__ import annotations
@@ -42,11 +50,19 @@ from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
 from docsgpt.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
 )
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.workspaces.outside import (
+    POLICY_LOCKED,
+    RECEIVER_ACTIONS,
+    cached_policies,
+    outside_minimum,
+    team_policy,
+)
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least, team_role_for
 
@@ -108,10 +124,12 @@ ACTIONS: dict[str, dict[str, str]] = {
     },
 }
 
-# Weakest *team* role per action on an item a team workspace owns.
+# Weakest *team* role per action on an item a team workspace owns, under the default outside
+# policy (``admins``); ``workspace_role_table`` applies the team's actual policy.
 # The Owner ranks above Admin and so has every row. There are no switches here, and no ``share``
-# or ``manage_settings``: a team item has no per-item people. ``folder`` is the team's one
-# folder tree (``docsgpt/api/user/folders``); ``resolve`` doesn't serve it.
+# or ``manage_settings``: a team item has no per-item people, only whole-team shares with another
+# team (``share_outside``). ``folder`` is the team's one folder tree (``docsgpt/api/user/folders``);
+# ``resolve`` doesn't serve it.
 WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
     "agent": {
         "use": "viewer",
@@ -123,8 +141,9 @@ WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
         "manage_schedules": "editor",
         "export": "editor",
         "move_folder": "editor",  # file it in the team's tree
-        "publish": "admin",  # outward exposure belongs to the team
-        "manage_access_details": "admin",
+        "publish": "admin",  # outward exposure: follows the outside policy
+        "manage_access_details": "admin",  # key, widget, public link, webhook: follows the outside policy
+        "share_outside": "admin",  # share with another team: follows the outside policy
         "delete": "admin",
         "move_out": "admin",  # to the acting Admin's Personal
     },
@@ -134,6 +153,7 @@ WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
         "edit": "editor",
         "move_folder": "editor",
         "reconnect": "admin",
+        "share_outside": "admin",
         "delete": "admin",
         "move_out": "admin",
     },
@@ -143,6 +163,7 @@ WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
         "edit": "editor",
         "edit_credentials": "editor",
         "move_folder": "editor",
+        "share_outside": "admin",
         "delete": "admin",
         "move_out": "admin",
     },
@@ -151,6 +172,7 @@ WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
         "duplicate": "viewer",
         "edit": "editor",
         "move_folder": "editor",
+        "share_outside": "admin",
         "delete": "admin",
         "move_out": "admin",
     },
@@ -165,8 +187,18 @@ WORKSPACE_ACTIONS: dict[str, dict[str, str]] = {
     },
 }
 
+# Actions whose weakest role is the outside policy's (``outside.outside_minimum``).
+_POLICY_ACTIONS = ("publish", "manage_access_details", "share_outside")
+
+# What a locked team takes from everyone, its Owner included. ``publish`` stays with Admins: a
+# draft can still go live for the team's members, it just never gets a key.
+_LOCKED_REMOVES = ("manage_access_details", "share_outside", "move_out", "export")
+
 # The ``access`` a team role gives on a team item: never ``owner`` (that stays the row's person-owner).
 _TEAM_ACCESS = {"owner": "admin", "admin": "admin", "editor": "editor", "viewer": "viewer"}
+
+# The ``access`` of a team that receives a share: view-level, whatever role its members hold.
+_RECEIVER_ACCESS = "viewer"
 
 
 @dataclass(frozen=True)
@@ -268,17 +300,74 @@ def team_access_level(team_role: Optional[str]) -> Optional[str]:
     return _TEAM_ACCESS.get(team_role or "")
 
 
-def workspace_allowed_actions(resource_type: str, team_role: Optional[str]) -> set[str]:
+def _require_policy(policy: Optional[str]) -> str:
+    """``policy``, or a ValueError: a team's actions are never read without the team's outside policy."""
+    if not policy:
+        raise ValueError("a team item's actions need the team's outside policy (policy=...)")
+    return policy
+
+
+def workspace_role_table(resource_type: str, *, policy: Optional[str]) -> dict[str, str]:
+    """``action -> weakest team role`` on a team item (or folder) under the team's outside policy.
+
+    Args:
+        resource_type: ``agent``, ``source``, ``tool``, ``prompt`` or ``folder``.
+        policy: The owning team's outside policy (``Workspace.outside_policy``, ``outside.team_policy``).
+            An unknown value reads as ``locked``.
+
+    Returns:
+        dict[str, str]: Empty for an unknown type. An action nobody may do under the policy is absent.
+
+    Raises:
+        ValueError: No policy given.
+    """
+    policy = _require_policy(policy)
+    table = dict(WORKSPACE_ACTIONS.get(resource_type) or {})
+    minimum = outside_minimum(policy)
+    if minimum is None:
+        for action in _LOCKED_REMOVES:
+            table.pop(action, None)
+    else:
+        for action in _POLICY_ACTIONS:
+            if action in table:
+                table[action] = minimum
+    return table
+
+
+def workspace_minimum(resource_type: str, action: str, *, policy: Optional[str]) -> Optional[str]:
+    """The weakest team role that may do ``action`` on a team item under the policy.
+
+    Args:
+        resource_type: ``agent``, ``source``, ``tool``, ``prompt`` or ``folder``.
+        action: The action.
+        policy: The owning team's outside policy.
+
+    Returns:
+        Optional[str]: The role, or None when nobody may (locked, or no such action).
+
+    Raises:
+        ValueError: No policy given.
+    """
+    return workspace_role_table(resource_type, policy=policy).get(action)
+
+
+def workspace_allowed_actions(
+    resource_type: str, team_role: Optional[str], *, policy: Optional[str] = None
+) -> set[str]:
     """The actions a team role may perform on an item (or folder) a team workspace owns.
 
     Args:
         resource_type: ``agent``, ``source``, ``tool``, ``prompt`` or ``folder``.
         team_role: The caller's role in the owning team, or None.
+        policy: The owning team's outside policy; required.
 
     Returns:
         set[str]: Empty for no role, an unknown role or an unknown type.
+
+    Raises:
+        ValueError: No policy given, so a call that forgets it fails instead of allowing.
     """
-    table = WORKSPACE_ACTIONS.get(resource_type)
+    table = workspace_role_table(resource_type, policy=policy)
     if not table or team_access_level(team_role) is None:
         return set()
     return {action for action, minimum in table.items() if role_at_least(team_role, minimum)}
@@ -301,6 +390,32 @@ def _access_payload(
         "team_role": team_role,
         "origin": origin,
     }
+
+
+def receiver_payload(
+    resource_type: str, via_team_id: str, owner_team_id: Optional[str], owner_team_name: Optional[str]
+) -> dict:
+    """The access fields of a team item as a team it was shared with sees it.
+
+    It lives in the receiving team's workspace (``workspace``), comes from the owning team
+    (``shared_from``) and carries the receiver's fixed actions; no team role.
+
+    Args:
+        resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
+        via_team_id: The receiving team.
+        owner_team_id: The team that owns and shared it.
+        owner_team_name: That team's name.
+
+    Returns:
+        dict: ``access``, ``allowed_actions``, ``workspace``, ``team_role`` (None), ``origin``
+        (``team_shared``) and ``shared_from`` (``{team_id, name}``).
+    """
+    payload = _access_payload(
+        _RECEIVER_ACCESS, RECEIVER_ACTIONS.get(resource_type, ()), str(via_team_id), None
+    )
+    payload["origin"] = "team_shared"
+    payload["shared_from"] = {"team_id": owner_team_id, "name": owner_team_name}
+    return payload
 
 
 def public_settings(resource_type: str, settings: Optional[dict]) -> list[dict]:
@@ -405,6 +520,9 @@ class ResourceAccess:
         team_id: The owning team, for a team item; None for a personal one.
         team_role: The caller's role in that team (``owner``, ``admin``, ``editor``, ``viewer``), for
             a team item reached through membership; None otherwise.
+        via_team_id: For a team item reached through a share with another team, that receiving
+            team; None otherwise. ``team_id`` stays the owning team.
+        owner_team_name: The owning team's name, for such a share (``shared_from``).
     """
 
     resource_type: str
@@ -415,6 +533,8 @@ class ResourceAccess:
     actions: frozenset = frozenset()
     team_id: Optional[str] = None
     team_role: Optional[str] = None
+    via_team_id: Optional[str] = None
+    owner_team_name: Optional[str] = None
 
     def can(self, action: str) -> bool:
         return action in self.actions
@@ -429,8 +549,12 @@ class ResourceAccess:
 
         Returns:
             dict: ``access``, ``allowed_actions``, ``workspace`` (``{kind, team_id}``), ``team_role``
-            and ``origin`` (``own``, ``team`` or ``shared``).
+            and ``origin`` (``own``, ``team`` or ``shared``). An item reached through a share with
+            another team lives in that receiving team's workspace, with ``origin`` ``team_shared``
+            and ``shared_from`` (:func:`receiver_payload`).
         """
+        if self.via_team_id:
+            return receiver_payload(self.resource_type, self.via_team_id, self.team_id, self.owner_team_name)
         return _access_payload(self.access, self.actions, self.team_id, self.team_role)
 
 
@@ -448,7 +572,7 @@ def build(resource_type: str, resource_id: str, access: str, owner_id: str, sett
 
 
 def build_team(
-    resource_type: str, resource_id: str, owner_id: str, team_role: Optional[str]
+    resource_type: str, resource_id: str, owner_id: str, team_role: Optional[str], *, policy: Optional[str] = None
 ) -> Optional[ResourceAccess]:
     """A :class:`ResourceAccess` for a team item from the caller's role (team list endpoints).
 
@@ -457,10 +581,15 @@ def build_team(
         resource_id: The item's id.
         owner_id: The item's ``user_id``: the team's principal.
         team_role: The caller's role in the team (``Workspace.role``).
+        policy: The team's outside policy (``Workspace.outside_policy``); required.
 
     Returns:
         Optional[ResourceAccess]: None when ``owner_id`` is not a principal or the role gives nothing.
+
+    Raises:
+        ValueError: No policy given.
     """
+    _require_policy(policy)
     team_id = team_of_principal(owner_id)
     access = team_access_level(team_role)
     if team_id is None or access is None:
@@ -471,7 +600,7 @@ def build_team(
         access=access,
         owner_id=owner_id,
         settings={},
-        actions=frozenset(workspace_allowed_actions(resource_type, team_role)),
+        actions=frozenset(workspace_allowed_actions(resource_type, team_role, policy=policy)),
         team_id=team_id,
         team_role=team_role,
     )
@@ -484,13 +613,15 @@ def payload_for(
     *,
     team_id: Optional[str] = None,
     team_role: Optional[str] = None,
+    policy: Optional[str] = None,
 ) -> dict:
     """The access fields of an item payload without a lookup (list endpoints).
 
     For a personal item pass the caller's ``access`` and the item's switches.
-    For a team item pass ``team_id`` and the caller's ``team_role``
-    (``Workspace.role``); ``access`` and ``settings`` are then ignored, since
-    the role decides and switches don't apply.
+    For a team item pass ``team_id``, the caller's ``team_role``
+    (``Workspace.role``) and the team's ``policy`` (``Workspace.outside_policy``);
+    ``access`` and ``settings`` are then ignored, since the role decides and
+    switches don't apply.
 
     Args:
         resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
@@ -498,13 +629,18 @@ def payload_for(
         settings: The item's stored switches (personal items).
         team_id: The owning team, for a team item.
         team_role: The caller's role in that team.
+        policy: That team's outside policy; required with ``team_id``.
 
     Returns:
         dict: See :meth:`ResourceAccess.payload`.
+
+    Raises:
+        ValueError: ``team_id`` without ``policy``.
     """
     if team_id:
         level = team_access_level(team_role)
-        return _access_payload(level, workspace_allowed_actions(resource_type, team_role), str(team_id), team_role)
+        actions = workspace_allowed_actions(resource_type, team_role, policy=policy)
+        return _access_payload(level, actions, str(team_id), team_role)
     return _access_payload(access, allowed_actions(resource_type, access, settings), None, None)
 
 
@@ -522,7 +658,8 @@ def cached_resolves():
     """
     token = _RESOLVE_CACHE.set({})
     try:
-        yield
+        with cached_policies():
+            yield
     finally:
         _RESOLVE_CACHE.reset(token)
 
@@ -563,20 +700,92 @@ def resource_owner(conn: Connection, resource_type: str, resource_id: Optional[s
     ).scalar()
 
 
+def _live_shares(
+    conn: Connection, user_id: str, resource_type: str, resource_id: str, owner_team_id: str
+) -> list[dict]:
+    """The live shares of a team's item that reach ``user_id``, oldest first.
+
+    Live: the row names the item's current owning team, and that team isn't locked (a lock
+    pauses its shares; unlocking brings them back with nothing written). A person is reached
+    through any team they are in; a team's principal only through its own team. Who shared it,
+    and whether they are still in either team, doesn't matter.
+    """
+    if resource_type not in RECEIVER_ACTIONS:
+        return []
+    repo = TeamItemSharesRepository(conn)
+    if is_principal_id(user_id):
+        own_team = team_of_principal(user_id)
+        rows = [r for r in repo.teams_for(resource_type, resource_id) if str(r.get("team_id")) == own_team]
+    else:
+        rows = repo.reaching(user_id, resource_type, resource_id)
+    rows = [r for r in rows if str(r.get("owner_team_id")) == owner_team_id]
+    if not rows or team_policy(conn, owner_team_id) == POLICY_LOCKED:
+        return []
+    return rows
+
+
+def team_item_reach(
+    conn: Connection, user_id: Optional[str], resource_type: str, resource_id: Optional[str],
+    prefer_team: Optional[str] = None,
+) -> Optional[str]:
+    """The team through which a share of a team's item reaches ``user_id``, or None.
+
+    Args:
+        conn: Open database connection.
+        user_id: A person, or a team's principal.
+        resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
+        resource_id: The item's id.
+        prefer_team: The team to answer when the item reaches the person through it (the request's
+            workspace, or an existing chat's team); otherwise the oldest share decides.
+
+    Returns:
+        Optional[str]: The receiving team's id; None when no live share reaches them (no row, the
+        owning team locked, the item no longer that team's, or they aren't in the receiving team).
+    """
+    if not user_id or not resource_id or not looks_like_uuid(str(resource_id)):
+        return None
+    owner_team_id = team_of_principal(resource_owner(conn, resource_type, str(resource_id)))
+    if owner_team_id is None:
+        return None
+    rows = _live_shares(conn, user_id, resource_type, canonical_uuid(str(resource_id)), owner_team_id)
+    teams = [str(r["team_id"]) for r in rows]
+    if not teams:
+        return None
+    preferred = str(prefer_team).lower() if prefer_team else None
+    return preferred if preferred in teams else teams[0]
+
+
 def _resolve_team_item(
     conn: Connection, resource_type: str, resource_id: str, owner_id: str, user_id: str
 ) -> Optional[ResourceAccess]:
-    """The caller's access to an item a team owns: their role in that team, or None.
+    """The caller's access to an item a team owns: their role in that team, a share into their team, or None.
 
-    Never falls back to grants: a team item has none that count.
+    Never falls back to grants: a team item has none that count. A member of the owning team
+    gets their role there, under the team's outside policy. Anyone else, another team's
+    principal included, gets the receiver's fixed actions while a live share reaches them.
     """
-    if is_principal_id(user_id):
-        # Another team's principal (a team's own principal resolved as owner above).
-        return None
     team_id = team_of_principal(owner_id)
     if team_id is None:
         return None
-    return build_team(resource_type, resource_id, owner_id, team_role_for(conn, user_id, team_id))
+    if not is_principal_id(user_id):
+        role = team_role_for(conn, user_id, team_id)
+        if role is not None:
+            return build_team(resource_type, resource_id, owner_id, role, policy=team_policy(conn, team_id))
+    rows = _live_shares(conn, user_id, resource_type, resource_id, team_id)
+    if not rows:
+        return None
+    return ResourceAccess(
+        resource_type=resource_type,
+        resource_id=str(resource_id),
+        access=_RECEIVER_ACCESS,
+        owner_id=owner_id,
+        settings={},
+        actions=frozenset(RECEIVER_ACTIONS[resource_type]),
+        team_id=team_id,
+        team_role=None,
+        via_team_id=str(rows[0]["team_id"]),
+        owner_team_name=rows[0].get("owner_team_name"),
+    )
 
 
 def _resolve_uncached(
@@ -868,6 +1077,11 @@ REASON_OWNER_LOST_ACCESS = "owner_lost_access"
 REASON_CONNECTION_NEEDS_RECONNECT = "connection_needs_reconnect"
 REASON_CONNECTION_REMOVED = "connection_removed"
 REASON_CONNECTOR_DISABLED = "connector_disabled"
+# A team's item used through its share with the holder's team: the share was removed, or the
+# reader left the receiving team (``team_share_ended``), or the owning team is locked, which
+# pauses its shares until it unlocks (``team_locked``).
+REASON_TEAM_SHARE_ENDED = "team_share_ended"
+REASON_TEAM_LOCKED = "team_locked"
 
 _REF_TABLES = {"source": "sources", "prompt": "prompts", "tool": "user_tools"}
 
@@ -2170,9 +2384,12 @@ def borrowed_refusal(
 # A team agent or workflow runs as the team's principal, so everything it
 # references must be the team's own: a member's personal source or tool
 # would otherwise run for the whole team (and for its outside traffic) with no
-# sponsor to answer for it. Presets and builtin tools belong to no one and
-# always pass. A personal holder may still reference a team item its owner can
-# use; ``borrowed_refs`` keeps such an agent unpublished.
+# sponsor to answer for it. The one exception is a source, tool or prompt
+# another team shared with this team: the share answers for it, and
+# ``borrowed_refs`` keeps a holder that uses one unpublished. Presets and
+# builtin tools belong to no one and always pass. A personal holder may still
+# reference a team item its owner can use; ``borrowed_refs`` keeps such an
+# agent unpublished.
 
 # Error code of a save that references items from another workspace.
 CODE_WORKSPACE_MISMATCH = "workspace_mismatch"
@@ -2192,17 +2409,36 @@ def _ownerless_ref(resource_type: str, resource_id: str) -> bool:
     return False
 
 
+# Kinds a team holder may use from another team through a share with its own team.
+_SHARED_IN_REF_TYPES = ("source", "tool", "prompt")
+
+
+def _shared_into(conn: Connection, team_id: Optional[str], resource_type: str, resource_id: str, owner: str) -> bool:
+    """Whether the item's owning team shares it with ``team_id`` (a row naming that owning team).
+
+    A share paused by a lock still counts, so saving an agent while its source's team is locked
+    doesn't fail: the item just doesn't run until the team unlocks. Adding one needs it live
+    (:func:`ref_attachable` asks :func:`resolve`).
+    """
+    owner_team = team_of_principal(owner)
+    if team_id is None or owner_team is None or resource_type not in _SHARED_IN_REF_TYPES:
+        return False
+    row = TeamItemSharesRepository(conn).get(team_id, resource_type, resource_id)
+    return row is not None and str(row.get("owner_team_id")) == owner_team
+
+
 def workspace_mismatches(
     conn: Connection, owner_id: Optional[str], refs: Iterable[tuple[str, Optional[str]]]
 ) -> list[tuple[str, str]]:
-    """The refs a team holder may not use: anything not owned by the holder's own principal.
+    """The refs a team holder may not use: anything not its own principal's or shared into its team.
 
     Call it on every save that writes a team agent's or workflow node's
     references (create, update, graph save, import), with every ``(type, id)``
     it will hold, knowledge folders included as ``("folder", id)``. A
     personal holder is not judged here and gets an empty list.
 
-    Fails closed: an unknown kind or a non-UUID id that isn't a preset or a
+    A source, tool or prompt another team shares with the holder's team
+    passes. Fails closed: an unknown kind or a non-UUID id that isn't a preset or a
     builtin tool is a mismatch. A UUID that names no row is not (it runs
     nowhere, and refusing it would block every save of an agent whose tool
     was deleted).
@@ -2230,6 +2466,8 @@ def workspace_mismatches(
             continue
         owner = resource_owner(conn, resource_type, rid)
         if owner is not None and owner != owner_id:
+            if _shared_into(conn, team_of_principal(owner_id), resource_type, rid, owner):
+                continue
             out.append(pair)
     return out
 

@@ -49,6 +49,7 @@ from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
 from docsgpt.workspaces.locks import lock_owner_items
+from docsgpt.workspaces.outside import team_policy
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import team_role_for
 from docsgpt.core.json_schema_utils import (
@@ -119,7 +120,8 @@ def _workflow_access(conn, workflow_id: str, user_id: str, action: str):
         )
         if role is None:
             raise AccessDenied(404, "Workflow not found")
-        if action not in resource_access.workspace_allowed_actions("agent", role):
+        team_id = team_of_principal(workflow["user_id"])
+        if action not in resource_access.workspace_allowed_actions("agent", role, policy=team_policy(conn, team_id)):
             raise AccessDenied(403, "Your access to this item doesn't allow that")
         return workflow, workflow["user_id"]
     agent_ids = conn.execute(

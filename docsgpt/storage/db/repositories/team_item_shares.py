@@ -135,13 +135,14 @@ class TeamItemSharesRepository:
         return [row_to_dict(r) for r in rows]
 
     def teams_for(self, resource_type: str, resource_id: str) -> list[dict]:
-        """The teams one item is shared with, by name, each row with ``team_name``."""
+        """The teams one item is shared with, by name, each row with ``team_name`` and ``owner_team_name``."""
         if not looks_like_uuid(str(resource_id)):
             return []
         rows = self._conn.execute(
             text(
                 """
-                SELECT s.*, t.name AS team_name FROM team_item_shares s JOIN teams t ON t.id = s.team_id
+                SELECT s.*, t.name AS team_name, o.name AS owner_team_name
+                FROM team_item_shares s JOIN teams t ON t.id = s.team_id JOIN teams o ON o.id = s.owner_team_id
                 WHERE s.resource_type = :type AND s.resource_id = CAST(:id AS uuid)
                 ORDER BY t.name, s.team_id
                 """

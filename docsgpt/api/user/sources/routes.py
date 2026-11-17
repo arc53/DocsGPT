@@ -231,7 +231,10 @@ def _with_access(
         dict: ``entry`` with the access payload merged in.
     """
     if workspace is not None and workspace.is_team:
-        payload = payload_for("source", None, None, team_id=workspace.team_id, team_role=workspace.role)
+        payload = payload_for(
+            "source", None, None, team_id=workspace.team_id, team_role=workspace.role,
+            policy=workspace.outside_policy,
+        )
     else:
         payload = payload_for("source", access, switches)
     if "view_config" not in payload["allowed_actions"]:
@@ -529,7 +532,8 @@ class PaginatedSources(Resource):
                     facets = [row for row in facets if filing.folder_of(row["id"]) in subtree]
                 ids = [str(row["id"]) for row in facets]
                 if workspace.is_team:
-                    deletable = ids if "delete" in workspace_allowed_actions("source", workspace.role) else []
+                    actions = workspace_allowed_actions("source", workspace.role, policy=workspace.outside_policy)
+                    deletable = ids if "delete" in actions else []
                 else:
                     deletable = deletable_row_ids(conn, user, "source", facets, team_shared)
                 used_by = used_by_many(

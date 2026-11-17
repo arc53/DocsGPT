@@ -35,6 +35,7 @@ from docsgpt.api.user.resource_access import (
     resolve,
     resource_owner,
     workspace_allowed_actions,
+    workspace_minimum,
 )
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -44,6 +45,7 @@ from docsgpt.storage.db.repositories.folders import (
     FoldersRepository,
 )
 from docsgpt.workspaces.context import Workspace
+from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, team_policy
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import team_role_for
 
@@ -126,11 +128,13 @@ class FolderTree:
             filings in it are written as this id.
         team_id: The team, for a team's tree; None for a person's.
         role: The caller's role in that team; None for a person's tree.
+        policy: The team's outside policy (moving folders out follows it); None for a person's tree.
     """
 
     owner_id: str
     team_id: Optional[str] = None
     role: Optional[str] = None
+    policy: Optional[str] = None
 
     @property
     def is_team(self) -> bool:
@@ -144,17 +148,20 @@ class FolderTree:
         """
         if not self.is_team:
             return True
-        return action in workspace_allowed_actions("folder", self.role)
+        return action in workspace_allowed_actions("folder", self.role, policy=self.policy)
 
     def require(self, action: str) -> None:
         """Refuse unless the caller may do ``action`` here.
 
         Raises:
-            FolderError: 403 ``workspace_role_required``.
+            FolderError: 403 ``team_locked`` for what a locked team keeps in (moving out), else 403
+                ``workspace_role_required``.
         """
         if not self.can(action):
-            minimum = WORKSPACE_ACTIONS["folder"].get(action, "admin")
-            raise FolderError(403, "workspace_role_required", f"This needs the {minimum} role in the team")
+            minimum = workspace_minimum("folder", action, policy=self.policy)
+            if minimum is None and action in WORKSPACE_ACTIONS["folder"]:
+                raise FolderError(403, CODE_TEAM_LOCKED, "This team is locked: nothing leaves it")
+            raise FolderError(403, "workspace_role_required", f"This needs the {minimum or 'admin'} role in the team")
 
 
 def workspace_tree(workspace: Workspace) -> FolderTree:
@@ -167,7 +174,7 @@ def workspace_tree(workspace: Workspace) -> FolderTree:
         FolderTree: The caller's own tree in Personal, the team's in a team.
     """
     if workspace.is_team:
-        return FolderTree(workspace.owner_id, workspace.team_id, workspace.role)
+        return FolderTree(workspace.owner_id, workspace.team_id, workspace.role, workspace.outside_policy)
     return FolderTree(workspace.owner_id)
 
 
@@ -195,7 +202,7 @@ def folder_by_id(conn: Connection, folder_id: Any, caller: str) -> tuple[dict, F
             team_id = team_of_principal(owner)
             role = team_role_for(conn, caller, team_id) if team_id else None
             if role is not None:
-                return resolve_folder(conn, raw, owner), FolderTree(owner, team_id, role)
+                return resolve_folder(conn, raw, owner), FolderTree(owner, team_id, role, team_policy(conn, team_id))
             raise FolderError(404, "folder_not_found", "Folder not found")
     return resolve_folder(conn, raw, caller), FolderTree(caller)
 

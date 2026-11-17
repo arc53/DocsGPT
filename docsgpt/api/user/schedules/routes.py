@@ -565,7 +565,9 @@ class UserSchedules(Resource):
                 return err.response()
             repo = SchedulesRepository(conn)
             if workspace.is_team:
-                manages = "manage_schedules" in workspace_allowed_actions("agent", workspace.role)
+                manages = "manage_schedules" in workspace_allowed_actions(
+                    "agent", workspace.role, policy=workspace.outside_policy
+                )
                 found = repo.list_for_owner_agents_with_context(
                     workspace.owner_id, user_id, setter=None if manages else user_id,
                 )

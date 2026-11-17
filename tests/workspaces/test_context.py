@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from flask import Flask
+from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
@@ -85,7 +86,9 @@ class TestCurrentWorkspace:
 
     def test_a_member_gets_the_team_with_their_role(self, pg_conn, team_id):
         ws = self._resolve(pg_conn, sub="bob", header=team_id)
-        assert ws == Workspace(kind="team", team_id=team_id, owner_id=principal_id(team_id), role="editor")
+        assert ws == Workspace(
+            kind="team", team_id=team_id, owner_id=principal_id(team_id), role="editor", outside_policy="admins"
+        )
         assert ws.owner_for_create("bob") == (principal_id(team_id), "bob")
         owner = self._resolve(pg_conn, sub="alice", query=team_id.upper())
         assert (owner.team_id, owner.role) == (team_id, "owner")
@@ -122,7 +125,14 @@ class TestCurrentWorkspace:
     def test_a_principal_caller_is_its_own_team_and_ignores_the_header(self, pg_conn, team_id):
         principal = principal_id(team_id)
         ws = self._resolve(pg_conn, sub=principal, header="personal")
-        assert ws == Workspace(kind="team", team_id=team_id, owner_id=principal, role=None)
+        assert ws == Workspace(kind="team", team_id=team_id, owner_id=principal, role=None, outside_policy="admins")
+
+    def test_a_team_workspace_carries_the_teams_outside_policy(self, pg_conn, team_id):
+        pg_conn.execute(
+            text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": team_id}
+        )
+        assert self._resolve(pg_conn, sub="bob", header=team_id).outside_policy == "locked"
+        assert self._resolve(pg_conn, sub="bob").outside_policy is None
 
     def test_memoised_per_request(self, pg_conn, team_id):
         ctx = _request(sub="bob", header=team_id)

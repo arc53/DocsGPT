@@ -954,7 +954,10 @@ class GetAgents(Resource):
             # Every agent is listed: one with no source skips retrieval and
             # answers from the model and its tools, so it is still runnable.
             if workspace.is_team:
-                team_access = payload_for("agent", None, None, team_id=workspace.team_id, team_role=workspace.role)
+                team_access = payload_for(
+                    "agent", None, None, team_id=workspace.team_id, team_role=workspace.role,
+                    policy=workspace.outside_policy,
+                )
                 list_agents = [
                     _format_agent_output(
                         agent,
@@ -1249,8 +1252,11 @@ class CreateAgent(Resource):
                 if model_refusal is not None:
                     return model_refusal
                 # Publishing a team agent (and the key that comes with it) is
-                # outward exposure: an Admin's to do, and they pay for the key.
-                team_actions = workspace_allowed_actions("agent", workspace.role) if workspace.is_team else None
+                # outward exposure: the team's outside policy says whose, and they pay for the key.
+                team_actions = (
+                    workspace_allowed_actions("agent", workspace.role, policy=workspace.outside_policy)
+                    if workspace.is_team else None
+                )
                 if is_published and team_actions is not None and "publish" not in team_actions:
                     return WorkspaceError(
                         403, "workspace_role_required", "Publishing a team's agent needs the admin role in the team",
@@ -2826,10 +2832,16 @@ class AdoptAgent(Resource):
                 template = expose_prompt_preset(dict(template_row._mapping))
 
                 now = datetime.datetime.now(datetime.timezone.utc)
-                # Publishing a team agent and its key are an Admin's to do (and
-                # pay for): an Editor's copy lands as a draft without a key.
-                publishes = workspace.is_personal or "publish" in workspace_allowed_actions("agent", workspace.role)
-                new_key = str(uuid.uuid4()) if publishes else ""
+                # Publishing a team agent and its key follow the team's outside
+                # policy (and whoever makes the key pays): a copy the policy keeps
+                # in lands as a draft, and a locked team's copy is published without a key.
+                team_actions = (
+                    workspace_allowed_actions("agent", workspace.role, policy=workspace.outside_policy)
+                    if workspace.is_team else set()
+                )
+                publishes = workspace.is_personal or "publish" in team_actions
+                keyed = workspace.is_personal or "manage_access_details" in team_actions
+                new_key = str(uuid.uuid4()) if publishes and keyed else ""
                 # Copy content columns only. Identity / idempotency columns
                 # (key, slug, shared_token, incoming_webhook_token) are
                 # deliberately NOT copied — the adopted agent is a fresh copy
@@ -2956,7 +2968,10 @@ class AdoptAgent(Resource):
                 )
 
             if workspace.is_team:
-                access = payload_for("agent", None, None, team_id=workspace.team_id, team_role=workspace.role)
+                access = payload_for(
+                    "agent", None, None, team_id=workspace.team_id, team_role=workspace.role,
+                    policy=workspace.outside_policy,
+                )
                 response_agent = _format_agent_output(
                     new_agent, include_key_masked=False, ownership="team",
                     team_access=_legacy_team_access(access["access"]), access=access,

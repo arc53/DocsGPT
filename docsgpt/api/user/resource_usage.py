@@ -42,7 +42,8 @@ from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
-from docsgpt.workspaces.principal import PRINCIPAL_PREFIX, is_principal_id, principal_id
+from docsgpt.workspaces.outside import team_policy
+from docsgpt.workspaces.principal import PRINCIPAL_PREFIX, is_principal_id, principal_id, team_of_principal
 from docsgpt.workspaces.roles import from_stored_role
 
 logger = logging.getLogger(__name__)
@@ -490,7 +491,12 @@ def _collect(
             continue
         if _can_open(agent_id, owner):
             role = _team_role(owner)
-            can_edit = owner == user_id or "view" in workspace_allowed_actions("agent", role)
+            can_edit = owner == user_id or (
+                role is not None
+                and "view" in workspace_allowed_actions(
+                    "agent", role, policy=team_policy(conn, team_of_principal(owner))
+                )
+            )
             listed[ref_key][agent_id] = (name, agent_type or "classic", can_edit, status)
             if owner != user_id and role is None:
                 shared_listed.add(agent_id)

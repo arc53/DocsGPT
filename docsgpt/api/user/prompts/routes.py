@@ -208,7 +208,10 @@ class GetPrompts(Resource):
                         "updated_at": _iso(prompt.get("updated_at")),
                         "created_by": created_by_payload(prompt, creators),
                         **filing.fields(prompt["id"]),
-                        **payload_for("prompt", None, None, team_id=workspace.team_id, team_role=workspace.role),
+                        **payload_for(
+                            "prompt", None, None, team_id=workspace.team_id, team_role=workspace.role,
+                            policy=workspace.outside_policy,
+                        ),
                     }
                 )
             # Presets (default/creative/strict) have no row id and stay visible to a restricted token.
