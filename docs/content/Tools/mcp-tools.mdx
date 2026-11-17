@@ -41,6 +41,17 @@ Presets need no URL entry. Most sign in with OAuth; draw.io, CoinGecko and Excal
 
 A server's tool descriptions reach the model verbatim, so a hostile server can plant instructions in them. While an admin has turned on **Warn about tool descriptions that look like prompt injection** in **Admin > Guardrails**, and the operator has turned the decision model on, each action is scored when the server is saved or refreshed, and an action that reads like a prompt injection is marked in the tool's permissions. Nothing is turned off; check the action under **Customize** before you allow it. See [MCP tool descriptions](/Agents/guardrails#mcp-tool-descriptions).
 
+## MCP servers in a team
+
+In a [team workspace](/Using/team-workspaces#team-connections), a server you sign in to (OAuth) can be used two ways. When an Admin adds one, the form asks **Who signs in**:
+
+- **Each person signs in with their own account** (the default). Everyone who uses the server's tools signs in to it with their own account; nobody's is shared. You need your own sign-in to the server in Personal first, and DocsGPT offers to take you there when you don't have one.
+- **The team signs in once, with your account.** You sign in now, and everyone in the team uses that account. It becomes the team's connection, connected by you, on the team's **Connectors** page. A team signs in to each server once.
+
+Editors add servers the first way only. OAuth presets and Linear connected from a team's **Connectors** page are team sign-ins, made by an Admin.
+
+A team sign-in follows the rules of any [account connected for the team](/Using/team-workspaces#team-connections): it pauses when whoever signed in leaves the team or stops being an Admin, another Admin can **Reconnect** it with their own account from **Connectors**, and its tools never run for anyone outside the team. A team server saved without sign-in can't be switched to OAuth by editing it: add it as a new server. Servers with a bearer token or API key keep the key on the team's tool, as before.
+
 ## Example: Parallel Search
 
 [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides public web search and page extraction without a Parallel account or API key. Free access is rate-limited.
@@ -96,6 +107,8 @@ OAuth servers, including the OAuth presets, also need `ENABLE_SSE_PUSH=true` (th
 | `/api/mcp_server/auth_status` | GET | Batch check auth status for all MCP tools |
 
 For an OAuth server, `/api/mcp_server/test` answers with `requires_oauth: true` and a `task_id`, and the sign-in runs in the background. Its progress arrives on the user event stream, `GET /api/events`, as `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect` (with the `authorization_url` to open), `mcp.oauth.completed` or `mcp.oauth.failed` events whose `scope.id` is that `task_id`. After `completed`, call `/api/mcp_server/save` with `oauth_task_id` set to the `task_id` in the config. See [Realtime events](/API/realtime-events); the event stream needs the API served through the ASGI app.
+
+In a team workspace, send `owner: "team"` beside `config` to both calls to sign in for the team (team Admins; the team is the one the `X-DocsGPT-Workspace` header names). The sign-in's events reach the Admin who started it. To reconnect the team's sign-in, also send its `connection_id`, and no tool `id`, to both. `save` returns the `connection_id`. A second team sign-in to the same server answers `409` `account_already_connected` with the existing `connection_id`. For a server each person signs in to, `POST /api/tools/member` with `connector_key: "custom_mcp"` and `server_url` adds the team's tool without a test; it answers `409` `connect_personal_first` until you have your own sign-in to that server.
 
 ## MCP Apps
 

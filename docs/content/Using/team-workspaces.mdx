@@ -1,6 +1,6 @@
 ---
 title: Team Workspaces
-description: How team workspaces work in DocsGPT, including the workspace switcher, Personal and team items, the four team roles, shared folders, moving work into a team and back, what stays personal, who pays for runs, the team Usage tab and chat export.
+description: How team workspaces work in DocsGPT, including the workspace switcher, Personal and team items, the four team roles, shared folders, accounts connected for the team, moving work into a team and back, what stays personal, who pays for runs, the team Usage tab and chat export.
 lastUpdated: 2026-11-15
 ---
 
@@ -24,7 +24,7 @@ To create a team and add members, see [Teams and sharing](/Using/teams-and-shari
 | What its agents can use | Your items, and items shared with you | The team's items, and items other teams share with it |
 | When someone leaves the team | Their items leave with them | Team items stay with the team |
 
-A team agent uses only the team's knowledge, tools and prompts, and those another team shares with it. Nobody's personal credentials sit behind a team agent, so it works the same for every member.
+A team agent uses only the team's knowledge, tools and prompts, and those another team shares with it. Its tools sign in with an [account connected for the team](#team-connections), or with each person's own account; one member's personal account never sits behind a team agent.
 
 ## Switch workspace
 
@@ -53,9 +53,9 @@ Your role is the same on everything in the workspace. A team item's tile names w
 
 | Role | Can |
 | --- | --- |
-| **Viewer** | Chat with the team's agents and pin them. Use the team's knowledge, tools and prompts, browse its sources, and duplicate its prompts. |
-| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules (and [take one over](#take-over)), create folders and file items in them, and move their own items in from Personal. A new agent from an Editor is a draft until an Admin publishes it. When the team lets **Editors too** take items outside, Editors also publish agents, manage their outside access and share items with other teams. |
-| **Admin** | Everything an Editor can, plus publish agents, manage outside access (API key and widget, public link, webhook) and take it over, and share the team's items with other teams, as far as the team's [setting for taking items outside](#taking-items-outside-the-team) allows. Also delete items, move items out to their own Personal, add and remove members and change their roles, see the team's [Usage](#usage), [export its chats](#export-the-teams-chats) when the instance allows it, lock the team, and edit the team's name and description. |
+| **Viewer** | Chat with the team's agents and pin them. Use the team's knowledge, tools and prompts, browse its sources, and duplicate its prompts. See the team's connected accounts and who connected each. |
+| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules (and [take one over](#take-over)), create folders and file items in them, move their own items in from Personal, sync the team's sources by hand, and add tools each person signs in to with their own account. A new agent from an Editor is a draft until an Admin publishes it. When the team lets **Editors too** take items outside, Editors also publish agents, manage their outside access and share items with other teams. |
+| **Admin** | Everything an Editor can, plus publish agents, manage outside access (API key and widget, public link, webhook) and take it over, and share the team's items with other teams, as far as the team's [setting for taking items outside](#taking-items-outside-the-team) allows. Also delete items, move items out to their own Personal, add and remove members and change their roles, see the team's [Usage](#usage), [export its chats](#export-the-teams-chats) when the instance allows it, lock the team, and edit the team's name and description. Connect accounts for the team and manage them; see [Team connections](#team-connections). |
 | **Owner** | The person who created the team, or was given it. An Admin who can also transfer ownership, unlock the team, and delete the team. |
 
 Taking items outside the team, to another team or through an agent's API key, widget, public link or webhook, follows the team's own setting; see [Taking items outside the team](#taking-items-outside-the-team). Viewers never can.
@@ -77,7 +77,7 @@ The **Agents**, **Knowledge**, **Tools** and **Prompts** pages follow the same o
 
 In a team, **New**, **Add**, **Import** and **New folder** appear only for Editors and up. On the Agents page, templates are there in both workspaces: an Editor's copy of a template lands in the team as a draft. **Discovered** is in Personal only.
 
-**Connectors** and **Custom models** are personal. In a team, those pages say so and offer **Switch to Personal**. A team can't hold a source synced from a connected service, or a tool that signs in with an account, so the tool forms leave those out in a team.
+**Custom models** are personal. In a team, that page says so and offers **Switch to Personal**. **Connectors** in a team lists the team's own accounts; see [Team connections](#team-connections).
 
 ## Folders
 
@@ -91,6 +91,66 @@ A workspace has one folder tree, and a folder can hold agents, knowledge, tools 
 - A Knowledge folder on a team agent is the team's folder, so every member sees the same folder and the same sources in it.
 
 For the folder pages themselves, see [Organize knowledge in folders](/Sources/adding-knowledge#organize-knowledge-in-folders) and [Organize agents in folders](/Using/web-app#organize-agents-in-folders).
+
+## Team connections
+
+A team Admin can connect an account for the team: a Google Drive, a GitHub account, a Telegram bot, an MCP server they sign in to. The account then belongs to the team, not to the Admin. The team's sources sync from it and the team's tools run on it, for every member. The Admin who connected it is named on it ("Connected by Lena"), pays for its scheduled syncs, and is the only one who picks what it syncs.
+
+In a team, **Settings > Connectors** lists the team's accounts, under "These accounts belong to the team. Your own accounts are in Personal." Each one shows its service, who connected it (even after they left), its status or why it is paused, and how many sources and tools use it.
+
+### Who can do what
+
+| Role | With the team's accounts |
+| --- | --- |
+| **Viewer** | See them, as above. Viewers and Editors see only the services the team has connected, not the list of services to connect. |
+| **Editor** | Everything a Viewer can, plus **Sync now** on a source synced from one (they pay for that sync), and [tools each person signs in to](#tools-each-person-signs-in-to). |
+| **Admin** | Everything an Editor can, plus **Connect for the team**, and manage the team's accounts: rename, set up tools and what each action may do, change how often a source syncs, **Reconnect**, **Disconnect** and remove. |
+| **Whoever connected it** | Browse the account and choose what it syncs: add the team's sources from it, and change what a source syncs. Only them, and only while they're an Admin. Other Admins never see its files. |
+
+To add a team source from a connected service, choose **Add knowledge** in the team. It offers the services you connected for the team, and Admins also get **Connect for the team**. A personal account never feeds a team source: in a team, the pickers only ever use the team's accounts. The new source is the team's, filed in the team's Knowledge.
+
+An instance admin gets no access to a team's accounts from being an admin.
+
+### Who pays for syncs
+
+As with [any run](#who-pays), whoever starts a sync pays for the model use it causes, such as building a knowledge graph. The person who adds a source pays for its first sync, and an Editor who chooses **Sync now** pays for that sync. A scheduled sync is paid by whoever connected the account, and its notifications go to them.
+
+### Pauses and Reconnect
+
+A team's account pauses when the person who connected it can no longer stand behind it. Nothing is deleted while it is paused: its sign-in is kept, unused, and it works again once the reason clears.
+
+| Reason | What pauses | Clears when |
+| --- | --- | --- |
+| They left the team, or are no longer an Admin | The whole account: no syncs, no picking, no tool calls | They're added back as an Admin, or another Admin reconnects it |
+| Their DocsGPT account is deactivated | The whole account | The account is reactivated, or another Admin reconnects it |
+| They're out of allowance | Scheduled syncs only. **Sync now** still runs, paid by whoever chooses it | The allowance resets or is raised, or another Admin reconnects it |
+
+The account, its sources and the team's [Usage](#usage) tab say why it is paused, for example "Paused: Lena left the team." A tool on a paused account doesn't run, and the agents that use it show it as stopped. Removing someone, or demoting them below Admin, says how many connections will pause, and the team's Owner and Admins get the same notice as for [schedules](#when-someone-leaves-a-team). When a service rejects a team account's sign-in, the account shows **Reconnect needed**, and the team's Owner and Admins are notified.
+
+To bring an account back, an Admin opens it on **Connectors** and chooses **Reconnect**:
+
+- **Whoever connected it** signs in again, as with a personal account.
+- **Another Admin** is asked **Reconnect with your account?**: the team uses their account from then on, and they pay for its syncs. The dialog lists the sources that sync from it. After they sign in, the account reads "Connected by" them, and its sources and tools keep working on it. If the new sign-in is a different account, DocsGPT revokes the previous person's sign-in at the service.
+
+<Callout type="warning">
+  Reconnecting with another account changes what the team can read. Files the new account can't open drop out of the sources at their next sync; the person who now holds the account can pick them again from the source. For Google Drive, see [Team accounts on Google Drive](/Sources/Connectors/google-drive#team-accounts).
+</Callout>
+
+If the team already has the new account connected, Reconnect is refused: use that connection instead. **Disconnect** forgets the account's sign-in; its sources keep their content and stop syncing, and its tools can't run until an Admin reconnects it.
+
+### Tools each person signs in to
+
+A team tool can also run on each person's own account instead of one the team holds. An Editor or above chooses **Add tool** in the team, picks the service and chooses **Each person signs in with their own account**. Nobody's account is shared: each person who uses the tool signs in to the service in Personal, and a chat asks them to connect the first time. Admins are also pointed to the team's own account for the service on **Connectors**.
+
+For a service whose tools come from an MCP server, such as GitHub or Notion, and for a custom MCP server, the person adding the tool needs their own sign-in to it in Personal first; otherwise DocsGPT asks them to switch to Personal and connect it there. If an instance admin set a service to always use one shared account, it can't be added this way. A team agent's API key, widget and webhook have no signed-in person, so these tools don't run there.
+
+### What can't leave the team
+
+A tool on an account connected for the team works only for the team's members, in the app. While a team agent uses one, the agent can't get an API key, widget, public link or webhook, and can't be shared with another team; nor can the tool itself. DocsGPT refuses and names the tools. A caller from outside never runs such a tool: it is left out of their run.
+
+Sources synced from a team account are ordinary team knowledge: they can be shared and published under the team's [setting for taking items outside](#taking-items-outside-the-team). Tools each person signs in to can be shared with other teams too.
+
+A connection never moves. A source or tool on a team account can't [move out](#move-to-team-and-back) of the team, and one on your personal account can't move in. While the team holds a connection, it can't be deleted: remove its connections first.
 
 ## Move to team and back
 
@@ -131,12 +191,14 @@ A team item can't depend on one person's account, device or permission, so these
 
 | Item | Why | What happens |
 | --- | --- | --- |
-| A tool signed in with an account (a connected service, or an MCP server you sign in to) | The connection is personal | Taken off the moving agent |
-| A source synced from a connected service | The sync runs on your connection | Taken off the moving agent |
+| A tool signed in with your account (a connected service, or an MCP server you sign in to) | Your connection is personal. An Admin can [connect an account for the team](#team-connections) instead | Taken off the moving agent |
+| A source synced from your connected service | The sync runs on your connection | Taken off the moving agent |
 | A personal custom model | Custom models are personal | Taken off the moving agent |
 | A tool that runs on a paired device | It runs on your machine | Taken off the moving agent |
 | Someone else's item, such as a source shared with you | It isn't yours to move | Taken off the moving agent; it stays with its owner. An item another team shares with the target team stays on the agent |
 | A tool whose saved secret can't be read any more | It can't be sealed for the team | Enter the secret again, then move |
+
+A tool where each person signs in with their own account moves: in the team it keeps running on each person's own account. Moving out, a source or tool on an [account connected for the team](#team-connections) stays with the team.
 
 ### When a move is refused
 
@@ -161,7 +223,7 @@ A team's page lists, under **Personal items shared**, the personal items members
 
 ## Taking items outside the team
 
-Outside means another team, or anyone who reaches a team agent without being in the team: through its API key and widget, public link, webhook, `/v1` or MCP. A team's shared chat links count as outside too. Viewers never take items outside.
+Outside means another team, or anyone who reaches a team agent without being in the team: through its API key and widget, public link, webhook, `/v1` or MCP. A team's shared chat links count as outside too. Viewers never take items outside, and tools on an account connected for the team never go outside at all; see [What can't leave the team](#what-cant-leave-the-team).
 
 ### Who can take items outside
 
@@ -232,15 +294,16 @@ When a share stops, the receiving team's agents run without the item and show it
 - **Team items stay.** Items they added belong to the team and keep working. They lose access to them. If they're added again, they get it back.
 - **Their chats in the team** can no longer be opened by them, and nobody else can open them either. If they're added again, the chats come back.
 - **Their personal items stay theirs.** What they shared with the team pauses: nobody in the team reaches it while they're out. If they're added again, those shares work again. Before removing someone, the dialog lists the personal items they share with the team, so you can ask them to move the ones the team depends on first.
+- **Accounts they connected for the team pause**: their sources stop syncing and their tools stop running, until they're added back as an Admin or another Admin [reconnects](#pauses-and-reconnect) each one.
 - **What they paid for on team agents pauses.** The schedules they set pause, and so does outside access they pay for. Nothing is deleted: it runs again if they're added back with the role, or once someone [takes it over](#take-over). See [What pauses, and when it resumes](#what-pauses-and-when-it-resumes).
 
-The same pause follows a role change: schedules a member set pause when they drop to Viewer, and outside access they pay for pauses when they drop below the role the team's [setting for taking items outside](#who-can-take-items-outside) asks for, Admin by default. When a removal or a demotion pauses anything, the team's Owner and Admins get one notification that names it, for example "Dana left Operations: 2 schedules and outside access on 1 agent are paused until someone takes over." Whoever made the change isn't notified, and the person who left isn't either. Its link opens the team's [Usage](#usage) tab, which lists everything paused.
+The same pause follows a role change: schedules a member set pause when they drop to Viewer, accounts they connected for the team pause when they drop below Admin, and outside access they pay for pauses when they drop below the role the team's [setting for taking items outside](#who-can-take-items-outside) asks for, Admin by default. When a removal or a demotion pauses anything, the team's Owner and Admins get one notification that names it, for example "Dana left Operations: 2 schedules and outside access on 1 agent are paused until someone takes over." Whoever made the change isn't notified, and the person who left isn't either. Its link opens the team's [Usage](#usage) tab, which lists everything paused.
 
-A team that still owns items can't be deleted. Move its items to Personal or delete them first; the team's **Settings** names what is left.
+A team that still owns items or connections can't be deleted. Move its items to Personal or delete them, and remove its connections, first; the team's **Settings** names what is left.
 
 ## What stays personal
 
-- **Connections and connectors.** Accounts you connect, and the tools and synced sources that use them, stay in Personal.
+- **Your connections.** Accounts you connect in Personal, and the tools and synced sources on them, stay yours. A team uses the accounts an Admin [connects for the team](#team-connections), or each person's own.
 - **Custom models.** A team agent uses the models your instance offers, not a member's custom model.
 - **Paired devices.** A remote device runs on one person's machine.
 - **Access tokens.** A token acts as you; see [Over the API](#over-the-api).
@@ -277,7 +340,7 @@ A schedule, or a team agent's outside access, pauses when its payer can't pay. N
 
 While outside access is paused, the agent's API key, widget, public link, webhook, `/v1` and MCP callers are told only "This agent is paused, so it can't answer right now.", never whose account it is or why. Members still chat with the agent in the app, each on their own allowance. When the pause is only the payer's allowance, signed-in visitors on the public link keep chatting too, on their own allowance; for the other reasons the link pauses for them as well. A paused schedule skips its runs; see [Paid by and paused schedules](/Agents/schedules#paid-by-and-paused-schedules).
 
-A team source's scheduled sync runs for the person who added the source while they are an Editor or above in the team. Otherwise its scheduled syncs are skipped and the source shows its sync as paused. A paused sync can't be taken over; an Editor can still sync the source by hand.
+A team source's scheduled sync runs for the person who added the source while they are an Editor or above in the team. Otherwise its scheduled syncs are skipped and the source shows its sync as paused. A paused sync can't be taken over; an Editor can still sync the source by hand. A source synced from an account connected for the team follows that account instead: see [Pauses and Reconnect](#pauses-and-reconnect).
 
 ### Take over
 
@@ -305,7 +368,7 @@ The team's Owner and Admins have a **Usage** tab on the team's page. It reports 
 - **Chats and runs without a person.** Chats count what members ran themselves, plain chats without an agent included. Runs without a person are schedules, an agent's outside traffic and other background work.
 - **By person**, with each person's role. People who have left the team stay listed with what they used.
 - **By agent**, with its requests, how many people used it, whether its own limit is on, and who pays for its outside access. An agent moved out of the team since shows as "Moved out", with what it used here and nothing about where it is now.
-- **What is paused**: every schedule, outside access and scheduled source sync in the team that is paused for its payer, with the reason and who paid. Each schedule or outside access links to the agent's page, where the right role can [take it over](#take-over).
+- **What is paused**: every schedule, outside access and scheduled source sync in the team that is paused for its payer, and every paused [team account](#pauses-and-reconnect), with the reason and who paid. Each schedule or outside access links to the agent's page, where the right role can [take it over](#take-over); a team account opens on **Connectors**.
 
 Amounts are in dollars where the models have a price, and in tokens otherwise. Only use in this workspace counts: a member's Personal use never shows here, and an agent's use stays in the report after it is moved out. Use recorded before this release isn't in it.
 
