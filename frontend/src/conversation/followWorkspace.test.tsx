@@ -201,16 +201,15 @@ describe('a shared agent opened from inside a team', () => {
     act(() => root.unmount());
   });
 
-  it('switches to Personal before asking for the agent or the chat', async () => {
+  // The agent says where its chat runs; anyone outside its team chats in
+  // Personal, so the page switches there before the chat shows.
+  it('switches a non-member to Personal before the chat shows', async () => {
     const store = makeStore('t1');
-    const askedIn: string[] = [];
-    userService.getSharedAgent.mockImplementation(async () => {
-      askedIn.push(requestWorkspace());
-      return new Response(
-        JSON.stringify({ id: 'a1', name: 'Helper', starters: [] }),
-        { status: 200 },
-      );
-    });
+    userService.getSharedAgent.mockResolvedValue(
+      new Response(JSON.stringify({ id: 'a1', name: 'Helper', starters: [] }), {
+        status: 200,
+      }),
+    );
     await act(async () => {
       root.render(
         <Provider store={store}>
@@ -224,8 +223,36 @@ describe('a shared agent opened from inside a team', () => {
     });
     await act(flush);
     expect(store.getState().workspace.current).toBe('personal');
-    expect(askedIn.length).toBeGreaterThan(0);
-    expect(askedIn.every((workspace) => workspace === 'personal')).toBe(true);
+    expect(requestWorkspace()).toBe('personal');
+    // The switch cleared the selected agent; the page sets it again there.
+    expect(store.getState().preference.selectedAgent?.id).toBe('a1');
+  });
+
+  it("takes a member of the agent's team there from Personal", async () => {
+    const store = makeStore('personal');
+    userService.getSharedAgent.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'a1',
+          name: 'Helper',
+          workspace: { kind: 'team', team_id: 't1' },
+        }),
+        { status: 200 },
+      ),
+    );
+    await act(async () => {
+      root.render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={['/agents/shared/tok-1']}>
+            <Routes>
+              <Route path="/agents/shared/:agentId" element={<SharedAgent />} />
+            </Routes>
+          </MemoryRouter>
+        </Provider>,
+      );
+    });
+    await act(flush);
+    expect(store.getState().workspace.current).toBe('t1');
     expect(store.getState().preference.selectedAgent?.id).toBe('a1');
   });
 
