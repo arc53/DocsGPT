@@ -26,7 +26,7 @@ from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget
 from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
-from docsgpt.events.publisher import publish_user_event
+from docsgpt.events.publisher import _notify_monitors, publish_user_event
 from docsgpt.guardrails import injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
 from docsgpt.parser.connectors.base import ConnectorAuthError
@@ -1806,7 +1806,9 @@ def _publish_source_event(
     A team editor changes a source they don't own: the job runs as the owner,
     and without a copy of its events the editor's view would never see it end.
     For a team's source the person who asked hears it instead of the team's
-    principal (``_source_event_recipients``).
+    principal (``_source_event_recipients``), and the ingest monitors hear it
+    once under the principal: they match a team's source by its owner, and a
+    person's copy wakes none, so without that no member's monitor would fire.
 
     Args:
         user: The source's owner.
@@ -1817,6 +1819,9 @@ def _publish_source_event(
     """
     if event_type == "source.ingest.queued":
         payload = _with_workspace(user, payload)
+    if is_principal_id(user):
+        # Even when nobody is told (a scheduled sync's success): the monitors still watch the source.
+        _notify_monitors(user, event_type, payload)
     for recipient in _source_event_recipients(user, actor_id, event_type):
         publish_user_event(recipient, event_type, payload, **kwargs)
 

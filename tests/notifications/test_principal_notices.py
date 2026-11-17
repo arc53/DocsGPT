@@ -243,3 +243,48 @@ class TestIngestMonitorsMatchBySource:
         tick.on_ingest_event("eddie", "source.ingest.completed", {"source_id": source_id})
 
         assert queued == [] and "by_owner" not in found
+
+
+class TestSourceEventsWakeIngestMonitors:
+    """The worker's source events wake ingest monitors once, under the source's owner, whoever else hears them."""
+
+    @pytest.fixture
+    def heard(self, db, redis, monkeypatch):
+        from docsgpt import worker
+        from docsgpt.monitors import tick
+
+        calls = []
+        # The redis fixture silences the hook; put the real one back and record what reaches the monitors.
+        monkeypatch.setattr(publisher, "_notify_monitors", _REAL_NOTIFY_MONITORS)
+        monkeypatch.setattr(worker, "_notify_monitors", _REAL_NOTIFY_MONITORS)
+        monkeypatch.setattr(tick, "on_ingest_event", lambda user_id, event_type, payload: calls.append(user_id))
+        monkeypatch.setattr(worker, "db_readonly", db_readonly_of(db))
+        return calls
+
+    @pytest.mark.parametrize(
+        "event_type,actor",
+        [
+            ("source.ingest.completed", "eddie"),
+            ("source.ingest.completed", None),
+            ("source.ingest.failed", None),
+            ("source.ingest.failed", "eddie"),
+        ],
+    )
+    def test_a_team_sources_event_reaches_the_monitors_under_the_principal(self, db, heard, event_type, actor):
+        from docsgpt.worker import _publish_source_event
+
+        _, principal = _team(db)
+
+        _publish_source_event(principal, actor, event_type, {"source_id": "s"}, scope={"kind": "source", "id": "s"})
+
+        assert heard.count(principal) == 1
+
+    def test_a_persons_source_wakes_its_owners_monitors_once(self, heard):
+        from docsgpt.worker import _publish_source_event
+
+        _publish_source_event("lena", "eddie", "source.ingest.completed", {"source_id": "s"})
+
+        assert heard.count("lena") == 1
+
+
+_REAL_NOTIFY_MONITORS = publisher._notify_monitors
