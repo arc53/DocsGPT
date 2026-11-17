@@ -21,10 +21,10 @@ To create a team and add members, see [Teams and sharing](/Using/teams-and-shari
 | Who owns an item | You | The team. You stay listed as the person who added it |
 | Who can reach it | You, plus the people and teams you share it with, item by item | Everyone in the team, by their team role |
 | Folders | Your own | The team's, the same for everyone in it |
-| What its agents can use | Your items, and items shared with you | The team's items only |
+| What its agents can use | Your items, and items shared with you | The team's items, and items other teams share with it |
 | When someone leaves the team | Their items leave with them | Team items stay with the team |
 
-A team agent uses only the team's knowledge, tools and prompts. Nobody's personal credentials sit behind a team agent, so it works the same for every member.
+A team agent uses only the team's knowledge, tools and prompts, and those another team shares with it. Nobody's personal credentials sit behind a team agent, so it works the same for every member.
 
 ## Switch workspace
 
@@ -54,9 +54,11 @@ Your role is the same on everything in the workspace. A team item's tile names w
 | Role | Can |
 | --- | --- |
 | **Viewer** | Chat with the team's agents and pin them. Use the team's knowledge, tools and prompts, browse its sources, and duplicate its prompts. |
-| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules (and [take one over](#take-over)), create folders and file items in them, and move their own items in from Personal. A new agent from an Editor is a draft until an Admin publishes it. |
-| **Admin** | Everything an Editor can, plus publish agents and manage outside access (API key and widget, public link, webhook) and take it over, delete items, move items out to their own Personal, add and remove members and change their roles, see the team's [Usage](#usage), [export its chats](#export-the-teams-chats) when the instance allows it, and edit the team's name and description. |
-| **Owner** | The person who created the team, or was given it. An Admin who can also transfer ownership and delete the team. |
+| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules (and [take one over](#take-over)), create folders and file items in them, and move their own items in from Personal. A new agent from an Editor is a draft until an Admin publishes it. When the team lets **Editors too** take items outside, Editors also publish agents, manage their outside access and share items with other teams. |
+| **Admin** | Everything an Editor can, plus publish agents, manage outside access (API key and widget, public link, webhook) and take it over, and share the team's items with other teams, as far as the team's [setting for taking items outside](#taking-items-outside-the-team) allows. Also delete items, move items out to their own Personal, add and remove members and change their roles, see the team's [Usage](#usage), [export its chats](#export-the-teams-chats) when the instance allows it, lock the team, and edit the team's name and description. |
+| **Owner** | The person who created the team, or was given it. An Admin who can also transfer ownership, unlock the team, and delete the team. |
+
+Taking items outside the team, to another team or through an agent's API key, widget, public link or webhook, follows the team's own setting; see [Taking items outside the team](#taking-items-outside-the-team). Viewers never can.
 
 New members join as Viewers. A team always keeps at least one Admin, and the Owner can't be demoted or removed: to step down, transfer ownership first, under the team's **Settings**.
 
@@ -71,6 +73,7 @@ The **Agents**, **Knowledge**, **Tools** and **Prompts** pages follow the same o
 1. **Folders**: the workspace's folders that hold this kind of item, plus empty folders.
 2. The items in no folder.
 3. In Personal only, **Shared with you**: items other people shared with you, each with its owner and your access, **Viewer** or **Editor**.
+4. In a team only, **Shared with this team**: items other teams shared with this one, each naming the team it comes from. See [Share an item with another team](#share-an-item-with-another-team).
 
 In a team, **New**, **Add**, **Import** and **New folder** appear only for Editors and up. On the Agents page, templates are there in both workspaces: an Editor's copy of a template lands in the team as a draft. **Discovered** is in Personal only.
 
@@ -96,8 +99,8 @@ Moving is how existing work gets into a team. Choose **Move to team…** in the 
 | Move | Who can |
 | --- | --- |
 | Into a team | The item's owner, if they are an Editor or above in that team |
-| Into a team, an agent with outside access (API key, public link or webhook) | The item's owner, if they are an Admin in that team. An Editor turns its outside access off first, or asks an Admin |
-| Out of a team, into your own Personal | An Admin of the team |
+| Into a team, an agent with outside access (API key, public link or webhook) | The item's owner, if the team's [setting for taking items outside](#taking-items-outside-the-team) lets them: an Admin, or an Editor when the team allows **Editors too**. Otherwise they turn its outside access off first, or ask an Admin. Nobody moves one into a locked team |
+| Out of a team, into your own Personal | An Admin of the team, unless the team is locked |
 
 ### The plan
 
@@ -119,6 +122,7 @@ If something changed while the dialog was open, the plan reloads with "Something
 - **A folder** brings its sub-folders and everything you filed in it.
 - **Your chats** with a moving agent follow it into the team. Other people's chats with it stay in their Personal workspace, where only they can read them, so a move never puts someone's private chat in a team export. They can't continue those chats there; a new chat with the agent in the team works.
 - **Chats through the agent's API key, widget or webhook** go with it too, so callers can carry on with them.
+- **Items another team shares with the target team** stay on a moving agent: in the team, it uses them through that share. The plan lists them under **Kept through another team's share**.
 - Per-item shares and access settings on a moved item are removed, and saved secrets are sealed again for the team.
 
 ### What can't move
@@ -131,7 +135,7 @@ A team item can't depend on one person's account, device or permission, so these
 | A source synced from a connected service | The sync runs on your connection | Taken off the moving agent |
 | A personal custom model | Custom models are personal | Taken off the moving agent |
 | A tool that runs on a paired device | It runs on your machine | Taken off the moving agent |
-| Someone else's item, such as a source shared with you | It isn't yours to move | Taken off the moving agent; it stays with its owner |
+| Someone else's item, such as a source shared with you | It isn't yours to move | Taken off the moving agent; it stays with its owner. An item another team shares with the target team stays on the agent |
 | A tool whose saved secret can't be read any more | It can't be sealed for the team | Enter the secret again, then move |
 
 ### When a move is refused
@@ -139,17 +143,89 @@ A team item can't depend on one person's account, device or permission, so these
 - **An agent people outside the team can reach would use what moves.** An API key, public link or webhook must not serve a team's item. Move that agent too, turn its outside access off, or take the items off it first. A personal agent of yours without outside access can keep using what moved, but can't be published while it does.
 - **Moving out, a team agent that stays still uses what moves.** A team agent can't use a personal item. Move that agent too, or take the items off it first.
 
-Moving out, only your own chats with the agent go back to Personal. Other members can still read their old chats with it, but can't continue them.
+- **The team is locked.** Nothing moves out of a locked team, and an agent with outside access can't move into one.
+
+Moving out, only your own chats with the agent go back to Personal. Other members can still read their old chats with it, but can't continue them. Moving an item out also ends its shares with other teams, and whatever uses it there stops; the plan lists them under **Sharing with other teams ends**. A moving agent stops using the items other teams share with the team.
 
 ## Sharing and where access comes from
 
 Menus say **Share**. What the dialog shows depends on where the item lives.
 
-**A team item** has no per-item people: access follows team membership. The dialog says "It belongs to Operations. Access follows team membership", with one row for everyone in the team and its member count, and your own role ("Admin in Operations · From the team"). Admins get **Manage members**. For an agent, **Outside the team** lists its public link, API key and widget, and webhook, each **Off**, or **On** with who pays for it. Only Admins change those, on the agent's own page.
+**A team item** has no per-item people: access follows team membership. The dialog says "It belongs to Operations. Access follows team membership", with one row for everyone in the team and its member count, and your own role ("Admin in Operations · From the team"). Admins get **Manage members**. For an agent, **Outside the team** lists its public link, API key and widget, and webhook, each **Off**, or **On** with who pays for it. Those are changed on the agent's own page, by whoever the team's [setting for taking items outside](#taking-items-outside-the-team) allows. Under **Shared with other teams**, the dialog lists the teams the item is shared with and lets those who may take items outside share it with another team, or stop sharing; see [Share an item with another team](#share-an-item-with-another-team).
+
+**An item another team shares with yours** shows who shares it ("Operations shares it with everyone in Dev"). You can use it, but you can't change it or share it with anyone else.
 
 **A personal item** keeps per-item sharing with teams and people (see [Teams and sharing](/Using/teams-and-sharing#share-with-a-team-or-a-teammate)). Each row says where the access comes from: **Added by you**, **via Operations**, or **Shared, not owned by the team**. For each team you're an Editor or above in, the dialog asks **Should Operations own this?** and offers **Move to team…**.
 
 A team's page lists, under **Personal items shared**, the personal items members share with it. They belong to the people who shared them, not to the team, so they would leave with them. Ask the owner to move the ones the team depends on.
+
+## Taking items outside the team
+
+Outside means another team, or anyone who reaches a team agent without being in the team: through its API key and widget, public link, webhook, `/v1` or MCP. A team's shared chat links count as outside too. Viewers never take items outside.
+
+### Who can take items outside
+
+On the team's **Settings** tab, **Who can take this team's items outside** has three options:
+
+| Option | Who can share the team's items with other teams, turn on an agent's API key, widget, public link or webhook, take over paying for it, and share a team chat as a link |
+| --- | --- |
+| **Admins and Owner** (the default) | Admins and the Owner |
+| **Editors too** | Editors, Admins and the Owner. Editors can then also publish the team's agents |
+| **No one (locked)** | Nobody, the Owner included |
+
+Admins and the Owner change the setting. Once the team is locked, only its Owner can unlock it; an instance admin can't, but can [transfer the team's ownership](/Deploying/Access-Control#managing-a-team). Each change asks you to confirm, says what pauses or comes back, and is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.outside_policy_changed`.
+
+Going back from **Editors too** to **Admins and Owner**, outside access an Editor pays for pauses until an Admin [takes it over](#take-over). Shares Editors made with other teams stay.
+
+### While a team is locked
+
+Locking pauses what is already outside. Nothing is deleted, and unlocking brings it all back as it was.
+
+- **Shares with other teams pause.** What uses a shared item in the other team runs without it, and a shared agent stops answering that team's members.
+- **The team's agents stop answering outside.** API key, widget, public link, webhook, `/v1` and MCP callers are told the agent is paused, and so are signed-in visitors on a public link. Members still chat with the agents in the app.
+- **The team's shared chat links stop opening**, and nobody can make new ones.
+- **Nothing moves out.** Nobody can move items or folders out of the team, or export its agents. An agent with outside access can't move in.
+
+Admins can still publish a draft agent for the team's members; it gets no API key.
+
+<Callout type="warning">
+  Locking keeps a team's items from leaving through DocsGPT's own ways out. It isn't data-loss prevention: members still read what their role shows them, and can copy it.
+</Callout>
+
+### Share an item with another team
+
+An agent, a source, a tool or a prompt the team owns can be shared with another team you're also in, if the team's setting lets you take items outside. Open **Share** on the item, pick the team under **Shared with other teams**, and choose **Share**. The picker lists only your other teams, and before you share, the dialog says what the other team gets.
+
+The whole receiving team gets use, never more:
+
+| Item | Members of the receiving team can |
+| --- | --- |
+| Agent | Chat with it and pin it |
+| Source | Read every file in it, test it, and use it in their agents |
+| Tool | Use it in their agents and chats |
+| Prompt | Read it and use it in their agents |
+
+Their Editors can also use a shared source, tool or prompt in the receiving team's own agents and workflows. Nobody in the receiving team can change the item, file it in a folder, move it, export it or share it further. An agent that uses it can't get an API key, public link or webhook, and can't be shared with a third team.
+
+- **A shared tool runs on the owning team's stored account.** What the receiving team's members do with it is done as the owning team.
+- **A shared agent runs with the owning team's knowledge and tools.** As with any agent, the owning team's Editors and up see each run in its **Logs** and **Insights**, the receiving members' questions included. The share dialog says so.
+- **A receiving member's chat lives in their own team.** They chat with a shared agent in the receiving team's workspace, not in Personal. Like any chat, it is private to them. It counts in the receiving team's [Usage](#usage), where the agent shows "From Operations", and they pay for it from their own allowance. The owning team's Usage doesn't show these chats, but the agent's own limit counts them. They can pin the agent, but not file it in a folder or schedule it.
+
+In the receiving team, the **Agents**, **Knowledge**, **Tools** and **Prompts** pages list shared items under **Shared with this team**, each naming the team it comes from, and the pickers name it too. A share belongs to the team: it stays if the person who made it leaves. Each one is recorded in the audit log as `team.item_shared_with_team`.
+
+### See and stop sharing
+
+On a team's page, the **Personal items shared** tab also has two lists:
+
+- **Shared outside the team**, which every member sees: the team's items shared with other teams, each with the team, who shared it and when, and whether it is paused while the team is locked. Under **Reachable from outside** are the team's agents with an API key, widget, public link or webhook; Editors and up can open each one.
+- **Shared from other teams**: other teams' items this team can use.
+
+To stop a share:
+
+- **In the owning team**, choose **Stop sharing** on the list or in the item's share dialog. Whoever may take the team's items outside can, and its Admins and Owner always can, even while it is locked. The confirm says what stops, for example "3 agents in Dev use it and will run without it."
+- **In the receiving team**, its Admins and Owner choose **Remove from this team**. The confirm names the agents that stop using it. Only the owning team can share it again.
+
+When a share stops, the receiving team's agents run without the item and show it as stopped, and a shared agent stops answering that team's members; their past chats stay readable. Sharing it again brings it back where it was used. A member who leaves the receiving team loses it at once. Each stop is recorded as `team.item_unshared_from_team`, with the side that stopped it.
 
 ## When someone leaves a team
 
@@ -158,7 +234,7 @@ A team's page lists, under **Personal items shared**, the personal items members
 - **Their personal items stay theirs.** What they shared with the team pauses: nobody in the team reaches it while they're out. If they're added again, those shares work again. Before removing someone, the dialog lists the personal items they share with the team, so you can ask them to move the ones the team depends on first.
 - **What they paid for on team agents pauses.** The schedules they set pause, and so does outside access they pay for. Nothing is deleted: it runs again if they're added back with the role, or once someone [takes it over](#take-over). See [What pauses, and when it resumes](#what-pauses-and-when-it-resumes).
 
-The same pause follows a role change: schedules a member set pause when they drop to Viewer, and outside access they pay for pauses when they drop below Admin. When a removal or a demotion pauses anything, the team's Owner and Admins get one notification that names it, for example "Dana left Operations: 2 schedules and outside access on 1 agent are paused until someone takes over." Whoever made the change isn't notified, and the person who left isn't either. Its link opens the team's [Usage](#usage) tab, which lists everything paused.
+The same pause follows a role change: schedules a member set pause when they drop to Viewer, and outside access they pay for pauses when they drop below the role the team's [setting for taking items outside](#who-can-take-items-outside) asks for, Admin by default. When a removal or a demotion pauses anything, the team's Owner and Admins get one notification that names it, for example "Dana left Operations: 2 schedules and outside access on 1 agent are paused until someone takes over." Whoever made the change isn't notified, and the person who left isn't either. Its link opens the team's [Usage](#usage) tab, which lists everything paused.
 
 A team that still owns items can't be deleted. Move its items to Personal or delete them first; the team's **Settings** names what is left.
 
@@ -170,7 +246,7 @@ A team that still owns items can't be deleted. Move its items to Personal or del
 - **Access tokens.** A token acts as you; see [Over the API](#over-the-api).
 - **Your chats.** A chat belongs to the workspace you started it in and can use only that workspace's items. In a team, the composer says "Operations · Only you can see this chat". Other members, Admins included, can't open your chats. If the instance allows it, the team's Owner and Admins can [export the team's chats](#export-the-teams-chats) to a file, and a new chat in that team says so. As with any agent, a team agent's **Logs** and **Insights**, which Editors and up see, record each run, the question included.
 
-A team chat can be shared only as a read-only link, and only by an Admin. **Delete all chats** in **Settings → General** deletes your chats in the current workspace only.
+A team chat can be shared only as a read-only link, and only by those the team's [setting for taking items outside](#who-can-take-items-outside) allows: Admins, or Editors too. While the team is locked, nobody can, and its existing chat links stop opening. **Delete all chats** in **Settings → General** deletes your chats in the current workspace only.
 
 ## Who pays
 
@@ -180,7 +256,7 @@ Whoever starts a run pays for it, from their own allowance: the [usage quota](/D
 | --- | --- |
 | A chat, with or without an agent, in Personal or in a team, including a signed-in visitor chatting through an agent's public link | The person chatting |
 | A schedule's runs | The person who set the schedule |
-| An agent's API key and widget, webhook, `/v1` and MCP traffic, and public-link visitors who aren't signed in | On a team agent, the Admin who turned its outside access on, or who took it over. On a personal agent, its owner |
+| An agent's API key and widget, webhook, `/v1` and MCP traffic, and public-link visitors who aren't signed in | On a team agent, the person who turned its outside access on, or who took it over. On a personal agent, its owner |
 | A background continuation, a retry, a chat's title, a workflow step | Whoever pays for the run it belongs to |
 
 An agent's own limit (tokens or requests per 24 hours) applies on top, whoever pays. One run has one payer, fixed when it starts, and the limits are checked again before each of its model calls; see [Usage Quotas](/Deploying/Usage-Quotas#windows-and-enforcement).
@@ -194,7 +270,8 @@ A schedule, or a team agent's outside access, pauses when its payer can't pay. N
 | Reason | Clears when |
 | --- | --- |
 | The payer is out of allowance | The allowance resets, an instance admin raises it, or someone takes it over |
-| The payer left the team, or lost the role it needs: Editor for a schedule, Admin for outside access | They're added back with that role, or someone takes it over |
+| The team is locked (outside access only) | The team's Owner unlocks it |
+| The payer left the team, or lost the role it needs: Editor for a schedule; for outside access, the role the team's setting asks for (Admin by default) | They're added back with that role, the setting changes, or someone takes it over |
 | Nobody pays for it | Someone takes it over |
 | The account it runs on is deactivated | The account is reactivated. On a team agent, someone can also take it over |
 
@@ -209,7 +286,7 @@ A team source's scheduled sync runs for the person who added the source while th
 | What | Who can take it over |
 | --- | --- |
 | A schedule on a team agent | Editors and up |
-| A team agent's outside access | Admins and the Owner |
+| A team agent's outside access | Whoever the team's [setting](#who-can-take-items-outside) lets take items outside: Admins and the Owner, or Editors too. Nobody while the team is locked |
 | Anything on a personal agent | Nobody: its owner pays for its outside access, and a schedule stays with the person it is stored under |
 
 Take over is offered on any running or paused schedule and on any agent with outside access on, not only on paused ones, unless you already pay for it. It asks you to confirm once:

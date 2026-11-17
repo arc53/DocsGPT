@@ -36,13 +36,13 @@ A team has four roles: **Viewer**, **Editor**, **Admin** and **Owner**. They dec
 A team's page has four tabs:
 
 - **Members**: Admins change a member's role from the drop-down next to their name and remove them with **Remove**. The removal dialog says that the team items they added stay with the team, lists the personal items they share with it, and says which schedules and outside access they pay for would pause.
-- **Personal items shared**: the personal items members share with the team. They belong to the people who shared them, not to the team.
+- **Personal items shared**: the personal items members share with the team. They belong to the people who shared them, not to the team. The tab also lists **Shared outside the team**, the team's items shared with other teams and its agents reachable from outside, and **Shared from other teams**, other teams' items this team can use; see [See and stop sharing](/Using/team-workspaces#see-and-stop-sharing).
 - **Usage** (Admins): what the team workspace used this period or the last, by person and by agent, and what is paused for its payer. It is a report, not a limit; see [Usage](/Using/team-workspaces#usage).
-- **Settings** (Admins): the team's name and description, **Transfer ownership** (the Owner only), the chat export when the operator turned it on (see [Export the team's chats](/Using/team-workspaces#export-the-teams-chats)), and **Delete team** (the Owner, once the team owns nothing).
+- **Settings** (Admins): the team's name and description, **Who can take this team's items outside** (see [Taking items outside the team](/Using/team-workspaces#taking-items-outside-the-team)), **Transfer ownership** (the Owner only), the chat export when the operator turned it on (see [Export the team's chats](/Using/team-workspaces#export-the-teams-chats)), and **Delete team** (the Owner, once the team owns nothing).
 
 A team always keeps at least one Admin, and the Owner can't be demoted or removed. The web app has no button to leave a team; use the [team API](/Deploying/Access-Control#managing-a-team) for that.
 
-Leaving a team, or losing a role, pauses what you pay for there: the schedules you set on the team's agents pause when you leave or drop to Viewer, and outside access you pay for pauses when you leave or drop below Admin. The team's Owner and Admins are notified, and anyone with the right role can [take it over](/Using/team-workspaces#take-over). If you're added back with the role, it runs again on your allowance. Your chats in Personal and your own agents are unaffected. See [Who pays](/Using/team-workspaces#who-pays).
+Leaving a team, or losing a role, pauses what you pay for there: the schedules you set on the team's agents pause when you leave or drop to Viewer, and outside access you pay for pauses when you leave or drop below the role the team's setting for taking items outside asks for, Admin by default. The team's Owner and Admins are notified, and anyone with the right role can [take it over](/Using/team-workspaces#take-over). If you're added back with the role, it runs again on your allowance. Your chats in Personal and your own agents are unaffected. See [Who pays](/Using/team-workspaces#who-pays).
 
 ## Switch workspace
 
@@ -50,7 +50,7 @@ The name at the top of the sidebar is the workspace switcher. It lists **Persona
 
 ## Share with a team or a teammate
 
-Sharing is for your personal items. A team's own items need no sharing: everyone in the team reaches them by their role.
+Sharing is for your personal items. A team's own items need no sharing: everyone in the team reaches them by their role. To share a team's item with another team, see [Share an item with another team](/Using/team-workspaces#share-an-item-with-another-team).
 
 1. Open the menu of the item and choose **Share**:
    - an agent: on its card in **Agents**, or in the agent editor,
@@ -78,6 +78,17 @@ As the owner, you can change this under **Access settings** in the same dialog. 
 A tool or source someone shared with you works in your own agents and chats, but not beyond them: an agent that uses one can't have an API key, public link or webhook, and you can't add one to an agent that has any of them. Publishing such an agent makes it available in your own chats without creating an API key. See [Agents that use someone else's tools or sources](/Deploying/Access-Control#agents-that-use-someone-elses-tools-or-sources).
 
 Sharing an agent doesn't share the tools, sources and prompt it uses; people reach them only through the agent, with the access the dialog lists under **What this agent uses**. Shared tools run with the owner's saved credentials, and nobody you share with can read them. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
+
+### A personal agent that uses a team's items
+
+A personal agent of yours can use a team's sources, tools, prompts and knowledge folders while you're in that team. Those items stay with the people who reach them, so:
+
+- **It can be shared only with people and teams who already reach each of them**: the team that owns them, or a person who can use them. The dialog suggests only those. Sharing it with anyone else is refused, and the refusal names the items and their team.
+- **It can't get an API key, public link or webhook**, and a team's item can't be added to an agent that has one.
+- **A team's item can't be added to it while it is shared with someone who can't use that item.** Use the item in an agent that isn't shared that way, or stop that share first.
+- If someone you shared it with can't use one of the items any more, for example after leaving the team, their runs leave that item out.
+
+When you're an Editor or above in a team that owns or receives every team item it uses, the refusal offers **Move to** that team, for example **Move to Operations**, so the team owns the agent and everyone in it can use it; see [Move to team and back](/Using/team-workspaces#move-to-team-and-back).
 
 ## Where shared items appear
 
