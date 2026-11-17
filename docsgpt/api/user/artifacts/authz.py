@@ -18,7 +18,6 @@ from docsgpt.storage.db.repositories.shared_conversations import (
 )
 from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from docsgpt.storage.db.session import db_readonly
-from docsgpt.workspaces.outside import POLICY_LOCKED, team_policy
 
 
 @dataclass(frozen=True)
@@ -114,11 +113,15 @@ def _shared_row_for(conn, conversation_id, share_token):
     shared = SharedConversationsRepository(conn).find_by_uuid(share_token)
     if not shared or str(shared.get("conversation_id")) != str(conversation_id):
         return None
-    team_id = conn.execute(
-        text("SELECT team_id FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": str(conversation_id)}
-    ).scalar()
-    if team_id is not None and team_policy(conn, str(team_id)) == POLICY_LOCKED:
-        # A locked team's chat links are paused, the artifacts they reach with them.
+    # Lazy: the sharing routes module registers its namespace on import.
+    from docsgpt.api.user.sharing.routes import chat_link_paused
+
+    row = conn.execute(
+        text("SELECT team_id, agent_id FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": str(conversation_id)}
+    ).mappings().first()
+    if row is not None and chat_link_paused(conn, dict(row)):
+        # A locked team's chat links are paused, and so are links to its agent's answers, with the artifacts
+        # they reach.
         return None
     return shared
 

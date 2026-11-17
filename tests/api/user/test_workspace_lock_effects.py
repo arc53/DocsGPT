@@ -188,3 +188,43 @@ class TestReadingATeamChatLink:
         response = _share(cid, "adam")
         assert response.status_code == 201
         assert _read(response.get_json()["identifier"]).status_code == 200
+
+
+class TestAReceivingTeamsChatOnAnotherTeamsAgent:
+    """Dev chats with Ops' agent shared into Dev: the link carries Ops' agent's answers outside, so Ops' lock
+    pauses it too, and no new link is made meanwhile."""
+
+    def _world(self, conn):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+        ops, ops_p = _team(conn)
+        dev = str(TeamsRepository(conn).create("Dev", f"dev-{uuid.uuid4().hex[:6]}", "dora")["id"])
+        TeamMembersRepository(conn).add_member(dev, "dora", role="team_admin")
+        agent = str(AgentsRepository(conn).create(ops_p, "Ops helper", "published", created_by="alice")["id"])
+        TeamItemSharesRepository(conn).share(ops, dev, "agent", agent, "adam")
+        repo = ConversationsRepository(conn)
+        cid = str(repo.create("dora", "Chat", team_id=dev, visibility="listed", agent_id=agent)["id"])
+        repo.append_message(cid, {"prompt": "q", "response": "a", "metadata": {}})
+        return ops, cid
+
+    def test_the_owning_teams_lock_pauses_the_link_and_unlocking_brings_it_back(self, use_conn):
+        from docsgpt.api.user.artifacts.authz import user_can_access_conversation
+
+        ops, cid = self._world(use_conn)
+        response = _share(cid, "dora")
+        assert response.status_code == 201
+        identifier = response.get_json()["identifier"]
+        assert _read(identifier).status_code == 200
+        _policy(use_conn, ops, "locked")
+        assert _read(identifier).status_code == 404
+        assert user_can_access_conversation(use_conn, cid, None, identifier) is False
+        _policy(use_conn, ops, "admins")
+        assert _read(identifier).status_code == 200
+        assert user_can_access_conversation(use_conn, cid, None, identifier) is True
+
+    def test_no_link_is_made_while_the_owning_team_is_locked(self, use_conn):
+        ops, cid = self._world(use_conn)
+        _policy(use_conn, ops, "locked")
+        response = _share(cid, "dora")
+        assert response.status_code == 403
+        assert response.get_json()["error"] == "team_locked"
