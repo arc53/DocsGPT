@@ -75,6 +75,7 @@ class Workspace:
         tools: Overview tool rows ``{id, name, kind, description?, shared?}``.
         prompts: Overview prompt rows ``{id, name, kind, description?}``.
         models: ``{id, name}`` rows of the models the caller can pick.
+        owner_id: The team's principal whose items the workspace offers, or None for Personal.
         agent: The saved agent being edited ``{id, name, status, agent_type}``, or None.
         policy_editable: Whether the caller may change the agent's guardrails and limits (``edit_policy``, the
             rule the agent update route applies); True for a new agent, which the caller will own.
@@ -97,6 +98,7 @@ class Workspace:
     tools: list[dict] = field(default_factory=list)
     prompts: list[dict] = field(default_factory=list)
     models: list[dict] = field(default_factory=list)
+    owner_id: Optional[str] = None
     agent: Optional[dict] = None
     policy_editable: bool = True
     attachable: dict[str, list[str]] = field(default_factory=dict)
@@ -608,14 +610,21 @@ def load_prompts(
 
 
 def load_models(user_id: str, ws: Workspace) -> None:
-    """Fill ``ws.models`` with the models the caller can pick (names only)."""
+    """Fill ``ws.models`` with the models the caller can pick (names only).
+
+    In a team (``ws.owner_id``) these are the built-ins and the team's own models, as ``/api/models`` lists them
+    there: a team item saves only models its owner owns, so the caller's personal ones are never offered.
+    """
+    owner = ws.owner_id or user_id
     try:
         from docsgpt.core.model_registry import ModelRegistry
 
-        models = ModelRegistry.get_instance().get_enabled_models(user_id=user_id)
+        models = ModelRegistry.get_instance().get_enabled_models(user_id=owner)
     except Exception:
         logger.warning("drafter: could not list models", exc_info=True)
         models = []
+    if owner != user_id:
+        models = [model for model in models if getattr(model, "source", None) != "user"]
     rows = [{"id": str(m.id), "name": clean_text(m.display_name or m.id, NAME_CHARS)} for m in models]
     ws.models = _cap(rows, MAX_MODELS, "models", ws)
 
@@ -714,7 +723,7 @@ def read_workspace(conn, user_id: str, agent_id: Optional[str] = None, *,
     if not is_principal_id(owner_id) or team_role_for(conn, user_id, team_of_principal(owner_id)) is None:
         # Never a team's items to someone outside it, whoever asked for them.
         owner_id = None
-    ws = Workspace()
+    ws = Workspace(owner_id=owner_id)
     load_sources(conn, user_id, ws, pinned.get("sources", ()), owner_id)
     load_tools(conn, user_id, ws, pinned.get("tools", ()), owner_id)
     load_prompts(conn, user_id, ws, pinned.get("prompts", ()), owner_id)

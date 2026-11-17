@@ -125,3 +125,50 @@ class TestCatalogueByWorkspace:
         ws = read_workspace(pg_conn, EDITOR, agent, team_id=tid)
         assert own_source in _ids(ws, "sources")
         assert team_source not in _ids(ws, "sources")
+
+
+class TestModelsByWorkspace:
+    """The models offered follow the catalogue's workspace: a team item saves only models its owner owns."""
+
+    def _registry(self, monkeypatch, principal):
+        from types import SimpleNamespace
+
+        from docsgpt.core.model_registry import ModelRegistry
+
+        def model(model_id, source):
+            return SimpleNamespace(id=model_id, display_name=model_id, enabled=True, source=source)
+
+        layers = {EDITOR: [model("personal-byom", "user")], STRANGER: [model("stranger-byom", "user")],
+                  principal: [model("team-byom", "team")]}
+        registry = SimpleNamespace(
+            get_enabled_models=lambda user_id=None: [model("builtin", "builtin")] + layers.get(user_id, []),
+        )
+        monkeypatch.setattr(ModelRegistry, "get_instance", classmethod(lambda cls: registry))
+
+    def _models(self, conn, user, **kwargs):
+        from docsgpt.drafter.catalog import load_models
+
+        ws = read_workspace(conn, user, **kwargs)
+        load_models(user, ws)
+        return {row["id"] for row in ws.models}
+
+    def test_a_team_offers_the_built_ins_and_the_teams_models_not_the_callers(self, pg_conn, monkeypatch):
+        tid, principal = _team(pg_conn)
+        self._registry(monkeypatch, principal)
+        assert self._models(pg_conn, EDITOR, team_id=tid) == {"builtin", "team-byom"}
+
+    def test_the_team_agent_being_edited_offers_the_teams_models(self, pg_conn, monkeypatch):
+        tid, principal = _team(pg_conn)
+        self._registry(monkeypatch, principal)
+        agent = str(AgentsRepository(pg_conn).create(principal, "Bot", "draft")["id"])
+        assert self._models(pg_conn, EDITOR, agent_id=agent) == {"builtin", "team-byom"}
+
+    def test_personal_offers_the_callers_own_models(self, pg_conn, monkeypatch):
+        tid, principal = _team(pg_conn)
+        self._registry(monkeypatch, principal)
+        assert self._models(pg_conn, EDITOR) == {"builtin", "personal-byom"}
+
+    def test_a_non_member_naming_a_team_gets_none_of_its_models(self, pg_conn, monkeypatch):
+        tid, principal = _team(pg_conn)
+        self._registry(monkeypatch, principal)
+        assert self._models(pg_conn, STRANGER, team_id=tid) == {"builtin", "stranger-byom"}
