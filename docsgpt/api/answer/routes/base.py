@@ -105,11 +105,31 @@ class StreamSuperseded(Exception):
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
 
 
+def _publisher_pays(external: bool, decoded_token: Any) -> bool:
+    """Whether a turn is outside traffic that its agent's publisher pays for.
+
+    Key, widget and ``/v1`` callers are, and so is a turn with no signed-in
+    person behind it (no token, or a token that runs as a team principal). A
+    signed-in visitor on a public link is not: they started the chat, so they
+    pay for it from their own allowance, as anyone chatting does.
+
+    Args:
+        external: The turn came in by the agent's key (``external_api_caller``).
+        decoded_token: The turn's identity.
+
+    Returns:
+        True when the agent's published-access payer pays.
+    """
+    sub = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
+    return bool(external) or not sub or is_principal_id(sub)
+
+
 def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Optional[str]]:
     """Who a stream bills, what kind of run it is, and which workspace its spend belongs to.
 
     A person chatting pays for their own chat, in the conversation's
-    workspace. Key, widget, ``/v1`` and public-link callers run as the agent's
+    workspace; a signed-in visitor on a public link too, in their own
+    Personal workspace. Key, widget and ``/v1`` callers run as the agent's
     owner (a team agent's owner is its principal), but the agent's
     published-access payer pays for that traffic, which is the agent's team's.
 
@@ -122,13 +142,10 @@ def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Opti
         already refused traffic nobody pays for; the usage guard reports a principal).
     """
     executor = getattr(arguments.get("agent"), "tool_executor", None)
-    outside = getattr(executor, "external_caller", False) is True or (
-        getattr(executor, "public_link_caller", False) is True
-    )
     # A new chat names its workspace; a resumed one carries it on its executor.
     team_id = arguments.get("workspace_team_id") or getattr(executor, "workspace_team_id", None)
     return _run_billing(
-        outside=outside,
+        outside=_publisher_pays(getattr(executor, "external_caller", False) is True, arguments.get("decoded_token")),
         decoded_token=arguments.get("decoded_token"),
         team_id=team_id,
         agent_id=arguments.get("agent_id"),
@@ -147,7 +164,7 @@ def _run_billing(
     """Who a turn bills, its run kind and its workspace, from what the turn is (see :func:`_stream_billing`).
 
     Args:
-        outside: Key, widget, ``/v1`` or public-link traffic.
+        outside: Traffic its agent's publisher pays for (:func:`_publisher_pays`).
         decoded_token: The turn's identity; its ``sub`` pays for a chat.
         team_id: The chat's workspace team.
         agent_id: The agent the turn runs.
@@ -637,9 +654,10 @@ class BaseAnswerResource:
         Traffic through an agent meets the agent's own 24h token and request
         limit first, then the payer's allowance; the first one used up is the
         one the refusal names. The payer is the person chatting (the token's
-        ``sub``). Outside traffic (an API key or widget caller, a public-link
-        caller, no token, or a token that runs as a team principal) bills
-        whoever pays for the agent's published access; with nobody, it is
+        ``sub``), a signed-in visitor on a public link included. Outside
+        traffic (an API key or widget caller, no token, or a token that runs
+        as a team principal) bills whoever pays for the agent's published
+        access; with nobody, it is
         refused with ``no_payer`` before anything is spent. When that payer is
         out of allowance the caller is told only that the agent is paused
         (429 ``agent_paused``, no numbers, no provider decoration); the
@@ -667,8 +685,7 @@ class BaseAnswerResource:
                 return agent_limit_response(hit)
         sub = (decoded_token or {}).get("sub")
         user_id = sub
-        outside = bool(agent_config.get("external_api_caller") or agent_config.get("public_link_caller"))
-        outside = outside or not sub or is_principal_id(sub)
+        outside = _publisher_pays(bool(agent_config.get("external_api_caller")), decoded_token)
         if outside:
             user_id = published_access_payer(agent or agent_config)
             # An unknown key falls through to its 401 below; a known agent, or a
@@ -715,7 +732,7 @@ class BaseAnswerResource:
             raise UsageRefused(error)
         run = {"agent_id": processor.agent_id, "user_api_key": agent_config.get("user_api_key")}
         payer, run_kind, team_id = _run_billing(
-            outside=bool(agent_config.get("external_api_caller") or agent_config.get("public_link_caller")),
+            outside=_publisher_pays(bool(agent_config.get("external_api_caller")), processor.decoded_token),
             decoded_token=processor.decoded_token,
             team_id=getattr(processor, "workspace_team_id", None),
             **run,

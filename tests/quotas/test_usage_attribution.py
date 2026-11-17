@@ -233,13 +233,14 @@ class TestPublishedTraffic:
 
         assert _rows(db) == [("adam", "published", team)]
 
-    def test_a_signed_in_public_link_caller_chatting_in_personal_is_the_agents_teams_traffic(self, db):
-        team, principal = _team(db)
+    def test_a_signed_in_public_link_visitor_pays_for_their_own_chat_outside_the_team(self, db):
+        """Their chat, in their Personal workspace: the team's Usage report doesn't list an outsider."""
+        _team_id, principal = _team(db)
         agent = _team_agent(db, principal)
 
         _stream({"sub": "stranger"}, agent["id"], agent["key"], public_link=True)
 
-        assert _rows(db) == [("adam", "published", team)]
+        assert _rows(db) == [("stranger", "chat", None)]
 
     def test_key_traffic_on_a_personal_agent_is_personal(self, db):
         agent = AgentsRepository(db).create("lena", "Mine", "published", key=f"k-{uuid.uuid4().hex[:8]}",

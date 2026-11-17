@@ -237,13 +237,24 @@ class TestCheckUsage:
         assert self._check(agent, {"sub": principal}, external_api_caller=True) is None
         assert checked == ["adam"]
 
-    def test_a_public_link_caller_signed_in_checks_the_publisher_not_themselves(self, db, app, monkeypatch):
+    def test_a_signed_in_public_link_visitor_checks_their_own_allowance_not_the_publishers(
+        self, db, app, monkeypatch
+    ):
         checked = []
         monkeypatch.setattr(QuotaService, "check", classmethod(lambda cls, uid, *a, **k: checked.append(uid)))
         _, principal = _team(db)
         agent = _team_agent(db, principal, payer="adam")
 
         assert self._check(agent, {"sub": "stranger"}, public_link_caller=True) is None
+        assert checked == ["stranger"]
+
+    def test_a_public_link_visitor_not_signed_in_checks_the_publisher(self, db, app, monkeypatch):
+        checked = []
+        monkeypatch.setattr(QuotaService, "check", classmethod(lambda cls, uid, *a, **k: checked.append(uid)))
+        _, principal = _team(db)
+        agent = _team_agent(db, principal, payer="adam")
+
+        assert self._check(agent, None, public_link_caller=True) is None
         assert checked == ["adam"]
 
     def test_a_member_chatting_pays_for_their_own_chat(self, db, app, monkeypatch):
@@ -543,8 +554,9 @@ def _run_v1(db, monkeypatch, principal, agent):
 
 
 def _run_public_link(db, monkeypatch, principal, agent):
+    # A signed-in visitor pays for their own chat.
     _stream({"sub": "stranger"}, agent["id"], agent["key"], public_link=True)
-    return "adam"
+    return "stranger"
 
 
 def _run_member_chat(db, monkeypatch, principal, agent):

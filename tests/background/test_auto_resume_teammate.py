@@ -4,7 +4,8 @@ A continuation carries on the chatter's run and bills the chatter (``continuatio
 a teammate's chat on a shared personal agent and a member's chat on a team agent may wake up when a job finishes.
 Rows are written as the chat writes them: an in-app chat on a published agent stores the agent's key, and every
 non-owner's chat is saved as shared usage. A chat stops resuming the moment the grant goes. API-key, widget and
-public-link traffic stays poll-only: its publisher pays for it, and the turn (not the row) says it is that traffic.
+public-link traffic stays poll-only: the link is all such a caller holds, and the turn (not the row) says it is that
+traffic.
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ class TestATeammatesChat:
         assert auto_resume_allowed(pg_conn, chat, "dana") is False
 
     def test_an_agent_nobody_shared_with_them_stays_poll_only(self, pg_conn):
-        # A public-link chat: the link is all they have, and the publisher pays for it.
+        # A public-link chat: the link is all they have.
         agent_id = _agent(pg_conn)
 
         assert auto_resume_allowed(pg_conn, _chat(pg_conn, "dana", agent_id), "dana") is False

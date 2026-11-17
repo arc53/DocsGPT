@@ -219,26 +219,66 @@ class TestAnOutsideCaller:
         assert response.headers["x-should-retry"] == "false"
         assert provider.decorated_for == []
 
-    @pytest.mark.parametrize("caller", ["public_link_caller", "no_token"])
-    def test_a_public_link_or_anonymous_caller_is_told_the_same(self, db, flask_app, provider, caller):
+    @pytest.mark.parametrize("public_link", [True, False])
+    def test_a_caller_who_is_not_signed_in_is_told_the_same(self, db, flask_app, provider, public_link):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         agent = self._keyed_agent(db)
         _over_allowance(db, "sam")
-        config = {"user_api_key": agent["key"]}
-        token = {"sub": "visitor"}
-        if caller == "public_link_caller":
-            config["public_link_caller"] = True
-        else:
-            token = None
+        config = {"user_api_key": agent["key"], **({"public_link_caller": True} if public_link else {})}
 
         with flask_app.app_context():
-            response = BaseAnswerResource().check_usage(config, token)
+            response = BaseAnswerResource().check_usage(config, None)
 
         body = response.get_json()
         assert response.status_code == 429 and body["code"] == "agent_paused"
         assert not set(_NUMBERS) & set(body)
         assert provider.decorated_for == []
+
+    def test_a_signed_in_public_link_visitor_is_not_stopped_by_the_publishers_allowance(self, db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        agent = self._keyed_agent(db)
+        _over_allowance(db, "sam")
+
+        with flask_app.app_context():
+            response = BaseAnswerResource().check_usage(
+                {"user_api_key": agent["key"], "public_link_caller": True}, {"sub": "visitor"}
+            )
+
+        assert response is None
+
+    def test_a_signed_in_public_link_visitor_out_of_their_own_allowance_sees_their_own_stop(
+        self, db, flask_app, provider
+    ):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        agent = self._keyed_agent(db)
+        _over_allowance(db, "visitor")
+
+        with flask_app.app_context():
+            response = BaseAnswerResource().check_usage(
+                {"user_api_key": agent["key"], "public_link_caller": True}, {"sub": "visitor"}
+            )
+
+        assert response.status_code == 429
+        body = response.get_json()
+        assert body["error_code"] == "quota-exceeded" and body["usage"] == 100
+        assert provider.decorated_for == ["visitor"]
+
+    def test_a_signed_in_public_link_visitor_is_stopped_mid_turn_by_their_own_allowance(
+        self, db, flask_app, provider
+    ):
+        _over_allowance(db, "visitor")
+        _over_allowance(db, "sam", tokens=10)
+        agent = _agent(gen=_turn_then_refused_call())
+        agent.tool_executor.public_link_caller = True
+
+        _, events = _stream(flask_app, agent, decoded_token={"sub": "visitor"})
+
+        error = [e for e in events if e.get("type") == "error"][-1]
+        assert error["code"] == "quota-exceeded" and error["params"]["usage"] == 100
+        assert provider.decorated_for == ["visitor"]
 
     def test_a_team_agents_outside_traffic_is_told_paused(self, db, flask_app, provider):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
