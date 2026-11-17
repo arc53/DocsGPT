@@ -36,6 +36,18 @@ describe('eventLabel', () => {
     expect(eventLabel('team.chats_exported')).toBe('Team chats exported');
   });
 
+  it("names the events of taking a team's items outside", () => {
+    expect(eventLabel('team.outside_policy_changed')).toBe(
+      'Outside policy changed',
+    );
+    expect(eventLabel('team.item_shared_with_team')).toBe(
+      'Item shared with another team',
+    );
+    expect(eventLabel('team.item_unshared_from_team')).toBe(
+      'Item unshared from another team',
+    );
+  });
+
   it('stays legible for an event a newer release added', () => {
     expect(eventLabel('source.archived')).toBe('Source archived');
     expect(eventLabel('brand_new_event')).toBe('Brand new event');
@@ -51,6 +63,7 @@ describe('eventTone', () => {
   it('flags revocations as a warning, not a failure', () => {
     expect(eventTone('role_revoked')).toBe('warning');
     expect(eventTone('agent.key_regenerated')).toBe('warning');
+    expect(eventTone('team.item_unshared_from_team')).toBe('warning');
   });
 
   it('marks an admin grant with the brand (default) variant', () => {

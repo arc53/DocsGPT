@@ -160,6 +160,9 @@ const EVENT_LABELS: Record<string, string> = {
   'team.schedule_taken_over': 'Schedule taken over',
   'team.outside_access_taken_over': 'Outside access taken over',
   'team.chats_exported': 'Team chats exported',
+  'team.outside_policy_changed': 'Outside policy changed',
+  'team.item_shared_with_team': 'Item shared with another team',
+  'team.item_unshared_from_team': 'Item unshared from another team',
   'source.created': 'Source created',
   'source.deleted': 'Source deleted',
   'source.reingested': 'Source reingested',
@@ -204,6 +207,7 @@ const WARNING_EVENTS = new Set([
   'quota_policy_deleted',
   'team.member_remove',
   'team.unshare',
+  'team.item_unshared_from_team',
 ]);
 
 export function eventTone(event: string): Tone {
