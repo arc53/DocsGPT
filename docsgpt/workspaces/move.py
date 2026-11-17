@@ -23,8 +23,8 @@ What a move takes along, and what it can't:
   account or paired device, a connector-synced source, a tool whose saved
   secret no longer opens), is removed from the agent and listed. A dragged
   item the mover doesn't own is listed and never re-owned.
-- A custom model never moves. An agent or workflow node that names one of the
-  old owner's goes to the new owner's model with the same endpoint and
+- A custom model never moves. An agent, workflow node or source graph
+  extraction that names one of the old owner's goes to the new owner's model with the same endpoint and
   upstream id (``model_remaps``); without one, and for anyone else's model,
   the reference is removed and listed.
 - Grants and share switches on moved items are deleted, sponsors cleared, and
@@ -427,6 +427,14 @@ def _agents_using(conn: Connection, kind: str, ids: list[str]) -> set[str]:
     return found
 
 
+def _extraction_model(row: dict) -> Optional[str]:
+    """The model a source's graph extraction names (``config.graph.extraction_model``), or None."""
+    config = row.get("config")
+    graph = config.get("graph") if isinstance(config, dict) else None
+    model_id = graph.get("extraction_model") if isinstance(graph, dict) else None
+    return model_id if isinstance(model_id, str) and model_id else None
+
+
 def _secret_readable(blob: Any, owner: str) -> bool:
     """Whether a stored secret opens for its owner (so a move can re-seal it)."""
     if not blob:
@@ -800,6 +808,18 @@ class _Planner:
         for key in [k for k in self.cannot if k in self.moving]:
             del self.cannot[key]
         self.stays = [k for k in self.stays if k not in self.moving]
+        self._plan_source_models()
+
+    def _plan_source_models(self) -> None:
+        """Plan the graph extraction model each moving source names, as an agent's models are planned.
+
+        A custom model resolves under the source's owner, so after the move the old owner's would not
+        resolve and the graph build would fail.
+        """
+        models = [_extraction_model(self.moving[k].row) for k in self.moving if k[0] == "source"]
+        models = [m for m in models if m]
+        if models:
+            self._plan_models(models)
 
     # --- folders -----------------------------------------------------------------
 
@@ -1336,6 +1356,7 @@ class _Executor:
         self._unfile(folders)
         self._folders(folders)
         self._reown("sources", plan.ids("source"))
+        self._source_models()
         self._reown("prompts", plan.ids("prompt"))
         self._reown("workflows", list(plan.workflows), ", resource_sponsors = '{}'::jsonb, updated_at = now()")
         self._agents()
@@ -1557,6 +1578,32 @@ class _Executor:
         if new_models != models:
             fields["models"] = new_models
         return fields
+
+    def _source_models(self) -> None:
+        """Point each moved source's graph extraction at the plan's match, or clear a custom model that
+        won't resolve under the new owner (the build then uses the configured default)."""
+        ids = self.plan.ids("source")
+        if not ids:
+            return
+        rows = self.conn.execute(
+            text("SELECT id::text, config FROM sources WHERE id = ANY(CAST(:ids AS uuid[]))"), {"ids": ids}
+        ).fetchall()
+        for source_id, config in rows:
+            current = _extraction_model({"config": config})
+            if current is None:
+                continue
+            new = self._remapped(current)
+            if unowned_custom_models(self.conn, self.new, [new]):
+                new = None
+            if new == current:
+                continue
+            self.conn.execute(
+                text(
+                    "UPDATE sources SET config = jsonb_set(config, '{graph,extraction_model}', CAST(:m AS jsonb)) "
+                    "WHERE id = CAST(:i AS uuid)"
+                ),
+                {"m": json.dumps(new), "i": source_id},
+            )
 
     def _strip_nodes(self) -> None:
         if not self.plan.workflows:

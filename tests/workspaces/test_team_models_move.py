@@ -15,7 +15,7 @@ from sqlalchemy import text
 from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
 from docsgpt.workspaces.move import MoveError, apply_move, parse_move_request
 from docsgpt.workspaces.principal import principal_id
-from tests.workspaces.move_support import agent, apply, body, keyed, other_team, plan, team, workflow
+from tests.workspaces.move_support import agent, apply, body, keyed, other_team, plan, source, team, workflow
 
 BASE = "https://models.example.com/v1"
 
@@ -189,6 +189,69 @@ class TestMoveOut:
         ag = agent(pg_conn, principal, agent_type="workflow", workflow_id=wid)
         apply(pg_conn, "adam", body("personal", [("agent", ag)]))
         assert _node_model(pg_conn, wid) == mine
+
+
+def _extraction_model(conn, source_id):
+    cfg = conn.execute(text("SELECT config FROM sources WHERE id = CAST(:i AS uuid)"), {"i": source_id}).scalar()
+    return (cfg or {}).get("graph", {}).get("extraction_model")
+
+
+def _graph_source(conn, owner, model_id) -> str:
+    return source(conn, owner, "Graph", config={"kind": "graphrag", "graph": {"extraction_model": model_id,
+                                                                               "gleanings": 1}})
+
+
+class TestSourceExtractionModel:
+    """A source's graph extraction model is planned like an agent's model: swapped for the match, else cleared."""
+
+    def test_moving_in_it_is_swapped_for_the_teams_match(self, pg_conn):
+        tid, principal = team(pg_conn)
+        mine = _model(pg_conn, "eddie")
+        theirs = _model(pg_conn, principal, "Team model")
+        src = _graph_source(pg_conn, "eddie", mine)
+
+        out = plan(pg_conn, "eddie", body(tid, [("source", src)]))
+        assert [(r["from_id"], r["to_id"]) for r in out["model_remaps"]] == [(mine, theirs)]
+        apply(pg_conn, "eddie", body(tid, [("source", src)]))
+        assert _extraction_model(pg_conn, src) == theirs
+        cfg = pg_conn.execute(text("SELECT config FROM sources WHERE id = CAST(:i AS uuid)"), {"i": src}).scalar()
+        assert cfg["graph"]["gleanings"] == 1 and cfg["kind"] == "graphrag"
+
+    def test_moving_in_without_a_match_it_is_listed_and_cleared(self, pg_conn):
+        tid, _ = team(pg_conn)
+        mine = _model(pg_conn, "eddie")
+        src = _graph_source(pg_conn, "eddie", mine)
+
+        out = plan(pg_conn, "eddie", body(tid, [("source", src)]))
+        entry = keyed(out["cannot_move"])[("model", mine)]
+        assert (entry["reason"], entry["effect"]) == ("custom_model", "removed_from_holder")
+        apply(pg_conn, "eddie", body(tid, [("source", src)]))
+        assert _extraction_model(pg_conn, src) is None
+
+    def test_a_source_an_agent_brings_is_planned_too(self, pg_conn):
+        tid, principal = team(pg_conn)
+        mine = _model(pg_conn, "eddie")
+        theirs = _model(pg_conn, principal, "Team model")
+        src = _graph_source(pg_conn, "eddie", mine)
+        ag = agent(pg_conn, "eddie", source_id=src)
+        apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        assert _extraction_model(pg_conn, src) == theirs
+
+    def test_moving_out_it_is_swapped_for_the_movers_match(self, pg_conn):
+        tid, principal = team(pg_conn)
+        theirs = _model(pg_conn, principal, "Team model")
+        mine = _model(pg_conn, "adam", "Adam's model")
+        src = _graph_source(pg_conn, principal, theirs)
+        apply(pg_conn, "adam", body("personal", [("source", src)]))
+        assert _extraction_model(pg_conn, src) == mine
+
+    def test_a_catalog_model_stays(self, pg_conn):
+        tid, _ = team(pg_conn)
+        src = _graph_source(pg_conn, "eddie", "gpt-4o")
+        out = plan(pg_conn, "eddie", body(tid, [("source", src)]))
+        assert out["model_remaps"] == [] and not [e for e in out["cannot_move"] if e["type"] == "model"]
+        apply(pg_conn, "eddie", body(tid, [("source", src)]))
+        assert _extraction_model(pg_conn, src) == "gpt-4o"
 
 
 class TestFingerprint:
