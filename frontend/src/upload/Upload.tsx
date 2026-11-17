@@ -23,6 +23,7 @@ import { syncTargets } from '../connectors/catalogCards';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import type { LeaveTo } from '../hooks/useLeaveGuard';
 import { connectorName } from '../connectors/i18n';
+import { connectionErrorMessage } from '../connectors/connectionErrors';
 import {
   connectionNeedsSignIn,
   loadConnectors,
@@ -30,6 +31,8 @@ import {
   selectConnectorCatalog,
   selectConnectorsEnabled,
   selectConnectorsLoaded,
+  selectPickableConnections,
+  selectWorkspaceConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import type { AppDispatch } from '../store';
 import type { ConnectorDefinition } from '../connectors/types';
@@ -53,6 +56,10 @@ import {
   UPLOAD_AND_WEB_INGESTORS,
 } from '../upload/types/ingestor';
 import { selectInTeam } from '../settings/workspaceAccess';
+import {
+  roleAtLeast,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
 import { addUploadTask, updateUploadTask } from './uploadSlice';
 
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
@@ -96,19 +103,22 @@ const MAX_UPLOAD_BYTES = 25000000;
 const SERVICE_TILE_LIMIT = 6;
 
 /**
- * Why the server refused an upload or ingest: a Website refusal `code` in
- * the user's language, else its JSON `error` or `message` when it sent one,
- * else a generic line (never the HTTP status text).
+ * Why the server refused an upload or ingest: a Website or team connection
+ * refusal `code` in the user's language, else its JSON `message` or `error`
+ * sentence when it sent one, else a generic line (never the HTTP status
+ * text, nor a bare code).
  *
  * @param t The translate function.
  * @param responseText The response body.
  * @param fallback The localized generic message.
+ * @param status The response's HTTP status.
  * @returns The message for the upload toast.
  */
 function refusalMessage(
   t: TFunction,
   responseText: string,
   fallback: string,
+  status?: number,
 ): string {
   try {
     const data = JSON.parse(responseText) as {
@@ -117,8 +127,7 @@ function refusalMessage(
     };
     const worded = websiteRefusalForCode(t, data);
     if (worded) return worded;
-    for (const value of [data?.error, data?.message])
-      if (typeof value === 'string' && value.trim()) return value;
+    return connectionErrorMessage(t, data, { status, fallback });
   } catch {
     // Not JSON (a proxy's error page): the generic line.
   }
@@ -174,9 +183,18 @@ function Upload({
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
   const connectorsOn = useSelector(selectConnectorsEnabled);
   const inTeam = useSelector(selectInTeam);
-  // Connections are personal: a team can't sync from one (the server
-  // refuses), so a team gets no connected services here.
-  const connectorsEnabled = connectorsOn && !inTeam;
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  // A team's source reads only through an account connected for the team,
+  // and only whoever connected it picks what it shares: in a team the
+  // services are those the caller can pick from a team account (never their
+  // own accounts, which stay in Personal, nor a teammate's).
+  const pickableConnections = useSelector(selectPickableConnections);
+  const workspaceCatalog = useSelector(selectWorkspaceConnectorCatalog);
+  const syncCatalog = inTeam ? workspaceCatalog : connectorCatalog;
+  const syncAccounts = inTeam ? pickableConnections : connections;
+  // Admins connect the team's accounts on the Connectors page.
+  const canConnectForTeam =
+    inTeam && connectorsOn && roleAtLeast(role, 'admin');
   // Connecting a service (a "From a service" card, GitHub's private-
   // repository hand-over) goes to the connect wizard, the one flow every
   // entry point uses. This modal steps aside while it runs: a connect closes
@@ -767,7 +785,12 @@ function Upload({
       } else {
         handleTaskFailure(
           clientTaskId,
-          refusalMessage(t, xhr.responseText, t('common.actionFailed')),
+          refusalMessage(
+            t,
+            xhr.responseText,
+            t('common.actionFailed'),
+            xhr.status,
+          ),
         );
       }
     };
@@ -872,7 +895,12 @@ function Upload({
       } else {
         handleTaskFailure(
           clientTaskId,
-          refusalMessage(t, xhr.responseText, t('common.actionFailed')),
+          refusalMessage(
+            t,
+            xhr.responseText,
+            t('common.actionFailed'),
+            xhr.status,
+          ),
         );
       }
     };
@@ -1038,18 +1066,9 @@ function Upload({
     }
   };
 
-  // "From a service": the services that sync into Knowledge, in the
-  // Connectors page's order, each opening the connect wizard in place.
-  const syncServices = connectorsEnabled ? syncTargets(connectorCatalog) : [];
-  // GitHub is listed once, here. Where it cannot be connected it still reads
-  // a public repository by URL, so it stays as that form.
-  const githubListed = syncServices.some(
-    ({ card, target }) => card.key === 'github' || target.key === 'github',
-  );
-
   /** The service's accounts that can sync, and those that need signing in. */
   const accountsOf = (key: string) => {
-    const own = connections.filter((c) => c.connector_key === key);
+    const own = syncAccounts.filter((c) => c.connector_key === key);
     return {
       connected: own.filter((c) => c.status === 'connected'),
       broken: own.filter(connectionNeedsSignIn),
@@ -1063,6 +1082,20 @@ function Upload({
     if (broken.length > 0) return t('settings.connectors.status.reconnect');
     return undefined;
   };
+
+  // "From a service": the services that sync into Knowledge, in the
+  // Connectors page's order, each opening the connect wizard in place. A
+  // team lists only those with a team account the caller picks from.
+  const syncServices = connectorsOn
+    ? syncTargets(syncCatalog).filter(
+        ({ target }) => !inTeam || !!serviceStatus(target.key),
+      )
+    : [];
+  // GitHub is listed once, here. Where it cannot be connected it still reads
+  // a public repository by URL, so it stays as that form.
+  const githubListed = syncServices.some(
+    ({ card, target }) => card.key === 'github' || target.key === 'github',
+  );
 
   const openService = (target: ConnectorDefinition) => {
     const { connected, broken } = accountsOf(target.key);
@@ -1078,10 +1111,12 @@ function Upload({
     setHandedOver(true);
     if (connected.length > 0) {
       // Opened to add knowledge: an account already connected goes straight
-      // to what to sync. With several, the wizard asks which one.
+      // to what to sync. With several, the wizard asks which one, from the
+      // caller's own accounts; so a team names its account here, one the
+      // caller picks from.
       launch(
         target,
-        connected.length === 1
+        connected.length === 1 || inTeam
           ? {
               mode: 'sync',
               connectionId: connected[0].id,
@@ -1142,7 +1177,7 @@ function Upload({
           />
         )}
       </div>
-      {onBrowseConnectors && !inTeam && (
+      {onBrowseConnectors && (!inTeam || canConnectForTeam) && (
         <Button
           type="button"
           variant="link"
@@ -1153,7 +1188,9 @@ function Upload({
             onBrowseConnectors();
           }}
         >
-          {t('settings.connectors.browseAll')}
+          {inTeam
+            ? t('settings.connectors.team.connectForTeam')
+            : t('settings.connectors.browseAll')}
           <ArrowRight />
         </Button>
       )}
@@ -1183,10 +1220,13 @@ function Upload({
 
   // The GitHub form reads public repositories by URL with no account (it
   // opens only while no account is connected). A private one needs the
-  // user's own GitHub connection: hand over to the connect wizard.
-  const githubConnector = connectorsEnabled
-    ? connectorCatalog.find((c) => c.key === 'github' && c.available)
-    : undefined;
+  // user's own GitHub connection: hand over to the connect wizard. Not in a
+  // team, where it would connect the caller's own account, which a team's
+  // source can't read through.
+  const githubConnector =
+    connectorsOn && !inTeam
+      ? connectorCatalog.find((c) => c.key === 'github' && c.available)
+      : undefined;
   const renderGitHubHandOver = () =>
     githubConnector ? (
       <Alert variant="info" role="note">

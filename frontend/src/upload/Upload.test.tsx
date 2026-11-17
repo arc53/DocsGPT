@@ -23,7 +23,16 @@ const connectorsState = vi.hoisted(() => ({
   connections: [] as Record<string, unknown>[],
   enabled: true,
   // The current workspace; none reads as Personal.
-  workspace: undefined as undefined | { current: string },
+  workspace: undefined as
+    undefined | { current: string; workspaces?: Record<string, unknown>[] },
+  // Each team's connections and catalog (`owner=team`), by team id.
+  teams: {} as Record<
+    string,
+    {
+      catalog: Record<string, unknown>[];
+      connections: Record<string, unknown>[];
+    }
+  >,
 }));
 
 vi.mock('react-redux', () => ({
@@ -37,8 +46,16 @@ vi.mock('react-redux', () => ({
         loaded: true,
         loading: false,
         failed: false,
+        teams: Object.fromEntries(
+          Object.entries(connectorsState.teams).map(([id, entry]) => [
+            id,
+            { ...entry, loaded: true, loading: false, failed: false },
+          ]),
+        ),
       },
-      workspace: connectorsState.workspace,
+      workspace: connectorsState.workspace
+        ? { workspaces: [], ...connectorsState.workspace }
+        : undefined,
     };
     try {
       return selector(state);
@@ -384,6 +401,7 @@ describe('Upload source-type tiles', () => {
     connectorsState.connections = [];
     connectorsState.enabled = true;
     connectorsState.workspace = undefined;
+    connectorsState.teams = {};
   });
 
   // One view: what needs no account, then the services that sync, listed
@@ -625,13 +643,142 @@ describe('Upload source-type tiles', () => {
     expect(serviceNames()).toEqual(['modals.uploadDoc.ingestors.github.label']);
   });
 
-  // Connections are personal: a team can't sync from one.
-  it('offers no service and no Browse connectors in a team', async () => {
-    connectorsState.catalog = CATALOG;
-    connectorsState.workspace = { current: 't1' };
-    await render(vi.fn());
-    expect(serviceNames()).toEqual(['modals.uploadDoc.ingestors.github.label']);
-    expect(browseLink()).toBeUndefined();
+  describe('in a team', () => {
+    // The caller connected this Drive for the team: they pick from it.
+    const TEAM_DRIVE = {
+      id: 'team-d1',
+      connector_key: 'google_drive',
+      status: 'connected',
+      owner: 'team',
+      team_id: 't1',
+      allowed_actions: ['view', 'sync', 'manage', 'pick'],
+      can_pick: true,
+    };
+    // A teammate connected this one: the caller can't browse it.
+    const TEAMMATE_SHAREPOINT = {
+      id: 'team-sp1',
+      connector_key: 'share_point',
+      status: 'connected',
+      owner: 'team',
+      team_id: 't1',
+      allowed_actions: ['view', 'sync', 'manage'],
+      can_pick: false,
+    };
+    const inTeam = (
+      role: 'owner' | 'admin' | 'editor' | 'viewer',
+      connections: Record<string, unknown>[],
+    ) => {
+      connectorsState.catalog = CATALOG;
+      // The caller's own accounts never sync a team's source.
+      connectorsState.connections = [
+        { id: 'own-s3', connector_key: 's3', status: 'connected' },
+        { id: 'own-d1', connector_key: 'google_drive', status: 'connected' },
+      ];
+      connectorsState.workspace = {
+        current: 't1',
+        workspaces: [{ id: 't1', kind: 'team', name: 'Ops', role }],
+      };
+      connectorsState.teams = { t1: { catalog: CATALOG, connections } };
+    };
+    const connectForTeam = () =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'settings.connectors.team.connectForTeam',
+      );
+
+    it('lists only the kinds the caller can pick from a team account, and syncs from that account', async () => {
+      inTeam('admin', [TEAM_DRIVE, TEAMMATE_SHAREPOINT]);
+      launch.mockClear();
+      await render(vi.fn());
+      // Never Amazon S3 (the caller's own) or SharePoint (a teammate's).
+      expect(serviceNames()).toEqual([
+        'Google Drive',
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(statusLine('Google Drive')).toBe(
+        'settings.connectors.status.connected',
+      );
+      await act(async () => serviceTile('Google Drive').click());
+      expect(launch).toHaveBeenLastCalledWith(
+        expect.objectContaining({ key: 'google_drive' }),
+        { mode: 'sync', connectionId: 'team-d1', purpose: 'knowledge' },
+      );
+    });
+
+    // The wizard's account choice lists the caller's own accounts, so a
+    // team's account is always named.
+    it('names the first team account when the caller connected several', async () => {
+      inTeam('admin', [
+        TEAM_DRIVE,
+        { ...TEAM_DRIVE, id: 'team-d2' },
+        TEAMMATE_SHAREPOINT,
+      ]);
+      launch.mockClear();
+      await render(vi.fn());
+      await act(async () => serviceTile('Google Drive').click());
+      expect(launch).toHaveBeenLastCalledWith(
+        expect.objectContaining({ key: 'google_drive' }),
+        { mode: 'sync', connectionId: 'team-d1', purpose: 'knowledge' },
+      );
+    });
+
+    it('never offers to connect a service from here', async () => {
+      inTeam('admin', []);
+      await render(vi.fn());
+      expect(serviceNames()).toEqual([
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(browseLink()).toBeUndefined();
+    });
+
+    it('offers Editors only the team accounts they connected, with no way to connect one', async () => {
+      inTeam('editor', [{ ...TEAM_DRIVE, can_pick: false }]);
+      await render(vi.fn());
+      expect(serviceNames()).toEqual([
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(connectForTeam()).toBeUndefined();
+      expect(browseLink()).toBeUndefined();
+    });
+
+    it.each(['viewer', 'editor'] as const)(
+      'shows a %s no Connect for the team',
+      async (role) => {
+        inTeam(role, []);
+        await render(vi.fn());
+        expect(connectForTeam()).toBeUndefined();
+      },
+    );
+
+    it.each(['admin', 'owner'] as const)(
+      'leads an %s to Connectors to connect an account for the team',
+      async (role) => {
+        inTeam(role, []);
+        close.mockClear();
+        const browse = vi.fn();
+        await render(browse);
+        const link = connectForTeam()!;
+        expect(section()!.contains(link)).toBe(true);
+        await act(async () => link.click());
+        expect(close).toHaveBeenCalled();
+        expect(browse).toHaveBeenCalled();
+      },
+    );
+
+    it('offers no Connect for the team where the opener has no way out', async () => {
+      inTeam('admin', []);
+      await render();
+      expect(connectForTeam()).toBeUndefined();
+    });
+
+    it('lists no team account while connectors are off', async () => {
+      inTeam('admin', [TEAM_DRIVE]);
+      connectorsState.enabled = false;
+      await render(vi.fn());
+      expect(serviceNames()).toEqual([
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(connectForTeam()).toBeUndefined();
+    });
   });
 
   describe('GitHub', () => {
@@ -1011,6 +1158,27 @@ describe('Upload source-type tiles', () => {
         error: 'A source holds up to 20 sites',
       }),
       'settings.sources.website.siteLimit',
+    ],
+    [
+      'its own words for a team connection refusal',
+      JSON.stringify({
+        success: false,
+        error: 'connector_personal_only',
+        code: 'connector_personal_only',
+        message: "A team's source can only read through…",
+      }),
+      'settings.connectors.team.errors.personalOnly',
+    ],
+    [
+      'its own words for a paused team account',
+      JSON.stringify({
+        success: false,
+        error: 'connection_paused',
+        code: 'connection_paused',
+        message: 'paused',
+        paused_for: { reason: 'payer_left', left_team: true },
+      }),
+      'settings.connectors.team.errors.paused',
     ],
     [
       'a generic line otherwise',
