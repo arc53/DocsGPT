@@ -84,6 +84,8 @@ class ChatWorkspaceError(Exception):
     ``workspace_mismatch`` (409): the agent lives in another workspace than the chat.
     ``conversation_not_found`` (404): the chat it continues is one the caller
     can't read (a team chat they left with the team, or none at all).
+    ``custom_model_personal_only`` (400): a team chat asked for the caller's
+    own custom model, which runs only in Personal.
     """
 
     def __init__(self, status: int, code: str, message: str) -> None:
@@ -1388,7 +1390,17 @@ class StreamProcessor:
         return attachments
 
     def _validate_and_set_model(self):
-        """Pick model_id with agent authority on agent-bound chats."""
+        """Pick model_id with agent authority on agent-bound chats.
+
+        An agent runs on its default under its owner's account. Without an
+        agent, the requested model resolves in the chat's account: the
+        caller's in Personal, the team's principal in a team chat, where the
+        caller's own custom models are refused.
+
+        Raises:
+            ChatWorkspaceError: 400 ``custom_model_personal_only`` for the caller's own model in a team chat.
+            ValueError: Any other requested model this chat doesn't offer.
+        """
         from docsgpt.core.model_settings import ModelRegistry
 
         requested_model = self.data.get("model_id")
@@ -1412,11 +1424,22 @@ class StreamProcessor:
             return
 
         if requested_model:
-            if not validate_model_id(requested_model, user_id=caller_user_id):
+            # A team chat offers the instance's models and the team's own, which
+            # resolve in the team's account; a person's own models stay out of it.
+            team_id = getattr(self, "workspace_team_id", None)
+            scope_user_id = principal_id(team_id) if team_id else caller_user_id
+            if not validate_model_id(requested_model, user_id=scope_user_id):
+                if team_id and caller_user_id and validate_model_id(requested_model, user_id=caller_user_id):
+                    raise ChatWorkspaceError(
+                        400,
+                        "custom_model_personal_only",
+                        "Your own custom models can't be used in a team chat. "
+                        "Pick one of the team's models or a model the whole instance offers.",
+                    )
                 registry = ModelRegistry.get_instance()
                 available_models = [
                     m.id
-                    for m in registry.get_enabled_models(user_id=caller_user_id)
+                    for m in registry.get_enabled_models(user_id=scope_user_id)
                 ]
                 raise ValueError(
                     f"Invalid model_id '{requested_model}'. "
@@ -1428,7 +1451,7 @@ class StreamProcessor:
                     )
                 )
             self.model_id = requested_model
-            self.model_user_id = caller_user_id
+            self.model_user_id = scope_user_id
         else:
             self.model_id = get_default_model_id()
             self.model_user_id = None
