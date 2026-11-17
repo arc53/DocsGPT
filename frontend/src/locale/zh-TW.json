@@ -3087,6 +3087,7 @@
         "mcp_resend": "傳送電子郵件並管理聯絡人、受眾和網域。",
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
+        "mcp_supabase": "列出資料表、執行 SQL、檢視記錄並管理 Supabase 專案。",
         "mcp_trello": "尋找 Trello 看板與卡片，並建立及更新卡片。",
         "mcp_twelvedata": "查詢股票、外匯、加密貨幣和 ETF 的報價、歷史價格、技術指標和基本面資料。",
         "mcp_zapier": "使用 Zapier MCP 帳戶中啟用的動作讀取或更新已連線的應用程式。",
@@ -3158,6 +3159,7 @@
       },
       "fieldHints": {
         "github_access_token": "細部權杖，授予 Contents 和 Metadata 的讀取權限。如要讓代理進行變更，還需授予 Issues 和 Pull requests 的讀寫權限。<link>在 GitHub 上建立權杖</link>",
+        "mcp_supabase_project_ref": "在 Supabase 控制台的 Project Settings > General 中複製。此連線只能存取該專案。",
         "telegram_chat_id": "訊息只會傳送到此聊天。加入機器人並傳送一則訊息給它，然後用 <link>getUpdates</link> 找到聊天 ID。"
       },
       "fields": {
@@ -3169,6 +3171,7 @@
         "client_secret": "用戶端密鑰",
         "endpoint_url": "自訂端點 URL",
         "github_access_token": "個人存取權杖",
+        "mcp_supabase_project_ref": "專案 ID",
         "ntfy_token": "存取權杖",
         "number_posts": "貼文數量",
         "postgres_token": "連線字串",
@@ -3367,6 +3370,7 @@
         "toolsHeading": "工具（{{formatted}}）",
         "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次，或將其關閉以繼續。",
         "tryInChat": "在聊天中試試",
+        "urlParameterInvalid": "請檢查此值：格式不符合要求。",
         "waiting": "請在開啟的視窗中完成 {{name}} 登入。"
       }
     },

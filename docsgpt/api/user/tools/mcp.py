@@ -104,6 +104,23 @@ def _invalid_server_url_response(exc: InvalidServerUrl):
     return make_response(jsonify({"success": False, "error": str(exc), "message": str(exc)}), 400)
 
 
+def _url_parameters_error(config: dict):
+    """A 400 when the URL is at a preset's server and lacks a parameter the preset needs, else None.
+
+    Supabase's preset needs a project ref, so no connection reaches every
+    project the account can see; see :func:`catalog.check_url_parameters`.
+    """
+    from docsgpt.connectors import catalog
+
+    try:
+        catalog.check_url_parameters((config.get("server_url") or "").strip())
+    except catalog.UrlParametersRequired as exc:
+        return make_response(
+            jsonify({"success": False, "error": str(exc), "message": str(exc), "code": "url_parameters"}), 400,
+        )
+    return None
+
+
 def _mcp_connection_revision(user: str, config: dict, auth_type: str) -> dict | None:
     """Capture the no-auth connection revision before remote discovery.
 
@@ -370,6 +387,9 @@ class TestMCPServerConfig(Resource):
                 )
 
             _validate_mcp_server_url(config)
+            parameters_error = _url_parameters_error(config)
+            if parameters_error is not None:
+                return parameters_error
             policy_error = _mcp_policy_error(config)
             if policy_error is not None:
                 return policy_error
@@ -486,6 +506,9 @@ class MCPServerSave(Resource):
                 )
 
             _validate_mcp_server_url(config)
+            parameters_error = _url_parameters_error(config)
+            if parameters_error is not None:
+                return parameters_error
             policy_error = _mcp_policy_error(config)
             if policy_error is not None:
                 return policy_error
@@ -561,7 +584,7 @@ class MCPServerSave(Resource):
                 "redirect_uri",
             ]:
                 storage_config.pop(field, None)
-            from docsgpt.connectors import catalog
+            from docsgpt.connectors import catalog, service
             from docsgpt.connectors.permissions import apply_default_permissions
 
             # Scored as read, so a re-save of an unchanged server is a cache hit; warn only.
@@ -606,6 +629,8 @@ class MCPServerSave(Resource):
                 if connection_id and auth_type != "oauth":
                     # The secret lives on the connection only.
                     storage_config.pop("encrypted_credentials", None)
+                # A preset's tool rebuilt from its connection gets the same project back.
+                service.remember_url_parameters(conn, connection_id, storage_config.get("server_url"))
                 fields_out = {
                     "display_name": display_name,
                     "custom_name": display_name,

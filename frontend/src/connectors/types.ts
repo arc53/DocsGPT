@@ -39,6 +39,8 @@ export type CredentialField = {
   hint?: string | null;
   /** Where the hint's `<link>…</link>` words point. */
   hint_url?: string | null;
+  /** A regular expression the whole value must match; the server checks it too. */
+  pattern?: string | null;
 };
 
 export type ConnectorDefinition = {
@@ -84,6 +86,11 @@ export type ConnectorDefinition = {
   credential_policy: 'choose' | CredentialMode;
   /** A connection may opt into changes: offered, and no admin forbade it. */
   writes_allowed?: boolean;
+  /**
+   * Query parameters an MCP preset's URL must carry, asked for before
+   * sign-in (Supabase's project ref, which keeps it to one project).
+   */
+  url_parameters?: CredentialField[];
 };
 
 export type Connection = {
@@ -104,6 +111,8 @@ export type Connection = {
   last_used_at: string | null;
   source_count: number;
   tool_count: number;
+  /** The URL parameter values its preset needs, as last saved (a project ref). */
+  url_parameters?: Record<string, string>;
 };
 
 export type ActionAccess = 'read' | 'write';
