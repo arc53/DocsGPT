@@ -3,7 +3,12 @@ import i18n from 'i18next';
 import { baseURL } from '../api/client';
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../models/misc';
-import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
+import {
+  Answer,
+  ClientCapability,
+  FEEDBACK,
+  RetrievalPayload,
+} from './conversationModels';
 import { isQuotaError, quotaErrorMessage } from './quotaError';
 import { ToolCallsType } from './types';
 
@@ -155,6 +160,13 @@ async function _drainSseBody(
   }
 }
 
+/**
+ * What the web app can render, sent with every ``/stream`` request. ``forms``:
+ * it draws clarifying questions as cards and resumes the turn with the
+ * answer; without it the server never offers the model questions.
+ */
+export const CLIENT_CAPABILITIES: ClientCapability[] = ['forms'];
+
 export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
@@ -278,6 +290,7 @@ export function handleFetchAnswerSteaming(
     // explicitly opts into the sidebar; save_conversation alone no longer
     // lists it.
     visibility: save_conversation ? 'listed' : 'hidden',
+    capabilities: CLIENT_CAPABILITIES,
   };
 
   if (modelId) {
@@ -453,14 +466,22 @@ export function handleFetchAnswerSteaming(
   });
 }
 
+/**
+ * One action on a paused call: an approval's decision, a client tool's
+ * result, or a clarifying question's answer (or ``skipped``).
+ */
+export type ToolAction = {
+  call_id: string;
+  decision?: 'approved' | 'denied';
+  comment?: string;
+  result?: Record<string, any>;
+  answer?: string;
+  skipped?: true;
+};
+
 export function handleSubmitToolActions(
   conversationId: string,
-  toolActions: {
-    call_id: string;
-    decision?: 'approved' | 'denied';
-    comment?: string;
-    result?: Record<string, any>;
-  }[],
+  toolActions: ToolAction[],
   token: string | null,
   signal: AbortSignal,
   onEvent: (event: MessageEvent) => void,
@@ -469,6 +490,7 @@ export function handleSubmitToolActions(
   const payload = {
     conversation_id: conversationId,
     tool_actions: toolActions,
+    capabilities: CLIENT_CAPABILITIES,
   };
 
   const headers: Record<string, string> = {};

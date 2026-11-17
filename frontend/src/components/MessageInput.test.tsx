@@ -16,6 +16,7 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 }));
 
 import connectorsReducer from '../connectors/connectorsSlice';
+import chatToolsReducer from '../conversation/chatToolsSlice';
 import notificationsReducer, {
   sseEventReceived,
   sseHealthChanged,
@@ -42,6 +43,7 @@ const makeStore = () =>
       upload: uploadReducer,
       notifications: notificationsReducer,
       connectors: connectorsReducer,
+      chatTools: chatToolsReducer,
     },
   });
 
@@ -133,7 +135,7 @@ describe('MessageInput send with a failed attachment', () => {
     vi.restoreAllMocks();
   });
 
-  const render = async (loading = false) => {
+  const render = async (loading = false, sendBlocked = false) => {
     await act(async () => {
       root.render(
         <MemoryRouter>
@@ -141,6 +143,7 @@ describe('MessageInput send with a failed attachment', () => {
             <MessageInput
               onSubmit={onSubmit}
               loading={loading}
+              sendBlocked={sendBlocked}
               showSourceButton={false}
               showToolButton={false}
               autoFocus={false}
@@ -231,6 +234,20 @@ describe('MessageInput send with a failed attachment', () => {
       'ok-1',
     ]);
     expect(textarea().value).toBe('');
+  });
+
+  // The chat it would go to is still loading: the question waits, kept.
+  it('holds a send while blocked, with no stop control', async () => {
+    await render(false, true);
+    await type('Is this the right chat?');
+    await pressEnter();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea().value).toBe('Is this the right chat?');
+    // The send button, disabled; not the stop control ``loading`` shows.
+    const send = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="conversation.send"]',
+    );
+    expect(send?.disabled).toBe(true);
   });
 
   it('sends when the only attachment failed on the network', async () => {

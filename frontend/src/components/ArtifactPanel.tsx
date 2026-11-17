@@ -329,7 +329,7 @@ export default function ArtifactPanel({
       .then(async (res: Response) => {
         if (currentFetchIdRef.current !== fetchId) return true;
         if (!res.ok) return false;
-        let data: any = null;
+        let data: any;
         try {
           data = await res.json();
         } catch {

@@ -12,6 +12,7 @@ import requests
 import urllib3
 
 from docsgpt.core.settings import settings
+from docsgpt.parser.ingest_limits import check_file_count
 from docsgpt.parser.remote.base import BaseRemote
 from docsgpt.parser.schema.base import Document
 
@@ -667,6 +668,7 @@ class GitHubLoader(BaseRemote):
             return documents
 
         files = self._list_candidate_files(repo_name, branch)
+        check_file_count(len(files))
         logger.info(
             "Fetching %d file(s) from %s@%s", len(files), repo_name, branch
         )
@@ -799,6 +801,8 @@ class GitHubLoader(BaseRemote):
                     continue
                 if text:
                     texts[path] = text
+                    # Stops reading a repo over INGEST_MAX_FILES; not caught below, so it fails the load.
+                    check_file_count(len(texts))
         if skipped_big:
             logger.info("Skipped %d file(s) over the %d-byte cap", skipped_big, max_file)
         return texts

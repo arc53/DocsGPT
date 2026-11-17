@@ -422,6 +422,8 @@ agents_table = Table(
     # ``"<type>:<id>" -> user_id`` of the editor vouching for a referenced
     # resource the owner can't use (migration 0039, see resource_access.py).
     Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # Up to four questions a new chat with the agent offers (migration 0061).
+    Column("starters", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
@@ -1141,6 +1143,11 @@ ingest_chunk_progress_table = Table(
     # Added in ``0008_ingest_progress_status``. The reconciler flips
     # this to 'stalled'; ``init_progress`` resets it to 'active'.
     Column("status", Text, nullable=False, server_default="active"),
+    # Added in ``0062_ingest_resume``: the chunk set's hash, the task to
+    # queue again after a restart, and how often the reconciler has.
+    Column("chunk_fingerprint", Text),
+    Column("dispatch", JSONB),
+    Column("resume_attempts", Integer, nullable=False, server_default="0"),
 )
 
 

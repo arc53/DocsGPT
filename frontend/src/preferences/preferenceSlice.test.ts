@@ -12,6 +12,7 @@ import reducer, {
   setConversationsHead,
   setConversationsLoading,
   prefListenerMiddleware,
+  receiveConversations,
   selectAnalyticsEnabled,
   selectAnalyticsMaxOverlapping,
   selectAnalyticsMaxTopics,
@@ -114,6 +115,35 @@ describe('setSourceDocs reconciler', () => {
     store.dispatch(setSourceDocs(null));
 
     expect(localStorage.getItem('DocsGPTRecentDocs')).not.toBeNull();
+  });
+});
+
+// The empty chat's suggestions wait for these lists; a failed fetch has to
+// read differently from one not answered yet.
+describe('failed list loads', () => {
+  it('marks the source list failed when its fetch returned nothing', () => {
+    expect(baseState().sourceDocsFailed).toBe(false);
+    const failed = reducer(baseState(), setSourceDocs(null));
+    expect(failed.sourceDocsFailed).toBe(true);
+    expect(reducer(failed, setSourceDocs([])).sourceDocsFailed).toBe(false);
+  });
+
+  it('marks the chat list failed until a fetch answers', () => {
+    expect(baseState().conversations.failed).toBeFalsy();
+    const failed = reducer(
+      baseState(),
+      receiveConversations({ data: null, loading: false }),
+    );
+    expect(failed.conversations).toEqual({
+      data: null,
+      loading: false,
+      failed: true,
+    });
+    const listed = reducer(
+      failed,
+      receiveConversations({ data: [], loading: false }),
+    );
+    expect(listed.conversations.failed).toBeFalsy();
   });
 });
 

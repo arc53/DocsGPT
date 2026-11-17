@@ -1,12 +1,18 @@
-"""Admin > Defaults: the settings a new source (retrieval) and a new agent (guardrails) start with.
+"""Admin > Defaults: the settings a new source (retrieval) and a new agent (guardrails) start with, and models.
 
-Behind ``@admin_required``. The defaults are copied into a source or an agent
-when it is created (``docsgpt.storage.db.source_defaults``,
+Behind ``@admin_required``. The source and agent defaults are copied into a
+source or an agent when it is created (``docsgpt.storage.db.source_defaults``,
 ``docsgpt.storage.db.agent_defaults``); saving them never changes an existing
 one. The GETs also say what the decision model costs on this server, from this
 process's measured speed: nothing here loads, warms or times the model.
 Members read the defaults themselves, without the cost, from
 ``GET /api/sources/defaults`` and ``GET /api/agents/defaults``.
+
+Models holds the instance task model (``docsgpt.storage.db.model_defaults``):
+the built-in model DocsGPT's own jobs (the drafter, graph extraction, the
+monitor judge) run on for a user who picked none in Settings > General. It
+applies at once, to existing sources and monitors too. Members read it from
+``GET /api/user/preferences`` (``instance_task_model_id``).
 """
 
 from __future__ import annotations
@@ -21,11 +27,15 @@ from docsgpt import decisions
 from docsgpt.api.admin.guardrails import audit, injection_model, validation_error
 from docsgpt.api.admin.routes import _actor, admin_ns
 from docsgpt.api.user.authz import admin_required
+from docsgpt.api.user.me.routes import task_model_status
+from docsgpt.core.model_registry import ModelRegistry
+from docsgpt.core.model_utils import model_is_usable, resolve_task_model_id
 from docsgpt.core.settings import settings
 from docsgpt.decisions import features
+from docsgpt.drafter.service import forget_model_failure
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.retriever.retriever_creator import RetrieverCreator
-from docsgpt.storage.db import agent_defaults, source_defaults
+from docsgpt.storage.db import agent_defaults, model_defaults, source_defaults
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import DEFAULT_CANDIDATE_K, RetrievalConfig, validation_message
 
@@ -129,3 +139,73 @@ class AdminAgentDefaultsResource(Resource):
                 audit(conn, "agent_defaults_set", changes)
         logger.info("agent_defaults_updated", extra={"admin": _actor(), "fields": sorted(changes)})
         return make_response(jsonify(_agents_body(after)), 200)
+
+
+def _builtin_models() -> list[dict]:
+    """The enabled built-in models an admin may pick, as ``{id, display_name, provider}``.
+
+    Never the calling admin's own custom models: those resolve for them alone.
+    """
+    return [
+        {"id": m.id, "display_name": m.display_name, "provider": m.display_provider or m.provider.value}
+        for m in ModelRegistry.get_instance().get_enabled_models()
+        if getattr(m, "source", "builtin") != "user"
+    ]
+
+
+def _models_body(conn) -> dict:
+    """The Models panel: the stored task model, whether it can run, what runs without one, the choices.
+
+    ``task_model_id`` is the stored model while it can still run, else
+    ``None``; ``task_model_unavailable`` is true when a model is stored that
+    can't run (disabled or removed), which only a null ``PUT`` clears;
+    ``task_model_error`` is the last refused-key failure of the model that
+    runs for members without a choice (``{model_id, code, at}``), else ``None``.
+    """
+    fallback = resolve_task_model_id(None, None, None)
+    return {
+        "success": True,
+        **task_model_status(model_defaults.stored_task_model(conn), None, fallback),
+        "fallback_model_id": fallback,
+        "models": _builtin_models(),
+    }
+
+
+@admin_ns.route("/admin/defaults/models")
+class AdminModelDefaultsResource(Resource):
+    @admin_required
+    def get(self):
+        """The instance task model, what runs when it is unset (TASK_MODEL_ID or the default), the built-ins.
+
+        `task_model_id` is null when none is stored or the stored one can't run; `task_model_unavailable`
+        is then true for the latter, and a PUT with null clears it. `task_model_error` is {model_id, code, at}
+        when the model that runs for members without a choice failed a draft because its provider refused the
+        key (code model_auth), else null; a draft that works on it, or any PUT, clears it.
+        """
+        with db_readonly() as conn:
+            body = _models_body(conn)
+        return make_response(jsonify(body), 200)
+
+    @admin_required
+    def put(self):
+        """Store the body's `task_model_id` (a built-in model id, or null to clear) as the instance task model."""
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or "task_model_id" not in body:
+            return _bad("task_model_id is required (a built-in model id, or null)")
+        model_id = body["task_model_id"]
+        if isinstance(model_id, str):
+            # Blank clears it, as null does.
+            model_id = model_id.strip() or None
+        if model_id is not None and not (isinstance(model_id, str) and model_is_usable(model_id)):
+            return _bad("task_model_id must be an enabled built-in model id, or null")
+        with db_session() as conn:
+            before = model_defaults.stored_task_model(conn)
+            model_defaults.save_task_model(conn, model_id)
+            changes = _changes({"task_model_id": before}, {"task_model_id": model_id})
+            if changes:
+                audit(conn, "model_defaults_set", changes)
+            # A failure of the model it replaces no longer applies.
+            forget_model_failure(None)
+            after = _models_body(conn)
+        logger.info("model_defaults_updated", extra={"admin": _actor(), "fields": sorted(changes)})
+        return make_response(jsonify(after), 200)

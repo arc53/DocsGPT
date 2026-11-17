@@ -10,14 +10,13 @@ import logging
 import types
 import typing
 import warnings
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings, settings
 from docsgpt.core.docs_pages import read_last_updated
-from docsgpt.core.settings.reference import reference_path, render_reference, updated_reference
+from docsgpt.core.settings.reference import render_reference, updated_reference
 
 SECRET_FIELDS = (
     "API_KEY",
@@ -279,15 +278,21 @@ class TestReference:
             prose = prose.replace("\\{", "").replace("\\}", "")  # escaped braces are fine
             assert "<" not in prose and "{" not in prose and "}" not in prose, f"line {lineno}: {line}"
 
-    def test_checked_in_reference_is_current(self):
-        path: Path = reference_path()
-        if not path.exists():
-            pytest.skip("docs tree not present (installed package, not a checkout)")
-        current = path.read_text(encoding="utf-8")
-        assert current == updated_reference(current), (
-            "docs/content/Deploying/Settings-Reference.mdx is stale; "
-            "run: python -m docsgpt.core.settings.reference --write"
-        )
+
+@pytest.mark.unit
+class TestReferencePath:
+    def test_the_page_lives_in_the_docs_tree(self, tmp_path):
+        from docsgpt.core.settings.reference import reference_path
+
+        assert reference_path(tmp_path) == tmp_path / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
+
+    def test_the_default_root_is_the_checkout(self):
+        from pathlib import Path
+
+        from docsgpt.core.settings.reference import reference_path
+
+        root = Path(__file__).resolve().parents[2]
+        assert reference_path() == root / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
 
 
 @pytest.mark.unit

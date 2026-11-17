@@ -283,12 +283,14 @@ class PersonalAccessTokenRegenerate(Resource):
 @pat_ns.route("/user/tokens/<string:token_id>/tool")
 class PersonalAccessTokenTool(Resource):
     def post(self, token_id):
-        """Create an API tool that lets agents read this account with the token.
+        """Create an API tool that lets agents work in this account with the token.
 
         The body carries the token's plaintext ``token``, which only the caller
         holds (it was just shown to them), and ``base_url``, where the API is
-        reached. The tool gets the read endpoints the token may call, with the
-        token sealed as their ``Authorization`` header.
+        reached. The tool gets an action for each endpoint the token may call
+        (see ``docsgpt.api.pat.agent_tool``), with the token sealed as their
+        ``Authorization`` header. Deletes, and asking another agent, start
+        switched off; the response names them in ``inactive``.
         """
         user_id = _session_user_id()
         if not user_id:
@@ -340,13 +342,15 @@ class PersonalAccessTokenTool(Resource):
                 config=_seal_api_tool_secrets({"actions": actions}, {}, user_id),
                 custom_name=f"DocsGPT API ({row['name']})",
                 display_name="API Tool",
-                description="Read this DocsGPT account's agents, logs, feedback and conversations.",
+                description="Work in this DocsGPT account with a personal access token: what the token's scopes allow.",
                 config_requirements=tool_instance.get_config_requirements(),
                 actions=transform_actions(tool_instance.get_actions_metadata()),
                 status=True,
             )
+        inactive = sorted(name for name, action in actions.items() if not action["active"])
         return make_response(
-            jsonify({"success": True, "id": str(created["id"]), "actions": sorted(actions)}), 201
+            jsonify({"success": True, "id": str(created["id"]), "actions": sorted(actions), "inactive": inactive}),
+            201,
         )
 
 

@@ -458,6 +458,148 @@ class TestEmbedCheckpoint:
         assert m["last_index"] == 3
 
 
+@pytest.fixture
+def qdrant_store(monkeypatch):
+    """Force the embed pipeline down the non-faiss branch with a stub vector store."""
+    from docsgpt.parser import embedding_pipeline as ep
+
+    monkeypatch.setattr(ep.settings, "VECTOR_STORE", "qdrant", raising=False)
+    fake_store = MagicMock(name="vector_store")
+    monkeypatch.setattr(ep.VectorCreator, "create_vectorstore", lambda *a, **kw: fake_store)
+    return fake_store
+
+
+def _embed_capturing(docs, source_id, tmp_path, task, attempt_id) -> list[str]:
+    """Run the embed loop with a spy store write; return the chunk texts it embedded."""
+    import docsgpt.parser.embedding_pipeline as ep_mod
+
+    captured: list[str] = []
+    original = ep_mod.add_texts_to_store_with_retry
+    ep_mod.add_texts_to_store_with_retry = lambda store, batch, sid: captured.extend(d.page_content for d in batch)
+    try:
+        ep_mod.embed_and_store_documents(docs, str(tmp_path), source_id, task, attempt_id=attempt_id)
+    finally:
+        ep_mod.add_texts_to_store_with_retry = original
+    return captured
+
+
+def _seed_checkpoint(pg_conn, source_id: str, docs: list, *, last_index: int, attempt_id: str) -> None:
+    """Write a checkpoint the way an earlier task embedding ``docs`` would have."""
+    from docsgpt.parser.ingest_resume import chunk_fingerprint
+    from docsgpt.storage.db.repositories.ingest_chunk_progress import IngestChunkProgressRepository
+
+    repo = IngestChunkProgressRepository(pg_conn)
+    repo.init_progress(source_id, len(docs), attempt_id, fingerprint=chunk_fingerprint(docs))
+    repo.record_chunk(source_id, last_index=last_index, embedded_chunks=last_index + 1)
+
+
+def _ingest_task(**kwargs):
+    """A stand-in for the bound ``ingest`` Celery task as the embed loop sees it."""
+
+    def run(directory, formats, job_name, user, file_path, filename, file_name_map=None, config=None,
+            idempotency_key=None, source_id=None, copy_files=None):
+        return None
+
+    request = MagicMock()
+    request.task = "docsgpt.api.user.tasks.ingest"
+    request.args = ["inputs", [".md"], "job", "u-1"]
+    request.kwargs = {"file_path": "inputs/u-1/job", "filename": "job", "idempotency_key": "k-1", **kwargs}
+    task = MagicMock()
+    task.request = request
+    task.run = run
+    return task
+
+
+@pytest.mark.unit
+class TestResumeAcrossTasks:
+    def test_a_new_task_for_the_same_chunk_set_resumes(
+        self, pg_conn, patch_pipeline_db, qdrant_store, tmp_path
+    ):
+        source_id = str(uuid.uuid4())
+        docs = _make_docs(6)
+        _seed_checkpoint(pg_conn, source_id, docs, last_index=2, attempt_id="task-killed")
+
+        captured = _embed_capturing(_make_docs(6), source_id, tmp_path, MagicMock(), "task-new")
+
+        assert captured == ["chunk-3", "chunk-4", "chunk-5"]
+        qdrant_store.delete_index.assert_not_called()
+
+    def test_a_changed_chunk_set_restarts_from_zero(
+        self, pg_conn, patch_pipeline_db, qdrant_store, tmp_path
+    ):
+        source_id = str(uuid.uuid4())
+        _seed_checkpoint(pg_conn, source_id, _make_docs(6), last_index=2, attempt_id="task-killed")
+        changed = _make_docs(6)
+        changed[4].page_content = "edited"
+
+        captured = _embed_capturing(changed, source_id, tmp_path, MagicMock(), "task-new")
+
+        assert captured == ["chunk-0", "chunk-1", "chunk-2", "chunk-3", "edited", "chunk-5"]
+        qdrant_store.delete_index.assert_called_once()
+
+    def test_another_embeddings_model_restarts_from_zero(
+        self, pg_conn, patch_pipeline_db, qdrant_store, tmp_path, monkeypatch
+    ):
+        import docsgpt.parser.embedding_pipeline as ep_mod
+
+        source_id = str(uuid.uuid4())
+        _seed_checkpoint(pg_conn, source_id, _make_docs(4), last_index=1, attempt_id="task-killed")
+        monkeypatch.setattr(ep_mod.settings, "EMBEDDINGS_NAME", "another/model", raising=False)
+
+        captured = _embed_capturing(_make_docs(4), source_id, tmp_path, MagicMock(), "task-new")
+
+        assert captured == ["chunk-0", "chunk-1", "chunk-2", "chunk-3"]
+
+    def test_the_running_task_is_stored_for_a_resume(
+        self, pg_conn, patch_pipeline_db, qdrant_store, tmp_path
+    ):
+        from docsgpt.storage.db.repositories.ingest_chunk_progress import IngestChunkProgressRepository
+
+        source_id = str(uuid.uuid4())
+        docs = _make_docs(3)
+        import docsgpt.parser.embedding_pipeline as ep_mod
+
+        original = ep_mod.add_texts_to_store_with_retry
+        seen: list[dict] = []
+
+        def _spy(store, batch, sid):
+            seen.append(IngestChunkProgressRepository(pg_conn).get_progress(source_id)["dispatch"])
+
+        ep_mod.add_texts_to_store_with_retry = _spy
+        try:
+            ep_mod.embed_and_store_documents(docs, str(tmp_path), source_id, _ingest_task(), attempt_id="task-1")
+        finally:
+            ep_mod.add_texts_to_store_with_retry = original
+
+        assert seen[0] == {
+            "task": "docsgpt.api.user.tasks.ingest",
+            "kwargs": {
+                "directory": "inputs",
+                "formats": [".md"],
+                "job_name": "job",
+                "user": "u-1",
+                "file_path": "inputs/u-1/job",
+                "filename": "job",
+                "idempotency_key": "k-1",
+                # Pinned so a resume lands on this source even when the
+                # first dispatch let the worker pick the id.
+                "source_id": source_id,
+            },
+        }
+        # The finished embed drops it.
+        assert IngestChunkProgressRepository(pg_conn).get_progress(source_id)["dispatch"] is None
+
+    def test_a_task_that_is_not_resumable_stores_nothing(
+        self, pg_conn, patch_pipeline_db, qdrant_store, tmp_path
+    ):
+        from docsgpt.parser.ingest_resume import dispatch_of
+
+        task = _ingest_task()
+        task.request.task = "docsgpt.api.user.tasks.ingest_connector_task"
+        assert dispatch_of(task, "s-1") is None
+        assert dispatch_of(MagicMock(), "s-1") is None
+
+
 @pytest.mark.unit
 class TestIngestHeartbeat:
     def test_loop_bumps_last_updated_then_exits(

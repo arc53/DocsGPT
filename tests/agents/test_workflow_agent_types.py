@@ -669,6 +669,85 @@ class TestWorkflowNodeDocumentsReachTheAgent:
         node_config = AgentNodeConfig(**cfg.config.get("config", cfg.config))
 
         assert engine._retrieve_node_sources(node_config) == []
+        # A failure is not "nothing matched": the node agent is told so.
+        assert engine._node_search_outcome.failed == ("s1",)
+
+    @pytest.mark.parametrize("broken", [{"retriever": "invalid"}, {"chunks": "abc"}])
+    def test_a_failure_never_names_a_foreign_source(self, monkeypatch, pg_conn, broken):
+        """An inline workflow naming another user's source must not get its name back.
+
+        A node that lists only a foreign source and a retriever (or chunk
+        count) that raises fell back to the raw configured ids, so the node
+        agent was told the foreign source "could not be searched" — and named it.
+        """
+        from contextlib import contextmanager
+
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        foreign = str(SourcesRepository(pg_conn).create("Victim payroll", user_id="someone-else")["id"])
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", _yield)
+        engine = create_engine()
+        engine.agent._resolve_owner_id = lambda: "user-1"
+        engine.state["query"] = "q"
+        node_config = AgentNodeConfig(agent_type="classic", sources=[foreign], **broken)
+
+        assert engine._retrieve_node_sources(node_config) == []
+        outcome = engine._node_search_outcome
+        assert foreign not in outcome.searched and foreign not in outcome.failed
+
+    def test_retrieve_keeps_the_retrievers_outcome(self, monkeypatch):
+        from docsgpt.retriever.base import SearchOutcome
+
+        engine = create_engine()
+
+        class _R:
+            last_outcome = SearchOutcome.of(["s1", "s2"], ["s2"])
+
+            def search(self, q):
+                return []
+
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: _R(),
+        )
+        monkeypatch.setattr(type(engine), "_authorized_node_sources", lambda self, s: list(s or []))
+        engine.state["query"] = "q"
+        cfg = create_agent_node(node_id="n", agent_type="classic", sources=["s1", "s2"])
+        node_config = AgentNodeConfig(**cfg.config.get("config", cfg.config))
+
+        assert engine._retrieve_node_sources(node_config) == []
+        assert engine._node_search_outcome == SearchOutcome(("s1", "s2"), ("s2",))
+
+    def test_the_outcome_reaches_the_node_agent(self, monkeypatch):
+        from docsgpt.retriever.base import SearchOutcome
+
+        engine = create_engine()
+        outcome = SearchOutcome.of(["s1"], ["s1"])
+
+        def retrieve(self, node_config):
+            self._node_search_outcome = outcome
+            return []
+
+        monkeypatch.setattr(type(engine), "_retrieve_node_sources", retrieve)
+        node = create_agent_node(node_id="n", agent_type="classic", sources=["s1"])
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["search_outcome"] is outcome
+        assert captured["sources_were_searched"] is True
 
 
 @pytest.mark.unit

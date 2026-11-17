@@ -785,3 +785,22 @@ class TestGitHubLoaderRateLimit:
         with pytest.raises(Exception, match="GitHub API error") as caught:
             loader._make_request("https://api.github.com/repos/o/r")
         assert "GITHUB_ACCESS_TOKEN" not in str(caught.value)
+
+
+class TestGitHubLoaderFileCap:
+    def test_a_tree_over_ingest_max_files_fails_before_any_file_is_fetched(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.parser.ingest_limits import IngestTooLarge
+
+        monkeypatch.setattr(settings, "INGEST_MAX_FILES", 2)
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        monkeypatch.setattr(
+            loader, "fetch_repo_tree", lambda repo, branch: ([("a.py", 5), ("b.py", 5), ("c.py", 5)], False),
+        )
+        fetch = MagicMock(return_value="code")
+        monkeypatch.setattr(loader, "fetch_file_content", fetch)
+
+        with pytest.raises(IngestTooLarge):
+            loader.load_data("https://github.com/owner/repo")
+        fetch.assert_not_called()

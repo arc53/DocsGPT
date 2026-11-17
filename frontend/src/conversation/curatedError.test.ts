@@ -71,6 +71,9 @@ describe('curatedErrorText', () => {
     expect(curatedErrorText(t, 'x', 'stopped')).toBe(
       'conversation.errors.stopped',
     );
+    expect(curatedErrorText(t, 'x', 'no_answer')).toBe(
+      'conversation.errors.noAnswer',
+    );
   });
 
   it("keeps the server's text for an unknown code or none", () => {

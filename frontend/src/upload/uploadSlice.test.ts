@@ -4,6 +4,7 @@ import notificationsReducer, {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import i18n from '../locale/i18n';
 import type { RootState } from '../store';
 import reducer, {
   addAttachment,
@@ -332,6 +333,23 @@ describe('source.ingest.completed', () => {
     expect(state.tasks[0].tokenLimitReached).toBe(false);
   });
 
+  it('keeps how many items a partial download lost', () => {
+    let state = stateWithTask(makeTask({ status: 'training' }));
+    state = reducer(
+      state,
+      ingest('source.ingest.completed', {
+        partial: true,
+        files_failed: 2,
+        folders_failed: 1,
+      }),
+    );
+    expect(state.tasks[0].status).toBe('completed');
+    expect(state.tasks[0].itemsNotDownloaded).toBe(3);
+
+    state = reducer(state, ingest('source.ingest.completed', { tokens: 4 }));
+    expect(state.tasks[0].itemsNotDownloaded).toBeUndefined();
+  });
+
   it('with limited=true transitions training -> failed and flags tokenLimitReached', () => {
     let state = stateWithTask(
       makeTask({ status: 'training', dismissed: true }),
@@ -375,6 +393,41 @@ describe('source.ingest.failed', () => {
     expect(state.tasks[0].status).toBe('failed');
     expect(state.tasks[0].errorMessage).toBe('parser blew up');
     expect(state.tasks[0].dismissed).toBe(false);
+  });
+
+  it('words a source over a size cap in the UI language', () => {
+    let state = stateWithTask(makeTask({ status: 'training' }));
+    state = reducer(
+      state,
+      ingest('source.ingest.failed', {
+        error: 'This source has 12,000 files; ...',
+        reason: 'too_many_files',
+        limit: 10000,
+      }),
+    );
+    expect(state.tasks[0].status).toBe('failed');
+    expect(state.tasks[0].errorMessage).toBe(
+      i18n.t('modals.uploadDoc.progress.tooManyFiles', {
+        limit: (10000).toLocaleString(),
+      }),
+    );
+    expect(state.tasks[0].errorMessage).toContain('files');
+    expect(state.tasks[0].errorMessage).not.toContain('{{limit}}');
+  });
+
+  it('asks to reconnect when the connected account was rejected', () => {
+    let state = stateWithTask(makeTask({ status: 'training' }));
+    state = reducer(
+      state,
+      ingest('source.ingest.failed', {
+        error: "The connected account's sign-in was rejected...",
+        reason: 'reconnect',
+      }),
+    );
+    expect(state.tasks[0].status).toBe('failed');
+    expect(state.tasks[0].errorMessage).toBe(
+      i18n.t('settings.connectors.detail.expired'),
+    );
   });
 
   it('does not re-un-dismiss when a duplicate failed event arrives', () => {

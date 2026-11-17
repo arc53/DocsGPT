@@ -1,6 +1,6 @@
 ---
 title: Using the Web App
-description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language.
+description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language, and the clarifying questions an assistant can ask in a chat.
 lastUpdated: 2026-10-30
 ---
 
@@ -17,7 +17,7 @@ The sidebar holds:
 - **New Chat**: start a conversation. A chat without an agent uses the model you pick in the chat box, the prompt you picked for chats (see [Prompts](/Agents/prompts#pick-the-prompt-for-your-chats)) and the default chat tools.
 - **Activity**: what runs now, what waits for you and what runs next, with your schedules and monitors. The row counts what is running and shows a dot while something needs you. See [Activity](/Using/activity).
 - **Agents**: your pinned agents. With fewer than three pinned, your most recently used published agents fill the list up to three. Click one to chat with it. Hover over it to **Pin agent** or **Unpin agent**. The grid button next to the **Agents** heading opens **Manage Agents**, the agent library. With no pinned or published agents, a **Manage Agents** row takes the list's place.
-- **Chats**: your conversations, newest first. Each has a menu with **Rename**, **Share** (see [Sharing conversations](/Using/sharing)) and **Delete**, and can show one [status mark](/Using/activity#status-marks-on-sidebar-chats): working, waiting for your approval, failed, unread or watching.
+- **Chats**: your conversations, newest first. Each has a menu with **Rename**, **Share** (see [Sharing conversations](/Using/sharing)) and **Delete**, and can show one [status mark](/Using/activity#status-marks-on-sidebar-chats): working, waiting for you (an approval or clarifying questions), failed, unread or watching.
 - **Settings**, grouped into **Personal** (**General**, **Access Tokens**), **Workspace** (**Knowledge**, **Connectors**, **Tools**, **Prompts**, **Custom Models**, **Teams**) and **Monitoring** (**Analytics**, **Insights** while the operator has insights on, **Logs**). Admins also get **Admin**.
 
 ## Search your conversations
@@ -79,9 +79,34 @@ For the same import over the API, see [Agent portability](/API/agent-api#agent-p
 
 - **Theme**: **Light** or **Dark**. Until you pick one, the app follows your system setting.
 - **Language**: the language of menus and labels: English, Deutsch, Español, Français, 日本語, 普通话, 繁體中文（臺灣） or Русский.
+- **Task model**, under **Models**: the model DocsGPT's own tasks run on for you. See [Task model](#task-model).
 - **Delete all conversations**: permanently deletes every conversation in your account.
 
-Theme and language are saved in your browser, so set them again on another browser or device. The prompt for chats without an agent is picked on **Settings → Prompts** and saved to your account; see [Prompts](/Agents/prompts).
+Theme and language are saved in your browser, so set them again on another browser or device. The task model is saved to your account. The prompt for chats without an agent is picked on **Settings → Prompts** and saved to your account; see [Prompts](/Agents/prompts).
+
+### Task model
+
+The task model runs the work DocsGPT does for you outside a chat: drafting an agent, a prompt or Insights topics with [Draft with DocsGPT](/Agents/draft-with-docsgpt), extracting the knowledge graph of a [GraphRAG](/Sources/GraphRAG) source, and judging whether a [monitor](/Tools/monitors)'s condition is met. Chats keep the agent's model.
+
+The list starts with **Use instance default**, which names in brackets the model that runs without a choice of yours (the order is below), and names none when no model can run. It is picked until you choose another, and it follows the instance: when an admin changes the task model, your tasks move with it. After it come the built-in models and your own [custom models](/Models/custom-models). Choosing a named model, even the one the instance runs, makes it your choice, and later admin changes no longer reach you; choose **Use instance default** to follow the instance again. A custom model runs with your own key and endpoint. Your choice applies to your own drafts, to graph builds of the sources you own and to your monitors. It is saved as you pick; if you pick several models quickly, the last one is the one saved.
+
+Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model, unless it is disabled. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. Settings then shows **Unavailable model** and a note that the instance default runs; your choice is kept and runs again if the model comes back, until you pick **Use instance default** or another model. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
+
+When a draft fails because the model's provider refused its API key, DocsGPT remembers it: the list marks that model **· key refused** (you can still pick it, since an admin may fix the key), and while it is the model that runs, a warning under the field names it. The mark goes once a draft on that model works or you pick a model; the instance's task model gets the same mark under **Admin → Defaults**.
+
+Over the API, `GET /api/user/preferences` returns `task_model_id` (`null` when you have no choice, or can no longer use it), `task_model_unavailable` (`true` when a choice is stored that can no longer run), `task_model_error` (`{"model_id", "code", "at"}` when the task model that runs now failed its last draft because its provider refused the key, code `model_auth`; otherwise `null`; a draft that works on it, or setting the task model, clears it) and `instance_task_model_id` (the model that runs without one, `null` when no model can), and `PUT /api/user/preferences` with `{"task_model_id": "<model id>"}` sets it; `null` goes back to the instance default, and a model you can't use answers `400` (`invalid_model`). A [personal access token](/API/personal-access-tokens#scopes) reads these fields with `models:read` and sets the task model with `models:write`.
+
+## Clarifying questions
+
+When your answer depends on something neither the chat nor your sources settle (which quarter, who a document is for), the assistant can ask first instead of guessing. The same goes for a request that needs your own specifics: asked for a shipping policy without the regions, times or costs, it asks for them rather than writing a template full of blanks. It asks at most three short questions, once per message, and only when the answer would really differ. Each question has a few options to pick, one or several, and **Something else…** for your own words, or a field to type in when only you know the answer (a name, an order number). Picking some options opens a field under the option for the rest, such as **Another city** with the city's name, and in a question that takes several picks, an option such as **None of these** comes last and rules out the others.
+
+- **Send answers** sends your picks, and the same answer carries on.
+- **Just answer** skips the questions: the assistant goes ahead with its best guess and says what it assumed.
+- You can also type a reply in the message box, which says **Or type your answer…** while the questions wait.
+
+Once answered, the questions fold into a short record of what you picked, which stays in the chat. A reply you typed instead shows as your own message under the questions. Questions waiting for you show in [Activity](/Using/activity#now) under **Needs you**; they expire like a tool approval, after which they're kept as not answered.
+
+There's nothing to turn on: every chat and every agent with tools or sources can ask in the web app. An agent with neither answers straight away. The [chat widget](/Extensions/chat-widget), chat bots and API calls don't ask: there the agent answers as before. An API client that can show the questions opts in; see [Clarifying questions](/API/agent-api#clarifying-questions) in the Agent API.
 
 ## Default tools in chats without an agent
 

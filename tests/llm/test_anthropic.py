@@ -951,6 +951,47 @@ class TestRawGenStream:
 
 
 @pytest.mark.unit
+class TestModelOutputCap:
+    """A model's ``max_output_tokens`` bounds ``max_tokens`` on both paths."""
+
+    MESSAGES = [{"role": "user", "content": "hi"}]
+
+    def _capped(self, llm, cap):
+        from docsgpt.core.model_settings import ModelCapabilities
+
+        llm.capabilities = ModelCapabilities(supports_tools=True, max_output_tokens=cap)
+        return llm
+
+    def test_cap_lowers_a_higher_explicit_value(self, llm):
+        self._capped(llm, 1000)._raw_gen(llm, model="m", messages=self.MESSAGES, max_tokens=5000)
+        assert _sent(llm)["max_tokens"] == 1000
+
+    def test_lower_explicit_value_is_kept(self, llm):
+        self._capped(llm, 1000)._raw_gen(llm, model="m", messages=self.MESSAGES, max_completion_tokens=300)
+        assert _sent(llm)["max_tokens"] == 300
+
+    def test_cap_bounds_the_default_on_the_stream_path(self, llm):
+        list(self._capped(llm, 1000)._raw_gen_stream(llm, model="m", messages=self.MESSAGES))
+        assert _sent(llm)["max_tokens"] == 1000
+
+    def test_cap_above_the_default_keeps_the_default(self, llm):
+        from docsgpt.llm.anthropic import DEFAULT_MAX_TOKENS
+
+        self._capped(llm, DEFAULT_MAX_TOKENS * 8)._raw_gen(llm, model="m", messages=self.MESSAGES)
+        assert _sent(llm)["max_tokens"] == DEFAULT_MAX_TOKENS
+
+    def test_stream_length_stop_reports_length(self, llm):
+        llm.anthropic.messages.stream_events = [
+            ev_block_start(0, types.SimpleNamespace(type="thinking", thinking="")),
+            ev_thinking_delta(0, "planning"),
+            ev_message_delta("max_tokens"),
+        ]
+        chunks = list(llm._raw_gen_stream(llm, model="m", messages=self.MESSAGES))
+        assert chunks == [{"type": "thought", "thought": "planning"}]
+        assert llm._last_finish_reason == "length"
+
+
+@pytest.mark.unit
 class TestUsageReporting:
 
     def test_non_streaming_usage_recorded(self, llm):
@@ -1127,7 +1168,7 @@ class TestStructuredOutput:
 
         status = llm.prepare_structured_output_format(schema)["schema"]["properties"]["status"]
 
-        assert status == {"type": "string", "enum": ["open", "closed"]}
+        assert status == {"enum": ["open", "closed"]}
 
     def test_prepare_type_list_splits_enum_values_by_type(self, llm):
         schema = {
@@ -1140,14 +1181,8 @@ class TestStructuredOutput:
 
         props = llm.prepare_structured_output_format(schema)["schema"]["properties"]
 
-        assert props["status"]["anyOf"] == [
-            {"type": "string", "enum": ["open"]},
-            {"type": "null"},
-        ]
-        assert props["code"]["anyOf"] == [
-            {"type": "integer", "enum": [1]},
-            {"type": "string", "enum": ["a"]},
-        ]
+        assert props["status"]["anyOf"] == [{"enum": ["open"]}, {"type": "null"}]
+        assert props["code"]["anyOf"] == [{"enum": [1]}, {"enum": ["a"]}]
 
     def test_prepare_type_list_enum_matching_no_type_returns_none(self, llm):
         """No value satisfies such a schema; it goes out unenforced rather
@@ -1169,7 +1204,7 @@ class TestStructuredOutput:
 
         kind = llm.prepare_structured_output_format(schema)["schema"]["properties"]["kind"]
 
-        assert kind["anyOf"][0] == {"type": "string", "enum": ["a"]}
+        assert kind["anyOf"][0] == {"enum": ["a"]}
         assert {branch["type"] for branch in kind["anyOf"][1]["anyOf"]} == {"integer", "null"}
 
     def test_prepare_typeless_enum_of_containers_returns_none(self, llm):
@@ -1195,10 +1230,10 @@ class TestStructuredOutput:
 
         kind = llm.prepare_structured_output_format(schema)["schema"]["properties"]["kind"]
 
-        assert kind["enum"] == ["invoice"]
-        assert kind["type"] == "string"
+        assert kind == {"enum": ["invoice"]}
 
-    def test_prepare_typeless_enum_gets_its_type(self, llm):
+    def test_prepare_typeless_enum_is_kept(self, llm):
+        """The SDK sends ``enum`` and ``const`` without a ``type`` beside them (anthropic 2.7)."""
         schema = {
             "type": "object",
             "properties": {"status": {"enum": ["open", "closed"]}},
@@ -1206,7 +1241,7 @@ class TestStructuredOutput:
 
         status = llm.prepare_structured_output_format(schema)["schema"]["properties"]["status"]
 
-        assert status == {"type": "string", "enum": ["open", "closed"]}
+        assert status == {"enum": ["open", "closed"]}
 
     def test_prepare_definitions_become_defs(self, llm):
         """Draft-07 ``definitions`` would otherwise land in a description and

@@ -1,3 +1,4 @@
+import { useCommandState } from 'cmdk';
 import { Check, ChevronDown } from 'lucide-react';
 import * as React from 'react';
 
@@ -45,6 +46,15 @@ export interface ComboboxOption {
   leading?: React.ReactNode;
 }
 
+/** A row's own action, beside picking it (a prompt's Edit or View). */
+export interface ComboboxRowAction {
+  /** Names the item: "Edit default". */
+  label: string;
+  icon: React.ReactNode;
+  /** Called with the picker already closed; the row isn't picked. */
+  onSelect: () => void;
+}
+
 export interface ComboboxGroup {
   heading: React.ReactNode;
   options: ComboboxOption[];
@@ -76,11 +86,21 @@ type ComboboxProps = {
   /** The search text, when the caller owns it. */
   search?: string;
   onSearchChange?: (search: string) => void;
-  /** Replaces a row's body (row actions); `leading`/`hint` are then yours. */
+  /**
+   * Replaces a row's body; `leading`/`hint` are then yours. A `rowAction`
+   * still follows it.
+   */
   renderItem?: (
     option: ComboboxOption,
     state: { checked: boolean },
   ) => React.ReactNode;
+  /**
+   * A trailing icon button on each row it returns one for, shown while the
+   * row is hovered or highlighted (and always on touch). Only the
+   * highlighted row's is in the tab order, so Tab from the search reaches
+   * it in one stop.
+   */
+  rowAction?: (option: ComboboxOption) => ComboboxRowAction | undefined;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
@@ -143,6 +163,7 @@ function Combobox({
   search,
   onSearchChange,
   renderItem,
+  rowAction,
   open: openProp,
   onOpenChange,
   modal = true,
@@ -232,8 +253,27 @@ function Combobox({
     </Button>
   );
 
+  const renderAction = (option: ComboboxOption) => {
+    const action = rowAction?.(option);
+    if (!action) return null;
+    return (
+      <ComboboxRowActionButton
+        value={option.value}
+        action={action}
+        onClose={() => setOpen(false)}
+      />
+    );
+  };
+
   const renderRow = (option: ComboboxOption, checked: boolean) => {
-    if (renderItem) return renderItem(option, { checked });
+    if (renderItem) {
+      return (
+        <>
+          {renderItem(option, { checked })}
+          {renderAction(option)}
+        </>
+      );
+    }
     const hint = option.hint && (
       <span
         data-slot="combobox-hint"
@@ -250,6 +290,7 @@ function Combobox({
             {option.label}
           </span>
           {hint}
+          {renderAction(option)}
         </>
       );
     }
@@ -274,6 +315,7 @@ function Combobox({
         {checked ? (
           <Check aria-hidden="true" className="size-4 text-current" />
         ) : null}
+        {renderAction(option)}
       </>
     );
   };
@@ -331,6 +373,7 @@ function Combobox({
                     ]}
                     checked={checked}
                     onSelect={() => select(option)}
+                    className={rowAction ? 'group/row' : undefined}
                   >
                     {renderRow(option, checked)}
                   </CommandItem>
@@ -391,6 +434,43 @@ function Combobox({
         {body}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * A row's action button. cmdk keeps focus in the search and highlights a
+ * row by its value; only that row's button takes a tab stop.
+ */
+function ComboboxRowActionButton({
+  value,
+  action,
+  onClose,
+}: {
+  value: string;
+  action: ComboboxRowAction;
+  onClose: () => void;
+}) {
+  const highlighted = useCommandState((state) => state.value === value);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      tabIndex={highlighted ? 0 : -1}
+      aria-label={action.label}
+      title={action.label}
+      data-slot="combobox-row-action"
+      className="shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 group-data-[selected=true]/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+      // The row picks on click, and cmdk's root on Enter; this button doesn't.
+      onClick={(event) => {
+        event.stopPropagation();
+        onClose();
+        action.onSelect();
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {action.icon}
+    </Button>
   );
 }
 

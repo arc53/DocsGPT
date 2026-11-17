@@ -43,6 +43,8 @@ from docsgpt.core.model_utils import (
     get_token_limit,
     validate_model_id,
 )
+from docsgpt.agents.client_capabilities import FORMS, parse_capabilities
+from docsgpt.agents.tools.ask_user import is_awaiting_answer, offered_questions
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
@@ -57,6 +59,7 @@ from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.api.user.team_sharing import can_access
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.utils import (
@@ -387,6 +390,10 @@ def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
 #: Agent types that build a tools_dict and so can carry the Wiki tool.
 WIKI_AGENT_TYPES = ("classic", "agentic", "research")
 
+#: Agent types whose chat turn can ask the user clarifying questions (``ask_user``).
+#: A research agent's steps and a workflow's nodes can't stop for an answer.
+QUESTION_AGENT_TYPES = ("classic", "react", "agentic")
+
 
 def wiki_tool_config(
     conn: Any,
@@ -562,6 +569,9 @@ class StreamProcessor:
         self.earlier_attachments: List[Dict[str, Any]] = []
         self.history = []
         self.retrieved_docs = []
+        # Which sources the pre-fetch searched and which failed to (see
+        # ``pre_fetch_docs``); None when no pre-fetch ran.
+        self.search_outcome: Optional[SearchOutcome] = None
         self.agent_config = {}
         self.retriever_config = {}
         self.is_shared_usage = False
@@ -579,6 +589,8 @@ class StreamProcessor:
         # WAL placeholder id pulled from continuation state on resume.
         self.reserved_message_id: Optional[str] = None
         self.prior_tool_calls: List[Dict[str, Any]] = []
+        # The paused turn's text, reasoning and their order, finalized ahead of the resumed answer.
+        self.prior_turn: Dict[str, Any] = {}
         # Carried through resumes so multi-pause runs keep one request_id.
         self.request_id: Optional[str] = None
         # The request's execution trace, started by the first traced setup
@@ -609,6 +621,19 @@ class StreamProcessor:
         (``agent.decision_record``), and a resume continues the paused turn's.
         """
         return DecisionRecord()
+
+    @property
+    def client_capabilities(self) -> frozenset:
+        """What the requesting client says it can render (its ``capabilities``).
+
+        Not enforced: a client that sends none (API agents, the widget, bots)
+        gets the turn as before any capability existed. ``/v1`` maps none.
+        """
+        return parse_capabilities(self.data.get("capabilities"))
+
+    def _client_draws_forms(self) -> bool:
+        """Whether the client draws question forms; without them a turn has no ``ask_user``."""
+        return FORMS in self.client_capabilities
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -1934,12 +1959,21 @@ class StreamProcessor:
         ):
             logger.info("Pre-fetch skipped: no %s sources", exposure)
             return None, None
+        if exposure is not None:
+            source_ids = [entry["id"] for entry in self._build_per_source_list(exposure=exposure)]
+        else:
+            active_docs = self.source.get("active_docs")
+            source_ids = [active_docs] if isinstance(active_docs, str) else list(active_docs)
+        # A retrieval that raises searched nothing; record every source failed
+        # unless the search returned and recorded its own outcome.
+        self.search_outcome = SearchOutcome.of(source_ids, source_ids)
         try:
             retriever = self.create_retriever(exposure=exposure)
             logger.info(
                 f"Pre-fetching docs with chunks={retriever.chunks}, doc_token_limit={retriever.doc_token_limit}"
             )
             docs = retriever.search(question)
+            self.search_outcome = search_outcome_of(retriever, source_ids)
             logger.info(f"Pre-fetch retrieved {len(docs) if docs else 0} documents")
 
             if not docs:
@@ -2312,7 +2346,9 @@ class StreamProcessor:
             NOT_PENDING_MESSAGE,
             ContinuationNotPendingError,
             ContinuationService,
+            InvalidToolActionsError,
             answered_call_ids,
+            question_action_problem,
         )
         from docsgpt.agents.agent_creator import AgentCreator
         from docsgpt.agents.tool_executor import ToolExecutor
@@ -2389,6 +2425,15 @@ class StreamProcessor:
             except Exception:
                 logger.warning("Failed to release a refused resume claim", exc_info=True)
             raise ContinuationNotPendingError(NOT_PENDING_MESSAGE)
+        # Questions take an answer (or skipping them), approvals a decision,
+        # client calls a result; a mixed-up action is refused before anything runs.
+        problem = question_action_problem(state.get("pending_tool_calls"), tool_actions)
+        if problem:
+            try:
+                cont_service.release_claim(conversation_id, self.initial_user_id)
+            except Exception:
+                logger.warning("Failed to release a refused resume claim", exc_info=True)
+            raise InvalidToolActionsError(problem)
 
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]
@@ -2443,6 +2488,13 @@ class StreamProcessor:
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
+        # A turn that offered questions still does after its resume when the
+        # resuming client draws forms too; one that asked already can't again.
+        if offered_questions(agent_config.get("questions")):
+            tool_executor.offers_questions = self._client_draws_forms()
+        tool_executor.questions_asked = bool(agent_config.get("questions_asked")) or any(
+            is_awaiting_answer(call) for call in pending_tool_calls or []
+        )
         # Restore client tools so they stay available for subsequent LLM calls
         saved_client_tools = state.get("client_tools")
         if saved_client_tools:
@@ -2563,6 +2615,8 @@ class StreamProcessor:
         self.request_id = agent_config.get("request_id")
         # The turn's calls from its earlier approval rounds, kept on the message.
         self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
+        prior_turn = agent_config.get("prior_turn")
+        self.prior_turn = dict(prior_turn) if isinstance(prior_turn, dict) else {}
         # The paused turn's values: a resume request does not resend them.
         self.passthrough = stored_passthrough(agent_config.get("passthrough")) or stored_passthrough(
             self.data.get("passthrough")
@@ -2777,6 +2831,11 @@ class StreamProcessor:
             api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
+        # A chat agent can ask the user clarifying questions only when the
+        # client draws them as forms (the web app); every other caller gets
+        # the turn without ``ask_user``, as before questions existed.
+        if str(agent_type or "").strip().lower() in QUESTION_AGENT_TYPES:
+            tool_executor.offers_questions = self._client_draws_forms()
         # Pass client-side tools so they get merged in get_tools()
         client_tools = self.data.get("client_tools")
         if client_tools:
@@ -2814,6 +2873,7 @@ class StreamProcessor:
                 False if override_used else prompt_requests_citations(raw_prompt)
             ),
             "sources_were_searched": self._has_active_docs(),
+            "search_outcome": getattr(self, "search_outcome", None),
             "decoded_token": self.decoded_token,
             "attachments": self.attachments,
             "json_schema": self.agent_config.get("json_schema"),

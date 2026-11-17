@@ -8,6 +8,7 @@ import {
 import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
 import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
+import { presetPrompts } from '../prompts/promptAccess';
 import { RootState } from '../store';
 import {
   getLocalRecentDocs,
@@ -37,9 +38,13 @@ export interface Preference {
   chunks: string;
   selectedDocs: Doc[];
   sourceDocs: Doc[] | null;
+  /** The last source list fetch failed; `sourceDocs` is then null. */
+  sourceDocsFailed: boolean;
   conversations: {
     data: ConversationSummary[] | null;
     loading: boolean;
+    /** The last newest-page fetch failed; `data` is then null. */
+    failed?: boolean;
     /** Older chats exist past the last one loaded. */
     hasMore?: boolean;
   };
@@ -82,14 +87,11 @@ export interface Preference {
 const initialState: Preference = {
   apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
-  prompts: [
-    { name: 'default', id: 'default', type: 'public' },
-    { name: 'creative', id: 'creative', type: 'public' },
-    { name: 'strict', id: 'strict', type: 'public' },
-  ],
+  prompts: presetPrompts(),
   chunks: '6',
   selectedDocs: [],
   sourceDocs: null,
+  sourceDocsFailed: false,
   conversations: {
     data: null,
     loading: false,
@@ -126,8 +128,10 @@ export const prefSlice = createSlice({
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
     },
+    /** A source list fetch's answer; null when it failed. */
     setSourceDocs: (state, action) => {
       state.sourceDocs = action.payload;
+      state.sourceDocsFailed = action.payload === null;
     },
     setPaginatedDocuments: (state, action) => {
       state.paginatedDocuments = action.payload;
@@ -175,7 +179,7 @@ export const prefSlice = createSlice({
       }>,
     ) => {
       if (!action.payload.data) {
-        state.conversations = { data: null, loading: false };
+        state.conversations = { data: null, loading: false, failed: true };
         return;
       }
       prefSlice.caseReducers.setConversationsHead(state, {
@@ -441,6 +445,8 @@ export const selectSelectedDocsStatus = (state: RootState) =>
   state.preference.selectedDocs.length > 0;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
+export const selectSourceDocsFailed = (state: RootState) =>
+  state.preference.sourceDocsFailed;
 export const selectModalStateDeleteConv = (state: RootState) =>
   state.preference.modalState;
 export const selectSelectedDocs = (state: RootState) =>

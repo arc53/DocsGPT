@@ -53,6 +53,7 @@ import type { SponsorAudience } from '../sponsorConsent';
 import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
 import { analyticsOf } from '../analyticsConfig';
 import { largestModelWindow } from '../contextLimit';
+import { cleanStarters } from '../starters';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
 import { ConditionCase, RetryConfig, WorkflowNode } from '../types/workflow';
 import {
@@ -230,9 +231,15 @@ function serializeNode(node: Node): WorkflowNode {
   };
 }
 
+/**
+ * What a save sends, and what the unsaved-changes check compares: the
+ * agent's name, description and starters (cleaned, as the server stores
+ * them), and the workflow's graph.
+ */
 function createWorkflowPayload(
   name: string,
   description: string,
+  starters: string[],
   workflowNodes: Node[],
   workflowEdges: Edge[],
   retryDefaults: RetryConfig | null,
@@ -240,6 +247,7 @@ function createWorkflowPayload(
   return {
     name,
     description,
+    starters: cleanStarters(starters),
     // Always sent, so clearing the defaults saves too.
     retry_defaults: normalizeRetryConfig(retryDefaults) ?? null,
     nodes: workflowNodes.map(serializeNode),
@@ -344,11 +352,13 @@ function WorkflowBuilderInner() {
   // the canvas, and nothing saves. Bumping the attempt loads both again.
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  // The name and description the agent was loaded with: the builder shows
-  // and saves the agent's own fields (its workflow's follow them).
+  // The name, description and starters the agent was loaded with: the
+  // builder shows and saves the agent's own fields (its workflow's follow
+  // them; a workflow has no starters).
   const loadedAgentFields = useRef<{
     name: string;
     description: string;
+    starters: string[];
   } | null>(null);
   // The workflow a first save just created: its graph is the one on the
   // canvas, so it isn't read back.
@@ -359,6 +369,8 @@ function WorkflowBuilderInner() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
+  // The agent's starters, cleaned (`agents/starters.ts`).
+  const [workflowStarters, setWorkflowStarters] = useState<string[]>([]);
   // What a node's unset retry fields fall back to (``retry_defaults``).
   const [retryDefaults, setRetryDefaults] = useState<RetryConfig | null>(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -413,7 +425,21 @@ function WorkflowBuilderInner() {
   // laid over the saved config with the next save; null when none changed.
   const [pendingConfig, setPendingConfig] = useState<AgentConfig | null>(null);
   const analyticsAvailability = useAnalyticsAvailability();
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const [listedModels, setListedModels] = useState<Model[]>([]);
+  // A node's model resolves in the owner's account, so a team editor picks
+  // from the owner's custom models, not their own (the save refuses those).
+  // Null for the owner.
+  const [ownerModels, setOwnerModels] = useState<Model[] | null>(null);
+  const availableModels = useMemo(
+    () =>
+      ownerModels
+        ? [
+            ...listedModels.filter((model) => model.source !== 'user'),
+            ...ownerModels,
+          ]
+        : listedModels,
+    [listedModels, ownerModels],
+  );
   const modelNames = useMemo(
     () =>
       Object.fromEntries(
@@ -464,11 +490,19 @@ function WorkflowBuilderInner() {
       createWorkflowPayload(
         workflowName,
         workflowDescription,
+        workflowStarters,
         nodes,
         edges,
         retryDefaults,
       ),
-    [workflowName, workflowDescription, nodes, edges, retryDefaults],
+    [
+      workflowName,
+      workflowDescription,
+      workflowStarters,
+      nodes,
+      edges,
+      retryDefaults,
+    ],
   );
 
   const workflowPayloadSignature = useMemo(
@@ -1145,7 +1179,7 @@ function WorkflowBuilderInner() {
           const transformedModels = modelService.transformModels(
             modelsData.models || [],
           );
-          setAvailableModels(transformedModels);
+          setListedModels(transformedModels);
           const preferredDefaultModel =
             transformedModels.find(
               (model) => model.id === modelsData.default_model_id,
@@ -1266,12 +1300,15 @@ function WorkflowBuilderInner() {
         });
         if (agent.agent_type !== 'workflow') return;
         setCurrentAgentId(agent.id);
+        const loadedStarters = cleanStarters(agent.starters);
         loadedAgentFields.current = {
           name: agent.name ?? '',
           description: agent.description || '',
+          starters: loadedStarters,
         };
         setWorkflowName(agent.name);
         setWorkflowDescription(agent.description || '');
+        setWorkflowStarters(loadedStarters);
         if (agent.workflow) {
           setWorkflowId(agent.workflow);
         } else {
@@ -1282,6 +1319,7 @@ function WorkflowBuilderInner() {
               createWorkflowPayload(
                 agent.name,
                 agent.description || '',
+                loadedStarters,
                 initialNodes,
                 [],
                 null,
@@ -1358,6 +1396,11 @@ function WorkflowBuilderInner() {
           ref_details: refDetails,
         } = responseData.data;
         applyResourceDetails(responseData.data);
+        setOwnerModels(
+          responseData.data.owner_models
+            ? modelService.transformModels(responseData.data.owner_models)
+            : null,
+        );
         setNodeRefNames({
           tools: (refDetails?.tools ?? []).map(
             (tool: { id: string; name?: string; display_name?: string }) => ({
@@ -1379,6 +1422,7 @@ function WorkflowBuilderInner() {
           loadedAgentFields.current?.name ?? workflow.name;
         const nextWorkflowDescription =
           loadedAgentFields.current?.description ?? workflow.description ?? '';
+        const nextWorkflowStarters = loadedAgentFields.current?.starters ?? [];
         const nextRetryDefaults =
           normalizeRetryConfig(workflow.retry_defaults) ?? null;
         const mappedNodes = parentsFirst<Node>(
@@ -1433,6 +1477,7 @@ function WorkflowBuilderInner() {
         );
         setWorkflowName(nextWorkflowName);
         setWorkflowDescription(nextWorkflowDescription);
+        setWorkflowStarters(nextWorkflowStarters);
         setRetryDefaults(nextRetryDefaults);
         setAgentJsonSchemaDrafts({});
         setAgentJsonSchemaErrors({});
@@ -1445,6 +1490,7 @@ function WorkflowBuilderInner() {
             createWorkflowPayload(
               nextWorkflowName,
               nextWorkflowDescription,
+              nextWorkflowStarters,
               mappedNodes,
               mappedEdges,
               nextRetryDefaults,
@@ -1887,6 +1933,8 @@ function WorkflowBuilderInner() {
         formData.append('name', workflowName);
         // As typed; a workflow agent's description may be blank.
         formData.append('description', workflowDescription);
+        // Always sent, so clearing them saves too.
+        formData.append('starters', JSON.stringify(workflowPayload.starters));
         formData.append('status', status);
         formData.append(
           'allow_system_prompt_override',
@@ -1959,6 +2007,7 @@ function WorkflowBuilderInner() {
           id: agentId,
           name: workflowName,
           description: workflowDescription,
+          starters: workflowPayload.starters,
           image: data?.image || prev.image || '',
           key: data?.key ?? prev.key,
           // The stamp the next save sends.
@@ -1973,6 +2022,7 @@ function WorkflowBuilderInner() {
         loadedAgentFields.current = {
           name: workflowName,
           description: workflowDescription,
+          starters: workflowPayload.starters,
         };
         if (savedWorkflowId && savedWorkflowId !== workflowId) {
           // The canvas holds what was saved: no reading it back.
@@ -2058,6 +2108,9 @@ function WorkflowBuilderInner() {
       if (persistingRef.current || detailsSaving || !canSave) return;
       setWorkflowName(values.name);
       setWorkflowDescription(values.description);
+      // Values without starters leave them as they are.
+      if (values.starters !== undefined)
+        setWorkflowStarters(cleanStarters(values.starters));
       setRetryDefaults(values.retryDefaults ?? null);
       setCurrentAgent((prev) => ({
         ...prev,
@@ -2571,6 +2624,7 @@ function WorkflowBuilderInner() {
                   nodes={nodes}
                   edges={edges}
                   availableModels={availableModels}
+                  modelsFromOwner={ownerModels !== null}
                   availableTools={availableTools}
                   attachedTools={nodeRefNames.tools}
                   attachedSources={nodeRefNames.sources}
@@ -2636,6 +2690,7 @@ function WorkflowBuilderInner() {
           details={{
             name: workflowName,
             description: workflowDescription,
+            starters: workflowStarters,
             allowPromptOverride: Boolean(
               currentAgent.allow_system_prompt_override,
             ),
@@ -2678,6 +2733,7 @@ function WorkflowBuilderInner() {
         >
           <WorkflowPreview
             workflowId={workflowId}
+            starters={workflowStarters}
             workflowData={{
               name: workflowName,
               description: workflowDescription,

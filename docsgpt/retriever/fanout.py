@@ -305,6 +305,9 @@ def fetch_per_source(
     )
     if embed_error is not None and _same_text_would_fail_again(embed_error):
         # Each store would re-send the same text to the same failing embedder.
+        # No search runs, so no per-source error is logged: say it per source.
+        for item in items:
+            logger.warning("Source %s was not searched: the query embedding failed", label_of(item))
         _report_degraded(embed_error, len(items), searched=False)
         return [None] * len(items)
     results = _dispatch(

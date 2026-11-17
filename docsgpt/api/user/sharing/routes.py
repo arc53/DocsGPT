@@ -298,6 +298,16 @@ class ShareConversation(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
+def _shared_tool_calls(tool_calls: Any) -> list:
+    """A message's tool calls as a share shows them: without MCP App views, which a viewer can't open."""
+    if not isinstance(tool_calls, list):
+        return []
+    return [
+        {key: value for key, value in call.items() if key != "ui"} if isinstance(call, dict) else call
+        for call in tool_calls
+    ]
+
+
 def _shared_wake(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """``{"wake": {source, count}}`` for a continuation turn, else ``{}``.
 
@@ -389,7 +399,7 @@ class GetPubliclySharedConversations(Resource):
                         "response": msg.get("response"),
                         "thought": msg.get("thought"),
                         "sources": msg.get("sources") or [],
-                        "tool_calls": msg.get("tool_calls") or [],
+                        "tool_calls": _shared_tool_calls(msg.get("tool_calls")),
                         # Only the order, not the rest of the private metadata.
                         "segments": (msg.get("metadata") or {}).get("segments"),
                         # What woke the agent, so the prompt reads as an event row.

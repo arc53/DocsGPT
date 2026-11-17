@@ -1,0 +1,257 @@
+import {
+  Bot,
+  FileText,
+  Files,
+  History,
+  Plug,
+  Upload as UploadIcon,
+} from 'lucide-react';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+
+import AgentTypeModal from '../agents/components/AgentTypeModal';
+import { catalogCards } from '../connectors/catalogCards';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import {
+  selectConnections,
+  selectConnectorCatalog,
+  selectConnectorsEnabled,
+  selectConnectorsLoaded,
+  selectConnectorsSettled,
+} from '../connectors/connectorsSlice';
+import { connectorName } from '../connectors/i18n';
+import {
+  selectChatTools,
+  selectChatToolsLoaded,
+} from '../conversation/chatToolsSlice';
+import {
+  selectAgents,
+  selectConversations,
+  selectSelectedDocs,
+  selectSourceDocs,
+  selectSourceDocsFailed,
+} from '../preferences/preferenceSlice';
+import type { ActiveState } from '../models/misc';
+import Upload from '../upload/Upload';
+import { intlLocale } from '../utils/dateTimeUtils';
+import {
+  answerableServices,
+  buildHeroSuggestions,
+  holdsData,
+  type HeroSuggestion,
+} from './suggestions';
+import SuggestionRows, {
+  suggestionIconClass as iconClass,
+  type SuggestionRow,
+} from './SuggestionRows';
+
+const SERVICE_TEMPLATES = new Set([
+  'files',
+  'knowledge',
+  'projects',
+  'dev',
+  'business',
+  'messaging',
+  'database',
+]);
+/** How many services the Connect row names before "and more". */
+const NAMED_SERVICES = 2;
+
+/**
+ * The empty chat's suggestions: questions about what the user has (the
+ * selected sources, connected services), their latest chat, and setup steps
+ * not done yet. Nothing shows until every list it reads has loaded (or
+ * failed, then read as empty), so a returning user never sees a fresh
+ * install's rows first.
+ */
+export default function HeroSuggestions({
+  onAsk,
+}: {
+  /** Sends a suggested question. */
+  onAsk: (question: string) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const [uploadState, setUploadState] = useState<ActiveState>('INACTIVE');
+  const [agentTypeOpen, setAgentTypeOpen] = useState(false);
+
+  const selectedDocs = useSelector(selectSelectedDocs);
+  const sourceDocs = useSelector(selectSourceDocs);
+  const sourceDocsFailed = useSelector(selectSourceDocsFailed);
+  const conversations = useSelector(selectConversations);
+  const agents = useSelector(selectAgents);
+  const tools = useSelector(selectChatTools);
+  const toolsLoaded = useSelector(selectChatToolsLoaded);
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
+  const connectorsSettled = useSelector(selectConnectorsSettled);
+  const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
+
+  // A list that failed to load counts as empty (the tools' failure sets
+  // their loaded flag too), so the setup steps still show. The connectors
+  // count once any load has answered: a reload (opening the Tools picker)
+  // clears their failure while it runs, and the rows shouldn't blink.
+  const ready =
+    (sourceDocs !== null || sourceDocsFailed) &&
+    (conversations.data !== null || !!conversations.failed) &&
+    toolsLoaded &&
+    (!connectorsEnabled || connectorsSettled);
+
+  // Offer connecting a service only while nothing is connected, named
+  // after services whose data you chat with (files, docs, issues).
+  const connectable = connectorsEnabled
+    ? catalog.filter((c) => c.available && c.publisher !== 'custom')
+    : [];
+  const offerConnect =
+    connectorsLoaded && connections.length === 0 && connectable.length > 0;
+  const dataServices = catalogCards(connectable).filter(holdsData);
+  const named = (dataServices.length > 0 ? dataServices : connectable).map(
+    (connector) => connectorName(t, connector),
+  );
+  // The app's English is British, so no comma before "and more".
+  const listLocale = intlLocale(i18n.language);
+  const connectNames = new Intl.ListFormat(
+    listLocale === 'en' || listLocale.startsWith('en-') ? 'en-GB' : listLocale,
+    { type: 'conjunction' },
+  ).format(
+    named.length > NAMED_SERVICES
+      ? [...named.slice(0, NAMED_SERVICES), t('hero.suggestions.more')]
+      : named,
+  );
+
+  const rows = ready
+    ? buildHeroSuggestions({
+        // The selection restored from the browser is checked against the
+        // source list; without that list it may name a deleted source or
+        // another account's, so it isn't offered.
+        selectedSources: sourceDocsFailed ? [] : selectedDocs,
+        hasSources: (sourceDocs?.length ?? 0) > 0,
+        services: connectorsEnabled
+          ? answerableServices({
+              catalog,
+              connections,
+              tools,
+              nameOf: (connector) => connectorName(t, connector),
+            })
+          : [],
+        conversations: conversations.data ?? [],
+        // The agent list loads with the sidebar; until it has, don't offer
+        // creating one.
+        hasAgents: agents === null || agents.length > 0,
+        offerConnect,
+        now: Date.now(),
+      })
+    : [];
+
+  const names = { interpolation: { escapeValue: false } };
+  // A question row sends its own text; the others open something.
+  type Row = Omit<SuggestionRow, 'onSelect'> & { onSelect?: () => void };
+  const row = (suggestion: HeroSuggestion): Row => {
+    switch (suggestion.kind) {
+      case 'summarize':
+        return {
+          key: `summarize-${suggestion.source.id}`,
+          icon: <FileText className={iconClass} />,
+          text: t('hero.suggestions.summarize', {
+            name: suggestion.source.name,
+            ...names,
+          }),
+          asks: true,
+        };
+      case 'compare':
+        return {
+          key: 'compare',
+          icon: <Files className={iconClass} />,
+          text: t('hero.suggestions.compare', {
+            first: suggestion.first.name,
+            second: suggestion.second.name,
+            ...names,
+          }),
+          asks: true,
+        };
+      case 'service': {
+        const { service } = suggestion;
+        const template = SERVICE_TEMPLATES.has(service.category)
+          ? service.category
+          : 'other';
+        return {
+          key: `service-${service.key}`,
+          icon: <ConnectorIcon icon={service.icon} className={iconClass} />,
+          text: t(`hero.suggestions.service.${template}`, {
+            name: service.name,
+            ...names,
+          }),
+          asks: true,
+        };
+      }
+      case 'continue':
+        return {
+          key: `continue-${suggestion.chat.id}`,
+          icon: <History className={iconClass} />,
+          text: t('hero.suggestions.continue', {
+            name: suggestion.chat.name,
+            ...names,
+          }),
+          asks: false,
+          onSelect: () => navigate(`/c/${suggestion.chat.id}`),
+        };
+      case 'addKnowledge':
+        return {
+          key: 'add-knowledge',
+          icon: <UploadIcon className={iconClass} />,
+          text: t('hero.suggestions.addKnowledge'),
+          asks: false,
+          onSelect: () => setUploadState('ACTIVE'),
+        };
+      case 'connect':
+        return {
+          key: 'connect',
+          icon: <Plug className={iconClass} />,
+          text: t('hero.suggestions.connect', {
+            names: connectNames,
+            ...names,
+          }),
+          asks: false,
+          onSelect: () => navigate('/settings/connectors'),
+        };
+      case 'createAgent':
+        return {
+          key: 'create-agent',
+          icon: <Bot className={iconClass} />,
+          text: t('hero.suggestions.createAgent'),
+          asks: false,
+          onSelect: () => setAgentTypeOpen(true),
+        };
+    }
+  };
+
+  return (
+    <>
+      <SuggestionRows
+        rows={rows.map(row).map((r) => ({
+          ...r,
+          onSelect: r.onSelect ?? (() => onAsk(r.text)),
+        }))}
+      />
+      {uploadState === 'ACTIVE' && (
+        <Upload
+          receivedFile={[]}
+          setModalState={setUploadState}
+          isOnboarding={false}
+          renderTab={null}
+          close={() => setUploadState('INACTIVE')}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
+        />
+      )}
+      <AgentTypeModal
+        isOpen={agentTypeOpen}
+        onClose={() => setAgentTypeOpen(false)}
+      />
+    </>
+  );
+}

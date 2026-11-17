@@ -6,6 +6,7 @@ import mimetypes
 from typing import List, Optional
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS
+from docsgpt.parser.ingest_limits import check_file_count
 from docsgpt.parser.remote.base import BaseRemote
 from docsgpt.parser.schema.base import Document
 
@@ -416,6 +417,7 @@ class S3Loader(BaseRemote):
             bucket = corrected_bucket
 
         objects = self.list_objects(bucket, prefix)
+        check_file_count(sum(1 for key in objects if self.is_text_file(key) or self.is_supported_document(key)))
         documents = []
 
         for key in objects:

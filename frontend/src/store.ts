@@ -7,6 +7,7 @@ import agentPreviewReducer from './agents/agentPreviewSlice';
 import { MAX_OVERLAPPING, MAX_TOPICS } from './agents/analyticsConfig';
 import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
 import backgroundReducer from './backgroundJobs/backgroundSlice';
+import chatToolsReducer from './conversation/chatToolsSlice';
 import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
@@ -18,6 +19,7 @@ import { sharedConversationSlice } from './conversation/sharedConversationSlice'
 import actionToastReducer from './notifications/actionToastSlice';
 import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
+import { presetPrompts } from './prompts/promptAccess';
 import {
   Preference,
   prefListenerMiddleware,
@@ -38,11 +40,7 @@ const preloadedState: { preference: Preference } = {
     token: localStorage.getItem('authToken') ?? null,
     // The server's choice replaces it once loaded (useDataInitializer).
     prompt: { name: 'default', id: 'default', type: 'public' },
-    prompts: [
-      { name: 'default', id: 'default', type: 'public' },
-      { name: 'creative', id: 'creative', type: 'public' },
-      { name: 'strict', id: 'strict', type: 'public' },
-    ],
+    prompts: presetPrompts(),
     chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
     conversations: {
@@ -50,6 +48,7 @@ const preloadedState: { preference: Preference } = {
       loading: false,
     },
     sourceDocs: null,
+    sourceDocsFailed: false,
     modalState: 'INACTIVE',
     paginatedDocuments: null,
     templateAgents: null,
@@ -86,6 +85,7 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    chatTools: chatToolsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,
     activity: activityReducer,

@@ -45,6 +45,7 @@ def notify_user(
     title: str,
     body: str,
     url: str,
+    schedule_id: Optional[str] = None,
 ) -> None:
     """Notify a user; never raises.
 
@@ -53,23 +54,36 @@ def notify_user(
         conversation_id: The conversation it is about, if any.
         kind: What happened: a wake source (``job``, ``lost``, ``monitor``,
             ``monitor_paused``, ``monitor_expired``, ``trigger``, ``approval``),
-            ``schedule`` for a scheduled run's answer, ``docs_gaps`` for the
-            weekly docs-gap digest, or any other short word;
-            the app shows a generic label for kinds it does not know.
+            ``schedule`` for a scheduled run's answer, ``schedule_paused`` /
+            ``schedule_failed`` for a recurring schedule that paused itself or
+            started failing, ``docs_gaps`` for the weekly docs-gap digest, or
+            any other short word; the app shows a generic label for kinds it
+            does not know.
         title: One short line.
         body: A short preview.
         url: Where Open goes, relative to the app (``/c/<conversation_id>``).
+        schedule_id: The schedule it is about, if any. The app drops the
+            notice once that schedule is resumed, runs fine or is deleted,
+            and a device keeps one push per schedule.
     """
     try:
         _notify(
-            user_id=user_id, conversation_id=conversation_id, kind=kind, title=title, body=body, url=url
+            user_id=user_id, conversation_id=conversation_id, kind=kind, title=title, body=body, url=url,
+            schedule_id=schedule_id,
         )
     except Exception:
         logger.exception("notify_user failed for user %s", user_id)
 
 
 def _notify(
-    *, user_id: str, conversation_id: Optional[str], kind: str, title: str, body: str, url: str
+    *,
+    user_id: str,
+    conversation_id: Optional[str],
+    kind: str,
+    title: str,
+    body: str,
+    url: str,
+    schedule_id: Optional[str] = None,
 ) -> Optional[str]:
     """The body of :func:`notify_user`; returns where the notification went."""
     if not user_id:
@@ -91,11 +105,15 @@ def _notify(
             "url": url,
             "conversation_id": conversation_id,
         }
+        if schedule_id:
+            payload["schedule_id"] = str(schedule_id)
         scope = {"kind": "conversation", "id": conversation_id} if conversation_id else {"kind": "user"}
         if publish_user_event(user_id, NOTIFICATION_CREATED, payload, scope=scope) is not None:
             return TOAST
         # The event did not reach the stream; a push is the next best thing.
-    if _queue_push(user_id, kind=kind, title=title, body=body, url=url, conversation_id=conversation_id):
+    if _queue_push(
+        user_id, kind=kind, title=title, body=body, url=url, conversation_id=conversation_id, schedule_id=schedule_id
+    ):
         return PUSH
     return STORED
 
@@ -166,7 +184,14 @@ def _mark_unread(conversation_id: str, user_id: str) -> None:
 
 
 def _queue_push(
-    user_id: str, *, kind: str, title: str, body: str, url: str, conversation_id: Optional[str]
+    user_id: str,
+    *,
+    kind: str,
+    title: str,
+    body: str,
+    url: str,
+    conversation_id: Optional[str],
+    schedule_id: Optional[str] = None,
 ) -> bool:
     """Queue a Web Push delivery when push is configured and the user has a subscription."""
     from docsgpt.notifications.push import build_payload, push_enabled
@@ -182,7 +207,9 @@ def _queue_push(
     except Exception:
         logger.exception("reading push subscriptions failed for user %s", user_id)
         return False
-    payload = build_payload(kind=kind, title=title, body=body, url=url, conversation_id=conversation_id)
+    payload = build_payload(
+        kind=kind, title=title, body=body, url=url, conversation_id=conversation_id, schedule_id=schedule_id
+    )
     try:
         from docsgpt.notifications.tasks import send_web_push
 

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from docsgpt.core.model_settings import (
     AvailableModel,
@@ -67,12 +67,14 @@ class _CapabilityFields(BaseModel):
     supports_streaming: Optional[bool] = None
     attachments: Optional[List[str]] = None
     context_window: Optional[int] = None
+    max_output_tokens: Optional[StrictInt] = Field(default=None, gt=0)
     input_cost_per_million: Optional[float] = Field(default=None, ge=0)
     output_cost_per_million: Optional[float] = Field(default=None, ge=0)
     cached_input_cost_per_million: Optional[float] = Field(default=None, ge=0)
     cache_write_cost_per_million: Optional[float] = Field(default=None, ge=0)
     first_token_timeout: Optional[float] = Field(default=None, gt=0)
     stall_timeout: Optional[float] = Field(default=None, gt=0)
+    answer_timeout: Optional[float] = Field(default=None, gt=0)
     reasoning_effort: Optional[str] = None
     api_flavor: Optional[str] = None
     tool_result_images: Optional[str] = None
@@ -282,12 +284,14 @@ def _build_model(
         supports_streaming=pick("supports_streaming", True),
         supported_attachment_types=expanded,
         context_window=pick("context_window", 128000),
+        max_output_tokens=pick("max_output_tokens", None),
         input_cost_per_million=pick("input_cost_per_million", None),
         output_cost_per_million=pick("output_cost_per_million", None),
         cached_input_cost_per_million=pick("cached_input_cost_per_million", None),
         cache_write_cost_per_million=pick("cache_write_cost_per_million", None),
         first_token_timeout=pick("first_token_timeout", None),
         stall_timeout=pick("stall_timeout", None),
+        answer_timeout=pick("answer_timeout", None),
         reasoning_effort=pick("reasoning_effort", None),
         api_flavor=pick("api_flavor", "chat_completions"),
         tool_result_images=pick("tool_result_images", None),

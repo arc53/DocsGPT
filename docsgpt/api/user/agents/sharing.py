@@ -10,6 +10,7 @@ from sqlalchemy import text as _sql_text
 from docsgpt.api import api
 from docsgpt.core.settings import settings
 from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
+from docsgpt.api.user.agents.starters import stored_starters
 from docsgpt.api.user.base import resolve_tool_details
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -64,6 +65,7 @@ def _serialize_agent_basic(agent: dict) -> dict:
             else ""
         ),
         "description": agent.get("description", ""),
+        "starters": stored_starters(agent),
         "source": str(source_id) if source_id else "",
         "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "0",
         "retriever": agent.get("retriever", "classic") or "classic",
@@ -195,6 +197,7 @@ class SharedAgents(Resource):
                         "id": agent_id_str,
                         "name": agent.get("name", ""),
                         "description": agent.get("description", ""),
+                        "starters": stored_starters(agent),
                         "image": (
                             generate_image_url(
                                 agent["image"], agent["id"], agent.get("user_id")

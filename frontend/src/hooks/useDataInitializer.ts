@@ -14,7 +14,6 @@ import {
   selectConversations,
   selectToken,
   receiveConversations,
-  setConversations,
   setConversationsLoading,
   setAnalyticsAvailability,
   setAttachmentBudgetShare,
@@ -146,7 +145,7 @@ export default function useDataInitializer(
           dispatch(receiveConversations(fetchedConversations));
         } catch (error) {
           console.error('Failed to fetch conversations:', error);
-          dispatch(setConversations({ data: null, loading: false }));
+          dispatch(receiveConversations({ data: null, loading: false }));
         }
       }
     };

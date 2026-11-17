@@ -234,8 +234,42 @@ class _SharedDatabase:
         pgconn._POOLS.clear()
 
 
-def pytest_collection_modifyitems(items):
-    """Give every migration test a database of its own: they run DDL and commit through Alembic."""
+def pytest_addoption(parser):
+    """``--shard INDEX/TOTAL`` runs one slice of the suite; CI runs the slices as parallel jobs."""
+    parser.addoption(
+        "--shard",
+        default=None,
+        metavar="INDEX/TOTAL",
+        help="run only this slice of the suite, such as 2/3 (test files are dealt out by test count)",
+    )
+
+
+def _keep_shard(config, items) -> None:
+    """Deselect the tests whose file belongs to another shard."""
+    value = config.getoption("--shard")
+    if not value:
+        return
+    from tests.sharding import assign_shards, parse_shard
+
+    try:
+        index, total = parse_shard(value)
+    except ValueError as error:
+        raise pytest.UsageError(str(error)) from None
+    files = [item.nodeid.split("::", 1)[0] for item in items]
+    shards = assign_shards(files, total)
+    kept = [item for item, file in zip(items, files) if shards[file] == index]
+    dropped = [item for item, file in zip(items, files) if shards[file] != index]
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = kept
+
+
+def pytest_collection_modifyitems(config, items):
+    """Keep this job's shard, and give every migration test a database of its own.
+
+    Migration tests run DDL and commit through Alembic, so each gets ``fresh_db``.
+    """
+    _keep_shard(config, items)
     for item in items:
         if item.path.name.startswith("test_migration_"):
             item.add_marker(pytest.mark.fresh_db)

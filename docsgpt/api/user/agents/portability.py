@@ -38,6 +38,7 @@ from docsgpt.agents.default_tools import (
 )
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
+from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
 from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
@@ -782,6 +783,7 @@ def serialize_agent(conn, agent: dict, user: str) -> dict:
     spec = {
         "name": agent.get("name") or "",
         "description": agent.get("description") or "",
+        "starters": stored_starters(agent),
         "agent_type": agent.get("agent_type") or "classic",
         "retriever": agent.get("retriever") or "classic",
         "chunks": int(agent["chunks"]) if agent.get("chunks") is not None else None,
@@ -885,6 +887,11 @@ def parse_agent_yaml(text: str) -> dict:
         raise AgentImportError("spec.name is required")
     if spec.get("agent_type") == "workflow":
         _validate_workflow_shape(spec)
+    # Held to the same rules as the agent routes; a file without them has none.
+    try:
+        spec["starters"] = normalize_starters(spec.get("starters"))
+    except StartersError as exc:
+        raise AgentImportError(f"spec.starters: {exc}") from exc
     for key in ("sources", "tools"):
         value = spec.get(key)
         if isinstance(value, list) and len(value) > MAX_LIST_ITEMS:
@@ -1699,6 +1706,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     # column defaults.
     authoritative: dict[str, Any] = {
         "description": spec.get("description") or "",
+        "starters": normalize_starters(spec.get("starters")),
         "agent_type": spec.get("agent_type") or "classic",
         "chunks": chunks_value,
         "prompt_id": prompt_id,

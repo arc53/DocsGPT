@@ -156,6 +156,21 @@ describe('service worker', () => {
     expect(self.clients.openWindow).not.toHaveBeenCalled();
   });
 
+  it('a click keeps the query of the page it opens', async () => {
+    const focused = client(`${ORIGIN}/c/x`, true);
+    const { handlers } = loadWorker([focused]);
+    await dispatch(handlers.notificationclick, {
+      notification: {
+        close: vi.fn(),
+        data: { url: `${ORIGIN}/activity/schedules?schedule=s1` },
+      },
+    });
+    expect(focused.postMessage).toHaveBeenCalledWith({
+      type: 'docsgpt:navigate',
+      url: '/activity/schedules?schedule=s1',
+    });
+  });
+
   it('a click with no tab of the app opens one', async () => {
     const { handlers, self } = loadWorker([
       client('https://elsewhere.example.com/'),
