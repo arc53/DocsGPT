@@ -2938,6 +2938,9 @@
         "connectionsDetail": "Das Team kann sie weder für Synchronisierungen noch für Werkzeuge nutzen, bis ein anderer Team-Admin sie auf der Seite „Konnektoren“ mit dem eigenen Konto neu verbindet.",
         "connections_one": "{{count}} Team-Konto, das {{name}} verbunden hat, wird pausiert",
         "connections_other": "{{count}} Team-Konten, die {{name}} verbunden hat, werden pausiert",
+        "customModelsDetail": "Die Schlüssel bleiben in Gebrauch. Ersetze einen Schlüssel auf der Seite „Eigene Modelle“ des Teams, wenn er {{name}} persönlich gehörte.",
+        "customModels_one": "{{name}} hat {{count}} eigenes Modell zum Team hinzugefügt",
+        "customModels_other": "{{name}} hat {{count}} eigene Modelle zum Team hinzugefügt",
         "schedulesDetail": "{{name}} bezahlt dafür. Ein Bearbeiter oder Admin kann sie auf der Zeitplan-Seite des Agenten übernehmen.",
         "schedules_one": "{{count}} Zeitplan, den {{name}} für Team-Agenten angelegt hat, wird pausiert",
         "schedules_other": "{{count}} Zeitpläne, die {{name}} für Team-Agenten angelegt hat, werden pausiert"
@@ -5020,6 +5023,8 @@
           "agent_other": "{{count}} Agenten",
           "connection_one": "{{count}} Verbindung",
           "connection_other": "{{count}} Verbindungen",
+          "custom_model_one": "{{count}} eigenes Modell",
+          "custom_model_other": "{{count}} eigene Modelle",
           "folder_one": "{{count}} Ordner",
           "folder_other": "{{count}} Ordner",
           "other_one": "{{count}} weiterer Eintrag",
@@ -5033,9 +5038,11 @@
           "workflow_one": "{{count}} Workflow",
           "workflow_other": "{{count}} Workflows"
         },
+        "customModelsHint": "Eigene Modelle lassen sich nicht verschieben. Ein Team-Admin entfernt sie auf der Seite „Eigene Modelle“ des Teams.",
         "hint": "Verschiebe sie nach „Persönlich“ oder lösche sie, dann lösche das Team.",
         "open": "{{name}} öffnen",
         "openConnectors": "Konnektoren öffnen",
+        "openCustomModels": "Eigene Modelle öffnen",
         "title": "{{name}} gehören noch Elemente"
       },
       "openTeamError": "Team-Details konnten nicht geladen werden.",

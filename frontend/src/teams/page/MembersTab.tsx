@@ -1,5 +1,6 @@
 import {
   Bot,
+  Cpu,
   FileText,
   KeyRound,
   LogOut,
@@ -420,6 +421,27 @@ export default function MembersTab({
     return lines;
   };
 
+  // The team's custom models the member added: their keys stay in use, so
+  // the line only says so (an Admin replaces a key that was their own).
+  const customModelsLine = (name: string, count: number): ReactNode[] =>
+    count > 0
+      ? [
+          <Consequence
+            key="customModels"
+            icon={Cpu}
+            title={t('payer.team.remove.customModels', {
+              count,
+              name,
+              interpolation: { escapeValue: false },
+            })}
+            detail={t('payer.team.remove.customModelsDetail', {
+              name,
+              interpolation: { escapeValue: false },
+            })}
+          />,
+        ]
+      : [];
+
   const requestRemove = (member: Member) => {
     setMemberToRemove(member);
     setRemoveState('ACTIVE');
@@ -460,9 +482,19 @@ export default function MembersTab({
     ? sharedBy(grants, memberToRemove.user_id)
     : [];
   const removePayerLines = memberToRemove
-    ? payerLines(removeName, pausedByChange(memberToRemove, null))
+    ? [
+        ...payerLines(removeName, pausedByChange(memberToRemove, null)),
+        ...customModelsLine(removeName, memberToRemove.custom_models ?? 0),
+      ]
     : [];
   const roleChangeName = roleChange ? memberLabel(roleChange.member) : '';
+  // Below Admin they no longer manage the models they added.
+  const roleChangeModels =
+    roleChange &&
+    ROLE_RANK[memberTeamRole(roleChange.member)] >= ROLE_RANK.admin &&
+    ROLE_RANK[roleChange.next] < ROLE_RANK.admin
+      ? customModelsLine(roleChangeName, roleChange.member.custom_models ?? 0)
+      : [];
 
   const resourceIcon = (type: ResourceType): ReactNode => {
     const Icon = RESOURCE_ICONS[type] ?? FileText;
@@ -741,6 +773,7 @@ export default function MembersTab({
         {roleChange && (
           <div className="flex flex-col gap-3">
             {payerLines(roleChangeName, roleChange.paused)}
+            {roleChangeModels}
           </div>
         )}
       </ConfirmationModal>

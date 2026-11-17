@@ -311,6 +311,41 @@ describe('MembersTab: what a change pauses of what a member pays for', () => {
     expect(confirm()).toBeNull();
   });
 
+  it("says the keys of the team's custom models a member added stay in use", async () => {
+    setMembers([
+      member('lena', 'owner', { schedules: 0, outside_access: 0 }),
+      {
+        ...member('ana', 'admin', { schedules: 1, outside_access: 0 }),
+        custom_models: 2,
+      },
+      {
+        ...member('ed', 'editor', { schedules: 0, outside_access: 0 }),
+        custom_models: 0,
+      },
+    ]);
+    await render();
+    await openRemove('ana@x.io');
+    expect(confirm()!.textContent).toContain(
+      'payer.team.remove.customModels(count=2,name=ana@x.io)',
+    );
+    expect(confirm()!.textContent).toContain(
+      'payer.team.remove.customModelsDetail',
+    );
+    act(() => button('cancel', confirm()!)!.click());
+    await flush();
+    await openRemove('ed@x.io');
+    expect(confirm()!.textContent).not.toContain(
+      'payer.team.remove.customModels',
+    );
+    act(() => button('cancel', confirm()!)!.click());
+    await flush();
+    // A demotion below Admin that asks anyway says it too.
+    await pickRole('ana@x.io', 'viewer');
+    expect(confirm()!.textContent).toContain(
+      'payer.team.remove.customModels(count=2,name=ana@x.io)',
+    );
+  });
+
   it('adds no payer lines for a member who pays for nothing', async () => {
     await render();
     await openRemove('priya@x.io');

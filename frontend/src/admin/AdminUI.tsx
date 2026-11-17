@@ -167,6 +167,9 @@ const EVENT_LABELS: Record<string, string> = {
   'team.connection_reconnected': 'Team account reconnected',
   'team.connection_disconnected': 'Team account disconnected',
   'team.connection_removed': 'Team account removed',
+  'team.model_added': 'Team model added',
+  'team.model_updated': 'Team model changed',
+  'team.model_removed': 'Team model removed',
   'source.created': 'Source created',
   'source.deleted': 'Source deleted',
   'source.reingested': 'Source reingested',
@@ -184,7 +187,23 @@ const EVENT_LABELS: Record<string, string> = {
   'guardrail.attachment': 'Guardrail (attachment)',
 };
 
-export function eventLabel(event: string): string {
+/**
+ * How an audit event reads. A team model added by copying a person's own
+ * (`detail.copied`) says so.
+ *
+ * Args:
+ *   event: The event name.
+ *   detail: The row's metadata, when the caller has it.
+ *
+ * Returns:
+ *   The label.
+ */
+export function eventLabel(
+  event: string,
+  detail?: Record<string, unknown> | null,
+): string {
+  if (event === 'team.model_added' && detail?.copied === true)
+    return 'Team model copied from Personal';
   const known = EVENT_LABELS[event];
   if (known) return known;
   // "source.reingested" -> "Source reingested"
@@ -214,6 +233,7 @@ const WARNING_EVENTS = new Set([
   'team.item_unshared_from_team',
   'team.connection_disconnected',
   'team.connection_removed',
+  'team.model_removed',
 ]);
 
 export function eventTone(event: string): Tone {

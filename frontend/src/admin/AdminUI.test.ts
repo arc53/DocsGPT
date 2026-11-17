@@ -59,6 +59,18 @@ describe('eventLabel', () => {
     expect(eventLabel('team.connection_removed')).toBe('Team account removed');
   });
 
+  it("names the events of a team's custom models, a copy apart", () => {
+    expect(eventLabel('team.model_added')).toBe('Team model added');
+    expect(eventLabel('team.model_added', { copied: false })).toBe(
+      'Team model added',
+    );
+    expect(eventLabel('team.model_added', { copied: true })).toBe(
+      'Team model copied from Personal',
+    );
+    expect(eventLabel('team.model_updated')).toBe('Team model changed');
+    expect(eventLabel('team.model_removed')).toBe('Team model removed');
+  });
+
   it('stays legible for an event a newer release added', () => {
     expect(eventLabel('source.archived')).toBe('Source archived');
     expect(eventLabel('brand_new_event')).toBe('Brand new event');
@@ -81,6 +93,11 @@ describe('eventTone', () => {
     expect(eventTone('team.connection_removed')).toBe('warning');
     expect(eventTone('team.connection_disconnected')).toBe('warning');
     expect(eventTone('team.connection_added')).toBe('neutral');
+  });
+
+  it("flags a team model's removal", () => {
+    expect(eventTone('team.model_removed')).toBe('warning');
+    expect(eventTone('team.model_added')).toBe('neutral');
   });
 
   it('marks an admin grant with the brand (default) variant', () => {

@@ -2912,6 +2912,9 @@
         "connectionsDetail": "在另一位團隊管理員於連接器頁面用自己的帳號重新連線之前，團隊無法將這些帳號用於同步或工具。",
         "connections_one": "{{name}} 連線的 {{count}} 個團隊帳號將暫停",
         "connections_other": "{{name}} 連線的 {{count}} 個團隊帳號將暫停",
+        "customModelsDetail": "這些密鑰仍在使用。如果某個密鑰是 {{name}} 個人的，請在團隊的自訂模型頁面上替換它。",
+        "customModels_one": "{{name}} 為團隊新增的 {{count}} 個自訂模型",
+        "customModels_other": "{{name}} 為團隊新增的 {{count}} 個自訂模型",
         "schedulesDetail": "由 {{name}} 付費。編輯者或管理員可以在代理的排程頁面上接手。",
         "schedules_one": "{{name}} 在團隊代理上設定的 {{count}} 個排程將暫停",
         "schedules_other": "{{name}} 在團隊代理上設定的 {{count}} 個排程將暫停"
@@ -4985,6 +4988,8 @@
           "agent_other": "{{count}} 個代理",
           "connection_one": "{{count}} 個連線",
           "connection_other": "{{count}} 個連線",
+          "custom_model_one": "{{count}} 個自訂模型",
+          "custom_model_other": "{{count}} 個自訂模型",
           "folder_one": "{{count}} 個資料夾",
           "folder_other": "{{count}} 個資料夾",
           "other_one": "{{count}} 筆其他記錄",
@@ -4998,9 +5003,11 @@
           "workflow_one": "{{count}} 個工作流程",
           "workflow_other": "{{count}} 個工作流程"
         },
+        "customModelsHint": "自訂模型無法移動。團隊管理員可在團隊的自訂模型頁面上移除它們。",
         "hint": "將它們移到個人空間或刪除，然後再刪除團隊。",
         "open": "開啟 {{name}}",
         "openConnectors": "開啟連接器",
+        "openCustomModels": "開啟自訂模型",
         "title": "{{name}} 仍擁有一些項目"
       },
       "openTeamError": "無法載入團隊詳細資訊。",

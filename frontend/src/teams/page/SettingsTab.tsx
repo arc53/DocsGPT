@@ -67,10 +67,13 @@ const ITEM_KINDS = [
   'prompt',
   'folder',
   'connection',
+  'custom_model',
 ] as const;
 
 /** Where a team Admin removes the team's connections. */
 const CONNECTORS_PATH = '/settings/connectors';
+/** Where a team Admin removes the team's custom models. */
+const CUSTOM_MODELS_PATH = '/settings/custom-models';
 
 /**
  * The most members one answer of the transfer picker lists (the server's
@@ -294,12 +297,15 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
     if (workspaceId !== team.id) dispatch(switchWorkspace(team.id));
   };
 
-  // Connections never move: they are removed, so they get their own line.
+  // Connections and custom models never move: they are removed, so each
+  // gets its own line.
   const holdsConnections = !!notEmpty?.connection;
+  const holdsModels = !!notEmpty?.custom_model;
   const holdsItems =
     !!notEmpty &&
     Object.entries(notEmpty).some(
-      ([kind, count]) => kind !== 'connection' && count > 0,
+      ([kind, count]) =>
+        kind !== 'connection' && kind !== 'custom_model' && count > 0,
     );
 
   const countLines = (counts: Record<string, number>): string[] => {
@@ -515,7 +521,7 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
-                {holdsItems || !holdsConnections ? (
+                {holdsItems || (!holdsConnections && !holdsModels) ? (
                   <p>
                     {t('settings.teams.notEmpty.hint')}{' '}
                     <AlertAction onClick={() => openTeam()}>
@@ -531,6 +537,14 @@ export default function SettingsTab({ team, role }: SettingsTabProps) {
                     {t('settings.teams.notEmpty.connectionsHint')}{' '}
                     <AlertAction onClick={() => openTeam(CONNECTORS_PATH)}>
                       {t('settings.teams.notEmpty.openConnectors')}
+                    </AlertAction>
+                  </p>
+                ) : null}
+                {holdsModels ? (
+                  <p>
+                    {t('settings.teams.notEmpty.customModelsHint')}{' '}
+                    <AlertAction onClick={() => openTeam(CUSTOM_MODELS_PATH)}>
+                      {t('settings.teams.notEmpty.openCustomModels')}
                     </AlertAction>
                   </p>
                 ) : null}

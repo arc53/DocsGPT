@@ -38,6 +38,11 @@ export type TeamMember = {
     outside_access: number;
     connections?: number;
   };
+  /**
+   * How many of the team's custom models the member added; their keys stay
+   * in use when the member leaves. Sent to the team's owner and admins only.
+   */
+  custom_models?: number;
 };
 
 const TEAM_ROLES: ReadonlySet<string> = new Set([

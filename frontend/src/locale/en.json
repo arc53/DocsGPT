@@ -2959,6 +2959,9 @@
         "connectionsDetail": "The team can't use them, for syncs or tools, until another team Admin reconnects them with their own account on the Connectors page.",
         "connections_one": "{{count}} team account {{name}} connected pauses",
         "connections_other": "{{count}} team accounts {{name}} connected pause",
+        "customModelsDetail": "Their keys stay in use. Replace a key on the team's Custom models page if it was {{name}}'s own.",
+        "customModels_one": "{{name}} added {{count}} custom model to the team",
+        "customModels_other": "{{name}} added {{count}} custom models to the team",
         "schedulesDetail": "{{name}} pays for them. An editor or admin can take them over on the agent's Schedules page.",
         "schedules_one": "{{count}} schedule {{name}} set on team agents pauses",
         "schedules_other": "{{count}} schedules {{name}} set on team agents pause"
@@ -5041,6 +5044,8 @@
           "agent_other": "{{count}} agents",
           "connection_one": "{{count}} connection",
           "connection_other": "{{count}} connections",
+          "custom_model_one": "{{count}} custom model",
+          "custom_model_other": "{{count}} custom models",
           "folder_one": "{{count}} folder",
           "folder_other": "{{count}} folders",
           "other_one": "{{count}} other record",
@@ -5054,9 +5059,11 @@
           "workflow_one": "{{count}} workflow",
           "workflow_other": "{{count}} workflows"
         },
+        "customModelsHint": "Custom models can't be moved. A team Admin removes them on the team's Custom models page.",
         "hint": "Move them to Personal or delete them, then delete the team.",
         "open": "Open {{name}}",
         "openConnectors": "Open Connectors",
+        "openCustomModels": "Open Custom models",
         "title": "{{name}} still owns items"
       },
       "openTeamError": "Could not load team details.",

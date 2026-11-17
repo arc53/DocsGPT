@@ -280,6 +280,47 @@ describe('SettingsTab', () => {
     );
   });
 
+  it("names the team's custom models, which only a removal on Custom models ends", async () => {
+    mockUnwrap.mockImplementation(() =>
+      Promise.reject({
+        name: 'TeamsApiError',
+        message: 'Remove its connections and/or custom models',
+        code: 'team_not_empty',
+        counts: { custom_model: 2 },
+      }),
+    );
+    await render();
+    await deleteAndConfirm();
+    const alert = body().querySelector('[data-slot="alert"]')!;
+    expect(alert.textContent).toContain(
+      'settings.teams.notEmpty.counts.custom_model(count=2)',
+    );
+    expect(alert.textContent).not.toContain(
+      'settings.teams.notEmpty.counts.other',
+    );
+    expect(alert.textContent).toContain(
+      'settings.teams.notEmpty.customModelsHint',
+    );
+    // Models never move: no "Move them to Personal" for them alone.
+    expect(alert.textContent).not.toContain('settings.teams.notEmpty.hint');
+    expect(alert.textContent).not.toContain(
+      'settings.teams.notEmpty.connectionsHint',
+    );
+    act(() =>
+      button('settings.teams.notEmpty.openCustomModels', alert)!.click(),
+    );
+    await flush();
+    expect(actions()).toContainEqual(
+      expect.objectContaining({
+        type: 'workspace/switched',
+        payload: { id: 't1', reason: 'user' },
+      }),
+    );
+    expect(body().querySelector('[data-testid="where"]')?.textContent).toBe(
+      '/settings/custom-models',
+    );
+  });
+
   it('says both what to move and what to remove when it holds both', async () => {
     mockUnwrap.mockImplementation(() =>
       Promise.reject({

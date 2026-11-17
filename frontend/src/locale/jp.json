@@ -2912,6 +2912,9 @@
         "connectionsDetail": "ほかのチーム管理者がコネクタページで自分のアカウントで再接続するまで、チームは同期にもツールにもこれらを使えません。",
         "connections_one": "{{name}} さんが接続したチームのアカウント {{count}} 件が一時停止します",
         "connections_other": "{{name}} さんが接続したチームのアカウント {{count}} 件が一時停止します",
+        "customModelsDetail": "キーはそのまま使われます。{{name}} さん個人のキーだった場合は、チームのカスタムモデルページでキーを置き換えてください。",
+        "customModels_one": "{{name}} さんがチームに追加したカスタムモデル {{count}} 件",
+        "customModels_other": "{{name}} さんがチームに追加したカスタムモデル {{count}} 件",
         "schedulesDetail": "{{name}} さんが支払っています。編集者または管理者がエージェントのスケジュールページで引き継げます。",
         "schedules_one": "{{name}} さんがチームのエージェントに設定したスケジュール {{count}} 件が一時停止します",
         "schedules_other": "{{name}} さんがチームのエージェントに設定したスケジュール {{count}} 件が一時停止します"
@@ -4985,6 +4988,8 @@
           "agent_other": "エージェント {{count}} 件",
           "connection_one": "接続 {{count}} 件",
           "connection_other": "接続 {{count}} 件",
+          "custom_model_one": "カスタムモデル {{count}} 件",
+          "custom_model_other": "カスタムモデル {{count}} 件",
           "folder_one": "フォルダー {{count}} 件",
           "folder_other": "フォルダー {{count}} 件",
           "other_one": "その他のレコード {{count}} 件",
@@ -4998,9 +5003,11 @@
           "workflow_one": "ワークフロー {{count}} 件",
           "workflow_other": "ワークフロー {{count}} 件"
         },
+        "customModelsHint": "カスタムモデルは移動できません。チームの管理者がチームのカスタムモデルページで削除します。",
         "hint": "個人に移動するか削除してから、チームを削除してください。",
         "open": "{{name}} を開く",
         "openConnectors": "コネクタを開く",
+        "openCustomModels": "カスタムモデルを開く",
         "title": "{{name}} はまだアイテムを所有しています"
       },
       "openTeamError": "チームの詳細を読み込めませんでした。",

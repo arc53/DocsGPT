@@ -2911,6 +2911,9 @@
         "connectionsDetail": "在另一位团队管理员于连接器页面用自己的账号重新连接之前，团队无法将这些账号用于同步或工具。",
         "connections_one": "{{name}} 连接的 {{count}} 个团队账号将暂停",
         "connections_other": "{{name}} 连接的 {{count}} 个团队账号将暂停",
+        "customModelsDetail": "这些密钥仍在使用。如果某个密钥是 {{name}} 个人的，请在团队的自定义模型页面上替换它。",
+        "customModels_one": "{{name}} 为团队添加的 {{count}} 个自定义模型",
+        "customModels_other": "{{name}} 为团队添加的 {{count}} 个自定义模型",
         "schedulesDetail": "由 {{name}} 付费。编辑者或管理员可以在智能体的计划任务页面上接管。",
         "schedules_one": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停",
         "schedules_other": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停"
@@ -4983,6 +4986,8 @@
           "agent_other": "{{count}} 个智能体",
           "connection_one": "{{count}} 个连接",
           "connection_other": "{{count}} 个连接",
+          "custom_model_one": "{{count}} 个自定义模型",
+          "custom_model_other": "{{count}} 个自定义模型",
           "folder_one": "{{count}} 个文件夹",
           "folder_other": "{{count}} 个文件夹",
           "other_one": "{{count}} 条其他记录",
@@ -4996,9 +5001,11 @@
           "workflow_one": "{{count}} 个工作流",
           "workflow_other": "{{count}} 个工作流"
         },
+        "customModelsHint": "自定义模型无法移动。团队管理员可在团队的自定义模型页面上移除它们。",
         "hint": "将它们移到个人空间或删除，然后再删除团队。",
         "open": "打开 {{name}}",
         "openConnectors": "打开连接器",
+        "openCustomModels": "打开自定义模型",
         "title": "{{name}} 仍拥有一些项目"
       },
       "openTeamError": "无法加载团队详情。",

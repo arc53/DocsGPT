@@ -394,8 +394,8 @@ export default function Activity() {
                           aria-expanded={isOpen}
                           label={
                             isOpen
-                              ? `Hide details for ${eventLabel(row.event)}`
-                              : `Show details for ${eventLabel(row.event)}`
+                              ? `Hide details for ${eventLabel(row.event, row.detail)}`
+                              : `Show details for ${eventLabel(row.event, row.detail)}`
                           }
                           icon={isOpen ? ChevronDown : ChevronRight}
                           onClick={() => setExpanded(isOpen ? null : key)}
@@ -404,7 +404,7 @@ export default function Activity() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Badge variant={eventTone(row.event)}>
-                            {eventLabel(row.event)}
+                            {eventLabel(row.event, row.detail)}
                           </Badge>
                           {row.outcome ? (
                             <Badge variant={outcomeTone(row.outcome)}>
