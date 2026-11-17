@@ -178,9 +178,9 @@ Whoever starts a run pays for it, from their own allowance: the [usage quota](/D
 
 | Run | Who pays |
 | --- | --- |
-| A chat, with or without an agent, in Personal or in a team | The person chatting |
+| A chat, with or without an agent, in Personal or in a team, including a signed-in visitor chatting through an agent's public link | The person chatting |
 | A schedule's runs | The person who set the schedule |
-| An agent's API key and widget, public link, webhook, `/v1` and MCP traffic | On a team agent, the Admin who turned its outside access on, or who took it over. On a personal agent, its owner |
+| An agent's API key and widget, webhook, `/v1` and MCP traffic, and public-link visitors who aren't signed in | On a team agent, the Admin who turned its outside access on, or who took it over. On a personal agent, its owner |
 | A background continuation, a retry, a chat's title, a workflow step | Whoever pays for the run it belongs to |
 
 An agent's own limit (tokens or requests per 24 hours) applies on top, whoever pays. One run has one payer, fixed when it starts, and the limits are checked again before each of its model calls; see [Usage Quotas](/Deploying/Usage-Quotas#windows-and-enforcement).
@@ -198,7 +198,7 @@ A schedule, or a team agent's outside access, pauses when its payer can't pay. N
 | Nobody pays for it | Someone takes it over |
 | The account it runs on is deactivated | The account is reactivated. On a team agent, someone can also take it over |
 
-While outside access is paused, the agent's API key, widget, public link, webhook, `/v1` and MCP callers are told only "This agent is paused, so it can't answer right now.", never whose account it is or why. Members still chat with the agent in the app, each on their own allowance. A paused schedule skips its runs; see [Paid by and paused schedules](/Agents/schedules#paid-by-and-paused-schedules).
+While outside access is paused, the agent's API key, widget, public link, webhook, `/v1` and MCP callers are told only "This agent is paused, so it can't answer right now.", never whose account it is or why. Members still chat with the agent in the app, each on their own allowance. When the pause is only the payer's allowance, signed-in visitors on the public link keep chatting too, on their own allowance; for the other reasons the link pauses for them as well. A paused schedule skips its runs; see [Paid by and paused schedules](/Agents/schedules#paid-by-and-paused-schedules).
 
 A team source's scheduled sync runs for the person who added the source while they are an Editor or above in the team. Otherwise its scheduled syncs are skipped and the source shows its sync as paused. A paused sync can't be taken over; an Editor can still sync the source by hand.
 

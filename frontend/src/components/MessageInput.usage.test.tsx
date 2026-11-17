@@ -129,14 +129,14 @@ describe('MessageInput and the person’s allowance', () => {
     expect(sendButton()?.disabled).toBe(true);
   });
 
-  it('lets a chat with an agent reached by its link send: its publisher pays', async () => {
+  it('stops a chat with an agent reached by its link: the signed-in visitor pays', async () => {
     await render({
       access: 'viewer',
       allowed_actions: ['pin', 'use'],
       origin: 'link',
     });
     await type('hello');
-    expect(stopCard()).toBeNull();
-    expect(sendButton()?.disabled).toBe(false);
+    expect(stopCard()).not.toBeNull();
+    expect(sendButton()?.disabled).toBe(true);
   });
 });

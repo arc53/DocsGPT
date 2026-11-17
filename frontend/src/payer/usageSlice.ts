@@ -34,32 +34,21 @@ const NEAR_PERCENT = 80;
  */
 export type UsageScope = 'direct' | 'agent';
 
-/** The access fields of the agent a chat runs with (`Agent`'s). */
-type ChatAgentAccess = {
-  access?: string | null;
-  workspace?: unknown;
-  origin?: string | null;
-  allowed_actions?: string[];
-};
-
 /**
  * Which of the person's allowances a chat spends from, as the server bills
- * it: `direct` without an agent, `agent` with one they own or reach through
- * a team, and nothing for an agent they reach only by its public link, whose
- * publisher pays (the person's own allowance neither stops nor counts it).
- * The server marks such an agent `origin: 'link'`.
+ * it: `direct` without an agent, `agent` with any agent, their own, a
+ * team's, one shared with them or one reached by its public link. In the app
+ * the person is always signed in, and a signed-in person pays for their own
+ * chat; an agent's publisher pays only for link visitors who aren't.
  *
  * Args:
  *   agent: The selected agent, or null for a chat without one.
  *
  * Returns:
- *   The scope, or null when the chat spends nothing of the person's.
+ *   The scope.
  */
-export function chatUsageScope(
-  agent: ChatAgentAccess | null | undefined,
-): UsageScope | null {
-  if (!agent) return 'direct';
-  return agent.origin === 'link' ? null : 'agent';
+export function chatUsageScope(agent: unknown): UsageScope {
+  return agent ? 'agent' : 'direct';
 }
 
 export type UsageState = {

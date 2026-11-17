@@ -75,9 +75,9 @@ Whoever starts a run pays for it, from their own quota. Where an agent lives and
 
 | Traffic | Charged to |
 | --- | --- |
-| A chat, with or without an agent, in Personal or in a [team workspace](/Using/team-workspaces) | The person chatting |
+| A chat, with or without an agent, in Personal or in a [team workspace](/Using/team-workspaces), including a signed-in visitor chatting through an agent's public link | The person chatting |
 | A schedule's runs | The person the schedule is stored under, shown as **Paid by** on it (see [Who owns a schedule](/Agents/schedules#who-owns-a-schedule-and-who-pays-for-it)) |
-| An agent's API key and widget, public link, webhook, `/v1` and MCP traffic | On a personal agent, its owner. On a team agent, the Admin who turned its outside access on, or who [took it over](/Using/team-workspaces#take-over) |
+| An agent's API key and widget, webhook, `/v1` and MCP traffic, and public-link visitors who aren't signed in | On a personal agent, its owner. On a team agent, the Admin who turned its outside access on, or who [took it over](/Using/team-workspaces#take-over) |
 | A background continuation, a retry, a chat's title, a workflow step, a sub-agent | Whoever pays for the run it belongs to |
 | [Draft with DocsGPT](/Agents/draft-with-docsgpt) | The person drafting, as chat without an agent |
 | A graph built from a source ([GraphRAG](/Sources/GraphRAG)) | The person adding or syncing the source |
@@ -94,7 +94,7 @@ Embeddings, OCR and speech-to-text aren't counted against any quota.
 
 ### Outside callers
 
-When the payer of an agent's outside access is out of quota, people reaching the agent through its API key, widget, public link, webhook, `/v1` or MCP are told only that the agent is paused. They never see the payer's usage, limit or reset:
+When the payer of an agent's outside access is out of quota, people reaching the agent through its API key, widget, webhook, `/v1` or MCP, or through its public link without signing in, are told only that the agent is paused. They never see the payer's usage, limit or reset. A signed-in visitor on the public link pays for their own chat, so only their own quota stops them, with the usual message:
 
 ```json
 {

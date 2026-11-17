@@ -276,21 +276,13 @@ describe('chatUsageScope', () => {
     ).toBe('agent');
   });
 
-  it('is nothing for an agent the server marks as reached by its link: its publisher pays', () => {
+  it('is agent for an agent reached by its link: a signed-in visitor pays for their own chat', () => {
     expect(
       chatUsageScope({
         access: 'viewer',
         allowed_actions: ['pin', 'use'],
         origin: 'link',
       }),
-    ).toBeNull();
-  });
-
-  it('reads the link from the marker, not from fields a grant would add', () => {
-    // A viewer payload without a workspace is not proof of a link: only the
-    // marker moves the chat off the person's allowance.
-    expect(
-      chatUsageScope({ access: 'viewer', allowed_actions: ['pin', 'use'] }),
     ).toBe('agent');
   });
 });

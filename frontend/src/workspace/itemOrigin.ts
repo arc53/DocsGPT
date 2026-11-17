@@ -2,8 +2,7 @@
  * How an item reached the current workspace's list: `own` (the caller's, in
  * Personal), `team` (the team's, in a team) or `shared` (someone shared it
  * with the caller; Personal only). `link` is only ever an agent the caller
- * reached by its public link alone (shared-agent and pinned lists), whose
- * publisher pays for its chats.
+ * reached by its public link alone (shared-agent and pinned lists).
  */
 export type ItemOrigin = 'own' | 'team' | 'shared' | 'link';
 
