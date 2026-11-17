@@ -56,9 +56,11 @@ from docsgpt.api.user.agents.starters import StartersError, normalize_starters, 
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     require,
+    resolve,
     resource_owner,
     workspace_mismatch_refusal,
     workspace_mismatches,
+    workspace_minimum,
 )
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
@@ -85,7 +87,9 @@ from docsgpt.workspaces.context import (
     current_workspace,
     require_workspace_role,
 )
+from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_EDITORS, POLICY_LOCKED, team_policy
 from docsgpt.workspaces.principal import is_principal_id
+from docsgpt.workspaces.roles import role_at_least
 
 
 logger = logging.getLogger(__name__)
@@ -2520,6 +2524,41 @@ def _token_denied_response(reason: str):
     )
 
 
+def _export_refusal(conn, agent_id: str, user: str, denied: AccessDenied):
+    """The response for an export :func:`require` refused.
+
+    A team member whose role exports under an open policy is refused only
+    because the team is locked (an export takes the agent outside the
+    team), and is told so with ``team_locked``.
+
+    Args:
+        conn: Open connection.
+        agent_id: The agent asked for.
+        user: The caller.
+        denied: What :func:`require` raised.
+
+    Returns:
+        A Flask response with ``denied``'s status.
+    """
+    if denied.status == 403:
+        ra = resolve(conn, "agent", agent_id, user)
+        if (
+            ra is not None
+            and ra.team_role is not None
+            and role_at_least(ra.team_role, workspace_minimum("agent", "export", policy=POLICY_EDITORS) or "owner")
+            and team_policy(conn, ra.team_id) == POLICY_LOCKED
+        ):
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "error": CODE_TEAM_LOCKED,
+                    "message": "This team is locked: its agents can't be exported.",
+                }),
+                403,
+            )
+    return make_response(jsonify({"success": False, "message": denied.message}), denied.status)
+
+
 @agents_portability_ns.route("/export_agent")
 class ExportAgent(Resource):
     @api.doc(params={"id": "Agent ID"}, description="Export an agent as YAML")
@@ -2535,9 +2574,7 @@ class ExportAgent(Resource):
             try:
                 ra = require(conn, "agent", agent_id, user, "export")
             except AccessDenied as denied:
-                return make_response(
-                    jsonify({"success": False, "message": denied.message}), denied.status
-                )
+                return _export_refusal(conn, agent_id, user, denied)
             agent = repo.get_by_id(ra.resource_id)
             if not agent:
                 return make_response(

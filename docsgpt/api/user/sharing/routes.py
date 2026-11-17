@@ -20,6 +20,7 @@ from docsgpt.storage.db.repositories.shared_conversations import (
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
+from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_LOCKED, may_take_outside, outside_minimum, team_policy
 
 logger = logging.getLogger(__name__)
 
@@ -159,8 +160,31 @@ def _find_reusable_share_agent(
     return mapping
 
 
+def team_chat_link_paused(conn, team_id: Optional[Any]) -> bool:
+    """Whether a chat's share link is paused because its team is locked.
+
+    A team chat's link takes the chat outside the team, so it follows the
+    team's outside policy: while the team is locked its links answer as if
+    they didn't exist, and unlocking brings them back. A Personal chat
+    (``team_id`` None) never depends on a team.
+
+    Args:
+        conn: Open connection.
+        team_id: The conversation's ``team_id``.
+
+    Returns:
+        bool: True while the chat's team is locked.
+    """
+    return team_id is not None and team_policy(conn, str(team_id)) == POLICY_LOCKED
+
+
 def _team_chat_share_refusal(conn, conversation: dict, user: str, is_promptable: bool):
-    """The 403 for sharing a team chat other than as an Admin's read-only snapshot, or None.
+    """The 403 for sharing a team chat other than as a read-only snapshot the team's outside policy allows, or None.
+
+    Who may make the link follows the policy: Admins, or Editors too under
+    ``editors``; nobody while the team is locked (``team_locked``). The
+    policy row is held until the share is written, so a lock set meanwhile
+    lands first or waits for it.
 
     Args:
         conn: Open connection.
@@ -185,16 +209,28 @@ def _team_chat_share_refusal(conn, conversation: dict, user: str, is_promptable:
             }),
             403,
         )
-    if not role_at_least(team_role_for(conn, user, str(team_id)), "admin"):
+    role = team_role_for(conn, user, str(team_id))
+    policy = team_policy(conn, str(team_id), lock="share")
+    if may_take_outside(role, policy):
+        return None
+    if policy == POLICY_LOCKED and role_at_least(role, "editor"):
         return make_response(
             jsonify({
                 "success": False,
-                "error": "workspace_role_required",
-                "message": "Only the team's admins can share a chat from its workspace.",
+                "error": CODE_TEAM_LOCKED,
+                "message": "This team is locked: its chats can't be shared outside it.",
             }),
             403,
         )
-    return None
+    who = "admins and editors" if outside_minimum(policy) == "editor" else "admins"
+    return make_response(
+        jsonify({
+            "success": False,
+            "error": "workspace_role_required",
+            "message": f"Only the team's {who} can share a chat from its workspace.",
+        }),
+        403,
+    )
 
 
 @sharing_ns.route("/share")
@@ -248,9 +284,9 @@ class ShareConversation(Resource):
                         404,
                     )
                 conv_pg_id = str(conversation["id"])
-                # Outward exposure belongs to the team: a team chat's
-                # link is a read-only snapshot an Admin makes; the promptable
-                # link, which mints an agent and key, stays Personal.
+                # Outward exposure belongs to the team: a team chat's link is
+                # a read-only snapshot made by whom its outside policy allows;
+                # the promptable link, which mints an agent and key, stays Personal.
                 if refusal := _team_chat_share_refusal(conn, conversation, user, is_promptable):
                     return refusal
                 current_n_queries = conv_repo.message_count(conv_pg_id)
@@ -443,6 +479,17 @@ class GetPubliclySharedConversations(Resource):
                             404,
                         )
                     conversation = dict(row._mapping)
+                if team_chat_link_paused(conn, conversation.get("team_id")):
+                    # Answered like a link that doesn't exist: a locked team's chats don't leave it.
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "might have broken url or the conversation does not exist",
+                            }
+                        ),
+                        404,
+                    )
 
                 messages = conv_repo.get_messages(conv_pg_id)
                 first_n = shared.get("first_n_queries") or 0

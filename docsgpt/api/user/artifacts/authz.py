@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Mapping, Optional
 
 from flask import request
+from sqlalchemy import text
 
 from docsgpt.api.user.workflow_runs.access import run_in_reach
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -17,6 +18,7 @@ from docsgpt.storage.db.repositories.shared_conversations import (
 )
 from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.outside import POLICY_LOCKED, team_policy
 
 
 @dataclass(frozen=True)
@@ -103,9 +105,15 @@ def _shared_row_for(conn, conversation_id, share_token):
     if not share_token:
         return None
     shared = SharedConversationsRepository(conn).find_by_uuid(share_token)
-    if shared and str(shared.get("conversation_id")) == str(conversation_id):
-        return shared
-    return None
+    if not shared or str(shared.get("conversation_id")) != str(conversation_id):
+        return None
+    team_id = conn.execute(
+        text("SELECT team_id FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": str(conversation_id)}
+    ).scalar()
+    if team_id is not None and team_policy(conn, str(team_id)) == POLICY_LOCKED:
+        # A locked team's chat links are paused, the artifacts they reach with them.
+        return None
+    return shared
 
 
 def user_can_access_conversation(
