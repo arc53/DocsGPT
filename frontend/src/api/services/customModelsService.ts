@@ -9,6 +9,7 @@ import type {
   CustomModelDeleteResult,
   CustomModelOwner,
   CustomModelTestResult,
+  CustomModelUsage,
 } from '../../models/types';
 
 /**
@@ -141,6 +142,28 @@ const customModelsService = {
     );
     const body = await parseJsonOrError(response);
     return body && typeof body === 'object' ? body : { success: true };
+  },
+
+  /**
+   * The owner's agents and workflows that name a model, which would run on
+   * the default model if it were deleted. Anyone who may see the model may
+   * read it; a refusal throws (404 `model_not_found`).
+   */
+  getCustomModelUsage: async (
+    id: string,
+    token: string | null,
+  ): Promise<CustomModelUsage> => {
+    const response = await apiClient.get(
+      endpoints.USER.CUSTOM_MODEL_USAGE(id),
+      token,
+    );
+    const body = await parseJsonOrError(response);
+    return {
+      agents: Array.isArray(body?.usage?.agents) ? body.usage.agents : [],
+      workflows: Array.isArray(body?.usage?.workflows)
+        ? body.usage.workflows
+        : [],
+    };
   },
 
   /**

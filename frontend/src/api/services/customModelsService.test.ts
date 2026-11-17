@@ -177,4 +177,19 @@ describe('customModelsService for a team', () => {
       success: true,
     });
   });
+
+  it('reads which agents and workflows use a model before it is deleted', async () => {
+    const usage = { agents: [{ id: 'a1', name: 'Support' }], workflows: [] };
+    get.mockResolvedValue(response({ success: true, usage }));
+    expect(await customModelsService.getCustomModelUsage('m1', 'tok')).toEqual(
+      usage,
+    );
+    expect(get).toHaveBeenCalledWith('/api/user/models/m1/usage', 'tok');
+    get.mockResolvedValue(
+      response({ success: false, error: 'model_not_found' }, 404),
+    );
+    await expect(
+      customModelsService.getCustomModelUsage('m1', 'tok'),
+    ).rejects.toMatchObject({ status: 404 });
+  });
 });

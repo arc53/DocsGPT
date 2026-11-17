@@ -17,6 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import {
+  customModelErrorMessage,
+  customModelRequestError,
+} from '../models/customModelErrors';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -25,6 +29,7 @@ import type {
   CreateCustomModelPayload,
   CustomModel,
   CustomModelCapabilities,
+  CustomModelOwner,
   ModelApiFlavor,
   ReasoningEffort,
   ToolResultImages,
@@ -35,6 +40,11 @@ interface CustomModelModalProps {
   setModalState: (state: ActiveState) => void;
   model?: CustomModel | null;
   onSaved: (model: CustomModel) => void;
+  /**
+   * Whose a new model is: `team` adds it (and tests it) for the current
+   * team. An edit goes by the model itself.
+   */
+  owner?: CustomModelOwner;
 }
 
 interface FormState {
@@ -106,6 +116,7 @@ export default function CustomModelModal({
   setModalState,
   model,
   onSaved,
+  owner,
 }: CustomModelModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -252,14 +263,20 @@ export default function CustomModelModal({
       const payload = buildPayload();
       const saved = isEditMode
         ? await customModelsService.updateCustomModel(model!.id, payload, token)
-        : await customModelsService.createCustomModel(payload, token);
+        : await customModelsService.createCustomModel(
+            owner === 'team' ? { ...payload, owner } : payload,
+            token,
+          );
       onSaved(saved);
       closeModal();
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : t('settings.customModels.errors.saveFailed');
+      // A refusal code reads in the app's words; a sentence (an unsafe
+      // URL) is the server's.
+      const message = customModelRequestError(
+        t,
+        err,
+        t('settings.customModels.errors.saveFailed'),
+      );
       const mapped = mapErrorToField(message);
       setErrors((prev) => ({ ...prev, [mapped.field]: mapped.message }));
     } finally {
@@ -296,6 +313,7 @@ export default function CustomModelModal({
                 api_key: trimmedApiKey,
                 upstream_model_id: trimmedUpstreamId,
                 capabilities,
+                ...(owner === 'team' && { owner }),
               },
               token,
             );
@@ -305,8 +323,11 @@ export default function CustomModelModal({
           message: t('settings.customModels.testSuccess'),
         });
       } else {
-        const message =
-          result.error || t('settings.customModels.errors.testFailed');
+        const message = customModelErrorMessage(
+          t,
+          { error: result.error, code: result.code },
+          { fallback: t('settings.customModels.errors.testFailed') },
+        );
         setTestResult({ ok: false, message });
         const mapped = mapErrorToField(message);
         if (mapped.field === 'base_url_remote') {

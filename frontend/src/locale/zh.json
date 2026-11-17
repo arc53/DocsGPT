@@ -3559,10 +3559,6 @@
         "off": "关闭",
         "saveFailed": "无法保存权限。请重试。"
       },
-      "personalOnly": {
-        "connections": "连接是个人的。切换到个人即可管理。",
-        "switch": "切换到个人"
-      },
       "publisher": {
         "built_in": "内置",
         "custom": "自定义",
@@ -3790,7 +3786,6 @@
       },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型",
-      "personalOnly": "自定义模型是个人的。切换到个人即可管理。",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "留空则保留原密钥",
@@ -3803,12 +3798,17 @@
       "searchPlaceholder": "搜索模型...",
       "subtitle": "接入你自己的 OpenAI 兼容模型。",
       "team": {
+        "actions": {
+          "disable": "禁用",
+          "enable": "启用"
+        },
         "addedBy": "由 {{name}} 添加",
         "addedByYou": "由你添加",
         "adminOnly": "只有团队管理员可以添加或更改团队的模型。",
         "copy": {
           "action": "复制到团队",
           "body": "团队会获得 {{name}} 的独立副本，使用你的 API 密钥。你的模型保持不变。",
+          "bodyTo": "{{team}} 会获得 {{name}} 的独立副本，使用你的 API 密钥。你的模型保持不变。",
           "confirm": "复制",
           "done": "已将 {{name}} 复制到 {{team}}。",
           "team": "团队",
@@ -3816,7 +3816,9 @@
         },
         "delete": {
           "body": "使用它的团队智能体和工作流将改用默认模型。",
-          "fellBack": "现已改用默认模型：{{names}}"
+          "fellBack": "现已改用默认模型：{{names}}",
+          "mayBeUsed": "使用它的团队智能体和工作流将改用默认模型。此操作无法撤销。",
+          "usedBy": "{{names}} 正在使用它，删除后将改用默认模型。此操作无法撤销。"
         },
         "emptyAdmin": "还没有为团队添加任何模型。添加一个后，团队里的每个人都能使用。",
         "emptyMember": "还没有为团队添加任何模型。团队管理员可以添加一个。",

@@ -19,13 +19,14 @@ vi.mock('../hooks', async (importOriginal) => ({
 }));
 
 vi.mock('../modals/CustomModelModal', () => ({ default: () => null }));
-// The open confirm's submit; the test reads what handleSubmit returns.
+// The delete confirm's submit; the test reads what handleSubmit returns.
 const confirmProps: { current: Record<string, unknown> | null } = {
   current: null,
 };
 vi.mock('../modals/ConfirmationModal', () => ({
   default: (props: Record<string, unknown>) => {
-    confirmProps.current = props;
+    if (props.message === 'settings.customModels.deleteWarning')
+      confirmProps.current = props;
     return null;
   },
 }));
@@ -51,10 +52,12 @@ vi.mock('../api/services/modelService', () => ({
 
 const listCustomModels = vi.fn();
 const deleteCustomModel = vi.fn();
+const getCustomModelUsage = vi.fn();
 vi.mock('../api/services/customModelsService', () => ({
   default: {
     listCustomModels: (...args: unknown[]) => listCustomModels(...args),
     deleteCustomModel: (...args: unknown[]) => deleteCustomModel(...args),
+    getCustomModelUsage: (...args: unknown[]) => getCustomModelUsage(...args),
   },
 }));
 
@@ -69,6 +72,8 @@ describe('CustomModels', () => {
   beforeEach(() => {
     listCustomModels.mockReset();
     deleteCustomModel.mockReset();
+    getCustomModelUsage.mockReset();
+    getCustomModelUsage.mockResolvedValue({ agents: [], workflows: [] });
     confirmProps.current = null;
     container = document.createElement('div');
     document.body.appendChild(container);

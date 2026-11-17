@@ -501,14 +501,15 @@ describe('Connectors page in a team', () => {
       (b) => b.textContent === 'settings.connectors.personalOnly.switch',
     );
 
-  it('Custom models in a team: says models are personal and loads nothing', async () => {
+  it("Custom models in a team: lists the team's models, with no Personal-only notice", async () => {
     await render('models', 'editor');
-    expect(
-      container.querySelector<HTMLElement>('[data-slot="alert"]')?.textContent,
-    ).toContain('settings.customModels.personalOnly');
-    expect(customModels.listCustomModels).not.toHaveBeenCalled();
-    await act(async () => switchButton()!.click());
-    expect(store.getState().workspace.current).toBe('personal');
+    expect(container.querySelector('[data-slot="alert"]')).toBe(null);
+    expect(switchButton()).toBeUndefined();
+    expect(customModels.listCustomModels).toHaveBeenCalledWith(
+      expect.anything(),
+      { owner: 'team', workspace: 't1' },
+    );
+    expect(text()).toContain('settings.customModels.team.notice');
   });
 
   it('Custom models in Personal: the list as before', async () => {

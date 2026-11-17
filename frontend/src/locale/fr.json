@@ -3721,10 +3721,6 @@
         "off": "Désactivé",
         "saveFailed": "Impossible d’enregistrer l’autorisation. Réessayez."
       },
-      "personalOnly": {
-        "connections": "Les connexions sont personnelles. Passez à Personnel pour les gérer.",
-        "switch": "Passer à Personnel"
-      },
       "publisher": {
         "built_in": "Intégré",
         "custom": "Personnalisé",
@@ -3961,7 +3957,6 @@
       "pageRange_many": "{{from}}–{{to}} sur {{formatted}} modèles",
       "pageRange_one": "{{from}}–{{to}} sur {{formatted}} modèle",
       "pageRange_other": "{{from}}–{{to}} sur {{formatted}} modèles",
-      "personalOnly": "Les modèles personnalisés sont personnels. Passez à Personnel pour les gérer.",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "Laissez vide pour conserver la valeur actuelle",
@@ -3974,12 +3969,17 @@
       "searchPlaceholder": "Rechercher des modèles…",
       "subtitle": "Utilisez votre propre modèle compatible OpenAI.",
       "team": {
+        "actions": {
+          "disable": "Désactiver",
+          "enable": "Activer"
+        },
         "addedBy": "Ajouté par {{name}}",
         "addedByYou": "Ajouté par vous",
         "adminOnly": "Seuls les administrateurs de l’équipe peuvent ajouter ou modifier les modèles de l’équipe.",
         "copy": {
           "action": "Copier dans une équipe",
           "body": "L’équipe reçoit sa propre copie de {{name}}, avec votre clé API. Votre modèle reste tel quel.",
+          "bodyTo": "{{team}} reçoit sa propre copie de {{name}}, avec votre clé API. Votre modèle reste tel quel.",
           "confirm": "Copier",
           "done": "{{name}} a été copié dans {{team}}.",
           "team": "Équipe",
@@ -3987,7 +3987,9 @@
         },
         "delete": {
           "body": "Les agents et workflows de l’équipe qui l’utilisent passeront au modèle par défaut.",
-          "fellBack": "Désormais sur le modèle par défaut : {{names}}"
+          "fellBack": "Désormais sur le modèle par défaut : {{names}}",
+          "mayBeUsed": "Les agents et workflows de l’équipe qui l’utilisent passeront au modèle par défaut. Cette action est irréversible.",
+          "usedBy": "Utilisé par {{names}}, qui passeront au modèle par défaut. Cette action est irréversible."
         },
         "emptyAdmin": "Aucun modèle n’est encore ajouté pour l’équipe. Ajoutez-en un et toute l’équipe pourra l’utiliser.",
         "emptyMember": "Aucun modèle n’est encore ajouté pour l’équipe. Un administrateur de l’équipe peut en ajouter un.",

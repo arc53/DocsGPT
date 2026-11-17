@@ -3590,10 +3590,6 @@
         "off": "Aus",
         "saveFailed": "Die Berechtigung konnte nicht gespeichert werden. Versuche es erneut."
       },
-      "personalOnly": {
-        "connections": "Verbindungen sind persönlich. Wechsle zu Persönlich, um sie zu verwalten.",
-        "switch": "Zu Persönlich wechseln"
-      },
       "publisher": {
         "built_in": "Integriert",
         "custom": "Eigener",
@@ -3824,7 +3820,6 @@
       },
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Modell",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Modellen",
-      "personalOnly": "Eigene Modelle sind persönlich. Wechsle zu Persönlich, um sie zu verwalten.",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "Leer lassen, um den vorhandenen Schlüssel beizubehalten",
@@ -3837,12 +3832,17 @@
       "searchPlaceholder": "Modelle suchen...",
       "subtitle": "Verbinde dein eigenes OpenAI-kompatibles Modell.",
       "team": {
+        "actions": {
+          "disable": "Deaktivieren",
+          "enable": "Aktivieren"
+        },
         "addedBy": "Hinzugefügt von {{name}}",
         "addedByYou": "Von dir hinzugefügt",
         "adminOnly": "Nur Team-Admins können die Modelle des Teams hinzufügen oder ändern.",
         "copy": {
           "action": "In ein Team kopieren",
           "body": "Das Team bekommt eine eigene Kopie von {{name}} mit deinem API-Schlüssel. Dein Modell bleibt, wie es ist.",
+          "bodyTo": "{{team}} bekommt eine eigene Kopie von {{name}} mit deinem API-Schlüssel. Dein Modell bleibt, wie es ist.",
           "confirm": "Kopieren",
           "done": "{{name}} wurde nach {{team}} kopiert.",
           "team": "Team",
@@ -3850,7 +3850,9 @@
         },
         "delete": {
           "body": "Agenten und Workflows des Teams, die es nutzen, laufen danach mit dem Standardmodell.",
-          "fellBack": "Jetzt mit dem Standardmodell: {{names}}"
+          "fellBack": "Jetzt mit dem Standardmodell: {{names}}",
+          "mayBeUsed": "Agenten und Workflows des Teams, die es nutzen, laufen danach mit dem Standardmodell. Dies kann nicht rückgängig gemacht werden.",
+          "usedBy": "Genutzt von {{names}}, die danach mit dem Standardmodell laufen. Dies kann nicht rückgängig gemacht werden."
         },
         "emptyAdmin": "Für das Team ist noch kein Modell hinzugefügt. Füge eins hinzu, dann kann es jeder im Team nutzen.",
         "emptyMember": "Für das Team ist noch kein Modell hinzugefügt. Ein Team-Admin kann eins hinzufügen.",

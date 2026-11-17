@@ -3611,10 +3611,6 @@
         "off": "Off",
         "saveFailed": "Could not save the permission. Try again."
       },
-      "personalOnly": {
-        "connections": "Connections are personal. Switch to Personal to manage them.",
-        "switch": "Switch to Personal"
-      },
       "publisher": {
         "built_in": "Built in",
         "custom": "Custom",
@@ -3845,7 +3841,6 @@
       },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} model",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} models",
-      "personalOnly": "Custom models are personal. Switch to Personal to manage them.",
       "placeholders": {
         "apiKey": "sk-...",
         "apiKeyEdit": "Leave blank to keep existing",
@@ -3858,12 +3853,17 @@
       "searchPlaceholder": "Search models...",
       "subtitle": "Bring your own OpenAI-compatible model.",
       "team": {
+        "actions": {
+          "disable": "Disable",
+          "enable": "Enable"
+        },
         "addedBy": "Added by {{name}}",
         "addedByYou": "Added by you",
         "adminOnly": "Only team Admins can add or change the team's models.",
         "copy": {
           "action": "Copy to a team",
           "body": "The team gets its own copy of {{name}} with your API key. Your model stays as it is.",
+          "bodyTo": "{{team}} gets its own copy of {{name}} with your API key. Your model stays as it is.",
           "confirm": "Copy",
           "done": "{{name}} was copied to {{team}}.",
           "team": "Team",
@@ -3871,7 +3871,9 @@
         },
         "delete": {
           "body": "The team's agents and workflows that use it will run on the default model instead.",
-          "fellBack": "Now on the default model: {{names}}"
+          "fellBack": "Now on the default model: {{names}}",
+          "mayBeUsed": "Any of the team's agents and workflows that use it will run on the default model instead. This can't be undone.",
+          "usedBy": "Used by {{names}}, which will run on the default model instead. This can't be undone."
         },
         "emptyAdmin": "No models added for the team yet. Add one and everyone in the team can use it.",
         "emptyMember": "No models added for the team yet. A team Admin can add one.",

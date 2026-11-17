@@ -275,6 +275,9 @@ const endpoints = {
     CUSTOM_MODEL_COPY: (id: string) =>
       `/api/user/models/${encodeURIComponent(id)}/copy`,
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
+    /** The owner's agents and workflows that name a model (for a delete confirm). */
+    CUSTOM_MODEL_USAGE: (id: string) =>
+      `/api/user/models/${encodeURIComponent(id)}/usage`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
     ACTIVITY_NOW: '/api/activity/now',
     ACTIVITY_HISTORY: (params: string) => `/api/activity/history?${params}`,
