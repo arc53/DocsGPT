@@ -92,6 +92,58 @@ class TestAMembersChatOnATeamAgent:
         assert auto_resume_allowed(pg_conn, chat, "dana") is False
 
 
+class TestAChatOnATeamAgentSharedIntoTheirTeam:
+    def _setup(self, conn):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        owner = str(TeamsRepository(conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", "lena")["id"])
+        receiving = str(TeamsRepository(conn).create("Sales", f"s-{uuid.uuid4().hex[:6]}", "sam")["id"])
+        TeamMembersRepository(conn).add_member(receiving, "dana")
+        agent_id = _agent(conn, principal_id(owner))
+        TeamItemSharesRepository(conn).share(owner, receiving, "agent", agent_id, "lena")
+        return owner, receiving, agent_id
+
+    def test_resumes_while_the_share_reaches_them_through_the_chats_team(self, pg_conn):
+        _, receiving, agent_id = self._setup(pg_conn)
+        chat = _chat(pg_conn, "dana", agent_id, team_id=receiving)
+
+        assert auto_resume_allowed(pg_conn, chat, "dana") is True
+
+    def test_stops_once_the_share_is_revoked(self, pg_conn):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+        _, receiving, agent_id = self._setup(pg_conn)
+        chat = _chat(pg_conn, "dana", agent_id, team_id=receiving)
+        TeamItemSharesRepository(pg_conn).revoke(receiving, "agent", agent_id)
+
+        assert auto_resume_allowed(pg_conn, chat, "dana") is False
+
+    def test_stops_once_they_leave_the_receiving_team(self, pg_conn):
+        _, receiving, agent_id = self._setup(pg_conn)
+        chat = _chat(pg_conn, "dana", agent_id, team_id=receiving)
+        TeamMembersRepository(pg_conn).remove_member(receiving, "dana")
+
+        assert auto_resume_allowed(pg_conn, chat, "dana") is False
+
+    def test_stops_while_the_owning_team_is_locked(self, pg_conn):
+        owner, receiving, agent_id = self._setup(pg_conn)
+        chat = _chat(pg_conn, "dana", agent_id, team_id=receiving)
+        pg_conn.execute(
+            text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": owner}
+        )
+
+        assert auto_resume_allowed(pg_conn, chat, "dana") is False
+
+    def test_a_chat_in_a_team_the_share_does_not_reach_stays_poll_only(self, pg_conn):
+        _, _, agent_id = self._setup(pg_conn)
+        third = str(TeamsRepository(pg_conn).create("Eng", f"e-{uuid.uuid4().hex[:6]}", "lena")["id"])
+        TeamMembersRepository(pg_conn).add_member(third, "dana")
+        chat = _chat(pg_conn, "dana", agent_id, team_id=third)
+
+        assert auto_resume_allowed(pg_conn, chat, "dana") is False
+
+
 class TestTheOwnersChat:
     def test_the_owners_own_chat_on_their_published_agent_resumes(self, pg_conn):
         agent_id = _agent(pg_conn)

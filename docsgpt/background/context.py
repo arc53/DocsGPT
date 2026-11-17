@@ -153,7 +153,9 @@ def auto_resume_allowed(
     owner as the chat does. A public-link chat by someone with no grant
     fails that check too. In a team workspace, a member's own chat on that
     team's agent resumes while they are still in the team (the member pays,
-    the agent runs as the team); other team chats are poll-only.
+    the agent runs as the team), and so does their chat there on another
+    team's agent shared into this team, while that share is live; other team
+    chats are poll-only.
 
     Args:
         conn: A database connection.
@@ -192,8 +194,16 @@ def auto_resume_allowed(
         # A team chat on the team's own agent, for someone still in the team. An
         # agentless team chat stays poll-only: a continuation would run it with
         # the member's personal tools, not the team's.
-        team_agent = mapping["agent_id"] is not None and mapping["agent_owner"] == principal_id(team_id)
-        return team_agent and team_role_for(conn, user_id, team_id) is not None
+        if mapping["agent_id"] is None:
+            return False
+        if mapping["agent_owner"] == principal_id(team_id):
+            return team_role_for(conn, user_id, team_id) is not None
+        from docsgpt.api.user.resource_access import team_item_reach
+
+        # Another team's agent shared into this chat's team: while that share
+        # still reaches them through this team (live, and they are still in it).
+        reach = team_item_reach(conn, user_id, "agent", str(mapping["agent_id"]), prefer_team=str(team_id))
+        return reach is not None and reach == str(team_id).lower()
     if mapping["agent_id"] is None:
         # A key or link chat whose agent is gone has nobody left to run it as.
         return not (mapping["api_key"] or mapping["is_shared_usage"])
