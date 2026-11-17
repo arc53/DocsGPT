@@ -102,3 +102,26 @@ class TestCatalogueByWorkspace:
             request.decoded_token = {"sub": EDITOR}
             ws = read_workspace(pg_conn, EDITOR)
         assert source in _ids(ws, "sources")
+
+    def test_the_requests_team_picks_it_after_the_request(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        source, _tool, _prompt = _items(pg_conn, principal, "team")
+        own_source, _t, _p = _items(pg_conn, EDITOR, "own")
+        # No request context: the drafter reads on its stream's thread.
+        ws = read_workspace(pg_conn, EDITOR, team_id=tid)
+        assert source in _ids(ws, "sources")
+        assert own_source not in _ids(ws, "sources")
+
+    def test_a_non_member_naming_a_team_after_the_request_gets_nothing_of_it(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        source, _tool, _prompt = _items(pg_conn, principal, "team")
+        assert source not in _ids(read_workspace(pg_conn, STRANGER, team_id=tid), "sources")
+
+    def test_the_agent_being_edited_still_decides_over_the_requests_team(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        team_source, _tool, _prompt = _items(pg_conn, principal, "team")
+        own_source, _t, _p = _items(pg_conn, EDITOR, "own")
+        agent = str(AgentsRepository(pg_conn).create(EDITOR, "Mine", "draft")["id"])
+        ws = read_workspace(pg_conn, EDITOR, agent, team_id=tid)
+        assert own_source in _ids(ws, "sources")
+        assert team_source not in _ids(ws, "sources")

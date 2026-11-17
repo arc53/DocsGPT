@@ -86,7 +86,8 @@ class Recipe:
     Attributes:
         id: The ``recipe`` value that picks it.
         parse_context: Cleans the request's ``context``; raises :class:`BadDraftRequest` when unusable.
-        load_workspace: Reads what the recipe may see, scoped to the caller: ``(user_id, context) -> Workspace``.
+        load_workspace: Reads what the recipe may see, scoped to the caller and the workspace the request was made
+            in: ``(user_id, context, *, team_id) -> Workspace``. It runs on the stream, after the request.
         instructions: The recipe's part of the system prompt: ``(request, workspace) -> str``.
         context_data: The form or screen values fenced next to the request: ``(request, workspace) -> dict``.
         proposal_schema: JSON schema of the ``submit_proposal`` arguments.
@@ -108,7 +109,7 @@ class Recipe:
 
     id: str
     parse_context: Callable[[Any], dict]
-    load_workspace: Callable[[str, dict], Workspace]
+    load_workspace: Callable[..., Workspace]
     instructions: Callable[[DraftRequest, Workspace], str]
     context_data: Callable[[DraftRequest, Workspace], dict]
     proposal_schema: dict

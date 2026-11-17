@@ -448,13 +448,14 @@ def _form_refs(form: dict) -> dict[str, list[str]]:
     return {"sources": list(form.get("sources") or []), "tools": list(form.get("tools") or []), "prompts": prompts}
 
 
-def _load(user_id: str, context: dict) -> AgentWorkspace:
+def _load(user_id: str, context: dict, *, team_id: Optional[str] = None) -> AgentWorkspace:
     """The caller's workspace plus what this request's step needs, read in one read-only transaction.
 
     Every step reads the text of the form's saved prompt, the one prompt the model is always shown: whole when
     edits may change it. The safety step also reads the instance's guardrail menu and Insights switch, the folders
     of the agent's sources, and whether a saved agent has enough conversations for Suggest from conversations; the
-    saved agent's row is read once for both.
+    saved agent's row is read once for both. A new agent reads the items of ``team_id``'s workspace (Personal
+    when None): the request that named it is over by now.
     """
     from docsgpt.storage.db.session import db_readonly
 
@@ -462,7 +463,7 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
     # The instance's switches first: the decision model's status needn't hold a connection.
     menu, insights = guardrail_menu(), topics_recipe.insights_on_here()
     with db_readonly() as conn:
-        ws = read_workspace(conn, user_id, context.get("agent_id"), pinned=_form_refs(form))
+        ws = read_workspace(conn, user_id, context.get("agent_id"), pinned=_form_refs(form), team_id=team_id)
         out = AgentWorkspace(**vars(ws), guardrail_menu=menu, insights=insights,
                              max_topics=int(settings.ANALYTICS_MAX_TOPICS))
         editable = _editable_prompt(form, ws)

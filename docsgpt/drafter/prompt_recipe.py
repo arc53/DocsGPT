@@ -32,7 +32,7 @@ that ``passed``.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from docsgpt.drafter.catalog import is_template, Workspace
 from docsgpt.drafter.fencing import clean_text
@@ -155,10 +155,11 @@ def asks(req: DraftRequest) -> bool:
     return req.context["mode"] in _ASKS and not req.context.get("skip_questions")
 
 
-def load_workspace(user_id: str, context: dict) -> Workspace:
+def load_workspace(user_id: str, context: dict, *, team_id: Optional[str] = None) -> Workspace:
     """A prompt is drafted on its own text; a review of a saved prompt also reads the agents using it.
 
-    The agents only inform the review, so a failed read is logged and the review runs without them.
+    The agents only inform the review, so a failed read is logged and the review runs without them. ``team_id``
+    is unused: the saved prompt decides whose agents are read.
     """
     prompt_id = context["prompt"]["id"]
     if context["mode"] != "review":

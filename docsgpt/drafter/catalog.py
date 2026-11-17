@@ -646,17 +646,21 @@ def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> No
     }
 
 
-def workspace_owner(conn, user_id: str, agent_id: Optional[str] = None) -> Optional[str]:
+def workspace_owner(conn, user_id: str, agent_id: Optional[str] = None, *,
+                    team_id: Optional[str] = None) -> Optional[str]:
     """Whose items the catalogue offers: a team's principal in a team workspace, None in Personal.
 
     The agent being edited decides when there is one (a route about one item goes by the item's workspace).
-    Otherwise the request's workspace header does; a refused or missing one reads as Personal, which offers
-    the caller nothing of any team's.
+    Otherwise ``team_id`` does when given, else the request's workspace header; a refused or missing one reads
+    as Personal, which offers the caller nothing of any team's.
 
     Args:
         conn: Open connection.
         user_id: The caller.
         agent_id: The agent being edited, if any.
+        team_id: The team the request was made in, read while it was open: the drafter reads the workspace
+            on its stream's thread, where the request's header is gone. The caller's membership is checked
+            by :func:`read_workspace`.
 
     Returns:
         Optional[str]: The team's principal, or None for Personal.
@@ -665,11 +669,14 @@ def workspace_owner(conn, user_id: str, agent_id: Optional[str] = None) -> Optio
 
     from docsgpt.api.user.resource_access import resolve
     from docsgpt.workspaces.context import WorkspaceError, current_workspace
+    from docsgpt.workspaces.principal import principal_id
 
     if agent_id and isinstance(agent_id, str):
         ra = resolve(conn, "agent", agent_id, user_id)
         if ra is not None:
             return ra.owner_id if ra.is_team_item else None
+    if team_id:
+        return principal_id(str(team_id))
     if not has_request_context():
         return None
     try:
@@ -681,7 +688,7 @@ def workspace_owner(conn, user_id: str, agent_id: Optional[str] = None) -> Optio
 
 def read_workspace(conn, user_id: str, agent_id: Optional[str] = None, *,
                    pinned: Optional[dict[str, list[str]]] = None,
-                   owner_id: Optional[str] = None) -> Workspace:
+                   owner_id: Optional[str] = None, team_id: Optional[str] = None) -> Workspace:
     """Read the overview of the caller's sources, tools and prompts and the agent being edited through ``conn``;
     models are left out.
 
@@ -693,6 +700,7 @@ def read_workspace(conn, user_id: str, agent_id: Optional[str] = None, *,
             is given by id only); an id the caller may not attach is still left out.
         owner_id: A team's principal to read that team's workspace; by default :func:`workspace_owner` decides.
             A caller who is not in that team reads Personal instead.
+        team_id: The team the request was made in, for a read after the request (see :func:`workspace_owner`).
 
     Returns:
         The workspace, without ``models`` (:func:`load_models` fills them).
@@ -702,7 +710,7 @@ def read_workspace(conn, user_id: str, agent_id: Optional[str] = None, *,
 
     pinned = pinned or {}
     if owner_id is None:
-        owner_id = workspace_owner(conn, user_id, agent_id)
+        owner_id = workspace_owner(conn, user_id, agent_id, team_id=team_id)
     if not is_principal_id(owner_id) or team_role_for(conn, user_id, team_of_principal(owner_id)) is None:
         # Never a team's items to someone outside it, whoever asked for them.
         owner_id = None
