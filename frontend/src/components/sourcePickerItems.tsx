@@ -63,6 +63,14 @@ export function sourceIcon(
   return <FileText className={lucide} />;
 }
 
+/** Another team's source shared with this team (`origin: "team_shared"`). */
+export const isReceivedSource = (doc: Doc): boolean =>
+  doc.origin === 'team_shared';
+
+/** The picker group of the sources other teams shared with this team. */
+export const receivedSourcesLabel = (t: TFunction): string =>
+  t('workspace.page.sharedFromTeams.title');
+
 type SourcePickerOptions = {
   t: TFunction;
   labels: SourceGroupLabels;
@@ -81,8 +89,9 @@ type SourcePickerOptions = {
  * details (`sourceDetailLine`), with the card's badges above that line: a
  * failed or running ingest, and Reconnect when the caller's connection
  * needs a sign-in. The rows are grouped into the caller's own, then the
- * team's; a picker passes `loneGroupHeading={false}`, so a lone group
- * shows its heading only beside Selected.
+ * team's, then those other teams shared with the team (each naming the team
+ * it comes from); a picker passes `loneGroupHeading={false}`, so a lone
+ * group shows its heading only beside Selected.
  *
  * Args:
  *   docs: The sources.
@@ -96,11 +105,13 @@ export function toSourcePickerItems(
   options: SourcePickerOptions,
 ): MultiSelectPopoverItem[] {
   const list = docs ?? [];
-  const isTeam = (doc: Doc) => doc.ownership === 'team';
+  const isTeam = (doc: Doc) =>
+    doc.ownership === 'team' && !isReceivedSource(doc);
   const toItem = (doc: Doc) => toSourcePickerItem(doc, options);
   return [
-    ...list.filter((doc) => !isTeam(doc)).map(toItem),
+    ...list.filter((doc) => !isTeam(doc) && !isReceivedSource(doc)).map(toItem),
     ...list.filter(isTeam).map(toItem),
+    ...list.filter(isReceivedSource).map(toItem),
   ];
 }
 
@@ -119,15 +130,28 @@ export function toSourcePickerItem(
   }: SourcePickerOptions & { linePrefix?: string | null },
 ): MultiSelectPopoverItem {
   const connection = connectionOf(doc, connections);
+  const received = isReceivedSource(doc);
+  // Another team's source says which team it comes from.
+  const from =
+    received && doc.shared_from?.name
+      ? t('workspace.page.sharedFromTeams.from', {
+          team: doc.shared_from.name,
+          interpolation: { escapeValue: false },
+        })
+      : null;
   const line =
-    [linePrefix, sourceDetailLine(t, doc, connection), lineSuffix?.(doc)]
+    [linePrefix, from, sourceDetailLine(t, doc, connection), lineSuffix?.(doc)]
       .filter(Boolean)
       .join(' · ') || undefined;
   const item: MultiSelectPopoverItem = {
     id: sourceItemId(doc),
     label: doc.name,
     icon: sourceIcon(doc, connection),
-    group: doc.ownership === 'team' ? labels.team : labels.own,
+    group: received
+      ? receivedSourcesLabel(t)
+      : doc.ownership === 'team'
+        ? labels.team
+        : labels.own,
   };
   const ingest = ingestState(doc);
   const badges = [];

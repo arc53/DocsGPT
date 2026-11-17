@@ -124,13 +124,20 @@ export function toolPickerItems<T extends PickerTool>(
         connector && connector.publisher !== 'custom'
           ? connectorDescription(t, connector)
           : tool.description || undefined;
+      // Another team's tool names that team; a person's shared one, who
+      // shared it.
       const sharedBy =
-        !isOwner(tool) && tool.shared_via
-          ? t('settings.tools.sharedBy', {
+        tool.origin === 'team_shared' && tool.shared_from?.name
+          ? t('workspace.page.sharedFromTeams.from', {
               interpolation: { escapeValue: false },
-              team: tool.shared_via,
+              team: tool.shared_from.name,
             })
-          : undefined;
+          : !isOwner(tool) && tool.shared_via
+            ? t('settings.tools.sharedBy', {
+                interpolation: { escapeValue: false },
+                team: tool.shared_via,
+              })
+            : undefined;
       const line =
         [
           // Under "In other folders" each row says which one.

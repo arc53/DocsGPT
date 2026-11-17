@@ -136,6 +136,19 @@ const teamDoc = doc({
   created_by: { user_id: 'dana', label: 'Dana' },
 });
 
+// Another team's source shared with this team: read and used, never changed.
+const receivedDoc = doc({
+  id: 'received-1',
+  name: 'Sales playbook',
+  origin: 'team_shared',
+  ownership: 'team',
+  access: 'viewer',
+  allowed_actions: ['use'],
+  workspace: { kind: 'team', team_id: 't1' },
+  shared_from: { team_id: 'sales', name: 'Sales' },
+  folder_id: null,
+});
+
 type Page = {
   docs: Doc[];
   totalDocuments: number;
@@ -312,9 +325,40 @@ describe('Knowledge in Personal', () => {
 });
 
 describe('Knowledge in a team', () => {
-  it('never asks for shared sources nor shows Shared with you', async () => {
+  it("asks for other teams' sources apart and lists them as Shared with this team", async () => {
     inWorkspace('t1');
-    answer({ own: page([teamDoc], { originCounts: { own: 1, shared: 1 } }) });
+    answer({
+      own: page([teamDoc], { originCounts: { own: 1, shared: 1 } }),
+      shared: page([receivedDoc]),
+    });
+    await mount([teamDoc]);
+    expect(origins()).toEqual(['own', 'shared']);
+    const section = sharedSection();
+    expect(section?.textContent).toContain(
+      'workspace.page.sharedFromTeams.title',
+    );
+    expect(section?.textContent).not.toContain('workspace.page.sharedWithYou');
+    expect(section?.textContent).toContain('Sales playbook');
+    const tile = cardFor('Sales playbook')!;
+    expect(
+      tile.querySelector('[data-testid="shared-from-meta"]'),
+    ).not.toBeNull();
+    expect(tile.querySelector('[data-testid="role-meta"]')).toBeNull();
+    // It is read and used; nothing edits, files, moves or deletes it.
+    const labels = (await openSourceMenu('received-1')).map(
+      (i) => i.textContent,
+    );
+    for (const refused of [
+      'settings.sources.editConfig',
+      'folders.moveToFolder',
+      'settings.sources.delete',
+    ])
+      expect(labels).not.toContain(refused);
+  });
+
+  it('asks for nothing apart while no other team shares a source', async () => {
+    inWorkspace('t1');
+    answer({ own: page([teamDoc], { originCounts: { own: 1, shared: 0 } }) });
     await mount([teamDoc]);
     expect(origins()).toEqual(['own']);
     expect(sharedSection()).toBeNull();

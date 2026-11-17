@@ -4,6 +4,7 @@ import { Folder as FolderIcon } from 'lucide-react';
 import type { Doc } from '../../models/misc';
 import { sourceItemId } from '../../utils/sourceUtils';
 import type { MultiSelectPopoverItem } from '../MultiSelectPopover';
+import { isReceivedSource, receivedSourcesLabel } from '../sourcePickerItems';
 import { folderCount, folderCountLine } from './folderCopy';
 import {
   docFolderId,
@@ -208,7 +209,15 @@ export function buildKnowledgeRows({
     };
   };
   const groupOf = (doc: Doc) =>
-    doc.ownership === 'team' ? labels.team : labels.own;
+    isReceivedSource(doc)
+      ? receivedSourcesLabel(t)
+      : doc.ownership === 'team'
+        ? labels.team
+        : labels.own;
+  // The root's loose sources, by group: the caller's own, the team's, then
+  // other teams' (never filed here, so always loose).
+  const isTeamDoc = (doc: Doc) =>
+    doc.ownership === 'team' && !isReceivedSource(doc);
   const unlistedRows = (): MultiSelectPopoverItem[] =>
     unlistedFolders.map((folder) => ({
       id: folderRowId(folder.id),
@@ -318,14 +327,15 @@ export function buildKnowledgeRows({
     ),
     ...unlistedRows(),
     ...loose
-      .filter((doc) => doc.ownership !== 'team')
+      .filter((doc) => !isTeamDoc(doc) && !isReceivedSource(doc))
       .map((doc) => docRow(doc, labels.own, null)),
     ...extraSources.map((item) => ({ ...item, group: labels.own })),
     ...filedPicked.map((doc) =>
       docRow(doc, groupOf(doc), trailBelowPlace(docFolderId(tree, doc)), true),
     ),
+    ...loose.filter(isTeamDoc).map((doc) => docRow(doc, labels.team, null)),
     ...loose
-      .filter((doc) => doc.ownership === 'team')
-      .map((doc) => docRow(doc, labels.team, null)),
+      .filter(isReceivedSource)
+      .map((doc) => docRow(doc, receivedSourcesLabel(t), null)),
   ];
 }

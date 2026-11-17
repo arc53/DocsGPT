@@ -91,6 +91,30 @@ describe('withHolderFolderFirst', () => {
     });
   });
 
+  it("puts another team's sources after the team's own at the root", () => {
+    const received: Doc = {
+      ...doc('received', null),
+      origin: 'team_shared',
+      ownership: 'team',
+      shared_from: { team_id: 'sales', name: 'Sales' },
+    };
+    const rows = buildKnowledgeRows({
+      t,
+      tree,
+      docs: [...docs, received],
+      shownDocs: [received, ...docs],
+      pick: { sources: [], folders: [] },
+      place: null,
+      query: '',
+      kindFiltered: false,
+      sourceRow,
+      onOpen: () => undefined,
+    });
+    const last = rows[rows.length - 1];
+    expect(last.id).toBe('received');
+    expect(last.group).toBe('workspace.page.sharedFromTeams.title');
+  });
+
   it('leaves the rows alone for a holder in no folder', () => {
     const base = rootRows({ sources: [], folders: [] });
     expect(

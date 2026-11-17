@@ -201,6 +201,24 @@ const teamTool = {
   allowed_actions: ['edit', 'use', 'use_in_own', 'move_folder'],
 };
 
+// Another team's tool shared with this team: used, never changed.
+const receivedTool = {
+  ...baseTool,
+  id: 'received',
+  displayName: 'Carrier rates',
+  status: false,
+  in_chat: false,
+  access: 'viewer',
+  ownership: 'team',
+  team_access: 'viewer',
+  origin: 'team_shared',
+  workspace: { kind: 'team', team_id: 't1' },
+  shared_from: { team_id: 'sales', name: 'Sales' },
+  owner_label: 'Sales',
+  allowed_actions: ['use', 'use_in_own'],
+  folder_id: null,
+};
+
 const folders: Folder[] = [
   {
     id: 'f-customs',
@@ -409,6 +427,32 @@ describe('Tools page in a workspace', () => {
     expect(menuLabels('Lane pricing')).toContain(
       'settings.tools.shareWithTeam',
     );
+  });
+
+  it("lists another team's tools under Shared with this team, naming the team, to use only", async () => {
+    setWorkspace('editor');
+    await render([teamTool, receivedTool]);
+    expect(headings()[headings().length - 1]).toBe(
+      'workspace.page.sharedFromTeams.title1',
+    );
+    expect(
+      tileTitles(section('workspace.page.sharedFromTeams.title')!),
+    ).toEqual(['Carrier rates']);
+    const received = tile('Carrier rates');
+    expect(
+      received.querySelector('[data-testid="shared-from-meta"]'),
+    ).not.toBeNull();
+    expect(received.querySelector('[data-testid="role-meta"]')).toBeNull();
+    // Each member may still put it in their own chats.
+    expect(received.querySelector('[role="switch"]')).not.toBeNull();
+    const labels = menuLabels('Carrier rates');
+    expect(labels).toContain('settings.tools.view');
+    for (const refused of [
+      'settings.tools.edit',
+      'folders.moveToFolder',
+      'settings.tools.delete',
+    ])
+      expect(labels).not.toContain(refused);
   });
 
   it("reloads the list when the Share dialog's offer moves the tool", async () => {

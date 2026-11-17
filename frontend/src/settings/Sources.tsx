@@ -105,6 +105,7 @@ import { can } from '../utils/accessUtils';
 import { formatRelative } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { captureWorkspace } from '../workspace/requestWorkspace';
 import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
 import WorkspaceLine from '../workspace/WorkspaceLine';
@@ -647,12 +648,11 @@ export default function Sources({
         .then((data) => {
           if (!isLatest()) return;
           setLoadFailed(data === null);
-          // Only Personal's root has a Shared with you; a team never does.
+          // The root lists what is shared in apart: with the caller in
+          // Personal (Shared with you), by other teams in a team (Shared
+          // with this team).
           const sharedHere =
-            !!data &&
-            !inTeam &&
-            !folderId &&
-            (data.originCounts?.shared ?? 0) > 0;
+            !!data && !folderId && (data.originCounts?.shared ?? 0) > 0;
           loadShared(
             sharedHere
               ? {
@@ -1001,7 +1001,7 @@ export default function Sources({
     (doc) => !doc.folder_id || !tree.byId.has(doc.folder_id),
   );
   const attentionListed = unfiledAttention.filter(
-    (doc) => doc.origin !== 'shared',
+    (doc) => doc.origin !== 'shared' && doc.origin !== 'team_shared',
   ).length;
   // Shared with you follows the own list's page 1, as the folders do.
   const sharedDocs =
@@ -1279,6 +1279,9 @@ export default function Sources({
             {/* Who added a team source, or owns one shared with the reader,
                 then the reader's role on a shared one. */}
             {showsCreator(document) ? <CreatorMeta item={document} /> : null}
+            {showsSharedFrom(document) ? (
+              <SharedFromMeta item={document} />
+            ) : null}
             {showsRole(document) ? <RoleMeta item={document} /> : null}
           </MetaLine>
           {/* The reader's own connection (only theirs are loaded): sign in
@@ -1671,7 +1674,11 @@ export default function Sources({
                 >
                   <SectionHeader
                     size="sm"
-                    title={t('workspace.page.sharedWithYou')}
+                    title={
+                      inTeam
+                        ? t('workspace.page.sharedFromTeams.title')
+                        : t('workspace.page.sharedWithYou')
+                    }
                     count={sharedCount}
                   />
                   <div className={GRID}>

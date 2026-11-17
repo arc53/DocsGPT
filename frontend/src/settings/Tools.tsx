@@ -85,6 +85,7 @@ import {
   toolInChat,
 } from '../utils/toolUtils';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
 import WorkspaceLine from '../workspace/WorkspaceLine';
 import {
@@ -634,10 +635,14 @@ export default function Tools() {
         (tool) => matchesKind(tool, kind) && matchesUsage(tool, usage),
       )
     : searchedTools.filter((tool) => filedAt(tree, tool, folderId));
-  // The workspace's own tools in their groups; in Personal, the ones shared
-  // with the caller in a section of their own after them.
+  // The workspace's own tools in their groups; then, each in a section of
+  // its own, the ones other teams shared with a team and the ones shared
+  // with the caller in Personal.
   const isShared = (tool: ListedTool) => tool.origin === 'shared';
-  const ownTools = filteredTools.filter((tool) => !isShared(tool));
+  const isReceived = (tool: ListedTool) => tool.origin === 'team_shared';
+  const isOwn = (tool: ListedTool) => !isShared(tool) && !isReceived(tool);
+  const ownTools = filteredTools.filter(isOwn);
+  const receivedTools = filteredTools.filter(isReceived);
   const sharedTools = filteredTools.filter(isShared);
   // A section's count is its whole group, not the part on this page.
   const groupSizes = new Map(
@@ -652,6 +657,7 @@ export default function Tools() {
     ...groupTools(ownTools, connections, catalog).flatMap(
       (group) => group.tools,
     ),
+    ...receivedTools,
     ...sharedTools,
   ];
   const {
@@ -663,11 +669,8 @@ export default function Tools() {
     SHORT_LIST_PAGE_SIZE,
     `${filterKey}|${folderId}`,
   );
-  const pageGroups = groupTools(
-    pageTools.filter((tool) => !isShared(tool)),
-    connections,
-    catalog,
-  );
+  const pageGroups = groupTools(pageTools.filter(isOwn), connections, catalog);
+  const pageReceived = pageTools.filter(isReceived);
   const pageShared = pageTools.filter(isShared);
   // The level's folders, on the first page; a filter alone lists tools
   // only, a search also finds folders.
@@ -737,6 +740,7 @@ export default function Tools() {
           </MetaItem>
         ) : null}
         {showsCreator(tool) ? <CreatorMeta item={tool} /> : null}
+        {showsSharedFrom(tool) ? <SharedFromMeta item={tool} /> : null}
         {showsRole(tool) ? <RoleMeta item={tool} /> : null}
         {agentUseCount(tool.used_by) > 0 ? (
           <UsedByAgents usage={tool.used_by} />
@@ -747,6 +751,7 @@ export default function Tools() {
       !!folderLabel ||
       !!account ||
       showsCreator(tool) ||
+      showsSharedFrom(tool) ||
       showsRole(tool) ||
       agentUseCount(tool.used_by) > 0;
     return (
@@ -1048,6 +1053,16 @@ export default function Tools() {
                       <div className={GRID}>{group.tools.map(renderTile)}</div>
                     </section>
                   ))}
+                  {pageReceived.length > 0 ? (
+                    <section className="flex flex-col gap-3">
+                      <SectionHeader
+                        size="sm"
+                        title={t('workspace.page.sharedFromTeams.title')}
+                        count={receivedTools.length}
+                      />
+                      <div className={GRID}>{pageReceived.map(renderTile)}</div>
+                    </section>
+                  ) : null}
                   {pageShared.length > 0 ? (
                     <section className="flex flex-col gap-3">
                       <SectionHeader
