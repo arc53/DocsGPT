@@ -3836,6 +3836,43 @@
       "save": "Speichern",
       "searchPlaceholder": "Modelle suchen...",
       "subtitle": "Verbinde dein eigenes OpenAI-kompatibles Modell.",
+      "team": {
+        "addedBy": "Hinzugefügt von {{name}}",
+        "addedByYou": "Von dir hinzugefügt",
+        "adminOnly": "Nur Team-Admins können die Modelle des Teams hinzufügen oder ändern.",
+        "copy": {
+          "action": "In ein Team kopieren",
+          "body": "Das Team bekommt eine eigene Kopie von {{name}} mit deinem API-Schlüssel. Dein Modell bleibt, wie es ist.",
+          "confirm": "Kopieren",
+          "done": "{{name}} wurde nach {{team}} kopiert.",
+          "team": "Team",
+          "title": "In ein Team kopieren"
+        },
+        "delete": {
+          "body": "Agenten und Workflows des Teams, die es nutzen, laufen danach mit dem Standardmodell.",
+          "fellBack": "Jetzt mit dem Standardmodell: {{names}}"
+        },
+        "emptyAdmin": "Für das Team ist noch kein Modell hinzugefügt. Füge eins hinzu, dann kann es jeder im Team nutzen.",
+        "emptyMember": "Für das Team ist noch kein Modell hinzugefügt. Ein Team-Admin kann eins hinzufügen.",
+        "errors": {
+          "adminRequired": "Nur ein Team-Admin kann dem Team ein eigenes Modell hinzufügen. Bitte einen Admin darum und importiere dann erneut.",
+          "alreadyInTeam": "Das Team hat dieses Modell bereits.",
+          "chatPersonalOnly": "Deine eigenen Modelle lassen sich in einem Team-Chat nicht nutzen. Wähle ein Modell des Teams oder eines, das die ganze Instanz anbietet.",
+          "credentialsUnreadable": "Der API-Schlüssel dieses Modells kann nicht gelesen werden. Ersetze den Schlüssel und kopiere das Modell dann.",
+          "modelAdminRequired": "Nur Team-Admins können die Modelle des Teams ändern.",
+          "notAvailableToTokens": "Die eigenen Modelle eines Teams lassen sich nur in der App ändern, nicht mit einem Zugriffstoken.",
+          "notFound": "Dieses Modell gibt es nicht mehr, oder du kannst es nicht sehen.",
+          "personalOnly": "Agenten und Workflows eines Teams können nur die eigenen Modelle des Teams nutzen. Wähle ein Modell des Teams oder eines, das die ganze Instanz anbietet.",
+          "roleRequired": "Nur die Admins des Teams können Modelle dafür hinzufügen.",
+          "teamIdRequired": "Wähle das Team, in das das Modell kopiert werden soll.",
+          "teamNotFound": "Dieses Team gibt es nicht mehr, oder du bist nicht darin.",
+          "teamOnly": "Ein eigenes Modell eines Teams können nur die Agenten und Workflows dieses Teams nutzen. Wähle eines deiner eigenen Modelle oder eines, das die ganze Instanz anbietet.",
+          "teamWorkspaceRequired": "Wechsle zum Team, um ein Modell dafür hinzuzufügen."
+        },
+        "notice": "Diese Modelle gehören dem Team. Deine eigenen Modelle findest du unter Persönlich.",
+        "pickerGroup": "Team-Modelle",
+        "teamModel": "Team-Modell"
+      },
       "testConnection": "Verbindung testen",
       "testHintNew": "Fülle Basis-URL, Modell-ID und API-Schlüssel aus, um Verbindungstests zu aktivieren.",
       "testSuccess": "Verbindung erfolgreich."

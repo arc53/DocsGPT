@@ -28,6 +28,7 @@ import {
 import { importFolderRefs } from '../components/folders/importFolderRef';
 import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
 import { ActiveState } from '../models/misc';
+import type { ImportModelRefusal } from '../models/types';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
 
 /** A plan entry for a whole knowledge folder rather than one source. */
@@ -86,6 +87,8 @@ type PlanModel = {
   display_name?: string;
   status: 'matched' | 'unavailable' | 'reuse' | 'create';
   requires_secrets?: string[];
+  /** Why a team import leaves a custom model off. */
+  reason?: ImportModelRefusal;
 };
 
 type ImportPlan = {

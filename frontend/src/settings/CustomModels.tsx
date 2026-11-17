@@ -28,7 +28,7 @@ import type { CustomModel } from '../models/types';
 import PersonalOnlyNotice from './PersonalOnlyNotice';
 import { selectInTeam } from './workspaceAccess';
 
-const formatBaseUrlHost = (baseUrl: string): string => {
+const formatBaseUrlHost = (baseUrl: string | undefined): string => {
   if (!baseUrl) return '';
   try {
     const url = new URL(baseUrl);

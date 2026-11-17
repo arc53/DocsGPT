@@ -3973,6 +3973,43 @@
       "save": "Enregistrer",
       "searchPlaceholder": "Rechercher des modèles…",
       "subtitle": "Utilisez votre propre modèle compatible OpenAI.",
+      "team": {
+        "addedBy": "Ajouté par {{name}}",
+        "addedByYou": "Ajouté par vous",
+        "adminOnly": "Seuls les administrateurs de l’équipe peuvent ajouter ou modifier les modèles de l’équipe.",
+        "copy": {
+          "action": "Copier dans une équipe",
+          "body": "L’équipe reçoit sa propre copie de {{name}}, avec votre clé API. Votre modèle reste tel quel.",
+          "confirm": "Copier",
+          "done": "{{name}} a été copié dans {{team}}.",
+          "team": "Équipe",
+          "title": "Copier dans une équipe"
+        },
+        "delete": {
+          "body": "Les agents et workflows de l’équipe qui l’utilisent passeront au modèle par défaut.",
+          "fellBack": "Désormais sur le modèle par défaut : {{names}}"
+        },
+        "emptyAdmin": "Aucun modèle n’est encore ajouté pour l’équipe. Ajoutez-en un et toute l’équipe pourra l’utiliser.",
+        "emptyMember": "Aucun modèle n’est encore ajouté pour l’équipe. Un administrateur de l’équipe peut en ajouter un.",
+        "errors": {
+          "adminRequired": "Seul un administrateur de l’équipe peut ajouter un modèle personnalisé à l’équipe. Demandez à l’un d’eux de l’ajouter, puis importez à nouveau.",
+          "alreadyInTeam": "L’équipe a déjà ce modèle.",
+          "chatPersonalOnly": "Vos propres modèles personnalisés ne peuvent pas servir dans un chat d’équipe. Choisissez un modèle de l’équipe ou un modèle proposé par toute l’instance.",
+          "credentialsUnreadable": "La clé API de ce modèle est illisible. Remplacez la clé, puis copiez le modèle.",
+          "modelAdminRequired": "Seuls les administrateurs de l’équipe peuvent modifier les modèles de l’équipe.",
+          "notAvailableToTokens": "Les modèles personnalisés d’une équipe ne se modifient que dans l’application, pas avec un jeton d’accès.",
+          "notFound": "Ce modèle n’existe plus, ou vous ne pouvez pas le voir.",
+          "personalOnly": "Les agents et workflows d’une équipe ne peuvent utiliser que les modèles personnalisés de l’équipe. Choisissez un modèle de l’équipe ou un modèle proposé par toute l’instance.",
+          "roleRequired": "Seuls les administrateurs de l’équipe peuvent lui ajouter des modèles.",
+          "teamIdRequired": "Choisissez l’équipe dans laquelle copier le modèle.",
+          "teamNotFound": "Cette équipe n’existe plus, ou vous n’en faites pas partie.",
+          "teamOnly": "Le modèle personnalisé d’une équipe ne peut servir qu’aux agents et workflows de cette équipe. Choisissez l’un de vos propres modèles ou un modèle proposé par toute l’instance.",
+          "teamWorkspaceRequired": "Passez à l’équipe pour lui ajouter un modèle."
+        },
+        "notice": "Ces modèles appartiennent à l’équipe. Vos propres modèles sont dans Personnel.",
+        "pickerGroup": "Modèles de l’équipe",
+        "teamModel": "Modèle de l’équipe"
+      },
       "testConnection": "Tester la connexion",
       "testHintNew": "Renseignez l’URL de base, l’ID du modèle et la clé API pour tester la connexion.",
       "testSuccess": "Connexion réussie."

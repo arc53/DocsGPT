@@ -3804,6 +3804,43 @@
       "save": "儲存",
       "searchPlaceholder": "搜尋模型...",
       "subtitle": "接入你自己的 OpenAI 相容模型。",
+      "team": {
+        "addedBy": "由 {{name}} 新增",
+        "addedByYou": "由你新增",
+        "adminOnly": "只有團隊管理員可以新增或變更團隊的模型。",
+        "copy": {
+          "action": "複製到團隊",
+          "body": "團隊會取得 {{name}} 的獨立副本，使用你的 API 金鑰。你的模型保持不變。",
+          "confirm": "複製",
+          "done": "已將 {{name}} 複製到 {{team}}。",
+          "team": "團隊",
+          "title": "複製到團隊"
+        },
+        "delete": {
+          "body": "使用它的團隊代理和工作流程將改用預設模型。",
+          "fellBack": "現已改用預設模型：{{names}}"
+        },
+        "emptyAdmin": "還沒有為團隊新增任何模型。新增一個後，團隊裡的每個人都能使用。",
+        "emptyMember": "還沒有為團隊新增任何模型。團隊管理員可以新增一個。",
+        "errors": {
+          "adminRequired": "只有團隊管理員可以為團隊新增自訂模型。請管理員新增後再匯入。",
+          "alreadyInTeam": "團隊已有此模型。",
+          "chatPersonalOnly": "你自己的自訂模型不能在團隊聊天中使用。請選擇團隊的模型或整個執行個體提供的模型。",
+          "credentialsUnreadable": "無法讀取此模型的 API 金鑰。請先更換金鑰，再複製模型。",
+          "modelAdminRequired": "只有團隊管理員可以變更團隊的模型。",
+          "notAvailableToTokens": "團隊的自訂模型只能在應用程式中變更，無法使用存取權杖變更。",
+          "notFound": "此模型已不存在，或你無權檢視。",
+          "personalOnly": "團隊的代理和工作流程只能使用該團隊的自訂模型。請選擇團隊的模型或整個執行個體提供的模型。",
+          "roleRequired": "只有團隊管理員可以為團隊新增模型。",
+          "teamIdRequired": "請選擇要將模型複製到的團隊。",
+          "teamNotFound": "該團隊已不存在，或你不是其成員。",
+          "teamOnly": "團隊的自訂模型只能由該團隊的代理和工作流程使用。請選擇你自己的模型或整個執行個體提供的模型。",
+          "teamWorkspaceRequired": "請切換到該團隊，再為它新增模型。"
+        },
+        "notice": "這些模型屬於團隊。你自己的模型在「個人」中。",
+        "pickerGroup": "團隊模型",
+        "teamModel": "團隊模型"
+      },
       "testConnection": "測試連線",
       "testHintNew": "請填寫 Base URL、模型 ID 與 API 金鑰以啟用連線測試。",
       "testSuccess": "連線成功。"

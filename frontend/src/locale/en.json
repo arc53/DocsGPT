@@ -3857,6 +3857,43 @@
       "save": "Save",
       "searchPlaceholder": "Search models...",
       "subtitle": "Bring your own OpenAI-compatible model.",
+      "team": {
+        "addedBy": "Added by {{name}}",
+        "addedByYou": "Added by you",
+        "adminOnly": "Only team Admins can add or change the team's models.",
+        "copy": {
+          "action": "Copy to a team",
+          "body": "The team gets its own copy of {{name}} with your API key. Your model stays as it is.",
+          "confirm": "Copy",
+          "done": "{{name}} was copied to {{team}}.",
+          "team": "Team",
+          "title": "Copy to a team"
+        },
+        "delete": {
+          "body": "The team's agents and workflows that use it will run on the default model instead.",
+          "fellBack": "Now on the default model: {{names}}"
+        },
+        "emptyAdmin": "No models added for the team yet. Add one and everyone in the team can use it.",
+        "emptyMember": "No models added for the team yet. A team Admin can add one.",
+        "errors": {
+          "adminRequired": "Only a team Admin can add a custom model to the team. Ask one to add it, then import again.",
+          "alreadyInTeam": "The team already has this model.",
+          "chatPersonalOnly": "Your own custom models can't be used in a team chat. Pick one of the team's models or a model the whole instance offers.",
+          "credentialsUnreadable": "This model's API key can't be read. Replace the key, then copy the model.",
+          "modelAdminRequired": "Only team Admins can change the team's models.",
+          "notAvailableToTokens": "A team's custom models can only be changed in the app, not with an access token.",
+          "notFound": "This model no longer exists, or you can't see it.",
+          "personalOnly": "A team's agents and workflows can use only the team's custom models. Pick one of the team's models or a model the whole instance offers.",
+          "roleRequired": "Only the team's Admins can add models for it.",
+          "teamIdRequired": "Pick the team to copy the model to.",
+          "teamNotFound": "That team no longer exists, or you're not in it.",
+          "teamOnly": "A team's custom model can be used only by that team's agents and workflows. Pick one of your own models or a model the whole instance offers.",
+          "teamWorkspaceRequired": "Switch to the team to add a model for it."
+        },
+        "notice": "These models belong to the team. Your own models are in Personal.",
+        "pickerGroup": "Team models",
+        "teamModel": "Team model"
+      },
       "testConnection": "Test connection",
       "testHintNew": "Fill in Base URL, Model ID, and API key to enable connection tests.",
       "testSuccess": "Connection successful."

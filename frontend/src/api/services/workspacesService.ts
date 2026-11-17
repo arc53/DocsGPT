@@ -94,6 +94,17 @@ export type MovePlan = {
   /** Moving out: the team's shares of the moving items with other teams, which the move ends. */
   dropped_shares?: (Named & { team_id: string; team_name: string | null })[];
   conversations_switched: number;
+  /**
+   * Custom models swapped for the new owner's with the same endpoint and
+   * upstream model (sorted by `from_name`); a model without a match is in
+   * `cannot_move` with reason `custom_model`.
+   */
+  model_remaps?: {
+    from_id: string;
+    from_name: string | null;
+    to_id: string;
+    to_name: string | null;
+  }[];
   renames: {
     type: MoveItemType;
     id: string;

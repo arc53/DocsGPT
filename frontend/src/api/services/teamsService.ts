@@ -276,6 +276,12 @@ export type ResourceSharesResponse = {
   outside_shares?: OutsideShare[];
   share_targets?: TeamRef[];
   warning_kind?: ShareWarningKind;
+  /**
+   * The owning team's custom models the agent runs on (its workflow's agent
+   * nodes too); people the team shares it with run on them. Empty for
+   * anything but an agent.
+   */
+  team_models?: { id: string; name: string }[];
 };
 
 // One owner switch on a resource (`resource_share_settings`).

@@ -268,7 +268,12 @@ const endpoints = {
       `/api/workflow_runs/${encodeURIComponent(workflowRunId)}/steps/${stepIndex}`,
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',
+    /** The header's team's custom models (any member). */
+    CUSTOM_MODELS_TEAM: '/api/user/models?owner=team',
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
+    /** Copies the caller's own model into a team (body `team_id`; its Admins). */
+    CUSTOM_MODEL_COPY: (id: string) =>
+      `/api/user/models/${encodeURIComponent(id)}/copy`,
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
     ACTIVITY_NOW: '/api/activity/now',
