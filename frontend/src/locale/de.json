@@ -3859,9 +3859,9 @@
           "title": "In ein Team kopieren"
         },
         "delete": {
-          "fellBack": "Jetzt mit dem Standardmodell: {{names}}",
-          "mayBeUsed": "Agenten und Workflows des Teams, die es nutzen, laufen danach mit dem Standardmodell. Dies kann nicht rückgängig gemacht werden.",
-          "usedBy": "Genutzt von {{names}}, die danach mit dem Standardmodell laufen. Dies kann nicht rückgängig gemacht werden."
+          "fellBack": "Prüfe das Modell in: {{names}}",
+          "mayBeUsed": "Agenten des Teams, die es verwenden, laufen stattdessen mit dem Standardmodell, und Workflow-Schritte, die darauf eingestellt sind, halten an, bis jemand ein anderes Modell auswählt. Dies kann nicht rückgängig gemacht werden.",
+          "usedBy": "Verwendet von {{names}}. Agenten laufen stattdessen mit dem Standardmodell; Workflow-Schritte, die darauf eingestellt sind, halten an, bis jemand ein anderes Modell auswählt. Dies kann nicht rückgängig gemacht werden."
         },
         "emptyAdmin": "Für das Team ist noch kein Modell hinzugefügt. Füge eins hinzu, dann kann es jeder im Team nutzen.",
         "emptyMember": "Für das Team ist noch kein Modell hinzugefügt. Ein Team-Admin kann eins hinzufügen.",

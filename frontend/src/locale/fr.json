@@ -3998,9 +3998,9 @@
           "title": "Copier dans une équipe"
         },
         "delete": {
-          "fellBack": "Désormais sur le modèle par défaut : {{names}}",
-          "mayBeUsed": "Les agents et workflows de l’équipe qui l’utilisent passeront au modèle par défaut. Cette action est irréversible.",
-          "usedBy": "Utilisé par {{names}}, qui passeront au modèle par défaut. Cette action est irréversible."
+          "fellBack": "Vérifiez le modèle de : {{names}}",
+          "mayBeUsed": "Les agents de l’équipe qui l’utilisent fonctionneront avec le modèle par défaut, et les étapes de workflow qui l’utilisent s’arrêteront jusqu’à ce que quelqu’un choisisse un autre modèle. Cette action est irréversible.",
+          "usedBy": "Utilisé par {{names}}. Les agents fonctionneront avec le modèle par défaut ; les étapes de workflow qui l’utilisent s’arrêteront jusqu’à ce que quelqu’un choisisse un autre modèle. Cette action est irréversible."
         },
         "emptyAdmin": "Aucun modèle n’est encore ajouté pour l’équipe. Ajoutez-en un et toute l’équipe pourra l’utiliser.",
         "emptyMember": "Aucun modèle n’est encore ajouté pour l’équipe. Un administrateur de l’équipe peut en ajouter un.",

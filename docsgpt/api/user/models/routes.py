@@ -511,7 +511,8 @@ class UserModelResource(Resource):
     @api.doc(
         description=(
             "Delete a BYOM custom model. On a team's model (Admins, in the app only) the answer also has "
-            "usage: the team's agents and workflows that named it, which fall back to the default model."
+            "usage: the team's agents and workflows that named it; agents fall back to the default model, "
+            "workflow steps set to it stop."
         )
     )
     def delete(self, model_id):
@@ -552,9 +553,10 @@ class UserModelResource(Resource):
 class UserModelUsageResource(Resource):
     @api.doc(
         description=(
-            "The owner's agents and workflows that name a custom model, which fall back to the default model "
-            "if it is deleted: {usage: {agents: [{id, name}], workflows: [{id, name}]}}. Anyone who may see "
-            "the model: every member for a team's model, only its owner for a person's own."
+            "The owner's agents and workflows that name a custom model. If it is deleted, agents fall back to "
+            "the default model and workflow steps set to it stop: "
+            "{usage: {agents: [{id, name}], workflows: [{id, name}]}}. Anyone who may see the model: every member "
+            "for a team's model, only its owner for a person's own."
         )
     )
     def get(self, model_id):

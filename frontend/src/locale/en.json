@@ -3880,9 +3880,9 @@
           "title": "Copy to a team"
         },
         "delete": {
-          "fellBack": "Now on the default model: {{names}}",
-          "mayBeUsed": "Any of the team's agents and workflows that use it will run on the default model instead. This can't be undone.",
-          "usedBy": "Used by {{names}}, which will run on the default model instead. This can't be undone."
+          "fellBack": "Check the model on: {{names}}",
+          "mayBeUsed": "Any of the team's agents that use it will run on the default model instead, and workflow steps set to it stop until someone picks another model. This can't be undone.",
+          "usedBy": "Used by {{names}}. Agents will run on the default model instead; workflow steps set to it stop until someone picks another model. This can't be undone."
         },
         "emptyAdmin": "No models added for the team yet. Add one and everyone in the team can use it.",
         "emptyMember": "No models added for the team yet. A team Admin can add one.",

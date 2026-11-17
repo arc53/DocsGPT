@@ -3998,9 +3998,9 @@
           "title": "Copiar a un equipo"
         },
         "delete": {
-          "fellBack": "Ahora con el modelo predeterminado: {{names}}",
-          "mayBeUsed": "Los agentes y flujos de trabajo del equipo que lo usan pasarán a usar el modelo predeterminado. No se puede deshacer.",
-          "usedBy": "Lo usan {{names}}, que pasarán a usar el modelo predeterminado. No se puede deshacer."
+          "fellBack": "Revisa el modelo en: {{names}}",
+          "mayBeUsed": "Los agentes del equipo que lo usan funcionarán con el modelo predeterminado, y los pasos de flujo de trabajo configurados con él se detendrán hasta que alguien elija otro modelo. Esto no se puede deshacer.",
+          "usedBy": "Lo usan {{names}}. Los agentes funcionarán con el modelo predeterminado; los pasos de flujo de trabajo configurados con él se detendrán hasta que alguien elija otro modelo. Esto no se puede deshacer."
         },
         "emptyAdmin": "Aún no hay modelos añadidos para el equipo. Añade uno y todo el equipo podrá usarlo.",
         "emptyMember": "Aún no hay modelos añadidos para el equipo. Un administrador del equipo puede añadir uno.",
