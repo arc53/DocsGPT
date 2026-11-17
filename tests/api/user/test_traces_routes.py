@@ -317,3 +317,60 @@ class TestGetTracesExMember:
         assert [t["id"] for t in _get(app, pg_conn, self.MEMBER, {"id": record["id"]}).json["traces"]] == [
             record["id"]
         ]
+
+
+class TestChatTracesFollowTheChat:
+    """A trace tied to a chat follows that chat's workspace, whoever owns the agent it ran."""
+
+    def _team_agent(self, pg_conn, member=None):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        tid = str(TeamsRepository(pg_conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", "tc-alice")["id"])
+        TeamMembersRepository(pg_conn).add_member(tid, "tc-alice", role="team_admin")
+        if member:
+            TeamMembersRepository(pg_conn).add_member(tid, member, role="team_editor")
+        agent = AgentsRepository(pg_conn).create(principal_id(tid), "bot", "published", key=f"k-{uuid.uuid4()}")
+        return tid, str(agent["id"])
+
+    def _chat_trace(self, pg_conn, user, agent_id, team_id):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        chat = ConversationsRepository(pg_conn).create(user, "chat", agent_id=agent_id, team_id=team_id)
+        return _trace(pg_conn, user_id=user, agent_id=agent_id, conversation_id=str(chat["id"]))
+
+    def _ids(self, app, pg_conn, user, record):
+        return [t["id"] for t in _get(app, pg_conn, user, {"id": record["id"]}).json["traces"]]
+
+    def test_an_outsiders_own_chat_with_a_team_agent_keeps_its_trace(self, app, pg_conn):
+        _, agent_id = self._team_agent(pg_conn)
+        record = self._chat_trace(pg_conn, "tc-outsider", agent_id, None)
+
+        assert self._ids(app, pg_conn, "tc-outsider", record) == [record["id"]]
+
+    def test_a_chat_in_a_team_it_is_shared_with_keeps_its_trace(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        tid, agent_id = self._team_agent(pg_conn)
+        other = str(TeamsRepository(pg_conn).create("Sales", f"s-{uuid.uuid4().hex[:6]}", "tc-sam")["id"])
+        TeamMembersRepository(pg_conn).add_member(other, "tc-dana", role="team_viewer")
+        TeamItemSharesRepository(pg_conn).share(tid, other, "agent", agent_id, "tc-alice")
+        record = self._chat_trace(pg_conn, "tc-dana", agent_id, other)
+
+        assert self._ids(app, pg_conn, "tc-dana", record) == [record["id"]]
+        TeamMembersRepository(pg_conn).remove_member(other, "tc-dana")
+        assert self._ids(app, pg_conn, "tc-dana", record) == []
+
+    def test_a_members_team_chat_trace_still_closes_on_leaving(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+
+        tid, agent_id = self._team_agent(pg_conn, member="tc-vera")
+        record = self._chat_trace(pg_conn, "tc-vera", agent_id, tid)
+
+        assert self._ids(app, pg_conn, "tc-vera", record) == [record["id"]]
+        TeamMembersRepository(pg_conn).remove_member(tid, "tc-vera")
+        assert self._ids(app, pg_conn, "tc-vera", record) == []

@@ -78,13 +78,18 @@ def _owner_team(column: str) -> str:
 
 # A trace of a team's chat, agent or workflow run is the team's record: the
 # person who made it stops reading it on leaving the team, as their team
-# chats and runs elsewhere, and reads it again if re-added. The trace columns
-# are qualified so a same-named column of a subquery's table can't capture them.
+# chats and runs elsewhere, and reads it again if re-added. A trace tied to a
+# chat follows that chat's workspace alone: someone outside the agent's team
+# (a public link, a team it is shared with, an agent that moved into a team)
+# keeps the traces of their own chats with it. The trace columns are
+# qualified so a same-named column of a subquery's table can't capture them.
 _USER_SCOPE = " AND ".join([
     "user_id = :scope_user",
-    _still_in_team(
+    "(request_traces.conversation_id IS NOT NULL OR "
+    + _still_in_team(
         f"(SELECT {_owner_team('rt_a.user_id')} FROM agents rt_a WHERE rt_a.id = request_traces.agent_id)"
-    ),
+    )
+    + ")",
     _still_in_team(
         "(SELECT rt_c.team_id::text FROM conversations rt_c WHERE rt_c.id = request_traces.conversation_id)"
     ),
