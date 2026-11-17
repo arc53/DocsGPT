@@ -20,6 +20,34 @@ from docsgpt.workspaces.outside import POLICIES, POLICY_LOCKED
 _OPEN_POLICIES = tuple(p for p in POLICIES if p != POLICY_LOCKED)
 
 
+def shared_run_sql(run: str, workflow: str, user_param: str) -> str:
+    """SQL that holds while the workflow's agent a run went through is shared into a team the user is in.
+
+    The same live share that lets them use that agent: the agent is the workflow's own, the share
+    names its owning team, that team isn't locked, and the user is in the receiving team (a member,
+    or its owner). The policies are written in as constants, so the clause needs no extra parameter.
+
+    Args:
+        run: The SQL alias of the ``workflow_runs`` row.
+        workflow: The SQL alias of its ``workflows`` row.
+        user_param: The bound parameter naming the user, with its colon (``:user_id``).
+
+    Returns:
+        str: A parenthesized ``EXISTS`` expression.
+    """
+    policies = ", ".join(f"'{p}'" for p in _OPEN_POLICIES)
+    return (
+        "(EXISTS (SELECT 1 FROM agents wrs_a"
+        f" JOIN teams wrs_o ON '__team__' || wrs_o.id::text = wrs_a.user_id AND wrs_o.outside_policy IN ({policies})"
+        " JOIN team_item_shares wrs_s ON wrs_s.resource_type = 'agent' AND wrs_s.resource_id = wrs_a.id"
+        " AND wrs_s.owner_team_id = wrs_o.id"
+        " JOIN teams wrs_r ON wrs_r.id = wrs_s.team_id"
+        f" WHERE wrs_a.id::text = lower({run}.inputs ->> 'agent_id') AND wrs_a.workflow_id = {workflow}.id"
+        f" AND (wrs_r.owner_id = {user_param} OR EXISTS (SELECT 1 FROM team_members wrs_m"
+        f" WHERE wrs_m.team_id = wrs_r.id AND wrs_m.user_id = {user_param}))))"
+    )
+
+
 class WorkflowRunsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -207,17 +235,9 @@ class WorkflowRunsRepository:
             " AND NOT EXISTS (SELECT 1 FROM teams t WHERE '__team__' || t.id::text = w.user_id"
             " AND (t.owner_id = :user_id OR EXISTS (SELECT 1 FROM team_members m"
             " WHERE m.team_id = t.id AND m.user_id = :user_id)))"
-            # The same live share that lets them use the workflow's agent.
-            " AND NOT EXISTS (SELECT 1 FROM agents a"
-            " JOIN teams o ON '__team__' || o.id::text = a.user_id AND o.outside_policy = ANY(:open_policies)"
-            " JOIN team_item_shares s ON s.resource_type = 'agent' AND s.resource_id = a.id"
-            " AND s.owner_team_id = o.id"
-            " JOIN teams r ON r.id = s.team_id"
-            " WHERE a.id::text = lower(workflow_runs.inputs ->> 'agent_id') AND a.workflow_id = w.id"
-            " AND (r.owner_id = :user_id OR EXISTS (SELECT 1 FROM team_members m2"
-            " WHERE m2.team_id = r.id AND m2.user_id = :user_id))))",
+            f" AND NOT {shared_run_sql('workflow_runs', 'w', ':user_id')})",
         ]
-        params: dict = {"user_id": user_id, "limit": int(limit), "open_policies": list(_OPEN_POLICIES)}
+        params: dict = {"user_id": user_id, "limit": int(limit)}
         if agent_ids is not None:
             allowed = sorted({str(a).lower() for a in agent_ids})
             if not allowed:

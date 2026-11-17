@@ -374,3 +374,84 @@ class TestChatTracesFollowTheChat:
         assert self._ids(app, pg_conn, "tc-vera", record) == [record["id"]]
         TeamMembersRepository(pg_conn).remove_member(tid, "tc-vera")
         assert self._ids(app, pg_conn, "tc-vera", record) == []
+
+
+class TestSharedWorkflowRunTraces:
+    """A receiving team's member reads the traces of their own runs of a workflow shared into that team."""
+
+    def _setup(self, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        owner = str(TeamsRepository(pg_conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", "ws-alice")["id"])
+        TeamMembersRepository(pg_conn).add_member(owner, "ws-alice", role="team_admin")
+        workflow = WorkflowsRepository(pg_conn).create(principal_id(owner), "flow")
+        agent = AgentsRepository(pg_conn).create(
+            principal_id(owner), "Flow", "published", key=f"k-{uuid.uuid4()}", workflow_id=str(workflow["id"]),
+            agent_type="workflow",
+        )
+        receiving = str(TeamsRepository(pg_conn).create("Sales", f"s-{uuid.uuid4().hex[:6]}", "ws-sam")["id"])
+        TeamMembersRepository(pg_conn).add_member(receiving, "ws-dana", role="team_viewer")
+        TeamItemSharesRepository(pg_conn).share(owner, receiving, "agent", str(agent["id"]), "ws-alice")
+        return owner, receiving, str(workflow["id"]), str(agent["id"])
+
+    def _run_trace(self, pg_conn, workflow_id, agent_id, user="ws-dana"):
+        from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+
+        run = WorkflowRunsRepository(pg_conn).create(
+            workflow_id, user, "completed", inputs={"query": "q", "agent_id": agent_id})
+        return _trace(pg_conn, user_id=user, agent_id=agent_id, workflow_run_id=str(run["id"]))
+
+    def _ids(self, app, pg_conn, record, user="ws-dana"):
+        return [t["id"] for t in _get(app, pg_conn, user, {"id": record["id"]}).json["traces"]]
+
+    def test_reads_while_the_share_is_live(self, app, pg_conn):
+        _, _, workflow_id, agent_id = self._setup(pg_conn)
+        record = self._run_trace(pg_conn, workflow_id, agent_id)
+
+        assert self._ids(app, pg_conn, record) == [record["id"]]
+
+    def test_closes_on_revoke(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+        _, receiving, workflow_id, agent_id = self._setup(pg_conn)
+        record = self._run_trace(pg_conn, workflow_id, agent_id)
+        TeamItemSharesRepository(pg_conn).revoke(receiving, "agent", agent_id)
+
+        assert self._ids(app, pg_conn, record) == []
+
+    def test_closes_on_leaving_the_receiving_team(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+
+        _, receiving, workflow_id, agent_id = self._setup(pg_conn)
+        record = self._run_trace(pg_conn, workflow_id, agent_id)
+        TeamMembersRepository(pg_conn).remove_member(receiving, "ws-dana")
+
+        assert self._ids(app, pg_conn, record) == []
+
+    def test_closes_while_the_owning_team_is_locked(self, app, pg_conn):
+        from sqlalchemy import text
+
+        owner, _, workflow_id, agent_id = self._setup(pg_conn)
+        record = self._run_trace(pg_conn, workflow_id, agent_id)
+        pg_conn.execute(text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": owner})
+
+        assert self._ids(app, pg_conn, record) == []
+
+    def test_another_persons_run_stays_closed(self, app, pg_conn):
+        from sqlalchemy import text
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+
+        _, receiving, workflow_id, agent_id = self._setup(pg_conn)
+        TeamMembersRepository(pg_conn).add_member(receiving, "ws-erin", role="team_viewer")
+        record = self._run_trace(pg_conn, workflow_id, agent_id, user="ws-erin")
+        # The trace is written for dana but names erin's run: the run must be the caller's own.
+        pg_conn.execute(text("UPDATE request_traces SET user_id = 'ws-dana' WHERE id = CAST(:i AS uuid)"),
+                        {"i": record["id"]})
+
+        assert self._ids(app, pg_conn, record) == []

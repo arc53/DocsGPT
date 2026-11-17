@@ -11,6 +11,7 @@ from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.repositories.workflow_runs import shared_run_sql
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 from docsgpt.utils import strip_null_bytes
 from docsgpt.workspaces.principal import PRINCIPAL_PREFIX
@@ -81,21 +82,33 @@ def _owner_team(column: str) -> str:
 # chats and runs elsewhere, and reads it again if re-added. A trace tied to a
 # chat follows that chat's workspace alone: someone outside the agent's team
 # (a public link, a team it is shared with, an agent that moved into a team)
-# keeps the traces of their own chats with it. The trace columns are
-# qualified so a same-named column of a subquery's table can't capture them.
-_USER_SCOPE = " AND ".join([
-    "user_id = :scope_user",
+# keeps the traces of their own chats with it. A trace of the caller's own
+# run of a team's workflow agent shared into a team they are in reads while
+# that share is live, as the run does. The trace columns are qualified so a
+# same-named column of a subquery's table can't capture them.
+_AGENT_AND_RUN_TEAMS = " AND ".join([
     "(request_traces.conversation_id IS NOT NULL OR "
     + _still_in_team(
         f"(SELECT {_owner_team('rt_a.user_id')} FROM agents rt_a WHERE rt_a.id = request_traces.agent_id)"
     )
     + ")",
     _still_in_team(
-        "(SELECT rt_c.team_id::text FROM conversations rt_c WHERE rt_c.id = request_traces.conversation_id)"
-    ),
-    _still_in_team(
         f"(SELECT {_owner_team('rt_w.user_id')} FROM workflow_runs rt_r"
         " JOIN workflows rt_w ON rt_w.id = rt_r.workflow_id WHERE rt_r.id = request_traces.workflow_run_id)"
+    ),
+])
+_SHARED_RUN = (
+    "EXISTS (SELECT 1 FROM workflow_runs rt_sr JOIN workflows rt_sw ON rt_sw.id = rt_sr.workflow_id"
+    " WHERE rt_sr.id = request_traces.workflow_run_id AND rt_sr.user_id = :scope_user"
+    # Only the run's own agent: a trace naming another agent keeps that agent's rule.
+    " AND (request_traces.agent_id IS NULL OR request_traces.agent_id::text = lower(rt_sr.inputs ->> 'agent_id'))"
+    f" AND {shared_run_sql('rt_sr', 'rt_sw', ':scope_user')})"
+)
+_USER_SCOPE = " AND ".join([
+    "user_id = :scope_user",
+    f"(({_AGENT_AND_RUN_TEAMS}) OR {_SHARED_RUN})",
+    _still_in_team(
+        "(SELECT rt_c.team_id::text FROM conversations rt_c WHERE rt_c.id = request_traces.conversation_id)"
     ),
 ])
 
