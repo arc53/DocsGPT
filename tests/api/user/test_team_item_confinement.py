@@ -363,3 +363,64 @@ class TestWorkflowNodes:
         assert _status(resp) == 409, _json(resp)
         assert _json(resp)["code"] == CODE_TEAM_ITEM_SHARED_OUTSIDE
 
+
+
+class TestShareRoute:
+    """``POST /api/teams/<id>/grants`` for a personal agent, through the app."""
+
+    @pytest.fixture
+    def client(self, pg_conn):
+        from contextlib import ExitStack, contextmanager
+        from unittest.mock import patch
+
+        from docsgpt.app import app as flask_app
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        flask_app.config["TESTING"] = True
+        with ExitStack() as stack:
+            for target in ("docsgpt.api.user.teams.routes.db_readonly", "docsgpt.api.user.teams.routes.db_session",
+                           "docsgpt.api.user.team_authz.db_readonly"):
+                stack.enter_context(patch(target, _yield))
+            stack.enter_context(patch("docsgpt.api.user.teams.routes.publish_user_event"))
+            stack.enter_context(patch("docsgpt.api.user.teams.routes._notify_resource_shared"))
+            yield flask_app.test_client()
+
+    @staticmethod
+    def _share(client, team_id, agent_id, user="vera", **extra):
+        from unittest.mock import patch
+
+        with patch("docsgpt.app.handle_auth", return_value={"sub": user}), patch(
+            "docsgpt.app.resolve_roles", return_value=["user"]
+        ):
+            return client.post(f"/api/teams/{team_id}/grants",
+                               json={"resource_type": "agent", "resource_id": agent_id, **extra})
+
+    @staticmethod
+    def _grants(conn, agent_id):
+        return conn.execute(
+            text("SELECT team_id, target_user_id FROM team_resource_grants WHERE resource_id = CAST(:a AS uuid)"),
+            {"a": agent_id},
+        ).fetchall()
+
+    def test_a_viewer_cant_share_a_teams_source_and_tool_with_another_team(self, client, pg_conn, w):
+        aid = str(_agent(pg_conn, source_id=w["source"], tools=[w["tool"]])["id"])
+        resp = self._share(client, w["dev"], aid)
+        assert resp.status_code == 409, resp.get_json()
+        assert resp.get_json()["error"] == CODE_USES_TEAM_ITEMS
+        assert resp.get_json()["move_to"] is None
+        assert self._grants(pg_conn, aid) == []
+
+    def test_sharing_with_the_owning_team(self, client, pg_conn, w):
+        aid = str(_agent(pg_conn, source_id=w["source"], tools=[w["tool"]])["id"])
+        assert self._share(client, w["ops"], aid).status_code in (200, 201)
+        assert len(self._grants(pg_conn, aid)) == 1
+
+    def test_one_member_who_can_use_every_item(self, client, pg_conn, w):
+        aid = str(_agent(pg_conn, source_id=w["source"], tools=[w["tool"]])["id"])
+        assert self._share(client, w["dev"], aid, target_user_id="eddie").status_code in (200, 201)
+        resp = self._share(client, w["dev"], aid, target_user_id="dan")
+        assert resp.status_code == 409, resp.get_json()
+        assert [row[1] for row in self._grants(pg_conn, aid)] == ["eddie"]
