@@ -99,48 +99,65 @@ export default function PairDeviceModal({
   // Poll while waiting for the CLI to redeem.
   React.useEffect(() => {
     if (stage !== 'waiting' || !pairing) return;
-    // Cleanup sets this, so a poll still in flight for this code can't act
-    // once the dialog closes or a new code replaces it: it can't reopen a
-    // closed dialog as expired (closing cancels the pairing, which then
-    // answers 404), and a late redemption can't close the new code's dialog.
+    // Set once this code is settled or the effect is cleaned up, so a poll
+    // still in flight can't act afterwards: it can't reopen a closed dialog
+    // as expired (closing cancels the pairing, which then answers 404), and
+    // an old code's redemption can't close the dialog for a new code.
     let stopped = false;
     const expiresAt = expiresAtRef.current;
+    const pollIntervalMs = (pairing.interval > 0 ? pairing.interval : 3) * 1000;
+    const stop = () => {
+      stopped = true;
+      clearInterval(pollTimer);
+      clearTimeout(expiryTimer);
+    };
     const expire = () => {
+      stop();
       setPairing(null);
       setStage('form');
       setExpired(true);
     };
-    const expiryTimer = setTimeout(expire, Math.max(0, expiresAt - Date.now()));
-    const pollIntervalMs = (pairing.interval > 0 ? pairing.interval : 3) * 1000;
-    const pollTimer = setInterval(async () => {
-      if (Date.now() >= expiresAt) return;
+    const check = async (atExpiry: boolean) => {
       try {
         const s = await devicesService.pollPairing(pairing.device_code, token);
-        if (stopped || Date.now() >= expiresAt) return;
+        if (stopped) return;
+        // A redemption counts even past the deadline: the CLI may redeem in
+        // the last seconds, and the server keeps the redeemed state after.
         if (s.status === 'redeemed') {
-          clearInterval(pollTimer);
+          stop();
           if (s.device_id && s.device_name) {
             onPaired?.(s.device_id, s.device_name);
           }
           setModalState('INACTIVE');
-        } else if (s.status === 'expired' || s.status === 'cancelled') {
+        } else if (
+          atExpiry ||
+          s.status === 'expired' ||
+          s.status === 'cancelled'
+        ) {
           expire();
         }
       } catch (err) {
-        if (stopped || Date.now() >= expiresAt) return;
+        if (stopped) return;
         // The server drops a code once it expires or is cancelled.
-        if (err instanceof DevicesApiError && err.status === 404) {
-          expire();
-          return;
-        }
-        console.error('pairing poll failed', err);
+        const notFound = err instanceof DevicesApiError && err.status === 404;
+        if (!notFound) console.error('pairing poll failed', err);
+        if (notFound || atExpiry) expire();
       }
-    }, pollIntervalMs);
-    return () => {
-      stopped = true;
-      clearTimeout(expiryTimer);
-      clearInterval(pollTimer);
     };
+    const pollTimer = setInterval(() => {
+      // Past the deadline, the check at expiry decides the outcome.
+      if (Date.now() >= expiresAt) return;
+      void check(false);
+    }, pollIntervalMs);
+    // At the deadline, check once more before showing the code as expired.
+    const expiryTimer = setTimeout(
+      () => {
+        clearInterval(pollTimer);
+        void check(true);
+      },
+      Math.max(0, expiresAt - Date.now()),
+    );
+    return stop;
   }, [stage, pairing, token, onPaired, setModalState]);
 
   const close = () => {
