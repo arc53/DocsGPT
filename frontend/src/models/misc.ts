@@ -110,11 +110,14 @@ export type Doc = {
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;
   allowed_actions?: string[];
-  // Where it lives, how it reached this list (own, the team's, or shared
-  // with the caller) and who added it (sources API).
+  // Where it lives, how it reached this list (own, the team's, shared with
+  // the caller, or shared with the team by another team) and who added it
+  // (sources API).
   workspace?: { kind: 'personal' | 'team'; team_id?: string | null } | null;
-  origin?: 'own' | 'team' | 'shared' | null;
+  origin?: 'own' | 'team' | 'shared' | 'team_shared' | null;
   created_by?: { user_id?: string | null; label?: string | null } | null;
+  // Another team's source shared with this team: the team it comes from.
+  shared_from?: { team_id: string; name: string | null } | null;
   // The agents that use it (both lists; absent from an older backend).
   used_by?: ResourceUsage;
   // The caller's own filing: the source folder it is in (null: none) and that
@@ -169,6 +172,10 @@ export type Prompt = {
   preview?: string;
   /** The agents that use it (`/api/get_prompts`). */
   used_by?: ResourceUsage | null;
+  /** How it reached this list; `team_shared` is another team's prompt shared with this team. */
+  origin?: 'own' | 'team' | 'shared' | 'team_shared' | null;
+  /** `team_shared` prompts: the team it comes from. */
+  shared_from?: { team_id: string; name: string | null } | null;
 };
 
 export type DocumentsProps = {

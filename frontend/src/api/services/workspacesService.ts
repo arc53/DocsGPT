@@ -82,6 +82,17 @@ export type MovePlan = {
   borrowing_agents: { id: string; name: string | null; published?: boolean }[];
   borrowing_others?: number;
   needs_admin: { id: string; name: string }[];
+  /**
+   * Moving in to a locked team: agents with outside access, which refuse
+   * the move (no role may bring them in). `needs_admin` is empty then.
+   */
+  team_locked_agents?: { id: string; name: string | null }[];
+  /** Refs the moved agents keep because another team shares them with the target team. */
+  shared_refs?: (Named & {
+    shared_from: { team_id: string; name: string | null };
+  })[];
+  /** Moving out: the team's shares of the moving items with other teams, which the move ends. */
+  dropped_shares?: (Named & { team_id: string; team_name: string | null })[];
   conversations_switched: number;
   renames: {
     type: MoveItemType;
@@ -96,6 +107,7 @@ export type MovePlan = {
 /** The codes a refused plan or move answers with. */
 export type MoveErrorCode =
   | 'move_plan_changed'
+  | 'team_locked'
   | 'move_would_borrow'
   | 'move_needs_admin'
   | 'credentials_unreadable'
@@ -112,7 +124,10 @@ export type MoveErrorCode =
   | 'folder_not_found'
   | 'move_failed';
 
-/** A refusal's whole body: `plan` on a changed plan, `agents`/`others`/`tools` on the others. */
+/**
+ * A refusal's whole body: `plan` on a changed plan, `agents`/`others`/`tools`
+ * on the others (`team_locked` names the `agents` with outside access).
+ */
 export type MoveErrorBody = {
   success?: false;
   error?: string;

@@ -34,10 +34,16 @@ export type ResourceSponsor = {
   can_confirm?: boolean;
 };
 
-/** Why an attached item doesn't run (`ResourceState.reason`). */
+/**
+ * Why an attached item doesn't run (`ResourceState.reason`).
+ * `team_share_ended`: another team stopped sharing it with the agent's team,
+ * or the reader left; `team_locked`: the team that shares it is locked.
+ */
 export type ResourceStateReason =
   | 'deleted'
   | 'owner_lost_access'
+  | 'team_share_ended'
+  | 'team_locked'
   | ResourceSponsorReason
   | 'connection_needs_reconnect'
   | 'connection_removed'
@@ -138,6 +144,8 @@ export type Agent = {
   workspace?: AccessFields['workspace'];
   origin?: AccessFields['origin'];
   created_by?: AccessFields['created_by'];
+  /** Another team's agent shared with this team: the team it comes from. */
+  shared_from?: AccessFields['shared_from'];
   // Owner-agnostic display names resolved server-side (GET /api/get_agent) so a
   // team member viewing a shared agent sees the owner's prompt/source names
   // instead of a blank prompt / "External KB" (the client can only resolve

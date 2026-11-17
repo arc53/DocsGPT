@@ -195,7 +195,7 @@ export default function TeamItemAccess({
           <SectionHeader
             as="h3"
             size="xs"
-            title={t('workspace.share.outside')}
+            title={t('workspace.share.outside.title')}
           />
           <ListRows>
             {outsideRows.map((row) => (

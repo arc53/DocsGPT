@@ -5,6 +5,10 @@ import {
   createSlice,
 } from '@reduxjs/toolkit';
 
+import type {
+  OutsidePolicy,
+  OutsidePolicyFields,
+} from '../api/services/teamsService';
 import workspacesService from '../api/services/workspacesService';
 import { readerIdFromToken } from '../utils/personLabel';
 import { PERSONAL_WORKSPACE, setRequestWorkspace } from './requestWorkspace';
@@ -16,8 +20,11 @@ export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer';
 
 export type SwitchReason = 'user' | 'link' | 'lost';
 
-/** One row of `GET /api/workspaces`. */
-export type WorkspaceRow = {
+/**
+ * One row of `GET /api/workspaces`. Team rows carry the team's outside
+ * policy (`outside_policy`) and whether the caller may change it.
+ */
+export type WorkspaceRow = OutsidePolicyFields & {
   id: string;
   kind: WorkspaceKind;
   name: string;
@@ -138,6 +145,16 @@ export const switchWorkspace = createAction(
   }),
 );
 
+/**
+ * A team's outside policy changed, or was read fresh (the team page). The
+ * team's workspace row and its row in the teams list follow it.
+ */
+export const outsidePolicyChanged = createAction<{
+  teamId: string;
+  outside_policy: OutsidePolicy;
+  can_set_outside_policy: boolean;
+}>('workspace/outsidePolicyChanged');
+
 /** Loads Personal and the caller's teams, with their role in each. */
 export const loadWorkspaces = createAsyncThunk<
   WorkspaceRow[],
@@ -169,6 +186,14 @@ const workspaceSlice = createSlice({
       .addCase(loadWorkspaces.rejected, (state, action) => {
         if (action.meta.requestId !== state.latestRequestId) return;
         state.loading = false;
+      })
+      .addCase(outsidePolicyChanged, (state, action) => {
+        const row = state.workspaces.find(
+          (w) => w.id === action.payload.teamId,
+        );
+        if (!row) return;
+        row.outside_policy = action.payload.outside_policy;
+        row.can_set_outside_policy = action.payload.can_set_outside_policy;
       });
   },
 });
@@ -241,6 +266,21 @@ export const selectWorkspaceRoleOrNull = (state: {
   workspace?: WorkspaceState;
 }): WorkspaceRole | null =>
   state.workspace ? selectWorkspaceRole(state as RootLike) : null;
+
+/**
+ * The current team's outside policy; null in Personal, and in a team whose
+ * row doesn't say (not loaded yet, or an older server).
+ */
+export const selectCurrentOutsidePolicy = (
+  state: RootLike,
+): OutsidePolicy | null => {
+  const row = selectCurrentWorkspace(state);
+  return row.kind === 'team' ? (row.outside_policy ?? null) : null;
+};
+
+/** Whether the current team is locked: nothing in it is taken outside. */
+export const selectIsCurrentTeamLocked = (state: RootLike): boolean =>
+  selectCurrentOutsidePolicy(state) === 'locked';
 
 /** Whether New, Add, Import and New folder show: Personal, or Editor and up. */
 export const selectCanCreateInWorkspace = (state: RootLike): boolean =>

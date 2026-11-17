@@ -7,12 +7,19 @@ import {
 
 import teamsService, {
   LegacyTeamRole,
+  OutsidePolicy,
+  OutsidePolicyFields,
+  OutsidePolicyResult,
   TeamRole,
 } from '../api/services/teamsService';
 import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
-import type { WorkspaceState } from '../workspace/workspaceSlice';
+import {
+  outsidePolicyChanged,
+  type WorkspaceState,
+} from '../workspace/workspaceSlice';
 
-export type Team = {
+/** A team row; `outside_policy` is who may take its items outside. */
+export type Team = OutsidePolicyFields & {
   id: string;
   name: string;
   slug: string;
@@ -106,6 +113,27 @@ export const deleteTeam = createAsyncThunk<
   },
 );
 
+/**
+ * Changes who may take a team's items outside. Once the server agrees, the
+ * team's row here and its workspace row follow; a refusal (an Admin
+ * unlocking: `policy_owner_only`) rejects with its code for
+ * `teamErrorMessage`, and nothing changes.
+ */
+export const setTeamOutsidePolicy = createAsyncThunk<
+  OutsidePolicyResult,
+  { teamId: string; policy: OutsidePolicy; token: string | null }
+>('teams/setOutsidePolicy', async ({ teamId, policy, token }, { dispatch }) => {
+  const result = await teamsService.setOutsidePolicy(teamId, policy, token);
+  dispatch(
+    outsidePolicyChanged({
+      teamId,
+      outside_policy: result.outside_policy,
+      can_set_outside_policy: result.can_set_outside_policy,
+    }),
+  );
+  return result;
+});
+
 const teamsSlice = createSlice({
   name: 'teams',
   initialState,
@@ -129,6 +157,12 @@ const teamsSlice = createSlice({
       })
       .addCase(deleteTeam.fulfilled, (state, action) => {
         state.teams = state.teams.filter((t) => t.id !== action.payload);
+      })
+      .addCase(outsidePolicyChanged, (state, action) => {
+        const team = state.teams.find((t) => t.id === action.payload.teamId);
+        if (!team) return;
+        team.outside_policy = action.payload.outside_policy;
+        team.can_set_outside_policy = action.payload.can_set_outside_policy;
       });
   },
 });

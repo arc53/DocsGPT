@@ -168,4 +168,15 @@ describe('splitByOrigin', () => {
     expect(team.map((r) => r.id)).toEqual(['b']);
     expect(shared.map((r) => r.id)).toEqual(['c']);
   });
+
+  it("keeps another team's items apart from the team's own", () => {
+    const rows: { id: string; origin?: ItemOrigin }[] = [
+      { id: 'a', origin: 'team' },
+      { id: 'b', origin: 'team_shared' },
+    ];
+    const { own, team, teamShared } = splitByOrigin(rows);
+    expect(own).toEqual([]);
+    expect(team.map((r) => r.id)).toEqual(['a']);
+    expect(teamShared.map((r) => r.id)).toEqual(['b']);
+  });
 });

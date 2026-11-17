@@ -92,7 +92,7 @@ describe('TeamItemAccess', () => {
 
   it('lists outside access with who pays for it', () => {
     const page = render();
-    expect(page).toContain('workspace.share.outside');
+    expect(page).toContain('workspace.share.outside.title');
     expect(page).toContain('workspace.share.publicLink');
     expect(page).toContain('workspace.share.off');
     expect(page).toContain(
@@ -122,7 +122,7 @@ describe('TeamItemAccess', () => {
       resourceType: 'source',
       info: info({ outside_access: undefined }),
     });
-    expect(page).not.toContain('workspace.share.outside');
+    expect(page).not.toContain('workspace.share.outside.title');
   });
 
   it('offers Manage members to an Admin only', () => {

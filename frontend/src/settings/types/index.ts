@@ -1,6 +1,6 @@
 import type { WorkflowProgress } from '../../activity/types';
 import { ConfigRequirements } from '../../modals/types';
-import type { Access } from '../../utils/accessUtils';
+import type { Access, AccessFields } from '../../utils/accessUtils';
 
 /**
  * A chunk's prompt-injection review state (`get_chunks`): the sha256 of its
@@ -243,6 +243,10 @@ export type UserToolType = {
   shared_via?: string | null;
   // The owner's email or name, when the server can resolve it.
   owner_label?: string | null;
+  // How it reached this list; `team_shared` with `shared_from` is another
+  // team's tool shared with this team.
+  origin?: AccessFields['origin'];
+  shared_from?: AccessFields['shared_from'];
   // The agents that use it. An older server leaves it out: unknown, read
   // as used by none.
   used_by?: ResourceUsage;

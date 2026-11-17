@@ -4886,10 +4886,21 @@
         "toolNoCredentials": "Editors can change actions, but not credentials."
       },
       "errors": {
+        "borrowedResource": "This agent uses sources, tools or prompts it doesn't own, so it can't be shared with another team or reached from outside. Remove them from the agent first.",
+        "invalidPolicy": "Choose who can take this team's items outside.",
         "lastAdmin": "A team needs at least one admin. Make someone else an admin first.",
         "ownerMustTransfer": "You own this team. Transfer it to another member first.",
         "ownerProtected": "The team's owner can't be demoted or removed.",
-        "teamNotEmpty": "The team still owns items. Move or delete them first."
+        "policyOwnerOnly": "Only the team's Owner can unlock it.",
+        "roleRequired": "Your role in this team doesn't allow this.",
+        "shareNotMember": "You can only share with a team you're in.",
+        "shareSameTeam": "This already belongs to that team.",
+        "shareViewerOnly": "Another team can use a team's item but not edit it.",
+        "shareWholeTeamOnly": "A team's item is shared with a whole team, not with one person.",
+        "teamItemSharedOutside": "This agent is shared with people who can't use that team's item. Use it in an agent that isn't shared outside the team, or stop that share first.",
+        "teamLocked": "This team is locked, so nothing in it can be taken outside. Only its Owner can unlock it.",
+        "teamNotEmpty": "The team still owns items. Move or delete them first.",
+        "usesTeamItems": "This agent uses a team's items, so it can only be shared with people who can use them."
       },
       "label": "Teams",
       "leave": {
@@ -4935,6 +4946,15 @@
         "title": "{{name}} still owns items"
       },
       "openTeamError": "Could not load team details.",
+      "outside": {
+        "label": "Who can take this team's items outside",
+        "policy": {
+          "admins": "Admins and Owner",
+          "editors": "Editors too",
+          "locked": "No one (locked)"
+        },
+        "title": "Outside the team"
+      },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams",
       "remove": "Remove",
@@ -5483,6 +5503,10 @@
       "switched": "Switched to {{name}}"
     },
     "page": {
+      "sharedFromTeams": {
+        "from": "From {{team}}",
+        "title": "Shared with this team"
+      },
       "sharedWithYou": "Shared with you"
     },
     "pickers": {
@@ -5504,7 +5528,17 @@
       "off": "Off",
       "on": "On",
       "onPaidBy": "On · paid by {{name}}",
-      "outside": "Outside the team",
+      "outside": {
+        "title": "Outside the team",
+        "warning": {
+          "agent": "Members of {{team}} can chat with it. It runs with {{owner}}'s knowledge and tools. People in {{owner}} who see its Logs and Insights see their questions.",
+          "always": "They can't change it, share it further or publish agents that use it. Stop sharing at any time; whatever uses it in {{team}} stops.",
+          "prompt": "Members of {{team}} can read it and use it in their agents.",
+          "source": "Members of {{team}} can read every file in it and use it in their agents.",
+          "toolMember": "Each member uses their own account.",
+          "toolStored": "Members of {{team}} will run this tool on {{owner}}'s stored account. What they do with it is done as {{owner}}."
+        }
+      },
       "payerYou": "you",
       "publicLink": "Public link",
       "teamTitle": "Who can use \"{{name}}\"",

@@ -4831,10 +4831,21 @@
         "toolNoCredentials": "編輯者可以變更動作，但不能變更憑證。"
       },
       "errors": {
+        "borrowedResource": "此代理使用了不屬於它的來源、工具或提示，因此無法與其他團隊分享，也無法從外部存取。請先將它們從代理中移除。",
+        "invalidPolicy": "請選擇誰可以將此團隊的項目帶到團隊外部。",
         "lastAdmin": "團隊至少需要一位管理員。請先將其他人設為管理員。",
         "ownerMustTransfer": "您是這個團隊的擁有者。請先將它轉讓給其他成員。",
         "ownerProtected": "團隊擁有者不能被降級或移除。",
-        "teamNotEmpty": "團隊仍擁有一些項目。請先移動或刪除它們。"
+        "policyOwnerOnly": "只有團隊擁有者才能解除鎖定。",
+        "roleRequired": "您在此團隊中的角色不允許此操作。",
+        "shareNotMember": "您只能與自己所屬的團隊分享。",
+        "shareSameTeam": "此項目已屬於該團隊。",
+        "shareViewerOnly": "其他團隊可以使用團隊的項目，但不能編輯。",
+        "shareWholeTeamOnly": "團隊的項目只能與整個團隊分享，不能與單一個人分享。",
+        "teamItemSharedOutside": "此代理已與無法使用該團隊項目的人分享。請在未與團隊外部分享的代理中使用它，或先停止該分享。",
+        "teamLocked": "此團隊已鎖定，因此其中的任何內容都不能帶到團隊外部。只有其擁有者才能解除鎖定。",
+        "teamNotEmpty": "團隊仍擁有一些項目。請先移動或刪除它們。",
+        "usesTeamItems": "此代理使用了團隊的項目，因此只能與可以使用這些項目的人分享。"
       },
       "label": "團隊",
       "leave": {
@@ -4880,6 +4891,15 @@
         "title": "{{name}} 仍擁有一些項目"
       },
       "openTeamError": "無法載入團隊詳細資訊。",
+      "outside": {
+        "label": "誰可以將此團隊的項目帶到團隊外部",
+        "policy": {
+          "admins": "管理員和擁有者",
+          "editors": "編輯者也可以",
+          "locked": "任何人都不可以（已鎖定）"
+        },
+        "title": "團隊外部"
+      },
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
       "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
       "remove": "移除",
@@ -5428,6 +5448,10 @@
       "switched": "已切換到 {{name}}"
     },
     "page": {
+      "sharedFromTeams": {
+        "from": "來自 {{team}}",
+        "title": "與此團隊分享"
+      },
       "sharedWithYou": "與您分享"
     },
     "pickers": {
@@ -5449,7 +5473,17 @@
       "off": "關閉",
       "on": "開啟",
       "onPaidBy": "開啟 · 由 {{name}} 付費",
-      "outside": "團隊外部",
+      "outside": {
+        "title": "團隊外部",
+        "warning": {
+          "agent": "{{team}} 的成員可以與它聊天。它使用 {{owner}} 的知識和工具執行。{{owner}} 中能檢視其日誌和洞察的人可以看到他們的問題。",
+          "always": "他們不能修改它、繼續分享它，也不能發布使用它的代理。您可以隨時停止分享；屆時 {{team}} 中使用它的一切都會停止。",
+          "prompt": "{{team}} 的成員可以閱讀它，並在自己的代理中使用。",
+          "source": "{{team}} 的成員可以閱讀其中的每個檔案，並在自己的代理中使用它。",
+          "toolMember": "每位成員使用自己的帳戶。",
+          "toolStored": "{{team}} 的成員將使用 {{owner}} 儲存的帳戶執行此工具。他們用它執行的操作都以 {{owner}} 的身分進行。"
+        }
+      },
       "payerYou": "您",
       "publicLink": "公開連結",
       "teamTitle": "誰可以使用「{{name}}」",

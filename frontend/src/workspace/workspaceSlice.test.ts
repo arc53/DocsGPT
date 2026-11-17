@@ -257,6 +257,48 @@ describe('workspace selectors', () => {
   });
 });
 
+describe("a team workspace's outside policy", () => {
+  it("is null in Personal and the row's policy in a team", async () => {
+    list.mockResolvedValue([
+      PERSONAL_ROW,
+      { ...OPS, outside_policy: 'locked', can_set_outside_policy: true },
+      SALES,
+    ]);
+    const { slice, store } = await load();
+    await store.dispatch(slice.loadWorkspaces({ token: null }));
+    expect(slice.selectCurrentOutsidePolicy(store.getState())).toBeNull();
+    expect(slice.selectIsCurrentTeamLocked(store.getState())).toBe(false);
+    store.dispatch(slice.switchWorkspace('t1'));
+    expect(slice.selectCurrentOutsidePolicy(store.getState())).toBe('locked');
+    expect(slice.selectIsCurrentTeamLocked(store.getState())).toBe(true);
+    // An older server sends no policy: nothing is read as locked.
+    store.dispatch(slice.switchWorkspace('t2'));
+    expect(slice.selectCurrentOutsidePolicy(store.getState())).toBeNull();
+    expect(slice.selectIsCurrentTeamLocked(store.getState())).toBe(false);
+  });
+
+  it('follows a change without reloading the list', async () => {
+    localStorage.setItem(STORAGE_KEY, 't1');
+    list.mockResolvedValue([
+      PERSONAL_ROW,
+      { ...OPS, outside_policy: 'admins', can_set_outside_policy: true },
+    ]);
+    const { slice, store } = await load();
+    await store.dispatch(slice.loadWorkspaces({ token: null }));
+    store.dispatch(
+      slice.outsidePolicyChanged({
+        teamId: 't1',
+        outside_policy: 'locked',
+        can_set_outside_policy: false,
+      }),
+    );
+    expect(slice.selectCurrentWorkspace(store.getState())).toMatchObject({
+      outside_policy: 'locked',
+      can_set_outside_policy: false,
+    });
+  });
+});
+
 describe('workspace refusals the API client reports', () => {
   it('checks the list again on a 404 workspace_not_found, then drops to Personal', async () => {
     localStorage.setItem(STORAGE_KEY, 't1');

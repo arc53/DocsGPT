@@ -58,6 +58,12 @@ const endpoints = {
       `/api/teams/${id}/members/${encodeURIComponent(memberId)}`,
     TEAM_GRANTS: (id: string) => `/api/teams/${id}/grants`,
     TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
+    // Admins and the Owner while not locked, then the Owner only; closed to access tokens.
+    TEAM_OUTSIDE_POLICY: (id: string) =>
+      `/api/teams/${encodeURIComponent(id)}/outside_policy`,
+    // Every member: the team's shares with other teams and its published agents.
+    TEAM_OUTSIDE: (id: string) =>
+      `/api/teams/${encodeURIComponent(id)}/outside`,
     // Owner and Admins of the team only; closed to access tokens.
     TEAM_USAGE: (id: string, period: 'current' | 'previous' = 'current') =>
       `/api/teams/${encodeURIComponent(id)}/usage?period=${period}`,

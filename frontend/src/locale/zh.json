@@ -4829,10 +4829,21 @@
         "toolNoCredentials": "编辑者可以更改操作，但不能更改凭据。"
       },
       "errors": {
+        "borrowedResource": "此智能体使用了不属于它的来源、工具或提示词，因此无法与其他团队共享，也无法从外部访问。请先将它们从智能体中移除。",
+        "invalidPolicy": "请选择谁可以将此团队的项目带到团队外部。",
         "lastAdmin": "团队至少需要一名管理员。请先将其他人设为管理员。",
         "ownerMustTransfer": "您是该团队的所有者。请先将其转让给其他成员。",
         "ownerProtected": "团队所有者不能被降级或移除。",
-        "teamNotEmpty": "团队仍拥有一些项目。请先移动或删除它们。"
+        "policyOwnerOnly": "只有团队所有者才能解除锁定。",
+        "roleRequired": "您在此团队中的角色不允许此操作。",
+        "shareNotMember": "您只能与自己所在的团队共享。",
+        "shareSameTeam": "此项目已属于该团队。",
+        "shareViewerOnly": "其他团队可以使用团队的项目，但不能编辑。",
+        "shareWholeTeamOnly": "团队的项目只能与整个团队共享，不能与单个人共享。",
+        "teamItemSharedOutside": "此智能体已与无法使用该团队项目的人共享。请在未与团队外部共享的智能体中使用它，或先停止该共享。",
+        "teamLocked": "此团队已锁定，因此其中的任何内容都不能带到团队外部。只有其所有者才能解除锁定。",
+        "teamNotEmpty": "团队仍拥有一些项目。请先移动或删除它们。",
+        "usesTeamItems": "此智能体使用了团队的项目，因此只能与可以使用这些项目的人共享。"
       },
       "label": "团队",
       "leave": {
@@ -4878,6 +4889,15 @@
         "title": "{{name}} 仍拥有一些项目"
       },
       "openTeamError": "无法加载团队详情。",
+      "outside": {
+        "label": "谁可以将此团队的项目带到团队外部",
+        "policy": {
+          "admins": "管理员和所有者",
+          "editors": "编辑者也可以",
+          "locked": "任何人都不可以（已锁定）"
+        },
+        "title": "团队外部"
+      },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "remove": "移除",
@@ -5426,6 +5446,10 @@
       "switched": "已切换到 {{name}}"
     },
     "page": {
+      "sharedFromTeams": {
+        "from": "来自 {{team}}",
+        "title": "与此团队共享"
+      },
       "sharedWithYou": "与您共享"
     },
     "pickers": {
@@ -5447,7 +5471,17 @@
       "off": "关闭",
       "on": "开启",
       "onPaidBy": "开启 · 由 {{name}} 付费",
-      "outside": "团队外部",
+      "outside": {
+        "title": "团队外部",
+        "warning": {
+          "agent": "{{team}} 的成员可以与它聊天。它使用 {{owner}} 的知识和工具运行。{{owner}} 中能查看其日志和洞察的人可以看到他们的问题。",
+          "always": "他们不能修改它、继续共享它，也不能发布使用它的智能体。您可以随时停止共享；届时 {{team}} 中使用它的一切都会停止。",
+          "prompt": "{{team}} 的成员可以阅读它，并在自己的智能体中使用。",
+          "source": "{{team}} 的成员可以阅读其中的每个文件，并在自己的智能体中使用它。",
+          "toolMember": "每位成员使用自己的账户。",
+          "toolStored": "{{team}} 的成员将使用 {{owner}} 保存的账户运行此工具。他们用它执行的操作都以 {{owner}} 的身份进行。"
+        }
+      },
       "payerYou": "您",
       "publicLink": "公开链接",
       "teamTitle": "谁可以使用“{{name}}”",

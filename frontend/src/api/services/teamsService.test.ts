@@ -12,9 +12,20 @@ vi.mock('../client', () => ({
   },
 }));
 
+import de from '../../locale/de.json';
+import en from '../../locale/en.json';
+import es from '../../locale/es.json';
+import fr from '../../locale/fr.json';
+import jp from '../../locale/jp.json';
+import ru from '../../locale/ru.json';
+import zhTW from '../../locale/zh-TW.json';
+import zh from '../../locale/zh.json';
 import teamsService, {
   memberTeamRole,
+  OUTSIDE_POLICIES,
+  TEAM_ERROR_KEYS,
   teamErrorMessage,
+  teamItemsRefusal,
   teamRoleOf,
   TeamsApiError,
 } from './teamsService';
@@ -100,6 +111,114 @@ describe('teamsService', () => {
     expect(error.body.counts).toEqual({ agent: 2, folder: 1 });
   });
 
+  it('changes who may take the team items outside', async () => {
+    put.mockResolvedValue(
+      response(200, {
+        success: true,
+        changed: true,
+        outside_policy: 'locked',
+        can_set_outside_policy: true,
+      }),
+    );
+    const body = await teamsService.setOutsidePolicy('t1', 'locked', 't');
+    expect(put.mock.calls[0][0]).toBe('/api/teams/t1/outside_policy');
+    expect(put.mock.calls[0][1]).toEqual({ policy: 'locked' });
+    expect(body.outside_policy).toBe('locked');
+  });
+
+  it("refuses an Admin's unlock with its code", async () => {
+    put.mockResolvedValue(
+      response(403, {
+        success: false,
+        error: 'policy_owner_only',
+        message: "Only the team's Owner can unlock it",
+      }),
+    );
+    const error = await teamsService
+      .setOutsidePolicy('t1', 'admins', 't')
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(TeamsApiError);
+    expect(error.code).toBe('policy_owner_only');
+  });
+
+  it('reads what the team takes outside', async () => {
+    get.mockResolvedValue(
+      response(200, {
+        success: true,
+        outside_policy: 'admins',
+        can_set_outside_policy: false,
+        shares: [],
+        published: [],
+      }),
+    );
+    const body = await teamsService.getOutside('t1', 't');
+    expect(get.mock.calls[0][0]).toBe('/api/teams/t1/outside');
+    expect(body.shares).toEqual([]);
+  });
+
+  it('shares a team item with the whole other team, at Viewer level', async () => {
+    post.mockResolvedValue(
+      response(201, { success: true, share: { id: 's1', created: true } }),
+    );
+    const body = await teamsService.shareTeamItem(
+      't2',
+      { resource_type: 'source', resource_id: 'src-1' },
+      't',
+    );
+    expect(post.mock.calls[0][0]).toBe('/api/teams/t2/grants');
+    expect(post.mock.calls[0][1]).toEqual({
+      resource_type: 'source',
+      resource_id: 'src-1',
+      access_level: 'viewer',
+    });
+    expect(body.share.id).toBe('s1');
+  });
+
+  it('stops sharing a team item with a team, from either side', async () => {
+    del.mockResolvedValue(response(200, { success: true, side: 'receiver' }));
+    const body = await teamsService.unshareTeamItem(
+      't2',
+      { resource_type: 'tool', resource_id: 'tool 1' },
+      't',
+    );
+    expect(del.mock.calls[0][0]).toBe(
+      '/api/teams/t2/grants?resource_type=tool&resource_id=tool%201',
+    );
+    expect(body.side).toBe('receiver');
+  });
+
+  it('keeps the team items and the move offer of a uses_team_items refusal', async () => {
+    const usesTeamItems = [
+      {
+        team_id: 't1',
+        name: 'Operations',
+        items: [{ key: 'source:s1', type: 'source', id: 's1', name: 'Docs' }],
+      },
+    ];
+    post.mockResolvedValue(
+      response(409, {
+        success: false,
+        error: 'uses_team_items',
+        code: 'uses_team_items',
+        message: 'words',
+        uses_team_items: usesTeamItems,
+        move_to: { team_id: 't1', name: 'Operations' },
+      }),
+    );
+    const error = await teamsService
+      .share('t2', { resource_type: 'agent', resource_id: 'a1' }, 't')
+      .catch((e) => e);
+    expect(teamItemsRefusal(error)).toEqual({
+      usesTeamItems,
+      moveTo: { team_id: 't1', name: 'Operations' },
+      sharedWith: [],
+    });
+    expect(teamItemsRefusal(new Error('network'))).toBeNull();
+    expect(
+      teamItemsRefusal(new TeamsApiError(403, 'x', 'team_locked')),
+    ).toBeNull();
+  });
+
   it('sends the new role names for members', async () => {
     post.mockResolvedValue(response(200, { success: true }));
     await teamsService.addMember(
@@ -143,6 +262,58 @@ describe('team roles and refusals', () => {
     expect(teamErrorMessage(t, refusal('owner_protected'), 'fallback')).toBe(
       'settings.teams.errors.ownerProtected',
     );
+  });
+
+  it('maps each refusal of taking items outside by its code', () => {
+    const refusal = (code: string) =>
+      new TeamsApiError(403, 'server words', code);
+    const expected: Record<string, string> = {
+      borrowed_resource: 'settings.teams.errors.borrowedResource',
+      invalid_policy: 'settings.teams.errors.invalidPolicy',
+      policy_owner_only: 'settings.teams.errors.policyOwnerOnly',
+      team_item_shared_outside: 'settings.teams.errors.teamItemSharedOutside',
+      team_locked: 'settings.teams.errors.teamLocked',
+      team_share_not_member: 'settings.teams.errors.shareNotMember',
+      team_share_same_team: 'settings.teams.errors.shareSameTeam',
+      team_share_viewer_only: 'settings.teams.errors.shareViewerOnly',
+      team_share_whole_team_only: 'settings.teams.errors.shareWholeTeamOnly',
+      uses_team_items: 'settings.teams.errors.usesTeamItems',
+      workspace_role_required: 'settings.teams.errors.roleRequired',
+    };
+    Object.entries(expected).forEach(([code, key]) =>
+      expect(teamErrorMessage(t, refusal(code), 'fallback')).toBe(key),
+    );
+  });
+
+  it('reads the code from a refusal a thunk serialized', () => {
+    const serialized = {
+      name: 'TeamsApiError',
+      message: 'words',
+      code: 'team_locked',
+    };
+    expect(teamErrorMessage(t, serialized, 'fallback')).toBe(
+      'settings.teams.errors.teamLocked',
+    );
+  });
+
+  it('has words for every code in all eight languages', () => {
+    const locales = { de, en, es, fr, jp, ru, zh, zhTW };
+    const read = (tree: object, path: string): unknown =>
+      path
+        .split('.')
+        .reduce<unknown>(
+          (node, part) => (node as Record<string, unknown> | undefined)?.[part],
+          tree,
+        );
+    Object.entries(locales).forEach(([name, locale]) =>
+      Object.values(TEAM_ERROR_KEYS).forEach((key) =>
+        expect(typeof read(locale, key), `${name}: ${key}`).toBe('string'),
+      ),
+    );
+  });
+
+  it('lists the three outside policies in the order the setting shows them', () => {
+    expect(OUTSIDE_POLICIES).toEqual(['admins', 'editors', 'locked']);
   });
 
   it("falls back to the server's message, then to the caller's", () => {

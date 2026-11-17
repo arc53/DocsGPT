@@ -4865,10 +4865,21 @@
         "toolNoCredentials": "Bearbeiter können Aktionen ändern, aber keine Anmeldedaten."
       },
       "errors": {
+        "borrowedResource": "Dieser Agent nutzt Quellen, Werkzeuge oder Prompts, die ihm nicht gehören. Er kann daher weder mit einem anderen Team geteilt noch von außen erreicht werden. Entferne sie zuerst aus dem Agenten.",
+        "invalidPolicy": "Wähle aus, wer die Elemente dieses Teams nach außen geben darf.",
         "lastAdmin": "Ein Team braucht mindestens einen Admin. Mach zuerst jemand anderen zum Admin.",
         "ownerMustTransfer": "Dir gehört dieses Team. Übertrage es zuerst an ein anderes Mitglied.",
         "ownerProtected": "Der Eigentümer des Teams kann weder herabgestuft noch entfernt werden.",
-        "teamNotEmpty": "Dem Team gehören noch Elemente. Verschiebe oder lösche sie zuerst."
+        "policyOwnerOnly": "Nur der Eigentümer des Teams kann es entsperren.",
+        "roleRequired": "Deine Rolle in diesem Team erlaubt das nicht.",
+        "shareNotMember": "Du kannst nur mit einem Team teilen, in dem du Mitglied bist.",
+        "shareSameTeam": "Das gehört bereits diesem Team.",
+        "shareViewerOnly": "Ein anderes Team kann ein Element des Teams nutzen, aber nicht bearbeiten.",
+        "shareWholeTeamOnly": "Ein Element des Teams wird mit einem ganzen Team geteilt, nicht mit einer einzelnen Person.",
+        "teamItemSharedOutside": "Dieser Agent ist mit Personen geteilt, die dieses Element des Teams nicht nutzen können. Verwende es in einem Agenten, der nicht außerhalb des Teams geteilt ist, oder beende diese Freigabe zuerst.",
+        "teamLocked": "Dieses Team ist gesperrt, daher kann nichts davon nach außen gegeben werden. Nur sein Eigentümer kann es entsperren.",
+        "teamNotEmpty": "Dem Team gehören noch Elemente. Verschiebe oder lösche sie zuerst.",
+        "usesTeamItems": "Dieser Agent nutzt Elemente eines Teams und kann daher nur mit Personen geteilt werden, die sie nutzen können."
       },
       "label": "Teams",
       "leave": {
@@ -4914,6 +4925,15 @@
         "title": "{{name}} gehören noch Elemente"
       },
       "openTeamError": "Team-Details konnten nicht geladen werden.",
+      "outside": {
+        "label": "Wer die Elemente dieses Teams nach außen geben darf",
+        "policy": {
+          "admins": "Admins und Eigentümer",
+          "editors": "Auch Bearbeiter",
+          "locked": "Niemand (gesperrt)"
+        },
+        "title": "Außerhalb des Teams"
+      },
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams",
       "remove": "Entfernen",
@@ -5462,6 +5482,10 @@
       "switched": "Zu {{name}} gewechselt"
     },
     "page": {
+      "sharedFromTeams": {
+        "from": "Von {{team}}",
+        "title": "Mit diesem Team geteilt"
+      },
       "sharedWithYou": "Mit dir geteilt"
     },
     "pickers": {
@@ -5483,7 +5507,17 @@
       "off": "Aus",
       "on": "An",
       "onPaidBy": "An · bezahlt von {{name}}",
-      "outside": "Außerhalb des Teams",
+      "outside": {
+        "title": "Außerhalb des Teams",
+        "warning": {
+          "agent": "Mitglieder von {{team}} können damit chatten. Er läuft mit dem Wissen und den Werkzeugen von {{owner}}. Wer in {{owner}} seine Protokolle und Einblicke sieht, sieht ihre Fragen.",
+          "always": "Sie können es nicht ändern, nicht weiter teilen und keine Agenten veröffentlichen, die es nutzen. Du kannst das Teilen jederzeit beenden; alles, was es in {{team}} nutzt, hört dann auf.",
+          "prompt": "Mitglieder von {{team}} können ihn lesen und in ihren Agenten nutzen.",
+          "source": "Mitglieder von {{team}} können jede Datei darin lesen und die Quelle in ihren Agenten nutzen.",
+          "toolMember": "Jedes Mitglied nutzt sein eigenes Konto.",
+          "toolStored": "Mitglieder von {{team}} nutzen dieses Werkzeug mit dem gespeicherten Konto von {{owner}}. Was sie damit tun, geschieht im Namen von {{owner}}."
+        }
+      },
       "payerYou": "dir",
       "publicLink": "Öffentlicher Link",
       "teamTitle": "Wer \"{{name}}\" nutzen kann",

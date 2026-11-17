@@ -5038,10 +5038,21 @@
         "toolNoCredentials": "Les éditeurs peuvent modifier les actions, mais pas les identifiants."
       },
       "errors": {
+        "borrowedResource": "Cet agent utilise des sources, des outils ou des prompts qui ne lui appartiennent pas, il ne peut donc être ni partagé avec une autre équipe ni accessible de l’extérieur. Retirez-les d’abord de l’agent.",
+        "invalidPolicy": "Choisissez qui peut sortir les éléments de cette équipe.",
         "lastAdmin": "Une équipe a besoin d’au moins un administrateur. Nommez d’abord quelqu’un d’autre administrateur.",
         "ownerMustTransfer": "Vous êtes propriétaire de cette équipe. Transférez-la d’abord à un autre membre.",
         "ownerProtected": "Le propriétaire de l’équipe ne peut être ni rétrogradé ni retiré.",
-        "teamNotEmpty": "L’équipe possède encore des éléments. Déplacez-les ou supprimez-les d’abord."
+        "policyOwnerOnly": "Seul le propriétaire de l’équipe peut la déverrouiller.",
+        "roleRequired": "Votre rôle dans cette équipe ne le permet pas.",
+        "shareNotMember": "Vous ne pouvez partager qu’avec une équipe dont vous faites partie.",
+        "shareSameTeam": "Cet élément appartient déjà à cette équipe.",
+        "shareViewerOnly": "Une autre équipe peut utiliser un élément de l’équipe, mais pas le modifier.",
+        "shareWholeTeamOnly": "Un élément de l’équipe se partage avec toute une équipe, pas avec une seule personne.",
+        "teamItemSharedOutside": "Cet agent est partagé avec des personnes qui ne peuvent pas utiliser cet élément de l’équipe. Utilisez-le dans un agent qui n’est pas partagé hors de l’équipe, ou arrêtez d’abord ce partage.",
+        "teamLocked": "Cette équipe est verrouillée, rien ne peut donc en sortir. Seul son propriétaire peut la déverrouiller.",
+        "teamNotEmpty": "L’équipe possède encore des éléments. Déplacez-les ou supprimez-les d’abord.",
+        "usesTeamItems": "Cet agent utilise des éléments d’une équipe, il ne peut donc être partagé qu’avec des personnes qui peuvent les utiliser."
       },
       "label": "Équipes",
       "leave": {
@@ -5096,6 +5107,15 @@
         "title": "{{name}} possède encore des éléments"
       },
       "openTeamError": "Impossible de charger les détails de l’équipe.",
+      "outside": {
+        "label": "Qui peut sortir les éléments de cette équipe",
+        "policy": {
+          "admins": "Administrateurs et propriétaire",
+          "editors": "Les éditeurs aussi",
+          "locked": "Personne (verrouillé)"
+        },
+        "title": "Hors de l’équipe"
+      },
       "pageRange_many": "{{from}}–{{to}} sur {{formatted}} équipes",
       "pageRange_one": "{{from}}–{{to}} sur {{formatted}} équipe",
       "pageRange_other": "{{from}}–{{to}} sur {{formatted}} équipes",
@@ -5670,6 +5690,10 @@
       "switched": "Vous êtes passé à {{name}}"
     },
     "page": {
+      "sharedFromTeams": {
+        "from": "De {{team}}",
+        "title": "Partagé avec cette équipe"
+      },
       "sharedWithYou": "Partagé avec vous"
     },
     "pickers": {
@@ -5692,7 +5716,17 @@
       "off": "Désactivé",
       "on": "Activé",
       "onPaidBy": "Activé · payé par {{name}}",
-      "outside": "Hors de l’équipe",
+      "outside": {
+        "title": "Hors de l’équipe",
+        "warning": {
+          "agent": "Les membres de {{team}} peuvent discuter avec lui. Il s’appuie sur les connaissances et les outils de {{owner}}. Les personnes de {{owner}} qui consultent ses journaux et ses analyses voient leurs questions.",
+          "always": "Ils ne peuvent ni le modifier, ni le repartager, ni publier des agents qui l’utilisent. Arrêtez le partage à tout moment ; tout ce qui l’utilise dans {{team}} s’arrête.",
+          "prompt": "Les membres de {{team}} peuvent le lire et l’utiliser dans leurs agents.",
+          "source": "Les membres de {{team}} peuvent lire tous ses fichiers et l’utiliser dans leurs agents.",
+          "toolMember": "Chaque membre utilise son propre compte.",
+          "toolStored": "Les membres de {{team}} utiliseront cet outil avec le compte enregistré de {{owner}}. Ce qu’ils en font est fait au nom de {{owner}}."
+        }
+      },
       "payerYou": "vous",
       "publicLink": "Lien public",
       "teamTitle": "Qui peut utiliser « {{name}} »",

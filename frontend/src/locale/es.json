@@ -5038,10 +5038,21 @@
         "toolNoCredentials": "Los editores pueden cambiar acciones, pero no las credenciales."
       },
       "errors": {
+        "borrowedResource": "Este agente usa fuentes, herramientas o prompts que no le pertenecen, así que no se puede compartir con otro equipo ni usar desde fuera. Quítalos del agente primero.",
+        "invalidPolicy": "Elige quién puede sacar los elementos de este equipo fuera de él.",
         "lastAdmin": "Un equipo necesita al menos un administrador. Haz administrador a otra persona primero.",
         "ownerMustTransfer": "Eres el propietario de este equipo. Transfiérelo primero a otro miembro.",
         "ownerProtected": "El propietario del equipo no puede perder su rol ni ser quitado.",
-        "teamNotEmpty": "El equipo todavía posee elementos. Muévelos o elimínalos primero."
+        "policyOwnerOnly": "Solo el propietario del equipo puede desbloquearlo.",
+        "roleRequired": "Tu rol en este equipo no lo permite.",
+        "shareNotMember": "Solo puedes compartir con un equipo del que formas parte.",
+        "shareSameTeam": "Esto ya pertenece a ese equipo.",
+        "shareViewerOnly": "Otro equipo puede usar un elemento del equipo, pero no editarlo.",
+        "shareWholeTeamOnly": "Un elemento del equipo se comparte con todo un equipo, no con una sola persona.",
+        "teamItemSharedOutside": "Este agente está compartido con personas que no pueden usar ese elemento del equipo. Úsalo en un agente que no esté compartido fuera del equipo, o deja de compartirlo primero.",
+        "teamLocked": "Este equipo está bloqueado, así que nada de él puede salir fuera. Solo su propietario puede desbloquearlo.",
+        "teamNotEmpty": "El equipo todavía posee elementos. Muévelos o elimínalos primero.",
+        "usesTeamItems": "Este agente usa elementos de un equipo, así que solo se puede compartir con personas que puedan usarlos."
       },
       "label": "Equipos",
       "leave": {
@@ -5096,6 +5107,15 @@
         "title": "{{name}} todavía posee elementos"
       },
       "openTeamError": "No se pudieron cargar los detalles del equipo.",
+      "outside": {
+        "label": "Quién puede sacar los elementos de este equipo fuera de él",
+        "policy": {
+          "admins": "Administradores y propietario",
+          "editors": "También los editores",
+          "locked": "Nadie (bloqueado)"
+        },
+        "title": "Fuera del equipo"
+      },
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} equipos",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} equipo",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos",
@@ -5670,6 +5690,10 @@
       "switched": "Has pasado a {{name}}"
     },
     "page": {
+      "sharedFromTeams": {
+        "from": "De {{team}}",
+        "title": "Compartido con este equipo"
+      },
       "sharedWithYou": "Compartido contigo"
     },
     "pickers": {
@@ -5692,7 +5716,17 @@
       "off": "Desactivado",
       "on": "Activado",
       "onPaidBy": "Activado · pagado por {{name}}",
-      "outside": "Fuera del equipo",
+      "outside": {
+        "title": "Fuera del equipo",
+        "warning": {
+          "agent": "Los miembros de {{team}} pueden chatear con él. Funciona con el conocimiento y las herramientas de {{owner}}. Quienes en {{owner}} ven sus registros e información ven sus preguntas.",
+          "always": "No pueden cambiarlo, volver a compartirlo ni publicar agentes que lo usen. Deja de compartirlo cuando quieras; todo lo que lo usa en {{team}} se detiene.",
+          "prompt": "Los miembros de {{team}} pueden leerlo y usarlo en sus agentes.",
+          "source": "Los miembros de {{team}} pueden leer todos los archivos que contiene y usar la fuente en sus agentes.",
+          "toolMember": "Cada miembro usa su propia cuenta.",
+          "toolStored": "Los miembros de {{team}} usarán esta herramienta con la cuenta guardada de {{owner}}. Lo que hagan con ella se hace en nombre de {{owner}}."
+        }
+      },
       "payerYou": "ti",
       "publicLink": "Enlace público",
       "teamTitle": "Quién puede usar \"{{name}}\"",
