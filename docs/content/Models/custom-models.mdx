@@ -38,7 +38,7 @@ Operators who want a model available to everyone configure it on the server inst
 
 4. Click **Test connection**, then **Save**.
 
-**Test connection** sends a tiny request (`hi`, with a 1-token limit, or 16 for the Responses protocol) to the endpoint with the values currently in the form, before anything is saved, and shows **Connection successful.** or the provider's error. It times out after 5 seconds and doesn't follow redirects. When you edit a saved model, leave **API key** blank to test (and keep) the stored key.
+**Test connection** sends a tiny request (`hi`, with a 1-token limit, or 16 for the Responses protocol) to the endpoint with the values currently in the form, before anything is saved, and shows **Connection successful.** or the provider's error. It times out after 5 seconds and doesn't follow redirects. When you edit a saved model, leave **API key** blank to test (and keep) the stored key. If you change the base URL to another host (a different scheme, host or port), enter the key again: the stored key is only sent to the host it was saved for, so the test and the save are refused without it.
 
 ## Where the model appears
 
@@ -97,9 +97,9 @@ The same operations are available over the API. With a [personal access token](/
 | `GET /api/models` | Lists every model available to the caller, including their custom models (`"source": "user"`). In a team workspace, it lists the team's enabled models instead (`"source": "team"`, without `base_url`) and never the caller's own. A token with `chat:run` can call it too. |
 | `GET /api/user/models` | Lists the caller's custom models. With `owner=team`, lists the models of the team the workspace header names. |
 | `POST /api/user/models` | Adds a model. With `"owner": "team"`, adds it for the team the workspace header names (Admins and the Owner). |
-| `GET`, `PATCH`, `DELETE /api/user/models/<id>` | Reads, updates or deletes one model. In a `PATCH`, a missing or empty `api_key` keeps the stored key. |
+| `GET`, `PATCH`, `DELETE /api/user/models/<id>` | Reads, updates or deletes one model. In a `PATCH`, a missing or empty `api_key` keeps the stored key, unless `base_url` moves to another host (scheme, host or port): then `api_key` is required, and the update is refused with `400` `api_key_required_for_new_host`. |
 | `POST /api/user/models/test` | Tests unsaved values (`base_url`, `api_key`, `upstream_model_id`, optional `capabilities`). |
-| `POST /api/user/models/<id>/test` | Tests a saved model; any of `base_url`, `api_key` and `upstream_model_id` in the body override the stored values. |
+| `POST /api/user/models/<id>/test` | Tests a saved model; any of `base_url`, `api_key` and `upstream_model_id` in the body override the stored values. A `base_url` on another host needs `api_key` too (`400`, `code: api_key_required_for_new_host`). |
 | `GET /api/user/models/<id>/usage` | The agents and workflows of the model's owner that use it: `{"usage": {"agents": [{id, name}], "workflows": [{id, name}]}}`. |
 | `POST /api/user/models/<id>/copy` | Copies one of your own models to a team you're an Admin of: `{"team_id": "..."}`. Answers `201` with the team's new model, or `409` `model_already_in_team` when the team has it. |
 

@@ -435,6 +435,110 @@ class TestOneModel:
         assert _audit(pg_conn, "team.model_updated") == [] and _audit(pg_conn, "team.model_removed") == []
 
 
+class TestStoredKeyStaysWithItsHost:
+    """The stored key is sent only to the host it was saved for: pointing a model at another origin needs the key."""
+
+    @staticmethod
+    def _saved(conn, team, owner):
+        return _team_model(conn, team) if owner == "team" else _model(conn, "ana", name="Ana's")
+
+    @pytest.mark.parametrize("owner", ["team", "personal"])
+    def test_a_test_against_a_new_host_without_a_key_is_refused(self, app, pg_conn, team, owner):
+        from docsgpt.api.user.models.routes import UserModelTestResource
+
+        mid = str(self._saved(pg_conn, team, owner)["id"])
+        with _db(pg_conn), patch(
+            "docsgpt.api.user.models.routes._run_connection_test", return_value=({"ok": True}, 200),
+        ) as run:
+            resp = _call(app, UserModelTestResource, "post", "ana", path=f"/api/user/models/{mid}/test",
+                         body={"base_url": "https://attacker.example.net/v1"}, args=[mid])
+
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "api_key_required_for_new_host"
+        run.assert_not_called()
+
+    @pytest.mark.parametrize("url", ["http://llm.example.com/v1", "https://llm.example.com:8443/v1"])
+    def test_another_scheme_or_port_is_another_host(self, app, pg_conn, team, url):
+        from docsgpt.api.user.models.routes import UserModelTestResource
+
+        mid = str(_team_model(pg_conn, team)["id"])
+        with _db(pg_conn), patch(
+            "docsgpt.api.user.models.routes._run_connection_test", return_value=({"ok": True}, 200),
+        ) as run:
+            resp = _call(app, UserModelTestResource, "post", "ana", path=f"/api/user/models/{mid}/test",
+                         body={"base_url": url}, args=[mid])
+
+        assert resp.status_code == 400
+        run.assert_not_called()
+
+    def test_a_test_against_a_new_host_with_a_key_sends_that_key(self, app, pg_conn, team):
+        from docsgpt.api.user.models.routes import UserModelTestResource
+
+        mid = str(_team_model(pg_conn, team)["id"])
+        with _db(pg_conn), patch(
+            "docsgpt.api.user.models.routes._run_connection_test", return_value=({"ok": True}, 200),
+        ) as run:
+            resp = _call(app, UserModelTestResource, "post", "ana", path=f"/api/user/models/{mid}/test",
+                         body={"base_url": "https://other.example.net/v1", "api_key": "sk-other"}, args=[mid])
+
+        assert resp.status_code == 200
+        assert run.call_args.args[:2] == ("https://other.example.net/v1", "sk-other")
+
+    @pytest.mark.parametrize("url", ["https://llm.example.com/v2", "https://LLM.Example.com:443/v1/"])
+    def test_the_same_host_keeps_the_stored_key(self, app, pg_conn, team, url):
+        from docsgpt.api.user.models.routes import UserModelTestResource
+
+        mid = str(_team_model(pg_conn, team)["id"])
+        with _db(pg_conn), patch(
+            "docsgpt.api.user.models.routes._run_connection_test", return_value=({"ok": True}, 200),
+        ) as run:
+            resp = _call(app, UserModelTestResource, "post", "ana", path=f"/api/user/models/{mid}/test",
+                         body={"base_url": url}, args=[mid])
+
+        assert resp.status_code == 200
+        assert run.call_args.args[1] == "sk-team"
+
+    @pytest.mark.parametrize("owner", ["team", "personal"])
+    def test_moving_a_model_to_a_new_host_without_a_key_is_refused(self, app, pg_conn, team, owner):
+        from docsgpt.api.user.models.routes import UserModelResource
+
+        mid = str(self._saved(pg_conn, team, owner)["id"])
+        with _db(pg_conn), patch("docsgpt.api.user.models.routes.ModelRegistry.invalidate_user"):
+            resp = _call(app, UserModelResource, "patch", "ana", path=f"/api/user/models/{mid}",
+                         body={"base_url": "https://attacker.example.net/v1", "api_key": ""}, args=[mid])
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "api_key_required_for_new_host"
+        assert _row(pg_conn, mid)["base_url"] == "https://llm.example.com/v1"
+        assert _audit(pg_conn, "team.model_updated") == []
+
+    def test_moving_a_model_to_a_new_host_with_a_key_replaces_both(self, app, pg_conn, team):
+        from docsgpt.api.user.models.routes import UserModelResource
+
+        mid = str(_team_model(pg_conn, team)["id"])
+        with _db(pg_conn), patch("docsgpt.api.user.models.routes.ModelRegistry.invalidate_user"):
+            resp = _call(app, UserModelResource, "patch", "ana", path=f"/api/user/models/{mid}",
+                         body={"base_url": "https://other.example.net/v1", "api_key": "sk-other"}, args=[mid])
+
+        assert resp.status_code == 200
+        row = _row(pg_conn, mid)
+        assert row["base_url"] == "https://other.example.net/v1"
+        assert decrypt_credentials(row["api_key_encrypted"], principal_id(team))["api_key"] == "sk-other"
+
+    def test_a_new_path_on_the_same_host_keeps_the_key(self, app, pg_conn, team):
+        from docsgpt.api.user.models.routes import UserModelResource
+
+        mid = str(_team_model(pg_conn, team)["id"])
+        with _db(pg_conn), patch("docsgpt.api.user.models.routes.ModelRegistry.invalidate_user"):
+            resp = _call(app, UserModelResource, "patch", "ana", path=f"/api/user/models/{mid}",
+                         body={"base_url": "https://llm.example.com/v2"}, args=[mid])
+
+        assert resp.status_code == 200
+        row = _row(pg_conn, mid)
+        assert row["base_url"] == "https://llm.example.com/v2"
+        assert decrypt_credentials(row["api_key_encrypted"], principal_id(team))["api_key"] == "sk-team"
+
+
 class TestPayloadTest:
     @pytest.mark.parametrize("user,status", [("ana", 200), ("alice", 200), ("eddie", 403), ("vi", 403),
                                              ("mallory", 404)])

@@ -20,6 +20,8 @@ change a team's model, and never through a personal access token.
 from __future__ import annotations
 
 import logging
+from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import requests
 from flask import current_app, jsonify, make_response, request
@@ -199,6 +201,52 @@ def _token_refused():
 
 def _is_token() -> bool:
     return is_pat(getattr(request, "decoded_token", None))
+
+
+#: A stored key may not follow its model to another host: a new origin needs the key typed again.
+CODE_API_KEY_REQUIRED_FOR_NEW_HOST = "api_key_required_for_new_host"
+_NEW_HOST_MESSAGE = (
+    "The base URL points to another host. Enter the API key again: the saved key is only sent to the host it "
+    "was saved for."
+)
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin(base_url: Any) -> Optional[tuple]:
+    """The origin of a base URL: its scheme, host and port, with case and the default port normalized.
+
+    Args:
+        base_url: The endpoint URL.
+
+    Returns:
+        ``(scheme, host, port)``, or None when the URL can't be parsed (never the same origin as anything).
+    """
+    try:
+        parts = urlsplit(str(base_url or "").strip())
+        scheme = parts.scheme.lower()
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    if not scheme or not parts.hostname:
+        return None
+    return scheme, parts.hostname.lower(), port
+
+
+def _changes_host(stored_url: Any, new_url: Any) -> bool:
+    """Whether ``new_url`` sends requests to another origin than ``stored_url``.
+
+    The stored key was entered for one host; sending it anywhere else (a test, or every chat after a save)
+    would hand it to whoever runs that host, so the caller must supply the key again.
+
+    Args:
+        stored_url: The saved base URL.
+        new_url: The base URL the request asks for.
+
+    Returns:
+        bool: True unless both parse to the same origin.
+    """
+    stored, new = _origin(stored_url), _origin(new_url)
+    return stored is None or stored != new
 
 
 def _audit_team_model(conn, actor: str, event: str, row: dict, **detail) -> None:
@@ -485,6 +533,21 @@ class UserModelResource(Resource):
                 if access.is_team and _is_token():
                     return _token_refused()
                 owner_id = access.owner_id
+                if (
+                    "base_url" in update_fields
+                    and "api_key_plaintext" not in update_fields
+                    and _changes_host(access.row.get("base_url"), update_fields["base_url"])
+                ):
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": CODE_API_KEY_REQUIRED_FOR_NEW_HOST,
+                                "message": _NEW_HOST_MESSAGE,
+                            }
+                        ),
+                        400,
+                    )
                 repo = UserCustomModelsRepository(conn)
                 # The owner's id seals a replaced key, so a team's stays the team's.
                 ok = repo.update(model_id, owner_id, update_fields)
@@ -827,6 +890,15 @@ class UserModelTestResource(Resource):
                 if access.is_team and _is_token():
                     return _token_refused()
                 row = dict(access.row)
+                if (
+                    override_base_url
+                    and not override_api_key
+                    and _changes_host(row.get("base_url"), override_base_url)
+                ):
+                    return make_response(
+                        jsonify({"ok": False, "error": _NEW_HOST_MESSAGE, "code": CODE_API_KEY_REQUIRED_FOR_NEW_HOST}),
+                        400,
+                    )
                 # The key was sealed with the owner's id: the team's principal on a team's model.
                 stored_api_key = (
                     UserCustomModelsRepository._decrypt_api_key(
