@@ -989,3 +989,53 @@ class TestFallbackFinish:
         fake = self._TrailingFailure(text(json.dumps(PROPOSAL)))
         events = _run(fake)
         assert events[-1]["type"] == "error"
+
+
+class _LimitedFake(FakeLLM):
+    """Checks the run's limits before each call, as ``BaseLLM`` does."""
+
+    def gen_stream(self, *args, **kwargs):
+        from docsgpt.llm.base import _check_run_limits
+
+        _check_run_limits()
+        return super().gen_stream(*args, **kwargs)
+
+
+class _OneCallLeft:
+    """Run limits that allow the first model call and refuse the next."""
+
+    def __init__(self):
+        self.checked = 0
+
+    def check_call(self):
+        from datetime import datetime, timezone
+
+        from docsgpt.quotas.run_limits import RunLimitReached
+        from docsgpt.quotas.service import QuotaExceeded
+
+        self.checked += 1
+        if self.checked > 1:
+            raise RunLimitReached(QuotaExceeded(
+                user_id="alice", bucket="all", budget="tokens", usage=120, limit=100, source=None, source_id=None,
+                resets_at=datetime(2026, 12, 1, tzinfo=timezone.utc),
+            ))
+
+
+@pytest.mark.unit
+class TestAllowance:
+    def test_each_model_call_of_a_turn_is_checked_against_the_callers_allowance(self, monkeypatch):
+        from docsgpt.quotas import run_limits
+
+        limits = _OneCallLeft()
+        started = []
+        monkeypatch.setattr(run_limits.RunLimits, "start",
+                            classmethod(lambda cls, payer, **kw: started.append((payer, kw)) or limits))
+        fake = _LimitedFake(calls(tool_call("get_prompt", {"prompt_id": "default"}, "c1")),
+                            calls(tool_call("submit_proposal", PROPOSAL, "c2")))
+
+        events = _run(fake)
+
+        assert started == [("alice", {"bucket": "direct"})]
+        assert len(fake.calls) == 1
+        assert events[-1]["type"] == "error" and events[-1]["code"] == "quota"
+        assert events[-1]["message"].startswith("Usage quota reached")
