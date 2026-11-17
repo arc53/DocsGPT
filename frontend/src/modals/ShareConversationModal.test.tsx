@@ -70,6 +70,24 @@ describe('ShareConversationModal', () => {
     );
   });
 
+  it("says a locked team's chats can't be shared, in the app's words", async () => {
+    mocks.shareConversation.mockReturnValue(
+      respond(
+        {
+          success: false,
+          error: 'team_locked',
+          message: "This team is locked: its chats can't be shared outside it.",
+        },
+        false,
+      ),
+    );
+    await create();
+    expect(document.body.textContent).toContain(
+      'settings.teams.errors.teamLocked',
+    );
+    expect(document.body.textContent).not.toContain('its chats can');
+  });
+
   it('shows the link once it is created', async () => {
     mocks.shareConversation.mockReturnValue(
       respond({ success: true, identifier: 'share-1' }),

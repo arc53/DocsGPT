@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
+import { TEAM_ERROR_KEYS } from '../api/services/teamsService';
 import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -98,7 +99,10 @@ export const ShareConversationModal = ({
           setIdentifier(data.identifier);
           setStatus('fetched');
         } else {
-          if (typeof data?.message === 'string' && data.message.trim())
+          // A locked team's chats stay in; the app says so in its own words.
+          if (data?.error === 'team_locked')
+            setError(t(TEAM_ERROR_KEYS.team_locked));
+          else if (typeof data?.message === 'string' && data.message.trim())
             setError(data.message);
           setStatus('failed');
         }
