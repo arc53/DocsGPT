@@ -65,6 +65,7 @@ from docsgpt.events.publisher import publish_user_event
 from docsgpt.notifications.notify import notify_user
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -832,6 +833,7 @@ class Team(Resource):
         user = _current_user()
         if not user:
             return {"success": False}, 401
+        artifact_paths: list[str] = []
         try:
             with db_session() as conn:
                 team = TeamsRepository(conn).get(team_id)
@@ -841,7 +843,7 @@ class Team(Resource):
                 if team["owner_id"] != user and not has_role(token, ROLE_ADMIN):
                     return {"success": False, "message": "Only the team owner can delete"}, 403
                 try:
-                    TeamsRepository(conn).delete(team_id)
+                    TeamsRepository(conn).delete(team_id, artifact_paths=artifact_paths)
                 except TeamNotEmpty as not_empty:
                     # Connections and custom models don't move; they are removed instead.
                     removed = [
@@ -866,6 +868,8 @@ class Team(Resource):
                         409,
                     )
                 _audit(conn, user, "team.delete", team_id=team_id)
+            # Only once the rows are gone for good: a rolled-back delete keeps its artifacts' bytes.
+            ArtifactsRepository.reap_storage(artifact_paths)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Delete team failed: %s", err, exc_info=True)

@@ -343,3 +343,23 @@ class TestTeamDelete:
             resp = client.delete(f"/api/teams/{tid}")
         assert resp.status_code == 200
         assert TeamsRepository(db).get(tid) is None
+
+    def test_its_chats_artifact_bytes_are_removed_and_kept_when_refused(self, client, db):
+        from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+
+        tid = _team(db)
+        conv = db.execute(
+            text("INSERT INTO conversations (user_id, name, team_id) VALUES ('vera', 'c', CAST(:t AS uuid)) "
+                 "RETURNING id"), {"t": tid},
+        ).scalar()
+        ArtifactsRepository(db).create_artifact("vera", "file", conversation_id=str(conv), team_id=tid,
+                                                storage_path="a/team.bin", mime_type="text/plain", size=1)
+        agent = AgentsRepository(db).create(principal_id(tid), "A", "draft")
+        reap = "docsgpt.api.user.teams.routes.ArtifactsRepository.reap_storage"
+        with _as("alice"), patch(reap) as refused:
+            assert client.delete(f"/api/teams/{tid}").status_code == 409
+        refused.assert_not_called()
+        AgentsRepository(db).delete(str(agent["id"]), principal_id(tid))
+        with _as("alice"), patch(reap) as reaped:
+            assert client.delete(f"/api/teams/{tid}").status_code == 200
+        reaped.assert_called_once_with(["a/team.bin"])

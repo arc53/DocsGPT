@@ -375,18 +375,22 @@ class TeamsRepository:
                 counts[key] = counts.get(key, 0) + int(n)
         return counts
 
-    def delete(self, team_id: str) -> bool:
+    def delete(self, team_id: str, artifact_paths: Optional[list[str]] = None) -> bool:
         """Delete an empty team, its principal and its chats.
 
         Refused while the principal owns anything (an Admin moves or deletes
         items first). Then the principal's own chats (a deleted team agent's
         widget or key chats) and the members' chats in the team
-        (``conversations.team_id ON DELETE CASCADE``) go with it;
+        (``conversations.team_id ON DELETE CASCADE``) go with it, with their
+        artifacts and the traces no message links (neither cascades: they
+        would stay in their owners' lists and count toward quota);
         ``team_members`` and ``team_resource_grants`` cascade, and personal
         items shared to the team revert to owner-only visibility.
 
         Args:
             team_id: Team UUID.
+            artifact_paths: When given, receives the storage keys of the deleted artifacts' bytes, for the
+                caller to remove once the transaction commits.
 
         Returns:
             True when the team was deleted; False when it doesn't exist.
@@ -400,6 +404,21 @@ class TeamsRepository:
         if holdings:
             raise TeamNotEmpty(holdings)
         principal = principal_id(team_id)
+        params = {"p": principal, "t": team_id}
+        chats = "SELECT id FROM conversations WHERE user_id = :p OR team_id = CAST(:t AS uuid)"
+        in_team = f"(a.conversation_id IN ({chats}) OR a.team_id = CAST(:t AS uuid))"
+        paths = self._conn.execute(
+            text(
+                "SELECT v.storage_path FROM artifact_versions v JOIN artifacts a ON a.id = v.artifact_id "
+                f"WHERE v.storage_path IS NOT NULL AND {in_team}"
+            ),
+            params,
+        ).scalars().all()
+        if artifact_paths is not None:
+            artifact_paths.extend(paths)
+        # Versions cascade with their artifact.
+        self._conn.execute(text(f"DELETE FROM artifacts a WHERE {in_team}"), params)
+        self._conn.execute(text(f"DELETE FROM request_traces WHERE conversation_id IN ({chats})"), params)
         self._conn.execute(text("DELETE FROM conversations WHERE user_id = :p"), {"p": principal})
         self._conn.execute(text("DELETE FROM users WHERE user_id = :p AND kind = 'team'"), {"p": principal})
         result = self._conn.execute(

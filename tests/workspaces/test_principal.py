@@ -134,6 +134,43 @@ class TestDelete:
         names = [r[0] for r in pg_conn.execute(text("SELECT name FROM conversations ORDER BY name"))]
         assert names == ["personal"]
 
+    def test_its_chats_artifacts_traces_and_jobs_go_too_and_the_bytes_are_handed_back(self, pg_conn):
+        from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+
+        team_id = str(_team(pg_conn)["id"])
+        principal = principal_id(team_id)
+        TeamMembersRepository(pg_conn).add_member(team_id, "bob", role="team_viewer")
+
+        def chat(user: str, team: str | None) -> str:
+            return str(pg_conn.execute(
+                text("INSERT INTO conversations (user_id, name, team_id) VALUES (:u, 'c', CAST(:t AS uuid)) "
+                     "RETURNING id"), {"u": user, "t": team},
+            ).scalar())
+
+        in_team, widget, personal = chat("bob", team_id), chat(principal, None), chat("bob", None)
+        artifacts = ArtifactsRepository(pg_conn)
+        for user, conv, team, path in (("bob", in_team, team_id, "a/team.bin"), (principal, widget, None, "a/w.bin"),
+                                       ("bob", personal, None, "a/mine.bin")):
+            artifacts.create_artifact(user, "file", conversation_id=conv, team_id=team, storage_path=path,
+                                      mime_type="application/octet-stream", filename="f.bin", size=3)
+        for conv in (in_team, personal):
+            # A trace not linked to a message (a stateless round) and a background job of the chat.
+            pg_conn.execute(text(
+                "INSERT INTO request_traces (id, conversation_id, user_id, source, status, started_at) "
+                "VALUES (gen_random_uuid(), CAST(:c AS uuid), 'bob', 'chat', 'ok', now())"), {"c": conv})
+            pg_conn.execute(text(
+                "INSERT INTO background_jobs (user_id, conversation_id, tool_name, action_name, deadline_at) "
+                "VALUES ('bob', CAST(:c AS uuid), 't', 'a', now() + interval '1 hour')"), {"c": conv})
+
+        paths: list[str] = []
+        assert TeamsRepository(pg_conn).delete(team_id, artifact_paths=paths) is True
+        # Removed from storage by the caller once the delete commits.
+        assert sorted(paths) == ["a/team.bin", "a/w.bin"]
+        left = pg_conn.execute(text("SELECT conversation_id::text FROM artifacts")).scalars().all()
+        assert left == [personal]
+        assert pg_conn.execute(text("SELECT conversation_id::text FROM request_traces")).scalars().all() == [personal]
+        assert pg_conn.execute(text("SELECT conversation_id::text FROM background_jobs")).scalars().all() == [personal]
+
     def test_deleting_a_missing_team_is_false(self, pg_conn):
         assert TeamsRepository(pg_conn).delete(str(uuid.uuid4())) is False
 
