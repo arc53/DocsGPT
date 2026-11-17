@@ -1354,8 +1354,8 @@ class _Executor:
         """Give the moved agents' key, widget and webhook chats to their new owner, in its workspace.
 
         Those runs are stored under the agent's owner, and the key reaches its
-        chats as that owner, so they follow the agent or the key can't continue
-        them. Moving in, the mover's listed chats with an agent are their own
+        chats (and their artifacts) as that owner, so they follow the agent or
+        the key can't continue them. Moving in, the mover's listed chats with an agent are their own
         (see :meth:`_chats`); moving out, every chat the team's principal holds
         came from outside.
         """
@@ -1388,6 +1388,12 @@ class _Executor:
                 text(f"UPDATE {table} SET user_id = :new WHERE conversation_id = ANY(CAST(:ids AS uuid[]))"),
                 {"new": self.new, "ids": ids},
             )
+        # The key downloads and lists a chat's artifacts only while they name the agent's owner.
+        self.conn.execute(
+            text("UPDATE artifacts SET user_id = :new, team_id = CAST(:to_team AS uuid) "
+                 "WHERE conversation_id = ANY(CAST(:ids AS uuid[]))"),
+            {"new": self.new, "to_team": to_team, "ids": ids},
+        )
 
     def _chats(self) -> None:
         agents = self.plan.ids("agent")

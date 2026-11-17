@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import text
 
 from docsgpt.agents.tool_executor import API_TOOL_SECRETS_KEY
+from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.resource_access import set_settings
 from docsgpt.security.encryption import (
     CredentialDecryptionError,
@@ -22,6 +23,8 @@ from docsgpt.security.encryption import (
     encrypt_credentials,
     encrypt_json,
 )
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository
@@ -440,6 +443,20 @@ def _owners(conn, conv_id: str) -> tuple:
     return conv["user_id"], str(conv["team_id"]) if conv["team_id"] else None, messages, pending
 
 
+def _artifact(conn, user: str, conv_id: str) -> str:
+    return str(ArtifactsRepository(conn).create_artifact(user, "file", conversation_id=conv_id, title="a.txt")["id"])
+
+
+def _key_reaches(conn, key: str, conv_id: str, artifact_id: str) -> bool:
+    """Whether the agent's key downloads an artifact of one of its chats, and lists it there."""
+    agent_row = AgentsRepository(conn).find_by_key(key)
+    principal = Principal(user_id=str(agent_row["user_id"]), agent_id=str(agent_row["id"]))
+    artifact = ArtifactsRepository(conn).get_artifact(artifact_id)
+    listed = ArtifactsRepository(conn).list_artifacts_for_agent(principal.agent_id, principal.user_id, conv_id)
+    return (authorize_artifact(conn, artifact, principal, {"conversation_id": conv_id})
+            and [str(a["id"]) for a in listed] == [artifact_id])
+
+
 class TestKeyChatsFollowTheAgentsOwner:
     """A key, widget or webhook chat is stored under the agent's owner, and the key keeps reaching it after a move."""
 
@@ -456,6 +473,8 @@ class TestKeyChatsFollowTheAgentsOwner:
         by_key = self._chat(pg_conn, "adam", agent_id=ag, api_key="k-chats-in", visibility="hidden")
         no_agent = self._chat(pg_conn, "adam", api_key="k-chats-in", visibility="hidden")
         in_app = self._chat(pg_conn, "adam", agent_id=ag, api_key="k-chats-in", visibility="listed")
+        made = _artifact(pg_conn, "adam", by_key)
+        assert _key_reaches(pg_conn, "k-chats-in", by_key, made)
 
         planned = plan(pg_conn, "adam", body(tid, [("agent", ag)]))
         apply(pg_conn, "adam", body(tid, [("agent", ag)]))
@@ -464,6 +483,10 @@ class TestKeyChatsFollowTheAgentsOwner:
         for conv_id in (by_key, no_agent):
             assert _owners(pg_conn, conv_id) == (principal, tid, {principal}, {principal})
         assert _owners(pg_conn, in_app) == ("adam", tid, {"adam"}, {"adam"})
+        # The artifacts the key's chat made follow it, so the key still downloads them.
+        assert _key_reaches(pg_conn, "k-chats-in", by_key, made)
+        assert (_row(pg_conn, "artifacts", made)["user_id"], str(_row(pg_conn, "artifacts", made)["team_id"])) == (
+            principal, tid)
 
     def test_moving_out_the_teams_key_chats_become_the_movers(self, pg_conn):
         tid, principal = team(pg_conn)
@@ -471,12 +494,18 @@ class TestKeyChatsFollowTheAgentsOwner:
         by_key = self._chat(pg_conn, principal, team_id=tid, agent_id=ag, api_key="k-chats-out", visibility="hidden")
         no_agent = self._chat(pg_conn, principal, team_id=tid, api_key="k-chats-out", visibility="hidden")
         unrelated = self._chat(pg_conn, principal, team_id=tid, api_key="k-other", visibility="hidden")
+        made = _artifact(pg_conn, principal, by_key)
+        left = _artifact(pg_conn, principal, unrelated)
 
         apply(pg_conn, "adam", body("personal", [("agent", ag)]))
 
         for conv_id in (by_key, no_agent):
             assert _owners(pg_conn, conv_id) == ("adam", None, {"adam"}, {"adam"})
         assert _owners(pg_conn, unrelated) == (principal, tid, {principal}, {principal})
+        assert _key_reaches(pg_conn, "k-chats-out", by_key, made)
+        assert (_row(pg_conn, "artifacts", made)["user_id"], _row(pg_conn, "artifacts", made)["team_id"]) == (
+            "adam", None)
+        assert _row(pg_conn, "artifacts", left)["user_id"] == principal
 
 
 class TestLegacyToolRefs:
