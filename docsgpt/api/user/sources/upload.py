@@ -135,21 +135,21 @@ def team_connection_for_new_source(
 
     Returns:
         ``(row, None)``, or ``(None, refusal)``: 403 ``connector_personal_only`` for a connection that isn't
-        this team's; the ``authorize_connection`` refusal (403 ``connection_picker_owner_only`` or
+        this team's; the ``resolve_request_connection(..., action="pick")`` refusal (403 ``connection_picker_owner_only`` or
         ``connection_admin_required``); 401 for a connection of another service; 409 ``connection_paused``.
     """
     from docsgpt.connectors import catalog, service
-    from docsgpt.connectors.team import ConnectionDenied, authorize_connection
+    from docsgpt.connectors.team import ConnectionDenied
 
     row = None
     if connection_id and looks_like_uuid(str(connection_id)):
-        row = ConnectorSessionsRepository(conn).get(str(connection_id))
+        try:
+            row = service.resolve_request_connection(user, None, {"connection_id": str(connection_id)}, action="pick")
+        except ConnectionDenied as err:
+            return None, err.response()
     if row is None or str(row.get("user_id")) != str(owner):
+        # None of the caller's teams', or a person's own (theirs, or another team's).
         return None, connector_personal_only()
-    try:
-        authorize_connection(conn, row["id"], user, "pick")
-    except ConnectionDenied as err:
-        return None, err.response()
     if catalog.connector_key_for_row(row) != connector_key:
         return None, make_response(jsonify({"success": False, "error": "Invalid or unauthorized connection"}), 401)
     try:
