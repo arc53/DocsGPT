@@ -41,10 +41,11 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
-from typing import Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from sqlalchemy import Connection, text
 
+from docsgpt import tracing
 from docsgpt.connectors.permissions import holds_owner_credentials, owner_credential_writes
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
@@ -1094,7 +1095,8 @@ class RefAccess:
         principal: The user it is authorized as (the holder's owner or a live
             sponsor); None when it doesn't run.
         reason: None while it runs; else :data:`REASON_DELETED`,
-            :data:`REASON_OWNER_LOST_ACCESS` or a sponsor reason.
+            :data:`REASON_OWNER_LOST_ACCESS`, :data:`REASON_TEAM_SHARE_ENDED`,
+            :data:`REASON_TEAM_LOCKED` or a sponsor reason.
         sponsor: The recorded sponsor, running or not.
     """
 
@@ -1113,6 +1115,133 @@ def _ref_exists(conn: Connection, resource_type: str, resource_id: str) -> bool:
     ).first() is not None
 
 
+# --- Who a run answers ------------------------------------------------------
+#
+# A holder runs as its owner, but someone else may be the one reading its
+# answers: a person chatting with a shared agent, whoever set a schedule on it,
+# or an outside caller. A team's item reaches only the people its team chose
+# (members, and teams it is shared with), so a run leaves out a team item its
+# reader can't use themselves. That also covers an agent shared before team
+# items were confined to the people who reach them, and a reader who left.
+# The value is the reader's id, ``""`` for an outside caller nobody signed in
+# as, and None outside a run (the edit page), where nothing is left out.
+
+_RUN_READER: ContextVar[Optional[str]] = tracing.carry(ContextVar("resource_access_run_reader", default=None))
+
+
+@contextmanager
+def run_reader(reader: Optional[str]) -> Iterator[None]:
+    """Resolve the holder refs inside the block for ``reader`` (None: an outside caller nobody signed in as).
+
+    Args:
+        reader: Who reads the run's answers.
+    """
+    token = _RUN_READER.set(reader or "")
+    try:
+        yield
+    finally:
+        _RUN_READER.reset(token)
+
+
+def current_run_reader() -> Optional[str]:
+    """The reader of the run in progress, ``""`` for an anonymous outside caller, None outside a run."""
+    return _RUN_READER.get()
+
+
+def read_by(reader: Optional[str], events: Iterable[Any]) -> Iterator[Any]:
+    """Iterate ``events`` with ``reader`` as the run's reader around each step, never across a yield.
+
+    A run resolves its tools (and a workflow its nodes' refs) while it streams,
+    after the request that set it up has returned, so the reader is bound to
+    each step of the stream instead of to a block.
+
+    Args:
+        reader: Who reads the run's answers (None: an anonymous outside caller).
+        events: The run's event stream.
+    """
+    iterator = iter(events)
+    try:
+        while True:
+            with run_reader(reader):
+                try:
+                    event = next(iterator)
+                except StopIteration:
+                    return
+            yield event
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            close()
+
+
+def _team_reach_reason(conn: Connection, resource_type: str, resource_id: str, reader: Optional[str]) -> str:
+    """Why a team's item doesn't reach ``reader``: its team is locked with a share that would, or none does.
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The item's id (owned by a team's principal).
+        reader: A person, a team's principal, or empty for nobody.
+
+    Returns:
+        :data:`REASON_TEAM_LOCKED` or :data:`REASON_TEAM_SHARE_ENDED`.
+    """
+    owner_team = team_of_principal(resource_owner(conn, resource_type, resource_id))
+    if reader and owner_team and resource_type in RECEIVER_ACTIONS:
+        repo = TeamItemSharesRepository(conn)
+        if is_principal_id(reader):
+            own_team = team_of_principal(reader)
+            rows = [r for r in repo.teams_for(resource_type, resource_id) if str(r.get("team_id")) == own_team]
+        else:
+            rows = repo.reaching(reader, resource_type, resource_id)
+        if any(str(r.get("owner_team_id")) == owner_team for r in rows) and (
+            team_policy(conn, owner_team) == POLICY_LOCKED
+        ):
+            return REASON_TEAM_LOCKED
+    return REASON_TEAM_SHARE_ENDED
+
+
+def _lost_reason(conn: Connection, resource_type: str, resource_id: str, user_id: Optional[str]) -> str:
+    """Why ``user_id`` can no longer use an item that exists: a team's reach ended, or they lost access."""
+    if is_principal_id(resource_owner(conn, resource_type, resource_id)):
+        return _team_reach_reason(conn, resource_type, resource_id, user_id)
+    return REASON_OWNER_LOST_ACCESS
+
+
+def reader_refusal(
+    conn: Connection, holder: Optional[dict], resource_type: str, resource_id: str
+) -> Optional[str]:
+    """Why the run's reader may not have ``resource_id`` in their run of ``holder``, or None when they may.
+
+    Only inside a run (:func:`run_reader`) and only for a reader other than the
+    holder's owner. Only a team's item is judged, and never one of the holder's
+    own team: that team chose who its agents reach. Any other team's item runs
+    only for a reader who can use it themselves (a member of its team, or of a
+    team it is shared with while that share is live).
+
+    Args:
+        conn: Open database connection.
+        holder: The holder row (needs ``user_id``).
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The referenced id.
+
+    Returns:
+        Optional[str]: None, :data:`REASON_TEAM_SHARE_ENDED` or :data:`REASON_TEAM_LOCKED`.
+    """
+    reader = _RUN_READER.get()
+    if reader is None or not holder:
+        return None
+    owner = holder.get("user_id")
+    if reader and reader == owner:
+        return None
+    item_team = team_of_principal(resource_owner(conn, resource_type, str(resource_id)))
+    if item_team is None or item_team == team_of_principal(owner):
+        return None
+    if reader and can_use_ref(conn, resource_type, str(resource_id), reader):
+        return None
+    return _team_reach_reason(conn, resource_type, str(resource_id), reader)
+
+
 def ref_access(
     conn: Connection, holder_type: str, holder: Optional[dict], resource_type: str, resource_id: str
 ) -> RefAccess:
@@ -1121,6 +1250,10 @@ def ref_access(
     The run and the edit page both ask this. The owner runs it when they may
     use it, else a live sponsor does; otherwise it is stopped, because the row
     is gone, a recorded sponsor no longer qualifies, or the owner lost access.
+    Another team's item used through a share stops as ``team_share_ended``
+    (the share was removed, or the owner left the team it reached them
+    through) or ``team_locked`` (its team is locked). Inside a run, a team's
+    item its reader can't use is stopped too (:func:`reader_refusal`).
 
     Args:
         conn: Open database connection.
@@ -1138,13 +1271,15 @@ def ref_access(
     rid = str(resource_id)
     owner = holder.get("user_id")
     if can_use_ref(conn, resource_type, rid, owner):
-        return RefAccess(owner)
+        refused = reader_refusal(conn, holder, resource_type, rid)
+        return RefAccess(None, refused) if refused else RefAccess(owner)
     sponsor, sponsor_reason = sponsor_state(conn, holder_type, holder, resource_type, rid)
     if sponsor and sponsor_reason is None:
-        return RefAccess(sponsor, None, sponsor)
+        refused = reader_refusal(conn, holder, resource_type, rid)
+        return RefAccess(None, refused, sponsor) if refused else RefAccess(sponsor, None, sponsor)
     if not _ref_exists(conn, resource_type, rid):
         return RefAccess(None, REASON_DELETED, sponsor)
-    return RefAccess(None, sponsor_reason or REASON_OWNER_LOST_ACCESS, sponsor)
+    return RefAccess(None, sponsor_reason or _lost_reason(conn, resource_type, rid, owner), sponsor)
 
 
 def resolve_holder_tool(
@@ -1195,7 +1330,9 @@ def resolve_holder_tools(
     """Exactly the tools a holder runs, keyed by id: the one runtime resolver for agents and workflow nodes.
 
     Each id resolves through :func:`resolve_holder_tool` (the holder's owner,
-    else a live sponsor), and a tool that doesn't run is logged with why.
+    else a live sponsor), and a tool that doesn't run is logged with why;
+    inside a run, so is a team's tool the run's reader can't use
+    (:func:`reader_refusal`).
     Left out as well: server-attached tools (``check_job``: the server adds
     it, a saved id is not a choice), workflow-only builtins outside a
     workflow (``read_document``), and chat-only tools on a headless run
@@ -1229,6 +1366,11 @@ def resolve_holder_tools(
         if row is None:
             log_stopped(holder_type, holder, "tool", tid, access.reason)
             continue
+        # A stored tool the owner reaches directly skips ``ref_access``: the run's reader is checked here.
+        refused = reader_refusal(conn, holder, "tool", str(tid)) if _sponsorable("tool", str(tid)) else None
+        if refused:
+            log_stopped(holder_type, holder, "tool", tid, refused)
+            continue
         name = row.get("name")
         if is_server_attached_tool(name):
             continue
@@ -1246,7 +1388,8 @@ def authorized_holder_sources(
     """The source ids a holder may retrieve from: the one runtime check for agents and workflow nodes.
 
     Each is authorized by :func:`ref_access` (the holder's owner, else a live
-    sponsor); one that doesn't run is logged with why. Empty refs are
+    sponsor, and inside a run only a team's source its reader may use); one
+    that doesn't run is logged with why. Empty refs are
     skipped and an id listed twice (any casing) is kept once.
 
     Args:

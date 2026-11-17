@@ -30,6 +30,7 @@ from docsgpt.api.answer.services.stream_processor import (
     source_for_docs,
     wiki_tool_config,
 )
+from docsgpt.api.user.resource_access import run_reader
 from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted
 from docsgpt.core.settings import settings
@@ -278,7 +279,10 @@ def run_agent_headless(
     )
     status = None
     billing = billed_to(payer, kind=run_kind, team_id=team_id, limits=limits)
-    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()), billing:
+    # Who reads the run: whoever set the schedule or carries on the chat (the payer); outside traffic is
+    # read by nobody known. A team's item that reader can't use is left out of the run.
+    reader = run_reader("" if run_kind == "published" else (payer or _resolve_owner(agent_config)))
+    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()), billing, reader:
         try:
             outcome = _run_agent_headless(
                 agent_config,

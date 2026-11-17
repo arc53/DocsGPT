@@ -93,22 +93,39 @@ class ChatWorkspaceError(Exception):
         self.message = message
 
 
-def item_in_chat_workspace(owner: Optional[str], team_id: Optional[str]) -> bool:
+def item_in_chat_workspace(
+    owner: Optional[str],
+    team_id: Optional[str],
+    *,
+    conn: Any = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+) -> bool:
     """Whether an item owned by ``owner`` belongs to a chat in workspace ``team_id``.
 
-    A team chat takes only that team's items (owned by its principal); a
-    Personal chat takes no team's items.
+    A team chat takes that team's items (owned by its principal) and, given
+    the item's kind and id, another team's item shared with it while the
+    share is live (not revoked, its team not locked). A Personal chat takes
+    no team's items.
 
     Args:
         owner: The item's ``user_id``.
         team_id: The chat's team, or None for Personal.
+        conn: Open connection, to read shares with the chat's team.
+        resource_type: ``source``, ``tool`` or ``prompt``.
+        resource_id: The item's id.
 
     Returns:
         bool: True when the item may be used in the chat.
     """
-    if team_id:
-        return bool(owner) and owner == principal_id(team_id)
-    return not is_principal_id(owner)
+    if not team_id:
+        return not is_principal_id(owner)
+    if bool(owner) and owner == principal_id(team_id):
+        return True
+    if conn is None or not resource_type or not resource_id or not is_principal_id(owner):
+        return False
+    # The chat's team reaches it as its principal does: only through a share with that team.
+    return team_item_reach(conn, principal_id(team_id), resource_type, str(resource_id)) is not None
 
 
 def is_external_api_caller(data: Dict[str, Any], decoded_token: Optional[Dict], owner: Optional[str]) -> bool:
@@ -293,7 +310,7 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
         usable row in run order.
     """
     from docsgpt.api.user.folder_knowledge import folder_source_ids
-    from docsgpt.api.user.resource_access import authorized_holder_sources
+    from docsgpt.api.user.resource_access import authorized_holder_sources, log_stopped, reader_refusal
 
     primary_id = agent.get("source_id")
     refs = [primary_id, *(agent.get("extra_source_ids") or [])]
@@ -302,7 +319,13 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
     rows: List[dict] = []
     seen: set = set()
     authorized = authorized_holder_sources(conn, "agent", agent, refs)
-    authorized += folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
+    for sid in folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent):
+        # A folder's team sources reach a run's reader only as a direct ref would.
+        refused = reader_refusal(conn, agent, "source", sid)
+        if refused:
+            log_stopped("agent", agent, "source", sid, refused)
+            continue
+        authorized.append(sid)
     for sid in authorized:
         source_doc = sources_repo.get_by_id(str(sid))
         if not source_doc or str(source_doc["id"]) in seen:
@@ -757,7 +780,14 @@ class StreamProcessor:
             return None
         if not getattr(self, "request_id", None):
             self.request_id = str(uuid.uuid4())
+        from docsgpt.api.user.resource_access import run_reader
+
+        # Who asked reads the answers (before an API key swaps the identity to
+        # the agent's owner; "" for an outside caller nobody signed in as): a
+        # team's item they can't use is left out of the run.
+        self._run_reader = getattr(self, "initial_user_id", None) or ""
         with ExitStack() as scope:
+            scope.enter_context(run_reader(self._run_reader))
             # The setup gate's billing is entered here, so it covers the rest of the build.
             self._setup_scope = scope
             try:
@@ -1780,9 +1810,11 @@ class StreamProcessor:
                 with db_readonly() as conn:
                     permitted = can_access(conn, "source", str(sid), owner)
                     # The chat's workspace: a team chat searches only that
-                    # team's sources, a Personal chat no team's.
+                    # team's sources and those shared with it, a Personal
+                    # chat no team's.
                     if permitted and not item_in_chat_workspace(
-                        resource_owner(conn, "source", str(sid)), getattr(self, "workspace_team_id", None)
+                        resource_owner(conn, "source", str(sid)), getattr(self, "workspace_team_id", None),
+                        conn=conn, resource_type="source", resource_id=str(sid),
                     ):
                         logger.warning("Dropping source %s from request: it is not in this chat's workspace.", sid)
                         continue
@@ -1958,9 +1990,9 @@ class StreamProcessor:
     def _workspace_prompt_id(self, prompt_id: Any) -> Any:
         """An agentless request's ``prompt_id`` if it belongs to the chat's workspace, else ``"default"``.
 
-        Presets pass through. A custom prompt must be the team's in a team
-        chat and must not be a team's in a Personal one; access is then
-        checked as before by :func:`authorized_prompt_id`.
+        Presets pass through. A custom prompt must be the team's (or shared
+        with the team) in a team chat and must not be a team's in a Personal
+        one; access is then checked as before by :func:`authorized_prompt_id`.
         """
         if prompt_id is None or prompt_id == "":
             return prompt_id
@@ -1971,10 +2003,13 @@ class StreamProcessor:
         try:
             with db_readonly() as conn:
                 owner = resource_owner(conn, "prompt", pid)
+                in_workspace = owner is None or item_in_chat_workspace(
+                    owner, team_id, conn=conn, resource_type="prompt", resource_id=pid
+                )
         except Exception:
             logger.warning("Could not read the owner of prompt %s; using the default prompt.", pid)
             return "default"
-        if owner is not None and not item_in_chat_workspace(owner, team_id):
+        if not in_workspace:
             logger.warning("Dropping prompt %s: it is not in this chat's workspace.", pid)
             return "default"
         return prompt_id
@@ -3052,6 +3087,9 @@ class StreamProcessor:
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
+        # Who resumes reads the rest of the turn, as in a new one.
+        self._run_reader = (original_token.get("sub") if isinstance(original_token, dict) else None) or ""
+        agent = self._answers_read_by_caller(agent)
         # The paused rounds' decisions, continued in the next round.
         self.decision_record.resume(agent_config.get("decisions"))
         agent.decision_record = self.decision_record
@@ -3425,4 +3463,32 @@ class StreamProcessor:
         agent.initial_user_id = self.initial_user_id
         agent.decision_record = self.decision_record
 
+        return self._answers_read_by_caller(agent)
+
+    def _answers_read_by_caller(self, agent: Any) -> Any:
+        """Have ``agent`` answer with this request's caller as the run's reader.
+
+        The run resolves its tools (and a workflow its nodes' refs) while the
+        answer streams, after the request that built it returned, so each step
+        of ``gen`` and ``gen_continuation`` runs as that reader
+        (``resource_access.read_by``). Without a reader (the agent was not
+        built through :meth:`build_agent` or a resume) nothing changes.
+
+        Args:
+            agent: The built agent.
+
+        Returns:
+            The same agent.
+        """
+        reader = getattr(self, "_run_reader", None)
+        if reader is None:
+            return agent
+        from docsgpt.api.user.resource_access import read_by
+
+        for name in ("gen", "gen_continuation"):
+            method = getattr(agent, name, None)
+            if callable(method):
+                setattr(agent, name, functools.wraps(method)(
+                    lambda *args, _method=method, **kwargs: read_by(reader, _method(*args, **kwargs))
+                ))
         return agent

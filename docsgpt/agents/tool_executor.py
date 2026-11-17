@@ -943,17 +943,29 @@ class ToolExecutor:
 
         In Personal (``workspace_team_id`` None): the user's own switched-on
         tools and the shared ones they switched into their chats, never a
-        team's. In a team: only that team's tools the user switched on for
-        their chats (``user_tool_preferences``; a team tool's ``status`` is
-        nobody's switch) and may still use, membership checked again through
-        ``resolve`` on every call; none of the user's personal tools.
+        team's. In a team: only that team's tools, and another team's shared
+        with it, that the user switched on for their chats
+        (``user_tool_preferences``; a team tool's ``status`` is nobody's
+        switch) and may still use, membership and the share checked again on
+        every call; none of the user's personal tools.
         """
         with db_readonly() as conn:
             switched_on = self._shared_in_chat_tools(conn, user)
             if self.workspace_team_id:
+                # Lazy: docsgpt.api's package import pulls in every route module.
+                from docsgpt.api.user.resource_access import team_item_reach
+
                 team_id = canonical_team_id(self.workspace_team_id)
                 team_owner = principal_id(team_id) if team_id else None
-                user_tools = [t for t in switched_on if team_owner and t.get("user_id") == team_owner]
+                # The team's own tools, and another team's shared with it while the share is live.
+                user_tools = [
+                    t for t in switched_on
+                    if team_owner and (
+                        t.get("user_id") == team_owner
+                        or (is_principal_id(t.get("user_id"))
+                            and team_item_reach(conn, team_owner, "tool", str(t.get("id"))) is not None)
+                    )
+                ]
             else:
                 user_tools = UserToolsRepository(conn).list_active_for_user(user)
                 user_tools.extend(switched_on)
