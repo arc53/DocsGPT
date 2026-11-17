@@ -31,6 +31,9 @@ interface Props {
 
 type Stage = 'form' | 'waiting';
 
+// How long the check at expiry may take before the code shows as expired.
+const FINAL_CHECK_TIMEOUT_MS = 5000;
+
 export default function PairDeviceModal({
   modalState,
   setModalState,
@@ -106,10 +109,14 @@ export default function PairDeviceModal({
     let stopped = false;
     const expiresAt = expiresAtRef.current;
     const pollIntervalMs = (pairing.interval > 0 ? pairing.interval : 3) * 1000;
+    const requests = new AbortController();
+    let finalCheckTimer: ReturnType<typeof setTimeout> | undefined;
     const stop = () => {
       stopped = true;
+      requests.abort();
       clearInterval(pollTimer);
       clearTimeout(expiryTimer);
+      clearTimeout(finalCheckTimer);
     };
     const expire = () => {
       stop();
@@ -119,7 +126,11 @@ export default function PairDeviceModal({
     };
     const check = async (atExpiry: boolean) => {
       try {
-        const s = await devicesService.pollPairing(pairing.device_code, token);
+        const s = await devicesService.pollPairing(
+          pairing.device_code,
+          token,
+          requests.signal,
+        );
         if (stopped) return;
         // A redemption counts even past the deadline: the CLI may redeem in
         // the last seconds, and the server keeps the redeemed state after.
@@ -153,6 +164,7 @@ export default function PairDeviceModal({
     const expiryTimer = setTimeout(
       () => {
         clearInterval(pollTimer);
+        finalCheckTimer = setTimeout(expire, FINAL_CHECK_TIMEOUT_MS);
         void check(true);
       },
       Math.max(0, expiresAt - Date.now()),

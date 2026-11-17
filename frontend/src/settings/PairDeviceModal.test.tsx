@@ -223,6 +223,31 @@ describe('PairDeviceModal', () => {
     expect(alertText()).not.toContain('settings.devices.pairing.expired');
   });
 
+  it('expires the code when the check at expiry does not answer in time', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, expires_in: 2, interval: 5 }),
+    );
+    const signals: AbortSignal[] = [];
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockImplementation((_url, _token, _headers, signal?: AbortSignal) => {
+        if (signal) signals.push(signal);
+        return new Promise<Response>(() => undefined);
+      });
+
+    await startPairing();
+    await advance(2000);
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain('ABCD-1234');
+
+    await advance(4999);
+    expect(alertText()).toBe('');
+    await advance(1);
+    expectExpiredForm();
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(true);
+  });
+
   it('expires the code when the check at expiry fails', async () => {
     vi.spyOn(apiClient, 'post').mockResolvedValue(
       response({ ...pairing, expires_in: 2, interval: 5 }),
