@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from docsgpt import utils
+from docsgpt.parser.file.bulk import SimpleDirectoryReader
 from docsgpt.parser.file.markdown_parser import MarkdownParser
 from docsgpt.parser.file.rst_parser import RstParser
 from docsgpt.parser.file.tabular_parser import CSVParser
@@ -100,6 +101,14 @@ def test_csv_parser_reads_utf_8(tmp_path: Path) -> None:
     path = tmp_path / "data.csv"
     path.write_text(f"name,note\nx,{TEXT}\n", encoding="utf-8")
     assert TEXT in _joined(CSVParser().parse_file(path))
+
+
+def test_plain_text_reads_utf_8(tmp_path: Path) -> None:
+    """A .txt file, which has no parser of its own, keeps UTF-8 text intact under a cp1252 default."""
+    path = tmp_path / "notes.txt"
+    path.write_text(f"{TEXT}\n", encoding="utf-8")
+    docs = SimpleDirectoryReader(input_files=[str(path)]).load_data()
+    assert TEXT in docs[0].text
 
 
 _MALFORMED_CASES = [
