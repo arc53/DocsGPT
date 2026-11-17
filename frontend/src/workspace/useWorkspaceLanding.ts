@@ -2,7 +2,11 @@ import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { switchRequested, workspaceLandingPath } from './landing';
+import {
+  switchRequested,
+  withoutSwitchRequest,
+  workspaceLandingPath,
+} from './landing';
 import {
   selectWorkspaceId,
   selectWorkspacesLoaded,
@@ -39,10 +43,11 @@ export default function useWorkspaceLanding(): void {
   useEffect(() => {
     if (!requested) return;
     // Forget the request first, so Back, Forward or a reload of this entry
-    // doesn't switch again.
+    // doesn't switch again. What else the page was opened with stays: it
+    // remounts in the new workspace and reads it there.
     navigate(`${location.pathname}${location.search}${location.hash}`, {
       replace: true,
-      state: null,
+      state: withoutSwitchRequest(location.state),
     });
     if (requested.id !== current)
       dispatch(switchWorkspace(requested.id, { reason: requested.reason }));

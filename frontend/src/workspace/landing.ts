@@ -84,3 +84,19 @@ export function switchRequested(state: unknown): SwitchOnArrival | null {
     reason: reason === 'link' || reason === 'lost' ? reason : 'user',
   };
 }
+
+/**
+ * A location's state without its switch request.
+ *
+ * Args:
+ *   state: The location's `state`.
+ *
+ * Returns:
+ *   The rest of the state, or null when nothing else is in it.
+ */
+export function withoutSwitchRequest(state: unknown): unknown {
+  if (!state || typeof state !== 'object') return null;
+  const rest = { ...(state as Record<string, unknown>) };
+  delete rest[SWITCH_STATE_KEY];
+  return Object.keys(rest).length > 0 ? rest : null;
+}

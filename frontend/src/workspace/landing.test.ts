@@ -1,4 +1,8 @@
-import { workspaceLandingPath } from './landing';
+import {
+  switchOnArrival,
+  withoutSwitchRequest,
+  workspaceLandingPath,
+} from './landing';
 
 describe('workspaceLandingPath: where a switch lands', () => {
   it.each([
@@ -31,5 +35,18 @@ describe('workspaceLandingPath: where a switch lands', () => {
     ['/c/0b6f2a', '', '/c/new'],
   ])('%s%s → %s', (pathname, search, expected) => {
     expect(workspaceLandingPath(pathname, search)).toBe(expected);
+  });
+});
+
+describe('withoutSwitchRequest: what a page keeps once its switch is done', () => {
+  it('keeps the rest of the state, and nothing when only the switch was in it', () => {
+    expect(
+      withoutSwitchRequest({
+        newMcpServer: { a: 1 },
+        ...switchOnArrival('t1'),
+      }),
+    ).toEqual({ newMcpServer: { a: 1 } });
+    expect(withoutSwitchRequest(switchOnArrival('t1'))).toBeNull();
+    expect(withoutSwitchRequest(null)).toBeNull();
   });
 });
