@@ -2790,6 +2790,7 @@
         "notAvailableToTokens": "Taking over isn't available with an access token. Sign in to the app to do it.",
         "notFound": "This no longer exists, or you can no longer open it.",
         "roleRequired": "Your role in this team doesn't let you take this over.",
+        "teamLocked": "This team is locked, so nothing in it can be reached from outside.",
         "teamOnly": "Only an item that belongs to a team can be taken over."
       },
       "paidBy": "Paid by {{name}}",
@@ -2810,6 +2811,8 @@
         "payerLostRole": "{{name}} no longer has the role in {{team}} that pays for it.",
         "payerLostRoleNoTeam": "{{name}} no longer has the role that pays for it.",
         "payerLostRoleUnnamed": "Its payer no longer has the role that pays for it.",
+        "teamLocked": "{{team}} is locked, so nothing in it can be reached from outside.",
+        "teamLockedNoTeam": "The team is locked, so nothing in it can be reached from outside.",
         "withSince": "{{reason}} Paused since {{date}}."
       },
       "takeOver": {

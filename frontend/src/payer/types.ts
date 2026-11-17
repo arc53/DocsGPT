@@ -4,14 +4,20 @@ export type { PersonRef };
 
 /**
  * Why something a person pays for is paused, most important first: the
- * owner's or payer's account is off, the payer left the team or lost the
- * role, nobody pays, or the payer is out of allowance until the reset.
+ * owner's or payer's account is off, the team is locked (outside access
+ * only), the payer left the team or lost the role, nobody pays, or the payer
+ * is out of allowance until the reset.
  */
 export type PauseReason =
-  'owner_inactive' | 'payer_left' | 'no_payer' | 'payer_out_of_allowance';
+  | 'owner_inactive'
+  | 'team_locked'
+  | 'payer_left'
+  | 'no_payer'
+  | 'payer_out_of_allowance';
 
 export const PAUSE_REASONS: readonly PauseReason[] = [
   'owner_inactive',
+  'team_locked',
   'payer_left',
   'no_payer',
   'payer_out_of_allowance',

@@ -115,6 +115,8 @@ export type TeamUsage = {
     published: { paid_by: PersonRef | null } | null;
     /** The team no longer owns it: no name, limit or payer, only what it spent here. */
     moved_out: boolean;
+    /** Another team's agent shared with this one: its members' chats with it count here. */
+    shared_from?: { team_id: string; name: string | null } | null;
   })[];
   paused: TeamUsagePausedItem[];
 };
@@ -161,6 +163,7 @@ export const PAYER_ERROR_KEYS: Readonly<Record<string, string>> = {
   not_available_to_tokens: 'payer.common.errors.notAvailableToTokens',
   schedule_not_found: 'payer.common.errors.notFound',
   take_over_team_only: 'payer.common.errors.teamOnly',
+  team_locked: 'payer.common.errors.teamLocked',
   team_not_found: 'payer.common.errors.notFound',
   workspace_role_required: 'payer.common.errors.roleRequired',
 };

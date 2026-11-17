@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatPayerDate, paidByText, pauseReasonText } from './pauseReason';
+import { isPausedFor, PAUSE_REASONS } from './types';
 
 // Echoes the key and its values, so a test sees both.
 const t = ((key: string, options?: Record<string, unknown>) => {
@@ -61,6 +62,23 @@ describe('pauseReasonText', () => {
     expect(
       pauseReasonText(t, demoted, 'Ines', 'Operations', { you: true }),
     ).toBe('payer.common.pause.payerLostRoleUnnamed');
+  });
+
+  it('says the team is locked, naming it when known', () => {
+    expect(
+      pauseReasonText(t, { reason: 'team_locked' }, 'Dana', 'Operations'),
+    ).toBe('payer.common.pause.teamLocked(team=Operations)');
+    expect(pauseReasonText(t, { reason: 'team_locked' }, 'Dana')).toBe(
+      'payer.common.pause.teamLockedNoTeam',
+    );
+  });
+
+  it('reads a lock as a pause, second only to a deactivated account', () => {
+    expect(isPausedFor({ reason: 'team_locked' })).toBe(true);
+    expect(PAUSE_REASONS.slice(0, 2)).toEqual([
+      'owner_inactive',
+      'team_locked',
+    ]);
   });
 
   it('says nobody pays', () => {

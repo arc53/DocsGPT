@@ -2743,6 +2743,7 @@
         "notAvailableToTokens": "アクセストークンでは引き継げません。アプリにサインインして行ってください。",
         "notFound": "これはもう存在しないか、開けなくなっています。",
         "roleRequired": "このチームでのあなたのロールでは引き継げません。",
+        "teamLocked": "このチームはロックされているため、外部からはアクセスできません。",
         "teamOnly": "引き継げるのはチームに属するものだけです。"
       },
       "paidBy": "支払い: {{name}}",
@@ -2763,6 +2764,8 @@
         "payerLostRole": "{{name}} さんは {{team}} で支払うためのロールをもう持っていません。",
         "payerLostRoleNoTeam": "{{name}} さんは支払うためのロールをもう持っていません。",
         "payerLostRoleUnnamed": "支払う人は支払うためのロールをもう持っていません。",
+        "teamLocked": "{{team}} はロックされているため、外部からはアクセスできません。",
+        "teamLockedNoTeam": "チームはロックされているため、外部からはアクセスできません。",
         "withSince": "{{reason}}{{date}} から一時停止中です。"
       },
       "takeOver": {

@@ -2769,6 +2769,7 @@
         "notAvailableToTokens": "Mit einem Zugriffstoken lässt sich nichts übernehmen. Melden Sie sich dafür in der App an.",
         "notFound": "Das gibt es nicht mehr, oder Sie können es nicht mehr öffnen.",
         "roleRequired": "Ihre Rolle in diesem Team erlaubt es nicht, das zu übernehmen.",
+        "teamLocked": "Dieses Team ist gesperrt, daher ist nichts davon von außen erreichbar.",
         "teamOnly": "Übernehmen lässt sich nur, was einem Team gehört."
       },
       "paidBy": "Bezahlt von {{name}}",
@@ -2789,6 +2790,8 @@
         "payerLostRole": "{{name}} hat in {{team}} nicht mehr die Rolle, mit der dafür bezahlt wird.",
         "payerLostRoleNoTeam": "{{name}} hat nicht mehr die Rolle, mit der dafür bezahlt wird.",
         "payerLostRoleUnnamed": "Wer dafür bezahlt, hat nicht mehr die nötige Rolle.",
+        "teamLocked": "{{team}} ist gesperrt, daher ist nichts davon von außen erreichbar.",
+        "teamLockedNoTeam": "Das Team ist gesperrt, daher ist nichts davon von außen erreichbar.",
         "withSince": "{{reason}} Pausiert seit {{date}}."
       },
       "takeOver": {

@@ -94,6 +94,11 @@ const reasonOnly = (
     case 'owner_inactive':
       // The agent's owner or the payer; the server doesn't say which.
       return t('payer.common.pause.ownerInactive');
+    case 'team_locked':
+      // Everyone's way in from outside pauses until the Owner unlocks it.
+      return teamName
+        ? t('payer.common.pause.teamLocked', { team: teamName, ...noEscape })
+        : t('payer.common.pause.teamLockedNoTeam');
     case 'payer_left': {
       // Left the team, still in it with too low a role, or (a stored pause) unknown.
       const key =
@@ -130,14 +135,14 @@ const reasonOnly = (
  * Why a schedule or an agent's outside access is paused, in one sentence:
  * "Tomas is out of allowance until 1 Dec.", "Ines left Operations.", "Ines
  * no longer has the role in Operations that pays for it.", "Nobody pays for
- * it.". With `since` (the
+ * it.", "Operations is locked…". With `since` (the
  * first skipped run) it adds "Paused since 12 Nov.".
  *
  * Args:
  *   t: The translate function.
  *   paused: `paused_for` from the server; null or undefined is not paused.
  *   payerLabel: The payer's label (`paid_by.label`), when known.
- *   teamName: The team the item is in, for `payer_left`.
+ *   teamName: The team the item is in, for `payer_left` and `team_locked`.
  *   options.you: The payer is the reader ("You're out of allowance…").
  *   options.language: The UI language, for the dates.
  *

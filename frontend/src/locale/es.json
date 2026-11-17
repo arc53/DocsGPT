@@ -2863,6 +2863,7 @@
         "notAvailableToTokens": "No se puede asumir el pago con un token de acceso. Inicia sesión en la app para hacerlo.",
         "notFound": "Ya no existe o ya no puedes abrirlo.",
         "roleRequired": "Tu rol en este equipo no te permite asumir esto.",
+        "teamLocked": "Este equipo está bloqueado, así que nada de él es accesible desde fuera.",
         "teamOnly": "Solo se puede asumir algo que pertenece a un equipo."
       },
       "paidBy": "Pagado por {{name}}",
@@ -2883,6 +2884,8 @@
         "payerLostRole": "{{name}} ya no tiene en {{team}} el rol con el que lo paga.",
         "payerLostRoleNoTeam": "{{name}} ya no tiene el rol con el que lo paga.",
         "payerLostRoleUnnamed": "Quien lo paga ya no tiene el rol necesario.",
+        "teamLocked": "{{team}} está bloqueado, así que nada de él es accesible desde fuera.",
+        "teamLockedNoTeam": "El equipo está bloqueado, así que nada de él es accesible desde fuera.",
         "withSince": "{{reason}} En pausa desde el {{date}}."
       },
       "takeOver": {

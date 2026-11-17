@@ -2743,6 +2743,7 @@
         "notAvailableToTokens": "使用存取權杖無法接手。請登入應用程式後操作。",
         "notFound": "此項目已不存在，或您已無法開啟。",
         "roleRequired": "您在此團隊中的角色不允許接手此項目。",
+        "teamLocked": "此團隊已鎖定，因此無法從外部存取其中的任何內容。",
         "teamOnly": "只有屬於團隊的項目才能被接手。"
       },
       "paidBy": "付費者：{{name}}",
@@ -2763,6 +2764,8 @@
         "payerLostRole": "{{name}} 在 {{team}} 中已不再擁有為此付費的角色。",
         "payerLostRoleNoTeam": "{{name}} 已不再擁有為此付費的角色。",
         "payerLostRoleUnnamed": "付費者已不再擁有為此付費的角色。",
+        "teamLocked": "{{team}} 已鎖定，因此無法從外部存取其中的任何內容。",
+        "teamLockedNoTeam": "團隊已鎖定，因此無法從外部存取其中的任何內容。",
         "withSince": "{{reason}}自 {{date}} 起暫停。"
       },
       "takeOver": {

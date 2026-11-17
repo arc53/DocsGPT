@@ -2863,6 +2863,7 @@
         "notAvailableToTokens": "La reprise n’est pas possible avec un jeton d’accès. Connectez-vous à l’application pour le faire.",
         "notFound": "Cet élément n’existe plus, ou vous ne pouvez plus l’ouvrir.",
         "roleRequired": "Votre rôle dans cette équipe ne vous permet pas de reprendre ceci.",
+        "teamLocked": "Cette équipe est verrouillée, rien n’y est donc accessible de l’extérieur.",
         "teamOnly": "Seul un élément qui appartient à une équipe peut être repris."
       },
       "paidBy": "Payé par {{name}}",
@@ -2883,6 +2884,8 @@
         "payerLostRole": "{{name}} n’a plus, dans {{team}}, le rôle qui le paie.",
         "payerLostRoleNoTeam": "{{name}} n’a plus le rôle qui le paie.",
         "payerLostRoleUnnamed": "La personne qui le paie n’a plus le rôle nécessaire.",
+        "teamLocked": "L’équipe {{team}} est verrouillée, rien n’y est donc accessible de l’extérieur.",
+        "teamLockedNoTeam": "L’équipe est verrouillée, rien n’y est donc accessible de l’extérieur.",
         "withSince": "{{reason}} En pause depuis le {{date}}."
       },
       "takeOver": {

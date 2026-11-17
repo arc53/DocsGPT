@@ -2742,6 +2742,7 @@
         "notAvailableToTokens": "使用访问令牌无法接管。请登录应用后操作。",
         "notFound": "此项已不存在，或您已无法打开它。",
         "roleRequired": "您在此团队中的角色不允许接管此项。",
+        "teamLocked": "此团队已锁定，因此无法从外部访问其中的任何内容。",
         "teamOnly": "只有属于团队的项目才能被接管。"
       },
       "paidBy": "付费人：{{name}}",
@@ -2762,6 +2763,8 @@
         "payerLostRole": "{{name}} 在 {{team}} 中已不再拥有为此付费的角色。",
         "payerLostRoleNoTeam": "{{name}} 已不再拥有为此付费的角色。",
         "payerLostRoleUnnamed": "付费人已不再拥有为此付费的角色。",
+        "teamLocked": "{{team}} 已锁定，因此无法从外部访问其中的任何内容。",
+        "teamLockedNoTeam": "团队已锁定，因此无法从外部访问其中的任何内容。",
         "withSince": "{{reason}}自 {{date}} 起暂停。"
       },
       "takeOver": {
