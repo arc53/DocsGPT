@@ -546,6 +546,53 @@ class TestOneTimeTaskPaused:
         assert (row["status"], row["next_run_at"]) == ("completed", None)
 
 
+class TestTakeOverInTheSkipGap:
+    """A take over committed after the claim found the old payer paused, before the skip is written."""
+
+    def _assert_due_now(self, engine, schedule) -> None:
+        TestOneTimeTaskPaused()._assert_waits(engine, schedule, _now())
+
+    def test_the_one_time_task_runs_now_and_the_old_payer_hears_nothing(self, engine, notified):
+        from docsgpt.api.user import scheduler_worker
+
+        with engine.begin() as conn:
+            _tid, schedule = _once_schedule(conn)
+            run = _pending(conn, schedule)
+            _out_of_allowance(conn, EDITOR)
+        real = scheduler_worker._skip_paused
+
+        def _taken_over_first(*args, **kwargs):
+            with engine.begin() as conn:
+                _take_over(conn, schedule, OWNER)
+            return real(*args, **kwargs)
+
+        with patch("docsgpt.api.user.scheduler_worker._skip_paused", _taken_over_first):
+            assert _execute(run)[0]["status"] == "skipped"
+
+        self._assert_due_now(engine, schedule)
+        assert notified == []
+
+    def test_a_refusal_for_the_old_payer_after_a_take_over_runs_it_now_too(self, engine, notified):
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
+
+        with engine.begin() as conn:
+            _tid, schedule = _once_schedule(conn)
+            run = _pending(conn, schedule)
+
+        def _taken_over_then_refused(*_args, **_kwargs):
+            with engine.begin() as conn:
+                _take_over(conn, schedule, OWNER)
+            raise QuotaExceededError(QuotaExceeded(
+                user_id=EDITOR, bucket="agent", budget="tokens", usage=10, limit=10, source="user", source_id=None,
+                resets_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+            ))
+
+        assert _execute(run, side_effect=_taken_over_then_refused)[0]["status"] == "skipped"
+
+        self._assert_due_now(engine, schedule)
+        assert notified == []
+
+
 class TestTakeOverAsTheRunStarts:
     """A take over committed after the worker picked the run up, but before it claimed it, decides who pays."""
 

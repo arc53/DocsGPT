@@ -400,7 +400,10 @@ def _skip_paused(
 
     A one-time task has no next run to carry on with, so it gets one: when the
     payer's allowance resets, when that is known, else after the shortest
-    recurring interval. Take over brings it forward to now.
+    recurring interval. Take over brings it forward to now. A take over that
+    lands after the pause was found, before this records it, did not see a
+    next run to bring forward: the task is re-armed for now instead, and the
+    old payer is not told, since the pause is no longer theirs.
 
     Args:
         run: The pending run.
@@ -414,16 +417,25 @@ def _skip_paused(
     """
     reason = pause.reason
     with get_engine().begin() as conn:
+        # Under the row lock Take over takes too: who pays now, against whom the pause was found for.
+        current = SchedulesRepository(conn).lock_internal(str(schedule["id"]))
+        taken_over = current is not None and current.get("user_id") != schedule.get("user_id")
         runs = ScheduleRunsRepository(conn)
         latest = runs.latest_finished([str(schedule["id"])]).get(str(schedule["id"]))
         in_streak = (
-            latest is not None
+            not taken_over
+            and latest is not None
             and latest.get("status") == "skipped"
             and latest.get("error_type") == reason
             and latest.get("user_id") == run.get("user_id")
         )
         if schedule.get("trigger_type") == "once" and run.get("trigger_source") != "manual":
-            retry_at = pause.until or datetime.now(timezone.utc) + timedelta(seconds=settings.SCHEDULE_MIN_INTERVAL)
+            if taken_over:
+                retry_at = datetime.now(timezone.utc)
+            else:
+                retry_at = pause.until or datetime.now(timezone.utc) + timedelta(
+                    seconds=settings.SCHEDULE_MIN_INTERVAL
+                )
             SchedulesRepository(conn).rearm_once(str(schedule["id"]), retry_at)
         if in_streak and collapse and run.get("trigger_source") != "manual":
             if runs.delete_pending(str(run["id"])):
@@ -437,7 +449,7 @@ def _skip_paused(
                 "error": reason,
             },
         )
-    if reason == PAYER_OUT_OF_ALLOWANCE and pause.payer and not in_streak:
+    if reason == PAYER_OUT_OF_ALLOWANCE and pause.payer and not in_streak and not taken_over:
         from docsgpt.notifications.notify import notify_user
 
         schedule_id = str(schedule["id"])
