@@ -66,6 +66,7 @@ from docsgpt.notifications.notify import notify_user
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_members import (
@@ -393,8 +394,12 @@ OUTSIDE_ACCESS_ON_SQL = (
 )
 
 
+#: ``pays_for`` of someone who pays for nothing in the team.
+NO_PAYS_FOR = {"schedules": 0, "outside_access": 0, "connections": 0}
+
+
 def pays_for(conn, team_id: str, user_ids: list[str]) -> dict[str, dict[str, int]]:
-    """What each person pays for on the team's agents.
+    """What each person pays for in the team.
 
     Args:
         conn: Open connection.
@@ -402,12 +407,13 @@ def pays_for(conn, team_id: str, user_ids: list[str]) -> dict[str, dict[str, int
         user_ids: The people.
 
     Returns:
-        ``{user_id: {"schedules": n, "outside_access": n}}`` for every id:
-        the running schedules they set on the team's agents, and the team
-        agents with outside access on that they are the payer of.
+        ``{user_id: {"schedules": n, "outside_access": n, "connections": n}}``
+        for every id: the running schedules they set on the team's agents,
+        the team agents with outside access on that they are the payer of, and
+        the team's connections they connected (whose syncs they pay for).
     """
     ids = sorted({u for u in user_ids if u})
-    out = {u: {"schedules": 0, "outside_access": 0} for u in ids}
+    out = {u: dict(NO_PAYS_FOR) for u in ids}
     if not ids or not looks_like_uuid(str(team_id)):
         return out
     params = {"principal": principal_id(team_id), "ids": ids}
@@ -429,6 +435,8 @@ def pays_for(conn, team_id: str, user_ids: list[str]) -> dict[str, dict[str, int
         out[user_id]["schedules"] = int(count)
     for user_id, count in access:
         out[user_id]["outside_access"] = int(count)
+    for user_id, count in ConnectorSessionsRepository(conn).connected_by_counts(params["principal"], ids).items():
+        out[user_id]["connections"] = count
     return out
 
 
@@ -437,7 +445,8 @@ def _paused_by_change(conn, team_id: str, member: str, before: str | None, after
 
     A schedule pauses when its setter drops below the role that manages
     schedules, outside access when its payer drops below the role the team's
-    outside policy gives access details to; whatever was paused already (all
+    outside policy gives access details to, and a team connection when whoever
+    connected it drops below Admin or leaves; whatever was paused already (all
     outside access of a locked team) is not counted again.
 
     Args:
@@ -448,7 +457,7 @@ def _paused_by_change(conn, team_id: str, member: str, before: str | None, after
         after: Their team role after, or None when they left.
 
     Returns:
-        ``{"schedules": n, "outside_access": n}``.
+        ``{"schedules": n, "outside_access": n, "connections": n}``.
     """
     counts = pays_for(conn, team_id, [member])[member]
     policy = team_policy(conn, team_id)
@@ -457,6 +466,9 @@ def _paused_by_change(conn, team_id: str, member: str, before: str | None, after
         needed = workspace_minimum("agent", action, policy=policy)
         lost = needed is not None and role_at_least(before, needed) and not role_at_least(after, needed)
         paused[key] = counts[key] if lost else 0
+    # A team connection's account is used only while whoever connected it is an Admin (or the Owner).
+    lost_admin = role_at_least(before, "admin") and not role_at_least(after, "admin")
+    paused["connections"] = counts["connections"] if lost_admin else 0
     return paused
 
 
@@ -487,8 +499,11 @@ def payer_left_text(member_label: str, team_name: str, new_role: str | None, pau
         parts.append(_plural(paused["schedules"], "schedule"))
     if paused["outside_access"]:
         parts.append(f"outside access on {_plural(paused['outside_access'], 'agent')}")
-    verb = "are" if len(parts) > 1 or paused["schedules"] > 1 else "is"
-    return f"{lead}: {' and '.join(parts)} {verb} paused until someone takes over."
+    if paused.get("connections"):
+        parts.append(_plural(paused["connections"], "connection"))
+    verb = "are" if len(parts) > 1 or paused["schedules"] > 1 or paused.get("connections", 0) > 1 else "is"
+    listed = parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
+    return f"{lead}: {listed} {verb} paused until someone takes over."
 
 
 def _payer_left_notice(
@@ -827,12 +842,15 @@ class Team(Resource):
                 try:
                     TeamsRepository(conn).delete(team_id)
                 except TeamNotEmpty as not_empty:
+                    message = "Move or delete the team's items before deleting the team"
+                    if not_empty.counts.get("connection"):
+                        message = "Move or delete the team's items and remove its connections before deleting the team"
                     return make_response(
                         jsonify(
                             {
                                 "success": False,
                                 "error": "team_not_empty",
-                                "message": "Move or delete the team's items before deleting the team",
+                                "message": message,
                                 "counts": not_empty.counts,
                             }
                         ),
@@ -872,7 +890,7 @@ class TeamMembers(Resource):
                 if role_at_least(team_role_for(conn, _current_user(), team_id), "admin"):
                     counts = pays_for(conn, team_id, [m.get("user_id") for m in members])
                     for member in members:
-                        member["pays_for"] = counts.get(member.get("user_id"), {"schedules": 0, "outside_access": 0})
+                        member["pays_for"] = counts.get(member.get("user_id"), dict(NO_PAYS_FOR))
             return make_response(
                 jsonify({"success": True, "members": members, "total": total}), 200
             )

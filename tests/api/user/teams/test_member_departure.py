@@ -1,5 +1,7 @@
 """What a member pays for in a team, and the notice its admins get when a removal or demotion pauses it.
 
+A team connection pauses when whoever connected it leaves or drops below Admin, so it counts too.
+
 Driven through the real app.py chokepoint against real Postgres; only ``handle_auth`` / ``resolve_roles`` are
 patched, the route module's sessions are pointed at the per-test ``pg_conn``, and ``notify_user`` is captured.
 """
@@ -14,6 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
@@ -97,6 +100,14 @@ def _dana_pays(conn, tid):
     return agent
 
 
+def _connection(conn, tid, by="dana", provider="google_drive"):
+    """A team connection ``by`` connected for the team."""
+    return str(ConnectorSessionsRepository(conn).create(
+        principal_id(tid), provider, connector_key=provider, auth_kind="oauth",
+        account_label=f"{uuid.uuid4().hex[:6]}@x.io", connected_by=by,
+    )["id"])
+
+
 def _members(client, tid, user):
     with _as(user):
         resp = client.get(f"/api/teams/{tid}/members")
@@ -109,8 +120,8 @@ class TestPaysFor:
         tid = _team(db)
         _dana_pays(db, tid)
         members = _members(client, tid, "lena")
-        assert members["dana"]["pays_for"] == {"schedules": 2, "outside_access": 1}
-        assert members["tomas"]["pays_for"] == {"schedules": 0, "outside_access": 0}
+        assert members["dana"]["pays_for"] == {"schedules": 2, "outside_access": 1, "connections": 0}
+        assert members["tomas"]["pays_for"] == {"schedules": 0, "outside_access": 0, "connections": 0}
 
     def test_a_viewer_does_not(self, client, db):
         tid = _team(db)
@@ -118,11 +129,21 @@ class TestPaysFor:
         members = _members(client, tid, "tomas")
         assert all("pays_for" not in m for m in members.values())
 
+    def test_connections_they_connected_count(self, client, db):
+        tid = _team(db)
+        _connection(db, tid)
+        _connection(db, tid, provider="github")
+        _connection(db, tid, by="jonas")
+        _connection(db, _team(db, name="Elsewhere"))
+        members = _members(client, tid, "lena")
+        assert members["dana"]["pays_for"] == {"schedules": 0, "outside_access": 0, "connections": 2}
+        assert members["jonas"]["pays_for"]["connections"] == 1
+
     def test_counts_are_per_team(self, client, db):
         tid = _team(db)
         other = _team(db, name="Elsewhere")
         _dana_pays(db, other)
-        assert _members(client, tid, "lena")["dana"]["pays_for"] == {"schedules": 0, "outside_access": 0}
+        assert _members(client, tid, "lena")["dana"]["pays_for"] == {"schedules": 0, "outside_access": 0, "connections": 0}
 
 
 class TestRemovalNotice:
@@ -153,6 +174,16 @@ class TestRemovalNotice:
         notices.assert_not_called()
 
 
+    def test_removing_whoever_connected_an_account_counts_its_connections(self, client, db, notices):
+        tid = _team(db)
+        _connection(db, tid)
+        with _as("lena"):
+            assert client.delete(f"/api/teams/{tid}/members/dana").status_code == 200
+        call = notices.call_args.kwargs
+        assert call["kind"] == "payer_left"
+        assert call["body"] == "dana@x.io left Operations: 1 connection is paused until someone takes over."
+
+
 class TestDemotionNotice:
     def test_admin_to_editor_pauses_only_outside_access(self, client, db, notices):
         tid = _team(db)
@@ -171,6 +202,28 @@ class TestDemotionNotice:
             assert client.put(f"/api/teams/{tid}/members/dana", json={"role": "viewer"}).status_code == 200
         body = notices.call_args.kwargs["body"]
         assert "2 schedules" in body and "1 agent" in body
+
+    def test_admin_to_editor_pauses_their_connections(self, client, db, notices):
+        tid = _team(db)
+        _dana_pays(db, tid)
+        _connection(db, tid)
+        _connection(db, tid, provider="github")
+        with _as("lena"):
+            assert client.put(f"/api/teams/{tid}/members/dana", json={"role": "editor"}).status_code == 200
+        body = notices.call_args.kwargs["body"]
+        assert body == (
+            "dana@x.io is now an Editor in Operations: outside access on 1 agent and 2 connections are paused "
+            "until someone takes over."
+        )
+
+    def test_admin_to_viewer_lists_all_three(self, client, db, notices):
+        tid = _team(db)
+        _dana_pays(db, tid)
+        _connection(db, tid)
+        with _as("lena"):
+            assert client.put(f"/api/teams/{tid}/members/dana", json={"role": "viewer"}).status_code == 200
+        body = notices.call_args.kwargs["body"]
+        assert "2 schedules, outside access on 1 agent and 1 connection are paused" in body
 
     def test_a_promotion_or_same_role_says_nothing(self, client, db, notices):
         tid = _team(db)
@@ -194,6 +247,19 @@ class TestDemotionNotice:
             resp = client.put(f"/api/teams/{tid}/members/lena", json={"role": "viewer"})
         assert resp.status_code in (400, 403)
         notices.assert_not_called()
+
+
+class TestTeamDelete:
+    def test_a_team_with_a_connection_names_it(self, client, db):
+        tid = _team(db)
+        _connection(db, tid)
+        with _as("lena"):
+            resp = client.delete(f"/api/teams/{tid}")
+        assert resp.status_code == 409
+        body = _body(resp)
+        assert body["error"] == "team_not_empty"
+        assert body["counts"] == {"connection": 1}
+        assert "connections" in body["message"]
 
 
 class TestKinds:

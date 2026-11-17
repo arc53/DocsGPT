@@ -29,6 +29,7 @@ _ITEM_KINDS = {
     "prompts": "prompt",
     "workflows": "workflow",
     "folders": "folder",
+    "connector_sessions": "connection",
 }
 
 # Every single-column FK onto ``users(user_id)``: the tables that can hold a principal's rows, and
