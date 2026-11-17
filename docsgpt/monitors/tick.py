@@ -714,6 +714,10 @@ def _payload(evaluation: Evaluation, content: Content, summary: str, extra: Opti
 # ----------------------------------------------------------------------
 
 
+#: Why a monitor ends once its conversation stops taking wakes.
+NOT_RESUMABLE = "its conversation can no longer be resumed"
+
+
 def _resumable(monitor: Dict[str, Any]) -> bool:
     """Whether the monitor's conversation still takes wakes (it was shared, or its agent changed hands)."""
     from docsgpt.background.context import auto_resume_allowed
@@ -775,7 +779,7 @@ def _tick(monitor_id: str) -> str:
         expire(monitor_id, now=now)
         return "expired"
     if not _resumable(monitor):
-        _finish(monitor_id, "cancelled", "its conversation can no longer be resumed")
+        _finish(monitor_id, "cancelled", NOT_RESUMABLE)
         return "cancelled"
     try:
         content = _fetch(monitor, now)
@@ -998,6 +1002,12 @@ def process_hit(hit_id: str, attempt: int = 0) -> Dict[str, Any]:
             with db_session() as conn:
                 TriggerHitsRepository(conn).mark(hit_id, "ignored", "the monitor is not active")
             return {"state": "ignored"}
+        if not _resumable(monitor):
+            # As on a polled tick: nobody can be woken, so no delivery is judged (and billed) any more.
+            with db_session() as conn:
+                TriggerHitsRepository(conn).mark(hit_id, "ignored", NOT_RESUMABLE)
+            _finish(monitor_id, "cancelled", NOT_RESUMABLE)
+            return {"state": "cancelled"}
         payload = claimed.get("payload") or {}
         try:
             outcome = _event(
@@ -1191,6 +1201,10 @@ def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> D
         if monitor is None or monitor.get("status") != "active" or monitor.get("source_type") != "ingest":
             _settle_event(row_id, "ignored", "the monitor is not active")
             return {"state": "skipped"}
+        if not _resumable(monitor):
+            _settle_event(row_id, "ignored", NOT_RESUMABLE)
+            _finish(monitor_id, "cancelled", NOT_RESUMABLE)
+            return {"state": "cancelled"}
         status = event.get("event")
         summary_text = (
             f"the ingest of source {event.get('source_id')} {'finished' if status == 'completed' else 'failed'}"
