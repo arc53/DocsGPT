@@ -41,7 +41,7 @@ dependencies = [
   "cel-python>=0.5.0,<0.6",
   "celery>=5.7.0,<6",
   "celery-redbeat>=2.4.2,<3",
-  "croniter>=6.2.4,<7",
+  "croniter>=7.0.0,<8",
   "cryptography>=50.0.2,<51",
   "dataclasses-json>=0.6.7,<0.7",
   "daytona>=0.231.0,<0.232",
@@ -60,8 +60,8 @@ dependencies = [
   "flask-restx>=1.3.2,<2",
   "google-api-python-client>=2.198.0,<3",
   "google-auth-oauthlib>=1.4.0,<2",
-  "google-genai>=2.17.0,<3",
-  "gunicorn>=26.0.0,<27",
+  "google-genai>=3.0.0,<4",
+  "gunicorn>=27.0.0,<28",
   # Imported directly by the BYOM DNS-pinning transport and the LLM
   # stream-retry error tuple; it is what anthropic and openai run on.
   "httpx2>=2.7.0,<3",
