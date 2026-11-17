@@ -474,7 +474,8 @@
       "errors": {
         "publishFailed": "No se pudo publicar el agente. Inténtalo de nuevo.",
         "saveDraftFailed": "No se pudo guardar el borrador. Inténtalo de nuevo.",
-        "staleWrite": "Otra persona guardó este agente después de que lo abrieras. Tus cambios siguen aquí: copia lo que necesites, recarga la página y vuelve a aplicarlos."
+        "staleWrite": "Otra persona guardó este agente después de que lo abrieras. Tus cambios siguen aquí: copia lo que necesites, recarga la página y vuelve a aplicarlos.",
+        "teamConnectionAdded": "No se puede añadir {{tools}}: este agente llega a personas fuera del equipo (una clave de API, un enlace público, un webhook u otro equipo), y las herramientas en una cuenta conectada para el equipo solo funcionan para sus miembros, en la app."
       },
       "externalKb": "KB Externa",
       "guardrails": {

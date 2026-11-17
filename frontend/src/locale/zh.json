@@ -461,7 +461,8 @@
       "errors": {
         "publishFailed": "无法发布该助手，请重试。",
         "saveDraftFailed": "无法保存草稿，请重试。",
-        "staleWrite": "在你打开此智能体后，其他人保存了它。你的更改仍在这里：复制所需内容，重新加载页面后再次应用。"
+        "staleWrite": "在你打开此智能体后，其他人保存了它。你的更改仍在这里：复制所需内容，重新加载页面后再次应用。",
+        "teamConnectionAdded": "无法添加 {{tools}}：此智能体可被团队外的人使用（API 密钥、公开链接、Webhook 或其他团队），而为团队连接的账号上的工具只能由团队成员在应用内使用。"
       },
       "externalKb": "外部知识库",
       "guardrails": {

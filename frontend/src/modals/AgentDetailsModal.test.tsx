@@ -197,6 +197,58 @@ describe('AgentDetailsModal', () => {
     expect(alert?.querySelector('svg.lucide-circle-x')).toBeNull();
   });
 
+  it("says which tools on a team's account keep the agent inside the team", async () => {
+    const refusal = {
+      success: false,
+      error: 'team_connection_outside',
+      code: 'team_connection_outside',
+      message: 'server words',
+      tools: [{ id: 'tl1', name: 'Create issue', connector_name: 'GitHub' }],
+    };
+    mocks.shareAgent.mockReturnValue(respond(refusal, false));
+    mocks.getAgentWebhook.mockReturnValue(respond(refusal, false));
+    await render({ status: 'published' });
+    const [publicLink] = generateButtons();
+    await act(async () => publicLink.click());
+    let alert = document.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain(
+      'settings.connectors.team.errors.teamConnectionOutsideNamed',
+    );
+    expect(alert?.textContent).not.toContain('server words');
+    const buttons = generateButtons();
+    await act(async () => buttons[buttons.length - 1].click());
+    alert = document.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain(
+      'settings.connectors.team.errors.teamConnectionOutsideNamed',
+    );
+  });
+
+  it('words a refused key reset over a team account in the confirm', async () => {
+    mocks.regenerateAgentKey.mockReturnValue(
+      respond(
+        {
+          success: false,
+          error: 'team_connection_outside',
+          code: 'team_connection_outside',
+          message: 'server words',
+          tools: [{ id: 'tl1', name: 'Create issue' }],
+        },
+        false,
+      ),
+    );
+    await render({ status: 'published' });
+    const [, apiKey] = generateButtons();
+    await act(async () => apiKey.click());
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="confirm-key"]')!
+        .click(),
+    );
+    expect(
+      document.querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('settings.connectors.team.errors.teamConnectionOutsideNamed');
+  });
+
   it('shows a failed webhook in an alert with a fallback message', async () => {
     mocks.getAgentWebhook.mockReturnValue(respond({}, false));
     await render({ status: 'published' });

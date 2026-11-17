@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 
+import { connectionErrorMessage } from '../../connectors/connectionErrors';
 import type { OutsideAccess, PersonRef } from '../../payer/types';
 import type { ItemOrigin } from '../../workspace/itemOrigin';
 import apiClient from '../client';
@@ -334,7 +335,8 @@ export const TEAM_ERROR_KEYS: Readonly<Record<string, string>> = {
 
 /**
  * What to say about a failed teams call: the app's words for a known
- * refusal code, else the server's message, else `fallback`.
+ * refusal code, else the server's message, else `fallback`. A refusal over
+ * tools on a team's account (`team_connection_outside`) names the tools.
  *
  * Args:
  *   t: The translate function.
@@ -354,6 +356,14 @@ export function teamErrorMessage(
   const e = error as { name?: unknown; message?: unknown; code?: unknown };
   if (typeof e !== 'object' || e === null || e.name !== 'TeamsApiError')
     return fallback;
+  if (e.code === 'team_connection_outside') {
+    const body = (error as { body?: unknown }).body;
+    return connectionErrorMessage(
+      t as TFunction,
+      body && typeof body === 'object' ? body : { error: e.code },
+      { fallback },
+    );
+  }
   const key = typeof e.code === 'string' ? TEAM_ERROR_KEYS[e.code] : undefined;
   if (key) return (t as (key: string) => string)(key);
   return typeof e.message === 'string' && e.message ? e.message : fallback;

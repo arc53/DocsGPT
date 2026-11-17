@@ -3,8 +3,8 @@ import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { names?: string }) =>
-      opts?.names ? `${key}:${opts.names}` : key,
+    t: (key: string, opts?: { names?: string; tools?: string }) =>
+      opts?.names || opts?.tools ? `${key}:${opts.names ?? opts.tools}` : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -215,6 +215,30 @@ describe('useSponsoredSave', () => {
     expect(result).toMatchObject({
       status: 'failed',
       message: 'agents.form.errors.staleWrite',
+    });
+  });
+
+  it("names the tools on a team's account a save would take outside the team", async () => {
+    let result: unknown;
+    await act(async () => {
+      result = await hook.save(
+        async () =>
+          json(409, {
+            success: false,
+            error: 'team_connection_outside',
+            code: 'team_connection_outside',
+            message: 'server words',
+            tools: [
+              { id: 'tl1', name: 'Create issue', connector_name: 'GitHub' },
+              { id: 'tl2', name: 'Search', connector_name: 'GitHub' },
+            ],
+          }),
+        'failed',
+      );
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      message: 'agents.form.errors.teamConnectionAdded:Create issue, Search',
     });
   });
 

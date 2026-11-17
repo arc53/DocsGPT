@@ -402,6 +402,31 @@ describe('ShareToTeamModal outside the team', () => {
       expect(text()).toContain('settings.teams.errors.borrowedResource');
       expect(text()).not.toContain('server words');
     });
+
+    it("names the tools on a team's account that keep it inside the team", async () => {
+      listResourceShares.mockResolvedValue(teamItem({ warning_kind: 'agent' }));
+      shareTeamItem.mockRejectedValue(
+        new TeamsApiError(409, 'server words', 'team_connection_outside', {
+          success: false,
+          error: 'team_connection_outside',
+          code: 'team_connection_outside',
+          message: 'server words',
+          tools: [
+            { id: 'tl1', name: 'Create issue', connector_name: 'GitHub' },
+          ],
+        }),
+      );
+      await render('agent');
+      await pickTarget('Dev');
+      await act(async () =>
+        buttonByText('workspace.share.outside.share')!.click(),
+      );
+      await flush();
+      expect(text()).toContain(
+        'settings.connectors.team.errors.teamConnectionOutsideNamed(tools=Create issue)',
+      );
+      expect(text()).not.toContain('server words');
+    });
   });
 
   describe('an item another team shares with the caller', () => {

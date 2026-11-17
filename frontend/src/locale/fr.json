@@ -474,7 +474,8 @@
       "errors": {
         "publishFailed": "Impossible de publier l’agent. Veuillez réessayer.",
         "saveDraftFailed": "Impossible d’enregistrer le brouillon. Veuillez réessayer.",
-        "staleWrite": "Quelqu’un d’autre a enregistré cet agent après que vous l’avez ouvert. Vos modifications sont toujours là : copiez ce dont vous avez besoin, rechargez la page et appliquez-les de nouveau."
+        "staleWrite": "Quelqu’un d’autre a enregistré cet agent après que vous l’avez ouvert. Vos modifications sont toujours là : copiez ce dont vous avez besoin, rechargez la page et appliquez-les de nouveau.",
+        "teamConnectionAdded": "Impossible d’ajouter {{tools}} : cet agent atteint des personnes extérieures à l’équipe (une clé d’API, un lien public, un webhook ou une autre équipe), et les outils sur un compte connecté pour l’équipe ne fonctionnent que pour ses membres, dans l’application."
       },
       "externalKb": "Base de connaissances externe",
       "guardrails": {

@@ -316,6 +316,51 @@ describe('team roles and refusals', () => {
     expect(OUTSIDE_POLICIES).toEqual(['admins', 'editors', 'locked']);
   });
 
+  it("names the tools a team's account keeps inside the team", () => {
+    const t = (key: string, opts?: Record<string, unknown>) =>
+      opts?.tools ? `${key}(tools=${opts.tools})` : key;
+    const body = {
+      success: false,
+      error: 'team_connection_outside',
+      code: 'team_connection_outside',
+      message: 'server words',
+      tools: [
+        { id: 'tl1', name: 'Create issue', connector_name: 'GitHub' },
+        { id: 'tl2', name: 'Drive search', connector_name: 'Google Drive' },
+      ],
+    };
+    const refusal = new TeamsApiError(
+      409,
+      'server words',
+      'team_connection_outside',
+      body,
+    );
+    expect(teamErrorMessage(t, refusal, 'fallback')).toBe(
+      'settings.connectors.team.errors.teamConnectionOutsideNamed(tools=Create issue, Drive search)',
+    );
+    // A thunk's serialized refusal keeps the body too.
+    expect(
+      teamErrorMessage(
+        t,
+        {
+          name: 'TeamsApiError',
+          message: 'server words',
+          code: 'team_connection_outside',
+          body,
+        },
+        'fallback',
+      ),
+    ).toContain('teamConnectionOutsideNamed');
+    // Without the tools it still says why, never the server's English.
+    expect(
+      teamErrorMessage(
+        t,
+        new TeamsApiError(409, 'server words', 'team_connection_outside'),
+        'fallback',
+      ),
+    ).toBe('settings.connectors.team.errors.teamConnectionOutside');
+  });
+
   it("falls back to the server's message, then to the caller's", () => {
     expect(
       teamErrorMessage(t, new TeamsApiError(404, 'No such user'), 'fallback'),

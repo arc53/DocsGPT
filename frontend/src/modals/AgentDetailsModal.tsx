@@ -1,4 +1,5 @@
 import { envVar } from '@/env';
+import type { TFunction } from 'i18next';
 import { focusRing } from '@/lib/utils';
 import { ExternalLink, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -17,6 +18,10 @@ import { Agent, type AgentConfig } from '../agents/types';
 import payerService from '../api/services/payerService';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from '../connectors/connectionErrors';
 import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
@@ -35,10 +40,19 @@ const baseURL = envVar('VITE_BASE_URL');
 // The public and webhook URLs are raw links in running text.
 const linkFocus = `${focusRing} rounded-sm outline-none`;
 
-/** The backend's `message` on a refused call, else null. */
-const errorMessage = async (response: Response): Promise<string | null> => {
+/**
+ * What to say about a refused call: the app's words for a refusal over a
+ * team's account (naming the tools that keep the agent inside the team),
+ * else the backend's `message`, else null.
+ */
+const errorMessage = async (
+  response: Response,
+  t: TFunction,
+): Promise<string | null> => {
   try {
     const body = await response.json();
+    if (connectionErrorCode(body))
+      return connectionErrorMessage(t, body, { status: response.status });
     return typeof body?.message === 'string' && body.message.trim()
       ? body.message
       : null;
@@ -255,7 +269,7 @@ export default function AgentDetailsModal({
       if (response.ok) onSuccess(await response.json());
       else
         failure =
-          (await errorMessage(response)) ??
+          (await errorMessage(response, t)) ??
           t('modals.agentDetails.actionFailed');
     } catch {
       failure = t('modals.agentDetails.actionFailed');

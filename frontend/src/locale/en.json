@@ -482,7 +482,8 @@
       "errors": {
         "publishFailed": "Could not publish the agent. Please try again.",
         "saveDraftFailed": "Could not save the draft. Please try again.",
-        "staleWrite": "Someone else saved this agent after you opened it. Your changes are still here: copy what you need, reload the page, and apply them again."
+        "staleWrite": "Someone else saved this agent after you opened it. Your changes are still here: copy what you need, reload the page, and apply them again.",
+        "teamConnectionAdded": "{{tools}} can't be added: this agent reaches people outside the team (an API key, public link, webhook or another team), and tools on an account connected for the team work only for its members, in the app."
       },
       "externalKb": "External KB",
       "guardrails": {
