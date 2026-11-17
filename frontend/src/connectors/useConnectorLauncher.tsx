@@ -57,6 +57,37 @@ type Active =
 const isMcp = (connector: ConnectorDefinition) =>
   connector.auth_kind === 'mcp' || connector.auth_kind === 'mcp_oauth';
 
+/**
+ * The MCP server form's input for signing a team's server in again from its
+ * connection: the server signs the team in only when the save names the
+ * team's connection, and refuses one naming the tool (that is a person's
+ * own save). Null for anything else.
+ *
+ * Args:
+ *   options: The launch options.
+ *
+ * Returns:
+ *   The server without its tool id, with `owner: 'team'` and its
+ *   `connection_id`; or null.
+ */
+function teamReconnect(options: LaunchOptions): Record<string, unknown> | null {
+  const server = options.mcpServer;
+  if (
+    options.owner !== 'team' ||
+    !options.connectionId ||
+    !server ||
+    server.auth_type !== 'oauth'
+  )
+    return null;
+  const named: Record<string, unknown> = {
+    ...server,
+    owner: 'team',
+    connection_id: options.connectionId,
+  };
+  delete named.id;
+  return named;
+}
+
 type LauncherCallbacks = {
   /**
    * The run connected an account, or repaired one (a reconnect), with the
@@ -165,6 +196,7 @@ export default function useConnectorLauncher({
           kind: 'mcp',
           connector,
           server:
+            teamReconnect(options) ??
             options.mcpServer ??
             (connector.mcp_url
               ? {
@@ -202,8 +234,10 @@ export default function useConnectorLauncher({
     const connector = active.connector;
     mcpSaved.current = true;
     // Signing an existing server in again creates no tool.
-    mcpToolId.current =
-      typeof active.server?.id === 'string' ? undefined : toolId;
+    const existing =
+      typeof active.server?.id === 'string' ||
+      typeof active.server?.connection_id === 'string';
+    mcpToolId.current = existing ? undefined : toolId;
     // A save in a team names the connection it runs on, or none for a tool
     // on each person's own sign-in: the caller's own list would name theirs.
     if (teamSave) {

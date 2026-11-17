@@ -60,10 +60,15 @@ type McpSavedStub = (
 ) => void;
 const mcpForm = vi.hoisted(() => ({
   onServerSaved: null as null | McpSavedStub,
+  server: undefined as Record<string, unknown> | undefined,
 }));
 vi.mock('../modals/MCPServerModal', () => ({
-  default: (props: { onServerSaved: McpSavedStub }) => {
+  default: (props: {
+    onServerSaved: McpSavedStub;
+    server?: Record<string, unknown>;
+  }) => {
     mcpForm.onServerSaved = props.onServerSaved;
+    mcpForm.server = props.server;
     return <div data-testid="mcp-form" />;
   },
 }));
@@ -327,6 +332,54 @@ describe('useConnectorLauncher', () => {
     await act(async () => mcpForm.onServerSaved!('mcp-old'));
     expect(onConnected).toHaveBeenCalledWith([]);
   });
+  it("reconnects a team's custom sign-in server by its connection, not by the tool", async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp_oauth',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    const mcpServer = {
+      id: 'tool-1',
+      displayName: 'Ops MCP',
+      server_url: 'https://mcp.example.com/mcp',
+      auth_type: 'oauth',
+    };
+    await act(async () =>
+      launchRef!(CUSTOM_MCP, {
+        mode: 'reconnect',
+        connectionId: 'conn-team',
+        mcpServer,
+        owner: 'team',
+      }),
+    );
+    // The server signs the team in again only when named this way; a tool
+    // id would be the caller's own save, refused to an Admin.
+    expect(mcpForm.server).toEqual({
+      displayName: 'Ops MCP',
+      server_url: 'https://mcp.example.com/mcp',
+      auth_type: 'oauth',
+      owner: 'team',
+      connection_id: 'conn-team',
+    });
+    await act(async () =>
+      mcpForm.onServerSaved!('tool-1', { connectionId: 'conn-team' }),
+    );
+    expect(wizard()).toBe('done:conn-team');
+
+    // The person's own server reconnects by its tool, as before.
+    await act(async () =>
+      launchRef!(CUSTOM_MCP, {
+        mode: 'reconnect',
+        connectionId: 'conn-mine',
+        mcpServer,
+      }),
+    );
+    expect(mcpForm.server).toEqual(mcpServer);
+  });
+
   it("ends a team's MCP save on the connection it names, never on the caller's own", async () => {
     const CUSTOM_MCP = {
       key: 'custom_mcp',
