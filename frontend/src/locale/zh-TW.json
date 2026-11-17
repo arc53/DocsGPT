@@ -590,6 +590,8 @@
           "sponsorCannotEditItem": "{{name}} 先前以 {{person}} 的存取權限執行，而對方已無法編輯它。",
           "sponsorCannotEditItemOther": "{{name}} 先前以其他人的存取權限執行，而對方已無法編輯它。",
           "sponsorCannotEditItemYou": "{{name}} 先前以你的存取權限執行，而你已無法編輯它。",
+          "teamLocked": "{{name}} 屬於另一個團隊，該團隊已鎖定，因此在其解除鎖定之前無法在此使用。",
+          "teamShareEnded": "{{name}} 屬於另一個團隊，該團隊已不再在此分享它。請該團隊重新分享。",
           "unknown": "{{name}} 未在執行。"
         },
         "reconnectLabel": "重新連接 {{name}}",
@@ -5001,6 +5003,8 @@
             "sponsorCannotEditItem": "{{person}} 已無法編輯它",
             "sponsorCannotEditItemOther": "新增者已無法編輯它",
             "sponsorCannotEditItemYou": "你已無法編輯它",
+            "teamLocked": "所屬團隊已鎖定",
+            "teamShareEnded": "所屬團隊已停止分享",
             "unknown": "未在執行"
           },
           "stopped": "已停止",

@@ -70,6 +70,11 @@ export function stoppedReason(
       return 'deleted';
     case 'owner_lost_access':
       return ownerReads ? 'ownerLostAccessYou' : 'ownerLostAccess';
+    // Another team's item: only that team can share it again or unlock.
+    case 'team_share_ended':
+      return 'teamShareEnded';
+    case 'team_locked':
+      return 'teamLocked';
     case 'sponsor_cannot_edit_agent':
       // The reader can edit the agent, so they are never this sponsor.
       return `sponsorCannotEditAgent${who === 'You' ? '' : who}`;

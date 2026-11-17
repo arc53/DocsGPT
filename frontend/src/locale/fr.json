@@ -605,6 +605,8 @@
           "sponsorCannotEditItem": "{{name}} s’exécutait en tant que {{person}}, qui ne peut plus le modifier.",
           "sponsorCannotEditItemOther": "{{name}} s’exécutait avec les accès d’une personne qui ne peut plus le modifier.",
           "sponsorCannotEditItemYou": "{{name}} s’exécutait avec vos accès, et vous ne pouvez plus le modifier.",
+          "teamLocked": "{{name}} appartient à une autre équipe, qui est verrouillée ; il ne peut donc pas être utilisé ici tant que cette équipe ne la déverrouille pas.",
+          "teamShareEnded": "{{name}} appartient à une autre équipe, qui ne le partage plus ici. Demandez à cette équipe de le partager à nouveau.",
           "unknown": "{{name}} ne s’exécute pas."
         },
         "reconnectLabel": "Reconnecter {{name}}",
@@ -5220,6 +5222,8 @@
             "sponsorCannotEditItem": "{{person}} ne peut plus le modifier",
             "sponsorCannotEditItemOther": "La personne qui l’a ajouté ne peut plus le modifier",
             "sponsorCannotEditItemYou": "Vous ne pouvez plus le modifier",
+            "teamLocked": "Son équipe est verrouillée",
+            "teamShareEnded": "Son équipe ne le partage plus",
             "unknown": "Inactif"
           },
           "stopped": "Arrêté",

@@ -590,6 +590,8 @@
           "sponsorCannotEditItem": "{{name}} 此前以 {{person}} 的访问权限运行，而其已无法编辑它。",
           "sponsorCannotEditItemOther": "{{name}} 此前以其他人的访问权限运行，而其已无法编辑它。",
           "sponsorCannotEditItemYou": "{{name}} 此前以你的访问权限运行，而你已无法编辑它。",
+          "teamLocked": "{{name}} 属于另一个团队，该团队已锁定，因此在其解除锁定之前无法在此使用。",
+          "teamShareEnded": "{{name}} 属于另一个团队，该团队已不再在此共享它。请让该团队重新共享。",
           "unknown": "{{name}} 未在运行。"
         },
         "reconnectLabel": "重新连接 {{name}}",
@@ -4999,6 +5001,8 @@
             "sponsorCannotEditItem": "{{person}} 已无法编辑它",
             "sponsorCannotEditItemOther": "添加者已无法编辑它",
             "sponsorCannotEditItemYou": "你已无法编辑它",
+            "teamLocked": "所属团队已锁定",
+            "teamShareEnded": "所属团队已停止共享",
             "unknown": "未在运行"
           },
           "stopped": "已停止",

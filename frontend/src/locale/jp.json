@@ -590,6 +590,8 @@
           "sponsorCannotEditItem": "{{name}} は {{person}} のアクセス権で実行されていましたが、この人はそれを編集できなくなりました。",
           "sponsorCannotEditItemOther": "{{name}} は他の人のアクセス権で実行されていましたが、この人はそれを編集できなくなりました。",
           "sponsorCannotEditItemYou": "{{name}} はあなたのアクセス権で実行されていましたが、あなたはそれを編集できなくなりました。",
+          "teamLocked": "{{name}} は別のチームのもので、そのチームはロックされています。ロックが解除されるまで、ここでは使用できません。",
+          "teamShareEnded": "{{name}} は別のチームのもので、そのチームはここでの共有をやめました。そのチームに再度共有するよう依頼してください。",
           "unknown": "{{name}} は実行されていません。"
         },
         "reconnectLabel": "{{name}} を再接続",
@@ -5001,6 +5003,8 @@
             "sponsorCannotEditItem": "{{person}} はこれを編集できなくなりました",
             "sponsorCannotEditItemOther": "追加した人がこれを編集できなくなりました",
             "sponsorCannotEditItemYou": "これを編集できなくなりました",
+            "teamLocked": "所属チームがロック中",
+            "teamShareEnded": "所属チームが共有を終了",
             "unknown": "実行されていません"
           },
           "stopped": "停止中",

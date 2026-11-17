@@ -612,6 +612,8 @@
           "sponsorCannotEditItem": "{{name}} ran as {{person}}, who can no longer edit it.",
           "sponsorCannotEditItemOther": "{{name}} ran as someone who can no longer edit it.",
           "sponsorCannotEditItemYou": "{{name}} ran with your access, and you can no longer edit it.",
+          "teamLocked": "{{name}} belongs to another team, which is locked, so it can't be used here until that team unlocks.",
+          "teamShareEnded": "{{name}} belongs to another team, which no longer shares it here. Ask that team to share it again.",
           "unknown": "{{name}} isn't running."
         },
         "reconnectLabel": "Reconnect {{name}}",
@@ -5056,6 +5058,8 @@
             "sponsorCannotEditItem": "{{person}} can't edit it any more",
             "sponsorCannotEditItemOther": "Whoever added it can't edit it any more",
             "sponsorCannotEditItemYou": "You can't edit it any more",
+            "teamLocked": "Its team is locked",
+            "teamShareEnded": "No longer shared by its team",
             "unknown": "Not running"
           },
           "stopped": "Stopped",

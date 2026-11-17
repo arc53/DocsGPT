@@ -279,6 +279,28 @@ describe('ResourceStatusNotice', () => {
     expect(container.textContent).toContain('reason.ownerLostAccess');
   });
 
+  it("says another team's share ended or that team is locked", async () => {
+    await render(editorAgent, [
+      stoppedItem({
+        key: 'source:s1',
+        type: 'source',
+        id: 's1',
+        reason: 'team_share_ended',
+      }),
+      stoppedItem({ key: 'tool:t2', id: 't2', reason: 'team_locked' }),
+    ]);
+    const [ended, locked] = Array.from(container.querySelectorAll('li'));
+    expect(ended.textContent).toContain(
+      'agents.form.resourceStates.reason.teamShareEnded',
+    );
+    expect(locked.textContent).toContain(
+      'agents.form.resourceStates.reason.teamLocked',
+    );
+    // Nothing for the reader to take over or reconnect: only the team acts.
+    expect(container.textContent).not.toContain('reason.unknown');
+    expect(container.textContent).not.toContain('resourceStates.ask');
+  });
+
   it('says whom to ask when the reader cannot fix it', async () => {
     await render(baseAgent, [
       stoppedItem({

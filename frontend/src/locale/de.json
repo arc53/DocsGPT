@@ -591,6 +591,8 @@
           "sponsorCannotEditItem": "{{name}} lief mit dem Zugriff von {{person}}, und diese Person kann es nicht mehr bearbeiten.",
           "sponsorCannotEditItemOther": "{{name}} lief mit dem Zugriff einer anderen Person, und diese Person kann es nicht mehr bearbeiten.",
           "sponsorCannotEditItemYou": "{{name}} lief mit deinem Zugriff, und du kannst es nicht mehr bearbeiten.",
+          "teamLocked": "{{name}} gehört einem anderen Team, das gesperrt ist. Bis dieses Team es entsperrt, lässt es sich hier nicht verwenden.",
+          "teamShareEnded": "{{name}} gehört einem anderen Team, das es hier nicht mehr teilt. Bitte dieses Team, es erneut zu teilen.",
           "unknown": "{{name}} läuft nicht."
         },
         "reconnectLabel": "{{name}} neu verbinden",
@@ -5035,6 +5037,8 @@
             "sponsorCannotEditItem": "{{person}} kann es nicht mehr bearbeiten",
             "sponsorCannotEditItemOther": "Wer es hinzugefügt hat, kann es nicht mehr bearbeiten",
             "sponsorCannotEditItemYou": "Du kannst es nicht mehr bearbeiten",
+            "teamLocked": "Sein Team ist gesperrt",
+            "teamShareEnded": "Von seinem Team nicht mehr geteilt",
             "unknown": "Läuft nicht"
           },
           "stopped": "Gestoppt",

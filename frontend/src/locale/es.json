@@ -605,6 +605,8 @@
           "sponsorCannotEditItem": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editarlo.",
           "sponsorCannotEditItemOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editarlo.",
           "sponsorCannotEditItemYou": "{{name}} se ejecutaba con tu acceso, y ya no puedes editarlo.",
+          "teamLocked": "{{name}} pertenece a otro equipo, que está bloqueado, así que no se puede usar aquí hasta que ese equipo lo desbloquee.",
+          "teamShareEnded": "{{name}} pertenece a otro equipo, que ya no lo comparte aquí. Pide a ese equipo que lo vuelva a compartir.",
           "unknown": "{{name}} no se está ejecutando."
         },
         "reconnectLabel": "Reconectar {{name}}",
@@ -5220,6 +5222,8 @@
             "sponsorCannotEditItem": "{{person}} ya no puede editarlo",
             "sponsorCannotEditItemOther": "Quien lo añadió ya no puede editarlo",
             "sponsorCannotEditItemYou": "Ya no puedes editarlo",
+            "teamLocked": "Su equipo está bloqueado",
+            "teamShareEnded": "Su equipo ya no lo comparte",
             "unknown": "No se está ejecutando"
           },
           "stopped": "Detenido",
