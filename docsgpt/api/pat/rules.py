@@ -475,6 +475,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/teams/<string:team_id>", "GET"): _rule("teams:read"),
     ("/api/teams/<string:team_id>/members", "GET"): _rule("teams:read"),
     ("/api/teams/<string:team_id>/grants", "GET"): _rule("teams:read"),
+    ("/api/teams/<string:team_id>/outside", "GET"): _rule("teams:read"),
     ("/api/resource_shares", "GET"): _rule("teams:read"),
     ("/api/resource_settings", "GET"): _rule("teams:read"),
     ("/api/workspaces", "GET"): _rule("teams:read"),
@@ -550,6 +551,8 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/teams/<string:team_id>/members/<string:member_id>": ("*",),
     "/api/teams/<string:team_id>/grants": ("POST", "DELETE"),
     "/api/teams/<string:team_id>/transfer_owner": ("*",),
+    # Who may take a team's items outside it is changed by its Admins or Owner in a session, like moving.
+    "/api/teams/<string:team_id>/outside_policy": ("*",),
     "/api/resource_settings": ("PUT",),
     # Who may edit a wiki from outside the app is the owner's call in a session.
     "/api/sources/<string:source_id>/wiki/settings": ("PUT",),

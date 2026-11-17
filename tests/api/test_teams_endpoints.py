@@ -47,6 +47,9 @@ def _auth(sub="u1", roles=("user",), team_role=None):
         patch("docsgpt.app.resolve_roles", return_value=list(roles)),
         patch("docsgpt.api.user.team_authz.db_readonly", lambda: _cm(Mock())),
         patch("docsgpt.api.user.team_authz.TeamMembersRepository", return_value=members),
+        # The agent's team items are read from the database; these mocked shares use none
+        # (tests/api/user/teams/test_team_outside_routes.py covers the refusal).
+        patch("docsgpt.api.user.teams.routes._team_items_refusal", return_value=None),
     ]
 
 

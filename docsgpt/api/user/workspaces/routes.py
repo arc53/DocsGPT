@@ -63,23 +63,30 @@ def list_workspaces(conn, user: str) -> list[dict]:
 
     Returns:
         list[dict]: ``{id: "personal", kind, name}`` first, then ``{id, kind: "team", name, slug, role,
-        member_count, principal_label, chat_export}`` per team. ``chat_export`` says whether the team's
-        Owner and Admins can export its chats (``TEAM_CHAT_EXPORT_ENABLED``), so every member can be told.
+        member_count, principal_label, chat_export, outside_policy, can_set_outside_policy}`` per team.
+        ``chat_export`` says whether the team's Owner and Admins can export its chats
+        (``TEAM_CHAT_EXPORT_ENABLED``), so every member can be told. ``outside_policy`` is who may take the
+        team's items outside; ``can_set_outside_policy`` whether the caller may change it.
     """
+    # Lazy: the teams routes import the user API, which imports this module.
+    from docsgpt.api.user.teams.outside import policy_fields
+
     teams = TeamsRepository(conn).workspaces_for(user)
     labels = UsersRepository(conn).principal_labels(principal_id(t["id"]) for t in teams)
     out = [{"id": PERSONAL, "kind": PERSONAL, "name": "Personal"}]
     for team in teams:
         team_id = str(team["id"])
+        role = _team_role(team)
         out.append({
             "id": team_id,
             "kind": "team",
             "name": team.get("name"),
             "slug": team.get("slug"),
-            "role": _team_role(team),
+            "role": role,
             "member_count": int(team.get("member_count") or 0),
             "principal_label": labels.get(principal_id(team_id)),
             "chat_export": bool(settings.TEAM_CHAT_EXPORT_ENABLED),
+            **policy_fields(team, role),
         })
     return out
 

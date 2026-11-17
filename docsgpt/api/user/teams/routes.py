@@ -22,8 +22,10 @@ Authorization model (two planes, see ``team_authz.py``):
   (``team_admin``/``team_member``) beside the new ``role``, the grants list
   keeps ``team_role`` in the old names beside ``role``, and member rows keep
   ``role`` in the old names beside the new ``team_role``.
-- A team's own items have no per-item grants (409 ``team_item``), and a team
-  that still owns items can't be deleted (409 ``team_not_empty``).
+- A team's own items have no per-item grants and go to another team whole:
+  the grants routes share a team item with every member of another team at
+  Viewer level, by its outside policy (``teams/outside.py``). A team that
+  still owns items can't be deleted (409 ``team_not_empty``).
 
 ``team_id`` always comes from the URL path (never the body) — enforced by
 ``require_team_role`` and by reading ``team_id`` as a route kwarg here.
@@ -68,6 +70,7 @@ from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_members import (
     ROLE_TEAM_ADMIN,
+    ROLE_TEAM_VIEWER,
     MembershipChangeRefused,
     TeamMembersRepository,
 )
@@ -79,6 +82,7 @@ from docsgpt.storage.db.repositories.teams import TeamNotEmpty, TeamsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.outside import team_policy
 from docsgpt.workspaces.principal import is_principal_id, principal_id
 from docsgpt.workspaces.roles import (
@@ -168,7 +172,7 @@ def _refusal(refused: MembershipChangeRefused):
 
 
 def _team_payload(team: dict, user: str | None, stored_role: str | None = None) -> dict:
-    """Add the caller's ``role``, ``member_role`` and ``is_owner`` to a team row.
+    """Add the caller's ``role``, ``member_role``, ``is_owner`` and the outside policy fields to a team row.
 
     Args:
         team: The team row.
@@ -178,13 +182,19 @@ def _team_payload(team: dict, user: str | None, stored_role: str | None = None) 
     Returns:
         dict: The row, with ``role`` (``owner|admin|editor|viewer``, None for a
         non-member such as an instance admin), ``member_role`` (today's
-        ``team_admin|team_member``) and ``is_owner`` (gates delete and transfer).
+        ``team_admin|team_member``), ``is_owner`` (gates delete and transfer),
+        ``outside_policy`` and ``can_set_outside_policy`` (the Owner, or an
+        Admin while the team isn't locked).
     """
+    # Lazy: the outside module registers its routes on this module's namespace.
+    from docsgpt.api.user.teams.outside import policy_fields
+
     is_owner = bool(user) and team.get("owner_id") == user
     role = "owner" if is_owner else from_stored_role(stored_role)
     team["role"] = role
     team["member_role"] = legacy_member_role(role)
     team["is_owner"] = is_owner
+    team.update(policy_fields(team, role))
     return team
 
 
@@ -532,6 +542,34 @@ def _send_payer_left(notice: dict | None) -> None:
             body=notice["body"],
             url=notice["url"],
         )
+
+
+def _team_items_refusal(conn, ra: ResourceAccess, team_id: str, target_user_id: str | None, user: str):
+    """The 409 that keeps a personal agent using a team's items from people who can't reach them.
+
+    Holds the agent owner's items lock first, so a save adding a team's item to
+    the agent runs wholly before or after this share.
+
+    Args:
+        conn: Open connection in the share's transaction.
+        ra: The caller's access to the agent.
+        team_id: The team it is shared with.
+        target_user_id: The one member, or None for the whole team.
+        user: The caller.
+
+    Returns:
+        The refusal response, or None when the share may go ahead.
+    """
+    # Lazy: graph_checks imports the workflow routes, which import most of the user API.
+    from docsgpt.api.user.agents.graph_checks import team_confinement_refusal
+
+    lock_owner_items(conn, ra.owner_id)
+    agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}
+    refused = team_confinement_refusal(conn, agent, team_id, target_user_id, user)
+    if refused is None:
+        return None
+    body, status = refused
+    return make_response(jsonify(body), status)
 
 
 def _valid_resource(resource_type, resource_id) -> bool:
@@ -1000,14 +1038,20 @@ class TeamGrants(Resource):
         Each row carries the resource's name, owner and people labels (email
         when on file, else null), ``caller`` — the caller's own live access
         fields on that resource (null if none) — and ``origin``
-        (``personal_shared``: grants are only ever on members' personal
-        items). A Viewer or Editor sees whole-team grants and grants aimed at
-        them; an Admin, the Owner, or someone with ``share`` on the resource,
-        sees every grant. ``paused_reason`` is ``owner_left`` on a grant whose
-        item's owner is no longer in the team (it gives no access until they
-        are re-added), else null. The envelope gives the caller's ``role``
-        (``owner|admin|editor|viewer``) and ``team_role`` in today's names.
+        (``personal_shared`` on a member's personal item). A Viewer or Editor
+        sees whole-team grants and grants aimed at them; an Admin, the Owner,
+        or someone with ``share`` on the resource, sees every grant.
+        ``paused_reason`` is ``owner_left`` on a grant whose item's owner is no
+        longer in the team (it gives no access until they are re-added), else
+        null. Items other teams share with this team follow, every member
+        seeing them, with ``origin`` ``team_shared``, ``shared_from``,
+        ``paused_reason`` ``team_locked`` and ``can_revoke`` (see
+        ``outside.incoming_share_rows``). The envelope gives the caller's
+        ``role`` (``owner|admin|editor|viewer``) and ``team_role`` in today's
+        names.
         """
+        from docsgpt.api.user.teams.outside import incoming_share_rows
+
         user = _current_user()
         token = getattr(request, "decoded_token", None)
         resource_type = request.args.get("resource_type")
@@ -1046,10 +1090,12 @@ class TeamGrants(Resource):
                         if u
                     },
                 )
+                incoming = incoming_share_rows(conn, user, team_id, resource_type)
             for g in visible:
                 g["owner_label"] = labels.get(g.get("owner_id"))
                 g["target_user_label"] = labels.get(g.get("target_user_id"))
                 g["granted_by_label"] = labels.get(g.get("granted_by"))
+            visible.extend(incoming)
             return make_response(
                 jsonify(
                     {
@@ -1065,15 +1111,24 @@ class TeamGrants(Resource):
             logger.error("List grants failed: %s", err, exc_info=True)
             return {"success": False}, 400
 
-    @team_member_required
     def post(self, team_id):
         """Share a resource with this team, or change an existing grant's level.
 
-        Needs ``share`` on the resource (the owner, or an editor when the owner
-        turned on ``editors_can_share``) and membership of the team. The grant
-        records the real owner as ``owner_id`` and the caller as ``granted_by``.
+        A person's item needs ``share`` on it (the owner, or an editor when the
+        owner turned on ``editors_can_share``) and membership of the team. The
+        grant records the real owner as ``owner_id`` and the caller as
+        ``granted_by``. A personal agent that uses a team's items goes only to
+        people who reach them (409 ``uses_team_items``).
+
+        A team's item goes to the whole team at Viewer level, from someone its
+        outside policy lets share (``share_outside``) who is in this team too
+        (``outside.share_team_item``): 201 with ``share``, 200 when this team
+        has it already.
         """
         user = _current_user()
+        token = getattr(request, "decoded_token", None)
+        if not user or not token:
+            return make_response(jsonify({"success": False, "message": "Authentication required"}), 401)
         data = request.get_json(silent=True) or {}
         resource_type = data.get("resource_type")
         resource_id = data.get("resource_id")
@@ -1084,33 +1139,40 @@ class TeamGrants(Resource):
             return {"success": False, "message": "invalid resource"}, 400
         if access_level not in _VALID_ACCESS_LEVELS:
             return {"success": False, "message": "invalid access_level"}, 400
+        from docsgpt.api.user.teams import outside
+
         try:
             with db_session() as conn:
+                share = None
+                if is_principal_id(resource_owner(conn, resource_type, resource_id)):
+                    refusal, share = outside.share_team_item(
+                        conn, user, team_id, resource_type, resource_id, access_level, target_user_id
+                    )
+                    if refusal is not None:
+                        return refusal
+            if share is not None:
+                # Post-commit, best-effort: tell the receiving team, once.
+                if share.get("created"):
+                    _notify_resource_shared(user, team_id, resource_type, resource_id, "viewer", None)
+                return make_response(jsonify({"success": True, "share": share}), 201 if share.get("created") else 200)
+            with db_session() as conn:
+                if not has_team_role(token, team_id, ROLE_TEAM_VIEWER):
+                    return make_response(jsonify({"success": False, "message": "Forbidden"}), 403)
                 # ``require`` dispatches by resource_type, so a mismatched
                 # type/id can't register a bogus grant (the table has no FK).
                 try:
                     ra = require(conn, resource_type, resource_id, user, "share")
                 except AccessDenied as denied:
-                    # A team's own item has no ``share``: its members reach it by their
-                    # team role and it has no per-item people. Said only to someone
-                    # who can see it (a 403, never a 404).
-                    if denied.status == 403 and is_principal_id(resource_owner(conn, resource_type, resource_id)):
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": False,
-                                    "error": "team_item",
-                                    "message": "This item belongs to a team and can't be shared item by item",
-                                }
-                            ),
-                            409,
-                        )
                     return _denied(denied)
                 # A per-member share target must actually be a member of the team.
                 if target_user_id and not TeamMembersRepository(conn).is_member(
                     target_user_id, team_id
                 ):
                     return {"success": False, "message": "Target is not a team member"}, 400
+                if resource_type == "agent":
+                    refusal = _team_items_refusal(conn, ra, team_id, target_user_id, user)
+                    if refusal is not None:
+                        return refusal
                 grant = TeamResourceGrantsRepository(conn).grant(
                     team_id,
                     resource_type,
@@ -1147,6 +1209,11 @@ class TeamGrants(Resource):
         team_admin of this team. ``target_user_id`` picks one member's grant
         (absent → the whole-team grant). Identifiers come from query params
         (some proxies strip DELETE bodies), with a JSON-body fallback.
+
+        A team's item shared with this team is stopped from either side
+        (``outside.revoke_team_item``): in the owning team by whoever may take
+        its items outside and by its Admins and Owner (locked too), in this
+        team by its Admins and Owner.
         """
         user = _current_user()
         token = getattr(request, "decoded_token", None)
@@ -1163,8 +1230,12 @@ class TeamGrants(Resource):
         ).strip() or None
         if not _valid_resource(resource_type, resource_id):
             return {"success": False, "message": "invalid resource"}, 400
+        from docsgpt.api.user.teams import outside
+
         try:
             with db_session() as conn:
+                if is_principal_id(resource_owner(conn, resource_type, resource_id)):
+                    return outside.revoke_team_item(conn, user, team_id, resource_type, resource_id)
                 try:
                     require(conn, resource_type, resource_id, user, "share")
                 except AccessDenied:
@@ -1237,8 +1308,11 @@ class ResourceShares(Resource):
 
         Powers the share dialog (current shares + unshare), so only someone who
         may change the sharing can enumerate it: 404 when the resource isn't
-        visible, 403 when the caller's role can't share. A team's own item has
-        no shares: any member gets where its access comes from instead
+        visible, 403 when the caller's role can't share. A personal agent adds
+        ``uses_team_items`` (``[{team_id, name, items}]``, the teams' items it
+        uses, which keep its shares to people who reach them). A team's own
+        item has no per-person shares: whoever reaches it gets where its
+        access comes from and its shares with other teams instead
         (:func:`_team_item_shares`).
         """
         user = _current_user()
@@ -1260,14 +1334,27 @@ class ResourceShares(Resource):
                 shares = TeamResourceGrantsRepository(conn).list_for_resource(
                     resource_type, resource_id
                 )
-            return make_response(jsonify({"success": True, "shares": shares}), 200)
+                body = {"success": True, "shares": shares}
+                if resource_type == "agent":
+                    body["uses_team_items"] = _uses_team_items(conn, resource_id, user)
+            return make_response(jsonify(body), 200)
         except Exception as err:
             logger.error("List resource shares failed: %s", err, exc_info=True)
             return {"success": False}, 400
 
 
+def _uses_team_items(conn, agent_id: str, user: str) -> list[dict]:
+    """``[{team_id, name, items}]``: the teams' items a personal agent uses, as its share dialog reads them."""
+    # Lazy: graph_checks imports the workflow routes, which import most of the user API.
+    from docsgpt.api.user.agents.graph_checks import agent_team_refs, uses_team_items_payload
+
+    agent = AgentsRepository(conn).get_by_id(agent_id) or {}
+    refs = agent_team_refs(conn, agent) if agent else {}
+    return uses_team_items_payload(conn, refs, user) if refs else []
+
+
 def _team_item_shares(conn, ra: ResourceAccess, user: str) -> dict:
-    """The share dialog of a team's item: the workspace, its size and the agent's outside access.
+    """The share dialog of a team's item: the workspace, its size, the agent's outside access, its team shares.
 
     Args:
         conn: Open connection.
@@ -1279,12 +1366,18 @@ def _team_item_shares(conn, ra: ResourceAccess, user: str) -> dict:
         ``members_count``, and for an agent ``outside_access``, the agent payload's own block
         (``outside_access_state``: ``{api_key, public_link, webhook, paid_by, paused_for,
         can_take_over}``), so the dialog and the agent page never disagree. Every member reads
-        what is on; only those who manage it read who pays and why it is paused.
+        what is on; only those who manage it read who pays and why it is paused. Then
+        ``outside_policy``, ``outside_shares``, ``share_targets`` and ``warning_kind``
+        (``outside.owner_dialog_fields``). A team that received the item through a share reads
+        only where it lives for them and where it comes from (``outside.receiver_dialog``).
     """
     # Imported here: the agents package pulls in most of the API, which would
     # make importing the teams routes order-dependent.
     from docsgpt.api.user.agents import sharing as agent_sharing
+    from docsgpt.api.user.teams import outside
 
+    if ra.via_team_id:
+        return outside.receiver_dialog(conn, ra)
     team = TeamsRepository(conn).get(ra.team_id) or {}
     members_count = conn.execute(
         text("SELECT count(DISTINCT user_id) FROM team_members WHERE team_id = CAST(:t AS uuid)"),
@@ -1301,6 +1394,7 @@ def _team_item_shares(conn, ra: ResourceAccess, user: str) -> dict:
     if ra.resource_type == "agent":
         agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}
         body["outside_access"] = agent_sharing.outside_access_state(conn, agent, ra, user)
+    body.update(outside.owner_dialog_fields(conn, ra, user))
     return body
 
 

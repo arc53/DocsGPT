@@ -700,6 +700,10 @@ CATALOG: tuple[Action, ...] = (
             "page": _int("Page number, from 1."), "page_size": _int("Rows per page, up to 100.")}),
     Action("list_team_resources", "GET", "/api/teams/<string:team_id>/grants", "List what is shared with a team.",
            {"team_id": _req("The team's id, from list_teams."), "resource_type": _param("Only agent, source, prompt or tool.")}),
+    Action("list_team_outside", "GET", "/api/teams/<string:team_id>/outside",
+           "List what a team takes outside it: its items shared with other teams, and its agents with an API key, "
+           "public link or webhook on.",
+           {"team_id": _req("The team's id, from list_teams.")}),
     Action("list_resource_shares", "GET", "/api/resource_shares", "List the teams one agent, source, prompt or tool is shared with.",
            {"resource_type": _req("agent, source, prompt or tool."), "resource_id": _req("The resource's id.")}),
     Action("get_resource_sharing_settings", "GET", "/api/resource_settings", "Read the sharing switches of one agent, source, prompt or tool.",

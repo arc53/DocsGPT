@@ -273,7 +273,9 @@ class TestTeamItems:
         return str(AgentsRepository(db).create(principal_id(tid), "Team agent", "published")["id"])
 
     @pytest.mark.parametrize("user", ["alice", "adam"])
-    def test_granting_a_team_item_is_409(self, client, db, user):
+    def test_a_team_item_goes_to_the_whole_other_team_never_as_a_grant(self, client, db, user):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
         tid = _team(db)
         other = _team(db, owner="olga", members=())
         TeamMembersRepository(db).add_member(other, user, role="team_viewer")
@@ -282,9 +284,9 @@ class TestTeamItems:
             resp = client.post(
                 f"/api/teams/{other}/grants", json={"resource_type": "agent", "resource_id": aid}
             )
-        assert resp.status_code == 409
-        assert _body(resp)["error"] == "team_item"
+        assert resp.status_code == 201, resp.data
         assert TeamResourceGrantsRepository(db).list_for_resource("agent", aid) == []
+        assert TeamItemSharesRepository(db).get(other, "agent", aid)["owner_team_id"] == tid
 
     def test_a_stranger_still_gets_404(self, client, db):
         tid = _team(db)
