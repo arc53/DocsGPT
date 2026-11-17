@@ -1,42 +1,46 @@
-import { useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { rememberOutsideAccess } from '../agents/OwnerInactiveNotice';
 import payerService from '../api/services/payerService';
-import type { ResourceType } from '../api/services/teamsService';
+import teamsService, {
+  teamErrorMessage,
+  type OutsideShare,
+  type ResourceSharesResponse,
+  type ResourceType,
+} from '../api/services/teamsService';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { Combobox } from '../components/ui/combobox';
+import { IconButton } from '../components/ui/icon-button';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { SectionHeader } from '../components/ui/section-header';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import type { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { pauseReasonText } from '../payer/pauseReason';
 import TakeOverModal from '../payer/TakeOverModal';
-import type {
-  OutsideAccess,
-  OutsideAccessKind,
-  PersonRef,
-} from '../payer/types';
+import type { OutsideAccessKind, PersonRef } from '../payer/types';
 import { selectToken } from '../preferences/preferenceSlice';
-import { roleAtLeast, type WorkspaceRole } from '../workspace/workspaceSlice';
+import { formatCount } from '../utils/dateTimeUtils';
+import { roleAtLeast } from '../workspace/workspaceSlice';
+import { shareWarningLines } from './accessSettings';
 
 /**
- * `GET /api/resource_shares` for an item a team owns: no per-item people,
- * the team and its size, the caller's access, and an agent's outside access.
+ * `GET /api/resource_shares` for an item a team owns, or one another team
+ * shares with the caller's (`origin: "team_shared"`): no per-item people,
+ * but the team it lives in (see `ResourceSharesResponse`).
  */
-export type TeamItemShares = {
-  success?: boolean;
+export type TeamItemShares = Omit<
+  ResourceSharesResponse,
+  'shares' | 'workspace'
+> & {
   shares?: unknown[];
-  workspace: { kind: 'team'; team_id: string; name?: string | null };
-  members_count?: number;
-  access?: string | null;
-  allowed_actions?: string[];
-  team_role?: WorkspaceRole | null;
-  origin?: 'own' | 'team' | 'shared' | null;
-  /** Agents only: what is on, who pays, why it is paused, Take over. */
-  outside_access?: OutsideAccess | null;
+  workspace: NonNullable<ResourceSharesResponse['workspace']>;
 };
 
 /** Whether a `resource_shares` answer is a team item's. */
@@ -56,6 +60,8 @@ type Props = {
   currentUserId?: string;
   /** Before Manage members navigates away, so the dialog can close. */
   onNavigate?: () => void;
+  /** After a share with another team was added or stopped: reload `info`. */
+  onChanged?: () => unknown;
 };
 
 const initialOf = (label: string): string => {
@@ -67,10 +73,12 @@ const initialOf = (label: string): string => {
  * The share dialog's body for an item a team owns: access follows team
  * membership, so it shows one row for everyone in the team (with Manage
  * members for the team's Admins), the caller's own row with their team role,
- * and for an agent what reaches it from outside the team (public link, API
- * key and widget, webhook), each On or Off and who pays for it, or why it is
- * paused. Those are changed on the agent's own page, by an Admin; an Admin
- * who doesn't pay for them can take them over here.
+ * the other teams it is shared with (see `OtherTeams`), and for an agent what
+ * reaches it from outside the team (public link, API key and widget,
+ * webhook), each On or Off and who pays for it, or why it is paused. Those
+ * are changed on the agent's own page, by an Admin; an Admin who doesn't pay
+ * for them can take them over here. An item another team shares with the
+ * caller's only says where it comes from.
  */
 export default function TeamItemAccess({
   resourceType,
@@ -79,6 +87,7 @@ export default function TeamItemAccess({
   info,
   currentUserId,
   onNavigate,
+  onChanged,
 }: Props) {
   const { t, i18n } = useTranslation();
   const dispatch = useDispatch();
@@ -139,6 +148,31 @@ export default function TeamItemAccess({
         ]
       : [];
 
+  if (info.origin === 'team_shared') {
+    const owner = info.shared_from?.name;
+    return (
+      <div className="flex flex-col gap-4">
+        <p className="text-muted-foreground text-sm">
+          {owner
+            ? t('workspace.share.outside.received.body', {
+                owner,
+                team,
+                ...noEscape,
+              })
+            : t('workspace.share.outside.received.bodyNoOwner', {
+                team,
+                ...noEscape,
+              })}
+        </p>
+        <Alert variant="info" role="note">
+          <AlertDescription>
+            {t('workspace.share.outside.received.note')}
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <p className="text-muted-foreground text-sm">
@@ -190,6 +224,13 @@ export default function TeamItemAccess({
           />
         </ListRows>
       </section>
+      <OtherTeams
+        resourceType={resourceType}
+        resourceId={resourceId}
+        info={info}
+        currentUserId={currentUserId}
+        onChanged={onChanged}
+      />
       {outside ? (
         <section className="flex flex-col gap-1">
           <SectionHeader
@@ -245,5 +286,264 @@ export default function TeamItemAccess({
         />
       ) : null}
     </div>
+  );
+}
+
+type OtherTeamsProps = {
+  resourceType: ResourceType;
+  resourceId?: string;
+  info: TeamItemShares;
+  currentUserId?: string;
+  onChanged?: () => unknown;
+};
+
+/**
+ * "Shared with other teams" for a member of the team that owns the item: a
+ * picker of the caller's other teams and Share, gated on `share_outside`
+ * (only `share_targets` are offered); what the picked team will get; the
+ * current shares, each with Stop sharing when the caller may stop it. A
+ * locked team says why nothing can be shared instead of the picker.
+ */
+function OtherTeams({
+  resourceType,
+  resourceId,
+  info,
+  currentUserId,
+  onChanged,
+}: OtherTeamsProps) {
+  const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const noEscape = { interpolation: { escapeValue: false } };
+  const owner = info.workspace.name ?? '';
+  const shares = info.outside_shares ?? [];
+  const targets = info.share_targets ?? [];
+  const canShare = !!info.allowed_actions?.includes('share_outside');
+  const locked = info.outside_policy === 'locked';
+  const [target, setTarget] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toRevoke, setToRevoke] = useState<OutsideShare | null>(null);
+
+  // A Viewer of an unlocked team with nothing shared has nothing to read
+  // here; once locked, whoever could take items outside learns why not.
+  const shown =
+    canShare ||
+    shares.length > 0 ||
+    (locked && roleAtLeast(info.team_role ?? 'viewer', 'editor'));
+  if (!shown) return null;
+
+  const teamLabel = (name: string | null | undefined): string =>
+    name || t('workspace.share.outside.unknownTeam');
+  const picked = targets.find((row) => row.team_id === target) ?? null;
+
+  const share = async () => {
+    if (!picked || !resourceId) return;
+    setSharing(true);
+    setError(null);
+    try {
+      await teamsService.shareTeamItem(
+        picked.team_id,
+        { resource_type: resourceType, resource_id: resourceId },
+        token,
+      );
+      setTarget(null);
+      await onChanged?.();
+    } catch (failure) {
+      setError(
+        teamErrorMessage(t, failure, t('workspace.share.outside.shareError')),
+      );
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const revoke = async (row: OutsideShare) => {
+    if (!resourceId) return;
+    await teamsService.unshareTeamItem(
+      row.team_id,
+      { resource_type: resourceType, resource_id: resourceId },
+      token,
+    );
+    await onChanged?.();
+  };
+
+  // What stops when a share ends: the other team's chats with an agent, or
+  // that team's agents using a source, tool or prompt.
+  const revokeDescription = (row: OutsideShare): string => {
+    const team = teamLabel(row.name);
+    const what =
+      resourceType === 'agent'
+        ? t('workspace.share.outside.revokeAgent', { team, ...noEscape })
+        : row.used_by_count
+          ? t('workspace.share.outside.revokeUsed', {
+              count: row.used_by_count,
+              formatted: formatCount(row.used_by_count),
+              team,
+              ...noEscape,
+            })
+          : t('workspace.share.outside.revokeUnused', { team, ...noEscape });
+    return `${what} ${t('workspace.share.outside.again')}`;
+  };
+
+  const rowDescription = (row: OutsideShare): ReactNode => {
+    if (row.paused_reason === 'team_locked') {
+      return (
+        <span className="text-warning">
+          {t('workspace.share.outside.pausedLocked', {
+            owner,
+            ...noEscape,
+          })}
+        </span>
+      );
+    }
+    const by = row.shared_by;
+    const parts = [
+      by && currentUserId && by.user_id === currentUserId
+        ? t('workspace.share.outside.sharedByYou')
+        : by?.label
+          ? t('workspace.share.outside.sharedBy', {
+              name: by.label,
+              ...noEscape,
+            })
+          : null,
+      row.used_by_count
+        ? t('workspace.share.outside.usedBy', {
+            count: row.used_by_count,
+            formatted: formatCount(row.used_by_count),
+          })
+        : null,
+    ].filter(Boolean);
+    return parts.join(' · ');
+  };
+
+  const picker = canShare ? (
+    targets.length === 0 ? (
+      <p className="text-muted-foreground text-sm">
+        {t('workspace.share.outside.noTargets')}
+      </p>
+    ) : (
+      <>
+        <div className="flex items-center gap-2">
+          <Combobox
+            options={targets.map((row) => ({
+              value: row.team_id,
+              label: teamLabel(row.name),
+              leading: (
+                <Avatar alt="" variant="primary" size="xs" shape="square">
+                  {initialOf(teamLabel(row.name))}
+                </Avatar>
+              ),
+            }))}
+            value={target}
+            onValueChange={(value) => {
+              setError(null);
+              setTarget(value);
+            }}
+            placeholder={t('workspace.share.outside.pickerPlaceholder')}
+            searchPlaceholder={t('workspace.share.outside.pickerSearch')}
+            emptyText={t('workspace.share.outside.noMatches')}
+            aria-label={t('workspace.share.outside.picker')}
+            disabled={sharing}
+            className="min-w-0 flex-1"
+          />
+          <Button
+            type="button"
+            size="field"
+            disabled={!picked}
+            loading={sharing}
+            onClick={share}
+          >
+            {t('workspace.share.outside.share')}
+          </Button>
+        </div>
+        {picked ? (
+          <Alert variant="warning">
+            <AlertDescription>
+              {shareWarningLines(
+                t,
+                info.warning_kind,
+                teamLabel(picked.name),
+                owner,
+              ).map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+      </>
+    )
+  ) : null;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader
+        as="h3"
+        size="xs"
+        title={t('workspace.share.outside.teamsTitle')}
+      />
+      {locked ? (
+        <Alert variant="info" role="note">
+          <AlertDescription>
+            {t('workspace.share.outside.locked', { team: owner, ...noEscape })}
+          </AlertDescription>
+        </Alert>
+      ) : (
+        picker
+      )}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      {shares.length > 0 ? (
+        <ListRows>
+          {shares.map((row) => (
+            <ListRow
+              key={row.id}
+              wrap={row.paused_reason === 'team_locked'}
+              leading={
+                <Avatar alt="" variant="primary" size="default" shape="square">
+                  {initialOf(teamLabel(row.name))}
+                </Avatar>
+              }
+              title={teamLabel(row.name)}
+              description={rowDescription(row)}
+              trailing={
+                row.can_revoke ? (
+                  <IconButton
+                    variant="ghost-destructive"
+                    size="icon-sm"
+                    icon={Trash2}
+                    label={t('workspace.share.outside.revoke')}
+                    onClick={() => setToRevoke(row)}
+                  />
+                ) : null
+              }
+            />
+          ))}
+        </ListRows>
+      ) : null}
+      {toRevoke ? (
+        <ConfirmationModal
+          message={t('workspace.share.outside.revokeConfirm', {
+            team: teamLabel(toRevoke.name),
+            ...noEscape,
+          })}
+          description={revokeDescription(toRevoke)}
+          modalState="ACTIVE"
+          setModalState={(state) => state === 'INACTIVE' && setToRevoke(null)}
+          submitLabel={t('workspace.share.outside.revoke')}
+          handleSubmit={() => revoke(toRevoke)}
+          error={(reason) =>
+            teamErrorMessage(
+              t,
+              reason,
+              t('workspace.share.outside.unshareError'),
+            )
+          }
+          variant="destructive"
+        />
+      ) : null}
+    </section>
   );
 }

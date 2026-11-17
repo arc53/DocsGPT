@@ -10,6 +10,10 @@ import teamsService, {
   ResourceShare,
   ResourceType,
   TeamMember,
+  teamErrorMessage,
+  teamItemsRefusal,
+  type TeamItemsRefusal,
+  type UsesTeamItems,
 } from '../api/services/teamsService';
 import connectorsService from '../api/services/connectorsService';
 import AgentUsesSection from '../agents/components/AgentUsesSection';
@@ -56,9 +60,12 @@ import {
   anyChanged,
   editorHint,
   errorMessage,
+  memberReachesTeamItems,
   resolveSettings,
   settingCopy,
   shownSettings,
+  teamItemsLine,
+  teamReachesTeamItems,
 } from './accessSettings';
 import { loadTeams, selectTeams } from './teamsSlice';
 import MoveToWorkspaceModal from '../workspace/move/MoveToWorkspaceModal';
@@ -178,6 +185,11 @@ export default function ShareToTeamModal({
   const currentUserId = useMemo(() => readerIdFromToken(token), [token]);
 
   const [shares, setShares] = useState<ResourceShare[]>([]);
+  // A personal agent's: the teams' items it uses, which keep its shares to
+  // people who can use them.
+  const [usesTeamItems, setUsesTeamItems] = useState<UsesTeamItems[]>([]);
+  // The last share the server refused over those items, with its move offer.
+  const [refusal, setRefusal] = useState<TeamItemsRefusal | null>(null);
   // An item a team owns has no grants: the answer says where access comes
   // from instead, and the dialog shows that.
   const [teamItem, setTeamItem] = useState<TeamItemShares | null>(null);
@@ -288,6 +300,9 @@ export default function ShareToTeamModal({
           return;
         }
         setTeamItem(null);
+        setUsesTeamItems(
+          Array.isArray(r?.uses_team_items) ? r.uses_team_items : [],
+        );
         const server = (r?.shares ?? []) as ResourceShare[];
         // Server state is authoritative, but a reconcile triggered by one
         // action's settle must not stomp a *different* row whose optimistic
@@ -458,6 +473,8 @@ export default function ShareToTeamModal({
       teams
         // Exclude teams already whole-team-shared.
         .filter((team) => !grantedKeys.has(`${team.id}:`))
+        // A team's items stay with people who can use them.
+        .filter((team) => teamReachesTeamItems(usesTeamItems, team.id))
         .filter((team) => matches(team.name, query))
         .map((team) => ({
           kind: 'team' as const,
@@ -465,7 +482,7 @@ export default function ShareToTeamModal({
           teamId: team.id,
           teamName: team.name,
         })),
-    [teams, grantedKeys, query],
+    [teams, grantedKeys, query, usesTeamItems],
   );
 
   const memberSuggestions = useMemo<Suggestion[]>(() => {
@@ -481,6 +498,10 @@ export default function ShareToTeamModal({
         const key = `${team.id}:${member.user_id}`;
         // Exclude (team, member) pairs already granted.
         if (grantedKeys.has(key)) return;
+        if (
+          !memberReachesTeamItems(usesTeamItems, membersByTeam, member.user_id)
+        )
+          return;
         const label = memberLabel(member);
         if (!matches(`${label} ${member.user_id} ${team.name}`, query)) return;
         out.push({
@@ -494,7 +515,20 @@ export default function ShareToTeamModal({
       });
     });
     return out;
-  }, [teams, membersByTeam, grantedKeys, query, currentUserId]);
+  }, [teams, membersByTeam, grantedKeys, query, currentUserId, usesTeamItems]);
+
+  // A refused share: over the agent's team items it says which and offers
+  // the move; anything else is the app's words for the code.
+  const shareFailed = (error: unknown) => {
+    const refused = teamItemsRefusal(error);
+    if (refused) {
+      setRefusal(refused);
+      return;
+    }
+    setActionError(
+      teamErrorMessage(t, error, t('settings.teams.share.shareError')),
+    );
+  };
 
   // Mutations update `shares` optimistically for instant feedback, then
   // reconcile against the server once the request settles: refreshShares() runs
@@ -508,6 +542,7 @@ export default function ShareToTeamModal({
     setPickerOpen(false);
     setQuery('');
     setActionError(null);
+    setRefusal(null);
     setCommitting(true);
 
     const optimistic: ResourceShare =
@@ -539,7 +574,7 @@ export default function ShareToTeamModal({
         token,
       );
     } catch (error) {
-      setActionError(errorMessage(error, t('settings.teams.share.shareError')));
+      shareFailed(error);
     } finally {
       // Clear this action's in-flight flag *before* reconciling so the refresh
       // adopts the server's canonical state for this pick (while still
@@ -557,6 +592,7 @@ export default function ShareToTeamModal({
     if (share.access_level === level) return;
     const key = shareKey(share);
     setActionError(null);
+    setRefusal(null);
     setRowBusy(key, true);
     setShares((prev) =>
       prev.map((s) =>
@@ -575,7 +611,7 @@ export default function ShareToTeamModal({
         token,
       );
     } catch (error) {
-      setActionError(errorMessage(error, t('settings.teams.share.shareError')));
+      shareFailed(error);
     } finally {
       // Free this row before reconciling so the refresh adopts server state for
       // it; other rows still busy keep their in-flight optimistic edits.
@@ -604,7 +640,7 @@ export default function ShareToTeamModal({
       );
     } catch (error) {
       setRemoveError(
-        errorMessage(error, t('settings.teams.share.unshareError')),
+        teamErrorMessage(t, error, t('settings.teams.share.unshareError')),
       );
       throw error;
     } finally {
@@ -1147,6 +1183,39 @@ export default function ShareToTeamModal({
             </p>
           </div>
 
+          {refusal ? (
+            <Alert variant="info" role="note">
+              <AlertTitle>
+                {t('settings.teams.errors.usesTeamItems')}
+              </AlertTitle>
+              <AlertDescription>
+                <p>
+                  {teamItemsLine(t, refusal.usesTeamItems)}{' '}
+                  {refusal.moveTo && can(settingsInfo, 'move_to_team') ? (
+                    <AlertAction
+                      onClick={() => setMoveTeamId(refusal.moveTo!.team_id)}
+                    >
+                      {t('workspace.share.outside.uses.moveTo', {
+                        team:
+                          refusal.moveTo.name ??
+                          teamName(refusal.moveTo.team_id),
+                        interpolation: { escapeValue: false },
+                      })}
+                    </AlertAction>
+                  ) : (
+                    t('workspace.share.outside.uses.remove')
+                  )}
+                </p>
+              </AlertDescription>
+            </Alert>
+          ) : usesTeamItems.length > 0 ? (
+            <Alert variant="info" role="note">
+              <AlertDescription>
+                {t('workspace.share.outside.uses.note')}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {/* People with access. */}
           <section className="flex flex-col gap-1">
             <SectionHeader
@@ -1270,6 +1339,7 @@ export default function ShareToTeamModal({
           info={teamItem}
           currentUserId={currentUserId}
           onNavigate={onClose}
+          onChanged={refreshShares}
         />
       </Modal>
     );

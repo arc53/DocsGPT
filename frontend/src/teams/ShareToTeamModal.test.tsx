@@ -51,7 +51,9 @@ const listMembers = vi.fn();
 const share = vi.fn();
 const unshare = vi.fn();
 
-vi.mock('../api/services/teamsService', () => ({
+// The real error helpers (codes, refusal bodies); only the calls are faked.
+vi.mock('../api/services/teamsService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/services/teamsService')>()),
   default: {
     listResourceShares: (...a: unknown[]) => listResourceShares(...a),
     getResourceSettings: (...a: unknown[]) => getResourceSettings(...a),

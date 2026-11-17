@@ -3,6 +3,8 @@ import type { TFunction } from 'i18next';
 import type {
   ResourceSetting,
   ResourceType,
+  ShareWarningKind,
+  UsesTeamItems,
 } from '../api/services/teamsService';
 
 /**
@@ -200,3 +202,99 @@ export const errorMessage = (error: unknown, fallback: string): string => {
     ? e.message
     : fallback;
 };
+
+// The warning line for each kind of team item (locale key under
+// `workspace.share.outside.warning`).
+const WARNING_KEYS: Record<ShareWarningKind, string> = {
+  agent: 'agent',
+  source: 'source',
+  prompt: 'prompt',
+  tool_stored: 'toolStored',
+  tool_member: 'toolMember',
+};
+
+/**
+ * What sharing a team's item with another team gives that team: the line for
+ * the item's kind (an agent's chats and Logs, a source's files, a tool's
+ * account), then the line every share has (no changes, no sharing on,
+ * stopping it stops whatever uses it).
+ *
+ * Args:
+ *   t: The translate function.
+ *   kind: The item's `warning_kind`; unknown gives only the common line.
+ *   team: The receiving team's name.
+ *   owner: The owning team's name.
+ *
+ * Returns:
+ *   The lines, in reading order.
+ */
+export function shareWarningLines(
+  t: TFunction,
+  kind: ShareWarningKind | undefined,
+  team: string,
+  owner: string,
+): string[] {
+  const noEscape = { interpolation: { escapeValue: false } };
+  const key = kind ? WARNING_KEYS[kind] : undefined;
+  return [
+    ...(key
+      ? [
+          t(`workspace.share.outside.warning.${key}`, {
+            team,
+            owner,
+            ...noEscape,
+          }),
+        ]
+      : []),
+    t('workspace.share.outside.warning.always', { team, ...noEscape }),
+  ];
+}
+
+/**
+ * Whether sharing a personal agent with the whole of `teamId` keeps its team
+ * items with people who can use them. The dialog knows only which team owns
+ * each item, so it suggests the team that owns all of them; a team that
+ * receives them through a share is left to the server.
+ */
+export const teamReachesTeamItems = (
+  uses: UsesTeamItems[],
+  teamId: string,
+): boolean => uses.every((row) => row.team_id === teamId);
+
+/**
+ * Whether sharing a personal agent with one person keeps its team items with
+ * people who can use them: they are in every team whose items it uses.
+ */
+export const memberReachesTeamItems = (
+  uses: UsesTeamItems[],
+  membersByTeam: Record<string, ReadonlyArray<{ user_id: string }>>,
+  userId: string,
+): boolean =>
+  uses.every((row) =>
+    (membersByTeam[row.team_id] ?? []).some((m) => m.user_id === userId),
+  );
+
+/**
+ * One sentence per team naming the items of it an agent uses, as far as the
+ * reader may see them ("From Operations: Rates, 1 item you can't see.").
+ */
+export function teamItemsLine(t: TFunction, uses: UsesTeamItems[]): string {
+  const noEscape = { interpolation: { escapeValue: false } };
+  return uses
+    .map((row) => {
+      const named = row.items.flatMap((item) => (item.name ? [item.name] : []));
+      const hidden = row.items.length - named.length;
+      const items = [
+        ...named,
+        ...(hidden
+          ? [t('workspace.share.outside.uses.hidden', { count: hidden })]
+          : []),
+      ].join(', ');
+      return t('workspace.share.outside.uses.fromTeam', {
+        team: row.name || t('workspace.share.outside.uses.someTeam'),
+        items,
+        ...noEscape,
+      });
+    })
+    .join(' ');
+}
