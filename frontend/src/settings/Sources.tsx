@@ -98,12 +98,15 @@ import {
   type KnowledgeLink,
   readKnowledgeLink,
 } from './knowledgeLink';
+import userService from '../api/services/userService';
+import { followItemWorkspace } from '../conversation/followWorkspace';
 import { cn } from '../lib/utils';
 import { can } from '../utils/accessUtils';
 import { formatRelative } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
 import { captureWorkspace } from '../workspace/requestWorkspace';
+import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
 import WorkspaceLine from '../workspace/WorkspaceLine';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
@@ -409,6 +412,31 @@ export default function Sources({
       },
       { replace: true },
     );
+  // The linked source this page asked the workspace of, once per link, and
+  // whether the answer (and the follow) is still out.
+  const linkLookup = useRef<{ id: string; pending: boolean } | null>(null);
+  /**
+   * Takes the app to the workspace a linked source lives in (a pasted,
+   * bookmarked or new-tab link), so it opens from that workspace's lists.
+   * A source out of reach, or a workspace the app can't go to, drops the
+   * link quietly.
+   */
+  const followLinkedSource = (id: string) => {
+    linkLookup.current = { id, pending: true };
+    const settle = (switched: boolean) => {
+      if (linkLookup.current?.id !== id) return;
+      linkLookup.current = { id, pending: false };
+      if (!switched) dropLink();
+    };
+    userService
+      .getSourceWorkspace(id, token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { workspace?: ItemWorkspace | null } | null) =>
+        body?.workspace ? dispatch(followItemWorkspace(body.workspace)) : false,
+      )
+      .then(settle)
+      .catch(() => settle(false));
+  };
   useEffect(() => {
     const link = readKnowledgeLink(searchParams);
     if (!link) return;
@@ -425,6 +453,12 @@ export default function Sources({
       waitedFor.current = link.sourceId;
       return;
     }
+    if (!listed && linkLookup.current?.id !== link.sourceId) {
+      // Not in this workspace's lists: it may live in another.
+      followLinkedSource(link.sourceId);
+      return;
+    }
+    if (!listed && linkLookup.current?.pending) return;
     dropLink();
     const waited = waitedFor.current === link.sourceId;
     waitedFor.current = null;

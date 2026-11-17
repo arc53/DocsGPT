@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 
 const {
   dispatch,
+  follow,
   service,
   view,
   connectors,
@@ -101,7 +102,17 @@ const {
     syncConnector: vi.fn(),
     reingestSource: vi.fn(),
     getDirectoryStructure: vi.fn(),
+    // Where a linked source lives; none found by default.
+    getSourceWorkspace: vi.fn(async () => ({ ok: false, status: 404 })),
   },
+  // The follow into a linked source's workspace; resolves to whether the
+  // app switched.
+  follow: vi.fn(async (_workspace: unknown) => false),
+}));
+
+vi.mock('../conversation/followWorkspace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../conversation/followWorkspace')>()),
+  followItemWorkspace: (workspace: unknown) => () => follow(workspace),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -1416,6 +1427,76 @@ describe('Sources citation link', () => {
     await render('/settings/knowledge?source=src-9&chunk=c1&q=x');
     expect(where()).toBe('?source=src-9&chunk=c1&q=x');
     expect(viewOf('chunks')).toBeNull();
+  });
+
+  // A pasted or bookmarked link to a source of another workspace goes there
+  // first; the source then opens from that workspace's lists.
+  describe('a source not in this workspace', () => {
+    beforeEach(() => {
+      service.getSourceWorkspace.mockClear();
+      follow.mockClear();
+    });
+    // Back to the defaults: no source found, no follow.
+    afterEach(() => {
+      service.getSourceWorkspace.mockImplementation(async () => ({
+        ok: false,
+        status: 404,
+      }));
+      follow.mockImplementation(async () => false);
+    });
+    const team = { kind: 'team', team_id: 't1' };
+
+    it("follows it into the source's workspace and keeps the link", async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(true);
+      await render('/settings/knowledge?source=src-t&chunk=c1&q=x');
+      expect(service.getSourceWorkspace).toHaveBeenCalledWith('src-t', null);
+      expect(follow).toHaveBeenCalledWith(team);
+      expect(where()).toBe('?source=src-t&chunk=c1&q=x');
+    });
+
+    it('drops the link quietly when the caller cannot see it', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: false,
+        status: 404,
+      } as never);
+      await render('/settings/knowledge?source=gone');
+      expect(follow).not.toHaveBeenCalled();
+      expect(where()).toBe('');
+      expect(viewOf('chunks')).toBeNull();
+    });
+
+    it('drops the link quietly when the app cannot go there', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(false);
+      await render('/settings/knowledge?source=src-t');
+      expect(follow).toHaveBeenCalledWith(team);
+      expect(where()).toBe('');
+    });
+
+    it('asks once, so a source still missing after the follow drops the link', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(true);
+      await render('/settings/knowledge?source=src-t');
+      expect(where()).toBe('?source=src-t');
+      // The team's lists come back without it.
+      knowledge.docs = [doc({ id: 'other' })];
+      await render('/settings/knowledge?source=src-t');
+      expect(service.getSourceWorkspace).toHaveBeenCalledTimes(1);
+      expect(where()).toBe('');
+    });
   });
 
   it('shows the list for a source the caller cannot see', async () => {

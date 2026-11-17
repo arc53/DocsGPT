@@ -384,6 +384,12 @@ const userService = {
       { content_hash: contentHash, decision },
       token,
     ),
+  /** Where a source lives (`{kind, team_id}`); 404 for one out of reach. */
+  getSourceWorkspace: (
+    sourceId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.SOURCE_WORKSPACE(sourceId), token),
   /** The chunk behind a citation, by the content key retrieval labelled it with. */
   getSourceChunk: (
     sourceId: string,

@@ -1359,6 +1359,39 @@ class SourceConfigResource(Resource):
         )
 
 
+@sources_ns.route("/sources/<string:source_id>/workspace")
+class SourceWorkspace(Resource):
+    @api.doc(
+        description=(
+            "The workspace a source lives in (``{kind, team_id}``), so a link to it "
+            "opened from another workspace can go there first. 404 when the caller "
+            "cannot see the source."
+        )
+    )
+    def get(self, source_id: str) -> Response:
+        """Return where a source the caller can read lives.
+
+        Args:
+            source_id: The source's id.
+
+        Returns:
+            Response: ``{"success", "workspace"}``, or 404 for a source the
+            caller can't read (missing, someone else's, or a team they left).
+        """
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        try:
+            with db_readonly() as conn:
+                _, ra = load_source(conn, source_id, decoded_token.get("sub"), "use")
+        except AccessDenied as err:
+            return denied_response(err)
+        except Exception as err:
+            current_app.logger.error(f"Error resolving source workspace: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "workspace": ra.payload()["workspace"]}), 200)
+
+
 @sources_ns.route("/sources/defaults")
 class SourceDefaultsResource(Resource):
     @api.doc(

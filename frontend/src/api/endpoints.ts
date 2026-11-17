@@ -113,6 +113,8 @@ const endpoints = {
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     SOURCE_SEARCH: (id: string) => `/api/sources/${id}/search`,
     SOURCE_DEFAULTS: '/api/sources/defaults',
+    SOURCE_WORKSPACE: (id: string) =>
+      `/api/sources/${encodeURIComponent(id)}/workspace`,
     SOURCE_CHUNK: (id: string, chunkKey: string, excerpt?: string) => {
       const params = new URLSearchParams({ chunk_key: chunkKey });
       if (excerpt) params.set('excerpt', excerpt);

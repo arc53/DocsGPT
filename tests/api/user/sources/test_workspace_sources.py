@@ -472,6 +472,62 @@ class TestItemRoutesByTeamRole:
         assert delay.call_args.kwargs["actor_id"] == "eddie"
 
 
+class TestSourceWorkspace:
+    """``GET /api/sources/<id>/workspace``: where a source lives, for a link opened elsewhere."""
+
+    def _get(self, app, conn, user, source_id, team_id=None):
+        from docsgpt.api.user.sources.routes import SourceWorkspace
+
+        with _patch_db(conn), app.test_request_context(
+            f"/api/sources/{source_id}/workspace", headers=_headers(team_id),
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            return SourceWorkspace().get(source_id)
+
+    def test_a_member_learns_the_team_from_personal(self, app, pg_conn):
+        tid, principal = _team(pg_conn)
+        src = SourcesRepository(pg_conn).create("Team doc", user_id=principal)
+
+        response = self._get(app, pg_conn, "vera", str(src["id"]))
+
+        assert response.status_code == 200
+        assert response.json["workspace"] == {"kind": "team", "team_id": tid}
+
+    def test_an_owner_learns_personal_from_a_team(self, app, pg_conn):
+        tid, _ = _team(pg_conn, members=(("eddie", "team_editor"),))
+        src = SourcesRepository(pg_conn).create("Mine", user_id="eddie")
+
+        response = self._get(app, pg_conn, "eddie", str(src["id"]), tid)
+
+        assert response.status_code == 200
+        assert response.json["workspace"] == {"kind": "personal", "team_id": None}
+
+    def test_an_outsider_gets_404_and_nothing_about_the_source(self, app, pg_conn):
+        _, principal = _team(pg_conn)
+        src = SourcesRepository(pg_conn).create("Team doc", user_id=principal)
+
+        response = self._get(app, pg_conn, "mallory", str(src["id"]))
+
+        assert response.status_code == 404
+        assert "workspace" not in response.json
+
+    def test_a_removed_member_gets_404(self, app, pg_conn):
+        tid, principal = _team(pg_conn)
+        src = SourcesRepository(pg_conn).create("Team doc", user_id=principal)
+        TeamMembersRepository(pg_conn).remove_member(tid, "vera")
+
+        response = self._get(app, pg_conn, "vera", str(src["id"]))
+
+        assert response.status_code == 404
+
+    def test_an_unknown_id_gets_404(self, app, pg_conn):
+        response = self._get(app, pg_conn, "vera", str(uuid.uuid4()))
+
+        assert response.status_code == 404
+
+
 class TestInternalUploadIndex:
     def test_a_team_source_is_created_with_its_creator(self, pg_conn):
         from docsgpt.app import app as flask_app
