@@ -621,7 +621,7 @@ class TestSecurityDispatchSSRFGuard:
             from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM):
-                LLMCreator.create_llm(
+                llm = LLMCreator.create_llm(
                     type="openai_compatible",
                     api_key="caller-key",
                     user_api_key=None,
@@ -637,6 +637,8 @@ class TestSecurityDispatchSSRFGuard:
         finally:
             if client is not None:
                 client.close()
+        # The team brings its own key, so its calls count $0 like a person's custom model.
+        assert llm._is_byom is True
 
     def test_llmcreator_refuses_team_model_with_no_api_key(self, pg_conn):
         s = _make_settings()

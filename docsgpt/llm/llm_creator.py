@@ -217,8 +217,8 @@ class LLMCreator:
         # run through the OpenAI client, so the class alone cannot name them
         # in traces (see ``docsgpt.tracing.llm.llm_provider``).
         llm._provider_plugin = plugin.name
-        # Calls to a user's own model are recorded at $0 (see ``docsgpt/usage.py``).
-        llm._is_byom = model is not None and getattr(model, "source", "builtin") == "user"
+        # Calls to a custom model (a person's or a team's own key) are recorded at $0 (see ``docsgpt/usage.py``).
+        llm._is_byom = is_custom_source(model)
         return llm
 
 
