@@ -318,9 +318,16 @@ export const prefSlice = createSlice({
   },
   extraReducers: (builder) => {
     // Lists and picks from the old workspace go; the next loads fill them
-    // from the new one. Templates, models and the session are the same in
-    // every workspace.
+    // from the new one. Templates, built-in models and the session are the
+    // same in every workspace.
     builder.addCase(switchWorkspace, (state) => {
+      // Custom models are a person's own or one team's: the model list
+      // loads again for the new workspace, and a custom pick from the old
+      // one goes, or sends from an open chat would name a model the
+      // server refuses here. Without a pick, sends use the default model.
+      state.availableModels = [];
+      if (state.selectedModel && state.selectedModel.source !== 'builtin')
+        state.selectedModel = null;
       state.agents = null;
       state.sharedAgents = null;
       state.selectedAgent = null;
@@ -423,12 +430,14 @@ prefListenerMiddleware.startListening({
 });
 
 // The composer's picks were the old workspace's: a reload in the new one
-// must not bring them back.
+// must not bring them back. The model pick is kept only if it survived.
 prefListenerMiddleware.startListening({
   actionCreator: switchWorkspace,
-  effect: () => {
+  effect: (_action, listenerApi) => {
     setLocalRecentDocs(null);
     setStoredRecentFolders([]);
+    if (!(listenerApi.getState() as RootState).preference.selectedModel)
+      localStorage.removeItem('DocsGPTSelectedModel');
   },
 });
 

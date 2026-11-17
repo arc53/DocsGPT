@@ -104,12 +104,13 @@ describe('workspace/switched resets what belongs to the old workspace', () => {
     expect(pref.conversations).toEqual({ data: null, loading: false });
   });
 
-  it('keeps templates, models and the session', () => {
+  it('keeps templates and the session; the model list loads again', () => {
     const store = filledStore();
     store.dispatch(switchWorkspace('t1'));
     const pref = store.getState().preference;
     expect(pref.templateAgents).toEqual([agent]);
-    expect(pref.availableModels).toHaveLength(1);
+    // Custom models are the workspace's, so the list is read again there.
+    expect(pref.availableModels).toEqual([]);
     expect(pref.token).toBe('tok');
   });
 

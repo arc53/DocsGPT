@@ -5,6 +5,7 @@ import foldersReducer, {
   loadFolders,
 } from '../components/folders/foldersSlice';
 import type { Doc } from '../models/misc';
+import type { Model } from '../models/types';
 import { getStoredRecentFolders } from './preferenceApi';
 import type { RootState } from '../store';
 import reducer, {
@@ -20,19 +21,24 @@ import reducer, {
   selectAnalyticsEnabled,
   selectAnalyticsMaxOverlapping,
   selectAnalyticsMaxTopics,
+  selectAvailableModels,
   selectIsAdmin,
   selectRoles,
   selectRolesResolved,
   selectSelectedFolders,
+  selectSelectedModel,
   selectTtsAvailable,
   setAnalyticsAvailability,
   setAuthRequired,
+  setAvailableModels,
   setRoles,
   setSelectedFolders,
+  setSelectedModel,
   setSourceDocs,
   setSpeechAvailability,
   setToken,
 } from './preferenceSlice';
+import { switchWorkspace } from '../workspace/workspaceSlice';
 
 const baseState = () => reducer(undefined, { type: '@@INIT' });
 
@@ -365,5 +371,47 @@ describe('composer folder pick', () => {
     expect(getStoredRecentFolders()).toEqual([]);
     localStorage.setItem('DocsGPTRecentFolders', 'nope');
     expect(getStoredRecentFolders()).toEqual([]);
+  });
+});
+
+describe('model pick across a workspace switch', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const model = (id: string, source: Model['source']): Model => ({
+    id,
+    value: id,
+    provider: 'openai',
+    display_name: id,
+    context_window: 128000,
+    supported_attachment_types: [],
+    supports_tools: true,
+    supports_structured_output: true,
+    supports_streaming: true,
+    source,
+  });
+
+  it("drops a custom model the new workspace can't use, here and in storage", () => {
+    for (const source of ['user', 'team'] as const) {
+      const store = storeWithListener();
+      store.dispatch(setAvailableModels([model('m1', source)]));
+      store.dispatch(setSelectedModel(model('m1', source)));
+      store.dispatch(switchWorkspace('team-b'));
+      const state = store.getState() as RootState;
+      expect(selectSelectedModel(state)).toBeNull();
+      expect(selectAvailableModels(state)).toEqual([]);
+      expect(localStorage.getItem('DocsGPTSelectedModel')).toBeNull();
+    }
+  });
+
+  it('keeps a built-in model, which every workspace offers', () => {
+    const store = storeWithListener();
+    store.dispatch(setSelectedModel(model('gpt', 'builtin')));
+    store.dispatch(switchWorkspace('team-b'));
+    expect(selectSelectedModel(store.getState() as RootState)?.id).toBe('gpt');
+    expect(
+      JSON.parse(localStorage.getItem('DocsGPTSelectedModel') ?? 'null')?.id,
+    ).toBe('gpt');
   });
 });
