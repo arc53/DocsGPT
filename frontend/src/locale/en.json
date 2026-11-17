@@ -3547,6 +3547,7 @@
         "cancel": "Cancel",
         "descriptionLabel": "Description (optional)",
         "descriptionPlaceholder": "Visible to the agent so it can pick the right device.",
+        "expired": "This code expired. Generate a new one to pair the device.",
         "formSubtitle": "Set a name, description, and approval mode for the new device.",
         "fullAccessWarning": "Full access: agents can run any command on this machine without asking. The safety denylist still applies.",
         "installLink": "Don't have docsgpt-cli? Install it",

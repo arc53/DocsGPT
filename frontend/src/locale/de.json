@@ -3526,6 +3526,7 @@
         "cancel": "Abbrechen",
         "descriptionLabel": "Beschreibung (optional)",
         "descriptionPlaceholder": "Für den Agenten sichtbar, damit er das richtige Gerät wählen kann.",
+        "expired": "Dieser Code ist abgelaufen. Generiere einen neuen, um das Gerät zu koppeln.",
         "formSubtitle": "Lege Name, Beschreibung und Genehmigungsmodus für das neue Gerät fest.",
         "fullAccessWarning": "Vollzugriff: Agenten können auf diesem Rechner jeden Befehl ohne Nachfrage ausführen. Die Sicherheits-Sperrliste gilt weiterhin.",
         "installLink": "Du hast docsgpt-cli noch nicht? Installiere es",

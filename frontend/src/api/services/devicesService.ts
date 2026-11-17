@@ -131,10 +131,13 @@ const devicesService = {
   pollPairing: async (
     deviceCode: string,
     token: string | null,
+    signal?: AbortSignal,
   ): Promise<PairingStatus> => {
     const r = await apiClient.get(
       endpoints.USER.DEVICE_PAIRING(deviceCode),
       token,
+      {},
+      signal,
     );
     return (await json(r)) as PairingStatus;
   },
