@@ -250,6 +250,31 @@ class UserCustomModelsRepository:
         found = {str(r[0]).lower() for r in rows}
         return [given for key, given in candidates.items() if key in found]
 
+    def added_by_counts(self, owner_id: str, user_ids: list[str]) -> dict[str, int]:
+        """How many of an owner's custom models each person added (``created_by``).
+
+        Args:
+            owner_id: The owner, a team's principal.
+            user_ids: The people to count for.
+
+        Returns:
+            ``{user_id: count}`` for every id given, 0 for those who added none.
+        """
+        ids = sorted({str(u) for u in user_ids if u})
+        if not ids or not owner_id:
+            return {}
+        counts = dict.fromkeys(ids, 0)
+        rows = self._conn.execute(
+            text(
+                "SELECT created_by, count(*) FROM user_custom_models "
+                "WHERE user_id = :owner AND created_by = ANY(:ids) GROUP BY created_by"
+            ),
+            {"owner": owner_id, "ids": ids},
+        ).fetchall()
+        for user_id, count in rows:
+            counts[user_id] = int(count)
+        return counts
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text(

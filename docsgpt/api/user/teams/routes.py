@@ -80,6 +80,7 @@ from docsgpt.storage.db.repositories.team_resource_grants import (
 )
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.storage.db.repositories.teams import TeamNotEmpty, TeamsRepository
+from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -884,7 +885,9 @@ class TeamMembers(Resource):
         For the team's Owner and Admins each row also has ``pays_for``
         (``{schedules, outside_access}``): the running schedules the member set
         on the team's agents and the team agents whose outside access they pay
-        for, which pause when they leave or lose the role.
+        for, which pause when they leave or lose the role; and
+        ``custom_models``: how many of the team's custom models they added,
+        whose keys stay in use after they leave.
         """
         q, limit, offset = _members_query()
         try:
@@ -896,9 +899,12 @@ class TeamMembers(Resource):
                 )
                 total = repo.count_members(team_id, q=q)
                 if role_at_least(team_role_for(conn, _current_user(), team_id), "admin"):
-                    counts = pays_for(conn, team_id, [m.get("user_id") for m in members])
+                    ids = [m.get("user_id") for m in members]
+                    counts = pays_for(conn, team_id, ids)
+                    added = UserCustomModelsRepository(conn).added_by_counts(principal_id(team_id), ids)
                     for member in members:
                         member["pays_for"] = counts.get(member.get("user_id"), dict(NO_PAYS_FOR))
+                        member["custom_models"] = added.get(member.get("user_id"), 0)
             return make_response(
                 jsonify({"success": True, "members": members, "total": total}), 200
             )
