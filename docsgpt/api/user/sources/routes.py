@@ -43,6 +43,7 @@ from docsgpt.api.user.sources.upload import (
     _read_idempotency_key,
     _release_claim,
     _requested_folder,
+    connection_paused,
     connector_personal_only,
     creation_workspace,
     reingest_idempotency_key,
@@ -184,6 +185,106 @@ def _file_count(row: dict) -> Optional[int]:
     """How many files a source's tree holds (a synced source's card says it); ``None`` for a flat source."""
     structure = row.get("directory_structure")
     return count_pages(structure) if isinstance(structure, dict) and structure else None
+
+
+def _team_connection_of(conn, doc: dict) -> Optional[dict]:
+    """The connection a team's source reads through, when it names one.
+
+    Args:
+        conn: Open connection.
+        doc: The source row.
+
+    Returns:
+        The ``connector_sessions`` row for a team's source that names a connection; None for a person's
+        source or one that names none (or one since deleted).
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    owner = doc.get("user_id")
+    connection_id = _connection_id(doc)
+    if not connection_id or not is_principal_id(owner):
+        return None
+    return ConnectorSessionsRepository(conn).get(connection_id)
+
+
+def team_connection_sync_refusal(conn, doc: dict, owner: str, actor: str) -> Optional[Response]:
+    """Why ``actor`` may not sync a team's source through the team's connection now, or None.
+
+    Editors and up sync a team's connection's sources (and pay for it), but
+    not while its account is paused: the person who connected it was
+    deactivated, left the team or lost the Admin role. A team's source naming
+    any other connection is refused as one that reads through a personal account.
+
+    Args:
+        conn: Open connection.
+        doc: The source row.
+        owner: Its owner.
+        actor: The caller.
+
+    Returns:
+        None when the sync may run (or the source reads through no team connection); else the
+        ``authorize_connection`` refusal, 403 ``connector_personal_only``, or 409 ``connection_paused``.
+    """
+    from docsgpt.connectors import service as connector_service
+    from docsgpt.connectors.team import ConnectionDenied, authorize_connection
+
+    if not is_principal_id(owner):
+        return None
+    row = _team_connection_of(conn, doc)
+    if row is None:
+        return None
+    if str(row.get("user_id")) != str(owner):
+        return connector_personal_only()
+    try:
+        authorize_connection(conn, row["id"], actor, "sync")
+    except ConnectionDenied as err:
+        return err.response()
+    try:
+        connector_service.ensure_account_usable(conn, row)
+    except connector_service.ConnectionUnavailable as err:
+        return connection_paused(err)
+    return None
+
+
+def connection_sync_pauses(conn, rows: list) -> dict:
+    """Why each listed team source reading through its team's connection won't sync, by source id.
+
+    Derived on every read: an account pause (the person who connected it is
+    deactivated, left the team or lost the Admin role, or nobody is recorded)
+    holds for every source of the connection; out of allowance only for those
+    that sync on a schedule, since a person's Sync now is paid by them.
+
+    Args:
+        conn: Open connection.
+        rows: The listed ``sources`` rows.
+
+    Returns:
+        ``{source_id: {reason, until, left_team, connection_id}}`` for the paused ones.
+    """
+    from docsgpt.quotas.pause import PayerChecks, connection_pause
+
+    checks = PayerChecks()
+    connections: dict = {}
+    paused: dict = {}
+    for row in rows:
+        connection_id = _connection_id(row)
+        if not connection_id or not is_principal_id(row.get("user_id")):
+            continue
+        if connection_id not in connections:
+            connections[connection_id] = _team_connection_of(conn, row)
+        connection = connections[connection_id]
+        if connection is None or str(connection.get("user_id")) != str(row.get("user_id")):
+            continue
+        scheduled = (row.get("sync_frequency") or "never") != "never"
+        pause = connection_pause(conn, connection, checks=checks, allowance=scheduled)
+        if pause is not None:
+            paused[str(row["id"])] = {
+                "reason": pause.reason,
+                "until": pause.until.isoformat() if pause.until else None,
+                "left_team": pause.left_team,
+                "connection_id": connection_id,
+            }
+    return paused
 
 
 def _sync_paused(row: dict) -> Optional[dict]:
@@ -379,6 +480,7 @@ class CombinedJson(Resource):
                     switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
                 filing = SourceFiling(conn, workspace.owner_id)
                 creators = creator_payloads(conn, user, [*indexes, *shared_sources])
+                sync_pauses = connection_sync_pauses(conn, [*indexes, *shared_sources])
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
             # equivalent for dev; re-sort defensively.
@@ -413,7 +515,7 @@ class CombinedJson(Resource):
                     "files": _file_count(index),
                     # As in the paginated listing (SourcesRepository.list_for_user).
                     "ingestStatus": index.get("ingest_status"),
-                    "sync_paused": _sync_paused(index),
+                    "sync_paused": sync_pauses.get(str(index["id"])) or _sync_paused(index),
                     # The caller's own filing: folder_id and its path, top-level folder first.
                     **filing.fields(index["id"]),
                     "created_by": created_by_payload(index, creators),
@@ -455,7 +557,8 @@ class PaginatedSources(Resource):
             "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` "
             "(the agents using it) and the caller's filing (``folder_id``, ``folder_path`` "
             "[{id, name}] from the top-level folder down) and ``sync_paused`` ({reason, since} while a team "
-            "source's scheduled sync is skipped for want of a payer, else null). ``kind_counts`` counts every "
+            "source's scheduled sync is skipped for want of a payer; {reason, until, left_team, connection_id} "
+            "while the team connection it reads through is paused; else null). ``kind_counts`` counts every "
             "kind with the "
             "search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search "
             "and kind filters applied. Both follow ``origin``; ``origin_counts`` counts own/shared with the "
@@ -619,6 +722,7 @@ class PaginatedSources(Resource):
                     conn, "source", [str(doc["id"]) for doc in window]
                 )
                 creators = creator_payloads(conn, user, window)
+                sync_pauses = connection_sync_pauses(conn, window)
 
             paginated_docs = []
             for doc in window:
@@ -653,8 +757,9 @@ class PaginatedSources(Resource):
                     "connectionId": _connection_id(doc),
                     "website": _website_summary(doc),
                     "files": _file_count(doc),
-                    # A team source's scheduled sync skipped for want of a payer.
-                    "sync_paused": _sync_paused(doc),
+                    # A team source's sync skipped for want of a payer: its team connection's
+                    # pause, derived now, else the scheduler's flag.
+                    "sync_paused": sync_pauses.get(str(doc["id"])) or _sync_paused(doc),
                     "used_by": used_by.get(str(doc["id"])) or empty_usage(),
                     **filing.fields(doc["id"]),
                     "created_by": created_by_payload(doc, creators),
@@ -833,6 +938,32 @@ class RedirectToSources(Resource):
         return redirect("/api/sources", code=301)
 
 
+def _team_connection_manage_refusal(conn, doc: dict, user: str) -> Optional[Response]:
+    """The refusal when ``user`` may not change how a team's connection source syncs (Admins only), or None.
+
+    Its schedule spends the allowance of the person who connected the
+    account, so it is managed with the connection, not edited with the source.
+
+    Args:
+        conn: Open connection.
+        doc: The source row.
+        user: The caller.
+
+    Returns:
+        None for any other source, or an Admin; else the ``authorize_connection`` refusal.
+    """
+    from docsgpt.connectors.team import ConnectionDenied, authorize_connection
+
+    row = _team_connection_of(conn, doc)
+    if row is None or str(row.get("user_id")) != str(doc.get("user_id")):
+        return None
+    try:
+        authorize_connection(conn, row["id"], user, "manage")
+    except ConnectionDenied as err:
+        return err.response()
+    return None
+
+
 @sources_ns.route("/manage_sync")
 class ManageSync(Resource):
     manage_sync_model = api.model(
@@ -869,6 +1000,9 @@ class ManageSync(Resource):
                 doc, ra = load_source(conn, source_id, user, "edit")
                 if sync_frequency != "never" and _is_wiki(doc):
                     return _sync_refusal(_WIKI_NO_SYNC, "wiki")
+                refusal = _team_connection_manage_refusal(conn, doc, user)
+                if refusal is not None:
+                    return refusal
                 SourcesRepository(conn).update(
                     str(doc["id"]), ra.owner_id, {"sync_frequency": sync_frequency}
                 )
@@ -909,6 +1043,7 @@ class SyncSource(Resource):
         try:
             with db_readonly() as conn:
                 doc, ra = load_source(conn, source_id, user, "edit")
+                refusal = team_connection_sync_refusal(conn, doc, ra.owner_id, user)
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:
@@ -917,6 +1052,8 @@ class SyncSource(Resource):
         owner = ra.owner_id
         if _is_wiki(doc):
             return _sync_refusal(_WIKI_NO_SYNC, "wiki")
+        if refusal is not None:
+            return refusal
         source_type = doc.get("type", "")
         if source_type and source_type.startswith("connector"):
             return _sync_refusal("Connector sources must be synced via /api/connectors/sync", "connector_source")
@@ -1006,7 +1143,9 @@ def owner_connector_sync(conn, doc: dict, owner: str, actor: str) -> dict | Resp
     A team editor's Sync now and a Reingest run as the owner, with the
     account the source names. A source that names none (its connection was
     removed) is refused: another of the owner's accounts would read the
-    selection, and the sync would re-link the source to it.
+    selection, and the sync would re-link the source to it. A team's source
+    syncs through the team's connection for its Editors and up, and bills the
+    caller (``actor``), while the account isn't paused.
 
     Args:
         conn: Open database connection.
@@ -1016,17 +1155,19 @@ def owner_connector_sync(conn, doc: dict, owner: str, actor: str) -> dict | Resp
 
     Returns:
         ``connector_sync_kwargs``, or a 409: ``connection_missing``, or
-        ``reconnect_needed`` when the owner must sign the connection in again;
-        a 403 ``connector_personal_only`` when a team owns the source.
+        ``reconnect_needed`` when the owner must sign the connection in again,
+        or ``connection_paused`` for a team's account that can't be used now;
+        or a team connection refusal (``team_connection_sync_refusal``).
     """
     from docsgpt.connectors import service as connector_service
 
-    if is_principal_id(owner):
-        return connector_personal_only()
     connection_id = _connection_id(doc)
     if not connection_id:
         text = _CONNECTION_REMOVED if actor == owner else _CONNECTION_REMOVED_EDITOR
         return _sync_refusal(text, "connection_missing", 409)
+    refusal = team_connection_sync_refusal(conn, doc, owner, actor)
+    if refusal is not None:
+        return refusal
     selection = connector_selection(doc)
     session = connector_service.owner_sync_connection(conn, owner, selection["provider"], connection_id)
     if session is None:
@@ -1064,15 +1205,13 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[_Rebuild] | R
     Returns:
         The sync to queue (``_Rebuild``); a refusal (a connector source
         whose connection was removed, 409 ``connection_missing``, or whose
-        owner must reconnect, 409 ``reconnect_needed``); or ``None`` when the
+        owner must reconnect, 409 ``reconnect_needed``; a team's source whose
+        team account is paused, 409 ``connection_paused``); or ``None`` when the
         source has nothing to sync, so the reingest task runs and reports that.
     """
     source_id = str(doc["id"])
     source_type = doc.get("type") or ""
     if source_type.startswith("connector"):
-        if is_principal_id(owner):
-            # A connector source syncs through a person's connection; a team has none in v1.
-            return connector_personal_only()
         if not connector_selection(doc).get("provider"):
             return None
         with db_readonly() as conn:
@@ -1088,6 +1227,10 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[_Rebuild] | R
     source_data = normalize_remote_data(source_type, doc.get("remote_data"))
     if not source_data:
         return None
+    with db_readonly() as conn:
+        refusal = team_connection_sync_refusal(conn, doc, owner, actor)
+    if refusal is not None:
+        return refusal
     sync_kwargs = {
         "source_data": source_data,
         "job_name": doc.get("name", ""),
@@ -1118,7 +1261,8 @@ class ReingestSource(Resource):
         "``{success, task_id}`` and the task's source.ingest events carry that "
         "task_id. A connector source can be refused with a 409: code "
         "connection_missing when its connection was removed, reconnect_needed "
-        "when the owner must sign it in again. Honours an Idempotency-Key "
+        "when the owner must sign it in again, connection_paused (with paused_for) when a team's account it "
+        "reads through is paused. Honours an Idempotency-Key "
         "header: a repeat with the same key runs nothing new, and a rebuild's "
         "repeat answers with the first request's task_id."
     )

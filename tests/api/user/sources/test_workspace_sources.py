@@ -3,7 +3,7 @@
 A team's sources are owned by the team's principal and name who added them
 (``created_by``). Lists and creates follow the ``X-DocsGPT-Workspace`` header;
 an item by id goes by its own workspace. Creating in a team needs the Editor
-role, and connector-synced sources stay personal in v1.
+role; a connector-synced source reads only through a connection the team holds.
 """
 
 from __future__ import annotations
@@ -430,7 +430,7 @@ class TestItemRoutesByTeamRole:
 
         assert response.status_code == 403
 
-    def test_a_connector_source_owned_by_a_team_is_not_synced(self, app, pg_conn):
+    def test_a_team_connector_source_without_a_connection_is_not_synced(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorSync
 
         _, principal = _team(pg_conn)
@@ -447,8 +447,9 @@ class TestItemRoutesByTeamRole:
             request.decoded_token = {"sub": "adam"}
             response = ConnectorSync().post()
 
-        assert response.status_code == 403
-        assert response.json["error"] == "connector_personal_only"
+        # Its connection was removed: nothing to sync through, and no other account may stand in.
+        assert response.status_code == 409
+        assert response.json["code"] == "connection_missing"
         delay.assert_not_called()
 
     def test_graph_enable_bills_the_editor_who_asked(self, app, pg_conn):

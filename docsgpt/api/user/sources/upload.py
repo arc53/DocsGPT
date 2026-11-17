@@ -79,19 +79,84 @@ sources_upload_ns = Namespace(
 
 _IDEMPOTENCY_KEY_MAX_LEN = 256
 
-#: Error code of a source that reads through a connected account, asked for in a team workspace:
-#: connections are personal in v1 (no team connections yet), so such sources stay personal.
+#: Error code of a source that would read through a person's own connected account, asked for in a team
+#: workspace: a team's source reads only through a connection the team itself holds.
 CODE_CONNECTOR_PERSONAL_ONLY = "connector_personal_only"
 
 
 def connector_personal_only() -> Response:
-    """The 403 for a connector-synced or connection-bound source in a team workspace."""
-    message = "Sources that read through a connected account stay personal for now; add it in your Personal workspace."
+    """The 403 for a source in a team workspace that would read through a personal connection."""
+    message = (
+        "A team's source can only read through an account connected for the team. Connect it for the team, "
+        "or add the source in your Personal workspace."
+    )
     return make_response(
         jsonify({"success": False, "error": CODE_CONNECTOR_PERSONAL_ONLY, "code": CODE_CONNECTOR_PERSONAL_ONLY,
                  "message": message}),
         403,
     )
+
+
+def connection_paused(err: Any) -> Response:
+    """The 409 for a team's account that can't be used now, saying why.
+
+    Args:
+        err: The ``ConnectionUnavailable`` (``status="paused"``) that refused it.
+
+    Returns:
+        ``{success: false, error: "connection_paused", code, message, paused_for, connection_id}``.
+    """
+    from docsgpt.connectors.team import CONNECTION_PAUSED
+
+    return make_response(
+        jsonify({
+            "success": False, "error": CONNECTION_PAUSED, "code": CONNECTION_PAUSED, "message": str(err),
+            "paused_for": getattr(err, "paused_for", None), "connection_id": getattr(err, "connection_id", None),
+        }),
+        409,
+    )
+
+
+def team_connection_for_new_source(
+    conn: Connection, user: str, owner: str, connection_id: Any, connector_key: str,
+) -> tuple[Optional[dict], Optional[Response]]:
+    """The team's connection a new team source will read through, when ``user`` may build one from it.
+
+    Only the person who connected the team's account (while an Admin) picks
+    what it shares, so only they create sources from it. Any other connection,
+    a person's own included, is refused as before.
+
+    Args:
+        conn: Open connection.
+        user: The caller.
+        owner: The team's principal (the new source's owner).
+        connection_id: The connection the request names.
+        connector_key: The kind of source asked for (``google_drive``, ``s3``, ...).
+
+    Returns:
+        ``(row, None)``, or ``(None, refusal)``: 403 ``connector_personal_only`` for a connection that isn't
+        this team's; the ``authorize_connection`` refusal (403 ``connection_picker_owner_only`` or
+        ``connection_admin_required``); 401 for a connection of another service; 409 ``connection_paused``.
+    """
+    from docsgpt.connectors import catalog, service
+    from docsgpt.connectors.team import ConnectionDenied, authorize_connection
+
+    row = None
+    if connection_id and looks_like_uuid(str(connection_id)):
+        row = ConnectorSessionsRepository(conn).get(str(connection_id))
+    if row is None or str(row.get("user_id")) != str(owner):
+        return None, connector_personal_only()
+    try:
+        authorize_connection(conn, row["id"], user, "pick")
+    except ConnectionDenied as err:
+        return None, err.response()
+    if catalog.connector_key_for_row(row) != connector_key:
+        return None, make_response(jsonify({"success": False, "error": "Invalid or unauthorized connection"}), 401)
+    try:
+        service.ensure_account_usable(conn, row)
+    except service.ConnectionUnavailable as err:
+        return None, connection_paused(err)
+    return row, None
 
 
 def request_workspace(user: str, conn: Optional[Connection] = None) -> Workspace:
@@ -893,7 +958,7 @@ class UploadFile(Resource):
         return make_response(jsonify(response_payload), 200)
 
 
-def _remote_credentials(user, source, config, personal_only=False):
+def _remote_credentials(user, source, config, team_owner=None):
     """Split an S3 / Reddit request into loader config and the connection holding its keys.
 
     A request naming a ``connection_id`` uses that connection's stored keys.
@@ -902,8 +967,9 @@ def _remote_credentials(user, source, config, personal_only=False):
     ``sources.remote_data``. When a multi-user install still runs on the
     public default encryption key, the keys stay with the source as before.
 
-    ``personal_only`` (a team workspace) refuses both: a connection is the
-    caller's own, and a team's source can't read through it in v1.
+    ``team_owner`` (a team workspace's principal): only a connection the team
+    holds may be named, by the person who connected it; pasted keys are
+    refused, since they would be stored on the caller's own connection.
 
     Returns:
         ``(source_data, connection_id, error_response)``.
@@ -914,8 +980,16 @@ def _remote_credentials(user, source, config, personal_only=False):
     credential_keys = {f.key for f in definition.credential_fields}
     public = {k: v for k, v in config.items() if k not in credential_keys and k != "connection_id"}
     connection_id = config.get("connection_id")
-    if personal_only and (connection_id or any(config.get(k) not in (None, "") for k in credential_keys)):
-        return None, None, connector_personal_only()
+    if team_owner:
+        if any(config.get(k) not in (None, "") for k in credential_keys):
+            return None, None, connector_personal_only()
+        if not connection_id:
+            return config, None, None
+        with db_readonly() as conn:
+            row, refusal = team_connection_for_new_source(conn, user, team_owner, connection_id, source)
+        if refusal is not None:
+            return None, None, refusal
+        return public, str(row["id"]), None
     if connection_id:
         with db_readonly() as conn:
             row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
@@ -999,9 +1073,6 @@ class UploadRemote(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-        if workspace.is_team and data.get("source") in ConnectorCreator.get_supported_connectors():
-            # A connector source syncs through its owner's connection; a team has none in v1.
-            return connector_personal_only()
         sync_frequency = data.get("sync_frequency") or "never"
         if sync_frequency not in SYNC_FREQUENCIES:
             return error_response(f"Unknown sync_frequency {sync_frequency!r}", code="bad_sync_frequency")
@@ -1051,7 +1122,7 @@ class UploadRemote(Resource):
                 source_data = config.get("url")
             elif data["source"] in ("reddit", "s3"):
                 source_data, connection_id, error = _remote_credentials(
-                    user, data["source"], config, personal_only=workspace.is_team,
+                    user, data["source"], config, team_owner=owner if workspace.is_team else None,
                 )
                 if error is not None:
                     if scoped_key:
@@ -1072,7 +1143,21 @@ class UploadRemote(Resource):
                     )
                 from docsgpt.connectors import service as connection_service
 
-                connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                if workspace.is_team:
+                    # A team's source reads only through the team's own connection.
+                    with db_readonly() as conn:
+                        connector_session, refusal = team_connection_for_new_source(
+                            conn, user, owner, config.get("connection_id"), data["source"],
+                        )
+                    if refusal is not None:
+                        if scoped_key:
+                            _release_claim(scoped_key)
+                        return refusal
+                else:
+                    connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                    if connector_session is not None and str(connector_session.get("user_id")) != owner:
+                        # A personal source never reads through a team's connection.
+                        connector_session = None
                 if connector_session is None:
                     if scoped_key:
                         _release_claim(scoped_key)
@@ -1102,7 +1187,7 @@ class UploadRemote(Resource):
                 connector_kwargs = {
                     "kwargs": {
                         "job_name": data["name"],
-                        "user": user,
+                        "user": owner,
                         "source_type": data["source"],
                         "connection_id": str(connector_session["id"]),
                         "file_ids": file_ids,
@@ -1115,6 +1200,7 @@ class UploadRemote(Resource):
                         # Validated above; stored on the new source so its syncs run on schedule.
                         "sync_frequency": sync_frequency,
                         **({"folder_id": folder_id} if folder_id else {}),
+                        **owner_task_kwargs(owner, user),
                     },
                 }
                 if predetermined_task_id is not None:

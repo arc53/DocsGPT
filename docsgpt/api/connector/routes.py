@@ -18,7 +18,6 @@ from flask_restx import fields, Namespace, Resource
 from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import load_source
-from docsgpt.api.user.sources.upload import connector_personal_only
 from docsgpt.api.user.sources.routes import (
     _CONNECTION_REMOVED,
     _WIKI_NO_SYNC,
@@ -753,7 +752,9 @@ class ConnectorSync(Resource):
         description=(
             "Sync connector source to check for modifications. A 409 with code connection_missing when the "
             "source has no connection (it was removed) and none is named, as for a team editor, who can't "
-            "name one; code reconnect_needed when a team editor's sync finds the source's connection signed out."
+            "name one; code reconnect_needed when a team editor's sync finds the source's connection signed out; "
+            "code connection_paused (with paused_for) for a team's source whose team account is paused. A team's "
+            "source is synced by its Editors and up, through the team's connection, and bills the caller."
         )
     )
     def post(self):
@@ -786,10 +787,8 @@ class ConnectorSync(Resource):
                     err.status,
                 )
             owner_id = ra.owner_id
-            if ra.is_team_item:
-                # A connector source syncs through a person's connection; a team has none in v1.
-                return connector_personal_only()
-            is_owner = ra.access == "owner"
+            # A team's source syncs through the team's own connection, never one the caller names.
+            is_owner = ra.access == "owner" and not ra.is_team_item
             # A converted wiki doesn't sync: it would replace the wiki's pages,
             # and the worker skips it, so a success here would never finish.
             if _is_wiki(source):
@@ -824,7 +823,8 @@ class ConnectorSync(Resource):
                 task_kwargs = connector_sync_kwargs(source, owner_id, user_id, selection, str(session["id"]))
             else:
                 # A grantee can't name a connection: theirs would read the
-                # source's files with another account.
+                # source's files with another account. A team member's sync
+                # bills them, and waits while the team's account is paused.
                 with db_readonly() as conn:
                     task_kwargs = owner_connector_sync(conn, source, owner_id, user_id)
                 if isinstance(task_kwargs, Response):

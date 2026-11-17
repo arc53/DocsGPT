@@ -3,8 +3,9 @@
 A report, not a limit: it reads the usage rows stamped with the team, so
 plain chats in the team count, Personal rows and another team's never do,
 and an agent's spend stays here after it is moved out. Alongside it, the
-schedules, outside access and scheduled source syncs of the team that are
-paused for their payer, so the admins can see who should take them over.
+schedules, outside access, connections and scheduled source syncs of the
+team that are paused for their payer, so the admins can see who should take
+them over.
 """
 
 from __future__ import annotations
@@ -17,11 +18,13 @@ from flask import jsonify, make_response, request
 from flask_restx import Resource
 from sqlalchemy import text
 
+from docsgpt.connectors.catalog import connector_key_for_row
 from docsgpt.core.settings import settings
 from docsgpt.quotas.agent_limits import has_agent_limit
-from docsgpt.quotas.pause import PayerChecks, outside_access_pause, schedule_pause
+from docsgpt.quotas.pause import PayerChecks, connection_pause, outside_access_pause, schedule_pause
 from docsgpt.quotas.payer import published_access_payer
 from docsgpt.quotas.windows import window_bounds
+from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.workspaces.principal import is_principal_id, principal_id
@@ -155,7 +158,9 @@ def paused_items(conn, team_id: str) -> list[dict]:
     Returns:
         A list of ``{type: "schedule", id, name, agent {id, name}, paused_for {reason, until}, paid_by}``,
         ``{type: "outside_access", id, agent {id, name}, access [...], paused_for, paid_by}`` (``id`` is the
-        agent's) and ``{type: "source_sync", id, name, paused_for {reason, since}}``. ``paid_by`` is
+        agent's), ``{type: "connection", id, name, connector_key, paused_for, paid_by}`` (a team connection
+        whose account is paused, or whose scheduled syncs wait for its connector's allowance) and
+        ``{type: "source_sync", id, name, paused_for {reason, since}}``. ``paid_by`` is
         ``{user_id, label}`` or None when nobody pays. A schedule a person paused is not listed.
     """
     principal = principal_id(team_id)
@@ -202,6 +207,20 @@ def paused_items(conn, team_id: str) -> list[dict]:
                 "id": str(agent["id"]),
                 "agent": {"id": str(agent["id"]), "name": agent["name"]},
                 "access": access_on(agent),
+                "paused_for": pause.payload(),
+            },
+            pause.payer,
+        ))
+    for row in ConnectorSessionsRepository(conn).list_for_user(principal):
+        pause = connection_pause(conn, row, checks=checks, allowance=True)
+        if pause is None:
+            continue
+        found.append((
+            {
+                "type": "connection",
+                "id": str(row["id"]),
+                "name": row.get("display_name") or row.get("account_label") or row.get("provider"),
+                "connector_key": connector_key_for_row(row),
                 "paused_for": pause.payload(),
             },
             pause.payer,
