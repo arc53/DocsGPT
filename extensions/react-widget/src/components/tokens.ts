@@ -147,7 +147,7 @@ export const shadows = {
 };
 
 export const fonts = {
-  sans: "'DocsGPT Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  sans: "var(--docsgpt-font-family, 'DocsGPT Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif)",
   mono: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
 };
 

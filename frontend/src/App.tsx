@@ -125,7 +125,7 @@ function MainLayout() {
           <div
             className={cn(
               'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',
-              !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
+              !isMobile ? (navOpen ? 'lg:ms-72' : 'lg:ms-14') : 'ms-0 lg:ms-16',
             )}
           >
             {/* Contain route render crashes so navigation stays usable;
@@ -142,7 +142,7 @@ function MainLayout() {
           approvals, uploads, action results. It rises above a composer it
           would cover. */}
           <ToastViewport
-            className={cn(previewOpen && 'right-auto left-2')}
+            className={cn(previewOpen && 'start-2 end-auto')}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <TeamNotificationToast />

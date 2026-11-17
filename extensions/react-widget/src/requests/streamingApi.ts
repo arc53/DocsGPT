@@ -65,6 +65,7 @@ export function fetchAnswerStreaming({
       signal,
     })
       .then((response) => {
+        if (!response.ok) throw Error('Chat request failed');
         if (!response.body) throw Error('No response body');
 
         const reader = response.body.getReader();

@@ -80,7 +80,7 @@ export interface LocaleProps {
   // `string & {}` keeps editor suggestions for the known codes.
   /**
    * UI language: `'auto'` (the default) follows the visitor's browser, or one
-   * of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. Anything else is
+   * of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`, `fa`. Anything else is
    * English. Text set through other props is never translated.
    */
   locale?: SupportedLocale | 'auto' | (string & {});

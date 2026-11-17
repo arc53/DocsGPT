@@ -63,7 +63,7 @@ export default function SectionRail({
         size="icon"
         onClick={onBack}
       >
-        <ArrowLeft aria-hidden />
+        <ArrowLeft className="rtl:rotate-180" aria-hidden />
       </IconButton>
       <Separator className="my-1 w-6" />
       {items.map((item) => {

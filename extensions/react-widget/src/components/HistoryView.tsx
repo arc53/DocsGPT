@@ -116,7 +116,7 @@ const ConfirmText = styled.p`
 const ConfirmActions = styled.div`
   display: flex;
   gap: 4px;
-  margin-left: auto;
+  margin-inline-start: auto;
 `;
 
 const Scroll = styled.div`
@@ -172,7 +172,7 @@ const List = styled.ul`
 const DeleteButton = styled(IconButton)`
   width: 28px;
   height: 28px;
-  margin-right: 6px;
+  margin-inline-end: 6px;
   opacity: 0;
 
   &:hover {
@@ -222,7 +222,7 @@ const RowButton = styled.button`
   background: transparent;
   color: ${(props) => props.theme.foreground};
   font-family: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 
   ${focusRing}

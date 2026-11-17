@@ -88,6 +88,30 @@ describe('i18n language detection', () => {
 });
 
 describe('html lang', () => {
+  it('selects Persian regions, changes direction, and restores English', async () => {
+    await i18n.changeLanguage('fa-IR');
+    expect(i18n.language).toBe('fa');
+    expect(document.documentElement.lang).toBe('fa');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(i18n.t('newChat')).toBe('گفتگوی جدید');
+    await i18n.changeLanguage('en');
+    expect(document.documentElement.dir).toBe('ltr');
+    expect(i18n.t('newChat')).toBe('New Chat');
+  });
+
+  it('detects a Persian browser and falls back for unsupported languages', async () => {
+    localStorage.removeItem('docsgpt-locale');
+    Object.defineProperty(navigator, 'languages', {
+      value: ['fa-IR'],
+      configurable: true,
+    });
+    await i18n.changeLanguage();
+    expect(i18n.language).toBe('fa');
+    await i18n.changeLanguage('xx-YY');
+    expect(i18n.resolvedLanguage).toBe('en');
+    expect(document.documentElement.dir).toBe('ltr');
+  });
+
   it('follows the UI language as a BCP 47 tag', async () => {
     // A page that declares English while showing Spanish invites the
     // browser's translator, whose DOM rewrites crash React.

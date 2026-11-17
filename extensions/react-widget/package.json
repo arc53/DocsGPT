@@ -34,7 +34,7 @@
     "build:react": "parcel build src/index.ts",
     "serve": "parcel serve -p 3000",
     "dev": "parcel -p 3000",
-    "test": "jest",
+    "test": "vitest run",
     "lint": "eslint ./src --ext .jsx,.js,.ts,.tsx",
     "lint-fix": "eslint ./src --ext .jsx,.js,.ts,.tsx --fix",
     "format": "prettier ./src --write",
@@ -77,13 +77,15 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "flow-bin": "^0.339.0",
     "globals": "^17.12.0",
+    "happy-dom": "21.0.4",
     "parcel": "^2.16.4",
     "prettier": "^3.9.6",
     "process": "^0.11.10",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "svgo": "^4.1.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "5.1.0"
   },
   "publishConfig": {
     "access": "public"

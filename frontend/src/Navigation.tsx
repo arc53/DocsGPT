@@ -473,7 +473,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       {!navOpen && !isMobile && (
         <div
           ref={navRef}
-          className="bg-sidebar border-border scrollbar-overlay fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto border-r py-3 lg:flex"
+          className="bg-sidebar border-border scrollbar-overlay fixed start-0 top-0 z-10 hidden h-full w-14 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto border-e py-3 lg:flex"
         >
           <IconButton
             label={t('navigation.openSidebar')}
@@ -557,8 +557,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       )}
       <div
         className={cn(
-          'bg-sidebar text-foreground fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-[margin] duration-300 ease-in-out',
-          !navOpen && '-ml-96 md:-ml-72',
+          'bg-sidebar text-foreground fixed top-0 z-20 flex h-full w-72 flex-col border-e border-b-0 transition-[margin] duration-300 ease-in-out',
+          !navOpen && '-ms-96 md:-ms-72',
         )}
       >
         <div
@@ -656,8 +656,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               )}
               {recentAgents?.length > 0 ? (
                 <div>
-                  <div className="my-auto mt-2 ml-2.75 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
-                    <p className="mt-1 ml-4 text-sm font-semibold">
+                  <div className="my-auto ms-2.75 mt-2 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
+                    <p className="ms-4 mt-1 text-sm font-semibold">
                       {t('navigation.agents')}
                     </p>
                     <IconButton
@@ -665,7 +665,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       variant="ghost-muted"
                       size="icon"
                       shape="pill"
-                      className="mr-1"
+                      className="me-1"
                       onClick={openManageAgents}
                     >
                       <LayoutGrid aria-hidden />
@@ -681,8 +681,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                             <Button
                               variant="sidebar-item"
                               asChild
-                              /* eslint-disable-next-line shadcn/no-restyle -- the link and its pin button are siblings, so the row keeps its fill while the pointer is on the pin, and pr-10 keeps the name clear of it */
-                              className="group-hover:bg-sidebar-accent flex w-full pr-10"
+                              /* eslint-disable-next-line shadcn/no-restyle -- the link and its pin button are siblings, so the row keeps its fill while the pointer is on the pin, and pe-10 keeps the name clear of it */
+                              className="group-hover:bg-sidebar-accent flex w-full pe-10"
                             >
                               <Link
                                 to={
@@ -716,7 +716,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                             </Button>
                             <div
                               className={cn(
-                                'absolute top-1 right-1.5 flex items-center',
+                                'absolute end-1.5 top-1 flex items-center',
                                 !isMobile &&
                                   'invisible group-focus-within:visible group-hover:visible',
                               )}
@@ -770,8 +770,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               )}
               {conversations?.data && conversations.data.length > 0 ? (
                 <div className="mt-7">
-                  <div className="my-auto mt-2 ml-2.75 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
-                    <p className="mt-1 ml-4 text-sm font-semibold">
+                  <div className="my-auto ms-2.75 mt-2 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
+                    <p className="ms-4 mt-1 text-sm font-semibold">
                       {t('chats')}
                     </p>
                     <IconButton
@@ -780,7 +780,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       size="icon"
                       shape="pill"
                       onClick={() => setSearchOpen(true)}
-                      className="mr-1"
+                      className="me-1"
                     >
                       <Search aria-hidden />
                     </IconButton>
@@ -908,7 +908,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <div className="flex items-center justify-between py-1">
               <Help />
 
-              <div className="flex items-center gap-1 pr-4">
+              <div className="flex items-center gap-1 pe-4">
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/vN7YFfdMpj'}

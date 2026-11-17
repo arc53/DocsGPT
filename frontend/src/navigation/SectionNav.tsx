@@ -87,13 +87,13 @@ export default function SectionNav({
         className="mx-4 mt-4 flex shrink-0"
       >
         <ArrowLeft
-          className="text-muted-foreground size-5 shrink-0"
+          className="text-muted-foreground size-5 shrink-0 rtl:rotate-180"
           aria-hidden
         />
         <span className="truncate">{backLabel}</span>
       </Button>
       <p
-        className="text-foreground mt-6 ml-8 shrink-0 truncate pr-4 text-sm font-semibold"
+        className="text-foreground ms-8 mt-6 shrink-0 truncate pe-4 text-sm font-semibold"
         title={sectionTitle}
       >
         {sectionTitle}
@@ -105,7 +105,7 @@ export default function SectionNav({
         {groups.map((group) => (
           <div key={group.key} className="mt-5 first:mt-0">
             {group.labelKey && (
-              <p className="text-muted-foreground mb-1 ml-8 text-xs font-medium">
+              <p className="text-muted-foreground ms-8 mb-1 text-xs font-medium">
                 {t(group.labelKey)}
               </p>
             )}

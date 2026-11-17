@@ -487,3 +487,14 @@
   pointer-events: auto !important;
   z-index: 9999 !important;
 }
+
+/* Technical content retains its reading order inside an RTL interface. */
+:where([dir='rtl'])
+  :where(pre, code, kbd, samp, input[type='url'], input[type='email']) {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: left;
+}
+:where([dir='rtl']) :where(a[href^='https://'], a[href^='mailto:']) {
+  unicode-bidi: isolate;
+}

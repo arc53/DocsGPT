@@ -20,6 +20,7 @@ import {
 } from './icons';
 import { MIC_TITLES, MicButton, VoiceWaveform } from './ComposerControls';
 import { I18nProvider, useMessages } from '../locale/context';
+import { localeDirection } from '../locale';
 import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
@@ -105,7 +106,7 @@ const field = css<{ $shape: Shape; $inputWidth: string }>`
   margin: 0;
   font-family: inherit;
   font-size: 14px;
-  text-align: left;
+  text-align: start;
   color: ${(props) => props.theme.mutedForeground};
   background-color: ${(props) => props.theme.controlFill};
   border: 1px solid ${(props) => props.theme.border};
@@ -118,7 +119,7 @@ const field = css<{ $shape: Shape; $inputWidth: string }>`
 
   & > svg {
     position: absolute;
-    left: ${(props) => (props.$shape === 'rounded' ? '12px' : '16px')};
+    inset-inline-start: ${(props) => (props.$shape === 'rounded' ? '12px' : '16px')};
     top: 50%;
     transform: translateY(-50%);
     color: ${(props) => props.theme.mutedForeground};
@@ -450,7 +451,7 @@ const AskQuery = styled.span`
 const RowHint = styled.span`
   display: inline-flex;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   color: ${(props) => props.theme.mutedForeground};
 `;
 
@@ -916,7 +917,7 @@ const SearchBarInner = ({
     <ThemeProvider theme={themes[theme]}>
       {/* The field is always on the page, so its face loads with it. */}
       <InterFontFace />
-      <Main lang={locale}>
+      <Main lang={locale} dir={localeDirection(locale)}>
         <Container
           ref={containerRef}
           onBlur={(event) => {

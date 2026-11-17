@@ -6,6 +6,7 @@ import { Provider } from 'react-redux';
 import store from './store';
 import { TooltipProvider } from './components/ui/tooltip';
 import './index.css';
+import LocaleDirection from './locale/LocaleDirection';
 import { installChunkReload } from './utils/chunkReload';
 import { installTranslatorGuard } from './utils/translatorGuard';
 
@@ -85,9 +86,11 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <BrowserRouter>
       <Provider store={store}>
         {/* One provider, so tooltips along a row skip the delay after the first. */}
-        <TooltipProvider>
-          <App />
-        </TooltipProvider>
+        <LocaleDirection>
+          <TooltipProvider>
+            <App />
+          </TooltipProvider>
+        </LocaleDirection>
       </Provider>
     </BrowserRouter>
   </React.StrictMode>,

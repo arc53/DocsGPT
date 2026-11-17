@@ -2,6 +2,7 @@ import { de } from './de';
 import { en, type Messages, type PluralKey } from './en';
 import { es } from './es';
 import { fr } from './fr';
+import { fa } from './fa';
 import { ja } from './ja';
 import { ru } from './ru';
 import { zh } from './zh';
@@ -19,6 +20,7 @@ export const SUPPORTED_LOCALES = [
   'zh-TW',
   'ru',
   'de',
+  'fa',
 ] as const;
 
 /** One of `SUPPORTED_LOCALES`. */
@@ -34,7 +36,12 @@ const CATALOGS: Record<SupportedLocale, Messages> = {
   'zh-TW': zhTW,
   ru,
   de,
+  fa,
 };
+
+/** Direction belongs to the widget, independently of the embedding page. */
+export const localeDirection = (locale: SupportedLocale): 'rtl' | 'ltr' =>
+  locale === 'fa' ? 'rtl' : 'ltr';
 
 /**
  * The supported locale a BCP 47 tag maps to, or null. Exact code first, then

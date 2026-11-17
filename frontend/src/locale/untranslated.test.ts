@@ -4,6 +4,7 @@ import de from './de.json';
 import en from './en.json';
 import es from './es.json';
 import fr from './fr.json';
+import fa from './fa.json';
 import jp from './jp.json';
 import ru from './ru.json';
 import zhTW from './zh-TW.json';
@@ -28,7 +29,7 @@ const isProse = (value: string): boolean =>
 
 const english = new Map(strings(en));
 
-const LOCALES = { de, es, fr, jp, ru, zh, zhTW };
+const LOCALES = { fa, de, es, fr, jp, ru, zh, zhTW };
 
 describe('locales are translated', () => {
   it.each(Object.entries(LOCALES))(

@@ -150,7 +150,7 @@ export default function MobileTopBar({
   const renderTitle = () => {
     if (isEditing) {
       return (
-        <div className="bg-accent flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md pr-1 pl-2">
+        <div className="bg-accent flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md ps-2 pe-1">
           <Input
             autoFocus
             type="text"
@@ -238,7 +238,7 @@ export default function MobileTopBar({
           onClick={onOpenSidebar}
         />
         <div className="flex min-w-0 flex-1">{renderTitle()}</div>
-        <div className="flex shrink-0 items-center gap-1 pr-1">
+        <div className="flex shrink-0 items-center gap-1 pe-1">
           {onNewChat && (
             <IconButton
               label={t('newChat')}

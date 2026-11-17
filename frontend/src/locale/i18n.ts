@@ -12,6 +12,7 @@ import zh from './zh.json'; //Mandarin
 import zhTW from './zh-TW.json'; //Traditional Chinese
 import ru from './ru.json'; //Russian
 import de from './de.json'; //German
+import fa from './fa.json'; //Persian
 
 // Codes older builds stored for the UI language. They aren't BCP 47 tags, so
 // browsers never matched them and Intl gave them English plural rules.
@@ -51,13 +52,16 @@ i18n
       de: {
         translation: de,
       },
+      fa: {
+        translation: fa,
+      },
     },
     fallbackLng: 'en',
     // Detection skips codes outside this list (a stored "undefined" from old
     // builds) and maps a region to its language (ru-RU -> ru); the detector
     // then caches the result over the stored value. A new language goes here
     // as well as in `resources`.
-    supportedLngs: ['en', 'es', 'fr', 'ja', 'zh', 'zh-TW', 'ru', 'de'],
+    supportedLngs: ['en', 'es', 'fr', 'ja', 'zh', 'zh-TW', 'ru', 'de', 'fa'],
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
@@ -75,6 +79,7 @@ i18n.changeLanguage(i18n.language);
 const syncHtmlLang = (lng: string) => {
   if (typeof document !== 'undefined') {
     document.documentElement.lang = intlLocale(lng);
+    document.documentElement.dir = i18n.dir(lng);
   }
 };
 i18n.on('languageChanged', syncHtmlLang);

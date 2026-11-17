@@ -53,6 +53,7 @@ import {
   SIDEBAR_DEFAULT_WIDTH,
 } from '../utils/sidebarWidth';
 import { I18nProvider, useMessages } from '../locale/context';
+import { localeDirection } from '../locale';
 import {
   AttachButton,
   AttachmentChips,
@@ -317,7 +318,7 @@ const WidgetContainer = styled.div<{
     transform: translate(50%, 50%);
   }
   align-items: center;
-  text-align: left;
+  text-align: start;
 
   @media only screen and (max-width: 768px) {
     right: 0;
@@ -546,8 +547,8 @@ const FloatingButton = styled.button<{ $bg?: string; $hidden: boolean }>`
   height: 48px;
   margin: 0;
   padding: 0 20px;
-  bottom: 16px;
-  right: 16px;
+  bottom: var(--docsgpt-launcher-bottom, 16px);
+  right: var(--docsgpt-launcher-right, 16px);
   border: none;
   border-radius: ${radii.full};
   background: ${(props) => props.$bg ?? props.theme.primary};
@@ -695,7 +696,7 @@ const Conversation = styled.div<{ $hidden?: boolean }>`
   height: 100%;
   box-sizing: border-box;
   padding: 16px;
-  text-align: left;
+  text-align: start;
   overflow-y: auto;
   /* Tables and code scroll in their own frames; nothing else may scroll the
      conversation sideways. */
@@ -723,7 +724,7 @@ const ActionsRow = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: -8px;
+  margin-inline-start: -8px;
   padding: 0;
 `;
 // ghost-muted icon-sm pill.
@@ -784,7 +785,7 @@ const Turn = styled.div`
   min-width: 0;
 `;
 const ActionHint = styled.span`
-  margin-left: 4px;
+  margin-inline-start: 4px;
   font-size: 12px;
   line-height: 1;
   color: ${(props) => props.theme.destructive};
@@ -809,6 +810,7 @@ const MessageBubble = styled.div<{ $type: MESSAGE_TYPE }>`
   }
 `;
 const Message = styled.div<{ $type: MESSAGE_TYPE }>`
+  unicode-bidi: plaintext;
   display: block;
   box-sizing: border-box;
   min-width: 0;
@@ -834,6 +836,15 @@ const Message = styled.div<{ $type: MESSAGE_TYPE }>`
 // The app's answer markdown: lib/markdown.tsx, MarkdownAnswer, ui/table and
 // CodeFrame, spelled out for the widget's markdown-it output.
 const Markdown = styled.div`
+  pre,
+  code {
+    direction: ltr;
+    unicode-bidi: isolate;
+    text-align: left;
+  }
+  a {
+    unicode-bidi: isolate;
+  }
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -914,15 +925,16 @@ const Markdown = styled.div`
 
   blockquote {
     margin: 0;
-    padding-left: 12px;
-    border-left: 2px solid ${(props) => props.theme.border};
+    padding-inline-start: 12px;
+    border-inline-start: 2px solid ${(props) => props.theme.border};
     color: ${(props) => props.theme.mutedForeground};
   }
 
   ul,
   ol {
     margin: 0;
-    padding: 0 0 0 16px;
+    padding: 0;
+    padding-inline-start: 16px;
     list-style-position: inside;
     white-space: normal;
   }
@@ -1196,7 +1208,7 @@ const Markdown = styled.div`
     width: 100%;
     min-width: 0;
     border-collapse: collapse;
-    text-align: left;
+    text-align: start;
     font-size: 14px;
   }
 
@@ -1428,7 +1440,7 @@ const StyledTextarea = styled.textarea<{
   overflow-wrap: break-word;
   white-space: pre-wrap;
   line-height: 1.25;
-  text-align: left;
+  text-align: start;
   min-height: ${(props) =>
     props.theme.dimensions!.size === 'large' ? '64px' : '48px'};
   max-height: 140px;
@@ -1447,7 +1459,7 @@ const StyledTextarea = styled.textarea<{
     background: transparent;
   }
   &::placeholder {
-    text-align: left;
+    text-align: start;
     color: ${(props) => props.theme.mutedForeground};
   }
 `;
@@ -1566,7 +1578,7 @@ const SuggestedQuestion = styled.button`
   font-family: inherit;
   font-size: 13px;
   line-height: 1.43;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition: background-color 0.15s ease;
 
@@ -2042,9 +2054,11 @@ const Launcher = (
   return (
     <ThemeProvider theme={themes[coreProps.theme ?? 'dark']}>
       <FloatingButton
+        data-docsgpt-launcher
         ref={launcherRef}
         type="button"
         lang={locale}
+        dir={localeDirection(locale)}
         $bg={buttonBg}
         onClick={handleOpen}
         $hidden={!isFloatingButtonVisible}
@@ -3072,7 +3086,12 @@ export const WidgetCore = ({
   const handlePromptKeyDown = async (
     e: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (
+      e.key === 'Enter' &&
+      !e.shiftKey &&
+      !e.nativeEvent.isComposing &&
+      e.keyCode !== 229
+    ) {
       e.preventDefault();
       await submitPrompt();
     }
@@ -3286,8 +3305,10 @@ export const WidgetCore = ({
       {isOpen && size === 'large' && <Overlay onClick={handleClose} />}
       {
         <WidgetContainer
+          data-docsgpt-panel
           ref={containerRef}
           lang={locale}
+          dir={localeDirection(locale)}
           className={`${size !== 'large' ? (isOpen ? 'open' : 'close') : 'modal'}`}
           $modal={size === 'large'}
           $sidebar={docked}

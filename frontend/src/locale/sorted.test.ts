@@ -4,6 +4,7 @@ import de from './de.json';
 import en from './en.json';
 import es from './es.json';
 import fr from './fr.json';
+import fa from './fa.json';
 import jp from './jp.json';
 import ru from './ru.json';
 import zhTW from './zh-TW.json';
@@ -13,7 +14,7 @@ import zh from './zh.json';
 // the end of a section. `npm run locale:sort` puts a file back in order.
 type Tree = { [key: string]: string | Tree };
 
-const LOCALES = { de, en, es, fr, jp, ru, zh, zhTW };
+const LOCALES = { fa, de, en, es, fr, jp, ru, zh, zhTW };
 
 const unsortedPaths = (tree: Tree, prefix = ''): string[] =>
   Object.entries(tree).flatMap(([key, value], index, entries) => {
