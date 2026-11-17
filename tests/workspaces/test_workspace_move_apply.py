@@ -32,7 +32,7 @@ from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.workspaces.move import MoveError, apply_move, parse_move_request
 from tests.workspaces.move_support import (
-    agent, apply, body, file, folder, grant, other_team, owner_of, plan, prompt, source, team, tool, workflow,
+    agent, apply, body, file, folder, grant, keyed, other_team, owner_of, plan, prompt, source, team, tool, workflow,
 )
 
 
@@ -401,6 +401,25 @@ class TestMoveOut:
         assert convs.team_id_of(str(adams["id"])) is None
         assert convs.team_id_of(str(veras["id"])) == tid
         assert ag in [e["metadata"]["resource_id"] for e in _events(pg_conn, "team.item_moved_out")]
+
+    def test_workflow_nodes_drop_the_team_sources_that_stay(self, pg_conn):
+        # The mover can still open the team's sources as a member; the node keeps only what they now own.
+        tid, principal = team(pg_conn)
+        other = other_team(pg_conn)
+        synced = source(pg_conn, principal, "Synced", type="connector:file")
+        olgas = source(pg_conn, "olga", "Olga's")
+        grant(pg_conn, other, "source", olgas, "olga")
+        grant(pg_conn, tid, "source", olgas, "olga")
+        plain = source(pg_conn, principal, "Plain")
+        wid = workflow(pg_conn, principal, nodes=[{"config": {"sources": [synced, olgas, plain]}}])
+        ag = agent(pg_conn, principal, agent_type="workflow", workflow_id=wid)
+        out = plan(pg_conn, "adam", body("personal", [("agent", ag)]))
+        assert keyed(out["cannot_move"])[("source", synced)]["effect"] == "removed_from_holder"
+        apply(pg_conn, "adam", body("personal", [("agent", ag)]))
+        cfg = pg_conn.execute(text("SELECT config FROM workflow_nodes WHERE workflow_id = CAST(:w AS uuid)"),
+                              {"w": wid}).scalar()
+        assert cfg["config"]["sources"] == [plain]
+        assert owner_of(pg_conn, "source", synced) == principal
 
     def test_an_editor_cant_move_out(self, pg_conn):
         tid, principal = team(pg_conn)

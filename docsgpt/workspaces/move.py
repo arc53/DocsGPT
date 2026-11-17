@@ -1575,6 +1575,7 @@ class _Executor:
             prepared = self._remap_node_model(node_type, self._uuid_node_refs(node_type, copy.deepcopy(config)))
             before = copy.deepcopy(prepared)
             stripped = self._keep_shared(node_type, before, transform(node_type, prepared))
+            stripped = self._kept_node_sources(node_type, stripped)
             if stripped != config:
                 self.conn.execute(
                     text("UPDATE workflow_nodes SET config = CAST(:c AS jsonb) WHERE id = CAST(:i AS uuid)"),
@@ -1606,6 +1607,28 @@ class _Executor:
                 str(v) for v in values if v and (str(v) in stayed or (kind, str(v).lower()) in self.plan.shared_refs)
             ]
         return after
+
+    def _kept_node_sources(self, node_type: str, config: dict) -> dict:
+        """Keep only the agent node's sources the agent itself may keep.
+
+        The adoption strip keeps any source the new owner can open, and a team admin moving out can still open
+        the team's (a connector-synced one, one another team shares with it): the keyed personal workflow
+        would go on reading them. A node keeps what the new owner owns, or what the plan keeps through a share.
+
+        Args:
+            node_type: The node's type.
+            config: The stripped node config (changed in place).
+
+        Returns:
+            dict: ``config``.
+        """
+        if node_type != "agent":
+            return config
+        nested = config.get("config")
+        cfg = nested if isinstance(nested, dict) else config
+        if isinstance(cfg.get("sources"), list):
+            cfg["sources"] = [s for s in cfg["sources"] if s and self._kept("source", s)]
+        return config
 
     def _uuid_node_refs(self, node_type: str, config: dict) -> dict:
         """Rewrite an agent node's tool and source refs that name an item by its Mongo id to the item's uuid.
