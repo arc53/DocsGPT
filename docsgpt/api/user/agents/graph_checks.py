@@ -333,6 +333,28 @@ def added_team_refs(before: TeamRefs, after: TeamRefs) -> TeamRefs:
     return out
 
 
+# The agent fields a save may change that decide which items it uses.
+_REF_FIELDS = ("source_id", "extra_source_ids", "prompt_id", "tools", "knowledge_folder_ids", "agent_type", "workflow_id")
+
+
+def team_refs_added_by_save(conn, agent: dict, fields: dict, nodes: Optional[list] = None) -> TeamRefs:
+    """The team items an agent save adds: those the agent uses after it and didn't before.
+
+    Args:
+        conn: Open database connection.
+        agent: The stored agent row.
+        fields: The columns the save writes.
+        nodes: The workflow nodes the save brings (an inline graph), if any.
+
+    Returns:
+        TeamRefs: The added items by owning team; empty when the save adds none.
+    """
+    if nodes is None and not any(f in fields for f in _REF_FIELDS):
+        return {}
+    after = {**agent, **{f: fields[f] for f in _REF_FIELDS if f in fields}}
+    return added_team_refs(agent_team_refs(conn, agent), agent_team_refs(conn, after, nodes=nodes))
+
+
 def _reaches(conn, item_team: str, ref: tuple[str, str], team_id: str, user_id: Optional[str]) -> bool:
     """Whether a whole team (``user_id`` None) or one person already reaches a team's item.
 
@@ -578,3 +600,31 @@ def team_items_shared_outside_refusal(
         "uses_team_items": rows,
         "shared_with": teams,
     }, 409
+
+
+def workflow_team_items_refusal(
+    conn, workflow: dict, owner_id: Optional[str], previous_nodes: list, nodes: list, caller: Optional[str]
+) -> Optional[tuple[dict, int]]:
+    """:func:`team_items_shared_outside_refusal` for a graph save, judged for every agent that runs the workflow.
+
+    Args:
+        conn: Open database connection.
+        workflow: The saved workflow row.
+        owner_id: Its owner.
+        previous_nodes: The stored graph's nodes.
+        nodes: The nodes being saved.
+        caller: Who saves.
+
+    Returns:
+        ``(body, 409)``, or None.
+    """
+    added = added_team_refs(
+        workflow_team_refs(conn, workflow, owner_id, previous_nodes),
+        workflow_team_refs(conn, workflow, owner_id, nodes),
+    )
+    if not added:
+        return None
+    agents = conn.execute(
+        text("SELECT id, user_id FROM agents WHERE workflow_id = CAST(:wid AS uuid)"), {"wid": str(workflow["id"])}
+    ).mappings().all()
+    return team_items_shared_outside_refusal(conn, [dict(a) for a in agents], added, caller)

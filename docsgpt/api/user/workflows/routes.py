@@ -592,8 +592,15 @@ def plan_graph_save(
     Returns:
         The :class:`GraphSave`, or the :class:`AccessDenied` to answer with.
     """
+    team_items = False
     if workflow is not None:
-        if holder_has_outside_access(conn, "workflow", workflow):
+        # Lazy: graph_checks imports this module.
+        from docsgpt.api.user.agents.graph_checks import workflow_team_refs
+
+        # Another team's item on a node is checked below against who the workflow's agents are shared with;
+        # a share made at the same time takes the same lock.
+        team_items = bool(workflow_team_refs(conn, workflow, owner_id, graph["nodes"]))
+        if team_items or holder_has_outside_access(conn, "workflow", workflow):
             # The borrowed-item check below runs wholly before or after a move of the owner's items. Taken
             # before the row lock, which a move waits on too.
             lock_owner_items(conn, owner_id)
@@ -609,6 +616,14 @@ def plan_graph_save(
     denied = _new_node_ref_denied(conn, previous_nodes, nodes, caller, owner_id)
     if denied is not None:
         return denied
+    # A team's item reaches only people who already reach it: none is added to
+    # a graph whose agents are shared with a team, or a person, who can't use it.
+    if team_items:
+        from docsgpt.api.user.agents.graph_checks import workflow_team_items_refusal
+
+        refusal = workflow_team_items_refusal(conn, workflow, owner_id, previous_nodes, nodes, caller)
+        if refusal is not None:
+            return GraphRefused(*refusal)
     # Someone else's tool or source, reached through a grant, never goes out
     # through the key, link or webhook of an agent that runs this graph; one
     # already on a node stays.

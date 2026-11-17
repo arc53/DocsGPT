@@ -107,6 +107,8 @@ from docsgpt.api.user.agents.graph_checks import (
     refuse_borrowed_outside_access as _refuse_borrowed_outside_access,
     runs_outside_builder as _runs_outside_builder,
     stored_graph_errors as _stored_graph_errors,
+    team_items_shared_outside_refusal as _team_items_shared_outside_refusal,
+    team_refs_added_by_save as _team_refs_added_by_save,
     workflow_runs_elsewhere as _workflow_runs_elsewhere,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -1980,7 +1982,12 @@ class UpdateAgent(Resource):
                     ):
                         newly_generated_key = str(uuid.uuid4())
                         update_fields["key"] = newly_generated_key
-                if newly_generated_key or has_outside_access(existing_agent):
+                # A team's items the save adds must reach everyone the agent is shared with (checked
+                # below); a share made at the same time takes the same lock, so one sees the other.
+                team_added = _team_refs_added_by_save(
+                    conn, existing_agent, update_fields, inline_graph["nodes"] if inline_graph is not None else None,
+                )
+                if newly_generated_key or has_outside_access(existing_agent) or team_added:
                     # The borrowed-item checks below run wholly before or after a move of the owner's
                     # items. Taken before the graph save locks its workflow row, which a move updates.
                     lock_owner_items(conn, owner_id)
@@ -2166,6 +2173,13 @@ class UpdateAgent(Resource):
                     )
                     if isinstance(graph_save, AccessDenied):
                         return _denied(graph_save)
+                # A team's item reaches only people who already reach it: none is
+                # added to an agent shared with a team, or a person, who can't use it.
+                if team_added:
+                    refusal = _team_items_shared_outside_refusal(conn, [existing_agent], team_added, user)
+                    if refusal is not None:
+                        body, status = refusal
+                        return make_response(jsonify(body), status)
                 # Someone else's tool or source, reached through a grant, never
                 # goes out through a key, link or webhook: none is added to an
                 # agent that has one (those already on it stay), and an agent

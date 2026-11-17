@@ -12,9 +12,11 @@ today's behaviour. Uses real repositories on ``pg_conn``.
 from __future__ import annotations
 
 import pytest
+from flask import Flask
 from sqlalchemy import text
 
 from docsgpt.api.user.agents.graph_checks import (
+    CODE_TEAM_ITEM_SHARED_OUTSIDE,
     CODE_USES_TEAM_ITEMS,
     agent_team_refs,
     team_confinement_refusal,
@@ -23,9 +25,16 @@ from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+from tests.api.user.agents.test_borrowed_outside_access import _call, _json, _status
 from tests.workspaces.move_support import agent, grant, prompt, source, team, tool
 
 LENDER = "lena-lender"
+
+
+@pytest.fixture
+def app():
+    return Flask(__name__)
 
 
 @pytest.fixture
@@ -58,6 +67,14 @@ def _share_in(conn, w, kind, into="dev", by="adam"):
     TeamItemSharesRepository(conn).share(w["ops"], w[into], kind, w[kind], by)
 
 
+def _lent_source(conn, w) -> str:
+    """Lena, a member of Dev, lends Vera her own source through Dev."""
+    TeamMembersRepository(conn).add_member(w["dev"], LENDER, role="team_viewer")
+    lent = source(conn, LENDER, "Lent")
+    grant(conn, w["dev"], "source", lent, LENDER, target="vera")
+    return lent
+
+
 def _lock(conn, team_id):
     conn.execute(text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": team_id})
 
@@ -77,8 +94,7 @@ class TestTeamRefs:
 
     def test_own_items_presets_and_lent_items_dont(self, pg_conn, w):
         own = source(pg_conn, "vera", "Mine")
-        lent = source(pg_conn, LENDER, "Lent")
-        grant(pg_conn, w["dev"], "source", lent, LENDER, target="vera")
+        lent = _lent_source(pg_conn, w)
         a = _agent(pg_conn, source_id=own, extra_source_ids=[lent], prompt_id="default")
         assert agent_team_refs(pg_conn, a) == {}
 
@@ -168,8 +184,7 @@ class TestShareWithATeam:
         assert _keys(body) == {f"source:{w['source']}"}
 
     def test_a_personally_lent_source_keeps_todays_behaviour(self, pg_conn, w):
-        lent = source(pg_conn, LENDER, "Lent")
-        grant(pg_conn, w["dev"], "source", lent, LENDER, target="vera")
+        lent = _lent_source(pg_conn, w)
         a = _agent(pg_conn, source_id=lent)
         assert team_confinement_refusal(pg_conn, a, w["qa"], None, "vera") is None
 
@@ -220,4 +235,131 @@ class TestMoveOffer:
         a = _agent(pg_conn, owner="eddie", source_id=w["source"])
         body, _ = team_confinement_refusal(pg_conn, a, w["dev"], None, "adam")
         assert body["move_to"] is None
+
+
+def _put(app, conn, agent_id, body, user="vera"):
+    from docsgpt.api.user.agents.routes import UpdateAgent
+
+    return _call(app, conn, UpdateAgent, "put", f"/api/update_agent/{agent_id}", user, json=body, args=(agent_id,))
+
+
+def _row(conn, agent_id) -> dict:
+    return AgentsRepository(conn).get_by_id(agent_id)
+
+
+class TestAddingToASharedAgent:
+    def test_a_teams_source_refused_on_an_agent_shared_with_another_team(self, app, pg_conn, w):
+        a = _agent(pg_conn)
+        grant(pg_conn, w["dev"], "agent", str(a["id"]), "vera")
+        resp = _put(app, pg_conn, str(a["id"]), {"sources": [w["source"]]})
+        assert _status(resp) == 409, _json(resp)
+        body = _json(resp)
+        assert body["error"] == body["code"] == CODE_TEAM_ITEM_SHARED_OUTSIDE
+        assert _keys(body) == {f"source:{w['source']}"}
+        assert body["shared_with"] == [{"team_id": w["dev"], "name": "Dev"}]
+        assert "Ops handbook" in body["message"]
+        assert not _row(pg_conn, str(a["id"])).get("extra_source_ids")
+
+    def test_allowed_when_shared_with_the_owning_team(self, app, pg_conn, w):
+        a = _agent(pg_conn)
+        grant(pg_conn, w["ops"], "agent", str(a["id"]), "vera")
+        resp = _put(app, pg_conn, str(a["id"]), {"sources": [w["source"]], "tools": [w["tool"]]})
+        assert _status(resp) == 200, _json(resp)
+        assert [str(s) for s in _row(pg_conn, str(a["id"]))["extra_source_ids"]] == [w["source"]]
+
+    def test_allowed_when_the_team_receives_it(self, app, pg_conn, w):
+        _share_in(pg_conn, w, "source")
+        a = _agent(pg_conn)
+        grant(pg_conn, w["dev"], "agent", str(a["id"]), "vera")
+        assert _status(_put(app, pg_conn, str(a["id"]), {"sources": [w["source"]]})) == 200
+
+    def test_a_member_share_follows_that_member(self, app, pg_conn, w):
+        a = _agent(pg_conn)
+        grant(pg_conn, w["dev"], "agent", str(a["id"]), "vera", target="eddie")
+        assert _status(_put(app, pg_conn, str(a["id"]), {"tools": [w["tool"]]})) == 200
+        grant(pg_conn, w["dev"], "agent", str(a["id"]), "vera", target="dan")
+        resp = _put(app, pg_conn, str(a["id"]), {"tools": [w["tool"]], "prompt_id": w["prompt"]})
+        assert _status(resp) == 409, _json(resp)
+        assert _keys(_json(resp)) == {f"prompt:{w['prompt']}"}
+
+    def test_a_teams_prompt_refused(self, app, pg_conn, w):
+        a = _agent(pg_conn)
+        grant(pg_conn, w["qa"], "agent", str(a["id"]), "vera")
+        resp = _put(app, pg_conn, str(a["id"]), {"prompt_id": w["prompt"]})
+        assert _status(resp) == 409, _json(resp)
+
+    def test_a_folder_feeding_a_teams_source_refused(self, app, pg_conn, w):
+        shelf = str(FoldersRepository(pg_conn).create("vera", "Shelf", resource_type="source")["id"])
+        FolderItemsRepository(pg_conn).file("vera", "source", w["source"], shelf)
+        a = _agent(pg_conn)
+        grant(pg_conn, w["dev"], "agent", str(a["id"]), "vera")
+        resp = _put(app, pg_conn, str(a["id"]), {"folders": [shelf]})
+        assert _status(resp) == 409, _json(resp)
+        assert _keys(_json(resp)) == {f"source:{w['source']}"}
+
+    def test_a_personally_lent_source_keeps_todays_behaviour(self, app, pg_conn, w):
+        lent = _lent_source(pg_conn, w)
+        a = _agent(pg_conn)
+        grant(pg_conn, w["qa"], "agent", str(a["id"]), "vera")
+        assert _status(_put(app, pg_conn, str(a["id"]), {"sources": [lent]})) == 200
+
+    def test_a_team_item_already_on_it_still_saves(self, app, pg_conn, w):
+        # An agent shared before the rule existed keeps saving; the run-time check stops the item.
+        a = _agent(pg_conn, source_id=w["source"])
+        grant(pg_conn, w["dev"], "agent", str(a["id"]), "vera")
+        resp = _put(app, pg_conn, str(a["id"]), {"name": "Renamed", "sources": [w["source"]]})
+        assert _status(resp) == 200, _json(resp)
+
+    def test_an_agent_shared_with_nobody_takes_it(self, app, pg_conn, w):
+        a = _agent(pg_conn)
+        assert _status(_put(app, pg_conn, str(a["id"]), {"sources": [w["source"]]})) == 200
+
+    def test_a_team_agent_shared_with_another_team(self, app, pg_conn, w):
+        # Dev's agent, shared with QA, may not take on Ops' source that Ops shares with Dev only.
+        _share_in(pg_conn, w, "source")
+        a = _agent(pg_conn, owner=w["dev_p"])
+        TeamItemSharesRepository(pg_conn).share(w["dev"], w["qa"], "agent", str(a["id"]), "dora")
+        resp = _put(app, pg_conn, str(a["id"]), {"sources": [w["source"]]}, user="dan")
+        assert _status(resp) == 409, _json(resp)
+        assert _json(resp)["code"] == CODE_TEAM_ITEM_SHARED_OUTSIDE
+
+
+class TestWorkflowNodes:
+    def _wf_agent(self, conn, w, share_to="dev"):
+        wid = str(WorkflowsRepository(conn).create("vera", "wf")["id"])
+        a = _agent(conn, agent_type="workflow", workflow_id=wid)
+        grant(conn, w[share_to], "agent", str(a["id"]), "vera")
+        return wid, a
+
+    def test_a_node_source_refused_when_the_agent_is_shared_outside(self, app, pg_conn, w):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        from tests.api.user.test_resource_sponsors import _wf_body
+
+        wid, _ = self._wf_agent(pg_conn, w)
+        resp = _call(app, pg_conn, WorkflowDetail, "put", f"/api/workflows/{wid}", "vera",
+                     json=_wf_body(source=w["source"]), args=(wid,))
+        assert _status(resp) == 409, _json(resp)
+        assert _json(resp)["code"] == CODE_TEAM_ITEM_SHARED_OUTSIDE
+        assert _keys(_json(resp)) == {f"source:{w['source']}"}
+
+    def test_a_node_tool_allowed_when_shared_with_the_owning_team(self, app, pg_conn, w):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        from tests.api.user.test_resource_sponsors import _wf_body
+
+        wid, _ = self._wf_agent(pg_conn, w, share_to="ops")
+        resp = _call(app, pg_conn, WorkflowDetail, "put", f"/api/workflows/{wid}", "vera",
+                     json=_wf_body(tool=w["tool"]), args=(wid,))
+        assert _status(resp) == 200, _json(resp)
+
+    def test_an_inline_graph_on_the_agent_save_refused(self, app, pg_conn, w):
+        from tests.api.user.test_resource_sponsors import _wf_body
+
+        _, a = self._wf_agent(pg_conn, w)
+        graph = _wf_body(tool=w["tool"])
+        resp = _put(app, pg_conn, str(a["id"]), {"workflow_graph": {"nodes": graph["nodes"],
+                                                                     "edges": graph["edges"]}})
+        assert _status(resp) == 409, _json(resp)
+        assert _json(resp)["code"] == CODE_TEAM_ITEM_SHARED_OUTSIDE
 
