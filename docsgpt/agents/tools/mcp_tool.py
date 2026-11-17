@@ -1736,9 +1736,18 @@ class DBTokenStorage(TokenStorage):
         return info
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
+        """Save a registration, applying the RFC 7591 default auth method to it.
+
+        The SDK exchanges a fresh registration's first code with this same
+        object, so the default goes onto it as well as onto the saved copy.
+
+        Args:
+            client_info: The registration the SDK holds for this flow.
+        """
         serialized_info = _default_token_endpoint_auth_method(
             self._serialize_client_info(client_info.model_dump())
         )
+        client_info.token_endpoint_auth_method = serialized_info.get("token_endpoint_auth_method")
         base_url = self.get_base_url(self.server_url)
         await asyncio.to_thread(
             self._merge, {"client_info": serialized_info},
