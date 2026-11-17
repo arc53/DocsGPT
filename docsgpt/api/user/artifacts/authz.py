@@ -50,15 +50,22 @@ def principal_for(decoded_token: Optional[dict], api_key: Optional[str]) -> Prin
 
     Priority: a decoded JWT (owner session) first, then the ``api_key``
     (agent-scoped). An unresolvable caller yields an anonymous principal (both
-    fields ``None``) that only a valid ``share_token`` can authorize.
+    fields ``None``) that only a valid ``share_token`` can authorize. So does a
+    key whose outside access is paused (the agent's team locked, its owner or
+    payer deactivated, nobody paying): the key reaches the agent's artifacts
+    only while it could chat with the agent.
     """
+    # Lazy: owner_pause reaches the quota and workspace modules.
+    from docsgpt.api.owner_pause import outside_access_refusal
+
     if decoded_token:
         return Principal(user_id=decoded_token.get("sub"))
 
     if api_key:
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
-        if agent and agent.get("user_id") and agent.get("id"):
+            paused = bool(agent) and outside_access_refusal(conn, agent) is not None
+        if agent and not paused and agent.get("user_id") and agent.get("id"):
             return Principal(user_id=str(agent["user_id"]), agent_id=str(agent["id"]))
     return Principal()
 
