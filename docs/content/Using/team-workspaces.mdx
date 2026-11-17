@@ -295,7 +295,7 @@ Locking pauses what is already outside. Nothing is deleted, and unlocking brings
 
 - **Shares with other teams pause.** What uses a shared item in the other team runs without it, and a shared agent stops answering that team's members.
 - **The team's agents stop answering outside.** API key, widget, public link, webhook, `/v1` and MCP callers are told the agent is paused, and so are signed-in visitors on a public link. Members still chat with the agents in the app.
-- **The team's shared chat links stop opening**, and nobody can make new ones.
+- **The team's shared chat links stop opening**, and nobody can make new ones. The same goes for chat links other teams made with the team's agents.
 - **Nothing moves out.** Nobody can move items or folders out of the team, or export its agents. An agent with outside access can't move in.
 
 Admins can still publish a draft agent for the team's members; it gets no API key.
