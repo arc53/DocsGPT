@@ -61,6 +61,7 @@ vi.mock('../components/ui/dropdown-menu', () => ({
   ),
 }));
 
+import modelService from '../api/services/modelService';
 import actionToastReducer from '../notifications/actionToastSlice';
 import type { CustomModel } from '../models/types';
 import { setRequestWorkspace } from '../workspace/requestWorkspace';
@@ -85,8 +86,16 @@ const team = (id: string, name: string, role: WorkspaceRole): WorkspaceRow => ({
   role,
 });
 
+/** Every action the page dispatched, by type. */
+const dispatched: string[] = [];
+
 const makeStore = (current: string, teams: WorkspaceRow[]) =>
   configureStore({
+    middleware: (getDefault) =>
+      getDefault().concat(() => (next) => (action) => {
+        dispatched.push((action as { type: string }).type);
+        return next(action);
+      }),
     reducer: {
       actionToast: actionToastReducer,
       preference: (state = { token: tokenFor('ana') }) => state,
@@ -267,6 +276,48 @@ describe('Custom models page in a team', () => {
     );
     expect(text()).toContain('settings.customModels.disabledBadge');
     expect(menuLabels()).toContain('settings.customModels.team.actions.enable');
+  });
+
+  it("a model list answering after a switch doesn't replace the new workspace's picker list", async () => {
+    service.listCustomModels.mockResolvedValue([teamModel(true)]);
+    service.updateCustomModel.mockResolvedValue(
+      teamModel(true, { enabled: false }),
+    );
+    let answer: (value: unknown) => void = () => {};
+    vi.mocked(modelService.getModels).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }) as ReturnType<typeof modelService.getModels>,
+    );
+    await inTeam('admin');
+    dispatched.length = 0;
+    await act(async () =>
+      button('settings.customModels.team.actions.disable')!.click(),
+    );
+    // Switched to another team before /api/models answered.
+    setRequestWorkspace('t2', 1);
+    await act(async () => {
+      answer({ ok: true, json: async () => ({ models: [] }) });
+    });
+    expect(modelService.getModels).toHaveBeenCalled();
+    expect(dispatched).not.toContain('preference/setAvailableModels');
+  });
+
+  it('a model list answering in the same workspace refreshes the picker list', async () => {
+    service.listCustomModels.mockResolvedValue([teamModel(true)]);
+    service.updateCustomModel.mockResolvedValue(
+      teamModel(true, { enabled: false }),
+    );
+    vi.mocked(modelService.getModels).mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [] }),
+    } as Response);
+    await inTeam('admin');
+    dispatched.length = 0;
+    await act(async () =>
+      button('settings.customModels.team.actions.disable')!.click(),
+    );
+    expect(dispatched).toContain('preference/setAvailableModels');
   });
 
   it('the delete confirm names the agents and workflows that fall back, read before deleting', async () => {

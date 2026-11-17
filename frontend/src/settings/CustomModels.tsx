@@ -37,6 +37,7 @@ import {
   setAvailableModels,
 } from '../preferences/preferenceSlice';
 import { readerIdFromToken } from '../utils/personLabel';
+import { captureWorkspace } from '../workspace/requestWorkspace';
 import {
   roleAtLeast,
   selectWorkspaceRoleOrNull,
@@ -154,12 +155,16 @@ export default function CustomModels() {
   };
 
   // Refresh Redux availableModels so the chat dropdown reconciles a
-  // selectedModel UUID that was just deleted/disabled.
+  // selectedModel UUID that was just deleted/disabled. A list answering
+  // after a switch is the old workspace's, and the picker would take it as
+  // the new one's.
   const refreshGlobalAvailableModels = React.useCallback(async () => {
+    const workspace = captureWorkspace();
     try {
       const response = await modelService.getModels(token);
-      if (!response.ok) return;
+      if (!response.ok || !workspace.isCurrent()) return;
       const data = await response.json();
+      if (!workspace.isCurrent()) return;
       const transformed = modelService.transformModels(data.models || []);
       dispatch(setAvailableModels(transformed));
     } catch (err) {
