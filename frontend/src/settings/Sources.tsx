@@ -300,6 +300,13 @@ export default function Sources({
   }>({ folderId: null, term: '' });
   // A search carried to the root by "Search all knowledge" (see below).
   const carriedSearch = useRef<string | null>(null);
+  // Leaving a folder drops its search, so coming back starts with none. The
+  // search keeps the folder it was typed in, so a carried one still reads.
+  const [searchFolderId, setSearchFolderId] = useState(folderId);
+  if (searchFolderId !== folderId) {
+    setSearchFolderId(folderId);
+    if (search.term) setSearch({ ...search, term: '' });
+  }
   const searchTerm =
     search.folderId === folderId
       ? search.term

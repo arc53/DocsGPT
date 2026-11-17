@@ -2412,6 +2412,37 @@ describe('Sources folders', () => {
     expect(folderMetaOf('Loose')).toBeNull();
   });
 
+  it('comes back to the root without the search it left there', async () => {
+    answer([sheet, loose]);
+    await mount(root, [sheet, loose]);
+    await typeSearch('rate');
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-folder-tile="f-rate"] button')!
+        .click(),
+    );
+    expect(where()).toBe('?folder=f-rate');
+    const crumbs = container.querySelector('[data-slot="folder-crumb-row"]')!;
+    await act(async () =>
+      Array.from(crumbs.querySelectorAll<HTMLButtonElement>('button'))
+        .find((b) => b.textContent === 'folders.root.source')!
+        .click(),
+    );
+    expect(where()).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('#document-search-input')!
+        .value,
+    ).toBe('');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('');
+    expect(options).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'root', direct: true },
+      origin: 'own',
+    });
+  });
+
   it('goes flat under a filter at the root, with no folder tiles', async () => {
     await mount(root, [sheet], { entry: '/settings/knowledge?kind=files' });
     expect(fetchPage.mock.calls[0][6]).toEqual({
