@@ -1497,3 +1497,50 @@ class TestBearerAgentKeyThroughTheApp:
         with patch("docsgpt.app.handle_auth", return_value=invalid_jwt):
             resp = client.get("/api/get_agents", headers=_bearer())
         assert resp.status_code == 401
+
+
+def _pat(scopes, resource_filter=None, sub=OWNER):
+    return {
+        "sub": sub,
+        "auth_method": "pat",
+        "pat_id": "t1",
+        "scopes": list(scopes),
+        "resource_filter": resource_filter or {},
+    }
+
+
+@pytest.mark.unit
+class TestPersonalAccessTokenDownload:
+    def _artifact(self, conn):
+        conv = _make_conversation(conn)
+        return _make_artifact(
+            conn, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+
+    def test_a_token_with_artifacts_read_downloads_its_owners_artifact(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"]))
+
+        assert resp.status_code == 200
+        assert resp.content == b"BYTES"
+
+    def test_a_token_without_the_scope_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["runs:read"]))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "insufficient_scope"
+
+    def test_a_restricted_token_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"], {"agents": [str(uuid.uuid4())]}))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "resource_not_allowed"

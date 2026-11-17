@@ -32,6 +32,9 @@ class FakeRedis:
             self.expiry.pop(key, None)
         return key in self.kv or key in self.hashes
 
+    def get(self, key):
+        return self.kv.get(key) if self._alive(key) else None
+
     def set(self, key, value, ex=None):
         self.kv[key] = _b(value)
         self.hashes.pop(key, None)

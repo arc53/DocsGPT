@@ -1,6 +1,29 @@
 export type NodeType =
   'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code' | 'loop';
 
+/** Which failures a node retries: upstream errors, or an unusable reply. */
+export type RetryOn = 'transient' | 'invalid_output';
+
+/**
+ * How a node retries a failed attempt; unset fields fall back to the
+ * workflow's ``retry_defaults``, then to the built-in defaults.
+ */
+export interface RetryConfig {
+  /** 1 to 5, counting the first try; 1 never retries. */
+  max_attempts?: number;
+  /** Seconds before retry n: entry n - 1, or the last one past the end. */
+  backoff_seconds?: number[];
+  on?: RetryOn[];
+}
+
+/** An agent node's config; only the fields read by type are listed. */
+export interface AgentNodeConfig {
+  output_variable?: string;
+  json_schema?: Record<string, unknown>;
+  retry?: RetryConfig;
+  [key: string]: unknown;
+}
+
 /** A loop node: runs the nodes inside it once per item of a state list. */
 export interface LoopNodeConfig {
   items: string;
@@ -18,6 +41,7 @@ export interface CodeNodeConfig {
   output_variable?: string;
   timeout?: number;
   json_schema?: Record<string, unknown>;
+  retry?: RetryConfig;
 }
 
 export interface ConditionCase {
@@ -56,6 +80,7 @@ export interface WorkflowNode {
 export interface WorkflowDefinition {
   id?: string;
   name: string;
+  retry_defaults?: RetryConfig | null;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   created_at?: string;
@@ -63,6 +88,17 @@ export interface WorkflowDefinition {
 }
 
 export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+/** One try of a node that ran more than once. */
+export interface NodeAttemptLog {
+  attempt: number;
+  status: 'completed' | 'failed';
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  error?: string | null;
+  reason?: RetryOn | null;
+}
 
 export interface NodeExecutionLog {
   node_id: string;
@@ -73,6 +109,8 @@ export interface NodeExecutionLog {
   started_at: number;
   completed_at?: number;
   logs: string[];
+  /** Each try, when the node ran more than once; empty otherwise. */
+  attempts?: NodeAttemptLog[];
 }
 
 export interface WorkflowRun {

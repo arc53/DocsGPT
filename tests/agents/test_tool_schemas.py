@@ -41,6 +41,8 @@ def shape(schema: Any) -> Any:
         out["properties"] = {name: shape(sub) for name, sub in schema["properties"].items()}
     if isinstance(schema.get("items"), dict):
         out["items"] = shape(schema["items"])
+    if isinstance(schema.get("anyOf"), list):
+        out["anyOf"] = [shape(sub) for sub in schema["anyOf"]]
     return out
 
 

@@ -57,6 +57,26 @@ describe('MermaidRenderer', () => {
     expect(container.querySelector('svg[data-rendered="true"]')).not.toBeNull();
   });
 
+  it('draws a diagram it drew before in its first paint', async () => {
+    const code = 'flowchart LR\nReopen --> Drawn';
+    renderMermaidDiagramMock.mockResolvedValue({
+      svg: '<svg data-drawn="true"></svg>',
+    });
+    await act(async () => {
+      root.render(<MermaidRenderer code={code} isLoading={false} />);
+    });
+    expect(renderMermaidDiagramMock).toHaveBeenCalledTimes(1);
+
+    // Reopened: in place on the synchronous render, with no second render.
+    act(() => root.unmount());
+    root = createRoot(container);
+    act(() => {
+      root.render(<MermaidRenderer code={code} isLoading={false} />);
+    });
+    expect(container.querySelector('svg[data-drawn="true"]')).not.toBeNull();
+    expect(renderMermaidDiagramMock).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the Download menu with a menu item per format', async () => {
     renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
 

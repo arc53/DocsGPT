@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -46,7 +46,8 @@ interface MCPServerModalProps {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   server?: any;
-  onServerSaved: () => void;
+  /** Called with the saved server's tool id once it is saved. */
+  onServerSaved: (toolId?: string) => void;
 }
 
 /**
@@ -493,7 +494,7 @@ export default function MCPServerModal({
           success: true,
           message: result.message,
         });
-        onServerSaved();
+        onServerSaved(typeof result.id === 'string' ? result.id : undefined);
         setModalState('INACTIVE');
         resetForm();
       } else {
@@ -809,33 +810,32 @@ export default function MCPServerModal({
             }
           >
             <AlertDescription>
-              <p>{testResult.message}</p>
-              {testResult.authorization_url && (
-                <Button
-                  variant="link"
-                  size="text"
-                  tone="current"
-                  asChild
-                  className="mt-1.5"
-                >
-                  <a
-                    href={testResult.authorization_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const popup = window.open(
-                        testResult.authorization_url,
-                        'oauthPopup',
-                        'width=600,height=700',
-                      );
-                      if (popup) oauthPopupRef.current = popup;
-                    }}
-                  >
-                    {t('settings.tools.mcp.openAuthPage')}
-                  </a>
-                </Button>
-              )}
+              <p>
+                {testResult.message}
+                {testResult.authorization_url && (
+                  <>
+                    {' '}
+                    <AlertAction asChild>
+                      <a
+                        href={testResult.authorization_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          const popup = window.open(
+                            testResult.authorization_url,
+                            'oauthPopup',
+                            'width=600,height=700',
+                          );
+                          if (popup) oauthPopupRef.current = popup;
+                        }}
+                      >
+                        {t('settings.tools.mcp.openAuthPage')}
+                      </a>
+                    </AlertAction>
+                  </>
+                )}
+              </p>
             </AlertDescription>
           </Alert>
         )}

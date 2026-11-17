@@ -254,6 +254,7 @@ export default function ConversationInsights({
       {showsFigures(state) && data && (
         <DocsGaps
           agentId={agentId}
+          agent={agent}
           agentName={agent?.name}
           filterOption={filterOption}
           hasTopics={

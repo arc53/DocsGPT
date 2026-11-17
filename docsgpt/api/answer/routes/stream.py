@@ -14,11 +14,13 @@ from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
     ContinuationNotPendingError,
+    InvalidToolActionsError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
+    UnfinishedWorkflowError,
     flush_trace_after_request,
 )
 from docsgpt.error import bounded_error_text
@@ -92,6 +94,17 @@ class StreamResource(Resource, BaseAnswerResource):
                 required=False,
                 description="Dynamic parameters to inject into prompt template",
             ),
+            "capabilities": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "What this client can render. 'forms': the assistant may ask clarifying questions "
+                    "(ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and "
+                    "`questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. "
+                    "Optional and not enforced: unknown values are ignored, and without 'forms' the assistant "
+                    "never asks and answers as usual."
+                ),
+            ),
         },
     )
 
@@ -150,6 +163,7 @@ class StreamResource(Resource, BaseAnswerResource):
                                 "request_id": processor.request_id,
                                 "reasoning_content": reasoning_content,
                                 "prior_tool_calls": processor.prior_tool_calls,
+                                "prior_turn": processor.prior_turn,
                             },
                         ),
                     ),
@@ -209,6 +223,13 @@ class StreamResource(Resource, BaseAnswerResource):
                 status=400,
                 mimetype="text/event-stream",
             )
+        except UnfinishedWorkflowError as e:
+            # A draft workflow agent whose stored graph isn't finished. Nothing ran.
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
+                status=400,
+                mimetype="text/event-stream",
+            )
         except ContinuationNotPendingError:
             # A decision for a pause that is over: decided already, moved past
             # by a new turn, or expired (a stale tab). Nothing ran; the code
@@ -220,6 +241,21 @@ class StreamResource(Resource, BaseAnswerResource):
             return Response(
                 self.error_stream_generate(NOT_PENDING_MESSAGE, code=NOT_PENDING_CODE),
                 status=409,
+                mimetype="text/event-stream",
+            )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on (a decision
+            # for a question, say). Nothing ran and the pause still waits.
+            # Caught ahead of ``ValueError`` (its base class), so the client
+            # reads what is wrong instead of "Malformed request body".
+            logger.info(
+                "/stream - tool actions refused for conversation %s: %s",
+                data.get("conversation_id"),
+                e.message,
+            )
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
+                status=400,
                 mimetype="text/event-stream",
             )
         except ResumeInProgressError as e:

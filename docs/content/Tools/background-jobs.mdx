@@ -162,7 +162,8 @@ The app's event stream (`/api/events`) carries:
 - `job.updated`: `{job_id, conversation_id, status, progress, tool_name, action_name, status_message}`; a
   device job waiting for its device has `progress.waiting_for = "device"`
 - `conversation.continued`: `{conversation_id, message_id, source}`
-- `notification.created`: `{kind, title, body, url, conversation_id}`
+- `notification.created`: `{kind, title, body, url, conversation_id}`, plus `schedule_id` for a notice about a
+  schedule
 
 A continuation's message carries `metadata.wake = {source, ref_id, dedupe_key}`. Jobs can be read and cancelled
 through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_jobs/<id>` and
@@ -215,6 +216,12 @@ The toast and the push lead with the kind of event:
 | `trigger` | Webhook received |
 | `approval` | Approval received |
 | `schedule` | Scheduled task finished |
+| `schedule_paused` | Scheduled task paused |
+| `schedule_failed` | Scheduled task failed |
+
+A recurring schedule that [pauses itself](/Agents/schedules#auto-pause) notifies with `schedule_paused` (and
+`schedule_failed`, when the operator turns that on); its **Open** goes to the schedule, and its body is the
+last run's error.
 
 Then comes what the event is about (the conversation's name for a job, a monitor's description, a schedule's
 name) and the start of the answer as plain text, Markdown removed. Any other kind shows its own title. Toasts are

@@ -224,13 +224,15 @@ class TestWorker:
             "VALUES ('alice', 'Linear · Engineering', 'linear', 'daily', CAST(:c AS uuid), "
             "'{\"teams\": [{\"id\": \"t1\"}]}')"
         ), {"c": cid})
-        with self._readonly(pg_conn) as worker, patch.object(worker, "sync", return_value={"status": "success"}) as sync:
+        with self._readonly(pg_conn) as worker, patch.object(worker, "db_session", worker.db_readonly), patch(
+            "docsgpt.api.user.tasks.sync_source.apply_async"
+        ) as apply_async:
             counts = worker.sync_worker(MagicMock(), "daily")
-        assert counts["sync_success"] == 1
-        args, kwargs = sync.call_args
-        assert args[1] == {"teams": [{"id": "t1"}]}
-        assert args[4] == "linear"
-        assert kwargs["connection_id"] == cid
+        assert counts["sync_dispatched"] == 1
+        queued = apply_async.call_args.kwargs["kwargs"]
+        assert queued["source_data"] == {"teams": [{"id": "t1"}]}
+        assert queued["loader"] == "linear"
+        assert queued["connection_id"] == cid
 
     def test_scheduled_sync_skips_a_source_paused_for_reconnect(self, pg_conn):
         cid = _linear(pg_conn, status="reconnect_needed")

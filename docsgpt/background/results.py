@@ -99,13 +99,22 @@ def running_payload(
     return payload
 
 
-def stored_result(text: str, *, status: str, artifacts: Optional[list] = None, artifact_id: Optional[str] = None):
-    """The ``result`` a finished job keeps: bounded text plus the files the call produced."""
+def stored_result(
+    text: str,
+    *,
+    status: str,
+    artifacts: Optional[list] = None,
+    artifact_id: Optional[str] = None,
+    script_error: Optional[str] = None,
+):
+    """The ``result`` a finished job keeps: bounded text, the call's files, and a code run's own exception."""
     out: Dict[str, Any] = {"text": head_tail(text, STORED_RESULT_MAX_CHARS), "status": status}
     if artifact_id:
         out["artifact_id"] = artifact_id
     if artifacts:
         out["artifacts"] = artifacts
+    if script_error:
+        out["script_error"] = script_error
     return out
 
 

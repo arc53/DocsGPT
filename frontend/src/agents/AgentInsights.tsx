@@ -52,7 +52,7 @@ export default function AgentInsights() {
         name={agent?.name}
         meta={agent && <LastUsedMeta lastUsedAt={agent.last_used_at} />}
         actions={
-          <div className="flex w-full gap-2 sm:w-auto">
+          <div className="flex w-full gap-2 @2xl:w-auto">
             <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
             {canEdit && (
               <Button

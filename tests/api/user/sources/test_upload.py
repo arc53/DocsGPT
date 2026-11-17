@@ -735,6 +735,12 @@ class TestUploadFile:
 
 
 class TestUploadRemote:
+    @pytest.fixture(autouse=True)
+    def _route_db(self, pg_conn):
+        """A remote submit reads and claims ``task_dedup`` rows; keep them in the test's transaction."""
+        with _patch_db(pg_conn):
+            yield
+
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.upload import UploadRemote
 
@@ -770,7 +776,7 @@ class TestUploadRemote:
         with patch(
             "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
-        ), app.test_request_context(
+        ) as apply, app.test_request_context(
             "/api/remote", method="POST",
             data={
                 "user": "u", "source": "github", "name": "gh",
@@ -782,7 +788,8 @@ class TestUploadRemote:
             request.decoded_token = {"sub": "u"}
             response = UploadRemote().post()
         assert response.status_code == 200
-        assert response.json["task_id"] == "remote-task-1"
+        # The route picks the task id up front, so a second submit can join it.
+        assert response.json["task_id"] == apply.call_args.kwargs["task_id"]
 
     def test_uploads_url_source(self, app):
         from docsgpt.api.user.sources.upload import UploadRemote

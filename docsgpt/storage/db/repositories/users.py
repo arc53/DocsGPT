@@ -297,6 +297,78 @@ class UsersRepository:
                 {"user_id": user_id, "tool_name": tool_name},
             )
 
+    def set_chat_prompt_id(self, user_id: str, prompt_id: str, only_if_unset: bool = False) -> bool:
+        """Store the prompt the user's chats use in ``tool_preferences.chat_prompt_id``.
+
+        It sits beside ``disabled_default_tools``: both are the user's chat
+        settings. The caller validates the id (a preset name or a prompt the
+        user can read); the other keys are kept.
+
+        Args:
+            user_id: Auth-provider ``sub``.
+            prompt_id: A preset name or a prompt's canonical UUID.
+            only_if_unset: Write only when no chat prompt was ever stored (no
+                non-empty string under the key), checked in the same statement
+                so a choice saved concurrently is never overwritten.
+
+        Returns:
+            bool: Whether the value was written; always true without
+            ``only_if_unset``.
+        """
+        self.upsert(user_id)
+        unset_only = (
+            """
+                  AND (jsonb_typeof(COALESCE(tool_preferences, '{}'::jsonb) -> 'chat_prompt_id')
+                           IS DISTINCT FROM 'string'
+                       OR tool_preferences ->> 'chat_prompt_id' = '')
+            """
+            if only_if_unset
+            else ""
+        )
+        result = self._conn.execute(
+            text(
+                f"""
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{{}}'::jsonb)
+                        || jsonb_build_object('chat_prompt_id', CAST(:prompt_id AS text)),
+                    updated_at = now()
+                WHERE user_id = :user_id
+                {unset_only}
+                """
+            ),
+            {"user_id": user_id, "prompt_id": prompt_id},
+        )
+        return result.rowcount > 0
+
+    def set_task_model_id(self, user_id: str, model_id: Optional[str]) -> None:
+        """Store the model the user's DocsGPT jobs run on in ``tool_preferences.task_model_id``.
+
+        The caller validates the id (a model the user can use). ``None``
+        removes the key, so the instance's task model applies again; the
+        other keys are kept.
+
+        Args:
+            user_id: Auth-provider ``sub``.
+            model_id: A model id, or ``None`` to use the instance's.
+        """
+        self.upsert(user_id)
+        if model_id is None:
+            statement = """
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{}'::jsonb) - 'task_model_id',
+                    updated_at = now()
+                WHERE user_id = :user_id
+            """
+        else:
+            statement = """
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{}'::jsonb)
+                        || jsonb_build_object('task_model_id', CAST(:model_id AS text)),
+                    updated_at = now()
+                WHERE user_id = :user_id
+            """
+        self._conn.execute(text(statement), {"user_id": user_id, "model_id": model_id})
+
     # ------------------------------------------------------------------
     # SCIM provisioning
     # ------------------------------------------------------------------

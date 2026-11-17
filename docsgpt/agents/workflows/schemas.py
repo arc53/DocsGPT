@@ -39,6 +39,10 @@ def parent_id_of(config: Any) -> Optional[str]:
     return value if isinstance(value, str) and value.strip() else None
 
 
+StreamOutput = Literal["full", "summary", "none"]
+STREAM_OUTPUT_VALUES = ("full", "summary", "none")
+
+
 class AgentType(str, Enum):
     CLASSIC = "classic"
     REACT = "react"
@@ -84,6 +88,11 @@ class AgentNodeConfig(BaseModel):
     # ``lines`` (the whole text with ``[D#:L#]`` line references; never cut,
     # the node fails when it does not fit).
     file_passing: Literal["auto", "native", "extract", "lines"] = "auto"
+    # How the step's output and state changes reach the stream: ``summary``
+    # sends them while the event fits WORKFLOW_STREAM_MAX_EVENT_BYTES and a
+    # preview past that, ``full`` always, ``none`` never (status only). Any
+    # node type may set it; the saved run keeps the full values either way.
+    stream_output: StreamOutput = "summary"
 
 
 class CodeNodeConfig(BaseModel):
@@ -93,6 +102,7 @@ class CodeNodeConfig(BaseModel):
     output_variable: Optional[str] = None
     timeout: Optional[int] = None
     json_schema: Optional[Dict[str, Any]] = None
+    stream_output: StreamOutput = "summary"
 
 
 class LoopNodeConfig(BaseModel):
@@ -173,6 +183,8 @@ class WorkflowCreate(BaseModel):
 
 class Workflow(WorkflowCreate):
     id: Optional[str] = None
+    # Retry settings every agent and code node inherits unless it sets its own.
+    retry_defaults: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -255,6 +267,18 @@ class LoopItemLog(BaseModel):
     steps: List["NodeExecutionLog"] = Field(default_factory=list)
 
 
+class NodeAttemptLog(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attempt: int
+    status: ExecutionStatus
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    error: Optional[str] = None
+    # The ``retry.on`` reason that covered a failed attempt; None when it was not retryable.
+    reason: Optional[str] = None
+
+
 class NodeExecutionLog(BaseModel):
     model_config = ConfigDict(extra="forbid")
     node_id: str
@@ -272,6 +296,8 @@ class NodeExecutionLog(BaseModel):
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
     # A loop node's per-item runs, in item order.
     items: List[LoopItemLog] = Field(default_factory=list)
+    # Each attempt of a node that was retried; empty when it ran once.
+    attempts: List[NodeAttemptLog] = Field(default_factory=list)
 
 
 LoopItemLog.model_rebuild()

@@ -1,5 +1,12 @@
 import type { Connection, ConnectorDefinition } from '../connectors/types';
-import { groupTools, isCustomTool } from './toolGroups';
+import {
+  groupTools,
+  isCustomTool,
+  isIncludedTool,
+  toolGroupLabel,
+  toolKindLabel,
+  toolKindOf,
+} from './toolGroups';
 
 const tool = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
@@ -21,7 +28,7 @@ const connections = [
 const catalog = [] as ConnectorDefinition[];
 
 describe('groupTools', () => {
-  it('groups built in first, then one group per service, then custom', () => {
+  it('groups included, added, one group per service, then custom', () => {
     const groups = groupTools(
       [
         tool('api', { name: 'api_tool' }),
@@ -30,29 +37,47 @@ describe('groupTools', () => {
         tool('lin', { name: 'mcp_tool', connection_id: 'c-lin' }),
         tool('mcp', { name: 'mcp_tool' }),
         tool('tg2', { name: 'telegram', connection_id: 'c-tg' }),
-        tool('web', { name: 'read_webpage' }),
+        tool('web', { name: 'read_webpage', default: true }),
+        tool('code', { name: 'code_executor', builtin: true }),
+        tool('sched', { name: 'scheduler', builtin: true, default: true }),
       ],
       connections,
       catalog,
     );
     expect(groups.map((g) => [g.kind, g.service?.name])).toEqual([
-      ['builtIn', undefined],
+      ['included', undefined],
+      ['added', undefined],
       ['service', 'Telegram'],
       ['service', 'Linear'],
       ['custom', undefined],
     ]);
     expect(groups.map((g) => g.tools.map((t) => t.id))).toEqual([
-      ['mem', 'web'],
+      ['web', 'code', 'sched'],
+      ['mem'],
       ['tg', 'tg2'],
       ['lin'],
       ['api', 'mcp'],
     ]);
-    expect(groups[1].service?.icon).toBe('tool_telegram');
+    expect(groups[2].service?.icon).toBe('tool_telegram');
+  });
+
+  // The two Memory rows: the one that comes with DocsGPT and the one the
+  // user added from the catalog land in different groups.
+  it('tells the default copy of a tool from an added one', () => {
+    const groups = groupTools(
+      [tool('mine'), tool('default', { default: true })],
+      connections,
+      catalog,
+    );
+    expect(groups.map((g) => [g.key, g.tools.map((t) => t.id)])).toEqual([
+      ['included', ['default']],
+      ['added', ['mine']],
+    ]);
   });
 
   it('leaves out empty groups', () => {
     const groups = groupTools([tool('mem')], connections, catalog);
-    expect(groups.map((g) => g.kind)).toEqual(['builtIn']);
+    expect(groups.map((g) => g.kind)).toEqual(['added']);
   });
 
   it('counts only an API or MCP tool with no connection as custom', () => {
@@ -62,5 +87,71 @@ describe('groupTools', () => {
       isCustomTool(tool('l', { name: 'mcp_tool', connection_id: 'c-lin' })),
     ).toBe(false);
     expect(isCustomTool(tool('mem'))).toBe(false);
+  });
+
+  it('counts a default or builtin tool as included', () => {
+    expect(isIncludedTool(tool('d', { default: true }))).toBe(true);
+    expect(isIncludedTool(tool('b', { builtin: true }))).toBe(true);
+    expect(isIncludedTool(tool('mem'))).toBe(false);
+  });
+});
+
+describe('toolGroupLabel', () => {
+  const t = ((key: string) => key) as never;
+
+  it('names each kind, and a service by its own name', () => {
+    const groups = groupTools(
+      [
+        tool('d', { default: true }),
+        tool('mem'),
+        tool('tg', { name: 'telegram', connection_id: 'c-tg' }),
+        tool('api', { name: 'api_tool' }),
+      ],
+      connections,
+      catalog,
+    );
+    expect(groups.map((group) => toolGroupLabel(t, group))).toEqual([
+      'settings.tools.groupIncluded',
+      'settings.tools.groupAdded',
+      'Telegram',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+  });
+});
+
+describe('toolKindOf', () => {
+  it('puts a tool in the group groupTools gives it', () => {
+    const tools = [
+      tool('api', { name: 'api_tool' }),
+      tool('tg', { name: 'telegram', connection_id: 'c-tg' }),
+      tool('mem'),
+      tool('web', { name: 'read_webpage', default: true }),
+    ];
+    expect(tools.map((t) => toolKindOf(t, connections, catalog))).toEqual([
+      'custom',
+      'service',
+      'added',
+      'included',
+    ]);
+    for (const group of groupTools(tools, connections, catalog))
+      for (const member of group.tools)
+        expect(toolKindOf(member, connections, catalog)).toBe(group.kind);
+  });
+});
+
+describe('toolKindLabel', () => {
+  it('names the filter items, Services for every service', () => {
+    const t = ((key: string) => key) as never;
+    expect(
+      (['all', 'included', 'added', 'service', 'custom'] as const).map((k) =>
+        toolKindLabel(t, k),
+      ),
+    ).toEqual([
+      'settings.tools.filters.all',
+      'settings.tools.groupIncluded',
+      'settings.tools.groupAdded',
+      'settings.tools.groupServices',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
   });
 });

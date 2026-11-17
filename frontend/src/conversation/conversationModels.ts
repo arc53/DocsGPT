@@ -1,5 +1,6 @@
 import type { AnswerSource } from './chatCompanion';
 import { AnswerSegment } from './answerSegments';
+import type { JobArtifact } from './artifactChips';
 import { ToolCallsType } from './types';
 
 // Backend placeholder for a producer that ended before writing an answer.
@@ -9,6 +10,8 @@ export const TERMINATED_RESPONSE_PLACEHOLDER =
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
+/** What a client tells the server it can render (the request's `capabilities`). */
+export type ClientCapability = 'forms';
 // Mirrors ``conversation_messages.status``.
 export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'failed';
 
@@ -72,6 +75,13 @@ export interface WorkflowStep {
   error?: string;
   /** A loop's items: how many there are, how many ended and failed. */
   items?: { total: number; done: number; failed: number };
+  /** While a retry runs: its attempt (from 2), out of how many. */
+  attempt?: number;
+  maxAttempts?: number;
+  /** Why the previous attempt failed. */
+  retryError?: string;
+  /** How many attempts a step that ran more than once took. */
+  attempts?: number;
 }
 
 export interface WorkflowProgress {
@@ -89,6 +99,9 @@ export interface Query {
   thought?: string;
   sources?: AnswerSource[];
   tool_calls?: ToolCallsType[];
+  // Files of the background jobs this answer reports (a continuation turn's
+  // ``metadata.job_artifacts``); the turn that started each job lists them too.
+  job_artifacts?: JobArtifact[];
   // Arrival-ordered layout of the fields above, so answer text, reasoning and
   // tool calls render where they happened. Recorded live, and rebuilt on load
   // from the order the backend saved (``hydrateSegments``); when that is absent
@@ -148,4 +161,6 @@ export interface RetrievalPayload {
   save_conversation?: boolean;
   visibility?: 'listed' | 'hidden';
   model_id?: string;
+  /** What the client can render; `forms` lets the model ask clarifying questions. */
+  capabilities?: ClientCapability[];
 }

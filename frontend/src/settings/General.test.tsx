@@ -17,7 +17,9 @@ vi.mock('../hooks', () => ({
   useDarkTheme: () => [false, () => undefined],
 }));
 vi.mock('../components/PageToolbar', () => ({ default: () => null }));
-vi.mock('./Prompts', () => ({ default: () => null }));
+vi.mock('./TaskModelSection', () => ({
+  default: () => <h2>settings.general.sections.models</h2>,
+}));
 
 import General from './General';
 
@@ -61,5 +63,21 @@ describe('General danger zone', () => {
     expect(card.querySelector('[data-slot="setting-row"]')).toBeNull();
     await act(async () => button.click());
     expect(dispatch).toHaveBeenCalled();
+  });
+});
+
+describe('General sections', () => {
+  // The chat prompt is picked on the Prompts page now.
+  it('has Appearance, Models and the danger zone, and no Chat section', async () => {
+    await act(async () => root.render(<General />));
+    const headings = Array.from(container.querySelectorAll('h2')).map(
+      (h) => h.textContent,
+    );
+    expect(headings).toEqual([
+      'settings.general.sections.appearance',
+      'settings.general.sections.models',
+      'settings.general.sections.dangerZone',
+    ]);
+    expect(container.textContent).not.toContain('settings.general.prompt');
   });
 });

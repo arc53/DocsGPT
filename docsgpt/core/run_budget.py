@@ -56,6 +56,12 @@ def remaining_seconds() -> float | None:
     return budget.hard_remaining() if budget else None
 
 
+def round_seconds_left() -> float | None:
+    """Seconds of work the round has left before its saving margin, or None without a budget."""
+    budget = _current.get()
+    return None if budget is None else budget.remaining() - budget.margin
+
+
 def check_round() -> None:
     """Defer before starting work that would eat the round's saving margin.
 

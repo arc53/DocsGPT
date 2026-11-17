@@ -1,0 +1,10 @@
+key: mcp:stripe
+rank: 50
+name: Stripe
+description: Look up customers, payments and subscriptions in Stripe.
+icon: stripe
+category: business
+mcp_url: https://mcp.stripe.com
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://docs.stripe.com/mcp

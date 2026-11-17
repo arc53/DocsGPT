@@ -180,6 +180,19 @@ describe('WorkflowBuilder Access details', () => {
     }
   });
 
+  it('an allowlist save hands its stamp to the agent the next save sends', async () => {
+    await render();
+    const onConfigChange = lastDialogs()[0].onConfigChange as (
+      config: unknown,
+      updatedAt?: string,
+    ) => void;
+    act(() => onConfigChange({ api_write_allowlist: ['tool:a'] }, 'stamp-2'));
+    for (const props of lastDialogs())
+      expect((props.agent as { updated_at?: string }).updated_at).toBe(
+        'stamp-2',
+      );
+  });
+
   it("a key regenerated from the phone's dialog reaches the builder", async () => {
     await render();
     const onKeyRegenerated = lastDialogs()[1].onKeyRegenerated as

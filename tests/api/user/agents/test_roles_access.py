@@ -113,6 +113,19 @@ def _row(conn, agent_id):
 # ---------------------------------------------------------------------------
 
 
+
+def _runnable_workflow(conn, owner, name="wf"):
+    """A workflow with a graph that passes the full validation (a published agent may attach it)."""
+    from docsgpt.api.user.workflows.routes import _write_graph
+    from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+    from tests.api.user.test_resource_sponsors import _wf_body
+
+    wf = WorkflowsRepository(conn).create(owner, name)
+    body = _wf_body()
+    _write_graph(conn, str(wf["id"]), 1, body["nodes"], body["edges"])
+    return wf
+
 class TestGetAgent:
     def _get(self, app, conn, agent_id, user):
         from docsgpt.api.user.agents.routes import GetAgent
@@ -249,7 +262,7 @@ class TestUpdateAgent:
     def test_workflow_validated_against_owner_and_owner_only_to_change(self, app, pg_conn):
         from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
-        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wf = _runnable_workflow(pg_conn, OWNER)
         agent_id = _agent(pg_conn, agent_type="workflow")
         # An editor can't point the agent at another of the owner's workflows.
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"workflow": str(wf["id"])})
@@ -270,9 +283,7 @@ class TestUpdateAgent:
     def test_workflow_changes_through_a_legacy_id(self, app, pg_conn):
         from sqlalchemy import text
 
-        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
-
-        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wf = _runnable_workflow(pg_conn, OWNER)
         agent_id = _agent(pg_conn, agent_type="workflow")
         legacy = "65a1b2c3d4e5f6a7b8c9d0e1"
         pg_conn.execute(

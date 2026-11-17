@@ -671,3 +671,20 @@ class TestSemanticEmbeddingsResolution:
 
         mock_resolver.assert_called_once_with()
         assert len(out) == 2
+
+
+@pytest.mark.unit
+def test_recursive_merge_seam_does_not_push_a_chunk_over_budget():
+    """Fragment counts do not add up across a seam; the merged chunk is re-checked.
+
+    Found by tests/fuzz/fuzz_chunking.py.
+    """
+    counter = TiktokenCounter()
+    text = "\n中文字符\xa0\xa0x"
+    chunker = RecursiveChunker(max_tokens=5, min_tokens=0, chunk_overlap=0)
+    chunker.counter = counter
+
+    chunks = chunker.chunk([Document(text=text, doc_id="d")])
+
+    assert all(counter.count(c.text) <= 5 for c in chunks)
+    assert "".join("".join(c.text for c in chunks).split()) == "".join(text.split())

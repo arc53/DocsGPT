@@ -5,7 +5,7 @@ export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'cancelled';
 export type ScheduleRunStatus =
   'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'timeout';
 
-// Mirrors the schedule_runs.error_type CHECK constraint (migrations 0010, 0027).
+// Mirrors the schedule_runs.error_type CHECK constraint (migrations 0010, 0027, 0063).
 export type ScheduleRunErrorType =
   | 'auth_expired'
   | 'tool_not_allowed'
@@ -16,7 +16,8 @@ export type ScheduleRunErrorType =
   | 'missed'
   | 'overlap'
   | 'stream_error'
-  | 'empty_output';
+  | 'empty_output'
+  | 'cannot_complete';
 
 export type Schedule = {
   id: string;

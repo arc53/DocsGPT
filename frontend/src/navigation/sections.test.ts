@@ -59,6 +59,19 @@ describe('getActiveItem', () => {
     ).toBe('accessTokens');
   });
 
+  it('lists Prompts in Workspace between Tools and Custom Models', () => {
+    const workspace = SETTINGS_SECTION.groups.find(
+      (group) => group.key === 'workspace',
+    )!;
+    const keys = workspace.items.map((item) => item.key);
+    expect(
+      keys.slice(keys.indexOf('tools'), keys.indexOf('tools') + 3),
+    ).toEqual(['tools', 'prompts', 'customModels']);
+    expect(getActiveItem(SETTINGS_SECTION, '/settings/prompts')?.key).toBe(
+      'prompts',
+    );
+  });
+
   it('keeps the parent item active inside a detail route', () => {
     expect(getActiveItem(SETTINGS_SECTION, '/settings/tools/slack')?.key).toBe(
       'tools',
@@ -185,8 +198,9 @@ describe('buildAgentSection', () => {
     );
   });
 
-  // The classic edit path still renders a workflow (an old link, a fallback
-  // when the agent isn't loaded): Overview stays the active tab there.
+  // A workflow on the classic edit path (an old link, a fallback built
+  // before its type was known) waits there for its editor: Overview stays
+  // the active tab meanwhile.
   it('keeps overview active on a workflow agent’s classic edit path', () => {
     const section = buildAgentSection('a1', 'Flow', false, {
       access: 'owner',
@@ -201,7 +215,7 @@ describe('buildAgentSection', () => {
 });
 
 describe('buildAgentSection tabs for a draft', () => {
-  it('shows only Overview until the agent is published', () => {
+  it('shows Overview and Logs until the agent is published', () => {
     const items = getSectionItems(
       buildAgentSection('a1', 'Bot', false, {
         access: 'owner',
@@ -209,7 +223,7 @@ describe('buildAgentSection tabs for a draft', () => {
         allowed_actions: ['view', 'view_logs', 'manage_schedules'],
       }),
     ).map((item) => item.key);
-    expect(items).toEqual(['overview']);
+    expect(items).toEqual(['overview', 'logs']);
   });
 });
 

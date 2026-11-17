@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
-import { Alert, AlertDescription } from '../components/ui/alert';
-import { Button } from '../components/ui/button';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { selectConnectorCatalog } from './connectorsSlice';
 import { reconnectsInPlace } from './launchRules';
+import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
 import useConnectorLauncher from './useConnectorLauncher';
 
 type ConnectionRef = { id: string; connector_key: string; name: string };
@@ -15,13 +15,23 @@ type ConnectionRef = { id: string; connector_key: string; name: string };
  * Reconnects a connection from wherever it shows up broken: in place when the
  * wizard can redo its sign-in, otherwise on its connector page. Render
  * `modals` somewhere that stays mounted (not inside a closing popover).
+ *
+ * Args:
+ *   onConnected: Called once a reconnect went through.
+ *   onNavigate: How it leaves for the connector page (and the wizard's own
+ *     ways out); a builder passes its leave guard's `leaveTo`, so unsaved
+ *     work gets its question first. The router's navigate otherwise.
  */
 export function useSignInAgain({
   onConnected,
-}: { onConnected?: () => void } = {}) {
+  onNavigate,
+}: { onConnected?: () => void; onNavigate?: LeaveTo } = {}) {
   const catalog = useSelector(selectConnectorCatalog);
-  const navigate = useNavigate();
-  const { launch, modals } = useConnectorLauncher({ onConnected });
+  const routerNavigate = useNavigate();
+  const { launch, modals } = useConnectorLauncher({
+    onConnected,
+    onNavigate,
+  });
 
   const reconnect = useCallback(
     (connection: Omit<ConnectionRef, 'name'>, mcpToolId?: string) => {
@@ -36,18 +46,19 @@ export function useSignInAgain({
         return;
       }
       // The drawer opens on this account (`connection`), not the first one.
-      navigate(
-        `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}&connection=${encodeURIComponent(connection.id)}`,
-      );
+      const path = `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}&connection=${encodeURIComponent(connection.id)}`;
+      if (onNavigate) onNavigate(path);
+      else leaveNow(routerNavigate, path);
     },
-    [catalog, launch, navigate],
+    [catalog, launch, onNavigate, routerNavigate],
   );
 
   return { reconnect, modals };
 }
 
 /**
- * One line per connection that needs signing in again, each with Reconnect.
+ * One line per connection that needs signing in again, each ending in a
+ * Reconnect link in the notice's colour.
  * Sits in the tool pickers so a broken service is visible where it is used.
  */
 export default function SignInAgainNotice({
@@ -63,23 +74,16 @@ export default function SignInAgainNotice({
     <div className="flex flex-col gap-2">
       {connections.map((connection) => (
         <Alert key={connection.id} variant="warning">
-          <AlertDescription className="flex items-center justify-between">
-            <span className="mr-3 min-w-0">
+          <AlertDescription>
+            <p>
               {t('settings.connectors.health.pickerNotice', {
                 name: connection.name,
                 interpolation: { escapeValue: false },
-              })}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              className="shrink-0"
-              onClick={() => onReconnect(connection)}
-            >
-              {t('settings.connectors.status.reconnect')}
-            </Button>
+              })}{' '}
+              <AlertAction onClick={() => onReconnect(connection)}>
+                {t('settings.connectors.status.reconnect')}
+              </AlertAction>
+            </p>
           </AlertDescription>
         </Alert>
       ))}

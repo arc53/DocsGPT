@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import { envVar } from '@/env';
+import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
 import { baseURL } from '../api/client';
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
@@ -58,7 +59,12 @@ import {
   selectConnections,
   syncStarted,
 } from './connectorsSlice';
-import { connectorDescription, connectorName, isKeyHint } from './i18n';
+import {
+  connectorDescription,
+  connectorLocaleKey,
+  connectorName,
+  isKeyHint,
+} from './i18n';
 import { isMcpOpenPreset, reconnectsInPlace } from './launchRules';
 import LinearPicker, {
   EMPTY_LINEAR_SELECTION,
@@ -74,6 +80,11 @@ import type {
   ConnectorAuthKind,
   ConnectorDefinition,
 } from './types';
+import {
+  urlParameterValid,
+  urlParametersValid,
+  withUrlParameters,
+} from './urlParameters';
 
 export type WizardMode = 'connect' | 'reconnect' | 'sync' | 'done';
 
@@ -111,7 +122,11 @@ type CreatedSource = { id: string; name: string };
  * Args:
  *   onClose: Called as the wizard closes, with whether this run created or
  *     repaired a connection (a saved account, a reconnect, a sync set up);
- *     false on a plain cancel.
+ *     false on a plain cancel. Then the ids of the tools this run created
+ *     (never ones it only showed or signed in again), for an opener that
+ *     puts new tools on something.
+ *   onNavigate: Leaves for a page (Try it in chat, Open in Knowledge); an
+ *     opener with unsaved work asks first. The router's navigate otherwise.
  */
 export default function ConnectWizard({
   connector,
@@ -120,6 +135,7 @@ export default function ConnectWizard({
   mcpToolId,
   purpose,
   onClose,
+  onNavigate,
   onFinished,
   onSynced,
 }: {
@@ -129,14 +145,17 @@ export default function ConnectWizard({
   /** Reconnecting an MCP preset: the tool to update rather than add. */
   mcpToolId?: string;
   purpose?: LaunchPurpose;
-  onClose: (connected: boolean) => void;
+  onClose: (connected: boolean, toolIds?: string[]) => void;
+  onNavigate?: LeaveTo;
   onFinished?: () => void;
   /** The ids of the sources a sync just started, still ingesting. */
   onSynced?: (sourceIds: string[]) => void;
 }) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate: LeaveTo =
+    onNavigate ?? ((path, options) => leaveNow(routerNavigate, path, options));
   const token = useSelector(selectToken);
   const connections = useSelector(selectConnections);
   const name = connectorName(t, connector);
@@ -164,6 +183,14 @@ export default function ConnectWizard({
   // Whether this run saved, repaired or set up a connection (onClose's
   // argument). A finished MCP save opens the wizard on the summary.
   const connectedRef = useRef(initialMode === 'done');
+  // Tools this run created (not ones it showed or signed in again), for an
+  // opener that puts new tools on something.
+  const createdToolIds = useRef<string[]>([]);
+  const noteCreated = (ids: (string | undefined)[]) => {
+    for (const id of ids)
+      if (id && !createdToolIds.current.includes(id))
+        createdToolIds.current.push(id);
+  };
   // The account as the sign-in reported it, before the connections reload.
   const [accountLabel, setAccountLabel] = useState('');
   // Bumped to remount the pickers after a reconnect or an account switch.
@@ -250,7 +277,10 @@ export default function ConnectWizard({
 
   const refresh = () => dispatch(loadConnectors({ token }));
 
-  const close = () => onClose(connectedRef.current);
+  const close = () => {
+    if (connectedRef.current) onClose(true, [...createdToolIds.current]);
+    else onClose(false);
+  };
 
   /** After a reconnect started from a picker: back to what it was doing. */
   const resumeAfterReconnect = () => {
@@ -298,7 +328,10 @@ export default function ConnectWizard({
         { create_tools: true },
         token,
       );
-      if (setup?.success) setTools(setup.tools ?? []);
+      if (setup?.success) {
+        setTools(setup.tools ?? []);
+        noteCreated((setup.tools ?? []).map((tool: ConnectionTool) => tool.id));
+      }
     }
     setStep(canSync || offerTools ? 'setup' : 'done');
   };
@@ -310,8 +343,42 @@ export default function ConnectWizard({
     connector.auth_kind === 'mcp_oauth' && !!connector.mcp_url;
   const isOpenMcp = isMcpOpenPreset(connector);
   const mcp = useMcpOAuth();
+  // A preset that needs URL parameters (Supabase's project ref) asks for
+  // them before signing in; a reconnect starts from the ones it was saved
+  // with, so it stays on the same project.
+  const urlFields = useMemo(
+    () => (isMcpPreset || isOpenMcp ? (connector.url_parameters ?? []) : []),
+    [connector.url_parameters, isMcpPreset, isOpenMcp],
+  );
+  const savedUrlValues = connection?.url_parameters;
+  const [urlValues, setUrlValues] = useState<Record<string, string>>(
+    () => savedUrlValues ?? {},
+  );
+  useEffect(() => {
+    if (savedUrlValues)
+      setUrlValues((current) =>
+        Object.keys(current).length ? current : savedUrlValues,
+      );
+  }, [savedUrlValues]);
+  const urlValuesReady = urlParametersValid(urlFields, urlValues);
+  const urlErrors = Object.fromEntries(
+    urlFields
+      .filter(
+        (field) =>
+          (urlValues[field.key] ?? '').trim() &&
+          !urlParameterValid(field, urlValues[field.key]),
+      )
+      .map((field) => [
+        field.key,
+        t('settings.connectors.wizard.urlParameterInvalid'),
+      ]),
+  );
+  const presetUrl = () =>
+    connector.mcp_url
+      ? withUrlParameters(connector.mcp_url, urlFields, urlValues)
+      : '';
   const mcpConfig = (): McpOAuthConfig => ({
-    server_url: connector.mcp_url ?? '',
+    server_url: presetUrl(),
     auth_type: 'oauth',
     oauth_scopes: connector.oauth_scopes ?? [],
     timeout: 30,
@@ -336,6 +403,9 @@ export default function ConnectWizard({
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error);
       connectedRef.current = true;
+      // A reconnect updates the saved tool; only a new one is new.
+      if (!mcpReconnectToolId && typeof result.id === 'string')
+        noteCreated([result.id]);
       let savedConnectionId: string | null = null;
       try {
         const list = await connectorsService.listConnections(token);
@@ -383,7 +453,7 @@ export default function ConnectWizard({
     setError('');
     saveMcp(
       {
-        server_url: connector.mcp_url ?? '',
+        server_url: presetUrl(),
         auth_type: 'none',
         timeout: 30,
       },
@@ -550,7 +620,10 @@ export default function ConnectWizard({
         return;
       }
       connectedRef.current = true;
-      if (wantsTools) setTools(data.tools ?? []);
+      if (wantsTools) {
+        setTools(data.tools ?? []);
+        noteCreated((data.tools ?? []).map((tool: ConnectionTool) => tool.id));
+      }
       const created: CreatedSource[] = data.sources ?? [];
       setSources(created);
       if (created.length) {
@@ -581,13 +654,18 @@ export default function ConnectWizard({
   // source opens in Knowledge instead), so the chat starts over no sources:
   // never the ones the last chat had picked.
   const tryInChat = () => {
-    dispatch(setConversation([]));
-    dispatch(updateConversationId({ query: { conversationId: null } }));
-    dispatch(setSelectedAgent(null));
-    dispatch(setSelectedDocs([]));
     onFinished?.();
     close();
-    navigate('/c/new');
+    // Cleared only once leaving is allowed: an opener with unsaved work
+    // asks first, and a reader who stays keeps the chat's selection.
+    navigate('/c/new', {
+      beforeLeave: () => {
+        dispatch(setConversation([]));
+        dispatch(updateConversationId({ query: { conversationId: null } }));
+        dispatch(setSelectedAgent(null));
+        dispatch(setSelectedDocs([]));
+      },
+    });
   };
 
   const finish = () => {
@@ -783,6 +861,16 @@ export default function ConnectWizard({
           fields={connector.credential_fields}
           values={credentials}
           onChange={setCredentials}
+        />
+      )}
+      {urlFields.length > 0 && (
+        <CredentialForm
+          connectorKey={connectorLocaleKey(connector.key)}
+          idPrefix={`connect-${connectorLocaleKey(connector.key)}`}
+          fields={urlFields}
+          values={urlValues}
+          onChange={setUrlValues}
+          errors={urlErrors}
         />
       )}
       {canName && (
@@ -1205,6 +1293,7 @@ export default function ConnectWizard({
           pending={
             isOpenMcp ? pending : isMcpPreset && (mcp.pending || pending)
           }
+          disabled={!urlValuesReady}
         />
       ) : (
         <ModalActions

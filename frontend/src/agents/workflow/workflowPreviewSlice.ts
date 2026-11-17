@@ -7,7 +7,7 @@ import {
   clearAttachments,
   toSendableAttachments,
 } from '../../upload/uploadSlice';
-import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import { RetryConfig, WorkflowEdge, WorkflowNode } from '../types/workflow';
 
 export interface WorkflowExecutionStep {
   nodeId: string;
@@ -22,6 +22,24 @@ export interface WorkflowExecutionStep {
   error?: string;
   /** A loop's items so far: how many there are, ended and failed. */
   items?: LoopItemProgress;
+  /** The step's place in the run's saved steps, to fetch its full values. */
+  stepIndex?: number;
+  /** The stream sent a summary: the event would have been too large. */
+  summarized?: boolean;
+  /** The start of an output too large to stream whole. */
+  outputPreview?: string;
+  outputTruncated?: boolean;
+  /** The node streams its status only (``stream_output: none``). */
+  outputOmitted?: boolean;
+  /** Keys a summarized step set, without their values. */
+  stateKeysChanged?: string[];
+  /** While a retry runs: its attempt (from 2), out of how many. */
+  attempt?: number;
+  maxAttempts?: number;
+  /** Why the previous attempt failed. */
+  retryError?: string;
+  /** How many attempts a step that ran more than once took. */
+  attempts?: number;
 }
 
 export interface LoopItemProgress {
@@ -33,6 +51,7 @@ export interface LoopItemProgress {
 interface WorkflowData {
   name: string;
   description?: string;
+  retry_defaults?: RetryConfig | null;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 }
@@ -42,6 +61,8 @@ export interface WorkflowQuery extends Query {
   // The run id for this query's execution; lets the artifacts panel list the
   // run's produced artifacts (GET /api/artifacts?workflow_run_id=).
   workflowRunId?: string;
+  /** False for an unsaved draft's run: nothing is stored under its id. */
+  workflowRunSaved?: boolean;
 }
 
 export interface WorkflowPreviewState {
@@ -203,6 +224,7 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                         setWorkflowRunId({
                           index: targetIndex,
                           workflowRunId: data.workflow_run_id,
+                          saved: data.run_saved,
                         }),
                       );
                     } else if (data.type === 'thought') {
@@ -241,6 +263,16 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                             stateDelta: data.state_delta ?? data.state_snapshot,
                             output: data.output,
                             error: data.error,
+                            stepIndex: data.step_index,
+                            summarized: data.summarized,
+                            outputPreview: data.output_preview,
+                            outputTruncated: data.output_truncated,
+                            outputOmitted: data.output_omitted,
+                            stateKeysChanged: data.state_keys_changed,
+                            attempt: data.attempt,
+                            maxAttempts: data.max_attempts,
+                            retryError: data.retry_error,
+                            attempts: data.attempts,
                           },
                         }),
                       );
@@ -439,6 +471,12 @@ export const workflowPreviewSlice = createSlice({
         stateDelta: step.stateDelta,
         output: step.output,
         error: step.error,
+        stepIndex: step.stepIndex,
+        summarized: step.summarized,
+        outputPreview: step.outputPreview,
+        outputTruncated: step.outputTruncated,
+        outputOmitted: step.outputOmitted,
+        stateKeysChanged: step.stateKeysChanged,
         startedAt:
           existingIndex !== -1
             ? querySteps[existingIndex].startedAt
@@ -450,6 +488,16 @@ export const workflowPreviewSlice = createSlice({
               ? querySteps[existingIndex].completedAt
               : undefined,
       };
+
+      // A running event past the first attempt is a retry of the same step;
+      // the end event says how many attempts it took.
+      if (step.status === 'running' && (step.attempt ?? 1) > 1) {
+        updatedStep.attempt = step.attempt;
+        if (step.maxAttempts) updatedStep.maxAttempts = step.maxAttempts;
+        if (step.retryError) updatedStep.retryError = step.retryError;
+      } else if (step.status !== 'running' && (step.attempts ?? 1) > 1) {
+        updatedStep.attempts = step.attempts;
+      }
 
       if (existingIndex !== -1) {
         updatedStep.stateDelta =
@@ -497,11 +545,16 @@ export const workflowPreviewSlice = createSlice({
     },
     setWorkflowRunId(
       state,
-      action: PayloadAction<{ index: number; workflowRunId: string }>,
+      action: PayloadAction<{
+        index: number;
+        workflowRunId: string;
+        saved?: boolean;
+      }>,
     ) {
-      const { index, workflowRunId } = action.payload;
+      const { index, workflowRunId, saved } = action.payload;
       if (state.queries[index]) {
         state.queries[index].workflowRunId = workflowRunId;
+        state.queries[index].workflowRunSaved = saved;
       }
     },
     setActiveNodeId(state, action: PayloadAction<string | null>) {

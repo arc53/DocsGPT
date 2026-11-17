@@ -23,7 +23,8 @@ from docsgpt.agents.tool_pins import iter_parameters, llm_fills, merge_submitted
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
-from docsgpt.api.pat.rules import filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
+from docsgpt.api.pat.tokens import is_pat, TOKEN_PREFIX
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.resource_access import (
     AccessDenied,
@@ -33,8 +34,14 @@ from docsgpt.api.user.resource_access import (
     ResourceAccess,
     settings_many,
 )
+from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
-from docsgpt.connectors.catalog import base_url, definition_for_tool
+from docsgpt.connectors.catalog import (
+    UrlParametersRequired,
+    base_url,
+    check_url_parameters,
+    definition_for_tool,
+)
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.connectors.service import account_tool_names
 from docsgpt.connectors.permissions import action_access, owner_credential_writes
@@ -197,6 +204,7 @@ _MCP_CREDENTIAL_AUTH_TYPES = {"api_key", "bearer", "basic"}
 # ``name`` (the tool type) and ``actions`` are handled on their own.
 _META_KEYS = ("displayName", "customName", "description")
 _TYPE_IS_FIXED = "A tool's type can't be changed"
+_TOKEN_TOOL_NEEDS_SESSION = "A tool that holds an access token can only be changed while signed in"
 _FIXED_VALUES_OWNER_ONLY = "Only the tool's owner can change fixed values"
 _MOVE_THROUGH_MCP_SAVE = (
     "This server signs in through a connection: change its address or sign-in by saving the "
@@ -217,6 +225,30 @@ def check_action(ra: ResourceAccess, action: str) -> None:
     """Raise a 403 :class:`AccessDenied` unless ``ra`` allows ``action``."""
     if not ra.can(action):
         raise AccessDenied(403, _FORBIDDEN_MESSAGE)
+
+
+def check_token_tool_untouched(decoded_token: Optional[dict], tool_doc: dict, owner_id: str) -> None:
+    """Refuse a personal access token changing an api_tool that holds one.
+
+    Such a tool lets agents call this API as the account. Its owner decides
+    which actions are on and where they point; an agent that could edit the
+    tool through the token would switch a delete on, or point an allowed
+    action at another endpoint, with nobody asked.
+
+    Args:
+        decoded_token: The caller's decoded credential.
+        tool_doc: The stored ``user_tools`` row.
+        owner_id: The tool's owner, whose key seals the stored secrets.
+
+    Raises:
+        AccessDenied: 403, the caller is a token and the tool holds one.
+    """
+    if not is_pat(decoded_token) or tool_doc.get("name") != "api_tool":
+        return
+    for sections in _stored_api_tool_secrets(tool_doc.get("config") or {}, owner_id).values():
+        for values in sections.values():
+            if any(isinstance(value, str) and TOKEN_PREFIX in value for value in values.values()):
+                raise AccessDenied(403, _TOKEN_TOOL_NEEDS_SESSION)
 
 
 _DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
@@ -431,6 +463,28 @@ def _api_tool_fixed_values_changed(new_config: dict, existing_config: dict) -> b
             elif (before.get(key) or after.get(key))[1] is not None:
                 return True
     return False
+
+
+def _mcp_url_parameters_refused(tool_name: Optional[str], config: Optional[dict]):
+    """A 400 when an MCP tool's new URL is at a preset's server and lacks a parameter it needs, else None.
+
+    The same check as ``/api/mcp_server/save``, so these routes can't put a
+    tool back on a preset's plain URL (Supabase's without its project ref).
+
+    Args:
+        tool_name: The tool's template name.
+        config: The incoming ``config``.
+
+    Returns:
+        The response to send, or None to go on.
+    """
+    if tool_name != "mcp_tool" or not isinstance(config, dict) or "server_url" not in config:
+        return None
+    try:
+        check_url_parameters(str(config.get("server_url") or "").strip())
+    except UrlParametersRequired as exc:
+        return make_response(jsonify({"success": False, "message": str(exc)}), 400)
+    return None
 
 
 def _connection_server_moved(tool_doc: dict, new_config: Optional[dict]) -> bool:
@@ -829,6 +883,11 @@ class GetTools(Resource):
             # A resource-restricted token sees only its allowed tools. Default
             # and builtin rows have ids too, so they follow the same allowlist.
             user_tools = filter_listing(request, "tools", user_tools)
+            with db_readonly() as conn:
+                attach_used_by(
+                    conn, user, "tool", user_tools,
+                    deletable_ids=deletable_ids_of(user_tools), agent_allowlist=used_by_agent_allowlist(request),
+                )
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -891,6 +950,9 @@ class CreateTool(Resource):
                             jsonify({"success": False, "message": f"Invalid server URL: {exc}"}),
                             400,
                         )
+            refused = _mcp_url_parameters_refused(data["name"], data.get("config"))
+            if refused is not None:
+                return refused
             tool_instance = tool_manager.tools.get(data["name"])
             if not tool_instance:
                 return make_response(
@@ -1131,6 +1193,7 @@ class UpdateTool(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Tool not found"}), 404,
                     )
+                check_token_tool_untouched(decoded_token, tool_doc, ra.owner_id)
                 if "name" in data and data["name"] != tool_doc.get("name"):
                     # The type decides what the config and the connection's
                     # credentials are used for; it is set once, on create.
@@ -1155,6 +1218,9 @@ class UpdateTool(Resource):
                         check_oauth_mcp_owner_only(ra, existing_config, data["config"])
                     if _connection_server_moved(tool_doc, data["config"]):
                         return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                    refused = _mcp_url_parameters_refused(tool_name, data["config"])
+                    if refused is not None:
+                        return refused
                     if tool_name == "api_tool":
                         check_api_tool_fixed_values(ra, data["config"], existing_config)
                     if tool_name == "api_tool" and not _api_tool_config_needs_credentials(
@@ -1278,6 +1344,7 @@ class UpdateToolConfig(Resource):
                 tool_doc = _load_owned_row(conn, ra)
                 if not tool_doc:
                     return make_response(jsonify({"success": False}), 404)
+                check_token_tool_untouched(decoded_token, tool_doc, ra.owner_id)
 
                 tool_name = tool_doc.get("name")
                 if tool_name == "mcp_tool":
@@ -1293,6 +1360,9 @@ class UpdateToolConfig(Resource):
                             )
                 if _connection_server_moved(tool_doc, data["config"]):
                     return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                refused = _mcp_url_parameters_refused(tool_name, data["config"])
+                if refused is not None:
+                    return refused
                 if tool_name == "api_tool":
                     check_api_tool_fixed_values(ra, data["config"], tool_doc.get("config"))
                 tool_instance = tool_manager.tools.get(tool_name)
@@ -1390,6 +1460,7 @@ class UpdateToolActions(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Tool not found"}), 404,
                     )
+                check_token_tool_untouched(decoded_token, tool_doc, ra.owner_id)
                 # The stored actions are the schema: nothing can be added,
                 # and a fixed value is the owner's to set (an editor pinning
                 # a Telegram chat would redirect the owner's bot).
@@ -1460,6 +1531,7 @@ class UpdateToolStatus(Resource):
                 )
             with db_session() as conn:
                 ra = require(conn, "tool", data["id"], user, "use")
+                check_token_tool_untouched(decoded_token, _load_owned_row(conn, ra) or {}, ra.owner_id)
                 if ra.access == "owner":
                     UserToolsRepository(conn).update(
                         ra.resource_id, ra.owner_id, {"status": bool(data["status"])},

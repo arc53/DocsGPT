@@ -41,11 +41,13 @@ function Where() {
 function Harness({
   connectorKey,
   mcpToolId,
+  onNavigate,
 }: {
   connectorKey: string;
   mcpToolId?: string;
+  onNavigate?: (path: string) => void;
 }) {
-  const { reconnect, modals } = useSignInAgain();
+  const { reconnect, modals } = useSignInAgain({ onNavigate });
   return (
     <>
       <SignInAgainNotice
@@ -75,7 +77,11 @@ describe('SignInAgainNotice', () => {
     container.remove();
   });
 
-  const render = async (connectorKey: string, mcpToolId?: string) => {
+  const render = async (
+    connectorKey: string,
+    mcpToolId?: string,
+    onNavigate?: (path: string) => void,
+  ) => {
     const store = configureStore({
       reducer: { connectors: connectorsReducer },
       preloadedState: {
@@ -97,7 +103,11 @@ describe('SignInAgainNotice', () => {
               <Route
                 path="/"
                 element={
-                  <Harness connectorKey={connectorKey} mcpToolId={mcpToolId} />
+                  <Harness
+                    connectorKey={connectorKey}
+                    mcpToolId={mcpToolId}
+                    onNavigate={onNavigate}
+                  />
                 }
               />
               <Route path="/settings/connectors" element={<Where />} />
@@ -137,6 +147,18 @@ describe('SignInAgainNotice', () => {
     expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
       '/settings/connectors?connector=custom_mcp&connection=conn-2',
     );
+  });
+
+  // In a builder the connector page is an exit like any other: it goes
+  // through the leave guard.
+  it('leaves for the connector page through its opener when given one', async () => {
+    const onNavigate = vi.fn();
+    await render('custom_mcp', undefined, onNavigate);
+    await act(async () => reconnectButton().click());
+    expect(onNavigate).toHaveBeenCalledWith(
+      '/settings/connectors?connector=custom_mcp&connection=conn-2',
+    );
+    expect(container.querySelector('[data-testid="where"]')).toBeNull();
   });
 
   it('renders nothing when every connection works', async () => {
