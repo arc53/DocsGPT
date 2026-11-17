@@ -3513,6 +3513,7 @@
         "toolsHeading": "Outils ({{formatted}})",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez, ou désactivez-les pour continuer.",
         "tryInChat": "Essayer dans une conversation",
+        "urlParameterInvalid": "Vérifiez cette valeur : elle n'a pas le format attendu.",
         "waiting": "Terminez la connexion à {{name}} dans la fenêtre qui s’est ouverte."
       }
     },

@@ -3513,6 +3513,7 @@
         "toolsHeading": "Herramientas ({{formatted}})",
         "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo o desactívalas para continuar.",
         "tryInChat": "Probar en el chat",
+        "urlParameterInvalid": "Revisa este valor: no tiene el formato esperado.",
         "waiting": "Termina de iniciar sesión en {{name}} en la ventana que se abrió."
       }
     },

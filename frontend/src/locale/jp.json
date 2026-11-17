@@ -3368,6 +3368,7 @@
         "toolsHeading": "ツール ({{formatted}})",
         "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度試すか、オフにして続行してください。",
         "tryInChat": "チャットで試す",
+        "urlParameterInvalid": "この値を確認してください。想定された形式ではありません。",
         "waiting": "開いたウィンドウで {{name}} へのサインインを完了してください。"
       }
     },

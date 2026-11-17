@@ -3399,6 +3399,7 @@
         "toolsHeading": "Werkzeuge ({{formatted}})",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
         "tryInChat": "Im Chat ausprobieren",
+        "urlParameterInvalid": "Prüfe diesen Wert: Er hat nicht das erwartete Format.",
         "waiting": "Schließe die Anmeldung bei {{name}} im geöffneten Fenster ab."
       }
     },

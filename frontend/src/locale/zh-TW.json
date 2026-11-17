@@ -3368,6 +3368,7 @@
         "toolsHeading": "工具（{{formatted}}）",
         "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次，或將其關閉以繼續。",
         "tryInChat": "在聊天中試試",
+        "urlParameterInvalid": "請檢查此值：格式不符合要求。",
         "waiting": "請在開啟的視窗中完成 {{name}} 登入。"
       }
     },

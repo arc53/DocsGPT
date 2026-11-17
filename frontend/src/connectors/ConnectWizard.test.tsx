@@ -1256,6 +1256,97 @@ describe('ConnectWizard', () => {
     open.mockRestore();
   });
 
+  describe('an MCP preset that needs a project', () => {
+    const REF = 'abcdefghijklmnopqrst';
+    const supabase: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:supabase',
+      name: 'Supabase',
+      icon: 'supabase',
+      auth_kind: 'mcp_oauth',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      mcp_url: 'https://mcp.supabase.com/mcp',
+      oauth_scopes: [],
+      publisher: 'preset',
+      url_parameters: [
+        {
+          key: 'project_ref',
+          label: 'Project ref',
+          secret: false,
+          required: true,
+          pattern: '[a-z]{20}',
+        },
+      ],
+    };
+    const refField = () =>
+      document.body.querySelector<HTMLInputElement>(
+        '#connect-mcp_supabase-project_ref',
+      );
+    const signIn = () => button('settings.connectors.wizard.signIn');
+
+    it('asks for the project first, then signs in to that project only', async () => {
+      const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+      const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+      mcpApi.testMCPConnection.mockResolvedValue({
+        json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+      });
+      await render(supabase);
+      expect(signIn()?.disabled).toBe(true);
+
+      await typeInto(refField()!, 'not-a-ref');
+      expect(signIn()?.disabled).toBe(true);
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.urlParameterInvalid',
+      );
+
+      await typeInto(refField()!, REF);
+      expect(signIn()?.disabled).toBe(false);
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.urlParameterInvalid',
+      );
+      await click('settings.connectors.wizard.signIn');
+      expect(mcpApi.testMCPConnection.mock.calls[0][0]).toMatchObject({
+        config: {
+          server_url: `https://mcp.supabase.com/mcp?project_ref=${REF}`,
+          auth_type: 'oauth',
+        },
+      });
+      open.mockRestore();
+    });
+
+    it('signs in again to the project the connection is on', async () => {
+      await render(
+        supabase,
+        vi.fn(),
+        { mode: 'reconnect', connectionId: 'conn-1', mcpToolId: 'tool-1' },
+        [
+          {
+            id: 'conn-1',
+            connector_key: 'mcp:supabase',
+            name: 'Supabase',
+            display_name: null,
+            icon: 'supabase',
+            account_label: 'mcp.supabase.com',
+            auth_kind: 'mcp_oauth',
+            status: 'reconnect_needed',
+            server_url: 'https://mcp.supabase.com',
+            last_error: null,
+            created_at: null,
+            updated_at: null,
+            last_used_at: null,
+            source_count: 0,
+            tool_count: 1,
+            url_parameters: { project_ref: REF },
+          },
+        ],
+      );
+
+      expect(refField()?.value).toBe(REF);
+      expect(signIn()?.disabled).toBe(false);
+    });
+  });
+
   it('connects a no-auth MCP preset with one Connect button', async () => {
     const open = vi.spyOn(window, 'open');
     mcpApi.saveMCPServer.mockResolvedValue({

@@ -3420,6 +3420,7 @@
         "toolsHeading": "Tools ({{formatted}})",
         "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
         "tryInChat": "Try it in chat",
+        "urlParameterInvalid": "Check this value: it isn't in the expected format.",
         "waiting": "Finish signing in to {{name}} in the window that opened."
       }
     },
