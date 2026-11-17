@@ -32,6 +32,7 @@ from docsgpt.storage.db.repositories.conversations import ConversationsRepositor
 from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,11 @@ class McpAppCall(Resource):
             return _error("This tool is turned off", 403)
         writes = action_access(row.get("name"), action) == ACCESS_WRITE
         if writes and _delegated(executor, row, user):
-            return _error("A view can't change things on a shared tool's account", 403)
+            # A team's tool runs on the team's account, which the caller may use: like an agent's
+            # call on it, a write asks the caller first. Another person's account stays closed.
+            if not is_principal_id(row.get("user_id")):
+                return _error("A view can't change things on a shared tool's account", 403)
+            permission = PERMISSION_ASK
         if permission == PERMISSION_ASK and data.get("approved") is not True:
             return _error("This tool needs your approval", 409, needs_approval=True)
         arguments = data.get("arguments")
