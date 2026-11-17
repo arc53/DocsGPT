@@ -105,7 +105,7 @@ def _token(user):
 class TestTeamPlan:
     def test_a_described_model_reuses_the_teams_match_whatever_its_name(self, pg_conn):
         tid, principal = _team(pg_conn)
-        theirs = _model(pg_conn, principal, base_url=BASE.upper() + "/")
+        theirs = _model(pg_conn, principal, base_url="HTTPS://Models.Example.COM/v1/")
         plan = plan_import(pg_conn, EDITOR, _models_doc(SPEC), workspace=_team_ws(tid, principal))
         assert plan["models"] == [{"display_name": "Llama", "status": "reuse", "requires_secrets": []}]
 
