@@ -730,6 +730,28 @@ class TestRegistry:
         assert listed[0]["source"] == "team"
 
 
+class TestEndpointKey:
+    """Two models are the same model when they point at the same endpoint: scheme and host ignore case, the path
+    doesn't (a provider may put a tenant or deployment name in it)."""
+
+    def test_scheme_and_host_ignore_case_and_a_trailing_slash(self):
+        from docsgpt.workspaces.team_models import endpoint_key
+
+        assert endpoint_key("HTTPS://LLM.Example.com/v1/", "llama-3") == endpoint_key(
+            "https://llm.example.com/v1", "llama-3"
+        )
+
+    def test_the_path_keeps_its_case(self):
+        from docsgpt.workspaces.team_models import endpoint_key, matching_model
+
+        assert endpoint_key("https://llm.example.com/tenant/ALICE/v1", "m") != endpoint_key(
+            "https://llm.example.com/tenant/alice/v1", "m"
+        )
+        rows = [{"id": "1", "base_url": "https://llm.example.com/tenant/alice/v1", "upstream_model_id": "m"}]
+        assert matching_model(rows, "https://llm.example.com/tenant/ALICE/v1", "m") is None
+        assert matching_model(rows, "https://LLM.example.com/tenant/alice/v1/", "m")["id"] == "1"
+
+
 class TestUnownedCustomModels:
     def test_names_custom_models_the_owner_doesnt_own(self, pg_conn, team):
         from docsgpt.workspaces.team_models import unowned_custom_models

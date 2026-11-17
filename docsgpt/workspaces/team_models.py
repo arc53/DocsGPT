@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Response, jsonify, make_response
 
@@ -337,7 +338,8 @@ def unowned_custom_models(conn: Any, owner_id: Optional[str], ids: Iterable[Any]
 def endpoint_key(base_url: Any, upstream_model_id: Any) -> tuple[str, str]:
     """What makes two custom models the same model: where they point and which model they ask for.
 
-    The base URL ignores case and trailing slashes; the name never counts, so a team's copy named
+    The base URL ignores the case of its scheme and host and trailing slashes, but not the case of its
+    path, which may name a tenant or deployment; the name never counts, so a team's copy named
     differently still matches.
 
     Args:
@@ -347,7 +349,25 @@ def endpoint_key(base_url: Any, upstream_model_id: Any) -> tuple[str, str]:
     Returns:
         ``(base_url, upstream_model_id)``, normalized.
     """
-    return str(base_url or "").strip().rstrip("/").lower(), str(upstream_model_id or "").strip()
+    return _normalized_url(base_url), str(upstream_model_id or "").strip()
+
+
+def _normalized_url(base_url: Any) -> str:
+    """``base_url`` without trailing slashes, its scheme and host lowercased and the rest kept as typed.
+
+    Args:
+        base_url: A URL, or anything (an unparsable value is only stripped).
+
+    Returns:
+        The normalized URL.
+    """
+    url = str(base_url or "").strip().rstrip("/")
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    userinfo, at, host = parts.netloc.rpartition("@")
+    return urlunsplit((parts.scheme.lower(), f"{userinfo}{at}{host.lower()}", parts.path, parts.query, parts.fragment))
 
 
 def matching_model(rows: Iterable[Mapping[str, Any]], base_url: Any, upstream_model_id: Any) -> Optional[dict]:
