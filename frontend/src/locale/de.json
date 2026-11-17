@@ -5626,8 +5626,8 @@
       "planChanged": "Etwas hat sich geändert; bitte erneut prüfen",
       "quoted": "\"{{name}}\"",
       "reasons": {
-        "connection_account": "Mit einem Konto angemeldet, das persönlich bleibt.",
-        "connector_synced": "Aus einem verbundenen Dienst synchronisiert, der persönlich bleibt.",
+        "connection_account": "Mit einem Konto angemeldet, das in diesem Arbeitsbereich bleibt.",
+        "connector_synced": "Aus einem Konto synchronisiert, das in diesem Arbeitsbereich bleibt.",
         "credentials_unreadable": "Sein gespeichertes Geheimnis ist nicht mehr lesbar.",
         "custom_model": "Ein persönliches eigenes Modell.",
         "in_knowledge_folder": "Liegt in einem Ordner, den der Agent liest; nur dessen Quellen kommen mit.",

@@ -5591,8 +5591,8 @@
       "planChanged": "內容有變更，請再檢查一次",
       "quoted": "「{{name}}」",
       "reasons": {
-        "connection_account": "以保持個人所有的帳號登入。",
-        "connector_synced": "從保持個人所有的已連線服務同步。",
+        "connection_account": "以留在此工作區的帳號登入。",
+        "connector_synced": "從留在此工作區的帳號同步。",
         "credentials_unreadable": "其儲存的密鑰已無法讀取。",
         "custom_model": "個人自訂模型。",
         "in_knowledge_folder": "位於代理讀取的資料夾中；只有其中的來源會一起移動。",

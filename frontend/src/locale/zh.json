@@ -5589,8 +5589,8 @@
       "planChanged": "内容有变化，请再检查一次",
       "quoted": "“{{name}}”",
       "reasons": {
-        "connection_account": "使用保持个人所有的账号登录。",
-        "connector_synced": "从保持个人所有的已连接服务同步。",
+        "connection_account": "使用留在此工作区的账号登录。",
+        "connector_synced": "从留在此工作区的账号同步。",
         "credentials_unreadable": "其保存的密钥已无法读取。",
         "custom_model": "个人自定义模型。",
         "in_knowledge_folder": "位于智能体读取的文件夹中；只有其中的来源会一起移动。",

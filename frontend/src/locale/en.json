@@ -5647,8 +5647,8 @@
       "planChanged": "Something changed; check again",
       "quoted": "\"{{name}}\"",
       "reasons": {
-        "connection_account": "Signed in with an account, which stays personal.",
-        "connector_synced": "Synced from a connected service, which stays personal.",
+        "connection_account": "Signed in with an account that stays in this workspace.",
+        "connector_synced": "Synced from an account that stays in this workspace.",
         "credentials_unreadable": "Its saved secret can't be read any more.",
         "custom_model": "A personal custom model.",
         "in_knowledge_folder": "Filed in a folder the agent reads; only its sources come along.",

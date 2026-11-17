@@ -5842,8 +5842,8 @@
       "planChanged": "Algo ha cambiado; vuelve a revisarlo",
       "quoted": "\"{{name}}\"",
       "reasons": {
-        "connection_account": "Conectado con una cuenta, que sigue siendo personal.",
-        "connector_synced": "Sincronizado desde un servicio conectado, que sigue siendo personal.",
+        "connection_account": "Conectado con una cuenta que se queda en este espacio de trabajo.",
+        "connector_synced": "Sincronizado desde una cuenta que se queda en este espacio de trabajo.",
         "credentials_unreadable": "Su secreto guardado ya no se puede leer.",
         "custom_model": "Un modelo personalizado personal.",
         "in_knowledge_folder": "Archivado en una carpeta que lee el agente; solo vienen sus fuentes.",

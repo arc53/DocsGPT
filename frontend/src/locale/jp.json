@@ -5591,8 +5591,8 @@
       "planChanged": "変更がありました。もう一度確認してください",
       "quoted": "「{{name}}」",
       "reasons": {
-        "connection_account": "個人のままのアカウントでサインインしています。",
-        "connector_synced": "個人のままの接続サービスから同期されています。",
+        "connection_account": "このワークスペースに残るアカウントでサインインしています。",
+        "connector_synced": "このワークスペースに残るアカウントから同期されています。",
         "credentials_unreadable": "保存されたシークレットを読み取れなくなっています。",
         "custom_model": "個人のカスタムモデルです。",
         "in_knowledge_folder": "エージェントが読むフォルダに入っています。移動するのはそのソースだけです。",
