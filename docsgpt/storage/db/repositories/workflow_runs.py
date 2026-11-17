@@ -14,6 +14,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.models import workflow_runs_table
+from docsgpt.workspaces.outside import POLICIES, POLICY_LOCKED
+
+# Outside policies under which a team's shares are live (a lock pauses them).
+_OPEN_POLICIES = tuple(p for p in POLICIES if p != POLICY_LOCKED)
 
 
 class WorkflowRunsRepository:
@@ -189,7 +193,9 @@ class WorkflowRunsRepository:
             limit: Most rows to return.
 
         A run of a team's workflow lists only while the user is still in
-        that team (its owner, or a member), as their chats there do.
+        that team (its owner, or a member), as their chats there do, or
+        while the workflow's agent the run went through is shared into a
+        team they are in and the owning team isn't locked.
 
         Returns:
             Run rows with ``step_count`` in place of ``steps`` and no ``result``.
@@ -200,9 +206,18 @@ class WorkflowRunsRepository:
             " AND left(w.user_id, 8) = '__team__'"
             " AND NOT EXISTS (SELECT 1 FROM teams t WHERE '__team__' || t.id::text = w.user_id"
             " AND (t.owner_id = :user_id OR EXISTS (SELECT 1 FROM team_members m"
-            " WHERE m.team_id = t.id AND m.user_id = :user_id))))",
+            " WHERE m.team_id = t.id AND m.user_id = :user_id)))"
+            # The same live share that lets them use the workflow's agent.
+            " AND NOT EXISTS (SELECT 1 FROM agents a"
+            " JOIN teams o ON '__team__' || o.id::text = a.user_id AND o.outside_policy = ANY(:open_policies)"
+            " JOIN team_item_shares s ON s.resource_type = 'agent' AND s.resource_id = a.id"
+            " AND s.owner_team_id = o.id"
+            " JOIN teams r ON r.id = s.team_id"
+            " WHERE a.id::text = lower(workflow_runs.inputs ->> 'agent_id') AND a.workflow_id = w.id"
+            " AND (r.owner_id = :user_id OR EXISTS (SELECT 1 FROM team_members m2"
+            " WHERE m2.team_id = r.id AND m2.user_id = :user_id))))",
         ]
-        params: dict = {"user_id": user_id, "limit": int(limit)}
+        params: dict = {"user_id": user_id, "limit": int(limit), "open_policies": list(_OPEN_POLICIES)}
         if agent_ids is not None:
             allowed = sorted({str(a).lower() for a in agent_ids})
             if not allowed:

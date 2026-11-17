@@ -125,3 +125,77 @@ class TestExMember:
 
         assert _run_artifacts(client, team_run).status_code == 403
         assert _run_artifacts(client, own_run).status_code == 200
+
+
+def _shared_workflow_agent(conn, owner_tid, principal):
+    """A team workflow agent shared into a second team that ``sam`` is in."""
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+    workflow_id = _workflow(conn, principal)
+    agent = AgentsRepository(conn).create(
+        principal, "Flow", "published", key=f"k-{uuid.uuid4().hex[:8]}", workflow_id=workflow_id,
+        agent_type="workflow", created_by="alice",
+    )
+    other = str(TeamsRepository(conn).create("Sales", f"s-{uuid.uuid4().hex[:6]}", "sam")["id"])
+    TeamMembersRepository(conn).add_member(other, "sam", role="team_viewer")
+    TeamItemSharesRepository(conn).share(owner_tid, other, "agent", str(agent["id"]), "alice")
+    return workflow_id, str(agent["id"]), other
+
+
+def _agent_run(conn, workflow_id, agent_id, user) -> str:
+    return str(WorkflowRunsRepository(conn).create(
+        workflow_id, user, "completed", inputs={"query": "q", "agent_id": agent_id})["id"])
+
+
+class TestSharedIntoAnotherTeam:
+    def test_a_receiving_member_reads_their_own_runs_and_files(self, client, db):
+        tid, principal = _team(db)
+        workflow_id, agent_id, _ = _shared_workflow_agent(db, tid, principal)
+        run = _agent_run(db, workflow_id, agent_id, "sam")
+        artifact = _artifact(db, run, user="sam")
+
+        assert visible_run(db, run, "sam", None) is not None
+        assert authorize_artifact(db, artifact, Principal(user_id="sam"), {})
+        assert _list(client, user="sam") == [run]
+        assert _run_artifacts(client, run, user="sam").status_code == 200
+
+    def test_the_runs_close_when_the_share_is_revoked(self, client, db):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+        tid, principal = _team(db)
+        workflow_id, agent_id, other = _shared_workflow_agent(db, tid, principal)
+        run = _agent_run(db, workflow_id, agent_id, "sam")
+        artifact = _artifact(db, run, user="sam")
+
+        TeamItemSharesRepository(db).revoke(other, "agent", agent_id)
+
+        assert visible_run(db, run, "sam", None) is None
+        assert not authorize_artifact(db, artifact, Principal(user_id="sam"), {})
+        assert _list(client, user="sam") == []
+
+    def test_the_runs_close_while_the_owning_team_is_locked(self, client, db):
+        tid, principal = _team(db)
+        workflow_id, agent_id, _ = _shared_workflow_agent(db, tid, principal)
+        run = _agent_run(db, workflow_id, agent_id, "sam")
+
+        db.execute(text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": tid})
+
+        assert visible_run(db, run, "sam", None) is None
+        assert _list(client, user="sam") == []
+
+    def test_a_run_naming_another_workflows_agent_stays_closed(self, client, db):
+        tid, principal = _team(db)
+        _, agent_id, _ = _shared_workflow_agent(db, tid, principal)
+        unshared = _workflow(db, principal)
+        run = _agent_run(db, unshared, agent_id, "sam")
+
+        assert visible_run(db, run, "sam", None) is None
+        assert _list(client, user="sam") == []
+
+    def test_someone_elses_run_stays_closed(self, client, db):
+        tid, principal = _team(db)
+        workflow_id, agent_id, _ = _shared_workflow_agent(db, tid, principal)
+        run = _agent_run(db, workflow_id, agent_id, "vera")
+
+        assert visible_run(db, run, "sam", None) is None
