@@ -987,6 +987,70 @@ def _api_key_account(
         candidate = f"{label} ({suffix})"
 
 
+def api_key_credentials(definition, credentials: dict) -> dict:
+    """The pasted credentials a connection stores: every required field, only known fields, no blanks.
+
+    Args:
+        definition: The catalog entry, or None for a connector the catalog no longer knows.
+        credentials: Field key to value, as the user entered them.
+
+    Returns:
+        The credentials to store.
+
+    Raises:
+        ValueError: A required credential field is missing.
+    """
+    fields = {f.key: f for f in definition.credential_fields} if definition is not None else {}
+    if not fields:
+        return {k: v for k, v in credentials.items() if v not in (None, "")}
+    missing = [f.label for f in fields.values() if f.required and not str(credentials.get(f.key) or "").strip()]
+    if missing:
+        raise ValueError(f"Missing credentials: {', '.join(missing)}")
+    return {k: v for k, v in credentials.items() if k in fields and v not in (None, "")}
+
+
+def replacement_api_key_label(conn, row: dict, definition, credentials: dict, label: Optional[str] = None) -> str:
+    """The label of a connection whose pasted key is replaced by another person's.
+
+    The old label names the old account, so it is derived again from the new key, the way a new
+    connection's is. Another of the owner's connections may hold the same hint with another key: the
+    label then takes a ``(2)``, ``(3)`` suffix.
+
+    Args:
+        conn: Open connection.
+        row: The connection being reconnected.
+        definition: Its catalog entry, or None.
+        credentials: The new credentials, as :func:`api_key_credentials` returns them.
+        label: What the account is called when the caller knows (a GitHub login); else a hint of the key.
+
+    Returns:
+        A label no other of the owner's connections for that service uses.
+
+    Raises:
+        AccountAlreadyConnected: Another of the owner's connections already holds exactly these credentials.
+    """
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    fields = {f.key: f for f in definition.credential_fields} if definition is not None else {}
+    secret_values = {k: v for k, v in credentials.items() if (fields[k].secret if k in fields else True)}
+    base = label or credential_hint(secret_values or credentials)
+    repo = ConnectorSessionsRepository(conn)
+    candidate, suffix = base, 1
+    while True:
+        other = repo.find_account(
+            row["user_id"], row["provider"], server_url=row.get("server_url"), account_label=candidate,
+        )
+        if other is None or str(other["id"]) == str(row["id"]):
+            return candidate
+        try:
+            if (read_secrets(other).get("credentials") or {}) == credentials:
+                raise AccountAlreadyConnected(str(other["id"]))
+        except CredentialDecryptionError:
+            pass
+        suffix += 1
+        candidate = f"{base} ({suffix})"
+
+
 def create_api_key_connection(
     conn,
     user_id: str,
@@ -1031,13 +1095,7 @@ def create_api_key_connection(
     preset = catalog.preset_for_url(server_url) if definition.key == "custom_mcp" else None
     ensure_connector_allowed(conn, preset.key if preset else definition.key)
     fields = {f.key: f for f in definition.credential_fields}
-    if fields:
-        missing = [f.label for f in fields.values() if f.required and not str(credentials.get(f.key) or "").strip()]
-        if missing:
-            raise ValueError(f"Missing credentials: {', '.join(missing)}")
-        credentials = {k: v for k, v in credentials.items() if k in fields and v not in (None, "")}
-    else:
-        credentials = {k: v for k, v in credentials.items() if v not in (None, "")}
+    credentials = api_key_credentials(definition, credentials)
     ensure_can_store_credentials()
     secret_values = {k: v for k, v in credentials.items() if (fields.get(k).secret if fields.get(k) else True)}
     repo = ConnectorSessionsRepository(conn)

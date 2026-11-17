@@ -690,6 +690,94 @@ class TestReplace:
         [(_, meta)] = _audit_events(pg_conn, "team.connection_reconnected")
         assert meta["previous_connected_by"] == "adam" and meta["replaced"] is True
 
+    def test_api_key_replace_keeps_nothing_of_the_old_account(self, app, pg_conn, team):
+        """Another Admin's key replaces the account: every field is theirs, none of the old ones stay."""
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="telegram", auth_kind="api_key", label="…dold",
+                        secrets={"credentials": {"token": "123:adam-old", "chat_id": "-100"}})
+        cid = str(old["id"])
+        with _db(pg_conn):
+            partial = _call(app, ConnectionReconnect, "post", "/x", "ana",
+                            body={"credentials": {"chat_id": "-200"}}, args=[cid])
+            unchanged = ConnectorSessionsRepository(pg_conn).get(cid)
+            resp = _call(app, ConnectionReconnect, "post", "/x", "ana",
+                         body={"credentials": {"token": "123:ana-new-key"}}, args=[cid])
+
+        assert partial.status_code == 400
+        assert unchanged["connected_by"] == "adam"
+        assert decrypt_json(unchanged["encrypted_credentials"], principal_id(team))["credentials"]["token"] == (
+            "123:adam-old"
+        )
+        assert resp.status_code == 200
+        row = ConnectorSessionsRepository(pg_conn).get(cid)
+        assert decrypt_json(row["encrypted_credentials"], principal_id(team))["credentials"] == {
+            "token": "123:ana-new-key",
+        }
+        assert (row["connected_by"], row["account_label"]) == ("ana", "…-key")
+
+    def test_api_key_replace_with_a_key_the_team_has_is_refused(self, app, pg_conn, team):
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="telegram", auth_kind="api_key", label="…dold",
+                        secrets={"credentials": {"token": "123:adam-old"}})
+        other = _team_row(pg_conn, team, "ana", provider="telegram", auth_kind="api_key", label="…-key",
+                          secrets={"credentials": {"token": "123:ana-new-key"}})
+        with _db(pg_conn):
+            resp = _call(app, ConnectionReconnect, "post", "/x", "ana",
+                         body={"credentials": {"token": "123:ana-new-key"}}, args=[str(old["id"])])
+
+        assert resp.status_code == 409
+        assert resp.get_json()["error"] == "account_already_connected"
+        assert resp.get_json()["connection_id"] == str(other["id"])
+        assert ConnectorSessionsRepository(pg_conn).get(str(old["id"]))["connected_by"] == "adam"
+
+    def test_api_key_replace_takes_a_free_label(self, app, pg_conn, team):
+        """Another key with the same hint keeps its label; the replaced account gets a numbered one."""
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="telegram", auth_kind="api_key", label="…dold",
+                        secrets={"credentials": {"token": "123:adam-old"}})
+        _team_row(pg_conn, team, "ana", provider="telegram", auth_kind="api_key", label="…-key",
+                  secrets={"credentials": {"token": "999:other-key"}})
+        with _db(pg_conn):
+            resp = _call(app, ConnectionReconnect, "post", "/x", "ana",
+                         body={"credentials": {"token": "123:ana-new-key"}}, args=[str(old["id"])])
+
+        assert resp.status_code == 200
+        assert ConnectorSessionsRepository(pg_conn).get(str(old["id"]))["account_label"] == "…-key (2)"
+
+    def test_github_key_replace_names_the_new_account(self, app, pg_conn, team):
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="github", auth_kind="api_key", label="adam-gh",
+                        secrets={"credentials": {"access_token": "ghp_adam_old"}})
+        with _db(pg_conn), patch("docsgpt.connectors.github.token_account", return_value="ana-gh") as whose:
+            resp = _call(app, ConnectionReconnect, "post", "/x", "ana",
+                         body={"credentials": {"access_token": "ghp_ana_new"}}, args=[str(old["id"])])
+
+        assert resp.status_code == 200
+        whose.assert_called_once_with("ghp_ana_new")
+        row = ConnectorSessionsRepository(pg_conn).get(str(old["id"]))
+        assert (row["connected_by"], row["account_label"]) == ("ana", "ana-gh")
+
+    def test_the_same_admin_updates_part_of_their_key(self, app, pg_conn, team):
+        """Whoever connected the account may change one field; the others stay."""
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="telegram", auth_kind="api_key", label="…dold",
+                        secrets={"credentials": {"token": "123:adam-old", "chat_id": "-100"}})
+        with _db(pg_conn):
+            resp = _call(app, ConnectionReconnect, "post", "/x", "adam",
+                         body={"credentials": {"chat_id": "-200"}}, args=[str(old["id"])])
+
+        assert resp.status_code == 200
+        row = ConnectorSessionsRepository(pg_conn).get(str(old["id"]))
+        assert decrypt_json(row["encrypted_credentials"], principal_id(team))["credentials"] == {
+            "token": "123:adam-old", "chat_id": "-200",
+        }
+        assert (row["connected_by"], row["account_label"]) == ("adam", "…dold")
+
 
 class TestCompleteOAuthReplace:
     def test_rewrites_in_place_after_revoking_the_old_grant(self, pg_conn, team):

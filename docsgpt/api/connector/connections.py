@@ -22,6 +22,7 @@ from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.api.user.sources.access import SYNC_FREQUENCIES
 from docsgpt.connectors import catalog, service
 from docsgpt.connectors.team import (
+    ACCOUNT_ALREADY_CONNECTED,
     CONNECTION_ACTIONS,
     CONNECTION_PAUSED,
     OWNER_PERSONAL,
@@ -665,8 +666,9 @@ class ConnectionReconnect(Resource):
         description=(
             "OAuth: returns an authorization URL for the same account. "
             "API key: accepts {credentials} and replaces the stored ones. On a team's connection (Admins), "
-            "an Admin other than whoever connected it reconnects with their own account: replace is true, "
-            "the connection keeps its id, sources and tools, and they become who connected it "
+            "an Admin other than whoever connected it (or any Admin while it is paused) reconnects with their "
+            "own account: replace is true, a key must fill every required field and nothing of the old one "
+            "is kept, the connection keeps its id, sources and tools, and they become who connected it "
             "(409 account_already_connected with connection_id when the team already has that account)."
         )
     )
@@ -707,6 +709,31 @@ class ConnectionReconnect(Resource):
             credentials = body.get("credentials")
             if not isinstance(credentials, dict) or not credentials:
                 return _error("credentials are required", 400)
+            if not replace and access.is_team:
+                from docsgpt.quotas.pause import connection_pause
+
+                with db_readonly() as conn:
+                    # A paused account is not theirs to patch: a key pasted now takes it over whole.
+                    replace = connection_pause(conn, row) is not None
+            label = None
+            if replace:
+                # Another person's key replaces the account: nothing of the old one may stay, so every
+                # field is theirs and the label names their account.
+                try:
+                    credentials = service.api_key_credentials(definition, credentials)
+                except ValueError as err:
+                    return _error(str(err), 400)
+                if key == "github":
+                    from docsgpt.connectors import github
+
+                    try:
+                        label = github.token_account(credentials.get("access_token"))
+                    except github.TokenRejected as err:
+                        return _error(str(err), 400, code="invalid_credentials")
+                    except github.RateLimited as err:
+                        return _rate_limited(err)
+                    except service.TransientConnectionError as err:
+                        return _error(str(err), 502)
             service.ensure_can_store_credentials()
             with db_session() as conn:
                 locked = ConnectorSessionsRepository(conn).get_for_update(connection_id)
@@ -717,12 +744,28 @@ class ConnectionReconnect(Resource):
                     stored = service.read_secrets(locked)
                 except CredentialDecryptionError:
                     stored = {}
-                merged = {**(stored.get("credentials") or {}), **{k: v for k, v in credentials.items() if v}}
+                if replace:
+                    try:
+                        relabel = {
+                            "account_label": service.replacement_api_key_label(
+                                conn, locked, definition, credentials, label,
+                            ),
+                        }
+                    except service.AccountAlreadyConnected as err:
+                        return make_response(jsonify({
+                            "success": False, "error": ACCOUNT_ALREADY_CONNECTED, "message": str(err),
+                            "connection_id": err.connection_id,
+                        }), 409)
+                    secrets = {"credentials": credentials}
+                else:
+                    # Whoever connected it may change one field and keep the others.
+                    relabel = {}
+                    merged = {**(stored.get("credentials") or {}), **{k: v for k, v in credentials.items() if v}}
+                    secrets = {**stored, "credentials": merged}
                 # A team's account is whoever pasted the key that works now.
                 named = {"connected_by": user_id} if access.is_team else {}
                 service.write_secrets(
-                    conn, locked, {**stored, "credentials": merged},
-                    status=service.STATUS_CONNECTED, last_error=None, **named,
+                    conn, locked, secrets, status=service.STATUS_CONNECTED, last_error=None, **named, **relabel,
                 )
                 service.resume_sources(conn, connection_id)
                 audit_team_connection(
