@@ -711,6 +711,30 @@ def _live_shares(
     through any team they are in; a team's principal only through its own team. Who shared it,
     and whether they are still in either team, doesn't matter.
     """
+    rows = _share_rows(conn, user_id, resource_type, resource_id, owner_team_id)
+    if not rows or team_policy(conn, owner_team_id) == POLICY_LOCKED:
+        return []
+    return rows
+
+
+def _share_rows(
+    conn: Connection, user_id: str, resource_type: str, resource_id: str, owner_team_id: str
+) -> list[dict]:
+    """The share rows of a team's item that name ``user_id``'s side, live or paused by a lock.
+
+    A person is named through any team they are in; a team's principal only through its own team. Only rows
+    naming the item's current owning team count.
+
+    Args:
+        conn: Open database connection.
+        user_id: A person, or a team's principal.
+        resource_type: ``agent``, ``source``, ``tool`` or ``prompt``.
+        resource_id: The item's canonical id.
+        owner_team_id: The team that owns the item now.
+
+    Returns:
+        list[dict]: The rows, oldest first.
+    """
     if resource_type not in RECEIVER_ACTIONS:
         return []
     repo = TeamItemSharesRepository(conn)
@@ -719,10 +743,31 @@ def _live_shares(
         rows = [r for r in repo.teams_for(resource_type, resource_id) if str(r.get("team_id")) == own_team]
     else:
         rows = repo.reaching(user_id, resource_type, resource_id)
-    rows = [r for r in rows if str(r.get("owner_team_id")) == owner_team_id]
-    if not rows or team_policy(conn, owner_team_id) == POLICY_LOCKED:
-        return []
-    return rows
+    return [r for r in rows if str(r.get("owner_team_id")) == owner_team_id]
+
+
+def shared_in(conn: Connection, resource_type: str, resource_id: Optional[str], user_id: Optional[str]) -> bool:
+    """Whether a share of another team's item names ``user_id``'s side, even while its owning team is locked.
+
+    A lock only pauses a share: unlocking brings it back with nothing written. So whatever must hold for an
+    item used through a share (it is borrowed, so a key, public link or webhook can't reach it) holds while
+    the share is paused too.
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``source``, ``tool`` or ``prompt``.
+        resource_id: The item's id.
+        user_id: A person, or a team's principal (whom a holder runs as).
+
+    Returns:
+        bool: True when such a row exists.
+    """
+    if not user_id or not resource_id or not looks_like_uuid(str(resource_id)):
+        return False
+    owner_team_id = team_of_principal(resource_owner(conn, resource_type, str(resource_id)))
+    if owner_team_id is None or owner_team_id == team_of_principal(user_id):
+        return False
+    return bool(_share_rows(conn, user_id, resource_type, canonical_uuid(str(resource_id)), owner_team_id))
 
 
 def team_item_reach(
@@ -2443,8 +2488,10 @@ def borrowed_refs(
     """The tools and sources among ``refs`` and the folders' sources that ``owner_id`` reaches only through a grant.
 
     Borrowed means someone else owns it and the holder's owner may use it
-    (:func:`can_use_ref`), so the holder runs it with the owner's grant. One
-    the owner can't use runs as a sponsor or not at all, and isn't borrowed.
+    (:func:`can_use_ref`), so the holder runs it with the owner's grant, or
+    another team shares it with the owner's side while that team is locked
+    (:func:`shared_in`: unlocking brings the share back). One the owner can't
+    use runs as a sponsor or not at all, and isn't borrowed.
     Prompts, presets and builtin tools never are.
 
     Args:
@@ -2482,7 +2529,7 @@ def borrowed_refs(
         for resource_type, rid in pairs
         if (row := rows.get(sponsor_key(resource_type, rid)))
         and row.get("user_id") != owner_id
-        and can_use_ref(conn, resource_type, rid, owner_id)
+        and (can_use_ref(conn, resource_type, rid, owner_id) or shared_in(conn, resource_type, rid, owner_id))
     ]
 
 

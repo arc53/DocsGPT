@@ -781,10 +781,11 @@ class StreamProcessor:
             self.request_id = str(uuid.uuid4())
         from docsgpt.api.user.resource_access import run_reader
 
-        # Who asked reads the answers (before an API key swaps the identity to
-        # the agent's owner; "" for an outside caller nobody signed in as): a
-        # team's item they can't use is left out of the run.
-        self._run_reader = getattr(self, "initial_user_id", None) or ""
+        # Who asked reads the answers: a team's item they can't use is left
+        # out of the run. A run its agent's key authenticates reads as an
+        # outside caller nobody signed in as (""), even when the token handed
+        # in is the key owner's (``/v1``): anyone may hold the key.
+        self._run_reader = "" if self.data.get("api_key") else (getattr(self, "initial_user_id", None) or "")
         with ExitStack() as scope:
             scope.enter_context(run_reader(self._run_reader))
             # The setup gate's billing is entered here, so it covers the rest of the build.
@@ -3107,8 +3108,10 @@ class StreamProcessor:
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
-        # Who resumes reads the rest of the turn, as in a new one.
-        self._run_reader = (original_token.get("sub") if isinstance(original_token, dict) else None) or ""
+        # Who resumes reads the rest of the turn, as in a new one: nobody for a
+        # resume the key authenticates, whoever's token came with it.
+        resumer = original_token.get("sub") if isinstance(original_token, dict) else None
+        self._run_reader = "" if request_key else (resumer or "")
         agent = self._answers_read_by_caller(agent)
         # The paused rounds' decisions, continued in the next round.
         self.decision_record.resume(agent_config.get("decisions"))

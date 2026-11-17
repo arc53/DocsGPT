@@ -345,6 +345,26 @@ class TestWhoReads:
         proc.build_agent("q")
         assert seen == [""]
 
+    @pytest.mark.parametrize("external", [True, False])
+    def test_a_key_run_with_the_owners_token_reads_as_nobody(self, use_conn, world, monkeypatch, external):
+        """``/v1`` hands the run the key owner's token; the owner's own preview sends the key too.
+
+        Either way the key is what authenticates the run, so it reads as an outside caller would: another
+        team's item shared with the owner's side stays out, whoever holds the key.
+        """
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        seen: list = []
+        proc = StreamProcessor({"question": "q", "api_key": "k"}, {"sub": "eddie"}, external_caller=external)
+        monkeypatch.setattr(proc, "initialize", lambda: seen.append(current_run_reader()))
+        monkeypatch.setattr(proc, "_exposure_partition", lambda: ([], []))
+        monkeypatch.setattr(proc, "pre_fetch_tools", lambda: None)
+        monkeypatch.setattr(proc, "create_agent", lambda **_kw: None)
+        proc.agent_config["agent_type"] = "classic"
+        proc.build_agent("q")
+        assert seen == [""]
+        assert proc._run_reader == ""
+
     @pytest.mark.parametrize(("endpoint", "run_kind", "expected"), [
         ("schedule", "schedule", "oscar"),
         ("continuation", "chat", "oscar"),

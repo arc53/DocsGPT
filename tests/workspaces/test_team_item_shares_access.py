@@ -187,6 +187,29 @@ class TestReceivingTeamsHolders:
         _policy(pg_conn, world["ops"], "locked")
         assert workspace_mismatches(pg_conn, world["dev_p"], [("source", world["items"]["source"])]) == []
 
+    @pytest.mark.parametrize("kind", ["source", "tool"])
+    @pytest.mark.parametrize("who", ["dev_p", "rita"])
+    def test_a_paused_share_is_still_borrowed(self, pg_conn, world, kind, who):
+        # Otherwise a key turned on while Ops is locked serves Ops' item once Ops unlocks.
+        user = world.get(who, who)
+        rid = world["items"][kind]
+        _share(pg_conn, world, kind)
+        _policy(pg_conn, world["ops"], "locked")
+        assert borrowed_refs(pg_conn, user, [(kind, rid)]) == [(kind, rid.lower())]
+
+    def test_a_paused_share_of_a_prompt_is_still_borrowed_by_an_agent(self, pg_conn, world):
+        from docsgpt.api.user.agents.graph_checks import agent_borrowed_refs
+
+        _share(pg_conn, world, "prompt")
+        _policy(pg_conn, world["ops"], "locked")
+        row = {"user_id": world["dev_p"], "prompt_id": world["items"]["prompt"], "agent_type": "classic"}
+        assert agent_borrowed_refs(pg_conn, row) == [("prompt", world["items"]["prompt"].lower())]
+
+    def test_a_row_naming_another_owning_team_is_not_borrowed(self, pg_conn, world):
+        _share(pg_conn, world, "source", owner_team=world["qa"])
+        rid = world["items"]["source"]
+        assert borrowed_refs(pg_conn, world["dev_p"], [("source", rid)]) == []
+
 
 def test_a_principal_never_reaches_another_teams_share(pg_conn, world):
     _share(pg_conn, world, "prompt")

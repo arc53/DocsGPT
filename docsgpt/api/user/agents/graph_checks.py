@@ -27,6 +27,7 @@ from docsgpt.api.user.resource_access import (
     ref_names,
     resolve,
     resource_owner,
+    shared_in,
     sponsor_key,
 )
 from docsgpt.api.user.workflows.routes import (
@@ -169,7 +170,8 @@ def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list
     Its own tools and sources, the sources of its knowledge folders, and for
     a workflow agent those of its nodes (see ``resource_access.borrowed_refs``).
     A prompt counts only when another team owns it: a team's items stay with
-    the people who reach them, while a prompt a person lends never did.
+    the people who reach them, while a prompt a person lends never did. A
+    share paused by its team's lock still counts: unlocking brings it back.
     Such an agent may not get a key, a public link or a webhook.
 
     Args:
@@ -194,7 +196,7 @@ def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list
         if (
             is_principal_id(prompt_owner)
             and prompt_owner != owner
-            and can_use_ref(conn, "prompt", prompt_id, owner)
+            and (can_use_ref(conn, "prompt", prompt_id, owner) or shared_in(conn, "prompt", prompt_id, owner))
         ):
             found.append(("prompt", prompt_id))
     if agent.get("agent_type") != "workflow":
