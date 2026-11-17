@@ -307,6 +307,8 @@ user_tools_table = Table(
     Column("credential_mode", Text, nullable=False, server_default="owner"),
     # The person who created it (migration 0065).
     Column("created_by", Text),
+    # The service of a member-mode tool that names no connection; written by the server only (migration 0065).
+    Column("connector_key", Text),
 )
 
 # A grantee's personal "In my chats" switch for a tool shared with them
@@ -817,6 +819,14 @@ connector_sessions_table = Table(
     # Added in ``0041_connection_account_name``: what the user calls the
     # account; ``account_label`` stays its identity.
     Column("account_name", Text),
+    # The person who connected a team's account (the row is owned by the team's principal);
+    # NULL on anyone else's connection (migration 0065).
+    Column("connected_by", Text),
+    CheckConstraint(
+        "(left(user_id, 8) = '__team__') = (connected_by IS NOT NULL) "
+        "AND (connected_by IS NULL OR left(connected_by, 8) <> '__team__')",
+        name="connector_sessions_connected_by_chk",
+    ),
 )
 
 
@@ -848,6 +858,11 @@ connector_oauth_flows_table = Table(
     Column("return_origin", Text, nullable=False),
     Column("expires_at", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # The team principal a sign-in connects for, NULL for the person's own; ``user_id`` must finish it
+    # (migration 0065).
+    Column("owner_id", Text),
+    # The sign-in replaces the account of an existing team connection in place (migration 0065).
+    Column("replace_account", Boolean, nullable=False, server_default="false"),
 )
 
 Index("connector_oauth_flows_expires_idx", connector_oauth_flows_table.c.expires_at)

@@ -41,6 +41,20 @@
   person who made it. ``shared_by`` is a person. Both teams cascade; the
   ``cleanup_team_item_shares`` triggers drop an item's shares when the item is
   deleted or changes owner (a move out of the team).
+* ``connector_sessions.connected_by``: the person who connected a team's
+  account (a team's connection is owned by its principal). Set exactly when
+  the owner is a principal, never a principal itself
+  (``connector_sessions_connected_by_chk``), so a team row nobody connected
+  can't be written. A team row stored before this check is kept (the check is
+  left unvalidated while one exists); it reads as having nobody to pay.
+* ``connector_oauth_flows.owner_id`` (the team principal a sign-in connects
+  for; NULL = the person's own) and ``replace_account`` (the sign-in replaces
+  the account of an existing team connection).
+* ``user_tools.connector_key``: the service of a member-mode tool that names
+  no connection; only the server writes it.
+* ``connection_owner_matches`` triggers on ``sources`` and ``user_tools``: an
+  item may only name a connection of its own owner. Existing mismatches are
+  left as they are (and counted in the log); readers already ignore them.
 
 Idempotent both ways. Downgrade refuses while any row still belongs to a
 principal; otherwise it turns ``team_editor``/``team_viewer`` back into
@@ -50,7 +64,10 @@ Revision ID: 0065_workspaces
 Revises: 0064_workspace_folders
 """
 
+import logging
+
 from alembic import op
+from sqlalchemy import text
 
 revision = "0065_workspaces"
 down_revision = "0064_workspace_folders"
@@ -92,6 +109,11 @@ _SHAREABLE = {"agents": "agent", "sources": "source", "user_tools": "tool", "pro
 
 #: What a model call was part of (``docsgpt/quotas/payer.py::RUN_KINDS``).
 _RUN_KINDS = "'chat', 'schedule', 'published', 'knowledge', 'monitor', 'drafter'"
+
+#: Tables whose rows name a connection, which must be their own owner's.
+_CONNECTION_LINKS = {"sources": "source", "user_tools": "tool"}
+
+logger = logging.getLogger("alembic.runtime.migration")
 
 #: The ``ensure_user_exists`` body of 0001, and the one that leaves existing rows alone.
 _ENSURE_USER_ANY = """
@@ -216,6 +238,98 @@ def _downgrade_outside() -> None:
     op.execute("DROP TABLE IF EXISTS team_item_shares")
     op.execute("ALTER TABLE teams DROP CONSTRAINT IF EXISTS teams_outside_policy_chk")
     op.execute("ALTER TABLE teams DROP COLUMN IF EXISTS outside_policy")
+
+
+#: A team's connection names the person who connected it; anyone else's names nobody. Never a principal.
+_CONNECTED_BY_RULE = (
+    f"(left(user_id, 8) = '{_PREFIX}') = (connected_by IS NOT NULL) "
+    f"AND (connected_by IS NULL OR left(connected_by, 8) <> '{_PREFIX}')"
+)
+
+
+def _upgrade_connections() -> None:
+    """Add who connected a team's account, team sign-ins, a member tool's service, and the owner-match triggers."""
+    op.execute("ALTER TABLE connector_sessions ADD COLUMN IF NOT EXISTS connected_by TEXT")
+    # Unvalidated while a team row from before the check exists, so the upgrade goes on; new writes are checked.
+    _add_constraint(
+        "connector_sessions", "connector_sessions_connected_by_chk", f"CHECK ({_CONNECTED_BY_RULE}) NOT VALID"
+    )
+    op.execute(
+        f"""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM connector_sessions WHERE NOT ({_CONNECTED_BY_RULE})) THEN
+                ALTER TABLE connector_sessions VALIDATE CONSTRAINT connector_sessions_connected_by_chk;
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS connector_sessions_connected_by_idx "
+        "ON connector_sessions (connected_by) WHERE connected_by IS NOT NULL"
+    )
+
+    op.execute("ALTER TABLE connector_oauth_flows ADD COLUMN IF NOT EXISTS owner_id TEXT")
+    op.execute(
+        "ALTER TABLE connector_oauth_flows ADD COLUMN IF NOT EXISTS replace_account BOOLEAN NOT NULL DEFAULT false"
+    )
+    op.execute("ALTER TABLE user_tools ADD COLUMN IF NOT EXISTS connector_key TEXT")
+
+    # An item runs with its connection's account, so the two must have one owner. A write that leaves both
+    # columns as they were passes, so an older mismatched row can still be edited.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION connection_owner_matches() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        DECLARE
+            owner text;
+        BEGIN
+            IF NEW.connection_id IS NULL THEN
+                RETURN NEW;
+            END IF;
+            IF TG_OP = 'UPDATE' AND NEW.connection_id IS NOT DISTINCT FROM OLD.connection_id
+               AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id THEN
+                RETURN NEW;
+            END IF;
+            SELECT user_id INTO owner FROM connector_sessions WHERE id = NEW.connection_id;
+            IF FOUND AND owner IS DISTINCT FROM NEW.user_id THEN
+                RAISE EXCEPTION 'A % may only use a connection of its own owner', TG_ARGV[0]
+                    USING ERRCODE = 'check_violation';
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+        """
+    )
+    bind = op.get_bind()
+    for table, kind in _CONNECTION_LINKS.items():
+        op.execute(f"DROP TRIGGER IF EXISTS {table}_connection_owner_matches ON {table}")
+        op.execute(
+            f"CREATE TRIGGER {table}_connection_owner_matches BEFORE INSERT OR UPDATE OF connection_id, user_id "
+            f"ON {table} FOR EACH ROW EXECUTE FUNCTION connection_owner_matches('{kind}')"
+        )
+        mismatched = bind.execute(
+            text(
+                f"SELECT count(*) FROM {table} t JOIN connector_sessions c ON c.id = t.connection_id "
+                "WHERE c.user_id <> t.user_id"
+            )
+        ).scalar()
+        if mismatched:
+            logger.warning(
+                "0065: %d %s(s) name a connection of another owner; left as they are (never used).", mismatched, kind
+            )
+
+
+def _downgrade_connections() -> None:
+    """Drop the owner-match triggers, a member tool's service, team sign-ins and who connected a team's account."""
+    for table in _CONNECTION_LINKS:
+        op.execute(f"DROP TRIGGER IF EXISTS {table}_connection_owner_matches ON {table}")
+    op.execute("DROP FUNCTION IF EXISTS connection_owner_matches()")
+    op.execute("ALTER TABLE user_tools DROP COLUMN IF EXISTS connector_key")
+    op.execute("ALTER TABLE connector_oauth_flows DROP COLUMN IF EXISTS replace_account")
+    op.execute("ALTER TABLE connector_oauth_flows DROP COLUMN IF EXISTS owner_id")
+    op.execute("DROP INDEX IF EXISTS connector_sessions_connected_by_idx")
+    op.execute("ALTER TABLE connector_sessions DROP CONSTRAINT IF EXISTS connector_sessions_connected_by_chk")
+    op.execute("ALTER TABLE connector_sessions DROP COLUMN IF EXISTS connected_by")
 
 
 def upgrade() -> None:
@@ -346,6 +460,9 @@ def upgrade() -> None:
     # Who may take the team's items outside, and its shares with other teams.
     _upgrade_outside()
 
+    # Accounts a team Admin connects for the team.
+    _upgrade_connections()
+
 
 def downgrade() -> None:
     """Refuse while a principal owns rows; otherwise drop principals, fold roles back and drop the columns."""
@@ -383,6 +500,7 @@ def downgrade() -> None:
         """
     )
 
+    _downgrade_connections()
     _downgrade_outside()
 
     op.execute("DROP INDEX IF EXISTS token_usage_team_ts_idx")
