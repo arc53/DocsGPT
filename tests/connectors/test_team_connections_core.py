@@ -355,8 +355,8 @@ class TestAccountUsable:
         with _patch_db(pg_conn):
             with pytest.raises(service.ConnectionUnavailable):
                 service.read_mcp_secrets(principal, base, str(row["id"]))
-            with pytest.raises(service.ConnectionUnavailable):
-                service.read_mcp_secrets(principal, base)
+            # Without its id a team's sign-in is never found, paused or not.
+            assert service.read_mcp_secrets(principal, base) == {}
             with pytest.raises(service.ConnectionUnavailable):
                 service.update_mcp_secrets(principal, base, {"tokens": {"access_token": "u"}},
                                            connection_id=str(row["id"]))

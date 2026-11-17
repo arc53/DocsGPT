@@ -1982,10 +1982,12 @@ def _tool_run_state(conn: Connection, tool: dict, owner: Optional[str], policies
         MODE_MEMBER,
         REMOVED_CONNECTION_KEY,
         connection_stop_reason,
+        is_connectionless_member,
         resolve_connection,
     )
 
-    if not tool.get("connection_id"):
+    # A member-mode tool without a connection (a team's) still resolves: by the service it names.
+    if not tool.get("connection_id") and not is_connectionless_member(tool):
         reason = connection_stop_reason(tool, None)
         if reason is not None:
             marker = (tool.get("config") or {}).get(REMOVED_CONNECTION_KEY)

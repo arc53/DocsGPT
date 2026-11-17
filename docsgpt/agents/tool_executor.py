@@ -41,7 +41,7 @@ from docsgpt.storage.db.repositories.tool_call_attempts import (
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
-from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id
+from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,21 @@ _RESULT_WITHHELD = "[Output withheld: the time limit stopped its guardrail check
 #: tool owner's id. The plaintext ``value`` of those entries is kept empty.
 API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
 API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
+# ``error_type`` of a call refused because it would use a team's connection
+# outside the team (an API key, widget, webhook or public link caller, or
+# someone the tool reached through another team), and of one whose team
+# connection is paused.
+TEAM_CONNECTION_OUTSIDE = "team_connection_outside"
+CONNECTION_PAUSED = "connection_paused"
+
+
+def _connection_backed(tool_data: Dict) -> bool:
+    """Whether a tool runs on a connection: it names one, or it runs on each caller's own (member mode)."""
+    if tool_data.get("client_side"):
+        return False
+    return bool(tool_data.get("connection_id")) or tool_data.get("credential_mode") == "member"
+
+
 # Tools that label their hits ``[n]`` from the answer's citation registry.
 CITING_TOOLS = frozenset({"internal_search", "graph_search"})
 # The actions whose result is made of hits the agent's ``retrieval_screen``
@@ -812,6 +827,9 @@ class ToolExecutor:
         self._connections: Dict[str, Any] = {}
         # Tool parameters those connections set (Telegram's default chat).
         self._connection_params: Dict[str, Dict] = {}
+        # Whether the run's reader is in a team, by team id, for the team
+        # connections this turn's tools run on.
+        self._team_readers: Dict[str, bool] = {}
         # Calls the user approved on an approval card (set by the resume
         # path), and the call running now: ``monitor`` binds an approval only
         # when the call that creates it was really approved.
@@ -871,9 +889,77 @@ class ToolExecutor:
             tools = self._get_tools_by_agent_id(self.agent_id)
         else:
             tools = self._get_user_tools(self.user or "local")
+        tools = {key: tool for key, tool in tools.items() if not self._held_in_team(tool)}
         if self.client_tools:
             self.merge_client_tools(tools, self.client_tools)
         return tools
+
+    def _held_in_team(self, tool: Any) -> bool:
+        """Whether a tool on a team's connection is left out because this caller is outside the team.
+
+        Logged, like any team item a run's reader can't use; nothing is
+        deleted, and the call-time checks refuse it again should it come
+        back (a paused turn's saved tools).
+        """
+        if not isinstance(tool, dict) or not tool.get("connection_id") or not is_principal_id(tool.get("user_id")):
+            return False
+        if not self._team_connection_refused(self._resolve_connection(tool)):
+            return False
+        logger.info(
+            "team_connection_tool_held_back",
+            extra={"tool_id": str(tool.get("id") or ""), "tool_owner": tool.get("user_id"),
+                   "invoker": self.user, "agent_id": self.agent_id},
+        )
+        return True
+
+    def _team_connection_refused(self, resolved) -> bool:
+        """Whether a call would run a team's connection for someone outside that team.
+
+        A tool on a team's own account (owner mode) runs only for the team's
+        members, in the app: never for an API-key, widget, webhook or public
+        link caller, nor for a reader who reached it through another team or
+        has left. The team itself (a scheduled run of its agent) reads as its
+        reader, whoever set the schedule. A member-mode tool runs on each
+        caller's own account, so it is never refused here.
+
+        Args:
+            resolved: What :func:`resolve_connection` picked, or None.
+
+        Returns:
+            True when the call must not run.
+        """
+        from docsgpt.connectors.resolve import MODE_MEMBER
+
+        row = resolved.row if resolved is not None else None
+        if row is None or resolved.mode == MODE_MEMBER or not is_principal_id(row.get("user_id")):
+            return False
+        if self.external_caller or self.public_link_caller:
+            return True
+        # Lazy: docsgpt.api's package import pulls in every route module.
+        from docsgpt.api.user.resource_access import current_run_reader
+
+        reader = current_run_reader()
+        if reader is None:
+            reader = self.user
+        if not reader:
+            return True
+        team_owner = row.get("user_id")
+        if reader == team_owner:
+            return False
+        team_id = team_of_principal(team_owner)
+        key = f"{team_id}:{reader}"
+        if key not in self._team_readers:
+            from docsgpt.workspaces.roles import team_role_for
+
+            try:
+                with db_readonly() as conn:
+                    self._team_readers[key] = team_role_for(conn, reader, team_id) is not None
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
+                logger.exception("team membership lookup failed for a team connection")
+                self._team_readers[key] = False
+        return not self._team_readers[key]
 
     def get_enabled_tool_names(self) -> set:
         """Return the set of tool names enabled for this context.
@@ -1221,7 +1307,7 @@ class ToolExecutor:
 
     def _connection_names(self, tool_data: Dict) -> Optional[Tuple[str, str]]:
         """``(service, account)`` a connection tool runs with, e.g. ``("Telegram", "Alerts bot")``."""
-        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+        if not _connection_backed(tool_data):
             return None
         resolved = self._resolve_connection(tool_data)
         if resolved is None or resolved.row is None:
@@ -1302,7 +1388,7 @@ class ToolExecutor:
 
     def _resolve_connection(self, tool_data: Dict):
         """The connection a connection-backed tool runs with this turn, or None."""
-        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+        if not _connection_backed(tool_data):
             return None
         key = str(tool_data.get("id") or tool_data.get("connection_id"))
         if key not in self._connections:
@@ -1324,7 +1410,7 @@ class ToolExecutor:
         connection (and so their own chat) applies. Only connectors with
         such fields are looked up.
         """
-        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+        if not _connection_backed(tool_data):
             return {}
         from docsgpt.connectors import catalog
 
@@ -1451,10 +1537,29 @@ class ToolExecutor:
                 "thought_signature": getattr(call, "thought_signature", None),
             }
 
+        # A tool on a team's own account never runs outside the team, and
+        # not while that account is paused; nobody in this chat can change
+        # either, so the call is refused rather than paused on a card.
+        resolved = self._resolve_connection(tool_data)
+        refusal = self._team_connection_denial(resolved)
+        if refusal is not None:
+            error_type, reason = refusal
+            return {
+                "call_id": call_id,
+                "name": llm_name,
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "llm_name": llm_name,
+                "arguments": arguments,
+                "pause_type": "headless_denied",
+                "deny_reason": reason,
+                "error_type": error_type,
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
         # A tool whose connection needs signing in pauses on a Connect card
         # (the approval card's connection variant) instead of failing; the
         # user connects, then continues, and the pending call resumes.
-        resolved = self._resolve_connection(tool_data)
         if resolved is not None and not resolved.available:
             if self.headless or self.external_caller:
                 return {
@@ -1839,6 +1944,29 @@ class ToolExecutor:
         yield {"type": "tool_call", "data": dict(record)}
         self.tool_calls.append(record)
         return record["result"], call_id
+
+    def _team_connection_denial(self, resolved) -> Optional[Tuple[str, str]]:
+        """``(error_type, reason)`` when a team connection keeps this call from running, else None.
+
+        Args:
+            resolved: What :func:`resolve_connection` picked, or None.
+
+        Returns:
+            :data:`TEAM_CONNECTION_OUTSIDE` for a caller outside the team,
+            :data:`CONNECTION_PAUSED` while the account is paused, or None.
+        """
+        if resolved is None:
+            return None
+        service_name = resolved.connector_name or "this service"
+        if self._team_connection_refused(resolved):
+            return TEAM_CONNECTION_OUTSIDE, (
+                f"This tool uses a team's {service_name} account, which only that team's members can use in the app."
+            )
+        if resolved.paused_for is not None:
+            return CONNECTION_PAUSED, (
+                f"The team's {service_name} account is paused. A team Admin can reconnect it in Connectors."
+            )
+        return None
 
     def _on_owner_credentials(self, tool_data: Dict, resolved, action_name: Optional[str] = None) -> bool:
         """Whether a call would act with credentials the caller doesn't hold.
@@ -2694,13 +2822,25 @@ class ToolExecutor:
             # agentless path where the tool row carries no user_id.
             tool_owner = tool_data.get("user_id") or self.user
             resolved = self._resolve_connection(tool_data)
+            member = tool_data.get("credential_mode") == "member"
+            if resolved is None and member:
+                # A tool on each caller's own account whose account could not
+                # be looked up never falls back to its owner's (a team's).
+                from docsgpt.connectors.service import ConnectionUnavailable
+
+                raise ConnectionUnavailable(f"{tool_data.get('name') or 'This service'} needs to be connected")
             if tool_data["name"] == "mcp_tool":
                 # MCP OAuth tokens are read as the account the call runs on:
                 # the resolved connection's owner (a member's own in member
-                # mode), else the tool owner, so a shared server without a
-                # connection runs on the owner's sign-in like every other
-                # credential.
-                load_user = ((resolved.row or {}).get("user_id") if resolved else None) or tool_owner
+                # mode, else nobody: never the tool owner), else the tool
+                # owner, so a shared server without a connection runs on the
+                # owner's sign-in like every other credential.
+                from docsgpt.connectors.resolve import MODE_MEMBER
+
+                if resolved is not None and resolved.mode == MODE_MEMBER:
+                    load_user = (resolved.row or {}).get("user_id") or self.user
+                else:
+                    load_user = ((resolved.row or {}).get("user_id") if resolved else None) or tool_owner
             if resolved is not None:
                 self._apply_connection(tool_data, tool_id, tool_config, resolved)
             elif tool_config.get("encrypted_credentials") and tool_owner:
@@ -2814,6 +2954,16 @@ class ToolExecutor:
             f"{resolved.connector_name or 'This service'} needs to be connected",
             connection_id=resolved.connection_id,
         )
+        denial = self._team_connection_denial(resolved)
+        if denial is not None:
+            logger.warning(
+                "team connection refused for tool %s: %s", tool_data.get("id") or tool_id, denial[0],
+            )
+            raise service.ConnectionUnavailable(
+                denial[1], connection_id=resolved.connection_id,
+                status=service.STATUS_PAUSED if denial[0] == CONNECTION_PAUSED else service.STATUS_RECONNECT,
+                paused_for=resolved.paused_for if denial[0] == CONNECTION_PAUSED else None,
+            )
         if not resolved.available or resolved.row is None:
             raise unavailable
         tool_name = tool_data.get("name")

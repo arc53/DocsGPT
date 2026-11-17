@@ -1450,6 +1450,12 @@ def _mcp_row(conn, user_id: str, base_url: str, connection_id: Optional[str], *,
         if row is None or row.get("provider") != mcp_provider(base_url):
             return None
         return row
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if is_principal_id(user_id):
+        # A team's sign-in is only ever used by its connection's id: a tool
+        # that names none (one on each person's own account) never borrows it.
+        return None
     result = conn.execute(
         text(
             "SELECT * FROM connector_sessions WHERE user_id = :user_id AND provider = :provider "
