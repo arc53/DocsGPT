@@ -556,6 +556,107 @@ class TestSecurityDispatchSSRFGuard:
             "endpoints"
         )
 
+    # A team's custom model is as untrusted as a person's: anyone can make a team and point
+    # its model at a host they control, so every dispatch-time check covers it too.
+
+    _TEAM = "__team__3f6c0a52-8b1e-4f7a-9a43-0d2e6b1c9e11"
+
+    def _seed_team_model(self, reg, uuid, base_url, api_key="sk-team"):
+        from docsgpt.core.model_settings import AvailableModel, ModelProvider
+
+        _seed_user_layer(
+            reg,
+            self._TEAM,
+            {
+                uuid: AvailableModel(
+                    id=uuid,
+                    provider=ModelProvider.OPENAI_COMPATIBLE,
+                    display_name="team",
+                    base_url=base_url,
+                    upstream_model_id="model-x",
+                    source="team",
+                    api_key=api_key,
+                )
+            },
+        )
+
+    def test_dispatch_rejects_team_model_with_unsafe_base_url(self, pg_conn):
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s):
+            reg = ModelRegistry()
+            uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0201"
+            self._seed_team_model(reg, uuid, "http://169.254.169.254/v1")
+
+            from docsgpt.llm.llm_creator import LLMCreator
+
+            with pytest.raises(ValueError, match="Refusing to dispatch"):
+                LLMCreator.create_llm(
+                    type="openai_compatible",
+                    api_key="some-key",
+                    user_api_key=None,
+                    decoded_token={"sub": "alice"},
+                    model_id=uuid,
+                    model_user_id=self._TEAM,
+                )
+
+    def test_dispatch_injects_pinned_http_client_for_team_model(self, pg_conn):
+        import httpx2
+
+        captured: dict = {}
+
+        class _FakeLLM:
+            def __init__(self, api_key, user_api_key, *a, **kw):
+                captured["http_client"] = kw.get("http_client")
+
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.security.safe_url.socket.getaddrinfo"
+        ) as gai:
+            gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
+            reg = ModelRegistry()
+            uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0202"
+            self._seed_team_model(reg, uuid, "https://api.mistral.ai/v1")
+
+            from docsgpt.llm.llm_creator import LLMCreator
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+            with patch.object(PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM):
+                LLMCreator.create_llm(
+                    type="openai_compatible",
+                    api_key="caller-key",
+                    user_api_key=None,
+                    decoded_token={"sub": "alice"},
+                    model_id=uuid,
+                    model_user_id=self._TEAM,
+                )
+
+        client = captured["http_client"]
+        try:
+            assert isinstance(client, httpx2.Client)
+            assert client.follow_redirects is False
+        finally:
+            if client is not None:
+                client.close()
+
+    def test_llmcreator_refuses_team_model_with_no_api_key(self, pg_conn):
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s):
+            reg = ModelRegistry()
+            uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0203"
+            self._seed_team_model(reg, uuid, "https://api.mistral.ai/v1", api_key=None)
+
+            from docsgpt.llm.llm_creator import LLMCreator
+
+            with pytest.raises(ValueError, match="no usable API key"):
+                LLMCreator.create_llm(
+                    type="openai_compatible",
+                    api_key="settings-api-key-DO-NOT-LEAK",
+                    user_api_key=None,
+                    decoded_token={"sub": "alice"},
+                    model_id=uuid,
+                    model_user_id=self._TEAM,
+                )
+
 
 @pytest.mark.unit
 class TestSharedAgentResolvesOwnerBYOM:

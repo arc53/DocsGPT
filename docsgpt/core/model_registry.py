@@ -51,6 +51,24 @@ logger = logging.getLogger(__name__)
 _USER_CACHE_TTL_SECONDS = 60.0
 _USER_VERSION_KEY_PREFIX = "byom:registry_version:"
 
+#: Sources of models whose endpoint and key someone typed in (a person's or a team's).
+CUSTOM_MODEL_SOURCES = frozenset({"user", "team"})
+
+
+def is_custom_source(model: object) -> bool:
+    """Whether ``model`` is a custom model: a person's or a team's, not the operator's catalog.
+
+    Anyone can add one (a team takes no more than creating it), so its endpoint is untrusted and
+    every dispatch-time guard (base URL re-check, pinned client, own-key rule) must cover it.
+
+    Args:
+        model: An ``AvailableModel`` or anything with a ``source`` attribute; ``None`` is not custom.
+
+    Returns:
+        bool: True for ``source`` ``"user"`` or ``"team"``.
+    """
+    return getattr(model, "source", "builtin") in CUSTOM_MODEL_SOURCES
+
 
 class ModelRegistry:
     """Singleton registry of available models.
