@@ -293,7 +293,8 @@ class TestImportRefusals:
         assert plan["tools"][0]["status"] != "reuse"
         assert plan["prompt"]["status"] == "create"
         assert [m["status"] for m in plan["models"]] == ["unavailable", "unavailable"]
-        assert plan["models"][0]["reason"] == "custom_model_personal_only"
+        # The team has no such model and an Editor may not add one.
+        assert plan["models"][0]["reason"] == "custom_model_admin_required"
         assert plan["models"][0]["requires_secrets"] == []
 
         resolution = {

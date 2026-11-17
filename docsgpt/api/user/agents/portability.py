@@ -7,12 +7,16 @@ resources or creating them from the file plus user-supplied tokens. In a
 team every row an import writes is the team's (owned by its principal, with
 the importer as creator, secrets sealed to the team), and a reference
 resolves among the team's own items only; a Personal import never matches a
-team's items. A team's agents can't use a custom model yet.
+team's items. A team's agent uses the team's custom models: a described
+model reuses the team's one with the same endpoint, and only a team Admin
+adds a missing one (in the app, never with a token). An export shows a
+team model's endpoint only to the team's Admins.
 
 Re-import is idempotent at every level: the agent is matched by
 ``metadata.id`` then ``metadata.slug``, tools by ``(type, name)``,
 prompts by ``(name, content)``, custom models by
-``(display_name, upstream_model_id, base_url)`` — so the same file
+``(display_name, upstream_model_id, base_url)`` (a team's by endpoint and
+upstream id alone) — so the same file
 applied twice updates rather than duplicating.
 
 Knowledge folders an agent (or a workflow agent node) reads live travel as
@@ -41,7 +45,7 @@ from collections import Counter
 from typing import Any, NamedTuple, Optional
 
 import yaml
-from flask import current_app, jsonify, make_response, request
+from flask import current_app, has_request_context, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
 from docsgpt.agents.default_tools import (
@@ -52,6 +56,7 @@ from docsgpt.agents.default_tools import (
 )
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
+from docsgpt.api.pat.tokens import is_pat
 from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
 from docsgpt.api.user.resource_access import (
     AccessDenied,
@@ -63,6 +68,7 @@ from docsgpt.api.user.resource_access import (
     workspace_minimum,
 )
 from docsgpt.connectors.resolve import carry_removed_connection
+from docsgpt.core.model_registry import ModelRegistry
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
@@ -88,8 +94,15 @@ from docsgpt.workspaces.context import (
     require_workspace_role,
 )
 from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_EDITORS, POLICY_LOCKED, team_policy
-from docsgpt.workspaces.principal import is_principal_id
-from docsgpt.workspaces.roles import role_at_least
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
+from docsgpt.workspaces.team_models import (
+    CODE_CUSTOM_MODEL_ADMIN_REQUIRED,
+    CODE_NOT_AVAILABLE_TO_TOKENS,
+    MODEL_ACTIONS,
+    matching_model,
+    unowned_custom_models,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -182,21 +195,42 @@ def _refuse_outside(conn, owner: str, actor: str, refs) -> None:
     raise ImportWorkspaceMismatch(bad, body)
 
 
-def _team_custom_models(conn, owner: str, model_ids) -> set[str]:
-    """The custom models among ``model_ids`` a team's agent can't run with (any, for now); empty in Personal."""
-    if not is_principal_id(owner):
-        return set()
-    from docsgpt.api.user.workflows.routes import personal_custom_models
+def _unowned_models(conn, owner: str, model_ids) -> set[str]:
+    """The custom models among ``model_ids`` an agent of ``owner`` can't run with: anyone else's (lower-case).
 
-    ids = [str(m) for m in model_ids if m]
-    return {str(m).lower() for m in personal_custom_models(conn, owner, ids)}
+    A custom model resolves in its owner's account, so a team's agent may name only the team's models and a
+    person's agent only their own.
+    """
+    return {str(m).lower() for m in unowned_custom_models(conn, owner, [str(m) for m in model_ids if m])}
 
 
-def _custom_model_code() -> str:
-    """The ``reason`` a team's plan gives a custom model: ``custom_model_personal_only``."""
-    from docsgpt.api.user.workflows.routes import CODE_CUSTOM_MODEL_PERSONAL_ONLY
+def _model_add_refusal(team: bool, role: Optional[str]) -> Optional[str]:
+    """Why this import may not add a custom model to its workspace, or None when it may.
 
-    return CODE_CUSTOM_MODEL_PERSONAL_ONLY
+    A person adds their own models freely. A team's model carries the team's provider key, so only its
+    Admins and Owner add one, and only in the app (never with a personal access token).
+
+    Args:
+        team: Whether the import lands in a team.
+        role: The importer's role there.
+
+    Returns:
+        ``not_available_to_tokens``, ``custom_model_admin_required`` or None.
+    """
+    if not team:
+        return None
+    if has_request_context() and is_pat(getattr(request, "decoded_token", None)):
+        return CODE_NOT_AVAILABLE_TO_TOKENS
+    if not role_at_least(role, MODEL_ACTIONS["manage"]):
+        return CODE_CUSTOM_MODEL_ADMIN_REQUIRED
+    return None
+
+
+def _model_left_off(display_name: str, refusal: str) -> str:
+    """The warning for a described custom model the import may not add to the team."""
+    if refusal == CODE_NOT_AVAILABLE_TO_TOKENS:
+        return f"Custom model '{display_name}' isn't the team's yet, and a token can't add one; it will be left off"
+    return f"Custom model '{display_name}' isn't the team's yet, and only a team Admin can add it; it will be left off"
 
 
 def _team_tool_refusal(tool_type: str, config: Optional[dict]) -> Optional[str]:
@@ -708,8 +742,20 @@ def _serialize_tools(conn, agent: dict, user: str) -> list:
     return out
 
 
-def _serialize_models(conn, agent: dict, user: str) -> dict:
+def _serialize_models(conn, agent: dict, user: str, *, endpoints: bool = True) -> dict:
+    """The portable ``spec.model`` block: catalog ids as they are, custom models described.
+
+    Args:
+        conn: Open connection.
+        agent: The agent row (or the ids a workflow's nodes name).
+        user: The owner the custom models resolve as.
+        endpoints: Whether a team's model carries its base URL; only the team's Admins see it.
+
+    Returns:
+        ``{default, available}``.
+    """
     repo = UserCustomModelsRepository(conn)
+    hide_endpoint = not endpoints and is_principal_id(user)
 
     def describe(model_id: str):
         mid = str(model_id)
@@ -717,7 +763,7 @@ def _serialize_models(conn, agent: dict, user: str) -> dict:
             row = repo.get(mid, user)
             if not row:
                 return None
-            return {
+            described = {
                 "type": "custom",
                 "display_name": row.get("display_name") or "",
                 "upstream_model_id": row.get("upstream_model_id") or "",
@@ -726,6 +772,9 @@ def _serialize_models(conn, agent: dict, user: str) -> dict:
                 "requires_secrets": ["api_key"],
                 "ref": mid,
             }
+            if hide_endpoint:
+                del described["base_url"]
+            return described
         return mid
 
     available = []
@@ -770,7 +819,9 @@ def _strip_shadowed_ref_keys(config: dict) -> None:
             config.pop(key, None)
 
 
-def _serialize_workflow(conn, agent: dict, user: str, exporter: Optional[str] = None):
+def _serialize_workflow(
+    conn, agent: dict, user: str, exporter: Optional[str] = None, *, model_endpoints: bool = True
+):
     """Build the portable ``spec.workflow`` block plus its reference sections.
 
     Agent nodes hold raw tool/source/folder/model ids; those are collected
@@ -779,7 +830,8 @@ def _serialize_workflow(conn, agent: dict, user: str, exporter: Optional[str] = 
     configs are rewritten to portable keys: ``tool-N``, the source's name, a
     folder entry's ``folder-N`` key (two folders may share a name), a custom
     model's display name. ``exporter`` decides how much of each folder leaves
-    (see :func:`_serialize_folders`); it defaults to ``user``. Returns
+    (see :func:`_serialize_folders`); it defaults to ``user``.
+    ``model_endpoints`` is as in :func:`serialize_agent`. Returns
     ``(workflow_block, tools, sources, model)``; the block is None when the
     agent has no resolvable workflow.
     """
@@ -840,7 +892,9 @@ def _serialize_workflow(conn, agent: dict, user: str, exporter: Optional[str] = 
         folder_key_by_id[fid] = entry["key"]
         sources.append(entry)
 
-    model = _serialize_models(conn, {"models": model_ids, "default_model_id": ""}, user)
+    model = _serialize_models(
+        conn, {"models": model_ids, "default_model_id": ""}, user, endpoints=model_endpoints
+    )
     model_name_by_id: dict[str, str] = {}
     for entry in model["available"]:
         if isinstance(entry, dict):
@@ -1002,7 +1056,9 @@ def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     return _valid_parts(kept)
 
 
-def serialize_agent(conn, agent: dict, user: str, exporter: Optional[str] = None) -> dict:
+def serialize_agent(
+    conn, agent: dict, user: str, exporter: Optional[str] = None, *, model_endpoints: bool = True
+) -> dict:
     """Build the portable export document for an agent row.
 
     Args:
@@ -1012,6 +1068,8 @@ def serialize_agent(conn, agent: dict, user: str, exporter: Optional[str] = None
         exporter: Whose folder tree the export may show: only its knowledge
             folders carry a path (see :func:`_serialize_folders`). Defaults
             to ``user``.
+        model_endpoints: Whether a team's custom model carries its base URL. Only the team's Admins and
+            Owner see it, so an Editor's export leaves it out.
 
     Returns:
         dict: The export document.
@@ -1022,14 +1080,16 @@ def serialize_agent(conn, agent: dict, user: str, exporter: Optional[str] = None
         # A workflow agent's behavior lives in its graph: the agent-level
         # prompt/source/tool/model slots are unused, so the top-level sections
         # instead carry the references collected from the graph's agent nodes.
-        workflow_block, tools, sources, model = _serialize_workflow(conn, agent, user, exporter)
+        workflow_block, tools, sources, model = _serialize_workflow(
+            conn, agent, user, exporter, model_endpoints=model_endpoints
+        )
         prompt = "default"
     else:
         tools = _serialize_tools(conn, agent, user)
         sources = _serialize_sources(conn, agent, user) + _serialize_folders(
             conn, agent.get("knowledge_folder_ids"), exporter
         )
-        model = _serialize_models(conn, agent, user)
+        model = _serialize_models(conn, agent, user, endpoints=model_endpoints)
         prompt = _serialize_prompt(conn, agent, user)
     spec = {
         "name": agent.get("name") or "",
@@ -1201,7 +1261,20 @@ def _find_user_tool(user_tools: list, tool_type: str, custom_name: str):
     return None
 
 
-def _find_custom_model(customs: list, spec_model: dict):
+def _find_custom_model(customs: list, spec_model: dict, *, by_endpoint: bool = False):
+    """The stored model a file's custom model entry names, or None.
+
+    Args:
+        customs: The workspace owner's models.
+        spec_model: The file's entry.
+        by_endpoint: Match on the endpoint and upstream id alone (case and trailing slash aside), so a team
+            reuses its model whatever it is called; otherwise the name must match too.
+
+    Returns:
+        The matching row, or None.
+    """
+    if by_endpoint:
+        return matching_model(customs, spec_model.get("base_url"), spec_model.get("upstream_model_id"))
     for row in customs:
         if (
             (row.get("display_name") or "") == (spec_model.get("display_name") or "")
@@ -1257,9 +1330,10 @@ def plan_import(conn, user: str, doc: dict, *, workspace: Optional[Workspace] = 
     """Resolve every reference without writing; returns a resolution report.
 
     References resolve inside the workspace only: its owner's sources, tools,
-    prompts and folder tree (the team's principal in a team, the importer in
-    Personal). A team can't take a custom model or a personal-only tool, so
-    those read ``unavailable`` with a ``reason`` code.
+    prompts, custom models and folder tree (the team's principal in a team,
+    the importer in Personal). A team can't take a personal-only tool, and a
+    custom model the team lacks is added only by an Admin, so those read
+    ``unavailable`` with a ``reason`` code.
 
     Args:
         conn: Open database connection.
@@ -1370,30 +1444,26 @@ def plan_import(conn, user: str, doc: dict, *, workspace: Optional[Workspace] = 
 
     customs = UserCustomModelsRepository(conn).list_for_user(owner)
     available_models = (spec.get("model") or {}).get("available") or []
-    refused_models = _team_custom_models(conn, owner, [m for m in available_models if isinstance(m, str)])
+    refused_models = _unowned_models(conn, owner, [m for m in available_models if isinstance(m, str)])
+    add_refusal = _model_add_refusal(team, ws.role)
     models = []
     for entry in available_models:
         if isinstance(entry, str):
             usable = entry.lower() not in refused_models and validate_model_id(entry, owner)
             models.append({"id": entry, "status": "matched" if usable else "unavailable"})
-        elif isinstance(entry, dict) and team:
-            warnings.append(
-                f"Custom model '{entry.get('display_name') or ''}' can't be used by a team's agent yet; "
-                "it will be left off"
-            )
-            models.append(
-                {
-                    "display_name": entry.get("display_name") or "",
-                    "status": "unavailable",
-                    "requires_secrets": [],
-                    "reason": _custom_model_code(),
-                }
-            )
         elif isinstance(entry, dict):
-            match = _find_custom_model(customs, entry)
+            display_name = entry.get("display_name") or ""
+            match = _find_custom_model(customs, entry, by_endpoint=team)
+            if match is None and add_refusal:
+                warnings.append(_model_left_off(display_name, add_refusal))
+                models.append(
+                    {"display_name": display_name, "status": "unavailable", "requires_secrets": [],
+                     "reason": add_refusal}
+                )
+                continue
             models.append(
                 {
-                    "display_name": entry.get("display_name") or "",
+                    "display_name": display_name,
                     "status": "reuse" if match else "create",
                     "requires_secrets": ["api_key"] if not match else [],
                 }
@@ -1863,12 +1933,33 @@ def _apply_tools(
     return out, id_by_key
 
 
-def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list):
+def _apply_models(
+    conn,
+    user: str,
+    spec: dict,
+    resolution: dict,
+    warnings: list,
+    *,
+    created_by: Optional[str] = None,
+    add_refusal: Optional[str] = None,
+):
     """Resolve the file's models for ``user`` (the workspace's owner); returns ``(models, default, name_to_id)``.
 
-    A team's agent can't use a custom model yet, so in a team every custom
-    entry is skipped with a warning and none is made, and a model id that
-    names anyone's custom model is dropped.
+    A model id that names a custom model ``user`` doesn't own is dropped. In a team a described custom model
+    reuses the team's model with the same endpoint, whatever its name; without one it is added for the team
+    (``created_by`` recorded and audited) unless ``add_refusal`` says the importer may not.
+
+    Args:
+        conn: Open connection.
+        user: The workspace's owner: the importer, or the team's principal.
+        spec: The file's ``spec``.
+        resolution: The client's picks (``models``: display name -> ``{api_key}``).
+        warnings: Collects what was left off.
+        created_by: The person importing, recorded on a model added for a team.
+        add_refusal: Why no custom model may be added (from :func:`_model_add_refusal`), or None.
+
+    Returns:
+        ``(models or None, default model id or None, display name -> id)``.
     """
     model_spec = spec.get("model") or {}
     repo = UserCustomModelsRepository(conn)
@@ -1895,11 +1986,11 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
             "references to it resolve to the last one in the file"
         )
 
-    refused = _team_custom_models(conn, user, [e for e in available if isinstance(e, str)])
+    refused = _unowned_models(conn, user, [e for e in available if isinstance(e, str)])
     for entry in available:
         if isinstance(entry, str):
             if entry.lower() in refused:
-                warnings.append(f"Model '{entry}' is a custom model, which a team's agent can't use yet; skipped")
+                warnings.append(f"Model '{entry}' is a custom model of another workspace; skipped")
             elif validate_model_id(entry, user):
                 models.append(entry)
                 name_to_id[entry] = entry
@@ -1909,13 +2000,13 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
         if not isinstance(entry, dict):
             continue
         display_name = entry.get("display_name") or ""
-        if team:
-            warnings.append(f"Custom model '{display_name}' can't be used by a team's agent yet; skipped")
-            continue
-        match = _find_custom_model(customs, entry)
+        match = _find_custom_model(customs, entry, by_endpoint=team)
         if match:
             models.append(str(match["id"]))
             name_to_id[display_name] = str(match["id"])
+            continue
+        if add_refusal:
+            warnings.append(_model_left_off(display_name, add_refusal))
             continue
         decision = decisions.get(display_name)
         api_key = decision.get("api_key") if isinstance(decision, dict) else None
@@ -1935,10 +2026,22 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
             base_url,
             api_key,
             capabilities=entry.get("capabilities") or {},
+            created_by=created_by if team else None,
         )
         if not created.get("api_key_encrypted"):
             warnings.append(f"Custom model '{display_name}' key encryption failed; skipped")
             continue
+        if team:
+            # Lazy: the models routes import much of the API. A team's model added here is audited like one
+            # added on the Custom models page.
+            from docsgpt.api.user.models.routes import _audit_team_model
+
+            _audit_team_model(
+                conn, created_by, "team.model_added", created, display_name=created["display_name"],
+                upstream_model_id=created["upstream_model_id"], copied=False,
+            )
+        # A later entry for the same model reuses this one.
+        customs.append(created)
         models.append(str(created["id"]))
         name_to_id[display_name] = str(created["id"])
 
@@ -1959,8 +2062,8 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
                 default_id = str(owned["id"])
             else:
                 warnings.append(f"Default model '{raw_default}' not resolved")
-    if default_id and _team_custom_models(conn, user, [default_id]):
-        warnings.append(f"Default model '{raw_default}' is a custom model, which a team's agent can't use yet")
+    if default_id and _unowned_models(conn, user, [default_id]):
+        warnings.append(f"Default model '{raw_default}' is a custom model of another workspace; left off")
         default_id = ""
     return (models or None), (default_id or None), name_to_id
 
@@ -1992,7 +2095,7 @@ def _rewrite_node_refs(
     they are a builtin synthetic id or ownership-check against ``user``, the
     workspace's owner (IDOR guard). Anything unresolvable is dropped with a
     warning so the graph imports degraded rather than pointing at foreign
-    resources. A team's node never keeps a custom model.
+    resources. A node keeps only a custom model the workspace's owner owns.
     """
     tools_repo = UserToolsRepository(conn)
     sources_repo = SourcesRepository(conn)
@@ -2054,8 +2157,8 @@ def _rewrite_node_refs(
     raw_model = cfg.get("model_id")
     if raw_model:
         raw_model = str(raw_model)
-        if _team_custom_models(conn, user, [raw_model]):
-            warnings.append(f"Workflow node model '{raw_model}' is a custom model a team can't use yet; removed")
+        if _unowned_models(conn, user, [raw_model]):
+            warnings.append(f"Workflow node model '{raw_model}' is a custom model of another workspace; removed")
             cfg["model_id"] = None
         elif raw_model in model_ids_by_name:
             cfg["model_id"] = model_ids_by_name[raw_model]
@@ -2283,7 +2386,8 @@ def apply_import(
     folder_ids, folder_ids_by_name = _apply_folders(conn, owner, spec, resolution, warnings)
     tool_ids, tool_ids_by_key = _apply_tools(conn, owner, spec, resolution, warnings, created_by)
     models, default_model_id, model_ids_by_name = _apply_models(
-        conn, owner, spec, resolution, warnings
+        conn, owner, spec, resolution, warnings,
+        created_by=created_by, add_refusal=_model_add_refusal(ws.is_team, ws.role),
     )
     # The resolvers look only inside the workspace; this would catch one that didn't.
     _refuse_outside(
@@ -2465,6 +2569,12 @@ agents_portability_ns = Namespace(
 )
 
 
+def _describes_custom_models(doc: dict) -> bool:
+    """Whether the file describes any custom model (one an import may add)."""
+    available = ((doc.get("spec") or {}).get("model") or {}).get("available") or []
+    return any(isinstance(entry, dict) for entry in available)
+
+
 def _read_import_payload(req):
     """Pull (yaml_text, resolution) from a JSON body or uploaded file.
 
@@ -2587,9 +2697,16 @@ class ExportAgent(Resource):
             # goes by its name alone.
             owner_id = ra.owner_id
             tree_owner = owner_id if ra.is_team_item else user
+            # A team's model's endpoint is for its Admins only (they manage the model).
+            owning_team = team_of_principal(owner_id)
+            model_endpoints = owning_team is None or role_at_least(
+                team_role_for(conn, user, owning_team), MODEL_ACTIONS["manage"]
+            )
             agent["slug"] = ensure_agent_slug(conn, agent, owner_id)
             try:
-                export = serialize_agent(conn, agent, owner_id, exporter=tree_owner)
+                export = serialize_agent(
+                    conn, agent, owner_id, exporter=tree_owner, model_endpoints=model_endpoints
+                )
             except AgentExportError as exc:
                 return make_response(
                     jsonify({"success": False, "message": str(exc)}), 400
@@ -2690,4 +2807,7 @@ class ImportAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Import failed"}), 500
             )
+        if workspace.is_team and _describes_custom_models(doc):
+            # It may have added a team model; the registry rereads the team's models once it is committed.
+            ModelRegistry.invalidate_user(workspace.owner_id)
         return make_response(jsonify({"success": True, **result}), 200)
