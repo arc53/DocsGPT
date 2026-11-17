@@ -2081,8 +2081,6 @@ class StreamProcessor:
             ):
                 agent_type = "workflow"
                 self.agent_config["workflow"] = self.data["workflow"]
-                if isinstance(self.decoded_token, dict):
-                    self.agent_config["workflow_owner"] = self.decoded_token.get("sub")
                 # A saved workflow id alongside the embedded graph (builder
                 # Preview) lets the run persist a ``workflow_runs`` row so its
                 # artifacts are listable + authz'd; ownership is re-checked on
@@ -2090,6 +2088,10 @@ class StreamProcessor:
                 preview_workflow_id = self.data.get("workflow_id")
                 if preview_workflow_id:
                     self.agent_config["workflow_id"] = str(preview_workflow_id)
+                if isinstance(self.decoded_token, dict):
+                    self.agent_config["workflow_owner"] = self._preview_workflow_owner(
+                        preview_workflow_id, self.decoded_token.get("sub")
+                    )
 
             self.workspace_team_id = self._chat_workspace(caller, has_agent=False)
             caller = self.decoded_token.get("sub") if isinstance(self.decoded_token, dict) else None
@@ -2118,6 +2120,38 @@ class StreamProcessor:
             # An explicit json_object request beats an agent-configured schema
             # (otherwise the configured json_schema would silently override it).
             self.agent_config["json_schema"] = None
+
+    @staticmethod
+    def _preview_workflow_owner(workflow_id: Any, caller: Optional[str]) -> Optional[str]:
+        """Whom a builder Preview of a saved workflow runs as.
+
+        A team's workflow is owned by the team, so a member's Preview has to run
+        as the team for its run to save under the workflow and for its folders
+        and sources to resolve. Only a caller who may edit the workflow gets
+        that: they could save the same graph and run it anyway. Anyone else
+        previews as themselves, which finds no row and so persists nothing.
+
+        Args:
+            workflow_id: The saved workflow's id from the request, if any.
+            caller: The signed-in caller.
+
+        Returns:
+            The workflow's owner, or ``caller``.
+        """
+        if not workflow_id or not caller:
+            return caller
+        from docsgpt.api.user.resource_access import AccessDenied
+        from docsgpt.api.user.workflows.routes import _workflow_access
+
+        try:
+            with db_readonly() as conn:
+                workflow, _acting = _workflow_access(conn, str(workflow_id), caller, "edit")
+        except AccessDenied:
+            return caller
+        except Exception:
+            logger.exception("Preview workflow owner lookup failed; running as the caller.")
+            return caller
+        return workflow.get("user_id") or caller
 
     def _configured_source_chunks(self) -> Optional[int]:
         """Return the top-k a source explicitly configured, or None.

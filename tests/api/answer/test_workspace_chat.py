@@ -388,6 +388,41 @@ class TestAnExMembersOldTeamChat:
         assert "conversation_not_found" in response.get_data(as_text=True)
 
 
+class TestTeamWorkflowPreview:
+    """A builder Preview names its saved workflow; it runs as that workflow's owner when the caller may edit it."""
+
+    def _preview(self, conn, caller, workflow_id, workspace=None):
+        body = {"question": "q", "workflow": {"nodes": [], "edges": []}, "workflow_id": workflow_id}
+        with _request(workspace, caller=caller):
+            proc = _processor(body, caller)
+            proc._configure_agent()
+        return proc.agent_config
+
+    def test_an_editor_previews_the_teams_workflow_as_the_team(self, use_conn):
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        tid, principal = _team(use_conn)
+        wid = str(WorkflowsRepository(use_conn).create(principal, "wf")["id"])
+        config = self._preview(use_conn, "eddie", wid, workspace=tid)
+        assert config["workflow_owner"] == principal
+        assert config["workflow_id"] == wid
+
+    def test_the_callers_own_workflow_stays_theirs(self, use_conn):
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        wid = str(WorkflowsRepository(use_conn).create("vera", "wf")["id"])
+        assert self._preview(use_conn, "vera", wid)["workflow_owner"] == "vera"
+
+    @pytest.mark.parametrize("caller", ["vera", "eve"])
+    def test_a_caller_who_cannot_edit_it_gains_nothing(self, use_conn, caller):
+        """A viewer or a stranger with the id previews as themselves, so no team row resolves."""
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        _, principal = _team(use_conn)
+        wid = str(WorkflowsRepository(use_conn).create(principal, "wf")["id"])
+        assert self._preview(use_conn, caller, wid)["workflow_owner"] == caller
+
+
 class TestRoutesAnswerTheWorkspaceRefusal:
     @pytest.mark.parametrize("route", ["/api/answer", "/stream"])
     def test_mismatch_is_409(self, monkeypatch, route):
