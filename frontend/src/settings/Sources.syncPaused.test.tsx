@@ -25,7 +25,31 @@ vi.mock('react-redux', () => ({
       preference: { token: null, sourceDocs: [] },
       upload: { tasks: [] },
       graphBuild: { builds: {} },
-      connectors: { connections: [], loaded: true, startedSyncs: [] },
+      connectors: {
+        connections: [],
+        loaded: true,
+        startedSyncs: [],
+        // The team's Drive, connected by Lena.
+        teams: {
+          t1: {
+            catalog: [],
+            connections: [
+              {
+                id: 'team-conn',
+                connector_key: 'google_drive',
+                status: 'paused',
+                owner: 'team',
+                team_id: 't1',
+                connected_by: { user_id: 'lena', label: 'Lena' },
+              },
+            ],
+            loaded: true,
+            loading: false,
+            failed: false,
+            latestRequestId: null,
+          },
+        },
+      },
       notifications: { recentEvents: [] },
       folders: {
         tree: {
@@ -198,5 +222,53 @@ describe('a team source whose scheduled sync nobody can pay for', () => {
     expect(container.querySelector('[data-testid="chunks"]')).not.toBeNull();
     const alert = container.querySelector('[data-variant="warning"]');
     expect(alert?.textContent).toContain('settings.sources.syncPaused.noPayer');
+  });
+});
+
+// A team source that syncs through an account connected for the team: why
+// it doesn't sync, naming whoever connected it.
+describe('a team source whose team account is paused', () => {
+  const line = () => card()?.querySelector('[data-sync-paused]')?.textContent;
+
+  it('says no sync runs while whoever connected it is gone', async () => {
+    await mount(
+      teamDoc({
+        reason: 'payer_left',
+        until: null,
+        left_team: true,
+        connection_id: 'team-conn',
+      }),
+    );
+    expect(line()).toBe(
+      'settings.sources.syncPaused.account(reason=payer.common.pause.payerLeftTeam(name=Lena,team=Operations))',
+    );
+  });
+
+  it('says only the schedule waits while they are out of allowance', async () => {
+    await mount(
+      teamDoc({
+        reason: 'payer_out_of_allowance',
+        until: `${THIS_YEAR}-12-01T00:00:00Z`,
+        left_team: null,
+        connection_id: 'team-conn',
+      }),
+    );
+    expect(line()).toMatch(
+      /^settings\.sources\.syncPaused\.scheduled\(reason=payer\.common\.pause\.outOfAllowance\(name=Lena,date=.+\)\)$/,
+    );
+  });
+
+  it('still words the pause when the connection is not listed', async () => {
+    await mount(
+      teamDoc({
+        reason: 'owner_inactive',
+        until: null,
+        left_team: null,
+        connection_id: 'gone',
+      }),
+    );
+    expect(line()).toBe(
+      'settings.sources.syncPaused.account(reason=payer.common.pause.ownerInactive)',
+    );
   });
 });

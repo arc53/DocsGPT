@@ -4502,10 +4502,12 @@
       },
       "syncNow": "立即同步",
       "syncPaused": {
+        "account": "同步已暂停：{{reason}}",
         "noPayer": "定时同步已暂停：团队中没有人可以为其付费。",
         "noPayerSince": "定时同步自 {{date}} 起暂停：团队中没有人可以为其付费。",
         "other": "定时同步已暂停。",
-        "otherSince": "定时同步自 {{date}} 起暂停。"
+        "otherSince": "定时同步自 {{date}} 起暂停。",
+        "scheduled": "定时同步已暂停：{{reason}}"
       },
       "syncStarted": "正在同步 {{name}}…",
       "syncing": "同步中...",

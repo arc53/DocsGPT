@@ -4537,10 +4537,12 @@
       },
       "syncNow": "Jetzt synchronisieren",
       "syncPaused": {
+        "account": "Synchronisierung pausiert: {{reason}}",
         "noPayer": "Geplante Synchronisierung pausiert: Niemand im Team kann dafür bezahlen.",
         "noPayerSince": "Geplante Synchronisierung seit {{date}} pausiert: Niemand im Team kann dafür bezahlen.",
         "other": "Geplante Synchronisierung pausiert.",
-        "otherSince": "Geplante Synchronisierung seit {{date}} pausiert."
+        "otherSince": "Geplante Synchronisierung seit {{date}} pausiert.",
+        "scheduled": "Geplante Synchronisierung pausiert: {{reason}}"
       },
       "syncStarted": "{{name}} wird synchronisiert…",
       "syncing": "Synchronisiere...",

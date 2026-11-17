@@ -4504,10 +4504,12 @@
       },
       "syncNow": "立即同步",
       "syncPaused": {
+        "account": "同步已暫停：{{reason}}",
         "noPayer": "排程同步已暫停：團隊中沒有人能為其付費。",
         "noPayerSince": "排程同步自 {{date}} 起暫停：團隊中沒有人能為其付費。",
         "other": "排程同步已暫停。",
-        "otherSince": "排程同步自 {{date}} 起暫停。"
+        "otherSince": "排程同步自 {{date}} 起暫停。",
+        "scheduled": "排程同步已暫停：{{reason}}"
       },
       "syncStarted": "正在同步 {{name}}…",
       "syncing": "同步中...",

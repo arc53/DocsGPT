@@ -4558,10 +4558,12 @@
       },
       "syncNow": "Sync now",
       "syncPaused": {
+        "account": "Syncing paused: {{reason}}",
         "noPayer": "Scheduled sync paused: nobody in the team can pay for it.",
         "noPayerSince": "Scheduled sync paused since {{date}}: nobody in the team can pay for it.",
         "other": "Scheduled sync paused.",
-        "otherSince": "Scheduled sync paused since {{date}}."
+        "otherSince": "Scheduled sync paused since {{date}}.",
+        "scheduled": "Scheduled sync paused: {{reason}}"
       },
       "syncStarted": "Syncing {{name}}…",
       "syncing": "Syncing...",

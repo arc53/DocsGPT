@@ -4504,10 +4504,12 @@
       },
       "syncNow": "今すぐ同期",
       "syncPaused": {
+        "account": "同期は一時停止中です：{{reason}}",
         "noPayer": "定期同期は一時停止中です：チーム内に支払える人がいません。",
         "noPayerSince": "定期同期は {{date}} から一時停止中です：チーム内に支払える人がいません。",
         "other": "定期同期は一時停止中です。",
-        "otherSince": "定期同期は {{date}} から一時停止中です。"
+        "otherSince": "定期同期は {{date}} から一時停止中です。",
+        "scheduled": "定期同期は一時停止中です：{{reason}}"
       },
       "syncStarted": "{{name}} を同期しています…",
       "syncing": "同期中...",

@@ -90,7 +90,6 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import { reloadSourceDocs } from '../preferences/reloadSourceDocs';
-import { formatPayerDate } from '../payer/pauseReason';
 import type { SourceSyncPaused } from '../payer/types';
 import Upload from '../upload/Upload';
 import {
@@ -129,7 +128,14 @@ import {
   startedSyncAge,
   syncIdsKey,
 } from '../connectors/startedSyncs';
+import type { Connection } from '../connectors/types';
 import type { AppDispatch } from '../store';
+import { readerIdFromToken } from '../utils/personLabel';
+import {
+  sourceSyncPausedText,
+  useCurrentTeamName,
+  useTeamConnections,
+} from './sourceSyncPause';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import GraphSourceView from '../components/graph/GraphSourceView';
@@ -178,24 +184,41 @@ function asListedDoc(doc: KnowledgeDoc): Doc {
 }
 
 /**
- * Why a team source's scheduled sync is skipped ("Scheduled sync paused:
- * nobody in the team can pay for it."), with since when; empty while it
- * runs. A reason the app doesn't know still reads as paused.
+ * Why a team source doesn't sync ("Scheduled sync paused: nobody in the
+ * team can pay for it.", "Syncing paused: Lena left Operations."); empty
+ * while it runs. See `sourceSyncPausedText`.
  *
  * Args:
  *   t: The translate function.
  *   doc: The source, with the server's `sync_paused`.
- *   language: The UI language, for the date.
+ *   options.teamConnections: The current team's connections, to name
+ *     whoever connected the one it syncs through.
+ *   options.teamName: The current team's name.
+ *   options.me: The reader's user id.
+ *   options.language: The UI language, for dates.
  */
-function syncPausedText(t: TFunction, doc: Doc, language?: string): string {
+function syncPausedText(
+  t: TFunction,
+  doc: Doc,
+  {
+    teamConnections,
+    ...options
+  }: {
+    teamConnections: Connection[];
+    teamName: string | null;
+    me: string | null;
+    language?: string;
+  },
+): string {
   const paused = (doc as Doc & { sync_paused?: SourceSyncPaused | null })
     .sync_paused;
-  if (!paused) return '';
-  const kind = paused.reason === 'sync_no_payer' ? 'noPayer' : 'other';
-  const date = formatPayerDate(paused.since, language);
-  return date
-    ? t(`settings.sources.syncPaused.${kind}Since`, { date })
-    : t(`settings.sources.syncPaused.${kind}`);
+  const connectionId = paused?.connection_id ?? doc.connectionId;
+  return sourceSyncPausedText(t, paused, {
+    ...options,
+    connection: connectionId
+      ? teamConnections.find((c) => c.id === connectionId)
+      : null,
+  });
 }
 
 // A sync with no word on its first ingest (live events off, or the stream
@@ -273,6 +296,15 @@ export default function Sources({
   const canCreate = useSelector(selectCanCreate);
   const inTeam = useSelector(selectInTeam);
   const connections = useSelector(selectConnections);
+  // A team source's pause names whoever connected the team's account.
+  const teamConnections = useTeamConnections();
+  const teamName = useCurrentTeamName();
+  const pauseOptions = {
+    teamConnections,
+    teamName,
+    me: readerIdFromToken(token) ?? null,
+    language: i18n?.language,
+  };
   // Signing in again reloads the connections, which lifts the pause.
   const { reconnect, modals: signInModals } = useSignInAgain();
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
@@ -1163,7 +1195,7 @@ export default function Sources({
     const ingest = ingestState(document);
     const line = sourceCardLine(t, document, connection);
     // A team source's scheduled sync that nobody in the team can pay for.
-    const syncPaused = syncPausedText(t, document, i18n?.language);
+    const syncPaused = syncPausedText(t, document, pauseOptions);
     const tokens = Number(document.tokens) || 0;
     const graph = document.config?.kind === 'graphrag';
     const build = graph && document.id ? graphBuilds[document.id] : undefined;
@@ -1381,7 +1413,7 @@ export default function Sources({
     sharedDocs.length === 0;
 
   const viewSyncPaused = documentToView
-    ? syncPausedText(t, documentToView, i18n?.language)
+    ? syncPausedText(t, documentToView, pauseOptions)
     : '';
 
   return documentToView ? (

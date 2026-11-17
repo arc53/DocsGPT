@@ -4698,10 +4698,12 @@
       },
       "syncNow": "Sincronizar ahora",
       "syncPaused": {
+        "account": "Sincronización en pausa: {{reason}}",
         "noPayer": "Sincronización programada en pausa: nadie del equipo puede pagarla.",
         "noPayerSince": "Sincronización programada en pausa desde el {{date}}: nadie del equipo puede pagarla.",
         "other": "Sincronización programada en pausa.",
-        "otherSince": "Sincronización programada en pausa desde el {{date}}."
+        "otherSince": "Sincronización programada en pausa desde el {{date}}.",
+        "scheduled": "Sincronización programada en pausa: {{reason}}"
       },
       "syncStarted": "Sincronizando {{name}}…",
       "syncing": "Sincronizando...",
