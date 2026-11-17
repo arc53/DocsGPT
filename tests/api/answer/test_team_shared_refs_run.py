@@ -367,3 +367,49 @@ class TestWhoReads:
         hr.run_agent_headless(config, "q", endpoint=endpoint, payer="oscar", run_kind=run_kind)
         assert seen == [expected]
         assert current_run_reader() is None
+
+
+class TestTheKeySearch:
+    """``/api/search`` and MCP ``search_docs`` answer an agent's key holder, whom nobody signed in as."""
+
+    def _search(self, conn, monkeypatch, key):
+        from docsgpt.services import search_service
+
+        searched: list = []
+
+        @contextmanager
+        def _yield():
+            yield conn
+
+        def _search_sources(query, source_ids, chunks):
+            searched.extend(source_ids)
+            return [{"text": "t", "title": "x", "source": sid} for sid in source_ids]
+
+        monkeypatch.setattr(search_service, "db_readonly", _yield)
+        monkeypatch.setattr(search_service, "_search_sources", _search_sources)
+        search_service.search(key, "q", 5)
+        return searched
+
+    def test_a_keyed_personal_agent_on_a_teams_source_searches_without_it(self, use_conn, world, monkeypatch):
+        """A key from before team items were refused borrowed outside access: the source stays out."""
+        own = source(use_conn, "eddie", name="Eddie's")
+        AgentsRepository(use_conn).create(
+            "eddie", "Keyed", "published", key="pre-t16-key", source_id=world["items"]["source"],
+            extra_source_ids=[world["items"]["source"], own],
+        )
+        assert self._search(use_conn, monkeypatch, "pre-t16-key") == [own]
+
+    def test_its_folder_sources_stay_out_too(self, use_conn, world, monkeypatch):
+        folder = str(FoldersRepository(use_conn).create("eddie", "Ops docs", resource_type="source")["id"])
+        FolderItemsRepository(use_conn).file("eddie", "source", world["items"]["source"], folder)
+        AgentsRepository(use_conn).create(
+            "eddie", "Keyed", "published", key="pre-t16-folder-key", knowledge_folder_ids=[folder],
+        )
+        assert self._search(use_conn, monkeypatch, "pre-t16-folder-key") == []
+
+    def test_a_team_agents_own_source_still_searches(self, use_conn, world, monkeypatch):
+        AgentsRepository(use_conn).create(
+            world["ops_p"], "Ops keyed", "published", key="ops-key", source_id=world["items"]["source"],
+            access_payer_id="alice",
+        )
+        assert self._search(use_conn, monkeypatch, "ops-key") == [world["items"]["source"]]

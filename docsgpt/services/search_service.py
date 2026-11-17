@@ -261,17 +261,22 @@ def search(
                 raise InvalidAPIKey()
             # The key pauses while its owner is deactivated.
             refuse_if_owner_deactivated(conn, agent)
-            # Authorize inside the same connection the agent was read on.
-            source_ids = _authorized_source_ids(
-                conn, agent, _collect_source_ids(agent)
-            )
-            # Its knowledge folders read as their owner's filing.
             from docsgpt.api.user.folder_knowledge import folder_source_ids
+            from docsgpt.api.user.resource_access import reader_sources, run_reader
 
-            seen = {str(sid).lower() for sid in source_ids}
-            source_ids += [
-                sid for sid in folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent) if sid not in seen
-            ]
+            # A key holder is nobody signed in: a team's source reaches them
+            # only through an agent of that team.
+            with run_reader(""):
+                # Authorize inside the same connection the agent was read on.
+                source_ids = _authorized_source_ids(
+                    conn, agent, _collect_source_ids(agent)
+                )
+                # Its knowledge folders read as their owner's filing.
+                seen = {str(sid).lower() for sid in source_ids}
+                folder_ids = folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
+                source_ids += [
+                    sid for sid in reader_sources(conn, "agent", agent, folder_ids) if sid not in seen
+                ]
     except (InvalidAPIKey, AgentPausedError):
         raise
     except Exception as e:
