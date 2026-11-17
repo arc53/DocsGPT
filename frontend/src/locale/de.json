@@ -4969,6 +4969,15 @@
         },
         "description": "Außerhalb heißt: ein anderes Team oder der API-Schlüssel, das Widget, der öffentliche Link oder der Webhook eines Agenten.",
         "fromAnotherTeam": "Von einem anderen Team",
+        "fromTeams": {
+          "intro": "Elemente anderer Teams, die dieses Team nutzen kann. Sie bleiben deren Elemente: Niemand hier kann sie ändern oder weiter teilen.",
+          "remove": "Aus diesem Team entfernen",
+          "removeAgain": "Nur {{from}} kann es wieder teilen.",
+          "removeError": "Konnte es nicht aus diesem Team entfernen.",
+          "removeLabel": "{{name}} aus diesem Team entfernen",
+          "removeTitle": "{{name}} aus {{team}} entfernen?",
+          "title": "Von anderen Teams geteilt"
+        },
         "hint": {
           "admins": "Admins und der Eigentümer können die Elemente dieses Teams mit anderen Teams teilen und für einen Agenten API-Schlüssel, Widget, öffentlichen Link oder Webhook einschalten.",
           "editors": "Bearbeiter können das auch. Betrachter nie.",
@@ -4976,12 +4985,40 @@
         },
         "label": "Wer die Elemente dieses Teams nach außen geben darf",
         "ownerOnly": "Nur der Eigentümer des Teams kann es entsperren.",
+        "paused": "Pausiert, solange {{team}} gesperrt ist",
         "policy": {
           "admins": "Admins und Eigentümer",
           "editors": "Auch Bearbeiter",
           "locked": "Niemand (gesperrt)"
         },
         "policyError": "Konnte nicht ändern, wer Elemente nach außen geben darf.",
+        "published": {
+          "open": "Öffnen",
+          "openLabel": "{{name}} öffnen",
+          "title": "Von außen erreichbar"
+        },
+        "shares": {
+          "by": "Geteilt von {{name}}",
+          "empty": "Nichts aus diesem Team wird nach außen geteilt.",
+          "intro": "Elemente dieses Teams, die andere Teams nutzen können, und seine Agenten, die man von außen erreicht.",
+          "loadError": "Konnte nicht laden, was dieses Team nach außen teilt.",
+          "locked": "{{team}} ist gesperrt: Das hier pausiert, bis sein Eigentümer es entsperrt.",
+          "policy": "Wer Elemente nach außen geben darf: {{policy}}",
+          "revoke": "Nicht mehr teilen",
+          "revokeError": "Konnte das Teilen nicht beenden.",
+          "revokeLabel": "{{name}} nicht mehr mit {{team}} teilen",
+          "revokeTitle": "{{name}} nicht mehr mit {{team}} teilen?",
+          "title": "Außerhalb des Teams geteilt",
+          "with": "Geteilt mit {{team}}"
+        },
+        "stops": {
+          "agent": "Mitglieder von {{team}} können nicht mehr damit chatten. Ihre Chats bleiben lesbar.",
+          "agents": "Diese Agenten in {{team}} laufen dann ohne es: {{names}}.",
+          "none": "In {{team}} nutzt es noch nichts.",
+          "unknown": "Alles in {{team}}, was es nutzt, läuft dann ohne es.",
+          "usedBy_one": "{{formatted}} Agent in {{team}} nutzt es und läuft dann ohne es.",
+          "usedBy_other": "{{formatted}} Agenten in {{team}} nutzen es und laufen dann ohne es."
+        },
         "title": "Außerhalb des Teams"
       },
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",

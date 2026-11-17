@@ -21,6 +21,12 @@ export const grantKey = (g: TeamGrant): string =>
   `${resourceKey(g)}:${g.target_user_id ?? ''}`;
 
 /**
+ * Whether a grants row is another team's item shared with this team, not a
+ * member's personal item.
+ */
+export const isFromTeam = (g: TeamGrant): boolean => g.origin === 'team_shared';
+
+/**
  * Groups grants by resource, keeping the server's order of first sighting.
  *
  * Args:
@@ -66,7 +72,9 @@ export function sharedBy(
   grants: TeamGrant[],
   userId: string,
 ): SharedResource[] {
-  return groupGrants(grants.filter((g) => g.owner_id === userId));
+  return groupGrants(
+    grants.filter((g) => !isFromTeam(g) && g.owner_id === userId),
+  );
 }
 
 // Member subs (OIDC subs) can be long; truncate the middle for readability

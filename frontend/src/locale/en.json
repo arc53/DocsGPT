@@ -4990,6 +4990,15 @@
         },
         "description": "Outside means another team, or an agent's API key, widget, public link or webhook.",
         "fromAnotherTeam": "From another team",
+        "fromTeams": {
+          "intro": "Other teams' items this team can use. They stay theirs: nobody here can change them or share them on.",
+          "remove": "Remove from this team",
+          "removeAgain": "Only {{from}} can share it again.",
+          "removeError": "Couldn't remove it from this team.",
+          "removeLabel": "Remove {{name}} from this team",
+          "removeTitle": "Remove {{name}} from {{team}}?",
+          "title": "Shared from other teams"
+        },
         "hint": {
           "admins": "Admins and the Owner can share this team's items with other teams and turn on an agent's API key, widget, public link or webhook.",
           "editors": "Editors can do this too. Viewers never can.",
@@ -4997,12 +5006,40 @@
         },
         "label": "Who can take this team's items outside",
         "ownerOnly": "Only the team's Owner can unlock it.",
+        "paused": "Paused while {{team}} is locked",
         "policy": {
           "admins": "Admins and Owner",
           "editors": "Editors too",
           "locked": "No one (locked)"
         },
         "policyError": "Couldn't change who can take items outside.",
+        "published": {
+          "open": "Open",
+          "openLabel": "Open {{name}}",
+          "title": "Reachable from outside"
+        },
+        "shares": {
+          "by": "Shared by {{name}}",
+          "empty": "Nothing in this team is shared outside it.",
+          "intro": "This team's items other teams can use, and its agents people reach from outside.",
+          "loadError": "Couldn't load what this team shares outside.",
+          "locked": "{{team}} is locked: these are paused until its Owner unlocks it.",
+          "policy": "Who can take items outside: {{policy}}",
+          "revoke": "Stop sharing",
+          "revokeError": "Couldn't stop sharing it.",
+          "revokeLabel": "Stop sharing {{name}} with {{team}}",
+          "revokeTitle": "Stop sharing {{name}} with {{team}}?",
+          "title": "Shared outside the team",
+          "with": "Shared with {{team}}"
+        },
+        "stops": {
+          "agent": "Members of {{team}} can no longer chat with it. Their chats stay readable.",
+          "agents": "These agents in {{team}} will run without it: {{names}}.",
+          "none": "Nothing in {{team}} uses it yet.",
+          "unknown": "Whatever uses it in {{team}} stops using it.",
+          "usedBy_one": "{{formatted}} agent in {{team}} uses it and will run without it.",
+          "usedBy_other": "{{formatted}} agents in {{team}} use it and will run without it."
+        },
         "title": "Outside the team"
       },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",

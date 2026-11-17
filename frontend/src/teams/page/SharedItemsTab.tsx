@@ -72,11 +72,15 @@ import {
   selectWorkspaceId,
   switchWorkspace,
 } from '../../workspace/workspaceSlice';
+import OutsideSharesSection, {
+  SharedFromTeamsSection,
+} from './OutsideSharesSection';
 import {
   grantKey,
   grantResourceName,
   groupGrants,
   initialOf,
+  isFromTeam,
   isPaused,
   type SharedResource,
   truncateSub,
@@ -112,6 +116,8 @@ type SharedItemsTabProps = {
  * The members' personal items shared with the team: they stay their
  * owners', so the page says so and points at moving the ones the team
  * depends on. A row opens a drawer with who has access and what they can do.
+ * Under them, other teams' items shared with this one, and what this team
+ * shares outside itself.
  */
 export default function SharedItemsTab({
   team,
@@ -170,7 +176,12 @@ export default function SharedItemsTab({
     return label === key ? level : label;
   };
 
-  const sharedResources = useMemo(() => groupGrants(grants), [grants]);
+  // Another team's items are listed on their own, never as a member's.
+  const fromTeams = useMemo(() => grants.filter(isFromTeam), [grants]);
+  const sharedResources = useMemo(
+    () => groupGrants(grants.filter((g) => !isFromTeam(g))),
+    [grants],
+  );
   const resourceCounts = useMemo(() => {
     const counts: Record<ResourceFilter, number> = {
       all: sharedResources.length,
@@ -502,7 +513,9 @@ export default function SharedItemsTab({
                     // everyone it's shared with, the viewer included.
                     if (workspaceId !== PERSONAL_WORKSPACE)
                       dispatch(
-                        switchWorkspace(PERSONAL_WORKSPACE, { reason: 'link' }),
+                        switchWorkspace(PERSONAL_WORKSPACE, {
+                          reason: 'link',
+                        }),
                       );
                     navigate(path);
                   }}
@@ -748,6 +761,16 @@ export default function SharedItemsTab({
           onMoved={() => void onGrantsChanged()}
         />
       )}
+
+      {/* Other teams' items, then what this team takes outside. */}
+      <div className="mt-5 flex flex-col gap-8">
+        <SharedFromTeamsSection
+          team={team}
+          grants={fromTeams}
+          onGrantsChanged={onGrantsChanged}
+        />
+        <OutsideSharesSection team={team} role={role} />
+      </div>
     </div>
   );
 }

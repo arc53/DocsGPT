@@ -4933,6 +4933,15 @@
         },
         "description": "团队外部指其他团队，或智能体的 API 密钥、小组件、公开链接或 Webhook。",
         "fromAnotherTeam": "来自其他团队",
+        "fromTeams": {
+          "intro": "此团队可以使用的其他团队的项目。它们仍归对方所有：这里的任何人都不能修改或继续共享。",
+          "remove": "从此团队移除",
+          "removeAgain": "只有 {{from}} 才能再次共享。",
+          "removeError": "无法从此团队移除。",
+          "removeLabel": "从此团队移除 {{name}}",
+          "removeTitle": "从 {{team}} 移除 {{name}}？",
+          "title": "来自其他团队的共享"
+        },
         "hint": {
           "admins": "管理员和所有者可以与其他团队共享此团队的项目，并为智能体开启 API 密钥、小组件、公开链接或 Webhook。",
           "editors": "编辑者也可以。查看者始终不可以。",
@@ -4940,12 +4949,40 @@
         },
         "label": "谁可以将此团队的项目带到团队外部",
         "ownerOnly": "只有团队所有者才能解除锁定。",
+        "paused": "{{team}} 锁定期间已暂停",
         "policy": {
           "admins": "管理员和所有者",
           "editors": "编辑者也可以",
           "locked": "任何人都不可以（已锁定）"
         },
         "policyError": "无法更改谁可以将项目带到团队外部。",
+        "published": {
+          "open": "打开",
+          "openLabel": "打开 {{name}}",
+          "title": "可从外部访问"
+        },
+        "shares": {
+          "by": "由 {{name}} 共享",
+          "empty": "此团队没有任何内容共享到团队外部。",
+          "intro": "其他团队可以使用的此团队项目，以及可从外部访问的智能体。",
+          "loadError": "无法加载此团队共享到外部的内容。",
+          "locked": "{{team}} 已锁定：在其所有者解除锁定之前，这些都处于暂停状态。",
+          "policy": "谁可以将项目带到团队外部：{{policy}}",
+          "revoke": "停止共享",
+          "revokeError": "无法停止共享。",
+          "revokeLabel": "停止与 {{team}} 共享 {{name}}",
+          "revokeTitle": "停止与 {{team}} 共享 {{name}}？",
+          "title": "共享到团队外部",
+          "with": "已与 {{team}} 共享"
+        },
+        "stops": {
+          "agent": "{{team}} 的成员将无法再与它聊天。他们的聊天记录仍可阅读。",
+          "agents": "{{team}} 中的这些智能体将在没有它的情况下运行：{{names}}。",
+          "none": "{{team}} 中还没有任何内容使用它。",
+          "unknown": "{{team}} 中使用它的内容将在没有它的情况下运行。",
+          "usedBy_one": "{{team}} 中有 {{formatted}} 个智能体使用它，之后将在没有它的情况下运行。",
+          "usedBy_other": "{{team}} 中有 {{formatted}} 个智能体使用它，之后将在没有它的情况下运行。"
+        },
         "title": "团队外部"
       },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",

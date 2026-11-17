@@ -5155,6 +5155,15 @@
         },
         "description": "Fuera significa otro equipo, o la clave de API, el widget, el enlace público o el webhook de un agente.",
         "fromAnotherTeam": "De otro equipo",
+        "fromTeams": {
+          "intro": "Elementos de otros equipos que este equipo puede usar. Siguen siendo suyos: nadie aquí puede cambiarlos ni compartirlos con otros.",
+          "remove": "Quitar de este equipo",
+          "removeAgain": "Solo {{from}} puede volver a compartirlo.",
+          "removeError": "No se pudo quitar de este equipo.",
+          "removeLabel": "Quitar {{name}} de este equipo",
+          "removeTitle": "¿Quitar {{name}} de {{team}}?",
+          "title": "Compartido por otros equipos"
+        },
         "hint": {
           "admins": "Los administradores y el propietario pueden compartir los elementos de este equipo con otros equipos y activar la clave de API, el widget, el enlace público o el webhook de un agente.",
           "editors": "Los editores también pueden. Los lectores, nunca.",
@@ -5162,12 +5171,41 @@
         },
         "label": "Quién puede sacar los elementos de este equipo fuera de él",
         "ownerOnly": "Solo el propietario del equipo puede desbloquearlo.",
+        "paused": "En pausa mientras {{team}} esté bloqueado",
         "policy": {
           "admins": "Administradores y propietario",
           "editors": "También los editores",
           "locked": "Nadie (bloqueado)"
         },
         "policyError": "No se pudo cambiar quién puede sacar elementos fuera.",
+        "published": {
+          "open": "Abrir",
+          "openLabel": "Abrir {{name}}",
+          "title": "Accesible desde fuera"
+        },
+        "shares": {
+          "by": "Compartido por {{name}}",
+          "empty": "Nada de este equipo se comparte fuera de él.",
+          "intro": "Elementos de este equipo que otros equipos pueden usar, y sus agentes accesibles desde fuera.",
+          "loadError": "No se pudo cargar lo que este equipo comparte fuera.",
+          "locked": "{{team}} está bloqueado: esto queda en pausa hasta que su propietario lo desbloquee.",
+          "policy": "Quién puede sacar elementos fuera: {{policy}}",
+          "revoke": "Dejar de compartir",
+          "revokeError": "No se pudo dejar de compartir.",
+          "revokeLabel": "Dejar de compartir {{name}} con {{team}}",
+          "revokeTitle": "¿Dejar de compartir {{name}} con {{team}}?",
+          "title": "Compartido fuera del equipo",
+          "with": "Compartido con {{team}}"
+        },
+        "stops": {
+          "agent": "Los miembros de {{team}} ya no podrán chatear con él. Sus chats siguen siendo legibles.",
+          "agents": "Estos agentes de {{team}} funcionarán sin él: {{names}}.",
+          "none": "Nada en {{team}} lo usa todavía.",
+          "unknown": "Lo que lo use en {{team}} dejará de usarlo.",
+          "usedBy_many": "{{formatted}} agentes de {{team}} lo usan y funcionarán sin él.",
+          "usedBy_one": "{{formatted}} agente de {{team}} lo usa y funcionará sin él.",
+          "usedBy_other": "{{formatted}} agentes de {{team}} lo usan y funcionarán sin él."
+        },
         "title": "Fuera del equipo"
       },
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} equipos",
