@@ -2300,6 +2300,8 @@
       "resetKey": "重置密钥",
       "resetKeyConfirm": "重置“{{name}}”的 API 密钥？",
       "resetKeyConsequence": "当前密钥会立即失效，所有使用它的地方都需要更新。此操作无法撤销。",
+      "teamLocked": "{{team}} 已锁定，因此此智能体不能有公开链接、API 密钥或 Webhook。只有团队所有者才能解除锁定。",
+      "teamLockedNoTeam": "此团队已锁定，因此此智能体不能有公开链接、API 密钥或 Webhook。只有团队所有者才能解除锁定。",
       "test": "测试",
       "title": "访问详情",
       "webhookUrl": "Webhook URL"

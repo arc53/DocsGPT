@@ -185,6 +185,23 @@ export default function AgentDetailsModal({
 }: AgentDetailsModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  // The agent's team row: its name and whether it is locked.
+  const teamId =
+    agent.workspace?.kind === 'team' ? agent.workspace.team_id : null;
+  const teamRow = useSelector(
+    (state: {
+      workspace?: {
+        workspaces?: {
+          id: string;
+          name?: string | null;
+          outside_policy?: string | null;
+        }[];
+      };
+    }) =>
+      (teamId &&
+        state.workspace?.workspaces?.find((row) => row.id === teamId)) ||
+      null,
+  );
 
   // Who pays for the key, link and webhook, and why they are paused: only
   // for a reader who manages them (the server leaves it out otherwise).
@@ -309,6 +326,16 @@ export default function AgentDetailsModal({
     setOutside(agent.outside_access ?? null);
   }, [agent]);
 
+  // A locked team's agents are reached from nowhere outside it: nothing can
+  // be turned on, and what is on is paused (the payer notice says so then).
+  const teamLocked =
+    teamRow?.outside_policy === 'locked' ||
+    outside?.paused_for?.reason === 'team_locked';
+  const pauseSaysLocked =
+    !!outside &&
+    outsideAccessOn(outside) &&
+    outside.paused_for?.reason === 'team_locked';
+
   return (
     <>
       <Modal
@@ -323,6 +350,18 @@ export default function AgentDetailsModal({
             </Alert>
           )}
           <div className="mt-8 flex flex-col gap-6">
+            {teamLocked && !pauseSaysLocked ? (
+              <Alert variant="info" role="note">
+                <AlertDescription>
+                  {teamRow?.name
+                    ? t('modals.agentDetails.teamLocked', {
+                        team: teamRow.name,
+                        interpolation: { escapeValue: false },
+                      })
+                    : t('modals.agentDetails.teamLockedNoTeam')}
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {/* Who pays for all three ways in, or why they are paused. */}
             {outside && outsideAccessOn(outside) ? (
               <OutsidePayer
@@ -372,7 +411,7 @@ export default function AgentDetailsModal({
                     </a>
                   </Button>
                 </div>
-              ) : (
+              ) : teamLocked ? null : (
                 <Button
                   type="button"
                   variant="outline-primary"
@@ -421,7 +460,7 @@ export default function AgentDetailsModal({
                         </a>
                       </Button>
                     )}
-                    {apiKey.includes('...') && (
+                    {apiKey.includes('...') && !teamLocked && (
                       <Button
                         type="button"
                         onClick={() => setResetKeyConfirmState('ACTIVE')}
@@ -436,7 +475,7 @@ export default function AgentDetailsModal({
                     )}
                   </div>
                 </div>
-              ) : agent.status === 'draft' ? (
+              ) : teamLocked ? null : agent.status === 'draft' ? (
                 // A draft has no key yet: the first one is minted on publish.
                 <p className="text-muted-foreground text-sm">
                   {t('modals.agentDetails.apiKeyAfterPublish')}
@@ -496,7 +535,7 @@ export default function AgentDetailsModal({
                     </a>
                   </Button>
                 </div>
-              ) : (
+              ) : teamLocked ? null : (
                 <Button
                   type="button"
                   variant="outline-primary"

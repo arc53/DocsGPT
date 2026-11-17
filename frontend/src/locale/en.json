@@ -2346,6 +2346,8 @@
       "resetKey": "Reset key",
       "resetKeyConfirm": "Reset the API key for \"{{name}}\"?",
       "resetKeyConsequence": "The current key stops working immediately, so anything using it must be updated. This can't be undone.",
+      "teamLocked": "{{team}} is locked, so this agent can't have a public link, API key or webhook. Only the team's Owner can unlock it.",
+      "teamLockedNoTeam": "This team is locked, so this agent can't have a public link, API key or webhook. Only the team's Owner can unlock it.",
       "test": "Test",
       "title": "Access details",
       "webhookUrl": "Webhook URL"

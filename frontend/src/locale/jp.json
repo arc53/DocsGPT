@@ -2301,6 +2301,8 @@
       "resetKey": "キーをリセット",
       "resetKeyConfirm": "「{{name}}」の API キーをリセットしますか？",
       "resetKeyConsequence": "現在のキーはすぐに使えなくなるため、使用している箇所をすべて更新する必要があります。この操作は元に戻せません。",
+      "teamLocked": "{{team}} はロックされているため、このエージェントには公開リンク、APIキー、Webhook を設定できません。ロックを解除できるのはチームの所有者だけです。",
+      "teamLockedNoTeam": "このチームはロックされているため、このエージェントには公開リンク、APIキー、Webhook を設定できません。ロックを解除できるのはチームの所有者だけです。",
       "test": "テスト",
       "title": "アクセス詳細",
       "webhookUrl": "Webhook URL"

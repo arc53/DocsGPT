@@ -2416,6 +2416,8 @@
       "resetKey": "Restablecer clave",
       "resetKeyConfirm": "¿Restablecer la clave de API de \"{{name}}\"?",
       "resetKeyConsequence": "La clave actual deja de funcionar de inmediato, así que todo lo que la use debe actualizarse. No se puede deshacer.",
+      "teamLocked": "{{team}} está bloqueado, así que este agente no puede tener enlace público, clave de API ni webhook. Solo el propietario del equipo puede desbloquearlo.",
+      "teamLockedNoTeam": "Este equipo está bloqueado, así que este agente no puede tener enlace público, clave de API ni webhook. Solo el propietario del equipo puede desbloquearlo.",
       "test": "Probar",
       "title": "Detalles de acceso",
       "webhookUrl": "URL del webhook"

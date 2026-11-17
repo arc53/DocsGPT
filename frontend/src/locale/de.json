@@ -2325,6 +2325,8 @@
       "resetKey": "Schlüssel zurücksetzen",
       "resetKeyConfirm": "API-Schlüssel für \"{{name}}\" zurücksetzen?",
       "resetKeyConsequence": "Der aktuelle Schlüssel funktioniert sofort nicht mehr, alles, was ihn verwendet, muss aktualisiert werden. Dies kann nicht rückgängig gemacht werden.",
+      "teamLocked": "{{team}} ist gesperrt, daher kann dieser Agent keinen öffentlichen Link, API-Schlüssel oder Webhook haben. Nur der Eigentümer des Teams kann es entsperren.",
+      "teamLockedNoTeam": "Dieses Team ist gesperrt, daher kann dieser Agent keinen öffentlichen Link, API-Schlüssel oder Webhook haben. Nur der Eigentümer des Teams kann es entsperren.",
       "test": "Testen",
       "title": "Zugriffsdetails",
       "webhookUrl": "Webhook-URL"

@@ -2416,6 +2416,8 @@
       "resetKey": "Réinitialiser la clé",
       "resetKeyConfirm": "Réinitialiser la clé API de « {{name}} » ?",
       "resetKeyConsequence": "La clé actuelle cesse immédiatement de fonctionner : tout ce qui l’utilise doit être mis à jour. Cette action est irréversible.",
+      "teamLocked": "L’équipe {{team}} est verrouillée ; cet agent ne peut donc avoir ni lien public, ni clé API, ni webhook. Seul le propriétaire de l’équipe peut la déverrouiller.",
+      "teamLockedNoTeam": "Cette équipe est verrouillée ; cet agent ne peut donc avoir ni lien public, ni clé API, ni webhook. Seul le propriétaire de l’équipe peut la déverrouiller.",
       "test": "Tester",
       "title": "Détails d’accès",
       "webhookUrl": "URL du webhook"
