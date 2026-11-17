@@ -93,6 +93,7 @@ from docsgpt.workspaces.context import (
     current_workspace,
     require_workspace_role,
 )
+from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_EDITORS, POLICY_LOCKED, team_policy
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least, team_role_for
@@ -138,6 +139,20 @@ class ImportWorkspaceMismatch(Exception):
         super().__init__(body.get("message") or "workspace_mismatch")
         self.refs = refs
         self.body = body
+
+
+class ImportRefused(Exception):
+    """An import over an existing agent breaks a rule its save would keep; nothing is written.
+
+    Attributes:
+        body: The JSON body to answer with, as the agent save answers it.
+        status: Its HTTP status.
+    """
+
+    def __init__(self, body: dict, status: int) -> None:
+        super().__init__(body.get("message") or body.get("error") or "import_refused")
+        self.body = body
+        self.status = status
 
 
 def _personal_workspace(user: str) -> Workspace:
@@ -2321,6 +2336,72 @@ def _apply_workflow(
     return str(created["id"])
 
 
+def _items_before_import(conn, owner: str, target: dict) -> Optional[tuple[dict, dict, set]]:
+    """What the agent an import updates uses before it: another team's items and tools on a team's account.
+
+    Takes ``lock_owner_items`` for the owner first, as an agent save does, so a share or a move made at the same
+    time is either seen by :func:`_refuse_import_over` or sees the import. It is taken before the workflow row
+    lock the graph write takes, which a move updates too. Read before the graph is written, since the import
+    writes it into the agent's own workflow.
+
+    Args:
+        conn: Open database connection.
+        owner: The workspace's owner.
+        target: From :func:`_resolve_target`.
+
+    Returns:
+        ``(agent row, its team refs, ids of its tools on a team's account)``, or None for a new agent.
+    """
+    if target.get("action") != "update" or not target.get("agent_id"):
+        return None
+    agent = AgentsRepository(conn).get(str(target["agent_id"]), owner)
+    if agent is None:
+        return None
+    from docsgpt.api.user.agents.graph_checks import agent_team_connection_tools, agent_team_refs
+
+    lock_owner_items(conn, owner)
+    return agent, agent_team_refs(conn, agent), {t["id"] for t in agent_team_connection_tools(conn, agent)}
+
+
+def _refuse_import_over(conn, before: Optional[tuple[dict, dict, set]], fields: dict, actor: str) -> None:
+    """Raise :class:`ImportRefused` when an import over an agent adds what its save would refuse.
+
+    The agent save's two rules for an agent that reaches outside its team: no tool on the team's account is
+    added to one with a key, public link, webhook or a share with another team, and no team's item is added to
+    one shared with a team or person who can't reach it. Items already on the agent stay.
+
+    Args:
+        conn: Open database connection, holding ``lock_owner_items`` (see :func:`_items_before_import`).
+        before: From :func:`_items_before_import`; None for a new agent, which reaches no one yet.
+        fields: The columns the import writes; the graph it wrote is read from the agent's workflow.
+        actor: The person importing.
+
+    Raises:
+        ImportRefused: With the save's 409 body.
+    """
+    if before is None:
+        return
+    from docsgpt.api.user.agents.graph_checks import (
+        added_team_refs,
+        agent_team_connection_tools,
+        agent_team_refs,
+        team_connection_added_refusal,
+        team_items_shared_outside_refusal,
+    )
+
+    agent, had_refs, had_tools = before
+    after = {**agent, **fields}
+    added = added_team_refs(had_refs, agent_team_refs(conn, after))
+    refusal = team_items_shared_outside_refusal(conn, [agent], added, actor)
+    if refusal is None:
+        added_tools = [t for t in agent_team_connection_tools(conn, after) if t["id"] not in had_tools]
+        refusal = team_connection_added_refusal(conn, [agent], added_tools)
+    if refusal is not None:
+        body, status = refusal
+        logger.info("Agent import refused: %s (user=%s, agent=%s)", body.get("error"), actor, agent.get("id"))
+        raise ImportRefused(body, status)
+
+
 def _prune_agent_sponsors(agents_repo: AgentsRepository, agent_id: str, user: str) -> None:
     """Drop sponsor records of resources the imported agent no longer references.
 
@@ -2376,6 +2457,7 @@ def apply_import(
     Raises:
         AgentImportError: The document fails a write-path check.
         ImportWorkspaceMismatch: It would bind an item from another workspace.
+        ImportRefused: An update adds what the agent's save would refuse for an agent reaching outside its team.
     """
     if not isinstance(resolution, dict):
         resolution = {}
@@ -2386,6 +2468,7 @@ def apply_import(
     warnings: list[str] = []
 
     target = _resolve_target(conn, owner, metadata)
+    before = _items_before_import(conn, owner, target)
 
     prompt_id = _apply_prompt(conn, owner, spec, created_by)
     source_ids, source_ids_by_name = _apply_sources(conn, owner, spec, resolution, warnings)
@@ -2518,6 +2601,7 @@ def apply_import(
         # any active users are unaffected) instead of reverting it to draft.
         # Only a brand-new agent (the create path below) starts as a draft.
         fields = {**authoritative, **optional, "name": spec.get("name")}
+        _refuse_import_over(conn, before, fields, user)
         if agents_repo.update(str(target["agent_id"]), owner, fields):
             _prune_agent_sponsors(agents_repo, str(target["agent_id"]), owner)
             if orphaned_workflow_id and not agents_repo.count_by_workflow(
@@ -2803,6 +2887,9 @@ class ImportAgent(Resource):
         except ImportWorkspaceMismatch as exc:
             # Raised before the transaction commits, so nothing of the import stays.
             return make_response(jsonify(exc.body), 400)
+        except ImportRefused as exc:
+            # Also raised before the commit.
+            return make_response(jsonify(exc.body), exc.status)
         except AgentImportError as exc:
             # Apply-time rejection of the user's document (e.g. the workflow
             # graph failing the API's validation gate) — a client error, with
