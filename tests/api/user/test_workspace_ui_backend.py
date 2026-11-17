@@ -192,10 +192,12 @@ class TestAvailableToolsInATeam:
         resp = self._list(app, pg_conn, user=user, team_id=tid)
         assert resp.status_code == 200
         body = resp.json
-        assert all(tool["group"] != "service" for tool in body["data"])
         assert "remote_device" not in self._names(resp)
+        # A service's tool stays, on each person's own account while the team has no connection for it.
+        services = [tool for tool in body["data"] if tool["group"] == "service"]
+        assert services and all(tool["member_only"] is True for tool in services)
         # Everything else a team can add stays, MCP included.
-        kept = {t["name"] for t in personal.json["data"] if t["group"] != "service" and t["name"] != "remote_device"}
+        kept = {t["name"] for t in personal.json["data"] if t["name"] != "remote_device"}
         assert self._names(resp) == kept
         assert "mcp_tool" in kept
         assert body["workspace"]["kind"] == "team" and body["workspace"]["team_id"] == tid
@@ -206,7 +208,7 @@ class TestAvailableToolsInATeam:
         tid = _team(pg_conn)
         personal = self._names(self._list(app, pg_conn))
         team = self._names(self._list(app, pg_conn, team_id=tid))
-        assert {name for name in personal if team_tool_refusal(name) is not None} == personal - team
+        assert {name for name in personal if team_tool_refusal(name, member=True) is not None} == personal - team
 
     def test_a_non_member_is_404(self, app, pg_conn):
         tid = _team(pg_conn)

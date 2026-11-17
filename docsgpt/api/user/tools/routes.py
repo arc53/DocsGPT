@@ -259,8 +259,9 @@ def holds_owner_rights(ra: ResourceAccess) -> bool:
     return ra.access == "owner" or (ra.is_team_item and ra.can("edit_credentials"))
 
 
-# What a team workspace can't hold in v1: each runs on one
-# person's account or device, and a team has no connections of its own yet.
+# What a team workspace can't hold: a paired device runs on one person's
+# machine; a connected service's tool runs on the team's own connection (set
+# up from it) or on each person's own account (``/api/tools/member``).
 CODE_OAUTH_PERSONAL_ONLY = "oauth_personal_only"
 CODE_REMOTE_DEVICE_PERSONAL_ONLY = "remote_device_personal_only"
 CODE_CONNECTOR_PERSONAL_ONLY = "connector_personal_only"
@@ -283,23 +284,30 @@ def personal_only_response(code: str):
     return WorkspaceError(403, code, _PERSONAL_ONLY_MESSAGES[code]).response()
 
 
-def team_tool_refusal(tool_name: str, config: Optional[dict] = None) -> Optional[str]:
+def team_tool_refusal(
+    tool_name: str, config: Optional[dict] = None, *, member: bool = False, team_connection: bool = False,
+) -> Optional[str]:
     """Why a team workspace can't hold a tool of this kind, or None when it can.
 
-    A paired device runs on one person's machine; a connected service, or an
-    MCP server you sign in to, needs a connection a team can't hold yet.
+    A paired device runs on one person's machine. A connected service's tool
+    needs an account: in a team either each person's own (``member``) or a
+    connection the team holds (``team_connection``); with neither (a pasted
+    secret, an imported agent's tool) it can't be held. An MCP server you sign
+    in to is still personal here.
 
     Args:
         tool_name: The tool's catalog name (``remote_device``, ``telegram``, ``mcp_tool``, ...).
         config: The tool's config; only an MCP server's ``auth_type`` is read. Without it (the
             catalog), the kind alone decides.
+        member: The tool runs on each person's own account.
+        team_connection: The tool runs on a connection the team holds.
 
     Returns:
         Optional[str]: One of the ``CODE_*_PERSONAL_ONLY`` codes, or None.
     """
     if tool_name == "remote_device":
         return CODE_REMOTE_DEVICE_PERSONAL_ONLY
-    if definition_for_tool(tool_name) is not None:
+    if definition_for_tool(tool_name) is not None and not (member or team_connection):
         return CODE_CONNECTOR_PERSONAL_ONLY
     if tool_name == "mcp_tool" and isinstance(config, dict) and config.get("auth_type") == "oauth":
         return CODE_OAUTH_PERSONAL_ONLY
@@ -826,6 +834,8 @@ class AvailableTools(Resource):
             policies = {}
         # Unread membership must not widen a team's list: a named team still gets the team's.
         in_team = workspace.is_team if workspace is not None else parse_workspace_ref(request) is not None
+        # The services the team holds a connection for; any other one's tool runs on each person's own.
+        team_keys = _team_connector_keys(workspace) if in_team else set()
         tools_metadata = []
         for tool_name, tool_instance in tool_manager.tools.items():
             # One broken tool (a custom one without a class docstring, or one
@@ -851,24 +861,26 @@ class AvailableTools(Resource):
                     group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]
                 else:
                     group, connector_key = "built_in", None
-                if in_team and team_tool_refusal(tool_name) is not None:
+                if in_team and team_tool_refusal(tool_name, member=group == "service") is not None:
                     continue
             except Exception as err:
                 current_app.logger.error(
                     f"Skipping tool {tool_name!r} in available tools: {err}", exc_info=True
                 )
                 continue
-            tools_metadata.append(
-                {
-                    "name": tool_name,
-                    "displayName": name,
-                    "description": description,
-                    "configRequirements": config_req,
-                    "actions": actions,
-                    "group": group,
-                    "connector_key": connector_key,
-                }
-            )
+            entry = {
+                "name": tool_name,
+                "displayName": name,
+                "description": description,
+                "configRequirements": config_req,
+                "actions": actions,
+                "group": group,
+                "connector_key": connector_key,
+            }
+            if in_team and group == "service":
+                # Without a team connection for it, only "each person signs in" is on offer.
+                entry["member_only"] = connector_key not in team_keys
+            tools_metadata.append(entry)
         return make_response(
             jsonify(
                 {
@@ -879,6 +891,22 @@ class AvailableTools(Resource):
             ),
             200,
         )
+
+
+def _team_connector_keys(workspace: Optional[Workspace]) -> set:
+    """The catalog keys of the connections a team workspace holds; empty when unknown."""
+    if workspace is None or not workspace.is_team:
+        return set()
+    from docsgpt.connectors.catalog import connector_key_for_row
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    try:
+        with db_readonly() as conn:
+            rows = ConnectorSessionsRepository(conn).list_for_user(workspace.owner_id)
+    except Exception:
+        current_app.logger.warning("Could not read the team's connections", exc_info=True)
+        return set()
+    return {connector_key_for_row(row) for row in rows}
 
 
 def _stamp_action_access(tool: dict) -> dict:
@@ -1226,6 +1254,161 @@ class CreateTool(Resource):
             current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"id": new_id}), 200)
+
+
+CODE_CONNECT_PERSONAL_FIRST = "connect_personal_first"
+CODE_MEMBER_MODE_NOT_ALLOWED = "member_mode_not_allowed"
+
+
+@tools_ns.route("/tools/member")
+class CreateMemberTool(Resource):
+    @api.expect(
+        api.model(
+            "CreateMemberToolModel",
+            {
+                "connector_key": fields.String(
+                    required=True, description="The service each person signs in to (a catalog key)"
+                ),
+                "permissions": fields.Raw(
+                    required=False, description="Per-action permission overrides: {action: always|ask|off}"
+                ),
+                "folder_id": fields.String(
+                    required=False, description="A folder of the team's tree to file the new tool in"
+                ),
+                "status": fields.Boolean(
+                    required=False, description="Switch it into the creator's own chats (default true)"
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description=(
+            "Add a team tool that runs on each person's own account for a service (member mode). "
+            "Editor and up in the team the workspace header names. No secret is stored: each run uses "
+            "the caller's own connection. An MCP service's actions are read with the creator's own "
+            "connection (409 connect_personal_first without one). 409 member_mode_not_allowed when an "
+            "admin makes every tool of that service run on its owner's account."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        from docsgpt.connectors import catalog as connector_catalog
+        from docsgpt.connectors import service as connection_service
+        from docsgpt.connectors.permissions import apply_default_permissions, apply_permission
+        from docsgpt.connectors.resolve import MODE_OWNER, own_connection
+
+        key = str(data.get("connector_key") or "").strip()
+        definition = connector_catalog.get_definition(key) if key else None
+        permissions = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}
+        try:
+            with db_readonly() as conn:
+                workspace = create_workspace(conn)
+                if not workspace.is_team:
+                    raise WorkspaceError(
+                        400, "team_workspace_required", "A tool for each person's own account is added in a team",
+                    )
+                owner_id, created_by = workspace.owner_for_create(user)
+                folder_pg = filing_folder(conn, owner_id, data.get("folder_id"))
+                if definition is None or not definition.tool_templates or definition.publisher == "custom":
+                    return make_response(
+                        jsonify({"success": False, "message": "This service has no tool to add"}), 400,
+                    )
+                if not (definition.configured and connection_service.connector_is_enabled(
+                    connection_service.load_policies(conn), definition.key,
+                )):
+                    return make_response(jsonify({"success": False, "message": "This service is turned off"}), 403)
+                if connection_service.forced_credential_mode(conn, definition.key) == MODE_OWNER:
+                    return WorkspaceError(
+                        409, CODE_MEMBER_MODE_NOT_ALLOWED,
+                        "An admin set this service to run on the account of whoever sets it up",
+                    ).response()
+                template = definition.tool_templates[0]
+                tool_instance = tool_manager.tools.get(template)
+                if tool_instance is None:
+                    return make_response(jsonify({"success": False, "message": "Tool not found"}), 404)
+                config: dict = {}
+                mine = None
+                if template == "mcp_tool":
+                    probe = {"name": template, "connector_key": definition.key,
+                             "config": {"server_url": definition.mcp_url}}
+                    mine = own_connection(conn, user, probe)
+        except WorkspaceError as err:
+            return err.response()
+        except FolderError as err:
+            return err.response()
+        description = (tool_instance.__doc__ or template).strip().split("\n", 1)
+        description = description[1].strip() if len(description) > 1 else ""
+        if template == "mcp_tool":
+            if mine is None:
+                return _connect_personal_first(definition.key)
+            config = connection_service.connection_mcp_config(definition, connection=mine)
+            if config is None:
+                return make_response(
+                    jsonify({"success": False, "message": "This service needs its server address first"}), 400,
+                )
+            from docsgpt.connectors import mcp as connector_mcp
+
+            try:
+                # Read with the creator's own sign-in; none of its tokens are kept on the tool.
+                discovered = connector_mcp.discover_connection_actions(user, mine)
+            except connection_service.ConnectionUnavailable:
+                return _connect_personal_first(definition.key)
+            except Exception as err:
+                current_app.logger.warning(f"Could not read {definition.key} actions: {err}", exc_info=True)
+                return make_response(
+                    jsonify({"success": False, "message": "Could not read the service's actions"}), 502,
+                )
+            actions = transform_actions(copy.deepcopy(discovered))
+            if definition.publisher == "preset":
+                description = connection_service.mcp_tool_description(config)
+        else:
+            actions = transform_actions(copy.deepcopy(tool_instance.get_actions_metadata()))
+        actions = apply_default_permissions(template, actions, definition.default_actions)
+        try:
+            for index, action in enumerate(actions):
+                permission = permissions.get(action.get("name"))
+                if permission:
+                    actions[index] = apply_permission(action, permission)
+        except ValueError as err:
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
+        in_chat = bool(data.get("status", True))
+        try:
+            with db_session() as conn:
+                created = UserToolsRepository(conn).create(
+                    owner_id,
+                    template,
+                    config=config,
+                    custom_name=definition.name,
+                    display_name=definition.name,
+                    description=description,
+                    config_requirements=tool_instance.get_config_requirements(),
+                    actions=actions,
+                    # A team tool's ``status`` stays off: each member switches it into their own chats.
+                    status=False,
+                    credential_mode="member",
+                    connector_key=definition.key,
+                    created_by=created_by,
+                )
+                if in_chat:
+                    UserToolPreferencesRepository(conn).set_in_chat(created_by, str(created["id"]), True)
+                if folder_pg:
+                    FolderItemsRepository(conn).file(owner_id, "tool", str(created["id"]), folder_pg)
+        except Exception as err:
+            current_app.logger.error(f"Error creating member tool: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "id": str(created["id"])}), 200)
+
+
+def _connect_personal_first(connector_key: str):
+    """409 ``connect_personal_first``: the caller connects their own account to the service first."""
+    return make_response(jsonify({
+        "success": False, "error": CODE_CONNECT_PERSONAL_FIRST, "connector_key": connector_key,
+        "message": "Connect your own account to this service first",
+    }), 409)
 
 
 def _create_connected_tool(user, data, definition, tool_instance, folder_id: Optional[str] = None):
