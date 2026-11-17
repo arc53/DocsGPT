@@ -92,10 +92,12 @@ const dispatched: string[] = [];
 const makeStore = (current: string, teams: WorkspaceRow[]) =>
   configureStore({
     middleware: (getDefault) =>
-      getDefault().concat(() => (next) => (action) => {
-        dispatched.push((action as { type: string }).type);
-        return next(action);
-      }),
+      getDefault().concat(
+        () => (next: (action: unknown) => unknown) => (action: unknown) => {
+          dispatched.push((action as { type: string }).type);
+          return next(action);
+        },
+      ),
     reducer: {
       actionToast: actionToastReducer,
       preference: (state = { token: tokenFor('ana') }) => state,
@@ -283,11 +285,11 @@ describe('Custom models page in a team', () => {
     service.updateCustomModel.mockResolvedValue(
       teamModel(true, { enabled: false }),
     );
-    let answer: (value: unknown) => void = () => {};
+    let answer: (value: Response) => void = () => {};
     vi.mocked(modelService.getModels).mockReturnValue(
-      new Promise((resolve) => {
+      new Promise<Response>((resolve) => {
         answer = resolve;
-      }) as ReturnType<typeof modelService.getModels>,
+      }),
     );
     await inTeam('admin');
     dispatched.length = 0;
@@ -297,7 +299,7 @@ describe('Custom models page in a team', () => {
     // Switched to another team before /api/models answered.
     setRequestWorkspace('t2', 1);
     await act(async () => {
-      answer({ ok: true, json: async () => ({ models: [] }) });
+      answer({ ok: true, json: async () => ({ models: [] }) } as Response);
     });
     expect(modelService.getModels).toHaveBeenCalled();
     expect(dispatched).not.toContain('preference/setAvailableModels');
