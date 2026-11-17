@@ -4932,6 +4932,7 @@
       },
       "openTeamError": "Team-Details konnten nicht geladen werden.",
       "outside": {
+        "fromAnotherTeam": "Von einem anderen Team",
         "label": "Wer die Elemente dieses Teams nach außen geben darf",
         "policy": {
           "admins": "Admins und Eigentümer",

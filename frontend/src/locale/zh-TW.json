@@ -4898,6 +4898,7 @@
       },
       "openTeamError": "無法載入團隊詳細資訊。",
       "outside": {
+        "fromAnotherTeam": "來自其他團隊",
         "label": "誰可以將此團隊的項目帶到團隊外部",
         "policy": {
           "admins": "管理員和擁有者",

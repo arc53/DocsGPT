@@ -272,6 +272,19 @@ export default function UsageTab({ team, role }: UsageTabProps) {
         formatted: formatCount(row.people, language),
       }),
     ];
+    // Another team's agent shared with this one: its members' chats count
+    // here, its limit and payer stay with the team that owns it.
+    if (row.shared_from) {
+      const from = row.shared_from.name?.trim();
+      parts.push(
+        from
+          ? t('workspace.page.sharedFromTeams.from', {
+              team: from,
+              ...noEscape,
+            })
+          : t('settings.teams.outside.fromAnotherTeam'),
+      );
+    }
     if (row.published) {
       const payer = payerOf(row.published.paid_by, me);
       parts.push(
@@ -299,7 +312,7 @@ export default function UsageTab({ team, role }: UsageTabProps) {
           <AmountCell
             value={amount(row)}
             sub={
-              row.moved_out
+              row.moved_out || row.shared_from
                 ? undefined
                 : row.limit_on
                   ? t('payer.team.byAgent.limitOn')

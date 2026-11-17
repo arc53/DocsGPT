@@ -305,6 +305,50 @@ describe('UsageTab', () => {
     );
   });
 
+  it('names the team that shared an agent with this one, with no limit line', async () => {
+    getTeamUsage.mockResolvedValue(
+      usage({
+        by_agent: [
+          {
+            agent_id: 'a9',
+            name: 'Dispatch helper',
+            tokens: 4000,
+            cost: 4,
+            requests: 12,
+            people: 2,
+            limit_on: false,
+            published: null,
+            moved_out: false,
+            shared_from: { team_id: 't2', name: 'Dev' },
+          },
+          {
+            agent_id: 'a8',
+            name: 'Hidden origin',
+            tokens: 1000,
+            cost: 1,
+            requests: 1,
+            people: 1,
+            limit_on: false,
+            published: null,
+            moved_out: false,
+            shared_from: { team_id: 't3', name: null },
+          },
+        ],
+      }),
+    );
+    await render();
+    const [shared, unnamed] = rows('usage-by-agent');
+    expect(shared.textContent).toContain('Dispatch helper');
+    expect(shared.textContent).toContain(
+      'workspace.page.sharedFromTeams.from(team=Dev)',
+    );
+    // Its limit belongs to the team that owns it: not shown here.
+    expect(shared.textContent).not.toContain('payer.team.byAgent.noLimit');
+    expect(unnamed.textContent).toContain(
+      'settings.teams.outside.fromAnotherTeam',
+    );
+  });
+
   it('shows five rows, then all of them on Show all', async () => {
     getTeamUsage.mockResolvedValue(
       usage({

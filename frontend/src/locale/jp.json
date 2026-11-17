@@ -4898,6 +4898,7 @@
       },
       "openTeamError": "チームの詳細を読み込めませんでした。",
       "outside": {
+        "fromAnotherTeam": "別のチームから",
         "label": "このチームのアイテムをチーム外に出せる人",
         "policy": {
           "admins": "管理者と所有者",

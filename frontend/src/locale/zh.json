@@ -4896,6 +4896,7 @@
       },
       "openTeamError": "无法加载团队详情。",
       "outside": {
+        "fromAnotherTeam": "来自其他团队",
         "label": "谁可以将此团队的项目带到团队外部",
         "policy": {
           "admins": "管理员和所有者",

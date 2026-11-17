@@ -4953,6 +4953,7 @@
       },
       "openTeamError": "Could not load team details.",
       "outside": {
+        "fromAnotherTeam": "From another team",
         "label": "Who can take this team's items outside",
         "policy": {
           "admins": "Admins and Owner",

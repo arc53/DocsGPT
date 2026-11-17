@@ -5114,6 +5114,7 @@
       },
       "openTeamError": "No se pudieron cargar los detalles del equipo.",
       "outside": {
+        "fromAnotherTeam": "De otro equipo",
         "label": "Quién puede sacar los elementos de este equipo fuera de él",
         "policy": {
           "admins": "Administradores y propietario",
