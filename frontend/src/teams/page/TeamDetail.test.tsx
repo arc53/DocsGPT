@@ -1,6 +1,13 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  type NavigateFunction,
+} from 'react-router-dom';
 
 const mockState = {
   preference: { token: 'tok' },
@@ -96,7 +103,10 @@ const flush = async () => {
 
 const body = () => document.body;
 
+let navigateTo: NavigateFunction | null = null;
+
 function Where() {
+  navigateTo = useNavigate();
   return <div data-testid="where">{useLocation().pathname}</div>;
 }
 
@@ -288,6 +298,35 @@ describe('TeamDetail', () => {
         .querySelector('[data-testid="tab-members"]')
         ?.getAttribute('data-role'),
     ).toBe('editor');
+  });
+
+  it("drops a late answer for the team you left, so its role doesn't land on the next team's page", async () => {
+    setTeam({ role: 'viewer', member_role: 'team_member', is_owner: false });
+    mockState.teams.teams.push({
+      ...mockState.teams.teams[0],
+      id: 't2',
+      name: 'Dev',
+      slug: 'dev',
+    });
+    let answerFirst: (value: unknown) => void = () => {};
+    listGrants.mockImplementation((teamId: string) =>
+      teamId === 't1'
+        ? new Promise((resolve) => {
+            answerFirst = resolve;
+          })
+        : Promise.resolve({ grants: [], role: 'viewer' }),
+    );
+    await render('/teams/t1');
+    act(() => navigateTo!('/teams/t2'));
+    await flush();
+    // The first team, where the caller is an Admin, answers last.
+    answerFirst({ grants: [], role: 'admin', team_role: 'team_admin' });
+    await flush();
+    expect(where()).toBe('/teams/t2');
+    expect(tabLinks().map((tab) => tab.textContent)).toEqual([
+      'settings.teams.tabs.members',
+      'settings.teams.tabs.shared',
+    ]);
   });
 
   it('says so when the team is not one of yours', async () => {

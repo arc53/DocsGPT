@@ -288,6 +288,45 @@ describe('SharedItemsTab, outside the team', () => {
     );
   });
 
+  it("drops a late answer for the team you left, so its shares don't show on the next team's page", async () => {
+    let answerFirst: (value: TeamOutside) => void = () => {};
+    getOutside.mockImplementation((teamId: string) =>
+      teamId === 't1'
+        ? new Promise((resolve) => {
+            answerFirst = resolve;
+          })
+        : Promise.resolve(
+            outside({
+              shares: [share({ id: 'd1', resource_name: 'Dev runbook' })],
+              published: [],
+            }),
+          ),
+    );
+    const show = (team: Team) =>
+      act(() => {
+        root.render(
+          <MemoryRouter initialEntries={['/teams/t1/shared']}>
+            <SharedItemsTab
+              team={team}
+              role="admin"
+              grants={[]}
+              onGrantsChanged={onGrantsChanged}
+            />
+          </MemoryRouter>,
+        );
+      });
+    show(TEAM);
+    await flush();
+    show({ ...TEAM, id: 't2', name: 'Dev', slug: 'dev' });
+    await flush();
+    // The team you left answers last.
+    answerFirst(outside());
+    await flush();
+    const names = rows('outside-share-row').map((row) => row.textContent);
+    expect(names.join(' ')).toContain('Dev runbook');
+    expect(names.join(' ')).not.toContain('Lane notes');
+  });
+
   it('offers Stop sharing only on rows the server lets the reader revoke', async () => {
     getOutside.mockResolvedValue(
       outside({ shares: [share(), share({ id: 's2', can_revoke: false })] }),

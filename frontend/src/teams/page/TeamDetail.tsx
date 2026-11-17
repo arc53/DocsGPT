@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
@@ -64,10 +64,16 @@ export default function TeamDetail() {
     dispatch(loadTeams({ token }));
   }, []);
 
+  // Only the newest read applies: one for the team you left, or an older
+  // read of this one, answering late would show the wrong grants and role.
+  const grantsSeq = useRef(0);
   const loadGrants = useCallback(async () => {
     if (!team) return;
+    const seq = ++grantsSeq.current;
+    const stale = () => seq !== grantsSeq.current;
     try {
       const g = await teamsService.listGrants(team.id, undefined, token);
+      if (stale()) return;
       setGrants(g?.grants ?? []);
       setLiveRole(
         g?.role || g?.team_role
@@ -75,6 +81,7 @@ export default function TeamDetail() {
           : null,
       );
     } catch {
+      if (stale()) return;
       // The page still works on the list's role; say the list didn't load.
       dispatch(
         showActionToast({
@@ -83,7 +90,7 @@ export default function TeamDetail() {
         }),
       );
     } finally {
-      setGrantsSettled(true);
+      if (!stale()) setGrantsSettled(true);
     }
   }, [team?.id, token]);
 

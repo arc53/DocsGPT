@@ -1,6 +1,12 @@
 import type { TFunction } from 'i18next';
 import { Bot, FileText, MessageSquare, Wrench } from 'lucide-react';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -166,12 +172,18 @@ export default function OutsideSharesSection({
   );
   const [toRevoke, setToRevoke] = useState<OutsideShare | null>(null);
 
+  // Only the newest read applies: one for the team you left answering late
+  // would show that team's shares on this one's page.
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const res = await teamsService.getOutside(team.id, token);
+      if (seq !== loadSeq.current) return;
       setOutside(res);
       setStatus('ready');
     } catch {
+      if (seq !== loadSeq.current) return;
       setStatus('error');
     }
   }, [team.id, token]);
