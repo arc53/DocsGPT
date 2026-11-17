@@ -771,6 +771,7 @@ LEFT_OUT: dict[str, tuple[tuple[str, str], ...]] = {
         ("/api/guardrails/catalog", "GET"),
         ("/api/agents/defaults", "GET"),
         ("/api/sources/defaults", "GET"),
+        ("/api/sources/<string:source_id>/workspace", "GET"),
         ("/api/analytics/topic_folders", "GET"),
         ("/api/user/preferences", "GET"),
         ("/api/user/preferences", "PUT"),
