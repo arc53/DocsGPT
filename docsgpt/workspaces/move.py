@@ -84,6 +84,7 @@ from docsgpt.api.user.resource_access import (
     resolve,
     resource_owner,
 )
+from docsgpt.connectors import catalog as connector_catalog
 from docsgpt.connectors import service as connector_service
 from docsgpt.connectors.permissions import holds_owner_credentials
 from docsgpt.security import encryption
@@ -518,7 +519,7 @@ class _Planner:
                 # It couldn't be re-sealed for the new owner; apply must never meet it.
                 return CANT_UNREADABLE
         if self.direction == "out":
-            return None
+            return self._classify_out(kind, row)
         if kind == "source":
             if str(row.get("type") or "").startswith("connector"):
                 return CANT_CONNECTOR
@@ -547,6 +548,29 @@ class _Planner:
             )
             return None if usable else CANT_CONNECTION
         if name == "mcp_tool" and (config.get("auth_type") or "none") == "oauth":
+            return CANT_CONNECTION
+        return None
+
+    @staticmethod
+    def _classify_out(kind: str, row: dict) -> Optional[str]:
+        """Why a team's item can't leave the team, or None when it can.
+
+        A connection never moves, and an item may only point at its own owner's connection, so what runs on
+        the team's account (a source it syncs, a tool signed in to it) stays with the team. A member-mode tool
+        runs on each person's own account and leaves freely.
+
+        Args:
+            kind: The item's kind.
+            row: The item's row.
+
+        Returns:
+            ``connector_synced``, ``connection_account`` or None.
+        """
+        if kind == "source":
+            if str(row.get("type") or "").startswith("connector"):
+                return CANT_CONNECTOR
+            return CANT_CONNECTION if row.get("connection_id") else None
+        if kind == "tool" and row.get("connection_id") and row.get("credential_mode") != "member":
             return CANT_CONNECTION
         return None
 
@@ -1404,6 +1428,11 @@ class _Executor:
                     config["encrypted_credentials"] = encryption.encrypt_credentials(credentials, self.new)
                     if credentials and not config["encrypted_credentials"]:
                         raise MoveError(409, "credentials_unavailable", "A server's saved key can't be re-sealed.")
+            connector_key = row.get("connector_key")
+            if connection_id and row.get("credential_mode") == "member" and not connector_key:
+                # Without its connection a member-mode tool still has to say which service each person signs in to.
+                session = sessions.get(str(connection_id))
+                connector_key = connector_catalog.connector_key_for_row(session) if session else None
             if connection_id and (row.get("name") == "mcp_tool" or row.get("credential_mode") == "member"):
                 connection_id = None
             if self.plan.direction == "in":
@@ -1419,8 +1448,9 @@ class _Executor:
             self._reown(
                 "user_tools", [tool_id],
                 ", config = CAST(:config AS jsonb), connection_id = CAST(:cid AS uuid), status = :status, "
-                "updated_at = now()",
-                {"config": json.dumps(config), "cid": str(connection_id) if connection_id else None, "status": status},
+                "connector_key = :ckey, updated_at = now()",
+                {"config": json.dumps(config), "cid": str(connection_id) if connection_id else None, "status": status,
+                 "ckey": connector_key},
             )
 
     def _slugs(self) -> None:
