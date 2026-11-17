@@ -3939,6 +3939,7 @@
       "editTitle": "Modifier le modèle personnalisé",
       "empty": "Aucun modèle trouvé",
       "errors": {
+        "apiKeyNewHost": "Saisissez la clé API du nouvel hôte. La clé enregistrée n’est envoyée qu’à l’hôte pour lequel elle a été enregistrée.",
         "apiKeyRequired": "La clé API est obligatoire",
         "baseUrlInvalid": "Veuillez saisir une URL valide",
         "baseUrlRequired": "L’URL de base est obligatoire",
@@ -3957,7 +3958,8 @@
         "modelId": "ID du modèle"
       },
       "hints": {
-        "apiKeyEdit": "Laissez vide pour conserver la clé actuelle."
+        "apiKeyEdit": "Laissez vide pour conserver la clé enregistrée tant que l’adresse reste sur le même hôte.",
+        "apiKeyNewHost": "L’adresse est sur un nouvel hôte. Saisissez sa clé API. La clé enregistrée n’est envoyée qu’à l’hôte pour lequel elle a été enregistrée."
       },
       "label": "Modèles personnalisés",
       "loadError": "Impossible de charger vos modèles.",

@@ -3822,6 +3822,7 @@
       "editTitle": "Edit Custom Model",
       "empty": "No models found",
       "errors": {
+        "apiKeyNewHost": "Enter the API key for the new host. The saved key is only sent to the host it was saved for.",
         "apiKeyRequired": "API key is required",
         "baseUrlInvalid": "Please enter a valid URL",
         "baseUrlRequired": "Base URL is required",
@@ -3840,7 +3841,8 @@
         "modelId": "Model ID"
       },
       "hints": {
-        "apiKeyEdit": "Leave blank to keep existing key."
+        "apiKeyEdit": "Leave blank to keep the saved key while the address stays on the same host.",
+        "apiKeyNewHost": "The address is on a new host: enter its API key. The saved key is only sent to the host it was saved for."
       },
       "label": "Custom Models",
       "loadError": "Could not load your models.",

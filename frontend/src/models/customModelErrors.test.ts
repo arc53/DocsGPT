@@ -36,6 +36,7 @@ const ERRORS = 'settings.customModels.team.errors';
 describe('custom model refusal codes', () => {
   it('maps every custom model code the server sends', () => {
     expect(Object.keys(CUSTOM_MODEL_ERROR_KEYS).sort()).toEqual([
+      'api_key_required_for_new_host',
       'credentials_unreadable',
       'custom_model_admin_required',
       'custom_model_personal_only',

@@ -3769,6 +3769,7 @@
       "editTitle": "編輯自訂模型",
       "empty": "找不到模型",
       "errors": {
+        "apiKeyNewHost": "請輸入新主機的 API 金鑰。已儲存的金鑰只會傳送到儲存時所用的主機。",
         "apiKeyRequired": "API 金鑰為必填",
         "baseUrlInvalid": "請輸入有效的 URL",
         "baseUrlRequired": "Base URL 為必填",
@@ -3787,7 +3788,8 @@
         "modelId": "模型 ID"
       },
       "hints": {
-        "apiKeyEdit": "留空以保留現有金鑰。"
+        "apiKeyEdit": "地址仍在同一主機時，留空則保留已儲存的金鑰。",
+        "apiKeyNewHost": "地址指向新的主機：請輸入該主機的 API 金鑰。已儲存的金鑰只會傳送到儲存時所用的主機。"
       },
       "label": "自訂模型",
       "loadError": "無法載入你的模型。",

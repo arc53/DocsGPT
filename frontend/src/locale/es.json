@@ -3939,6 +3939,7 @@
       "editTitle": "Editar modelo personalizado",
       "empty": "No se encontraron modelos",
       "errors": {
+        "apiKeyNewHost": "Introduce la clave API del nuevo host. La clave guardada solo se envía al host para el que se guardó.",
         "apiKeyRequired": "La clave API es obligatoria",
         "baseUrlInvalid": "Introduce una URL válida",
         "baseUrlRequired": "La URL base es obligatoria",
@@ -3957,7 +3958,8 @@
         "modelId": "ID del modelo"
       },
       "hints": {
-        "apiKeyEdit": "Déjalo en blanco para mantener la clave actual."
+        "apiKeyEdit": "Déjalo en blanco para mantener la clave guardada mientras la dirección siga en el mismo host.",
+        "apiKeyNewHost": "La dirección está en un host nuevo: introduce su clave API. La clave guardada solo se envía al host para el que se guardó."
       },
       "label": "Modelos personalizados",
       "loadError": "No se pudieron cargar tus modelos.",

@@ -129,6 +129,28 @@ describe('customModelsService for a team', () => {
     ).toMatchObject({ ok: false, code: 'model_admin_required' });
   });
 
+  it('keeps the code a refused test sends next to its sentence', async () => {
+    post.mockResolvedValue(
+      response(
+        {
+          ok: false,
+          error: 'The base URL points to another host.',
+          code: 'api_key_required_for_new_host',
+        },
+        400,
+      ),
+    );
+    expect(
+      await customModelsService.testCustomModel('m1', 'tok', {
+        base_url: 'https://other.example.com/v1',
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: 'The base URL points to another host.',
+      code: 'api_key_required_for_new_host',
+    });
+  });
+
   it('copies a personal model into a team by id, naming the team in the body', async () => {
     post.mockResolvedValue(
       response({ id: 'm2', source: 'team', owner: 'team' }, 201),

@@ -3801,6 +3801,7 @@
       "editTitle": "Eigenes Modell bearbeiten",
       "empty": "Keine Modelle gefunden",
       "errors": {
+        "apiKeyNewHost": "Gib den API-Schlüssel für den neuen Host ein. Der gespeicherte Schlüssel wird nur an den Host gesendet, für den er gespeichert wurde.",
         "apiKeyRequired": "API-Schlüssel ist erforderlich",
         "baseUrlInvalid": "Bitte gib eine gültige URL ein",
         "baseUrlRequired": "Basis-URL ist erforderlich",
@@ -3819,7 +3820,8 @@
         "modelId": "Modell-ID"
       },
       "hints": {
-        "apiKeyEdit": "Leer lassen, um den vorhandenen Schlüssel beizubehalten."
+        "apiKeyEdit": "Leer lassen, um den gespeicherten Schlüssel zu behalten, solange die Adresse auf demselben Host bleibt.",
+        "apiKeyNewHost": "Die Adresse liegt auf einem neuen Host: Gib seinen API-Schlüssel ein. Der gespeicherte Schlüssel wird nur an den Host gesendet, für den er gespeichert wurde."
       },
       "label": "Eigene Modelle",
       "loadError": "Deine Modelle konnten nicht geladen werden.",

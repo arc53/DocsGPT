@@ -68,8 +68,10 @@ const readTestResult = async (
         (body && (body.error || body.message)) ||
         `Test failed with status ${response.status}`,
     };
-    // A bare code, not a sentence such as a missing field's.
-    if (
+    // The code next to a sentence (`code`), or a bare code in `error`, not
+    // a sentence such as a missing field's.
+    if (typeof body?.code === 'string') result.code = body.code;
+    else if (
       body?.success === false &&
       typeof body.error === 'string' &&
       /^[a-z0-9_]+$/.test(body.error)

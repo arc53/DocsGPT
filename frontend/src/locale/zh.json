@@ -3767,6 +3767,7 @@
       "editTitle": "编辑自定义模型",
       "empty": "未找到模型",
       "errors": {
+        "apiKeyNewHost": "请输入新主机的 API 密钥。已保存的密钥只会发送到保存时所用的主机。",
         "apiKeyRequired": "API 密钥必填",
         "baseUrlInvalid": "请输入有效的 URL",
         "baseUrlRequired": "Base URL 必填",
@@ -3785,7 +3786,8 @@
         "modelId": "模型 ID"
       },
       "hints": {
-        "apiKeyEdit": "留空以保留现有密钥。"
+        "apiKeyEdit": "地址仍在同一主机时，留空则保留已保存的密钥。",
+        "apiKeyNewHost": "地址指向新的主机：请输入该主机的 API 密钥。已保存的密钥只会发送到保存时所用的主机。"
       },
       "label": "自定义模型",
       "loadError": "无法加载你的模型。",

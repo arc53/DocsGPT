@@ -8,6 +8,7 @@ const TEAM_ERRORS = 'settings.customModels.team.errors';
  * keeps a sentence in `error` and sends the code in `code`.
  */
 export const CUSTOM_MODEL_ERROR_KEYS: Readonly<Record<string, string>> = {
+  api_key_required_for_new_host: 'settings.customModels.errors.apiKeyNewHost',
   credentials_unreadable: `${TEAM_ERRORS}.credentialsUnreadable`,
   custom_model_admin_required: `${TEAM_ERRORS}.adminRequired`,
   custom_model_personal_only: `${TEAM_ERRORS}.personalOnly`,

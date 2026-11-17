@@ -328,4 +328,60 @@ describe('CustomModelModal for a team', () => {
     expect(payload).not.toHaveProperty('api_key');
     expect(payload).not.toHaveProperty('owner');
   });
+
+  it('asks for the key again once the address moves to another host, and only then', () => {
+    renderModal(TEAM_MODEL);
+    const [, , baseUrl] = inputs();
+    // Another path on the same host keeps the saved key.
+    type(baseUrl, 'https://llm.example.com/v2');
+    expect(button('settings.customModels.testConnection').disabled).toBe(false);
+    expect(button('settings.customModels.save').disabled).toBe(false);
+    // Another host (or port, or scheme) needs its own key.
+    type(baseUrl, 'https://other.example.com/v1');
+    expect(document.body.textContent).toContain(
+      'settings.customModels.hints.apiKeyNewHost',
+    );
+    expect(document.body.textContent).not.toContain(
+      'settings.customModels.hints.apiKeyEdit',
+    );
+    expect(button('settings.customModels.testConnection').disabled).toBe(true);
+    expect(button('settings.customModels.save').disabled).toBe(true);
+    type(inputs()[3], 'sk-new');
+    expect(button('settings.customModels.testConnection').disabled).toBe(false);
+    expect(button('settings.customModels.save').disabled).toBe(false);
+  });
+
+  it('words a test refused for a new host without its key by its code', async () => {
+    service.testCustomModel.mockResolvedValue({
+      ok: false,
+      error: 'The base URL now points to another host: enter its API key.',
+      code: 'api_key_required_for_new_host',
+    });
+    renderModal(TEAM_MODEL);
+    await act(async () =>
+      button('settings.customModels.testConnection').click(),
+    );
+    const alert = document.body.querySelector('[data-slot="alert"]')!;
+    expect(alert.textContent).toContain(
+      'settings.customModels.errors.apiKeyNewHost',
+    );
+  });
+
+  it('words a save refused for a new host without its key at the key field', async () => {
+    service.updateCustomModel.mockRejectedValue(
+      Object.assign(new Error('api_key_required_for_new_host'), {
+        status: 400,
+        payload: {
+          error: 'api_key_required_for_new_host',
+          message: 'Enter the API key for the new host.',
+        },
+      }),
+    );
+    renderModal(TEAM_MODEL);
+    await act(async () => button('settings.customModels.save').click());
+    expect(document.body.textContent).toContain(
+      'settings.customModels.errors.apiKeyNewHost',
+    );
+    expect(document.body.textContent).not.toContain('Enter the API key');
+  });
 });
