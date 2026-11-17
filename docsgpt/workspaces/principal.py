@@ -105,9 +105,10 @@ def route_owner_notice(
     """Who gets a notice addressed to an item's owner.
 
     A person owner gets it as before. When the owner is a team principal (whose
-    stream nobody reads), the person who started the work gets it; with no
-    such person, a failure kind (:data:`ADMIN_NOTICE_KINDS`) goes to the team's
-    admins and owner, and anything else is dropped.
+    stream nobody reads), the person who started the work gets it while they
+    are still in the team (someone removed hears nothing more about its
+    items); with no such person, a failure kind (:data:`ADMIN_NOTICE_KINDS`)
+    goes to the team's admins and owner, and anything else is dropped.
 
     Args:
         conn: Open connection.
@@ -122,11 +123,14 @@ def route_owner_notice(
         return []
     if not is_principal_id(owner_id):
         return [owner_id]
+    team_id = team_of_principal(owner_id)
     if actor_id and not is_principal_id(actor_id):
-        return [actor_id]
+        from docsgpt.workspaces.roles import team_role_for
+
+        if team_role_for(conn, actor_id, team_id) is not None:
+            return [actor_id]
     if kind not in ADMIN_NOTICE_KINDS:
         return []
-    team_id = team_of_principal(owner_id)
     if team_id is None:
         return []
     from docsgpt.storage.db.repositories.teams import TeamsRepository

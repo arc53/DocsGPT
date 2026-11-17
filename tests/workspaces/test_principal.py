@@ -214,8 +214,20 @@ class TestRouteOwnerNotice:
         assert route_owner_notice(pg_conn, "alice", "bob", "schedule") == ["alice"]
 
     def test_a_principal_owner_routes_to_the_actor(self, pg_conn):
-        principal = principal_id(_team(pg_conn)["id"])
-        assert route_owner_notice(pg_conn, principal, "bob", "source.ingest.failed") == ["bob"]
+        team_id = str(_team(pg_conn)["id"])
+        TeamMembersRepository(pg_conn).add_member(team_id, "bob", role="team_editor")
+        assert route_owner_notice(pg_conn, principal_id(team_id), "bob", "source.ingest.failed") == ["bob"]
+
+    def test_an_actor_no_longer_in_the_team_is_not_told(self, pg_conn):
+        team_id = str(_team(pg_conn, owner="alice")["id"])
+        members = TeamMembersRepository(pg_conn)
+        members.add_member(team_id, "alice", role="team_admin")
+        members.add_member(team_id, "bob", role="team_editor")
+        members.remove_member(team_id, "bob")
+
+        assert route_owner_notice(pg_conn, principal_id(team_id), "bob", "source.ingest.completed") == []
+        # A failure then goes where it goes with nobody behind it: the team's admins.
+        assert route_owner_notice(pg_conn, principal_id(team_id), "bob", "schedule_failed") == ["alice"]
 
     def test_a_principal_actor_is_never_a_recipient(self, pg_conn):
         principal = principal_id(_team(pg_conn)["id"])
