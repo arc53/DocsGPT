@@ -5615,7 +5615,6 @@
         "confirm": "Supprimer tous vos chats dans {{name}} ?",
         "consequence": "Chaque chat que vous avez commencé dans {{name}} est supprimé, avec ses messages. Les chats de vos autres espaces de travail restent. Cette action est irréversible."
       },
-      "exportNotice": "Les administrateurs de {{team}} peuvent exporter les conversations d’ici",
       "mismatch": "Cet agent appartient à un autre espace de travail que ce chat.",
       "notFound": "Vous ne faites plus partie de cette équipe ; le chat ne peut pas continuer ici.",
       "onlyYou": "Vous seul voyez ce chat",

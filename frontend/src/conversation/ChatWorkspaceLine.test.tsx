@@ -69,25 +69,23 @@ const render = (store: ReturnType<typeof makeStore>) =>
 const line = () =>
   container.querySelector('[data-testid="chat-workspace-line"]');
 
-describe('the chat export notice under the composer', () => {
-  it("says the team's admins can export chats when the setting is on", () => {
+describe('the workspace line under the composer', () => {
+  it('names only the team when its admins can export chats', () => {
     render(makeStore('t1', true));
-    expect(line()?.textContent).toContain(
-      'workspace.chat.exportNotice(Operations)',
-    );
+    expect(line()?.textContent).toBe('Operations');
     // The chat isn't only theirs to see any more.
     expect(line()?.textContent).not.toContain('workspace.chat.onlyYou');
   });
 
   it('keeps "Only you can see this chat" while the setting is off', () => {
     render(makeStore('t1', false));
+    expect(line()?.textContent).toContain('Operations');
     expect(line()?.textContent).toContain('workspace.chat.onlyYou');
-    expect(line()?.textContent).not.toContain('workspace.chat.exportNotice');
   });
 
   it('reads an older server with no setting as off', () => {
     render(makeStore('t1', undefined));
-    expect(line()?.textContent).not.toContain('workspace.chat.exportNotice');
+    expect(line()?.textContent).toContain('workspace.chat.onlyYou');
   });
 
   it('says nothing in Personal', () => {

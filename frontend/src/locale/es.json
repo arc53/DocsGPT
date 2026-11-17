@@ -5615,7 +5615,6 @@
         "confirm": "¿Eliminar todos tus chats en {{name}}?",
         "consequence": "Se eliminan todos los chats que iniciaste en {{name}}, con sus mensajes. Los chats de tus otros espacios de trabajo se conservan. No se puede deshacer."
       },
-      "exportNotice": "Los administradores de {{team}} pueden exportar los chats de aquí",
       "mismatch": "Este agente pertenece a otro espacio de trabajo que este chat.",
       "notFound": "Ya no estás en este equipo, así que el chat no puede continuar aquí.",
       "onlyYou": "Solo tú puedes ver este chat",

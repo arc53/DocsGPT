@@ -5415,7 +5415,6 @@
         "confirm": "Alle deine Chats in {{name}} löschen?",
         "consequence": "Jeder Chat, den du in {{name}} begonnen hast, wird mitsamt seinen Nachrichten gelöscht. Chats in deinen anderen Arbeitsbereichen bleiben. Das kann nicht rückgängig gemacht werden."
       },
-      "exportNotice": "Admins von {{team}} können Chats hier exportieren",
       "mismatch": "Dieser Agent gehört zu einem anderen Arbeitsbereich als dieser Chat.",
       "notFound": "Du bist nicht mehr in diesem Team, daher kann der Chat hier nicht weitergehen.",
       "onlyYou": "Nur du siehst diesen Chat",

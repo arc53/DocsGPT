@@ -5436,7 +5436,6 @@
         "confirm": "Delete all your chats in {{name}}?",
         "consequence": "Every chat you started in {{name}} is deleted, with its messages. Chats in your other workspaces stay. This can't be undone."
       },
-      "exportNotice": "Admins of {{team}} can export chats here",
       "mismatch": "This agent belongs to another workspace than this chat.",
       "notFound": "You're no longer in this team, so the chat can't continue here.",
       "onlyYou": "Only you can see this chat",

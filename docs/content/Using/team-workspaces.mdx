@@ -244,7 +244,7 @@ A team that still owns items can't be deleted. Move its items to Personal or del
 - **Custom models.** A team agent uses the models your instance offers, not a member's custom model.
 - **Paired devices.** A remote device runs on one person's machine.
 - **Access tokens.** A token acts as you; see [Over the API](#over-the-api).
-- **Your chats.** A chat belongs to the workspace you started it in and can use only that workspace's items. In a team, the composer says "Operations · Only you can see this chat". Other members, Admins included, can't open your chats. If the instance allows it, the team's Owner and Admins can [export the team's chats](#export-the-teams-chats) to a file, and a new chat in that team says so. As with any agent, a team agent's **Logs** and **Insights**, which Editors and up see, record each run, the question included.
+- **Your chats.** A chat belongs to the workspace you started it in and can use only that workspace's items. In a team, the composer says "Operations · Only you can see this chat". Other members, Admins included, can't open your chats. If the instance allows it, the team's Owner and Admins can [export the team's chats](#export-the-teams-chats) to a file, and the composer then names only the team. As with any agent, a team agent's **Logs** and **Insights**, which Editors and up see, record each run, the question included.
 
 A team chat can be shared only as a read-only link, and only by those the team's [setting for taking items outside](#who-can-take-items-outside) allows: Admins, or Editors too. While the team is locked, nobody can, and its existing chat links stop opening. **Delete all chats** in **Settings → General** deletes your chats in the current workspace only.
 
@@ -320,7 +320,7 @@ With the setting on:
 - The team's **Settings** tab has an export row for its Owner and Admins. It downloads one NDJSON file, `docsgpt-<team>-chats-<date>.ndjson`, with every chat started in that team workspace, including chats of people who have since left and chats through the team's agents from outside (API key, widget, public link).
 - Each chat keeps its name, who started it, its agent, and each message's prompt and answer, time, model, source titles, tool names, attachment file names and feedback.
 - The file never holds personal chats, other teams' chats, tool arguments or results, reasoning, or attachment contents.
-- Members see "Admins of Operations can export chats here" when they start a new chat in the team.
+- The line under the composer names only the team, without "Only you can see this chat".
 - Each export is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.chats_exported`, with how many chats and people it covered.
 
 ## Over the API
