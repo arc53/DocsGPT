@@ -13,7 +13,7 @@ P1 #3 — covered indirectly: the route already accepts a user_id; this
 from __future__ import annotations
 
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -785,7 +785,7 @@ class TestContinuationPreservesByomScope:
     owner-stored BYOM record."""
 
     def test_resume_forwards_model_user_id_from_agent_config(
-        self, monkeypatch
+        self, monkeypatch, pg_conn
     ):
         """``resume_from_tool_actions`` reads ``model_user_id`` from the
         saved ``agent_config`` and forwards it to LLMCreator so the
@@ -793,6 +793,10 @@ class TestContinuationPreservesByomScope:
         from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has
+        # no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         captured: dict = {}
 

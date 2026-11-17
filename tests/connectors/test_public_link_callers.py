@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -174,12 +174,16 @@ class TestPublicLinkDetection:
         assert executor.public_link_caller is True
         assert executor.api_write_allowlist == {f"tool-1:{ACTION}"}
 
-    def test_resumed_run_stays_a_public_caller(self, monkeypatch):
+    def test_resumed_run_stays_a_public_caller(self, monkeypatch, pg_conn):
         from docsgpt.agents import agent_creator as ac_mod
         from docsgpt.api.answer.services import continuation_service as cont_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.api.answer.services.stream_processor import StreamProcessor
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         cont_service = MagicMock()
         cont_service.claim_state.return_value = {

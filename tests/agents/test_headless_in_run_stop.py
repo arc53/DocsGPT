@@ -8,7 +8,7 @@ own limit), and the message as ``error``. It is never worded as a time limit.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -160,10 +160,14 @@ class TestTheRunOpensItsLimits:
         _run(monkeypatch, lambda: iter([{"answer": "ok"}]), endpoint="webhook", payer="dana", seen=seen)
         assert seen["started"]["outside"] is True
 
-    def test_the_agent_row_is_passed_so_no_extra_read_is_needed(self, monkeypatch):
+    def test_the_agent_row_is_passed_so_no_extra_read_is_needed(self, monkeypatch, pg_conn):
+        from docsgpt.agents import headless_runner as hr
+
+        # A limited agent's past usage is read first: none in the throwaway database.
+        monkeypatch.setattr(hr, "db_readonly", lambda: nullcontext(pg_conn))
         seen = {}
-        config = {"user_id": "owner", "id": "agent-1", "default_model_id": "m", "limited_token_mode": True,
-                  "token_limit": 10}
+        config = {"user_id": "owner", "id": "00000000-0000-0000-0000-0000000000a1", "default_model_id": "m",
+                  "limited_token_mode": True, "token_limit": 10}
         _run(monkeypatch, lambda: iter([{"answer": "ok"}]), config=config, payer="dana", seen=seen)
         assert seen["started"]["agent"]["token_limit"] == 10
 
