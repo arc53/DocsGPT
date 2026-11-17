@@ -239,3 +239,26 @@ class TestThePolicyIsReadLive:
         with pytest.raises(ValueError):
             repo.set_outside_policy(tid, "everyone")
         assert repo.set_outside_policy(str(uuid.uuid4()), "admins") is None
+
+
+class TestATeamsFolderTree:
+    def test_a_locked_team_keeps_its_folders_in_with_a_team_locked_refusal(self):
+        from docsgpt.api.user.folders.service import FolderError, FolderTree
+
+        tid = str(uuid.uuid4())
+        FolderTree(principal_id(tid), tid, "admin", "admins").require("move_out")
+        with pytest.raises(FolderError) as refused:
+            FolderTree(principal_id(tid), tid, "owner", "locked").require("move_out")
+        assert (refused.value.status, refused.value.code) == (403, "team_locked")
+        with pytest.raises(FolderError) as refused:
+            FolderTree(principal_id(tid), tid, "editor", "admins").require("move_out")
+        assert refused.value.code == "workspace_role_required"
+
+    def test_a_teams_tree_without_its_policy_raises(self):
+        from docsgpt.api.user.folders.service import FolderTree
+
+        tid = str(uuid.uuid4())
+        with pytest.raises(ValueError):
+            FolderTree(principal_id(tid), tid, "admin").can("move_out")
+        # A person's own tree needs none.
+        assert FolderTree("bob").can("move_out")
