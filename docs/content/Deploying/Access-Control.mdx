@@ -143,9 +143,11 @@ Each role includes everything the role above it in the table can do.
 | Role | Capabilities |
 | --- | --- |
 | `viewer` | Uses the team's agents, sources, tools and prompts, and lists its folders. New members join as viewers. |
-| `editor` | Creates, imports, edits and exports the team's items, sees an agent's logs and manages its schedules (and takes one over as its payer), manages the team's folders, and moves their own items into the team. |
-| `admin` | Publishes the team's agents and manages their API key, public link and webhook (and takes over paying for them), deletes items, moves items out to their own Personal workspace, manages members and roles, reads the team's usage report, exports its chats when `TEAM_CHAT_EXPORT_ENABLED` is on, and edits the team's name and description. |
-| `owner` | The team's creator, or whoever ownership was transferred to. An admin who can also transfer ownership and delete the team. |
+| `editor` | Creates, imports, edits and exports the team's items, sees an agent's logs and manages its schedules (and takes one over as its payer), manages the team's folders, and moves their own items into the team. When the team's setting allows **Editors too**, also publishes agents, manages their API key, public link and webhook, and shares the team's items with other teams. |
+| `admin` | Publishes the team's agents, manages their API key, public link and webhook (and takes over paying for them), and shares the team's items with other teams, as far as the team's setting allows. Also deletes items, moves items out to their own Personal workspace, manages members and roles, reads the team's usage report, exports its chats when `TEAM_CHAT_EXPORT_ENABLED` is on, and edits the team's name and description. |
+| `owner` | The team's creator, or whoever ownership was transferred to. An admin who can also transfer ownership, unlock the team, and delete the team. |
+
+Taking items outside the team (an agent's API key, widget, public link and webhook, sharing with another team, and team chat links) follows the team's own [setting](/Using/team-workspaces#who-can-take-items-outside): admins by default, editors too when the team allows it, and nobody while the team is locked. Admins and the owner change the setting; only the owner unlocks a locked team. While it is locked, nobody moves items out or exports its agents either.
 
 The owner is `teams.owner_id`; the other roles are stored per member as `team_admin`, `team_editor` and `team_viewer`. Requests take and return the short names. The older names still work: `team_member` is read and accepted as `viewer`, and team payloads keep `member_role` (`team_admin` or `team_member`) beside the new `role`. Upgrading turns existing members into viewers and existing admins into admins.
 
@@ -225,10 +227,11 @@ Some runs are limited, because nobody can approve an action for you there:
 
 A tool or source someone shared with you can go into your own agents, and runs there with your access to it. It doesn't reach anyone its owner didn't share it with: an agent that uses one gets no API key (and so no website widget), no public link and no incoming webhook.
 
-- This covers the agent's tools and sources, the sources in its [Knowledge folders](/Sources/adding-knowledge#pick-a-whole-folder), and the tools, sources and folders on a workflow agent's nodes. Prompts don't count. A resource an editor [sponsors](#resources-an-editor-adds-to-someone-elses-agent) runs with their access, not the owner's, and follows the sponsor rules instead.
+- This covers the agent's tools and sources, the sources in its [Knowledge folders](/Sources/adding-knowledge#pick-a-whole-folder), and the tools, sources and folders on a workflow agent's nodes. A prompt counts only when a team owns it; a prompt a person shares with you doesn't. A resource an editor [sponsors](#resources-an-editor-adds-to-someone-elses-agent) runs with their access, not the owner's, and follows the sponsor rules instead.
 - Publishing such an agent makes it available in your own chats, and your teammates' if you shared the agent with them, but creates no API key.
 - Creating a key (`POST /api/regenerate_agent_key/<agent_id>` on an agent with none), a public link (`PUT /api/share_agent`) or a webhook (`GET /api/agent_webhook`) for it is refused with `403`, as is a promptable [conversation link](/Using/sharing) on someone else's source. Replacing a key or link the agent already has still works.
-- A save that adds such a tool or source to an agent that has a key, a public link or a webhook (`PUT /api/update_agent/<agent_id>`, or `PUT /api/workflows/<id>` for a node) is refused with `403`. Tools and sources already on it stay.
+- A save that adds such a tool, source or team prompt to an agent that has a key, a public link or a webhook (`PUT /api/update_agent/<agent_id>`, or `PUT /api/workflows/<id>` for a node) is refused with `403`. What is already on it stays.
+- A team's items (sources, tools, prompts and knowledge folders) stay with the people who reach them, so a personal agent that uses one can be shared only with the teams and people who already reach each of them; sharing it more widely is refused with `409` `uses_team_items`. See [A personal agent that uses a team's items](/Using/teams-and-sharing#a-personal-agent-that-uses-a-teams-items).
 
 The refusal names each resource and whose it is:
 
