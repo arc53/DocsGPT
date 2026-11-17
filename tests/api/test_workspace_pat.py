@@ -143,7 +143,7 @@ class TestAgentTool:
         "list_agents", "create_agent", "list_agent_folders", "create_agent_folder", "list_schedules",
         "list_sources", "search_sources_list", "create_wiki_source", "list_folders", "create_folder",
         "file_in_folder", "list_prompts", "create_prompt", "list_tools", "create_tool", "list_artifacts",
-        "list_conversations", "search_conversations",
+        "list_conversations", "search_conversations", "list_custom_models",
     }
 
     def test_lists_and_creates_take_a_workspace(self):

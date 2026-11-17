@@ -842,9 +842,17 @@ class Team(Resource):
                 try:
                     TeamsRepository(conn).delete(team_id)
                 except TeamNotEmpty as not_empty:
+                    # Connections and custom models don't move; they are removed instead.
+                    removed = [
+                        noun for kind, noun in (("connection", "connections"), ("custom_model", "custom models"))
+                        if not_empty.counts.get(kind)
+                    ]
                     message = "Move or delete the team's items before deleting the team"
-                    if not_empty.counts.get("connection"):
-                        message = "Move or delete the team's items and remove its connections before deleting the team"
+                    if removed:
+                        message = (
+                            f"Move or delete the team's items and remove its {' and '.join(removed)} "
+                            "before deleting the team"
+                        )
                     return make_response(
                         jsonify(
                             {

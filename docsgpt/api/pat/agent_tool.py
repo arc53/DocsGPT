@@ -162,7 +162,14 @@ CATALOG: tuple[Action, ...] = (
     Action("get_account", "GET", "/api/user/me", "Who this token acts as: user id, roles, email and name."),
     Action("get_quota", "GET", "/api/user/quota", "The account's usage limits: tokens and cost used, and when each resets."),
     Action("list_models", "GET", "/api/models", "List the models this account can use, with their ids and capabilities."),
-    Action("list_custom_models", "GET", "/api/user/models", "List the custom models this account registered."),
+    Action(
+        "list_custom_models",
+        "GET",
+        "/api/user/models",
+        "List the custom models this account registered, or with owner=team and a workspace, the team's.",
+        {"owner": _param("team to list the custom models of the team named by workspace. Leave empty for "
+                         "this account's own.")},
+    ),
     Action(
         "get_custom_model",
         "GET",
@@ -734,7 +741,7 @@ WORKSPACE_ACTIONS = frozenset({
     "list_agents", "create_agent", "list_agent_folders", "create_agent_folder", "list_schedules",
     "list_sources", "search_sources_list", "create_wiki_source", "list_folders", "create_folder",
     "file_in_folder", "list_prompts", "create_prompt", "list_tools", "create_tool", "list_artifacts",
-    "list_conversations", "search_conversations",
+    "list_conversations", "search_conversations", "list_custom_models",
 })
 _WORKSPACE = "A team id from list_workspaces to work in that team. Leave empty for Personal."
 CATALOG = tuple(

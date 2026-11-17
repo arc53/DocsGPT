@@ -87,7 +87,25 @@ class UserCustomModelsRepository:
         description: str = "",
         capabilities: Optional[dict] = None,
         enabled: bool = True,
+        created_by: Optional[str] = None,
     ) -> dict:
+        """Insert a model; its key is sealed with ``user_id``, the owner (a person or a team's principal).
+
+        Args:
+            user_id: The owner.
+            upstream_model_id: The id sent to the provider.
+            display_name: The name shown in pickers.
+            base_url: The OpenAI-compatible endpoint.
+            api_key_plaintext: The provider key.
+            description: Shown under the name.
+            capabilities: What the model supports (unknown keys dropped).
+            enabled: Whether pickers offer it.
+            created_by: The person adding a team's model. Left None for a person's own, which the
+                ``fill_created_by`` trigger sets to the owner.
+
+        Returns:
+            The new row.
+        """
         values = {
             "user_id": user_id,
             "upstream_model_id": upstream_model_id,
@@ -98,6 +116,8 @@ class UserCustomModelsRepository:
             "capabilities": self._normalize_capabilities(capabilities),
             "enabled": bool(enabled),
         }
+        if created_by:
+            values["created_by"] = created_by
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         stmt = (
@@ -118,6 +138,96 @@ class UserCustomModelsRepository:
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def get_by_id(self, model_id: str) -> Optional[dict]:
+        """One model by id, whoever owns it; callers authorize (``workspaces.team_models``).
+
+        Args:
+            model_id: The model's id; one that isn't a UUID finds nothing.
+
+        Returns:
+            The row, or None.
+        """
+        from docsgpt.storage.db.base_repository import looks_like_uuid
+
+        if not model_id or not looks_like_uuid(str(model_id)):
+            return None
+        row = self._conn.execute(
+            text("SELECT * FROM user_custom_models WHERE id = CAST(:id AS uuid)"), {"id": str(model_id)}
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def owned_ids(self, owner_id: str, model_ids: list[str]) -> list[str]:
+        """Which of ``model_ids`` are custom models ``owner_id`` owns.
+
+        Args:
+            owner_id: A person or a team's principal.
+            model_ids: Candidate ids; ones that aren't UUIDs are ignored.
+
+        Returns:
+            The ids (as given) that name a row of ``owner_id``.
+        """
+        from docsgpt.storage.db.base_repository import looks_like_uuid
+
+        candidates = {str(m).lower(): str(m) for m in model_ids if m and looks_like_uuid(str(m))}
+        if not candidates or not owner_id:
+            return []
+        rows = self._conn.execute(
+            text(
+                "SELECT id::text FROM user_custom_models "
+                "WHERE id = ANY(CAST(:ids AS uuid[])) AND user_id = :owner"
+            ),
+            {"ids": sorted(candidates), "owner": owner_id},
+        ).fetchall()
+        found = {str(r[0]).lower() for r in rows}
+        return [given for key, given in candidates.items() if key in found]
+
+    def usage(self, owner_id: str, model_id: str) -> dict[str, list[dict]]:
+        """The owner's agents and workflows that name a model, so a delete can say what falls back.
+
+        An agent names it as its default or in its model list; a workflow in an agent node of its current
+        graph. Only ``owner_id``'s items count: no one else's item can run on the model.
+
+        Args:
+            owner_id: The model's owner.
+            model_id: The model's id.
+
+        Returns:
+            ``{"agents": [{id, name}], "workflows": [{id, name}]}``, each by name.
+        """
+        params = {"owner": owner_id, "m": str(model_id).lower()}
+        agents = self._conn.execute(
+            text(
+                """
+                SELECT a.id::text, a.name FROM agents a
+                WHERE a.user_id = :owner AND (
+                    lower(a.default_model_id) = :m
+                    OR (jsonb_typeof(a.models) = 'array' AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements_text(a.models) e WHERE lower(e) = :m))
+                )
+                ORDER BY a.name, a.id
+                """
+            ),
+            params,
+        ).fetchall()
+        workflows = self._conn.execute(
+            text(
+                """
+                SELECT w.id::text, w.name FROM workflows w
+                WHERE w.user_id = :owner AND EXISTS (
+                    SELECT 1 FROM workflow_nodes n
+                    WHERE n.workflow_id = w.id AND n.graph_version = w.current_graph_version
+                      AND n.node_type = 'agent'
+                      AND lower(COALESCE(n.config -> 'config' ->> 'model_id', n.config ->> 'model_id')) = :m)
+                ORDER BY w.name, w.id
+                """
+            ),
+            params,
+        ).fetchall()
+        return {
+            "agents": [{"id": r[0], "name": r[1]} for r in agents],
+            "workflows": [{"id": r[0], "name": r[1]} for r in workflows],
+        }
 
     def existing_ids(self, model_ids: list[str]) -> list[str]:
         """Which of ``model_ids`` are custom models of anyone.

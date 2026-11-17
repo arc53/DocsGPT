@@ -7,7 +7,8 @@ calls ``get_models`` to produce the final per-provider model list.
 End-user BYOM (per-user model records in Postgres) is layered on top:
 when a lookup arrives with a ``user_id``, the registry consults a
 per-user cache first (loaded from the ``user_custom_models`` table on
-miss) and falls through to the built-in catalog.
+miss) and falls through to the built-in catalog. A team's principal has
+a layer like a person's, holding the team's models (``source="team"``).
 
 Cross-process invalidation: ``ModelRegistry`` is a per-process
 singleton, so a CRUD write only evicts the cache in the process that
@@ -235,6 +236,10 @@ class ModelRegistry:
             )
             from docsgpt.storage.db.session import db_readonly
 
+            from docsgpt.workspaces.principal import is_principal_id
+
+            # A team's principal owns the team's models; pickers group them apart from a person's own.
+            source = "team" if is_principal_id(user_id) else "user"
             with db_readonly() as conn:
                 repo = UserCustomModelsRepository(conn)
                 rows = repo.list_for_user(user_id)
@@ -304,7 +309,7 @@ class ModelRegistry:
                         enabled=bool(row.get("enabled", True)),
                         base_url=row["base_url"],
                         upstream_model_id=row["upstream_model_id"],
-                        source="user",
+                        source=source,
                         api_key=api_key,
                     )
         except Exception as e:

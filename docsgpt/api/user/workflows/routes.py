@@ -911,7 +911,8 @@ def _owner_models(owner_id: str) -> List[Dict]:
     return [
         {k: v for k, v in model.to_dict().items() if k in _OWNER_MODEL_FIELDS}
         for model in models
-        if model.source == "user"
+        # A team workflow's owner is the team's principal, whose models are the team's.
+        if model.source in ("user", "team")
     ]
 
 

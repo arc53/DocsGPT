@@ -2,14 +2,17 @@
 
 - ``GET /api/models`` — list available models for the current user.
   Combines the built-in catalog with the user's BYOM records; in a team
-  workspace, the catalog only (a team can't use a person's own models).
-- ``GET/POST/PATCH/DELETE /api/user/models[/<id>]`` — CRUD for the
-  user's own OpenAI-compatible model registrations (BYOM).
+  workspace, the catalog and the team's own models (never a person's).
+- ``GET/POST/PATCH/DELETE /api/user/models[/<id>]`` — CRUD for
+  OpenAI-compatible model registrations (BYOM): the caller's own, or with
+  ``owner=team`` the models of the team the workspace header names.
 - ``POST /api/user/models/<id>/test`` — sanity-check the upstream
   endpoint with a tiny request.
 
-Every BYOM endpoint is user-scoped at the repository layer
-(every query filters on ``user_id`` from ``request.decoded_token``).
+A list or create is the caller's own unless it says ``owner=team``; a route
+about one model loads it by id and goes by its owner, never the header
+(``docsgpt/workspaces/team_models.py``). Only a team's Admins and Owner
+change a team's model, and never through a personal access token.
 """
 
 from __future__ import annotations
@@ -21,7 +24,9 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
 from docsgpt.api import api
+from docsgpt.api.pat.tokens import is_pat
 from docsgpt.core.model_registry import ModelRegistry
+from docsgpt.quotas.pause import PayerChecks
 from docsgpt.security.safe_url import (
     UnsafeUserUrlError,
     pinned_post,
@@ -33,6 +38,17 @@ from docsgpt.storage.db.repositories.user_custom_models import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
 from docsgpt.workspaces.context import current_workspace, parse_workspace_ref, WorkspaceError
+from docsgpt.workspaces.principal import team_of_principal
+from docsgpt.workspaces.team_models import (
+    CODE_NOT_AVAILABLE_TO_TOKENS,
+    ModelDenied,
+    authorize_model,
+    creation_owner,
+    is_team_model,
+    listed_owner,
+    model_fields,
+    wants_team,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -131,18 +147,69 @@ def _normalize_capabilities(raw) -> dict:
     return out
 
 
-def _row_to_response(row: dict) -> dict:
-    """Wire-format projection — never includes the API key."""
-    return {
+def _row_to_response(conn, row: dict, viewer: str, checks: PayerChecks | None = None) -> dict:
+    """Wire-format projection for ``viewer`` — never includes the API key.
+
+    Args:
+        conn: Open connection.
+        row: The ``user_custom_models`` row.
+        viewer: The person reading it.
+        checks: The request's :class:`PayerChecks`, shared across a list.
+
+    Returns:
+        The model's fields plus ``owner``, ``team_id``, ``created_by`` and ``allowed_actions``. ``base_url``
+        only for someone who may manage it: on a team's model, its Admins and Owner.
+    """
+    fields = model_fields(conn, row, viewer, checks=checks)
+    body = {
         "id": str(row["id"]),
         "upstream_model_id": row["upstream_model_id"],
         "display_name": row["display_name"],
         "description": row.get("description") or "",
-        "base_url": row["base_url"],
         "capabilities": row.get("capabilities") or {},
         "enabled": bool(row.get("enabled", True)),
-        "source": "user",
+        "source": "team" if fields["owner"] == "team" else "user",
+        **fields,
     }
+    if "manage" in fields["allowed_actions"]:
+        body["base_url"] = row["base_url"]
+    return body
+
+
+def _token_refused():
+    """403 for a personal access token changing a team's model: it carries a key every team chat uses."""
+    return make_response(
+        jsonify(
+            {
+                "success": False,
+                "error": CODE_NOT_AVAILABLE_TO_TOKENS,
+                "message": "A team's custom models can only be changed in the app",
+            }
+        ),
+        403,
+    )
+
+
+def _is_token() -> bool:
+    return is_pat(getattr(request, "decoded_token", None))
+
+
+def _audit_team_model(conn, actor: str, event: str, row: dict, **detail) -> None:
+    """Record ``event`` on the team's audit trail when ``row`` is a team's model (best-effort).
+
+    Args:
+        conn: Open connection inside the action's transaction.
+        actor: Who did it.
+        event: ``team.model_added``, ``team.model_updated`` or ``team.model_removed``.
+        row: The model.
+        **detail: More metadata; None values are dropped.
+    """
+    if not is_team_model(row):
+        return
+    # Lazy: the teams routes import the user API, which imports this module.
+    from docsgpt.api.user.teams.routes import _audit
+
+    _audit(conn, actor, event, team_id=team_of_principal(row["user_id"]), model_id=str(row["id"]), **detail)
 
 
 @models_ns.route("/models")
@@ -152,8 +219,10 @@ class ModelsListResource(Resource):
 
         When the request is authenticated, the response includes the
         user's own BYOM registrations alongside the built-in catalog. In a
-        team workspace it leaves them out: saving one on a team item is
-        refused, so a team's pickers never offer one.
+        team workspace it lists the team's enabled models instead
+        (``source: "team"``, without ``base_url``) and never the person's:
+        saving one on a team item is refused, so a team's pickers never
+        offer one.
         """
         try:
             user_id = None
@@ -168,13 +237,23 @@ class ModelsListResource(Resource):
                 except WorkspaceError as err:
                     return err.response()
                 if workspace.is_team:
-                    user_id = None
+                    # The team's own models resolve in its principal's layer; a person's never do.
+                    user_id = workspace.owner_id
 
             registry = ModelRegistry.get_instance()
             models = registry.get_enabled_models(user_id=user_id)
+            if user_id and user_id != request.decoded_token.get("sub"):
+                models = [model for model in models if model.source != "user"]
+            entries = []
+            for model in models:
+                entry = model.to_dict()
+                if model.source == "team":
+                    # Members use a team's model; only its Admins see where it points (Custom models page).
+                    entry.pop("base_url", None)
+                entries.append(entry)
 
             response = {
-                "models": [model.to_dict() for model in models],
+                "models": entries,
                 "default_model_id": registry.default_model_id,
                 "count": len(models),
             }
@@ -186,30 +265,50 @@ class ModelsListResource(Resource):
 
 @models_ns.route("/user/models")
 class UserModelsCollectionResource(Resource):
-    @api.doc(description="List the current user's BYOM custom models")
+    @api.doc(
+        description=(
+            "List the current user's BYOM custom models; with owner=team, the models of the team the "
+            "workspace header names (any member)"
+        ),
+        params={"owner": "personal (default) or team"},
+    )
     def get(self):
         user_id, err = _user_id_or_401()
         if err:
             return err
         try:
             with db_readonly() as conn:
-                rows = UserCustomModelsRepository(conn).list_for_user(user_id)
-            return make_response(
-                jsonify({"models": [_row_to_response(r) for r in rows]}), 200
-            )
+                owner_id = listed_owner(conn, user_id, request.args.get("owner"))
+                rows = UserCustomModelsRepository(conn).list_for_user(owner_id)
+                checks = PayerChecks()
+                models = [_row_to_response(conn, r, user_id, checks) for r in rows]
+            return make_response(jsonify({"models": models}), 200)
+        except WorkspaceError as e:
+            return e.response()
         except Exception as e:
             current_app.logger.error(
                 f"Error listing user custom models: {e}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 500)
 
-    @api.doc(description="Register a new BYOM custom model")
+    @api.doc(
+        description=(
+            "Register a new BYOM custom model. owner=team adds it for the team the workspace header "
+            "names (Admins, in the app only); without it the model is the caller's own, whatever the header."
+        )
+    )
     def post(self):
         user_id, err = _user_id_or_401()
         if err:
             return err
 
         data = request.get_json() or {}
+        try:
+            for_team = wants_team(data.get("owner"))
+        except WorkspaceError as e:
+            return e.response()
+        if for_team and _is_token():
+            return _token_refused()
         missing = check_required_fields(
             data,
             ["upstream_model_id", "display_name", "base_url", "api_key"],
@@ -255,8 +354,10 @@ class UserModelsCollectionResource(Resource):
 
         try:
             with db_session() as conn:
+                owner_id, created_by = creation_owner(conn, user_id, data.get("owner"))
+                # A team's key is sealed with the principal, so any Admin can replace it and runs open it.
                 row = UserCustomModelsRepository(conn).create(
-                    user_id=user_id,
+                    user_id=owner_id,
                     upstream_model_id=data["upstream_model_id"],
                     display_name=data["display_name"],
                     description=data.get("description") or "",
@@ -264,35 +365,44 @@ class UserModelsCollectionResource(Resource):
                     api_key_plaintext=data["api_key"],
                     capabilities=capabilities,
                     enabled=bool(data.get("enabled", True)),
+                    created_by=created_by,
                 )
+                _audit_team_model(
+                    conn, user_id, "team.model_added", row, display_name=row["display_name"],
+                    upstream_model_id=row["upstream_model_id"], copied=False,
+                )
+                body = _row_to_response(conn, row, user_id)
+        except WorkspaceError as e:
+            return e.response()
         except Exception as e:
             current_app.logger.error(
                 f"Error creating user custom model: {e}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 500)
 
-        ModelRegistry.invalidate_user(user_id)
-        return make_response(jsonify(_row_to_response(row)), 201)
+        ModelRegistry.invalidate_user(owner_id)
+        return make_response(jsonify(body), 201)
 
 
 @models_ns.route("/user/models/<string:model_id>")
 class UserModelResource(Resource):
-    @api.doc(description="Get one BYOM custom model")
+    @api.doc(description="Get one BYOM custom model: the caller's own, or a team's they are in")
     def get(self, model_id):
         user_id, err = _user_id_or_401()
         if err:
             return err
         try:
             with db_readonly() as conn:
-                row = UserCustomModelsRepository(conn).get(model_id, user_id)
+                access = authorize_model(conn, model_id, user_id, "view")
+                body = _row_to_response(conn, dict(access.row), user_id)
+        except ModelDenied as e:
+            return e.response()
         except Exception as e:
             current_app.logger.error(
                 f"Error fetching user custom model: {e}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 500)
-        if row is None:
-            return make_response(jsonify({"success": False}), 404)
-        return make_response(jsonify(_row_to_response(row)), 200)
+        return make_response(jsonify(body), 200)
 
     @api.doc(description="Update a BYOM custom model (partial)")
     def patch(self, model_id):
@@ -364,41 +474,71 @@ class UserModelResource(Resource):
 
         try:
             with db_session() as conn:
-                ok = UserCustomModelsRepository(conn).update(
-                    model_id, user_id, update_fields
+                access = authorize_model(conn, model_id, user_id, "manage")
+                if access.is_team and _is_token():
+                    return _token_refused()
+                owner_id = access.owner_id
+                repo = UserCustomModelsRepository(conn)
+                # The owner's id seals a replaced key, so a team's stays the team's.
+                ok = repo.update(model_id, owner_id, update_fields)
+                if not ok:
+                    return make_response(jsonify({"success": False}), 404)
+                row = repo.get(model_id, owner_id)
+                _audit_team_model(
+                    conn, user_id, "team.model_updated", row, display_name=row["display_name"],
+                    fields=sorted(k for k in update_fields if k != "api_key_plaintext"),
+                    key_replaced="api_key_plaintext" in update_fields,
                 )
+                body = _row_to_response(conn, row, user_id)
+        except ModelDenied as e:
+            return e.response()
         except Exception as e:
             current_app.logger.error(
                 f"Error updating user custom model: {e}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 500)
 
-        if not ok:
-            return make_response(jsonify({"success": False}), 404)
+        ModelRegistry.invalidate_user(owner_id)
+        return make_response(jsonify(body), 200)
 
-        ModelRegistry.invalidate_user(user_id)
-        with db_readonly() as conn:
-            row = UserCustomModelsRepository(conn).get(model_id, user_id)
-        return make_response(jsonify(_row_to_response(row)), 200)
-
-    @api.doc(description="Delete a BYOM custom model")
+    @api.doc(
+        description=(
+            "Delete a BYOM custom model. On a team's model (Admins, in the app only) the answer also has "
+            "usage: the team's agents and workflows that named it, which fall back to the default model."
+        )
+    )
     def delete(self, model_id):
         user_id, err = _user_id_or_401()
         if err:
             return err
+        body: dict = {"success": True}
         try:
             with db_session() as conn:
-                ok = UserCustomModelsRepository(conn).delete(model_id, user_id)
+                access = authorize_model(conn, model_id, user_id, "manage")
+                if access.is_team and _is_token():
+                    return _token_refused()
+                owner_id = access.owner_id
+                row = dict(access.row)
+                repo = UserCustomModelsRepository(conn)
+                usage = repo.usage(owner_id, model_id) if access.is_team else None
+                if not repo.delete(model_id, owner_id):
+                    return make_response(jsonify({"success": False}), 404)
+                if usage is not None:
+                    body["usage"] = usage
+                    _audit_team_model(
+                        conn, user_id, "team.model_removed", row, display_name=row["display_name"],
+                        agents=len(usage["agents"]), workflows=len(usage["workflows"]),
+                    )
+        except ModelDenied as e:
+            return e.response()
         except Exception as e:
             current_app.logger.error(
                 f"Error deleting user custom model: {e}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 500)
-        if not ok:
-            return make_response(jsonify({"success": False}), 404)
 
-        ModelRegistry.invalidate_user(user_id)
-        return make_response(jsonify({"success": True}), 200)
+        ModelRegistry.invalidate_user(owner_id)
+        return make_response(jsonify(body), 200)
 
 
 def _run_connection_test(
@@ -492,6 +632,15 @@ class UserModelTestPayloadResource(Resource):
             return err
 
         data = request.get_json() or {}
+        try:
+            if wants_team(data.get("owner")):
+                # Testing a model for the team is a step of adding one: the same Admins, in the app.
+                if _is_token():
+                    return _token_refused()
+                with db_readonly() as conn:
+                    creation_owner(conn, user_id, data.get("owner"))
+        except WorkspaceError as e:
+            return e.response()
         missing = check_required_fields(
             data, ["base_url", "api_key", "upstream_model_id"]
         )
@@ -537,17 +686,20 @@ class UserModelTestResource(Resource):
 
         try:
             with db_readonly() as conn:
-                repo = UserCustomModelsRepository(conn)
-                row = repo.get(model_id, user_id)
-                if row is None:
-                    return make_response(jsonify({"success": False}), 404)
+                access = authorize_model(conn, model_id, user_id, "manage")
+                if access.is_team and _is_token():
+                    return _token_refused()
+                row = dict(access.row)
+                # The key was sealed with the owner's id: the team's principal on a team's model.
                 stored_api_key = (
-                    repo._decrypt_api_key(
-                        row.get("api_key_encrypted", ""), user_id
+                    UserCustomModelsRepository._decrypt_api_key(
+                        row.get("api_key_encrypted", ""), access.owner_id
                     )
                     if not override_api_key
                     else None
                 )
+        except ModelDenied as e:
+            return e.response()
         except Exception as e:
             current_app.logger.error(
                 f"Error loading user custom model for test: {e}", exc_info=True

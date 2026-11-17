@@ -30,6 +30,7 @@ _ITEM_KINDS = {
     "workflows": "workflow",
     "folders": "folder",
     "connector_sessions": "connection",
+    "user_custom_models": "custom_model",
 }
 
 # Every single-column FK onto ``users(user_id)``: the tables that can hold a principal's rows, and

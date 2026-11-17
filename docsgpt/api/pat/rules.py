@@ -396,7 +396,8 @@ RULES: dict[tuple[str, str], Rule] = {
     # Cancels a sign-in the caller started; the route checks it is theirs.
     ("/api/mcp_server/oauth_cancel", "POST"): _rule("tools:write", open=True),
     ("/api/mcp_server/save", "POST"): _rule("tools:write", (JSON, "id")),
-    # Models
+    # Models. A token reads a team's models (``owner=team`` with the workspace) but never adds, changes,
+    # tests or deletes one: the routes refuse it (``not_available_to_tokens``), as connections are closed.
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
     ("/api/user/models", "GET"): _rule("models:read"),
     ("/api/user/models/<string:model_id>", "GET"): _rule("models:read"),
