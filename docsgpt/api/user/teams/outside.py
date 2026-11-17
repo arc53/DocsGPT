@@ -283,6 +283,49 @@ def _warning_kind(conn, ra: ResourceAccess) -> str:
     return best_effort(conn, "a shared tool's account", _mode, "tool_stored")
 
 
+# The custom models an agent runs on: its default, its model list and the agent nodes of its workflow's
+# current graph, kept to the agent's owner's own (anyone else's never runs), enabled, by name.
+_AGENT_TEAM_MODELS_SQL = text(
+    """
+    WITH agent AS (
+        SELECT * FROM agents WHERE id = CAST(:agent AS uuid) AND user_id = :owner
+    ), named AS (
+        SELECT lower(default_model_id) AS m FROM agent
+        UNION SELECT lower(e) FROM agent, jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(agent.models) = 'array' THEN agent.models ELSE '[]'::jsonb END) e
+        UNION SELECT lower(COALESCE(n.config -> 'config' ->> 'model_id', n.config ->> 'model_id'))
+        FROM agent
+        JOIN workflows w ON w.id = agent.workflow_id AND w.user_id = :owner
+        JOIN workflow_nodes n ON n.workflow_id = w.id AND n.graph_version = w.current_graph_version
+            AND n.node_type = 'agent'
+    )
+    SELECT m.id::text AS id, m.display_name AS name FROM user_custom_models m
+    WHERE m.user_id = :owner AND m.enabled AND lower(m.id::text) IN (SELECT m FROM named WHERE m IS NOT NULL)
+    ORDER BY m.display_name, m.id
+    """
+)
+
+
+def _team_models(conn, ra: ResourceAccess) -> list[dict]:
+    """The owning team's custom models a team agent runs on, so the share dialog can say so.
+
+    Members of a team the agent is shared with, and outside callers, run it on these models with the
+    owning team's key. Anything but an agent names none.
+
+    Returns:
+        list[dict]: ``{id, name}`` by name; empty when it can't be read.
+    """
+    if ra.resource_type != "agent" or not ra.owner_id:
+        return []
+    return best_effort(
+        conn, "an agent's team models",
+        lambda: [dict(r._mapping) for r in conn.execute(
+            _AGENT_TEAM_MODELS_SQL, {"agent": ra.resource_id, "owner": ra.owner_id},
+        ).fetchall()],
+        [],
+    )
+
+
 def share_targets(conn, user: str, ra: ResourceAccess, shared_with: set[str]) -> list[dict]:
     """The teams the caller may share a team item with: theirs, but not its own or one that has it.
 
@@ -309,7 +352,8 @@ def owner_dialog_fields(conn, ra: ResourceAccess, user: str) -> dict:
 
     Returns:
         dict: ``outside_policy``, ``outside_shares`` (:func:`outside_share_rows` of this item),
-        ``share_targets`` (:func:`share_targets`) and ``warning_kind`` (:func:`_warning_kind`).
+        ``share_targets`` (:func:`share_targets`), ``warning_kind`` (:func:`_warning_kind`) and
+        ``team_models`` (:func:`_team_models`: the team's custom models an agent runs on, ``[{id, name}]``).
     """
     policy = team_policy(conn, ra.team_id)
     shares = outside_share_rows(conn, ra.team_id, ra.team_role, policy, (ra.resource_type, ra.resource_id))
@@ -318,6 +362,7 @@ def owner_dialog_fields(conn, ra: ResourceAccess, user: str) -> dict:
         "outside_shares": shares,
         "share_targets": share_targets(conn, user, ra, {s["team_id"] for s in shares}),
         "warning_kind": _warning_kind(conn, ra),
+        "team_models": _team_models(conn, ra),
     }
 
 
