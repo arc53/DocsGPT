@@ -209,7 +209,9 @@ export default function useConnectorLauncher({
     if (teamSave) {
       // The form closes right after this yields; the summary comes after.
       await Promise.resolve();
-      if (teamSave.connectionId)
+      if (teamSave.connectionId) {
+        // The summary names the new account from the team's list.
+        refresh();
         setActive({
           kind: 'wizard',
           connector,
@@ -217,7 +219,7 @@ export default function useConnectorLauncher({
           connectionId: teamSave.connectionId,
           owner: 'team',
         });
-      else end(true);
+      } else end(true);
       return;
     }
     const list = await connectorsService.listConnections(token);

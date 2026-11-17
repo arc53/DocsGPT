@@ -332,10 +332,15 @@ export default function ConnectWizard({
   const usesOAuth = method === 'oauth';
 
   // A finished MCP save or a reconnect lands here with only the connection id.
+  // Its account is named from here until the lists are read again (a team's
+  // sign-in is in no list yet).
   useEffect(() => {
     if (initialMode !== 'done' || !initialConnectionId) return;
     connectorsService.getConnection(initialConnectionId, token).then((data) => {
-      if (data?.success) setTools(data.connection.tools ?? []);
+      if (!data?.success) return;
+      setTools(data.connection.tools ?? []);
+      if (data.connection.account_label)
+        setAccountLabel(data.connection.account_label);
     });
   }, [initialMode, initialConnectionId, token]);
 

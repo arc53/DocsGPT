@@ -20,6 +20,7 @@ const service = vi.hoisted(() => ({
   getCatalog: vi.fn(),
   listConnections: vi.fn(),
   renameConnection: vi.fn(),
+  setToolPermissions: vi.fn(),
 }));
 vi.mock('../api/services/connectorsService', () => ({ default: service }));
 
@@ -390,5 +391,110 @@ describe('ConnectWizard for a team', () => {
     );
     expect(text()).not.toContain('settings.connectors.team.reconnect.body');
     expect(service.getConnection).not.toHaveBeenCalled();
+  });
+
+  describe("a team's MCP sign-in saved from the server form", () => {
+    const customMcp: ConnectorDefinition = {
+      ...base,
+      key: 'custom_mcp',
+      name: 'MCP server',
+      icon: 'tool_mcp_tool',
+      auth_kind: 'mcp',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      publisher: 'custom',
+    };
+    /** The team's sign-in to a custom server, made by `ana` just now. */
+    const teamMcp = teamDrive({
+      id: 'conn-mcp',
+      connector_key: 'custom_mcp',
+      name: 'Carrier Rates',
+      icon: 'tool_mcp_tool',
+      account_label: 'ops@carrier.example',
+      auth_kind: 'mcp_oauth',
+      server_url: 'https://rates.example.com',
+      source_count: 0,
+      tool_count: 1,
+      connected_by: { user_id: 'ana', label: 'ana@operations.io' },
+      allowed_actions: ['view', 'sync', 'manage', 'pick'],
+      can_pick: true,
+    });
+    const savedTool = {
+      id: 'tool-m',
+      name: 'mcp_tool',
+      display_name: 'Carrier Rates',
+      status: true,
+      credential_mode: 'owner',
+      actions: [
+        {
+          name: 'quote',
+          description: 'Quote a lane.',
+          access: 'write',
+          permission: 'ask',
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      service.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...teamMcp, tools: [savedTool], sources: [] },
+      });
+      service.setToolPermissions.mockResolvedValue({
+        success: true,
+        tool: savedTool,
+      });
+    });
+
+    it("ends on the summary of the team's account, with its tool", async () => {
+      const onClose = vi.fn();
+      await render(
+        customMcp,
+        { mode: 'done', connectionId: 'conn-mcp', onClose },
+        { connections: [teamMcp] },
+      );
+      expect(title()).toBe(
+        'settings.connectors.wizard.doneTitle(settings.connectors.custom.custom_mcp)',
+      );
+      expect(service.getConnection).toHaveBeenCalledWith(
+        'conn-mcp',
+        expect.anything(),
+      );
+      // The account the team signed in with, and the tool it set up.
+      expect(text()).toContain('settings.connectors.wizard.doneSummaryNone');
+      expect(text()).toContain('settings.connectors.wizard.toolsHeading');
+      // Nothing to sync from a server, so it never offers to.
+      expect(button('settings.connectors.syncContent')).toBeUndefined();
+      await click('settings.connectors.wizard.tryInChat');
+      expect(onClose).toHaveBeenCalledWith(true, []);
+    });
+
+    it("sets the tool's permissions on the team's account", async () => {
+      await render(
+        customMcp,
+        { mode: 'done', connectionId: 'conn-mcp' },
+        { connections: [teamMcp] },
+      );
+      const always = document.body.querySelector<HTMLButtonElement>(
+        '[data-permission="always"]',
+      );
+      expect(always).not.toBeNull();
+      await act(async () => always!.click());
+      expect(service.setToolPermissions).toHaveBeenCalledWith(
+        'conn-mcp',
+        'tool-m',
+        { quote: 'always' },
+        expect.anything(),
+      );
+    });
+
+    it('names the account before the team list is read again', async () => {
+      await render(
+        customMcp,
+        { mode: 'done', connectionId: 'conn-mcp' },
+        { connections: [] },
+      );
+      expect(text()).toContain('settings.connectors.wizard.doneSummaryNone');
+    });
   });
 });

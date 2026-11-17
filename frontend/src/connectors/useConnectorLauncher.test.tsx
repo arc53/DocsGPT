@@ -344,10 +344,13 @@ describe('useConnectorLauncher', () => {
       ],
     });
     await act(async () => launchRef!(CUSTOM_MCP));
+    vi.mocked(connectorsService.listConnections).mockClear();
     await act(async () =>
       mcpForm.onServerSaved!('mcp-team', { connectionId: 'conn-team' }),
     );
     expect(wizard()).toBe('done:conn-team');
+    // The summary names the new account: the lists are read again for it.
+    expect(connectorsService.listConnections).toHaveBeenCalled();
 
     // A tool on each person's own sign-in has no connection: the run ends.
     await act(async () => launchRef!(CUSTOM_MCP));
