@@ -1032,6 +1032,31 @@ def _borrow_message(agents: list[dict], hidden: int, direction: str) -> str:
             "those items from it first.")
 
 
+def _sides_to_lock(conn: Connection, mover: str, request: MoveRequest) -> list[str]:
+    """Who owns the items now and who will, read as the planner reads them, in lock order.
+
+    Moving out, every team principal that owns a named item is included; the
+    planner picks one of them, and holding more is harmless.
+
+    Args:
+        conn: Open connection.
+        mover: The person moving.
+        request: From :func:`parse_move_request`.
+
+    Returns:
+        list[str]: Owner ids, sorted so two moves never wait on each other's locks in a cycle.
+    """
+    owners = {mover}
+    if request.team_id is not None:
+        owners.add(principal_id(request.team_id))
+    else:
+        for kind, item_id in request.items:
+            owner = resource_owner(conn, kind, item_id)
+            if is_principal_id(owner):
+                owners.add(owner)
+    return sorted(owners)
+
+
 def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
     """Apply a move in one transaction (a savepoint of the caller's), only while its plan is unchanged.
 
@@ -1052,6 +1077,11 @@ def apply_move(conn: Connection, mover: str, request: MoveRequest) -> MovePlan:
     """
     if not request.fingerprint:
         raise MoveError(400, "fingerprint_required", "Send the fingerprint of the plan you agreed to")
+    folders = FoldersRepository(conn)
+    for owner in _sides_to_lock(conn, mover, request):
+        # The folder service's lock on each tree, taken before planning: a folder created in a moving one
+        # meanwhile is either planned along or finds its parent gone, never left behind under a team's.
+        folders.lock_tree(owner)
     with conn.begin_nested():
         plan = plan_move(conn, mover, request)
         if plan.body["fingerprint"] != request.fingerprint:
