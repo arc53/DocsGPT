@@ -80,6 +80,7 @@ import { effectiveRetry } from '../retryConfig';
 import { NO_ESCAPE, schemaErrorText, type UserTool } from '../workflowHelpers';
 import { type NodePanelBodyProps } from './types';
 
+import { groupModels } from '../../../models/modelGroups';
 import type { Model } from '../../../models/types';
 
 interface AgentPanelProps extends NodePanelBodyProps {
@@ -303,12 +304,15 @@ export default function AgentPanel({
     if (next) dispatch(loadConnectors({ token }));
   };
 
-  const builtinModels = availableModels.filter((m) => m.source !== 'user');
+  const modelGroups = groupModels(availableModels);
+  const builtinModels = modelGroups.builtin;
   // Custom models are the person's own: none for a workflow that lives in
   // another workspace than the list.
-  const userModels = pickerScope.holderElsewhere
-    ? []
-    : availableModels.filter((m) => m.source === 'user');
+  const userModels = pickerScope.holderElsewhere ? [] : modelGroups.user;
+  // A team's models from the list are the workspace's; the owner's
+  // (`modelsFromOwner`) are the workflow's team's wherever it is shown.
+  const teamModels =
+    pickerScope.holderElsewhere && !modelsFromOwner ? [] : modelGroups.team;
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
   // Marks a row only in the list; its chip keeps the plain name.
   const attachedDescription = t('agents.form.sponsors.addedByOther');
@@ -399,6 +403,18 @@ export default function AgentPanel({
                       {t('settings.customModels.modelsGroup.builtin')}
                     </SelectLabel>
                     {builtinModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.display_name} · {model.provider}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {teamModels.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>
+                      {t('settings.customModels.team.pickerGroup')}
+                    </SelectLabel>
+                    {teamModels.map((model) => (
                       <SelectItem key={model.id} value={model.id}>
                         {model.display_name} · {model.provider}
                       </SelectItem>

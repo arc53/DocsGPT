@@ -579,6 +579,14 @@
         "savedVersion": "version enregistrée",
         "unsavedChanges": "Vous avez des modifications non enregistrées. L’aperçu utilise la version enregistrée jusqu’à ce que vous enregistriez."
       },
+      "refusedModels": {
+        "line": "Cet agent ne peut pas utiliser {{names}}.",
+        "remove": "Retirer de l’agent",
+        "separator": ", ",
+        "unlisted_many": "{{count}} modèles non proposés ici",
+        "unlisted_one": "{{count}} modèle non proposé ici",
+        "unlisted_other": "{{count}} modèles non proposés ici"
+      },
       "resourceStates": {
         "ask": {
           "admin": "Demandez à un administrateur de le réactiver.",

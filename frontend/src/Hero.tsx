@@ -17,6 +17,7 @@ import {
 import { selectFolderWorkspaceId } from './components/folders/folderWorkspace';
 import HeroSuggestions from './hero/HeroSuggestions';
 import { useDarkTheme } from './hooks';
+import { groupModels } from './models/modelGroups';
 import {
   selectAvailableModels,
   selectSelectedModel,
@@ -107,14 +108,13 @@ export function HeroModelSelect() {
   ]);
 
   const hasModels = availableModels && (availableModels?.length ?? 0) > 0;
-  const builtinModels = (availableModels ?? []).filter(
-    (m: Model) => m.source !== 'user',
-  );
-  // Until the list is this workspace's, custom models (a person's own) wait:
-  // the old list may hold Personal's in a team.
-  const userModels = listIsCurrent
-    ? (availableModels ?? []).filter((m: Model) => m.source === 'user')
-    : [];
+  const groups = groupModels(availableModels ?? []);
+  const builtinModels = groups.builtin;
+  // Until the list is this workspace's, custom models (a person's own or a
+  // team's) wait: the old list may hold Personal's in a team, or another
+  // team's.
+  const userModels = listIsCurrent ? groups.user : [];
+  const teamModels = listIsCurrent ? groups.team : [];
   const modelItems = (models: Model[]) =>
     models.map((model) => (
       <SelectItem key={model.id} value={model.id}>
@@ -145,10 +145,10 @@ export function HeroModelSelect() {
           <div className="text-muted-foreground px-2 py-1.5 text-sm">
             {t('agents.form.modelsPopup.noOptionsMessage')}
           </div>
-        ) : userModels.length === 0 ? (
+        ) : userModels.length === 0 && teamModels.length === 0 ? (
           modelItems(builtinModels)
         ) : (
-          // Headings only once the user has models of their own to tell apart.
+          // Headings only once there are custom models to tell apart.
           <>
             {builtinModels.length > 0 && (
               <SelectGroup>
@@ -158,12 +158,22 @@ export function HeroModelSelect() {
                 {modelItems(builtinModels)}
               </SelectGroup>
             )}
-            <SelectGroup>
-              <SelectLabel>
-                {t('settings.customModels.modelsGroup.user')}
-              </SelectLabel>
-              {modelItems(userModels)}
-            </SelectGroup>
+            {teamModels.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>
+                  {t('settings.customModels.team.pickerGroup')}
+                </SelectLabel>
+                {modelItems(teamModels)}
+              </SelectGroup>
+            )}
+            {userModels.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>
+                  {t('settings.customModels.modelsGroup.user')}
+                </SelectLabel>
+                {modelItems(userModels)}
+              </SelectGroup>
+            )}
           </>
         )}
       </SelectContent>

@@ -33,6 +33,7 @@ import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { isCustomModelSaveRefusal } from '../../models/customModelErrors';
 import { ActiveState } from '../../models/misc';
+import { isCatalogModel } from '../../models/modelGroups';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can, canOpenShare, canPublish } from '../../utils/accessUtils';
 import { selectWorkspaceRoleOrNull } from '../../workspace/workspaceSlice';
@@ -439,7 +440,9 @@ function WorkflowBuilderInner() {
     () =>
       ownerModels
         ? [
-            ...listedModels.filter((model) => model.source !== 'user'),
+            // The catalog from the list; every custom model is the owner's
+            // (a team's own models come with the list too: not twice).
+            ...listedModels.filter(isCatalogModel),
             ...ownerModels,
           ]
         : listedModels,

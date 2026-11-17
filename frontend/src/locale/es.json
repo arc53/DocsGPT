@@ -579,6 +579,14 @@
         "savedVersion": "versión guardada",
         "unsavedChanges": "Tienes cambios sin guardar. La vista previa usa la versión guardada hasta que guardes."
       },
+      "refusedModels": {
+        "line": "Este agente no puede usar {{names}}.",
+        "remove": "Quitar del agente",
+        "separator": ", ",
+        "unlisted_many": "{{count}} modelos que no se ofrecen aquí",
+        "unlisted_one": "{{count}} modelo que no se ofrece aquí",
+        "unlisted_other": "{{count}} modelos que no se ofrecen aquí"
+      },
       "resourceStates": {
         "ask": {
           "admin": "Pide a un administrador que lo vuelva a activar.",

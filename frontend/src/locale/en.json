@@ -586,6 +586,13 @@
         "savedVersion": "saved version",
         "unsavedChanges": "You have unsaved changes. The preview uses the saved version until you save."
       },
+      "refusedModels": {
+        "line": "This agent can't run on {{names}}.",
+        "remove": "Remove from the agent",
+        "separator": ", ",
+        "unlisted_one": "{{count}} model not offered here",
+        "unlisted_other": "{{count}} models not offered here"
+      },
       "resourceStates": {
         "ask": {
           "admin": "Ask an admin to turn it back on.",

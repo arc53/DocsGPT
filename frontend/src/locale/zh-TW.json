@@ -564,6 +564,13 @@
         "savedVersion": "已儲存版本",
         "unsavedChanges": "你有未儲存的變更。儲存之前，預覽會使用已儲存的版本。"
       },
+      "refusedModels": {
+        "line": "此代理無法使用 {{names}}。",
+        "remove": "從代理中移除",
+        "separator": "、",
+        "unlisted_one": "{{count}} 個此處未提供的模型",
+        "unlisted_other": "{{count}} 個此處未提供的模型"
+      },
       "resourceStates": {
         "ask": {
           "admin": "請管理員重新開啟。",

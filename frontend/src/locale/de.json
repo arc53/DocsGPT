@@ -565,6 +565,13 @@
         "savedVersion": "gespeicherte Version",
         "unsavedChanges": "Sie haben ungespeicherte Änderungen. Die Vorschau nutzt die gespeicherte Version, bis Sie speichern."
       },
+      "refusedModels": {
+        "line": "Dieser Agent kann {{names}} nicht nutzen.",
+        "remove": "Aus dem Agenten entfernen",
+        "separator": ", ",
+        "unlisted_one": "{{count}} Modell, das hier nicht angeboten wird",
+        "unlisted_other": "{{count}} Modelle, die hier nicht angeboten werden"
+      },
       "resourceStates": {
         "ask": {
           "admin": "Bitte einen Admin, es wieder zu aktivieren.",

@@ -564,6 +564,13 @@
         "savedVersion": "保存済みバージョン",
         "unsavedChanges": "保存されていない変更があります。保存するまで、プレビューは保存済みのバージョンを使います。"
       },
+      "refusedModels": {
+        "line": "このエージェントは {{names}} を使えません。",
+        "remove": "エージェントから外す",
+        "separator": "、",
+        "unlisted_one": "ここで提供されていないモデル {{count}} 件",
+        "unlisted_other": "ここで提供されていないモデル {{count}} 件"
+      },
       "resourceStates": {
         "ask": {
           "admin": "管理者にオンに戻すよう依頼してください。",

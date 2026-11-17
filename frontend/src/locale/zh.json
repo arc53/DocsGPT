@@ -564,6 +564,13 @@
         "savedVersion": "已保存版本",
         "unsavedChanges": "你有未保存的更改。保存之前，预览使用已保存的版本。"
       },
+      "refusedModels": {
+        "line": "此智能体无法使用 {{names}}。",
+        "remove": "从智能体中移除",
+        "separator": "、",
+        "unlisted_one": "{{count}} 个此处未提供的模型",
+        "unlisted_other": "{{count}} 个此处未提供的模型"
+      },
       "resourceStates": {
         "ask": {
           "admin": "请让管理员重新开启。",

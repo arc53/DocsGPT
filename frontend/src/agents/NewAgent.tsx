@@ -205,6 +205,8 @@ import { useAgentGaps } from './useAgentGaps';
 import { IMPROVE_PARAMS, readImproveHandoff } from './improveLink';
 import AgentGapCards from './AgentGapCards';
 
+import { customModelRefusedIds } from '../models/customModelErrors';
+import { groupModels } from '../models/modelGroups';
 import type { Model } from '../models/types';
 import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
 import {
@@ -434,6 +436,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // The custom models a refused save named: ones the agent's owner can't
+  // run (a person's on a team agent, a team's on another workspace's).
+  const [refusedModelIds, setRefusedModelIds] = useState<string[]>([]);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
   // Unsaved changes: what a save would send against what was loaded or last
@@ -498,6 +503,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
     { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
+
+  // The refused models by name; one the list doesn't offer (a person's own
+  // in a team) is only counted.
+  const refusedModelsLine = (() => {
+    if (refusedModelIds.length === 0) return '';
+    const listed = refusedModelIds
+      .map((id) => availableModels.find((m) => m.id === id)?.display_name)
+      .filter((name): name is string => !!name);
+    const unlisted = refusedModelIds.length - listed.length;
+    const names = [
+      ...listed,
+      ...(unlisted > 0
+        ? [t('agents.form.refusedModels.unlisted', { count: unlisted })]
+        : []),
+    ].join(t('agents.form.refusedModels.separator'));
+    return t('agents.form.refusedModels.line', {
+      names,
+      interpolation: { escapeValue: false },
+    });
+  })();
+  const removeRefusedModels = () => {
+    const refused = new Set(refusedModelIds);
+    setSelectedModelIds(
+      (prev) => new Set(Array.from(prev).filter((id) => !refused.has(id))),
+    );
+    setRefusedModelIds([]);
+  };
 
   // The largest window of the agent's models: a limit past it is noted.
   const modelWindow = useMemo(
@@ -1780,10 +1812,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       savingRef.current = true;
       setLoading(true);
       setSubmitError(null);
+      setRefusedModelIds([]);
       const result = await sendAgent(formData, failedText);
       if (result.status === 'cancelled') return;
       if (result.status === 'failed') {
         setSubmitError(result.message);
+        setRefusedModelIds(customModelRefusedIds(result.body));
         return;
       }
       const data = await result.response.json();
@@ -2838,40 +2872,56 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     id={modelsPickerId}
                     labelSurface="background"
                     label={t('agents.form.sections.models')}
+                    error={
+                      refusedModelIds.length > 0 ? (
+                        <>
+                          {refusedModelsLine}{' '}
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="text"
+                            onClick={removeRefusedModels}
+                          >
+                            {t('agents.form.refusedModels.remove')}
+                          </Button>
+                        </>
+                      ) : undefined
+                    }
                   >
                     <MultiSelectPopover
                       open={isModelsPopupOpen}
                       onOpenChange={setIsModelsPopupOpen}
                       title={t('agents.form.modelsPopup.title')}
                       items={(() => {
-                        const builtinLabel = t(
-                          'settings.customModels.modelsGroup.builtin',
-                        );
-                        const userLabel = t(
-                          'settings.customModels.modelsGroup.user',
-                        );
-                        const builtin: MultiSelectPopoverItem[] = [];
-                        const user: MultiSelectPopoverItem[] = [];
-                        // Custom models are the person's own: none for an
-                        // agent that lives in another workspace than the list.
-                        availableModels.forEach((model) => {
-                          if (
-                            pickerScope.holderElsewhere &&
-                            model.source === 'user'
-                          )
-                            return;
-                          const opt: MultiSelectPopoverItem = {
+                        const groups = groupModels(availableModels);
+                        const items = (models: Model[], group: string) =>
+                          models.map((model): MultiSelectPopoverItem => ({
                             id: model.id,
                             label: model.display_name,
-                            group:
-                              model.source === 'user'
-                                ? userLabel
-                                : builtinLabel,
-                          };
-                          if (model.source === 'user') user.push(opt);
-                          else builtin.push(opt);
-                        });
-                        return [...builtin, ...user];
+                            group,
+                          }));
+                        // Custom models are the workspace's (a person's own
+                        // or the team's): none for an agent that lives in
+                        // another workspace than the list.
+                        const custom = !pickerScope.holderElsewhere;
+                        return [
+                          ...items(
+                            groups.builtin,
+                            t('settings.customModels.modelsGroup.builtin'),
+                          ),
+                          ...(custom
+                            ? items(
+                                groups.team,
+                                t('settings.customModels.team.pickerGroup'),
+                              )
+                            : []),
+                          ...(custom
+                            ? items(
+                                groups.user,
+                                t('settings.customModels.modelsGroup.user'),
+                              )
+                            : []),
+                        ];
                       })()}
                       selectedIds={Array.from(selectedModelIds)}
                       onToggle={(id) => {
