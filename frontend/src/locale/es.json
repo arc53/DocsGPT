@@ -2482,6 +2482,7 @@
       "invalidFileType": "Solo se admiten archivos .yaml o .yml",
       "leaveUnattached": "Dejar sin vincular",
       "modelCustom": "{{name}}: modelo personalizado",
+      "modelLeftOff": "{{name}}: aún no es un modelo del equipo, se omitirá",
       "models": "Modelos",
       "planWarningsTitle": "Revisa antes de importar:",
       "readError": "No se pudo leer este archivo de agente",
@@ -6011,6 +6012,9 @@
           "always": "No pueden cambiarlo, volver a compartirlo ni publicar agentes que lo usen. Deja de compartirlo cuando quieras; todo lo que lo usa en {{team}} se detiene.",
           "prompt": "Los miembros de {{team}} pueden leerlo y usarlo en sus agentes.",
           "source": "Los miembros de {{team}} pueden leer todos los archivos que contiene y usar la fuente en sus agentes.",
+          "teamModels_many": "Los miembros de {{team}} usarán este agente con los modelos {{names}} de {{owner}}.",
+          "teamModels_one": "Los miembros de {{team}} usarán este agente con el modelo {{names}} de {{owner}}.",
+          "teamModels_other": "Los miembros de {{team}} usarán este agente con los modelos {{names}} de {{owner}}.",
           "toolMember": "Cada miembro usa su propia cuenta.",
           "toolStored": "Los miembros de {{team}} usarán esta herramienta con la cuenta guardada de {{owner}}. Lo que hagan con ella se hace en nombre de {{owner}}."
         }

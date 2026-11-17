@@ -2365,6 +2365,7 @@
       "invalidFileType": "仅支持 .yaml 或 .yml 文件",
       "leaveUnattached": "暂不关联",
       "modelCustom": "{{name}}：自定义模型",
+      "modelLeftOff": "{{name}}：还不是团队的模型，将被省略",
       "models": "模型",
       "planWarningsTitle": "导入前请检查：",
       "readError": "无法读取此智能体文件",
@@ -5752,6 +5753,8 @@
           "always": "他们不能修改它、继续共享它，也不能发布使用它的智能体。您可以随时停止共享；届时 {{team}} 中使用它的一切都会停止。",
           "prompt": "{{team}} 的成员可以阅读它，并在自己的智能体中使用。",
           "source": "{{team}} 的成员可以阅读其中的每个文件，并在自己的智能体中使用它。",
+          "teamModels_one": "{{team}} 的成员将使用 {{owner}} 的模型 {{names}} 运行此智能体。",
+          "teamModels_other": "{{team}} 的成员将使用 {{owner}} 的模型 {{names}} 运行此智能体。",
           "toolMember": "每位成员使用自己的账户。",
           "toolStored": "{{team}} 的成员将使用 {{owner}} 保存的账户运行此工具。他们用它执行的操作都以 {{owner}} 的身份进行。"
         }

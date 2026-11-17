@@ -27,6 +27,7 @@ import {
 } from '../components/folders/folderTree';
 import { importFolderRefs } from '../components/folders/importFolderRef';
 import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
+import { CUSTOM_MODEL_ERROR_KEYS } from '../models/customModelErrors';
 import { ActiveState } from '../models/misc';
 import type { ImportModelRefusal } from '../models/types';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
@@ -626,8 +627,24 @@ export default function ImportAgentModal({
               </Section>
             )}
 
-            {plan.models.some((m) => m.status === 'create') && (
+            {plan.models.some(
+              (m) => m.status === 'create' || leftOffReason(m),
+            ) && (
               <Section title={t('modals.importAgent.models')}>
+                {plan.models.filter(leftOffReason).map((m) => (
+                  // A team import that may not add the model: why.
+                  <Alert key={m.display_name} variant="warning">
+                    <AlertDescription>
+                      <p>
+                        {t('modals.importAgent.modelLeftOff', {
+                          name: m.display_name,
+                          ...noEscape,
+                        })}
+                      </p>
+                      <p>{t(leftOffReason(m) as string)}</p>
+                    </AlertDescription>
+                  </Alert>
+                ))}
                 {plan.models
                   .filter((m) => m.status === 'create')
                   .map((m) => (
@@ -664,6 +681,15 @@ export default function ImportAgentModal({
       </div>
     </Modal>
   );
+}
+
+/**
+ * The locale key of why a team import leaves a custom model off (only an
+ * Admin adds one, never a token), or null for a model it keeps.
+ */
+function leftOffReason(model: PlanModel): string | null {
+  if (model.status !== 'unavailable' || !model.reason) return null;
+  return CUSTOM_MODEL_ERROR_KEYS[model.reason] ?? null;
 }
 
 function Section({

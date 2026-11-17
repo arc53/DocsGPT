@@ -216,14 +216,16 @@ const WARNING_KEYS: Record<ShareWarningKind, string> = {
 /**
  * What sharing a team's item with another team gives that team: the line for
  * the item's kind (an agent's chats and Logs, a source's files, a tool's
- * account), then the line every share has (no changes, no sharing on,
- * stopping it stops whatever uses it).
+ * account), the owning team's custom models an agent runs on (the receiving
+ * team's members spend them), then the line every share has (no changes, no
+ * sharing on, stopping it stops whatever uses it).
  *
  * Args:
  *   t: The translate function.
  *   kind: The item's `warning_kind`; unknown gives only the common line.
  *   team: The receiving team's name.
  *   owner: The owning team's name.
+ *   teamModels: The item's `team_models`; none adds no line.
  *
  * Returns:
  *   The lines, in reading order.
@@ -233,6 +235,7 @@ export function shareWarningLines(
   kind: ShareWarningKind | undefined,
   team: string,
   owner: string,
+  teamModels: readonly { id: string; name: string }[] = [],
 ): string[] {
   const noEscape = { interpolation: { escapeValue: false } };
   const key = kind ? WARNING_KEYS[kind] : undefined;
@@ -242,6 +245,17 @@ export function shareWarningLines(
           t(`workspace.share.outside.warning.${key}`, {
             team,
             owner,
+            ...noEscape,
+          }),
+        ]
+      : []),
+    ...(teamModels.length > 0
+      ? [
+          t('workspace.share.outside.warning.teamModels', {
+            count: teamModels.length,
+            team,
+            owner,
+            names: teamModels.map((model) => model.name).join(', '),
             ...noEscape,
           }),
         ]

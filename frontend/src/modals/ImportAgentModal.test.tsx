@@ -377,4 +377,95 @@ describe('ImportAgentModal', () => {
     expect(resolution.folders).toEqual({});
     expect(resolution.sources).toEqual({});
   });
+
+  describe("a team's custom models", () => {
+    const reviewModels = async (models: unknown[]) => {
+      service.planImportAgent.mockResolvedValue(
+        jsonResponse({
+          success: true,
+          plan: {
+            target: { action: 'create', agent_id: null, matched_by: null },
+            sources: [],
+            tools: [],
+            prompt: { status: 'default' },
+            models,
+          },
+        }),
+      );
+      act(() => {
+        root.render(
+          <ImportAgentModal
+            modalState="ACTIVE"
+            setModalState={() => undefined}
+          />,
+        );
+      });
+      const file = new File(['name: Agent\n'], 'agent.yaml', {
+        type: 'application/x-yaml',
+      });
+      await act(async () => dropzone.onDrop!([file], []));
+      await flush();
+      await clickButton('modals.importAgent.review');
+    };
+
+    it.each([
+      [
+        'custom_model_admin_required',
+        'settings.customModels.team.errors.adminRequired',
+      ],
+      [
+        'not_available_to_tokens',
+        'settings.customModels.team.errors.notAvailableToTokens',
+      ],
+    ])('says why a model is left off (%s)', async (reason, key) => {
+      await reviewModels([
+        {
+          display_name: 'Ops Mistral',
+          status: 'unavailable',
+          requires_secrets: [],
+          reason,
+        },
+      ]);
+      const warning = Array.from(
+        document.querySelectorAll(
+          '[data-slot="alert"][data-variant="warning"]',
+        ),
+      ).find((a) => a.textContent?.includes('Ops Mistral'));
+      expect(warning?.textContent).toContain(
+        'modals.importAgent.modelLeftOff:Ops Mistral',
+      );
+      expect(warning?.textContent).toContain(key);
+      expect(
+        document.querySelector(
+          'input[placeholder="modals.importAgent.apiKeyPlaceholder"]',
+        ),
+      ).toBeNull();
+    });
+
+    it('asks a team Admin for the key of a model it adds to the team, and sends it', async () => {
+      await reviewModels([
+        {
+          display_name: 'Ops Mistral',
+          status: 'create',
+          requires_secrets: ['api_key'],
+        },
+      ]);
+      const input = document.querySelector<HTMLInputElement>(
+        'input[placeholder="modals.importAgent.apiKeyPlaceholder"]',
+      );
+      expect(input).not.toBeNull();
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )!.set!.call(input, 'sk-team');
+        input!.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await clickButton('modals.importAgent.import');
+      const { resolution } = service.importAgent.mock.calls[0][0];
+      expect(resolution.models).toEqual({
+        'Ops Mistral': { api_key: 'sk-team' },
+      });
+    });
+  });
 });

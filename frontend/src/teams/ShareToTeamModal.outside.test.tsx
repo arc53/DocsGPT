@@ -281,6 +281,23 @@ describe('ShareToTeamModal outside the team', () => {
       );
     });
 
+    it("names the team's custom models the agent runs on", async () => {
+      listResourceShares.mockResolvedValue(
+        teamItem({
+          warning_kind: 'agent',
+          team_models: [
+            { id: 'm1', name: 'Ops Mistral' },
+            { id: 'm2', name: 'Ops Llama' },
+          ],
+        }),
+      );
+      await render();
+      await pickTarget('Dev');
+      expect(text()).toContain(
+        'workspace.share.outside.warning.teamModels(count=2,team=Dev,owner=Operations,names=Ops Mistral, Ops Llama)',
+      );
+    });
+
     it('shows an info note instead of the picker while the team is locked', async () => {
       listResourceShares.mockResolvedValue(
         teamItem({

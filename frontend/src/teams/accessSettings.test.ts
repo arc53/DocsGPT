@@ -46,6 +46,21 @@ describe('shareWarningLines', () => {
     ]);
   });
 
+  it("names the owning team's custom models after the kind's line", () => {
+    expect(
+      shareWarningLines(t, 'agent', 'Dev', 'Operations', [
+        { id: 'm1', name: 'Ops Mistral' },
+      ]),
+    ).toEqual([
+      'workspace.share.outside.warning.agent(team=Dev,owner=Operations)',
+      'workspace.share.outside.warning.teamModels(count=1,team=Dev,owner=Operations,names=Ops Mistral)',
+      'workspace.share.outside.warning.always(team=Dev)',
+    ]);
+    expect(shareWarningLines(t, 'agent', 'Dev', 'Operations', [])).toHaveLength(
+      2,
+    );
+  });
+
   it('gives only the common line for a kind it does not know', () => {
     expect(shareWarningLines(t, undefined, 'Dev', 'Operations')).toEqual([
       'workspace.share.outside.warning.always(team=Dev)',

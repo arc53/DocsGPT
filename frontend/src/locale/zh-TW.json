@@ -2366,6 +2366,7 @@
       "invalidFileType": "僅支援 .yaml 或 .yml 檔案",
       "leaveUnattached": "暫不附加",
       "modelCustom": "{{name}}：自訂模型",
+      "modelLeftOff": "{{name}}：還不是團隊的模型，將被略過",
       "models": "模型",
       "planWarningsTitle": "匯入前請檢查：",
       "readError": "無法讀取此代理檔案",
@@ -5754,6 +5755,8 @@
           "always": "他們不能修改它、繼續分享它，也不能發布使用它的代理。您可以隨時停止分享；屆時 {{team}} 中使用它的一切都會停止。",
           "prompt": "{{team}} 的成員可以閱讀它，並在自己的代理中使用。",
           "source": "{{team}} 的成員可以閱讀其中的每個檔案，並在自己的代理中使用它。",
+          "teamModels_one": "{{team}} 的成員將使用 {{owner}} 的模型 {{names}} 執行此代理。",
+          "teamModels_other": "{{team}} 的成員將使用 {{owner}} 的模型 {{names}} 執行此代理。",
           "toolMember": "每位成員使用自己的帳戶。",
           "toolStored": "{{team}} 的成員將使用 {{owner}} 儲存的帳戶執行此工具。他們用它執行的操作都以 {{owner}} 的身分進行。"
         }

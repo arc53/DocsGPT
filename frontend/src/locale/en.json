@@ -2411,6 +2411,7 @@
       "invalidFileType": "Only .yaml or .yml files are supported",
       "leaveUnattached": "Leave unattached",
       "modelCustom": "{{name}}: custom model",
+      "modelLeftOff": "{{name}}: not the team's model yet, will be left off",
       "models": "Models",
       "planWarningsTitle": "Check before you import:",
       "readError": "Could not read this agent file",
@@ -5810,6 +5811,8 @@
           "always": "They can't change it, share it further or publish agents that use it. Stop sharing at any time; whatever uses it in {{team}} stops.",
           "prompt": "Members of {{team}} can read it and use it in their agents.",
           "source": "Members of {{team}} can read every file in it and use it in their agents.",
+          "teamModels_one": "Members of {{team}} will run this agent on {{owner}}'s model {{names}}.",
+          "teamModels_other": "Members of {{team}} will run this agent on {{owner}}'s models {{names}}.",
           "toolMember": "Each member uses their own account.",
           "toolStored": "Members of {{team}} will run this tool on {{owner}}'s stored account. What they do with it is done as {{owner}}."
         }

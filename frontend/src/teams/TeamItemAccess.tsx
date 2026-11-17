@@ -464,6 +464,7 @@ function OtherTeams({
                 info.warning_kind,
                 teamLabel(picked.name),
                 owner,
+                info.team_models,
               ).map((line) => (
                 <p key={line}>{line}</p>
               ))}
