@@ -13,6 +13,12 @@ export type McpOAuthConfig = {
   redirect_uri: string;
 };
 
+/**
+ * Whose sign-in it is: `owner: 'team'` signs in for the current team (its
+ * Admins), `connection_id` the team's connection being reconnected.
+ */
+export type McpOAuthOwner = { owner?: 'team'; connection_id?: string };
+
 type Handlers = {
   /** Signed in: `taskId` is the OAuth task to save with (null when the
    * server already had a valid sign-in). */
@@ -75,7 +81,11 @@ export default function useMcpOAuth() {
   }, [finish, stopOnServer]);
 
   const start = useCallback(
-    async (config: McpOAuthConfig, handlers: Handlers) => {
+    async (
+      config: McpOAuthConfig,
+      handlers: Handlers,
+      owner: McpOAuthOwner = {},
+    ) => {
       // Starting again abandons the previous attempt.
       if (taskIdRef.current) stopOnServer(taskIdRef.current);
       taskIdRef.current = null;
@@ -91,7 +101,10 @@ export default function useMcpOAuth() {
         'width=600,height=700',
       );
       try {
-        const response = await userService.testMCPConnection({ config }, token);
+        const response = await userService.testMCPConnection(
+          { config, ...owner },
+          token,
+        );
         const result = await response.json();
         // Cancelled (or started again) while the server answered: stop the
         // sign-in it just queued.

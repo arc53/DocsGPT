@@ -13,18 +13,24 @@ vi.mock('./ConnectWizard', () => ({
     mode,
     connectionId,
     purpose,
+    owner,
     onSynced,
     onClose,
   }: {
     mode: string;
     connectionId?: string;
     purpose?: string;
+    owner?: string;
     onSynced?: (ids: string[]) => void;
     onClose: (connected?: boolean, toolIds?: string[]) => void;
   }) => {
     wizardProps.onSynced = onSynced;
     return (
-      <div data-testid="wizard" data-purpose={purpose ?? ''}>
+      <div
+        data-testid="wizard"
+        data-purpose={purpose ?? ''}
+        data-owner={owner ?? ''}
+      >
         <span data-testid="wizard-state">{`${mode}:${connectionId ?? ''}`}</span>
         <button
           type="button"
@@ -190,6 +196,25 @@ describe('useConnectorLauncher', () => {
     container
       .querySelector('[data-testid="wizard"]')
       ?.getAttribute('data-purpose');
+
+  it("tells the wizard to connect for the team only when asked, so a team's chat still connects the person's own", async () => {
+    const owner = () =>
+      container
+        .querySelector('[data-testid="wizard"]')
+        ?.getAttribute('data-owner');
+    await act(async () => launchRef!(DRIVE));
+    expect(owner()).toBe('');
+    await act(async () => launchRef!(DRIVE, { owner: 'team' }));
+    expect(owner()).toBe('team');
+    await act(async () =>
+      launchRef!(LINEAR, {
+        mode: 'reconnect',
+        connectionId: 'c1',
+        owner: 'team',
+      }),
+    );
+    expect(owner()).toBe('team');
+  });
 
   it('tells the wizard it was opened for Knowledge', async () => {
     await act(async () => launchRef!(LINEAR, { purpose: 'knowledge' }));

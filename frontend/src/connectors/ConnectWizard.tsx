@@ -2,7 +2,7 @@ import { nanoid } from '@reduxjs/toolkit';
 import { Database, Plug } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import { envVar } from '@/env';
@@ -57,8 +57,14 @@ import { ACCOUNT_NAME_MAX } from './accounts';
 import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
 import {
-  loadConnectors,
+  connectionErrorCode,
+  connectionErrorMessage,
+} from './connectionErrors';
+import {
+  type ConnectorsState,
+  reloadConnectors,
   selectConnections,
+  selectCurrentTeamConnectors,
   syncStarted,
 } from './connectorsSlice';
 import {
@@ -75,9 +81,12 @@ import LinearPicker, {
   type LinearSelection,
 } from './LinearPicker';
 import RepoPicker from './RepoPicker';
+import { connectionCan, isTeamConnection } from './teamConnections';
 import ToolPermissions from './ToolPermissions';
 import useMcpOAuth, { type McpOAuthConfig } from './useMcpOAuth';
+import { readerIdFromToken } from '../utils/personLabel';
 import type {
+  ConnectionSource,
   ConnectionTool,
   ConnectorAuthKind,
   ConnectorDefinition,
@@ -109,6 +118,12 @@ const PICKER_CONNECTORS = new Set([
 
 type CreatedSource = { id: string; name: string };
 
+/** The store as the wizard reads it after a reload. */
+type WizardRoot = {
+  connectors: ConnectorsState;
+  workspace?: { current: string };
+};
+
 /**
  * The one connect flow every entry point opens: sign in, choose what to set
  * up, then a summary whose footer follows what happened (Open in Knowledge,
@@ -129,6 +144,9 @@ type CreatedSource = { id: string; name: string };
  *     puts new tools on something.
  *   onNavigate: Leaves for a page (Try it in chat, Open in Knowledge); an
  *     opener with unsaved work asks first. The router's navigate otherwise.
+ *   owner: `team` connects (and reconnects) the current team's accounts:
+ *     the sync step shows only to whoever may browse the account, and an
+ *     Admin reconnecting someone else's account is told it becomes theirs.
  */
 export default function ConnectWizard({
   connector,
@@ -136,6 +154,7 @@ export default function ConnectWizard({
   connectionId: initialConnectionId = null,
   mcpToolId,
   purpose,
+  owner,
   folderId = null,
   onClose,
   onNavigate,
@@ -148,6 +167,8 @@ export default function ConnectWizard({
   /** Reconnecting an MCP preset: the tool to update rather than add. */
   mcpToolId?: string;
   purpose?: LaunchPurpose;
+  /** `team`: the current team's accounts; the caller's own otherwise. */
+  owner?: 'team';
   /** The caller's Knowledge folder the synced sources are filed into. */
   folderId?: string | null;
   onClose: (connected: boolean, toolIds?: string[]) => void;
@@ -162,8 +183,29 @@ export default function ConnectWizard({
   const navigate: LeaveTo =
     onNavigate ?? ((path, options) => leaveNow(routerNavigate, path, options));
   const token = useSelector(selectToken);
-  const connections = useSelector(selectConnections);
+  const store = useStore<WizardRoot>();
+  const team = owner === 'team';
+  const teamId = useSelector((state: WizardRoot) => state.workspace?.current);
+  const ownConnections = useSelector(selectConnections);
+  const teamConnections = useSelector(
+    (state: WizardRoot) => selectCurrentTeamConnectors(state)?.connections,
+  );
+  const connections = team ? (teamConnections ?? []) : ownConnections;
   const name = connectorName(t, connector);
+  /**
+   * Whether the caller may browse an account to choose what to sync: their
+   * own always; a team's only when the server says so (whoever connected
+   * it, while an Admin). Read from the store, so it holds right after a
+   * reload too.
+   */
+  const pickable = (id: string | null) => {
+    if (!team) return true;
+    const list = selectCurrentTeamConnectors(store.getState())?.connections;
+    return connectionCan(
+      list?.find((c) => c.id === id),
+      'pick',
+    );
+  };
 
   // A picker whose sign-in expired switches the wizard to reconnect, then
   // back to the mode it came from (`resumeMode`).
@@ -235,21 +277,38 @@ export default function ConnectWizard({
   // Sync more from Add knowledge names no account when the service has
   // several: the first setup field picks one (the first, until changed).
   const serviceAccounts = connections.filter(
-    (c) => c.connector_key === connector.key && c.status === 'connected',
+    (c) =>
+      c.connector_key === connector.key &&
+      c.status === 'connected' &&
+      (!team || connectionCan(c, 'pick')),
   );
   const pickingAccount = mode === 'sync' && !fixedConnectionId;
   const activeConnectionId =
     connectionId ?? (pickingAccount ? (serviceAccounts[0]?.id ?? null) : null);
   const chooseAccount = pickingAccount && serviceAccounts.length > 1;
   const connection = connections.find((c) => c.id === activeConnectionId);
-  const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
+  const syncCapable =
+    connector.setup.sync !== 'off' && !!connector.sync_ingestor;
+  // A team's account syncs only through whoever may browse it.
+  const canSync = syncCapable && (!team || connectionCan(connection, 'pick'));
+  // Another Admin reconnecting a team's account: their own account takes it
+  // over (same connection, sources and tools), so they are told first.
+  const me = readerIdFromToken(token);
+  const replacing =
+    team &&
+    mode === 'reconnect' &&
+    isTeamConnection(connection) &&
+    connection?.connected_by?.user_id !== me;
+  const [replacedSources, setReplacedSources] = useState<ConnectionSource[]>(
+    [],
+  );
   // A first connect asks whether to sync into Knowledge; Sync more is only
   // about syncing, so it never asks.
   const askSync = canSync && mode === 'connect';
   // Syncing is the only reason to connect it (S3, Drive): the setup step
   // offers Sync content now (picked, from any entry point) or Just connect.
   // A connector with tools too (GitHub, Linear) asks with switches.
-  const syncOnly = canSync && connector.setup.tools === 'off';
+  const syncOnly = syncCapable && connector.setup.tools === 'off';
   const [syncOn, setSyncOn] = useState(syncOnly || purpose === 'knowledge');
   const syncing = canSync && (mode === 'sync' || syncOn);
   const { value: retrievalOptions, setValue: setRetrievalOptions } =
@@ -280,7 +339,25 @@ export default function ConnectWizard({
     });
   }, [initialMode, initialConnectionId, token]);
 
-  const refresh = () => dispatch(loadConnectors({ token }));
+  // The account a replacing reconnect takes over: which sources it feeds.
+  const replacedId = replacing ? activeConnectionId : null;
+  useEffect(() => {
+    if (!replacedId) return;
+    let cancelled = false;
+    connectorsService
+      .getConnection(replacedId, token)
+      .then((data) => {
+        if (!cancelled && data?.success)
+          setReplacedSources(data.connection.sources ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [replacedId, token]);
+
+  // Both lists: the caller's own and, in a team, the team's.
+  const refresh = () => dispatch(reloadConnectors({ token }));
 
   const close = () => {
     if (connectedRef.current) onClose(true, [...createdToolIds.current]);
@@ -338,7 +415,8 @@ export default function ConnectWizard({
         noteCreated((setup.tools ?? []).map((tool: ConnectionTool) => tool.id));
       }
     }
-    setStep(canSync || offerTools ? 'setup' : 'done');
+    // Whether the new account may be browsed is known once it is listed.
+    setStep((syncCapable && pickable(id)) || offerTools ? 'setup' : 'done');
   };
 
   // MCP presets (Notion, Linear…) sign in over MCP OAuth: no URL or auth
@@ -402,6 +480,7 @@ export default function ConnectWizard({
               : { ...config, oauth_task_id: taskId ?? '' },
           status: true,
           ...(mcpReconnectToolId && { id: mcpReconnectToolId }),
+          ...mcpOwner(),
         },
         token,
       );
@@ -413,7 +492,10 @@ export default function ConnectWizard({
         noteCreated([result.id]);
       let savedConnectionId: string | null = null;
       try {
-        const list = await connectorsService.listConnections(token);
+        const list = await connectorsService.listConnections(
+          token,
+          team ? { owner: 'team', workspace: teamId } : {},
+        );
         const saved = (
           (list?.connections ?? []) as {
             id: string;
@@ -442,7 +524,12 @@ export default function ConnectWizard({
       if (mode === 'reconnect' && resumeAfterReconnect()) return;
       // One sign-in also syncs (Linear): choosing what to sync comes next.
       setStep(
-        canSync && savedConnectionId && mode === 'connect' ? 'setup' : 'done',
+        syncCapable &&
+          savedConnectionId &&
+          pickable(savedConnectionId) &&
+          mode === 'connect'
+          ? 'setup'
+          : 'done',
       );
     } catch (err) {
       setError(
@@ -453,6 +540,16 @@ export default function ConnectWizard({
       setPending(false);
     }
   };
+
+  /** A team's sign-in names the team and, reconnecting, the connection. */
+  const mcpOwner = () =>
+    team
+      ? {
+          owner: 'team' as const,
+          ...(mode === 'reconnect' &&
+            activeConnectionId && { connection_id: activeConnectionId }),
+        }
+      : {};
 
   const connectOpenMcp = () => {
     setError('');
@@ -469,19 +566,39 @@ export default function ConnectWizard({
   const startMcpSignIn = () => {
     setError('');
     const config = mcpConfig();
-    mcp.start(config, {
-      onDone: ({ taskId }) => saveMcp(config, taskId),
-      onError: (message) =>
-        setError(message || t('settings.tools.mcp.errors.oauthFailed')),
-    });
+    mcp.start(
+      config,
+      {
+        onDone: ({ taskId }) => saveMcp(config, taskId),
+        onError: (message) =>
+          setError(
+            connectionErrorMessage(
+              t,
+              { error: message },
+              { fallback: t('settings.tools.mcp.errors.oauthFailed') },
+            ),
+          ),
+      },
+      mcpOwner(),
+    );
   };
 
   const startSignIn = useConnectorAuth({
     provider: connector.key,
     connectionId:
       mode === 'reconnect' ? (activeConnectionId ?? undefined) : undefined,
+    // A reconnect goes by the connection's own owner on the server.
+    owner: team && mode !== 'reconnect' ? 'team' : undefined,
     onSuccess: (data) => afterSignIn(data.connection_id),
-    onError: setError,
+    // A team refusal comes back as its code: say it in the app's words.
+    onError: (message) =>
+      setError(
+        connectionErrorMessage(
+          t,
+          { error: message },
+          { fallback: t('settings.connectors.wizard.connectFailed') },
+        ),
+      ),
   });
 
   const submitCredentials = async () => {
@@ -496,25 +613,31 @@ export default function ConnectWizard({
               token,
             )
           : await connectorsService.createConnection(
-              { connector_key: connector.key, credentials },
+              {
+                connector_key: connector.key,
+                credentials,
+                ...(team && { owner: 'team' as const }),
+              },
               token,
             );
       if (!data?.success) {
         setError(
-          data?.code === 'encryption_key_default'
-            ? t('settings.connectors.error.defaultKey')
-            : data?.code === 'invalid_credentials'
-              ? t('settings.connectors.wizard.credentialsRejected', {
-                  name,
-                  interpolation: { escapeValue: false },
-                })
-              : data?.code === 'rate_limited' && data.retry_at
-                ? t('settings.connectors.wizard.rateLimited', {
+          connectionErrorCode(data)
+            ? connectionErrorMessage(t, data)
+            : data?.code === 'encryption_key_default'
+              ? t('settings.connectors.error.defaultKey')
+              : data?.code === 'invalid_credentials'
+                ? t('settings.connectors.wizard.credentialsRejected', {
                     name,
-                    time: formatClock(new Date(data.retry_at)),
                     interpolation: { escapeValue: false },
                   })
-                : t('settings.connectors.wizard.connectFailed'),
+                : data?.code === 'rate_limited' && data.retry_at
+                  ? t('settings.connectors.wizard.rateLimited', {
+                      name,
+                      time: formatClock(new Date(data.retry_at)),
+                      interpolation: { escapeValue: false },
+                    })
+                  : t('settings.connectors.wizard.connectFailed'),
         );
         return;
       }
@@ -815,6 +938,32 @@ export default function ConnectWizard({
     return [accountLine, countsLine, syncLine].filter(Boolean).join(' ');
   }, [account, sources, toolCount, mode, canSync, t]);
 
+  /**
+   * Taking over a team's account: the sources that sync from it, and what
+   * happens to files the new account can't open.
+   */
+  const renderReplacing = () =>
+    replacedSources.length > 0 && (
+      <div className="flex flex-col gap-2 text-sm">
+        <p>
+          {t('settings.connectors.team.reconnect.sources', {
+            count: replacedSources.length,
+            formatted: formatCount(replacedSources.length),
+          })}
+        </p>
+        <ul className="text-muted-foreground list-inside list-disc">
+          {replacedSources.map((source) => (
+            <li key={source.id} className="truncate">
+              {source.name}
+            </li>
+          ))}
+        </ul>
+        <p className="text-muted-foreground">
+          {t('settings.connectors.team.reconnect.dropNote')}
+        </p>
+      </div>
+    );
+
   const renderSignIn = () => (
     <div className="flex flex-col gap-5">
       {error && (
@@ -822,6 +971,7 @@ export default function ConnectWizard({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      {replacing && renderReplacing()}
       {isMcpPreset && mcp.pending && (
         <p className="text-muted-foreground text-sm">
           {t('settings.connectors.wizard.waiting', {
@@ -1232,24 +1382,26 @@ export default function ConnectWizard({
   // The service is in every title, and the setup title stays put while the
   // choice changes.
   const title =
-    step === 'signin'
-      ? t(
-          mode === 'reconnect'
-            ? 'settings.connectors.wizard.reconnectTitle'
-            : 'settings.connectors.wizard.connectTitle',
-          { name, interpolation: { escapeValue: false } },
-        )
-      : step === 'setup'
+    step === 'signin' && replacing
+      ? t('settings.connectors.team.reconnect.title')
+      : step === 'signin'
         ? t(
-            offerTools
-              ? 'settings.connectors.wizard.chooseWhatToSetUpFor'
-              : 'settings.connectors.wizard.chooseWhatToSyncFrom',
+            mode === 'reconnect'
+              ? 'settings.connectors.wizard.reconnectTitle'
+              : 'settings.connectors.wizard.connectTitle',
             { name, interpolation: { escapeValue: false } },
           )
-        : t('settings.connectors.wizard.doneTitle', {
-            name,
-            interpolation: { escapeValue: false },
-          });
+        : step === 'setup'
+          ? t(
+              offerTools
+                ? 'settings.connectors.wizard.chooseWhatToSetUpFor'
+                : 'settings.connectors.wizard.chooseWhatToSyncFrom',
+              { name, interpolation: { escapeValue: false } },
+            )
+          : t('settings.connectors.wizard.doneTitle', {
+              name,
+              interpolation: { escapeValue: false },
+            });
 
   // Sign-in says what the service does; setup names the account it sets up
   // (unless the first field picks one). A sync-only service's choice also
@@ -1260,12 +1412,21 @@ export default function ConnectWizard({
           .filter(Boolean)
           .join(' ')
       : accountSentence;
+  // Taking over someone's account says whose it was and who pays from now.
+  const replacedBy = connection?.connected_by;
   const description =
-    step === 'signin'
-      ? connectorDescription(t, connector)
-      : step === 'setup' && !chooseAccount && setupDescription
-        ? setupDescription
-        : undefined;
+    step === 'signin' && replacing
+      ? replacedBy
+        ? t('settings.connectors.team.reconnect.body', {
+            name: replacedBy.label || replacedBy.user_id,
+            interpolation: { escapeValue: false },
+          })
+        : t('settings.connectors.team.reconnect.bodyUnnamed')
+      : step === 'signin'
+        ? connectorDescription(t, connector)
+        : step === 'setup' && !chooseAccount && setupDescription
+          ? setupDescription
+          : undefined;
 
   // Cancelling a reconnect a picker asked for goes back to the picker.
   const cancelSignIn = () => {
@@ -1280,16 +1441,18 @@ export default function ConnectWizard({
           cancelLabel={t('cancel')}
           onCancel={cancelSignIn}
           submitLabel={
-            isOpenMcp
-              ? t(
-                  mode === 'reconnect'
-                    ? 'settings.connectors.status.reconnect'
-                    : 'settings.connectors.status.connect',
-                )
-              : t('settings.connectors.wizard.signIn', {
-                  name,
-                  interpolation: { escapeValue: false },
-                })
+            replacing
+              ? t('settings.connectors.team.reconnect.confirm')
+              : isOpenMcp
+                ? t(
+                    mode === 'reconnect'
+                      ? 'settings.connectors.status.reconnect'
+                      : 'settings.connectors.status.connect',
+                  )
+                : t('settings.connectors.wizard.signIn', {
+                    name,
+                    interpolation: { escapeValue: false },
+                  })
           }
           onSubmit={
             isOpenMcp
@@ -1308,9 +1471,11 @@ export default function ConnectWizard({
           cancelLabel={t('cancel')}
           onCancel={cancelSignIn}
           submitLabel={
-            mode === 'reconnect'
-              ? t('settings.connectors.status.reconnect')
-              : t('settings.connectors.status.connect')
+            replacing
+              ? t('settings.connectors.team.reconnect.confirm')
+              : mode === 'reconnect'
+                ? t('settings.connectors.status.reconnect')
+                : t('settings.connectors.status.connect')
           }
           onSubmit={submitCredentials}
           pending={pending}

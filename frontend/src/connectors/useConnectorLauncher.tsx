@@ -12,7 +12,7 @@ import ConnectWizard, {
   type LaunchPurpose,
   type WizardMode,
 } from './ConnectWizard';
-import { loadConnectors } from './connectorsSlice';
+import { reloadConnectors } from './connectorsSlice';
 import { connectsInWizard } from './launchRules';
 import type { ConnectorDefinition } from './types';
 
@@ -29,6 +29,12 @@ export type LaunchOptions = {
    * starts on Sync content now.
    */
   purpose?: LaunchPurpose;
+  /**
+   * `team`: connect (or reconnect) an account for the current team; only
+   * the Connectors page in a team asks. Never inferred from the workspace:
+   * the chat's Connect card connects the person's own account anywhere.
+   */
+  owner?: 'team';
 };
 
 type Active =
@@ -39,6 +45,7 @@ type Active =
       connectionId?: string;
       mcpToolId?: string;
       purpose?: LaunchPurpose;
+      owner?: 'team';
     }
   | {
       kind: 'mcp';
@@ -107,10 +114,11 @@ export default function useConnectorLauncher({
   // The saved MCP server's tool, reported if no summary lists it.
   const mcpToolId = useRef<string | undefined>(undefined);
 
-  // Every close reads the connections again: a cancelled run may still have
-  // signed in (the account exists, nothing was set up on it).
+  // Every close reads the connections again (the team's too, in a team): a
+  // cancelled run may still have signed in (the account exists, nothing was
+  // set up on it).
   const refresh = useCallback(() => {
-    dispatch(loadConnectors({ token }));
+    dispatch(reloadConnectors({ token }));
   }, [dispatch, token]);
 
   /** End the run: tell the opener whether it connected anything. */
@@ -148,6 +156,7 @@ export default function useConnectorLauncher({
               ? options.mcpServer.id
               : undefined,
           purpose: options.purpose,
+          owner: options.owner,
         });
         return;
       }
@@ -182,6 +191,7 @@ export default function useConnectorLauncher({
         mode: options.mode ?? 'connect',
         connectionId: options.connectionId,
         purpose: options.purpose,
+        owner: options.owner,
       });
     },
     [navigate],
@@ -235,6 +245,7 @@ export default function useConnectorLauncher({
           connectionId={active.connectionId}
           mcpToolId={active.mcpToolId}
           purpose={active.purpose}
+          owner={active.owner}
           folderId={folderId}
           onSynced={onSynced}
           onNavigate={onNavigate}
