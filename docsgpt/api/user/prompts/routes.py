@@ -17,6 +17,8 @@ from docsgpt.api.user.resource_access import (
 )
 from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.drafter.prompt_checks import prompt_checks
+from docsgpt.drafter.prompt_recipe import READ_MAX
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -34,6 +36,9 @@ def _denied(err: AccessDenied):
 
 #: Longest ``preview`` a listed prompt carries.
 PREVIEW_LENGTH = 200
+#: Most ``POST /api/check_prompt`` calls a user makes in a minute. The editor checks once typing rests
+#: (400 ms), so a writer stays well under it; a script can't keep a worker on 100,000-character checks.
+CHECK_PROMPT_RATE_PER_MINUTE = 120
 
 #: The built-in prompts, listed by name; they have no row.
 PRESET_PROMPTS = ("default", "creative", "strict")
@@ -69,7 +74,10 @@ class CreatePrompt(Resource):
     )
 
     @api.expect(create_prompt_model)
-    @api.doc(description="Create a new prompt")
+    @api.doc(
+        description="Create a new prompt",
+        responses={200: "The new prompt's id and updated_at (the version a save over it sends back)"},
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -87,7 +95,7 @@ class CreatePrompt(Resource):
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"id": new_id}), 200)
+        return make_response(jsonify({"id": new_id, "updated_at": _iso(prompt.get("updated_at"))}), 200)
 
 
 @prompts_ns.route("/get_prompts")
@@ -234,11 +242,22 @@ class UpdatePrompt(Resource):
             "content": fields.String(
                 required=True, description="New content of the prompt"
             ),
+            "expected_updated_at": fields.String(
+                required=False,
+                description="The prompt's updated_at as last read or saved; the save is refused (409) "
+                "when someone saved it since",
+            ),
         },
     )
 
     @api.expect(update_prompt_model)
-    @api.doc(description="Update an existing prompt")
+    @api.doc(
+        description="Update an existing prompt",
+        responses={
+            200: "Saved: success and the new updated_at, the version the next save sends back",
+            409: "Someone saved the prompt since expected_updated_at (code stale_write)",
+        },
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -274,4 +293,48 @@ class UpdatePrompt(Resource):
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True}), 200)
+        return make_response(
+            jsonify({"success": True, "updated_at": _iso(result) if isinstance(result, str) else None}), 200
+        )
+
+
+@prompts_ns.route("/check_prompt")
+class CheckPrompt(Resource):
+    check_prompt_model = api.model(
+        "CheckPromptModel",
+        {
+            "content": fields.String(
+                required=True, description=f"The prompt's text as the editor holds it, at most {READ_MAX:,} characters"
+            ),
+        },
+    )
+
+    @api.expect(check_prompt_model)
+    @api.doc(
+        description="Check a prompt's text without a model: blanks left in, lines DocsGPT already adds to a "
+        "persona, and a template that doesn't parse, runs tool variables, or lacks the Boundaries section or "
+        "citation rules. Each check is a code the client words; works with the drafter off",
+        responses={
+            200: "checks: at most 20 of {code, ...}: placeholder {text, line}, repeats_builtin {topic, line}, "
+            "template_invalid, tool_variables {variables}, boundaries_missing, citations_missing",
+            400: "content is missing, not text, or too long",
+            429: f"more than {CHECK_PROMPT_RATE_PER_MINUTE} checks in a minute",
+        },
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        from docsgpt.monitors import triggers
+
+        if triggers.rate_limited("check_prompt", decoded_token.get("sub"), CHECK_PROMPT_RATE_PER_MINUTE):
+            return make_response(jsonify({"success": False, "message": "Too many checks in a minute"}), 429)
+        data = request.get_json(silent=True)
+        content = data.get("content") if isinstance(data, dict) else None
+        if not isinstance(content, str):
+            return make_response(jsonify({"success": False, "message": "content must be text"}), 400)
+        if len(content) > READ_MAX:
+            return make_response(
+                jsonify({"success": False, "message": f"content can be at most {READ_MAX:,} characters"}), 400
+            )
+        return make_response(jsonify({"checks": prompt_checks(content)}), 200)

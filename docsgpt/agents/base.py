@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 import logging
@@ -21,6 +22,7 @@ from docsgpt.agents.attachment_dispatch import AttachmentDispatch
 from docsgpt.agents.cannot_complete import CANNOT_COMPLETE_MARKER
 from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
+from docsgpt.agents.tools import ask_user
 from docsgpt.agents.tools.report_cannot_complete import add_report_cannot_complete_tool
 from docsgpt.agents.tools.view_image import add_view_image_tool
 from docsgpt.agents.tool_executor import (
@@ -803,6 +805,14 @@ class BaseAgent(ABC):
 
         actions_by_id = {a["call_id"]: a for a in tool_actions}
 
+        # The answers to question cards are the user's words: screen them with
+        # the input controls first, so a block ends the turn before any call
+        # in the pause runs or anything reaches the model.
+        answers, blocked = self._screen_question_answers(pending_tool_calls, actions_by_id)
+        if blocked is not None:
+            yield blocked
+            return
+
         # Build a single assistant message containing all tool calls so
         # the message history matches the format LLM providers expect
         # (one assistant message with N tool_calls, followed by N tool results).
@@ -846,7 +856,10 @@ class BaseAgent(ABC):
                     "comment": "No response provided",
                 }
 
-            if action.get("decision") == "approved":
+            if ask_user.is_awaiting_answer(pending):
+                yield from self._resume_question_call(pending, answers.get(call_id, ""), messages)
+
+            elif action.get("decision") == "approved":
                 approved = getattr(self.tool_executor, "approved_call_ids", None)
                 if isinstance(approved, set):
                     approved.add(call_id)
@@ -968,6 +981,85 @@ class BaseAgent(ABC):
         yield {"tool_calls": self._get_truncated_tool_calls()}
         yield from self._emit_responses_metadata()
 
+    def _screen_question_answers(
+        self, pending_tool_calls: List[Dict[str, Any]], actions_by_id: Dict[str, Dict[str, Any]]
+    ) -> Tuple[Dict[str, str], Optional[Dict]]:
+        """The user's answers to the pause's question cards, cleaned, capped and run through the input controls.
+
+        An answer is what the user typed or picked, so it gets the controls a
+        typed message gets: a redaction is what the model reads and the call
+        keeps, and a block ends the turn as an input block on a message does.
+
+        Args:
+            pending_tool_calls: The calls the pause waits on.
+            actions_by_id: The client's actions, by call id.
+
+        Returns:
+            ``({call id: answer}, block event)``: an answer is ``""`` when the
+            questions were skipped; the event is set when an input control
+            blocked an answer, and the answers are then not to be used.
+        """
+        from docsgpt.agents.questions import ANSWER_CHARS
+        from docsgpt.drafter.fencing import clean_text
+
+        answers: Dict[str, str] = {}
+        for pending in pending_tool_calls:
+            if not ask_user.is_awaiting_answer(pending):
+                continue
+            call_id = pending["call_id"]
+            action = actions_by_id.get(call_id) or {}
+            raw = action.get("answer") if action.get("skipped") is not True else None
+            # Cut before cleaning, which reads every character; the headroom
+            # covers what cleaning drops.
+            answer = clean_text(raw[: ANSWER_CHARS * 2] if isinstance(raw, str) else raw, ANSWER_CHARS)
+            if answer:
+                answer, decision = self.apply_input_guardrails(answer)
+                if decision is not None and decision.blocked:
+                    return {}, self._guardrail_block_event(
+                        decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
+                    )
+            answers[call_id] = answer
+        return answers, None
+
+    def _resume_question_call(
+        self, pending: Dict[str, Any], answer: str, messages: List[Dict]
+    ) -> Generator[Dict, None, None]:
+        """Answer a paused ``ask_user`` call with what the user replied, or with their skipping it.
+
+        The answer was screened by the input controls
+        (:meth:`_screen_question_answers`); it is also scanned like a client's
+        tool result. The call is kept on the message with the normalized
+        questions as its arguments, so a reload can draw the cards.
+
+        Args:
+            pending: The paused call (``awaiting_answer``).
+            answer: The screened answer, or ``""`` when the questions were skipped.
+            messages: The resumed messages; the tool result is appended.
+
+        Yields:
+            The call's ``tool_call`` event.
+        """
+        from docsgpt.agents.tools.ask_user import SKIPPED_TEXT
+
+        call_id = pending["call_id"]
+        if answer:
+            result, status = self._guard_tool_result_text(answer), "success"
+        else:
+            result, status = SKIPPED_TEXT, "skipped"
+        tc = ToolCall(id=call_id, name=pending["name"], arguments=pending["arguments"])
+        messages.append(self.llm_handler.create_tool_message(tc, _bound_tool_response_for_llm(result)))
+        data = {
+            "tool_name": pending.get("tool_name") or "ask_user",
+            "call_id": call_id,
+            "action_name": pending.get("llm_name", pending["name"]),
+            "arguments": ask_user.question_payload(pending),
+            "result": truncate_tool_result(result),
+            "status": status,
+        }
+        trace_unexecuted_tool_call(tc, data)
+        self.tool_calls.append(data)
+        yield {"type": "tool_call", "data": data}
+
     # ---- Tool delegation (thin wrappers around ToolExecutor) ----
 
     @property
@@ -1009,15 +1101,47 @@ class BaseAgent(ABC):
 
             if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
                 add_check_job_tool(tools_dict)
+        # An interactive chat turn can ask the user clarifying questions, beside
+        # its other tools: a turn with none calls the model without tools, so
+        # its answers stay cacheable and it pays no tokens for the tool.
+        from docsgpt.agents.tools.ask_user import ASK_USER, add_ask_user_tool
+
+        has_other_tools = any(
+            isinstance(t, dict) and (t.get("name") != ASK_USER or t.get("client_side")) for t in tools_dict.values()
+        )
+        add_ask_user_tool(tools_dict, enabled=has_other_tools and self._offers_questions())
         # The executor gates tool calls itself, so it needs this run's engine,
         # and the search tools screen their hits as retrieved documents and
         # the source names their result lists as those documents' names.
         self.tool_executor.guardrail_engine = self.guardrails
         self.tool_executor.retrieval_screen = self._screen_docs
         self.tool_executor.source_name_screen = self._screen_names_one_by_one
+        # Question cards are shown to the user as the model wrote them, so
+        # they get the output controls an answer gets.
+        self.tool_executor.question_screen = self._screen_questions
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
         self._sync_attachments_tool()
+
+    def _offers_questions(self) -> bool:
+        """Whether this turn offers ``ask_user``.
+
+        Only an interactive chat turn whose client draws question forms
+        (``ToolExecutor.offers_questions``), on a model that takes tools. Never a
+        headless run, a workflow node (its tools are an explicit scope) or a
+        turn whose answer must be structured output.
+
+        Returns:
+            True when the tool is attached.
+        """
+        executor = self.tool_executor
+        if getattr(executor, "offers_questions", False) is not True:
+            return False
+        if getattr(executor, "headless", False) is True or getattr(executor, "allowed_tool_ids", None) is not None:
+            return False
+        if self.json_schema is not None or self.json_object:
+            return False
+        return self._llm_supports_tools()
 
     def _add_attachments_tool(self, tools_dict: Dict) -> None:
         """Add the server-side attachments tool when the conversation has files.
@@ -2480,7 +2604,9 @@ class BaseAgent(ABC):
             lists the ids an attachment control withheld, which the resume
             keeps out of every tool), ``last_compression_at``,
             ``backup_models``, ``decisions`` (None when nothing was
-            recorded) and ``context_window_limit``; all JSON-safe.
+            recorded), ``context_window_limit``, ``questions`` (whether the
+            turn offers questions) and ``questions_asked``;
+            all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [
@@ -2504,6 +2630,7 @@ class BaseAgent(ABC):
                 "withheld": sorted(self.withheld_attachments),
             }
         backup_models = getattr(self.llm, "_backup_models", None)
+        executor = getattr(self, "tool_executor", None)
         return {
             "attachments": files,
             "last_compression_at": _epoch_text(getattr(self, "last_compression_at", None)),
@@ -2512,6 +2639,10 @@ class BaseAgent(ABC):
             ),
             "decisions": decision_record.snapshot(),
             "context_window_limit": getattr(self, "context_window_limit", None),
+            # Whether the turn offers questions, and whether it asked already:
+            # one question round per user message, resumes included.
+            "questions": getattr(executor, "offers_questions", False) is True,
+            "questions_asked": getattr(executor, "questions_asked", False) is True,
         }
 
     def resume_paused_attachments(
@@ -2933,6 +3064,64 @@ class BaseAgent(ABC):
             yield self._guardrail_block_event(
                 step.decisions[-1], step.block_message or GUARDRAIL_DEFAULT_MESSAGE
             )
+
+    def _screen_questions(
+        self, message: Optional[str], questions: List[Dict[str, Any]]
+    ) -> Tuple[Optional[str], List[Dict[str, Any]], Optional[Dict]]:
+        """Run ``ask_user`` question cards through the output controls before they are shown or kept.
+
+        The cards are the model's words shown to the user, as an answer is, so
+        a redaction is what the cards show and a block withholds them all (the
+        turn then ends as a blocked answer does). Every shown string is scanned
+        together, one per line, the way source names are; when a redaction no
+        longer lines up with the strings, each is screened on its own.
+
+        Args:
+            message: The cards' lead-in line.
+            questions: The normalized questions (:func:`docsgpt.agents.questions.normalize_questions`).
+
+        Returns:
+            ``(message, questions, block event)``: the screened message and
+            questions (copies, when anything was redacted), or the event that
+            ends the turn when a control blocked them.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.has_stage(Stage.OUTPUT):
+            return message, questions, None
+        self._refresh_sources_before_output()
+        screened = copy.deepcopy(questions)
+        lead = {"message": message}
+        slots: List[Tuple[Dict[str, Any], str]] = [(lead, "message")]
+        for question in screened:
+            slots += [(question, "text"), (question, "note"), (question, "placeholder")]
+            for option in question.get("options") or []:
+                if isinstance(option, dict):
+                    slots += [(option, "label"), (option, "input")]
+        slots = [(holder, key) for holder, key in slots if isinstance(holder.get(key), str) and holder[key]]
+        texts = [holder[key] for holder, key in slots]
+        if not texts:
+            return message, questions, None
+
+        def blocked(decision) -> Dict:
+            return self._guardrail_block_event(decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE)
+
+        decision = self._guardrail_stage("\n".join(texts), Stage.OUTPUT)
+        if decision is None or not (decision.blocked or decision.redacted):
+            return message, questions, None
+        if decision.blocked:
+            return None, [], blocked(decision)
+        redacted = decision.text.split("\n")
+        if len(redacted) != len(texts):
+            # A string held a line break, or a redaction spanned one.
+            redacted = []
+            for text in texts:
+                one = self._guardrail_stage(text, Stage.OUTPUT)
+                if one is not None and one.blocked:
+                    return None, [], blocked(one)
+                redacted.append(one.text if one is not None and one.redacted else text)
+        for (holder, key), text in zip(slots, redacted):
+            holder[key] = text
+        return lead["message"], screened, None
 
     def _guarded_complete_answer(self, text: str, answer_event):
         """Scan a whole (non-streamed) answer before releasing it."""

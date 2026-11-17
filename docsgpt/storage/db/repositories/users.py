@@ -340,6 +340,35 @@ class UsersRepository:
         )
         return result.rowcount > 0
 
+    def set_task_model_id(self, user_id: str, model_id: Optional[str]) -> None:
+        """Store the model the user's DocsGPT jobs run on in ``tool_preferences.task_model_id``.
+
+        The caller validates the id (a model the user can use). ``None``
+        removes the key, so the instance's task model applies again; the
+        other keys are kept.
+
+        Args:
+            user_id: Auth-provider ``sub``.
+            model_id: A model id, or ``None`` to use the instance's.
+        """
+        self.upsert(user_id)
+        if model_id is None:
+            statement = """
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{}'::jsonb) - 'task_model_id',
+                    updated_at = now()
+                WHERE user_id = :user_id
+            """
+        else:
+            statement = """
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{}'::jsonb)
+                        || jsonb_build_object('task_model_id', CAST(:model_id AS text)),
+                    updated_at = now()
+                WHERE user_id = :user_id
+            """
+        self._conn.execute(text(statement), {"user_id": user_id, "model_id": model_id})
+
     # ------------------------------------------------------------------
     # SCIM provisioning
     # ------------------------------------------------------------------

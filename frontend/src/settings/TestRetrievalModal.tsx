@@ -433,7 +433,7 @@ export default function TestRetrievalModal({
             })
           : tr('subtitleGeneric')
       }
-      // xl, like PromptsModal, so the two large modals read as one family.
+      // xl: room for the retrieved passages.
       size="xl"
     >
       <div className="flex flex-col">

@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
     ContinuationNotPendingError,
+    InvalidToolActionsError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
@@ -86,6 +87,17 @@ class AnswerResource(Resource, BaseAnswerResource):
                 required=False,
                 description="Dynamic parameters to inject into prompt template",
             ),
+            "capabilities": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "What this client can render. 'forms': the assistant may ask clarifying questions "
+                    "(ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and "
+                    "`questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. "
+                    "Optional and not enforced: unknown values are ignored, and without 'forms' the assistant "
+                    "never asks and answers as usual."
+                ),
+            ),
         },
     )
 
@@ -138,6 +150,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                         "request_id": processor.request_id,
                         "reasoning_content": reasoning_content,
                         "prior_tool_calls": processor.prior_tool_calls,
+                        "prior_turn": processor.prior_turn,
                     },
                 )
             else:
@@ -222,6 +235,15 @@ class AnswerResource(Resource, BaseAnswerResource):
                 {"error": NOT_PENDING_MESSAGE, "code": NOT_PENDING_CODE},
                 409,
             )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on (a decision
+            # for a question, say). Nothing ran and the pause still waits.
+            logger.info(
+                "/api/answer - tool actions refused for conversation %s: %s",
+                data.get("conversation_id"),
+                e.message,
+            )
+            return make_response({"error": e.message, "code": e.code}, 400)
         except ResumeInProgressError as e:
             # Another request already owns this conversation's continuation
             # claim. Same contract as ``/stream`` and ``/v1/chat/completions``:

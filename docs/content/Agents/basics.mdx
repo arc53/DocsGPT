@@ -37,7 +37,7 @@ When you create or configure an agent, you'll work with these key components:
     * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/API/agent-api)).
 
 **Prompt:**
-The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond. The **Prompt** field lists **Included**, **Yours** and **Shared with team**, each prompt with a line saying what it does (a built-in prompt's purpose, or the start of yours), and **Go to Prompts** and **Add prompt** at the bottom. With more than 10 prompts it can filter by section, and on a phone it opens as a sheet from the bottom of the screen.
+The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond. The **Prompt** field lists **Included**, **Yours** and **Shared with team**, each prompt with a line saying what it does (a built-in prompt's purpose, or the start of yours), and **Go to Prompts** and **Add prompt** at the bottom. Pointing at a prompt (or moving to it with the arrow keys, then Tab) shows a pencil (**Edit**) or, for a prompt you can't change, an eye (**View**): it opens that prompt in place of the form without picking it, with **Improve** to change it with [Draft with DocsGPT](/Agents/draft-with-docsgpt). With more than 10 prompts it can filter by section, and on a phone it opens as a sheet from the bottom of the screen.
 
 **Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information. The picker groups them as the Tools page does (**Included**, **Added**, one group per connected service, **Custom**), lists the selected ones first, and ends with **Go to Tools** and **Add tool**; see [The Tools page](/Tools/basics#the-tools-page).
 
@@ -128,8 +128,8 @@ You can easily access and manage your agents through the DocsGPT user interface.
   style={{ margin: '1em auto', display: 'block', borderRadius: '8px' }}
 />
 
-4.  Fill in the fields as described in the "Core Components of an Agent" section.
-5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active. Workflow agents work the same way: **Save draft** keeps an unfinished workflow, and **Publish** checks its [graph rules](/Agents/nodes#graph-rules) first.
+4.  Fill in the fields as described in the "Core Components of an Agent" section. Or choose **Build** in the toolbar, and DocsGPT builds the agent with you step by step in a panel beside the form, for you to review before you save; see [Draft with DocsGPT](/Agents/draft-with-docsgpt).
+5.  Once configured, choose **Publish** to make the agent active, or **Save Draft** in the toolbar's **⋯** menu to continue editing later. The same menu holds **Preview**, to try the agent before you publish it. Workflow agents work the same way: **Save draft** keeps an unfinished workflow, and **Publish** checks its [graph rules](/Agents/nodes#graph-rules) first.
 
 While the builder has changes you haven't saved, links that leave the builder (**Go to Knowledge**, **Go to Tools**, the prompt's link, and the connector links in **Add tool** and **Upload new**) ask before they discard them. Opening one in a new tab with Cmd/Ctrl-click doesn't ask.
 
@@ -140,7 +140,7 @@ Once an agent is created, you can:
 * **Chat with it:** Select the agent to start an interaction.
 * **View Logs:** Access usage statistics, monitor token consumption per interaction, and review user message feedbacks. This is crucial for understanding how your agent is being used and performing. See [Analytics and Logs](/Using/analytics-and-logs).
 * **Edit an Agent:**
-    * Modify any of its configuration settings (name, description, starters, source, prompt, tools, type).
+    * Modify any of its configuration settings (name, description, starters, source, prompt, tools, type). **Improve** in the toolbar asks [Draft with DocsGPT](/Agents/draft-with-docsgpt) to make a change you describe, and the toolbar's **⋯** menu holds **Preview** (and **Save Draft** on a draft).
     * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
     * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
     * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).

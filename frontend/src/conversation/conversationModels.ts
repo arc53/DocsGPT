@@ -10,6 +10,8 @@ export const TERMINATED_RESPONSE_PLACEHOLDER =
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
+/** What a client tells the server it can render (the request's `capabilities`). */
+export type ClientCapability = 'forms';
 // Mirrors ``conversation_messages.status``.
 export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'failed';
 
@@ -159,4 +161,6 @@ export interface RetrievalPayload {
   save_conversation?: boolean;
   visibility?: 'listed' | 'hidden';
   model_id?: string;
+  /** What the client can render; `forms` lets the model ask clarifying questions. */
+  capabilities?: ClientCapability[];
 }

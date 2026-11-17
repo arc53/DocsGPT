@@ -25,6 +25,8 @@ from docsgpt.agents.tool_pins import (
     resolve_arguments,
     sent_arguments,
 )
+from docsgpt.agents.questions import QuestionsInvalid, normalize_questions
+from docsgpt.agents.tools import ask_user
 from docsgpt.agents.tools.report_cannot_complete import REPORT_CANNOT_COMPLETE
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
@@ -115,6 +117,7 @@ _TOOL_SPAN_STATUS = {
     "skipped": tracing.STATUS_SKIPPED,
     "awaiting_approval": tracing.STATUS_PENDING,
     "requires_client_execution": tracing.STATUS_PENDING,
+    "awaiting_answer": tracing.STATUS_PENDING,
 }
 
 
@@ -766,6 +769,12 @@ class ToolExecutor:
         # ("Could not be searched"); the tool-result stage skips its item-level
         # controls for those tools, so nothing else would score them.
         self.source_name_screen: Optional[Callable[[Dict[str, str]], Dict[str, str]]] = None
+        # The agent's output screen for question cards (``BaseAgent._screen_questions``):
+        # ``(message, questions)`` in, ``(message, questions, block event)`` out.
+        self.question_screen: Optional[Callable[..., Tuple[Optional[str], List[Dict], Optional[Dict]]]] = None
+        # The event that ends the turn when that screen blocked the cards; the
+        # LLM handler takes it and emits it instead of the pause.
+        self.questions_blocked: Optional[Dict] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -810,6 +819,19 @@ class ToolExecutor:
         # Secrets the owner chose to show the assistant (``{secret: reference}``),
         # looked up once per turn: a raw one in a call is taken as its reference.
         self._exposed_secrets: Optional[Dict[str, str]] = None
+        # Whether this turn may ask the model's clarifying questions
+        # (``ask_user``), pausing for the client to draw them as cards. Off
+        # for headless runs, workflow nodes, research steps and every client
+        # that doesn't draw forms.
+        self.offers_questions = False
+        # A question round was asked in this user message (survives a resume
+        # through the paused state): a second one is refused.
+        self.questions_asked = False
+        # Questions the model sent that could not be shown, this turn.
+        self._invalid_questions = 0
+        # Tool calls in the round being run (set by the LLM handler): ask_user
+        # is honoured only alone.
+        self.calls_this_round = 1
 
     def exposed_secrets(self) -> Dict[str, str]:
         """``{secret: reference}`` for the secrets this user chose to show the assistant (cached per turn)."""
@@ -1361,6 +1383,9 @@ class ToolExecutor:
         tool_data = tools_dict[tool_id]
         arguments = call_args if isinstance(call_args, dict) else {}
 
+        if self._is_ask_user(tool_data):
+            return self._ask_user_pause(call, call_id, llm_name, tool_id, tool_data, action_name, arguments)
+
         # Client-side tools
         if tool_data.get("client_side"):
             if self.headless:
@@ -1619,6 +1644,164 @@ class ToolExecutor:
             return payload
 
         return None
+
+    @staticmethod
+    def _is_ask_user(tool_data: Dict) -> bool:
+        """Whether ``tool_data`` is the server-attached ``ask_user`` tool (a client tool of that name is not)."""
+        return tool_data.get("name") == ask_user.ASK_USER and not tool_data.get("client_side")
+
+    def _ask_user_check(self, arguments: Dict) -> Tuple[Optional[str], Optional[str], Optional[str], List[Dict]]:
+        """Whether an ``ask_user`` call may ask, and its questions normalized.
+
+        Questions that can't be shown count towards the one corrected try the
+        model gets.
+
+        Args:
+            arguments: The call's arguments.
+
+        Returns:
+            ``(model text, reason, message, questions)``: the first two are set
+            when the call is refused (what the model is told, and the short
+            reason kept on the message); otherwise the normalized questions.
+        """
+        if self.offers_questions is not True:
+            return ask_user.UNAVAILABLE_TEXT, "questions can't be shown here", None, []
+        if self.questions_asked is True:
+            return ask_user.ONE_ROUND_TEXT, "already asked in this turn", None, []
+        if isinstance(self.calls_this_round, int) and self.calls_this_round > 1:
+            return ask_user.NOT_ALONE_TEXT, "called beside other tools", None, []
+        try:
+            message, questions = normalize_questions(arguments)
+        except QuestionsInvalid as exc:
+            last_try = self._invalid_questions >= 1
+            self._invalid_questions += 1
+            if last_try:
+                # No third try: the model answers without asking.
+                self.questions_asked = True
+            return ask_user.invalid_text(exc.problems, last_try), "the questions were invalid", None, []
+        return None, None, message, questions
+
+    def _ask_user_pause(
+        self,
+        call: Any,
+        call_id: str,
+        llm_name: str,
+        tool_id: str,
+        tool_data: Dict,
+        action_name: str,
+        arguments: Dict,
+    ) -> Optional[Dict]:
+        """What ``check_pause`` returns for an ``ask_user`` call.
+
+        A call that may not ask is refused (the ``headless_denied`` shape the
+        LLM handler answers with ``model_text``); otherwise the turn pauses on
+        ``awaiting_answer``, carrying the normalized questions as its
+        arguments.
+
+        Args:
+            call: The model's tool call.
+            call_id: Its id.
+            llm_name: The name the model called it by.
+            tool_id: The tool's key in the turn's tools.
+            tool_data: The tool.
+            action_name: The action's name.
+            arguments: The call's arguments.
+
+        Returns:
+            The pause or the refusal.
+        """
+        base = {
+            "call_id": call_id,
+            "name": llm_name,
+            "tool_name": tool_data.get("name", ask_user.ASK_USER),
+            "tool_id": tool_id,
+            "action_name": action_name,
+            "llm_name": llm_name,
+            "arguments": arguments,
+            "thought_signature": getattr(call, "thought_signature", None),
+        }
+        model_text, reason, message, questions = self._ask_user_check(arguments)
+        if model_text is not None:
+            # A refused round shows nothing, so none of the model's text goes
+            # to the client, the journal or the kept record; the model's own
+            # call reaches it from the call itself.
+            return {
+                **base,
+                "arguments": {},
+                "pause_type": "headless_denied",
+                "deny_reason": f"Questions not asked: {reason}.",
+                "model_text": model_text,
+                "error_type": "questions_not_asked",
+            }
+        self.questions_asked = True
+        screened = self._screened_questions(message, questions)
+        if screened is None:
+            return {**base, "arguments": {}, "pause_type": ask_user.QUESTIONS_BLOCKED}
+        message, questions = screened
+        # The model's own wording must not reach the client or the paused
+        # state: the arguments are the screened cards, so whatever the cards
+        # leave out (a fourth question, an extra key, text past a cap) and the
+        # screen therefore never saw stays out too. They are held once, as the
+        # arguments; clients get them beside the call too
+        # (``ask_user.question_payload`` / ``client_pending_call``).
+        return {
+            **base,
+            "arguments": {"message": message, "questions": questions},
+            "pause_type": ask_user.AWAITING_ANSWER,
+        }
+
+    def _screened_questions(
+        self, message: Optional[str], questions: List[Dict]
+    ) -> Optional[Tuple[Optional[str], List[Dict]]]:
+        """The normalized questions after the turn's output controls, or None when a control blocked them.
+
+        A block is left in :attr:`questions_blocked`, which ends the turn as a
+        blocked answer does.
+
+        Args:
+            message: The cards' lead-in line.
+            questions: The normalized questions.
+
+        Returns:
+            ``(message, questions)`` as they may be shown, or None.
+        """
+        if self.question_screen is None:
+            return message, questions
+        screened_message, screened, block = self.question_screen(message, questions)
+        if block is not None:
+            self.questions_blocked = block
+            return None
+        return screened_message, screened
+
+    def _ask_user_unavailable(self, call_id: str, llm_name: str):
+        """Refuse an ``ask_user`` call that reached execution: questions are only ever asked by pausing.
+
+        ``check_pause`` pauses or refuses every ``ask_user`` call, so this runs
+        only for a caller that skipped it. Nothing of the call is kept.
+
+        Args:
+            call_id: The call's id.
+            llm_name: The name the model called it by.
+
+        Yields:
+            The call's ``tool_call`` event.
+
+        Returns:
+            ``(tool result, call id)``.
+        """
+        record: Dict[str, Any] = {
+            "tool_name": ask_user.ASK_USER,
+            "call_id": call_id,
+            "action_name": llm_name,
+            "arguments": {},
+            "result": ask_user.UNAVAILABLE_TEXT,
+            "error": "Questions not asked: questions can't be shown here.",
+            "error_type": "questions_not_asked",
+            "status": "error",
+        }
+        yield {"type": "tool_call", "data": dict(record)}
+        self.tool_calls.append(record)
+        return record["result"], call_id
 
     def _on_owner_credentials(self, tool_data: Dict, resolved, action_name: Optional[str] = None) -> bool:
         """Whether a call would act with credentials the caller doesn't hold.
@@ -1983,6 +2166,8 @@ class ToolExecutor:
             "arguments": call_args,
         }
         tool_data = tools_dict[tool_id]
+        if self._is_ask_user(tool_data):
+            return (yield from self._ask_user_unavailable(call_id, llm_name))
         if self._app_only(tool_data, action_name):
             refused = f"'{llm_name}' is called only by its app's view in the chat, not by the model. Nothing ran."
             tool_call_data["result"] = refused

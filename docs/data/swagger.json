@@ -7598,14 +7598,14 @@
         }
       ],
       "post": {
-        "description": "The body carries the token's plaintext ``token``, which only the caller\nholds (it was just shown to them), and ``base_url``, where the API is\nreached. The tool gets the read endpoints the token may call, with the\ntoken sealed as their ``Authorization`` header.",
+        "description": "The body carries the token's plaintext ``token``, which only the caller\nholds (it was just shown to them), and ``base_url``, where the API is\nreached. The tool gets an action for each endpoint the token may call\n(see ``docsgpt.api.pat.agent_tool``), with the token sealed as their\n``Authorization`` header. Deletes, and asking another agent, start\nswitched off; the response names them in ``inactive``.",
         "operationId": "post_personal_access_token_tool",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Create an API tool that lets agents read this account with the token",
+        "summary": "Create an API tool that lets agents work in this account with the token",
         "tags": [
           "tokens"
         ],

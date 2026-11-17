@@ -978,6 +978,40 @@ class TestResumeMarkResuming:
 
         assert sp.reserved_message_id == reserved_id
 
+    def test_resume_carries_the_text_written_before_the_pause(self, monkeypatch):
+        """The paused turn's text, reasoning and their order reach the resumed ``complete_stream``."""
+        from docsgpt.api.answer.services import continuation_service as cont_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
+        from docsgpt.llm import llm_creator as llm_creator_mod
+        from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        prior_turn = {"response": "A few details first.", "thought": "",
+                      "segments": [{"kind": "text", "length": 20}]}
+        cont_service = MagicMock()
+        cont_service.claim_state.return_value = {
+            "messages": [], "pending_tool_calls": [], "tools_dict": {}, "tool_schemas": [],
+            "agent_config": {"model_id": "m1", "llm_name": "openai", "api_key": "k", "agent_type": "ClassicAgent",
+                             "prompt": "", "prior_turn": prior_turn},
+            "client_tools": None,
+        }
+        monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
+        monkeypatch.setattr(llm_creator_mod.LLMCreator, "create_llm", lambda *a, **kw: MagicMock())
+        monkeypatch.setattr(handler_mod.LLMHandlerCreator, "create_handler", lambda *a, **kw: MagicMock())
+        from docsgpt.agents import agent_creator as ac_mod
+        from docsgpt.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None))
+        monkeypatch.setattr(ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock())
+
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {}
+        sp.decoded_token = {"sub": "alice"}
+        sp.initial_user_id = "alice"
+        sp.conversation_id = "00000000-0000-0000-0000-000000000001"
+        sp.agent_config = {}
+        sp.resume_from_tool_actions(tool_actions=[], conversation_id="00000000-0000-0000-0000-000000000001")
+        assert sp.prior_turn == prior_turn
+
     def test_resume_resolves_owner_from_api_key_when_no_jwt(self, monkeypatch):
         """api_key-authenticated resumes (no JWT) must resolve the agent owner
         before loading state.

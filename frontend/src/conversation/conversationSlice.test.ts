@@ -25,6 +25,7 @@ import {
   handleFetchAnswer,
   handleSubmitToolActions,
 } from './conversationHandlers';
+import { pendingQuestionCall } from './questionCall';
 import reducer, {
   addQuery,
   applyMessageTail,
@@ -43,6 +44,7 @@ import reducer, {
   setConversation,
   setConversationId,
   setStatus,
+  resumeQuestion,
   submitToolActions,
   tailInFlightMessage,
   updateConversationId,
@@ -1234,5 +1236,221 @@ it('hydrates supporting details and order from a failed time-limit tail', () => 
       { kind: 'tool', call_id: 'done' },
       { kind: 'text', text: 'Saved progress' },
     ],
+  });
+});
+
+describe('resumeQuestion', () => {
+  const pausedTurn = {
+    prompt: 'write the QBR deck',
+    tool_calls: [
+      {
+        tool_name: 'ask_user',
+        action_name: 'ask_user',
+        call_id: 'ask-1',
+        arguments: {},
+        status: 'awaiting_answer' as const,
+        message: 'Two things change what goes in it:',
+        questions: [
+          {
+            id: 'q1',
+            text: 'Which quarter?',
+            note: null,
+            multi: false,
+            options: [{ id: 'a', label: 'Q3' }],
+          },
+        ],
+      },
+    ],
+  };
+  const makeStore = () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(setConversation([pausedTurn]));
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+    return store;
+  };
+
+  beforeEach(() => {
+    vi.mocked(handleSubmitToolActions)
+      .mockReset()
+      .mockResolvedValue(undefined as never);
+  });
+
+  it('resumes the paused turn with the answer and folds the cards', async () => {
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({
+        callId: 'ask-1',
+        action: { answer: 'Which quarter? → Q3' },
+      }),
+    );
+    const [conversationId, actions] = vi.mocked(handleSubmitToolActions).mock
+      .calls[0];
+    expect(conversationId).toBe('conv-1');
+    expect(actions).toEqual([
+      { call_id: 'ask-1', answer: 'Which quarter? → Q3' },
+    ]);
+    const call = store.getState().conversation.queries[0].tool_calls![0];
+    expect(call).toMatchObject({
+      status: 'success',
+      result: 'Which quarter? → Q3',
+      arguments: { message: 'Two things change what goes in it:' },
+    });
+    // The answer is the tool's result, not a new turn.
+    expect(store.getState().conversation.queries).toHaveLength(1);
+  });
+
+  it('answers the latest turn when a provider reused the call id', async () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    // A local server's "call_0": the first turn's call was answered, the
+    // next turn asks again under the same id.
+    const answered = {
+      ...pausedTurn.tool_calls[0],
+      status: 'success' as const,
+      result: 'Which quarter? → Q2' as never,
+    };
+    store.dispatch(
+      setConversation([
+        { ...pausedTurn, tool_calls: [answered] },
+        { ...pausedTurn, prompt: 'and the next one' },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const { queries } = store.getState().conversation;
+    expect(queries[0].tool_calls![0].result).toBe('Which quarter? → Q2');
+    expect(queries[1].tool_calls![0]).toMatchObject({
+      status: 'success',
+      result: 'Q3',
+    });
+  });
+
+  it('sends Just answer as skipped', async () => {
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { skipped: true } }),
+    );
+    expect(vi.mocked(handleSubmitToolActions).mock.calls[0][1]).toEqual([
+      { call_id: 'ask-1', skipped: true },
+    ]);
+    expect(store.getState().conversation.queries[0].tool_calls![0].status).toBe(
+      'skipped',
+    );
+  });
+
+  // The server refused the resume before it ran (a 400, a 429, a dropped
+  // connection): it still waits, so the cards come back to try again.
+  const frames =
+    (events: object[]) =>
+    async (...args: Parameters<typeof handleSubmitToolActions>) => {
+      for (const event of events)
+        args[4](new MessageEvent('message', { data: JSON.stringify(event) }));
+      return undefined as never;
+    };
+  const waitingCall = (store: ReturnType<typeof makeStore>) =>
+    pendingQuestionCall(store.getState().conversation.queries);
+
+  it('brings the cards back when the server refuses the resume', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      frames([{ type: 'error', error: 'Too many requests', code: 'quota' }]),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const call = store.getState().conversation.queries[0].tool_calls![0];
+    expect(call.status).toBe('awaiting_answer');
+    expect(call.result).toBeUndefined();
+    expect(call.arguments).toEqual({});
+    expect(waitingCall(store)?.call_id).toBe('ask-1');
+    expect(store.getState().conversation.status).not.toBe('loading');
+  });
+
+  it('brings the cards back when the request throws', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(
+      new TypeError('Failed to fetch'),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { skipped: true } }),
+    );
+    const state = store.getState().conversation;
+    expect(state.status).toBe('failed');
+    expect(state.queries[0].tool_calls![0].status).toBe('awaiting_answer');
+    expect(waitingCall(store)?.call_id).toBe('ask-1');
+  });
+
+  it('keeps the cards folded when the resumed run fails after it started', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      frames([
+        { type: 'message_id', message_id: 'm-1' },
+        { type: 'error', error: 'Model failed' },
+      ]),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const call = store.getState().conversation.queries[0].tool_calls![0];
+    expect(call).toMatchObject({ status: 'success', result: 'Q3' });
+    expect(waitingCall(store)).toBeNull();
+  });
+
+  it("clears a refused try's error when the answer goes again", async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementationOnce(
+      frames([{ type: 'error', error: 'Too many requests' }]),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    expect(store.getState().conversation.queries[0].error).toBe(
+      'Too many requests',
+    );
+    await store.dispatch(
+      resumeQuestion({ callId: 'ask-1', action: { answer: 'Q3' } }),
+    );
+    const turn = store.getState().conversation.queries[0];
+    expect(turn.error).toBeUndefined();
+    expect(turn.tool_calls![0].status).toBe('success');
+  });
+
+  it('does not leave an approval stuck loading when its request throws', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(
+      new TypeError('Failed to fetch'),
+    );
+    const store = makeStore();
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'ask-1', decision: 'approved' }],
+      }),
+    );
+    expect(store.getState().conversation.status).toBe('failed');
+  });
+
+  it('retires waiting questions when a new message goes out', () => {
+    const state = reducer(
+      reducer(undefined, setConversation([pausedTurn])),
+      fetchAnswer.pending('req-1', { question: 'never mind' }),
+    );
+    expect(state.queries[0].tool_calls![0]).toMatchObject({
+      status: 'denied',
+      not_run: 'moved_on',
+    });
   });
 });

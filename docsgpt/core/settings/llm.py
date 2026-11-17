@@ -90,6 +90,14 @@ class LLMSettings(SettingsGroup):
     TITLE_MODEL_ID: Optional[str] = Field(
         default=None, description="Optional cheaper model for conversation titles; unset reuses the answer model."
     )
+    TASK_MODEL_ID: Optional[str] = Field(
+        default=None,
+        description=(
+            "Built-in model for DocsGPT's own jobs (drafting forms, GraphRAG extraction, monitor judging) when "
+            "neither the user (Settings > General) nor an admin (Admin > Defaults) picked one; unset uses the "
+            "default model. Chats use the agent's model."
+        ),
+    )
     MODELS_CONFIG_DIR: Optional[str] = Field(
         default=None,
         description=(

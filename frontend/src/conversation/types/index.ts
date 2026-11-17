@@ -20,10 +20,19 @@ export type ToolCallsType = {
   status?:
     | 'pending'
     | 'completed'
+    | 'success'
     | 'error'
     | 'awaiting_approval'
+    | 'awaiting_answer'
+    | 'skipped'
     | 'denied'
     | 'requires_client_execution';
+  /**
+   * An `ask_user` call paused on `awaiting_answer`: the model's lead-in line
+   * and its questions, normalized. Once answered they are its `arguments`.
+   */
+  message?: string | null;
+  questions?: unknown;
   artifact_id?: string;
   // Every artifact this call produced, with display names. A single call can
   // write several files (``run_code``), and ``artifact_id`` names only the

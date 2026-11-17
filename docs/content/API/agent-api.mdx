@@ -81,6 +81,7 @@ Common request body fields:
 | `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. Clamped to `0`-`500`; `0` skips retrieval. Ignored when `api_key` or `agent_id` selects an agent (the agent's value is used), and when a source has its own chunk count configured (the source's value wins). |
 | `isNoneDoc` | `boolean` | No | `/api/answer`, `/stream` | Skip document retrieval. |
 | `agent_id` | `string` | No | `/api/answer`, `/stream` | Alternative to `api_key` when using authenticated user context. |
+| `capabilities` | `string[]` | No | `/api/answer`, `/stream` | What your client can render. `["forms"]` lets the assistant ask clarifying questions, which pause the turn so your client can show them. Optional: unknown values are ignored, and without `"forms"` the assistant never asks. See [Clarifying questions](#clarifying-questions). |
 
 Streaming-only fields:
 
@@ -192,7 +193,7 @@ Each `data:` frame is JSON with `type`:
 | `answer` | `answer` | Incremental answer chunk. |
 | `thought` | `thought` | Reasoning chunk (model and agent dependent). |
 | `source` | `source` | The retrieved sources and chunks. |
-| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. A call that made files also has `artifacts` (see [Artifacts](#artifacts)). |
+| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval`, `awaiting_answer` or `requires_client_execution`) and `result` or `error`. A call that made files also has `artifacts` (see [Artifacts](#artifacts)). |
 | `tool_calls` | `tool_calls` | The completed tool calls of the turn. |
 | `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
 | `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
@@ -363,6 +364,21 @@ A pause ends without an answer in two cases:
 Either way the paused turn is saved as complete. Its text so far and the calls that ran stay on its message. The calls it waited on never run: they are recorded with `"status": "denied"`, a `not_run` of `"moved_on"` or `"expired"`, and a `result` saying why, and the model reads them that way on later turns. Resuming a pause that has ended returns HTTP `409` with `"code": "tool_call_not_pending"` (on `/stream`, an `error` event with that code), and nothing runs. So does a resume whose `call_id`s belong to an earlier pause than the one waiting now.
 
 Write actions on the owner's accounts or credentials never reach this pause for an API-key caller: they are refused outright unless the owner allowed them (see below).
+
+## Clarifying questions
+
+When an answer depends on something neither the conversation nor the sources settle, the assistant can ask the user up to three short questions, once per user message. It does so only for a client that says it can show them, with `"capabilities": ["forms"]` on the request (and on the request that resumes the turn). Without it, which is the default, the assistant never asks and answers as usual, so an existing integration sees no change. An agent with no tools and no sources never asks either.
+
+With `"forms"`, the turn pauses as in [Tools that need approval](#tools-that-need-approval). The `tool_call` event has `"status": "awaiting_answer"`, a `message` (the lead-in, or `null`) and a `questions` list; the pending call's `pause_type` is `awaiting_answer`.
+
+Each entry in `questions` has an `id` (`q1`, `q2`, `q3`), its `text`, an optional `note`, `multi` (whether several options may be picked) and `options`, each with an `id` (`a`, `b`, ...), a `label`, `input` and `exclusive`. `input` is the placeholder of a field that picking the option opens for the rest (send the answer as `<label>: <typed text>`), or `null`. `exclusive` is `true` for at most one option of a `multi` question, listed last: picking it rules out the others ("None of these"). A question with no options takes a typed answer and may carry a `placeholder`.
+
+Resume with `tool_actions`, one action for the call:
+
+- `"answer": "..."`: the user's answers as text, one line per question (for example `Team size? → 11-50`), or whatever they typed instead. At most 4000 characters reach the model.
+- `"skipped": true`: the model goes ahead with its best assumptions and says what it assumed.
+
+A question call takes only `answer` or `skipped`, and an approval or client-side call never does; a mixed-up action is refused with HTTP `400`, `"code": "invalid_tool_actions"` and an `error` naming the problem (on `/stream`, an `error` event with that code). Nothing runs and the turn stays paused, so you can send the corrected action. Questions nobody answers end like any pause: they are recorded as not answered.
 
 ## Letting API callers make changes
 

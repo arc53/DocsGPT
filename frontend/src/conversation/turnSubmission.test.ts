@@ -83,4 +83,30 @@ describe('composerSubmitTarget', () => {
       }),
     ).toEqual({ kind: 'new' });
   });
+
+  it('answers the questions the last turn waits on, unless files are attached', () => {
+    const paused = {
+      prompt: 'write the deck',
+      tool_calls: [
+        {
+          tool_name: 'ask_user',
+          action_name: 'ask_user',
+          call_id: 'ask-1',
+          arguments: {},
+          status: 'awaiting_answer' as const,
+          questions: [{ id: 'q1', text: 'Which quarter?', options: [] }],
+        },
+      ],
+    };
+    const target = (composerFileCount: number) =>
+      composerSubmitTarget({
+        question: 'Q3, for them',
+        queries: [paused],
+        lastQueryReturnedErr: false,
+        composerFileCount,
+      });
+    expect(target(0)).toEqual({ kind: 'answer', callId: 'ask-1' });
+    // An answer carries no files: those go out as a new message.
+    expect(target(1)).toEqual({ kind: 'new' });
+  });
 });

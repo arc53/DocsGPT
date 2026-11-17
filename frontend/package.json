@@ -16,13 +16,16 @@
     "lint-fix": "eslint ./src --ext .jsx,.js,.ts,.tsx --fix",
     "lint:design": "eslint ./src -f json | node scripts/design-lint-report.mjs",
     "format": "prettier ./src --write",
+    "locale:sort": "node scripts/sort-locales.mjs",
+    "locale:check": "node scripts/sort-locales.mjs --check",
     "prepare": "cd .. && husky install frontend/.husky"
   },
   "lint-staged": {
     "**/*.{js,jsx,ts,tsx}": [
       "npm run lint-fix",
       "npm run format"
-    ]
+    ],
+    "src/locale/*.json": "node scripts/sort-locales.mjs"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.13.0",

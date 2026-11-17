@@ -32,6 +32,9 @@ vi.mock('../hooks/useLoadMore', () => ({
     return vi.fn();
   },
 }));
+vi.mock('../drafter/useDrafterConfig', () => ({
+  useDrafterConfig: () => null,
+}));
 vi.mock('./traces/TraceSheet', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 

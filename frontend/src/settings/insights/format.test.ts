@@ -10,6 +10,7 @@ import {
   optionBars,
   optionName,
   pageNames,
+  shownPageName,
   bucketLabel,
   periodChange,
   readsOverTime,
@@ -437,5 +438,27 @@ describe('pageNames', () => {
       'B',
       'https://x/a',
     ]);
+  });
+});
+
+describe('shownPageName', () => {
+  it('names a page as a Docs gaps row showed it, without its site tail', () => {
+    const shown = 'App Configuration';
+    expect(shownPageName('App Configuration | DocsGPT Docs', shown)).toBe(
+      shown,
+    );
+    expect(shownPageName('App Configuration – Docs', shown)).toBe(shown);
+    expect(shownPageName('App Configuration', shown)).toBe(shown);
+  });
+
+  it('leaves any other name as it is', () => {
+    expect(
+      shownPageName('App Configuration Guide | Docs', 'App Configuration'),
+    ).toBe('App Configuration Guide | Docs');
+    expect(shownPageName('Install | Docs', 'App Configuration')).toBe(
+      'Install | Docs',
+    );
+    expect(shownPageName('Install | Docs', null)).toBe('Install | Docs');
+    expect(shownPageName('Install | Docs', '')).toBe('Install | Docs');
   });
 });

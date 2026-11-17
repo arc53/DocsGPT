@@ -6,7 +6,7 @@ import sys
 import threading
 from typing import Any, Optional
 
-from celery import Celery
+from docsgpt.celery_publish import Celery
 from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from celery.signals import (

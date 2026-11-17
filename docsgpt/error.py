@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Iterator, Mapping, Optional, Sequence
 
 from flask import jsonify
 from werkzeug.http import HTTP_STATUS_CODES
@@ -17,6 +17,14 @@ SERVER_ERROR = "server_error"
 MAX_ERROR_TEXT_CHARS = 2_000
 # A run this long of base64 characters is a payload, not a message.
 _BASE64_RUN = re.compile(r"(?:base64,)?[A-Za-z0-9+/=_-]{200,}")
+# Longest provider error text a model-call failure log line keeps.
+MAX_PROVIDER_FAILURE_CHARS = 300
+# Error class names the provider SDKs raise for a refused key (OpenAI, Anthropic, Groq…).
+_AUTH_ERROR_NAMES = frozenset({"AuthenticationError", "PermissionDeniedError"})
+# Lower-cased phrases of the errors an SDK raises for a key that is missing when it is built or called.
+_MISSING_KEY_PHRASES = ("api_key client option must be set", "could not resolve authentication method")
+# How deep to follow ``raise ... from`` when looking for the provider's error.
+_MAX_CAUSE_DEPTH = 5
 
 
 def response_error(code_status, message=None):
@@ -187,4 +195,92 @@ def bounded_error_text(error: BaseException) -> str:
     text = _BASE64_RUN.sub("[payload]", f"{type(error).__name__}: {error}")
     if len(text) > MAX_ERROR_TEXT_CHARS:
         text = text[: MAX_ERROR_TEXT_CHARS - 1] + "…"
+    return text
+
+
+def cause_chain(error: BaseException) -> Iterator[BaseException]:
+    """``error`` and what it was raised from (``raise ... from``), outermost first, at most five deep.
+
+    Args:
+        error: The exception.
+
+    Yields:
+        Each exception of the chain.
+    """
+    current: Optional[BaseException] = error
+    for _ in range(_MAX_CAUSE_DEPTH):
+        if current is None:
+            return
+        yield current
+        current = current.__cause__
+
+
+def http_status(error: BaseException, *, follow_causes: bool = True) -> Optional[int]:
+    """The HTTP status a provider error carries, or None.
+
+    Reads ``status_code`` (OpenAI, Anthropic), an integer ``code`` in the HTTP
+    range (google-genai), the attached response's status, or a boto
+    ``ClientError``'s metadata.
+
+    Args:
+        error: The exception.
+        follow_causes: Also read what it was raised from (:func:`cause_chain`), outermost first.
+
+    Returns:
+        The first status found; None without one.
+    """
+    for current in cause_chain(error) if follow_causes else (error,):
+        status = getattr(current, "status_code", None)
+        if status is None:
+            code = getattr(current, "code", None)
+            status = code if isinstance(code, int) and 100 <= code < 600 else None
+        if status is None:
+            response = getattr(current, "response", None)
+            if isinstance(response, Mapping):
+                status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
+            else:
+                status = getattr(response, "status_code", None)
+        if isinstance(status, int) and not isinstance(status, bool):
+            return status
+    return None
+
+
+def is_auth_failure(error: BaseException) -> bool:
+    """Whether a model call failed because the provider refused, or never got, the model's key.
+
+    A 401 or 403 from the provider (the error's own status, not its cause's),
+    an SDK's authentication or permission error, or an SDK that can't find a key to send. Such a failure doesn't go
+    away on retry: the user has to change the model or its key.
+
+    Args:
+        error: What the call (or building the model) raised.
+
+    Returns:
+        True for a key problem.
+    """
+    if http_status(error, follow_causes=False) in (401, 403) or type(error).__name__ in _AUTH_ERROR_NAMES:
+        return True
+    message = str(error).lower()
+    return any(phrase in message for phrase in _MISSING_KEY_PHRASES)
+
+
+def provider_failure_text(error: BaseException) -> str:
+    """A failed model call, as an operator log line may quote it.
+
+    A refused key is named by its type and HTTP status only: the provider's
+    body can quote the key or the account. Other failures keep their message,
+    payloads cut out and cut to :data:`MAX_PROVIDER_FAILURE_CHARS`.
+
+    Args:
+        error: What the model call raised.
+
+    Returns:
+        ``Type (HTTP 401)`` for a key problem, else ``Type: message``.
+    """
+    if is_auth_failure(error):
+        status = http_status(error, follow_causes=False)
+        return type(error).__name__ + (f" (HTTP {status})" if status is not None else "")
+    text = bounded_error_text(error)
+    if len(text) > MAX_PROVIDER_FAILURE_CHARS:
+        text = text[: MAX_PROVIDER_FAILURE_CHARS - 1] + "…"
     return text
