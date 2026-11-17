@@ -1109,20 +1109,22 @@ function Upload({
       return;
     }
     setHandedOver(true);
+    // In a team the wizard works on the team's accounts (and asks among
+    // those the caller picks from), never the caller's own.
+    const owner = inTeam ? ({ owner: 'team' } as const) : {};
     if (connected.length > 0) {
       // Opened to add knowledge: an account already connected goes straight
-      // to what to sync. With several, the wizard asks which one, from the
-      // caller's own accounts; so a team names its account here, one the
-      // caller picks from.
+      // to what to sync. With several, the wizard asks which one.
       launch(
         target,
-        connected.length === 1 || inTeam
+        connected.length === 1
           ? {
               mode: 'sync',
               connectionId: connected[0].id,
               purpose: 'knowledge',
+              ...owner,
             }
-          : { mode: 'sync', purpose: 'knowledge' },
+          : { mode: 'sync', purpose: 'knowledge', ...owner },
       );
     } else if (broken.length > 0) {
       // Repair the account that stopped rather than add a second one.
@@ -1130,6 +1132,7 @@ function Upload({
         mode: 'reconnect',
         connectionId: broken[0].id,
         purpose: 'knowledge',
+        ...owner,
       });
     } else {
       launch(target, { purpose: 'knowledge' });

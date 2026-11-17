@@ -700,13 +700,17 @@ describe('Upload source-type tiles', () => {
       await act(async () => serviceTile('Google Drive').click());
       expect(launch).toHaveBeenLastCalledWith(
         expect.objectContaining({ key: 'google_drive' }),
-        { mode: 'sync', connectionId: 'team-d1', purpose: 'knowledge' },
+        {
+          mode: 'sync',
+          connectionId: 'team-d1',
+          purpose: 'knowledge',
+          owner: 'team',
+        },
       );
     });
 
-    // The wizard's account choice lists the caller's own accounts, so a
-    // team's account is always named.
-    it('names the first team account when the caller connected several', async () => {
+    // The wizard asks among the team's accounts the caller picks from.
+    it('leaves the team account to the wizard when the caller connected several', async () => {
       inTeam('admin', [
         TEAM_DRIVE,
         { ...TEAM_DRIVE, id: 'team-d2' },
@@ -717,7 +721,26 @@ describe('Upload source-type tiles', () => {
       await act(async () => serviceTile('Google Drive').click());
       expect(launch).toHaveBeenLastCalledWith(
         expect.objectContaining({ key: 'google_drive' }),
-        { mode: 'sync', connectionId: 'team-d1', purpose: 'knowledge' },
+        { mode: 'sync', purpose: 'knowledge', owner: 'team' },
+      );
+    });
+
+    it('repairs a team account the caller connected that needs signing in again', async () => {
+      inTeam('admin', [{ ...TEAM_DRIVE, status: 'reconnect_needed' }]);
+      launch.mockClear();
+      await render(vi.fn());
+      expect(statusLine('Google Drive')).toBe(
+        'settings.connectors.status.reconnect',
+      );
+      await act(async () => serviceTile('Google Drive').click());
+      expect(launch).toHaveBeenLastCalledWith(
+        expect.objectContaining({ key: 'google_drive' }),
+        {
+          mode: 'reconnect',
+          connectionId: 'team-d1',
+          purpose: 'knowledge',
+          owner: 'team',
+        },
       );
     });
 
