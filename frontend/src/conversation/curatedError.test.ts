@@ -133,4 +133,10 @@ describe('curatedErrorText', () => {
       'payer.notice.chat.noPayer',
     );
   });
+
+  it("says a team chat can't run on the caller's own custom model", () => {
+    expect(
+      curatedErrorText(t, 'server words', 'custom_model_personal_only'),
+    ).toBe('settings.customModels.team.errors.chatPersonalOnly');
+  });
 });

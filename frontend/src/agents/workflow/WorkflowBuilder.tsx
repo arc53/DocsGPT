@@ -31,6 +31,7 @@ import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
+import { isCustomModelSaveRefusal } from '../../models/customModelErrors';
 import { ActiveState } from '../../models/misc';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can, canOpenShare, canPublish } from '../../utils/accessUtils';
@@ -1993,10 +1994,13 @@ function WorkflowBuilderInner() {
         );
         if (result.status === 'cancelled') return 'cancelled';
         if (result.status === 'failed') {
-          // A graph the server can't run lists each problem.
+          // A graph the server can't run lists each problem; a refused
+          // custom model is one line, already in the reader's words.
           const listed = (result.body as { errors?: unknown } | null)?.errors;
           setPublishErrors(
-            Array.isArray(listed) && listed.length > 0
+            Array.isArray(listed) &&
+              listed.length > 0 &&
+              !isCustomModelSaveRefusal(result.body)
               ? listed.map(String)
               : [result.message],
           );

@@ -12,6 +12,10 @@ import {
   teamConnectionOutsideTools,
 } from '../../connectors/connectionErrors';
 import {
+  customModelErrorMessage,
+  isCustomModelSaveRefusal,
+} from '../../models/customModelErrors';
+import {
   confirmTakeOver,
   readSponsorRefusal,
   saveWithSponsorConsent,
@@ -172,7 +176,9 @@ export function useSponsoredSave({
               })
             : outsideTools
               ? connectionErrorMessage(t, body)
-              : messageOf(body, fallback),
+              : isCustomModelSaveRefusal(body)
+                ? customModelErrorMessage(t, body)
+                : messageOf(body, fallback),
       };
     },
     [i18n.language, sponsorPrompt.ask, t],

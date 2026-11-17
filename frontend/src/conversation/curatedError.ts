@@ -1,6 +1,7 @@
 import i18next, { type TFunction } from 'i18next';
 
 import { isRecord } from '../utils/wireGuards';
+import { CUSTOM_MODEL_CHAT_PERSONAL_ONLY_KEY } from '../models/customModelErrors';
 import type { Query } from './conversationModels';
 import {
   AGENT_LIMIT_EXCEEDED,
@@ -128,6 +129,9 @@ export function curatedErrorText(
       return t('payer.notice.chat.agentPaused');
     case 'no_payer':
       return t('payer.notice.chat.noPayer');
+    // A team chat asked for the caller's own custom model.
+    case 'custom_model_personal_only':
+      return t(CUSTOM_MODEL_CHAT_PERSONAL_ONLY_KEY);
     default:
       return message;
   }

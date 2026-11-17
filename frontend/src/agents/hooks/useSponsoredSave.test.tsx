@@ -242,6 +242,46 @@ describe('useSponsoredSave', () => {
     });
   });
 
+  it("words a save refused for a custom model its owner can't run", async () => {
+    let result: unknown;
+    // An agent save puts the code in `error`.
+    await act(async () => {
+      result = await hook.save(
+        async () =>
+          json(400, {
+            success: false,
+            error: 'custom_model_personal_only',
+            message: 'server words',
+            models: ['m1'],
+          }),
+        'failed',
+      );
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      message: 'settings.customModels.team.errors.personalOnly',
+    });
+    // A workflow save keeps a sentence in `error` and the code in `code`.
+    await act(async () => {
+      result = await hook.save(
+        async () =>
+          json(400, {
+            success: false,
+            error: 'server words',
+            code: 'custom_model_team_only',
+            message: 'server words',
+            errors: ['server words'],
+            models: ['m2'],
+          }),
+        'failed',
+      );
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      message: 'settings.customModels.team.errors.teamOnly',
+    });
+  });
+
   it('takes back a takeover', async () => {
     await act(async () => {
       void hook.takeOver(RESOURCE, 'Jira', AUDIENCE);
