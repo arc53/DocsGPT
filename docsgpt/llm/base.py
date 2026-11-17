@@ -40,8 +40,8 @@ class StreamDeadlines(NamedTuple):
 # retries — RateLimitError needs backoff, BadRequestError won't get any
 # better on retry, and the existing fallback handles both.
 # Both HTTP stacks are listed because the providers are split across them and
-# the two libraries' exception classes are unrelated types: openai, anthropic
-# and the MCP client run on httpx2, while google-genai, elevenlabs,
+# the two libraries' exception classes are unrelated types: openai, anthropic,
+# google-genai and the MCP client run on httpx2, while elevenlabs,
 # qdrant-client and daytona are still on httpx. Naming only one silently stops
 # matching for half the providers — the retry just never fires.
 _TRANSPORT_ERROR_NAMES = (

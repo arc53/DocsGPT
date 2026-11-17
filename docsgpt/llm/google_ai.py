@@ -8,7 +8,7 @@ from google.genai import types
 from docsgpt.core.settings import settings
 
 from docsgpt.llm.base import BaseLLM
-from docsgpt.llm.credential_scope import GOOGLE_BASE_URL, check_credential_scope
+from docsgpt.llm.credential_scope import GOOGLE_API_VERSION, GOOGLE_BASE_URL, check_credential_scope
 from docsgpt.llm.deadlines import provider_event
 from docsgpt.llm.handlers.google import _decode_thought_signature
 from docsgpt.llm.tool_images import follow_up_note, native_tool_images, reads_images, tool_result
@@ -66,11 +66,13 @@ class GoogleLLM(BaseLLM):
 
         # Pin the client to the endpoint just checked. Left to itself the SDK
         # takes GOOGLE_GEMINI_BASE_URL, or switches to Vertex AI on
-        # GOOGLE_GENAI_USE_VERTEXAI, and sends the key there.
+        # GOOGLE_GENAI_USE_VERTEXAI, and sends the key there. The API version
+        # is pinned too: google-genai 3 defaults to v1, which lacks the
+        # ``-latest`` aliases and some preview models.
         self.client = genai.Client(
             api_key=self.api_key,
             vertexai=False,
-            http_options={"base_url": GOOGLE_BASE_URL},
+            http_options={"base_url": GOOGLE_BASE_URL, "api_version": GOOGLE_API_VERSION},
         )
         self.storage = StorageCreator.get_storage()
 
