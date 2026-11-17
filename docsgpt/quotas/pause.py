@@ -1,4 +1,4 @@
-"""Why a schedule or an agent's outside access is paused for its payer.
+"""Why a schedule, an agent's outside access or a team's connection is paused for its payer.
 
 A pause is derived from the accounts, team roles and allowance it depends on
 each time someone asks, at run time (the scheduler, the outside-access gates)
@@ -25,6 +25,12 @@ The reasons, strongest first (:data:`PAUSE_REASONS`):
   window resets (``until``).
 
 The agent's own limit is not a payer pause and is not reported here.
+
+A team's connection (:func:`connection_pause`) is paid for by the person who
+connected it (``connected_by``), who must stay an Admin of the team. The first
+three reasons apply to it (:data:`ACCOUNT_PAUSES`): while one holds, the
+account is not used at all. Out of allowance only holds back its scheduled
+syncs; anything a person starts is paid by that person.
 """
 
 from __future__ import annotations
@@ -49,6 +55,12 @@ PAYER_OUT_OF_ALLOWANCE = "payer_out_of_allowance"
 
 #: Every pause reason, strongest first: when several hold, the first is reported.
 PAUSE_REASONS = (OWNER_INACTIVE, TEAM_LOCKED, PAYER_LEFT, NO_PAYER, PAYER_OUT_OF_ALLOWANCE)
+
+#: The reasons a team's connection is not used at all (no sync, no picker, no tool call), strongest first.
+ACCOUNT_PAUSES = (OWNER_INACTIVE, PAYER_LEFT, NO_PAYER)
+
+#: The team role the person who connected a team's account must keep (the role that manages connections).
+_CONNECTOR_ROLE = "admin"
 
 #: Agent columns that say whether outside access is on (``has_outside_access``).
 _ACCESS_COLUMNS = ("key", "shared_token", "incoming_webhook_token")
@@ -281,4 +293,48 @@ def outside_access_pause(
     exceeded = checks.quota(payer, "agent", now)
     if exceeded is not None:
         return Pause(PAYER_OUT_OF_ALLOWANCE, payer, exceeded.resets_at)
+    return None
+
+
+def connection_pause(
+    conn: Any,
+    row: Mapping[str, Any],
+    *,
+    checks: Optional[PayerChecks] = None,
+    allowance: bool = False,
+    now: Optional[datetime] = None,
+) -> Optional[Pause]:
+    """Why a team's connection is paused for the person who connected it, or None when it may be used.
+
+    Args:
+        conn: Open connection.
+        row: The ``connector_sessions`` row (``user_id``, ``connected_by``).
+        checks: The request's :class:`PayerChecks`; a fresh one when None.
+        allowance: Also check that person's allowance (the ``direct`` bucket
+            graph extraction bills), for a scheduled sync; other uses are paid
+            by whoever starts them.
+        now: Reference instant for the allowance window, for tests.
+
+    Returns:
+        The strongest :class:`Pause` that holds, or None. Always None for a
+        personal connection: its owner uses it and pays as they always have.
+    """
+    owner = row.get("user_id")
+    if not is_principal_id(owner):
+        return None
+    checks = checks or PayerChecks()
+    payer = _person(row.get("connected_by"))
+    team_id = team_of_principal(owner)
+    if payer and checks.deactivated(conn, payer):
+        return Pause(OWNER_INACTIVE, payer)
+    if payer and team_id:
+        role = checks.team_role(conn, payer, team_id)
+        if not role_at_least(role, _CONNECTOR_ROLE):
+            return Pause(PAYER_LEFT, payer, left_team=role is None)
+    if payer is None or team_id is None:
+        return Pause(NO_PAYER, None)
+    if allowance:
+        exceeded = checks.quota(payer, "direct", now)
+        if exceeded is not None:
+            return Pause(PAYER_OUT_OF_ALLOWANCE, payer, exceeded.resets_at)
     return None

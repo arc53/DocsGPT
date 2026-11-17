@@ -18,9 +18,13 @@ from sqlalchemy import Connection
 PRINCIPAL_PREFIX = "__team__"
 
 #: Notices that still reach someone when a principal owns the item and no person started the work:
-#: the team's admins (and owner) hear about failures; anything else with no actor is dropped.
+#: the team's admins (and owner) hear about failures, a team connection that needs signing in again
+#: included; anything else with no actor is dropped.
 ADMIN_NOTICE_KINDS = frozenset(
-    {"schedule_failed", "schedule_paused", "docs_gaps", "sync_failed", "source.ingest.failed", "payer_left"}
+    {
+        "schedule_failed", "schedule_paused", "docs_gaps", "sync_failed", "source.ingest.failed", "payer_left",
+        "connection.reconnect_needed",
+    }
 )
 
 

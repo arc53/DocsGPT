@@ -26,6 +26,8 @@ STATUS_RECONNECT = "reconnect_needed"
 STATUS_DISCONNECTED = "disconnected"
 STATUS_ERROR = "error"
 STATUS_PENDING = "pending"
+#: A team's account the person who connected it can't use now (never stored; see :func:`ensure_account_usable`).
+STATUS_PAUSED = "paused"
 
 # Worst first: a card shows the worst status among the user's accounts.
 _STATUS_SEVERITY = {
@@ -469,13 +471,22 @@ class ConnectionUnavailable(ValueError):
 
     Attributes:
         connection_id: The connection, when known.
-        status: ``reconnect_needed``, ``disconnected`` or ``missing``.
+        status: ``reconnect_needed``, ``disconnected``, ``missing`` or ``paused``.
+        paused_for: For ``paused``: why, as ``Pause.payload()``; else None.
     """
 
-    def __init__(self, message: str, *, connection_id: Optional[str] = None, status: str = STATUS_RECONNECT):
+    def __init__(
+        self,
+        message: str,
+        *,
+        connection_id: Optional[str] = None,
+        status: str = STATUS_RECONNECT,
+        paused_for: Optional[dict] = None,
+    ):
         super().__init__(message)
         self.connection_id = connection_id
         self.status = status
+        self.paused_for = paused_for
 
 
 class TransientConnectionError(Exception):
@@ -567,6 +578,43 @@ def write_secrets(conn, row: dict, secrets: dict, **fields: Any) -> None:
         scopes = token_info["scopes"]
         update["scopes"] = scopes.split() if isinstance(scopes, str) else list(scopes)
     ConnectorSessionsRepository(conn).update(str(row["id"]), update)
+
+
+PAUSED_ERROR = "This team account is paused: the person who connected it can't use it now. An Admin can reconnect it."
+
+
+def ensure_account_usable(conn, row: dict) -> None:
+    """Refuse a team's account while the person who connected it can't use it.
+
+    A team's connection runs on the account of the person who connected it.
+    While they are deactivated, out of the team or below Admin, or nobody is
+    recorded, the account is not used at all: no token refresh, no
+    credentials, no MCP tokens. The connection is not flagged for reconnect
+    (the grant may be fine); the pause lifts by itself when they are back,
+    or another Admin reconnects it. A personal connection always passes.
+
+    Args:
+        conn: Open connection, or None to open a read-only one when needed.
+        row: The ``connector_sessions`` row.
+
+    Raises:
+        ConnectionUnavailable: ``status="paused"``, with ``paused_for``.
+    """
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if not row or not is_principal_id(row.get("user_id")):
+        return
+    from docsgpt.quotas.pause import connection_pause
+
+    if conn is None:
+        with db_readonly() as own:
+            pause = connection_pause(own, row)
+    else:
+        pause = connection_pause(conn, row)
+    if pause is not None:
+        raise ConnectionUnavailable(
+            PAUSED_ERROR, connection_id=str(row.get("id")), status=STATUS_PAUSED, paused_for=pause.payload(),
+        )
 
 
 def credential_hint(credentials: dict) -> str:
@@ -704,8 +752,9 @@ def get_valid_token_info(connection_id: str, *, rejected_access_token: Optional[
         The decrypted token info, refreshed if it was about to expire.
 
     Raises:
-        ConnectionUnavailable: The connection is missing, disconnected, cannot
-            be decrypted, or its grant was revoked (it is then flagged
+        ConnectionUnavailable: The connection is missing, disconnected, a
+            paused team account (:func:`ensure_account_usable`), cannot be
+            decrypted, or its grant was revoked (it is then flagged
             ``reconnect_needed``).
         TransientConnectionError: The provider failed in a retryable way.
     """
@@ -719,6 +768,8 @@ def get_valid_token_info(connection_id: str, *, rejected_access_token: Optional[
         row = repo.get_for_update(connection_id)
         if row is None:
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
+        # Before any refresh, and never flagged for reconnect: the grant itself may be fine.
+        ensure_account_usable(conn, row)
         status = normalize_status(row)
         if status == STATUS_DISCONNECTED:
             raise ConnectionUnavailable(
@@ -773,8 +824,9 @@ def get_credentials(row: dict) -> dict:
     """The pasted credentials (API keys) of an ``api_key`` connection.
 
     Raises:
-        ConnectionUnavailable: Disconnected, flagged, or undecryptable.
+        ConnectionUnavailable: Disconnected, flagged, a paused team account, or undecryptable.
     """
+    ensure_account_usable(None, row)
     status = normalize_status(row)
     if status in (STATUS_DISCONNECTED, STATUS_RECONNECT):
         raise ConnectionUnavailable(f"Connection is {status}", connection_id=str(row["id"]), status=status)
@@ -793,10 +845,11 @@ def access_credentials(row: dict) -> dict:
     has expired.
 
     Raises:
-        ConnectionUnavailable: Disconnected, flagged, undecryptable, or the
-            refresh was refused (the connection is then flagged).
+        ConnectionUnavailable: Disconnected, flagged, a paused team account,
+            undecryptable, or the refresh was refused (the connection is then flagged).
         TransientConnectionError: The provider failed in a retryable way.
     """
+    ensure_account_usable(None, row)
     if (row.get("auth_kind") or "") == "oauth":
         status = normalize_status(row)
         if status in (STATUS_DISCONNECTED, STATUS_RECONNECT):
@@ -947,22 +1000,46 @@ def create_api_key_connection(
 # ---------------------------------------------------------------------------
 
 
-def begin_oauth(conn, user_id: str, provider: str, connection_id: Optional[str] = None) -> dict:
+def begin_oauth(
+    conn,
+    owner_id: str,
+    provider: str,
+    connection_id: Optional[str] = None,
+    *,
+    connected_by: Optional[str] = None,
+    replace: bool = False,
+) -> dict:
     """The row an OAuth sign-in writes into when it completes.
 
     Reconnecting passes the connection being reconnected. A new sign-in
     gets a pending row with no account label; the callback moves the tokens
     onto the existing row for that account if there is one.
 
+    Args:
+        conn: Open connection inside a transaction.
+        owner_id: Who owns the connection: the person, or a team's principal
+            (the caller has checked the person may connect for that team).
+        provider: The OAuth connector.
+        connection_id: The connection being reconnected, if any.
+        connected_by: The person connecting a team's account; required for a
+            principal owner (the database refuses a team row without one) and
+            None for a personal connection.
+        replace: The sign-in replaces the account of the team connection
+            ``connection_id`` (its flow records it; :func:`complete_oauth`
+            rewrites the row).
+
     Raises:
-        ConnectionUnavailable: ``connection_id`` is not the caller's
+        ConnectionUnavailable: ``connection_id`` is not ``owner_id``'s
             connection for ``provider``.
+        ValueError: ``replace`` without a connection to replace.
     """
     from sqlalchemy import text
 
+    if replace and not connection_id:
+        raise ValueError("replacing an account needs the connection it replaces")
     repo = ConnectorSessionsRepository(conn)
     if connection_id:
-        row = repo.get_for_user(connection_id, user_id)
+        row = repo.get_for_user(connection_id, owner_id)
         if row is None or row.get("provider") != provider:
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
         return row
@@ -971,8 +1048,10 @@ def begin_oauth(conn, user_id: str, provider: str, connection_id: Optional[str] 
     result = conn.execute(
         text(
             """
-            INSERT INTO connector_sessions (user_id, provider, status, connector_key, auth_kind, display_name)
-            VALUES (:user_id, :provider, 'pending', :provider, 'oauth', :display_name)
+            INSERT INTO connector_sessions (
+                user_id, provider, status, connector_key, auth_kind, display_name, connected_by
+            )
+            VALUES (:user_id, :provider, 'pending', :provider, 'oauth', :display_name, :connected_by)
             ON CONFLICT (user_id, provider, COALESCE(server_url, ''), COALESCE(account_label, ''))
             DO UPDATE SET status = CASE
                 WHEN connector_sessions.status IN ('connected', 'authorized') THEN connector_sessions.status
@@ -980,14 +1059,28 @@ def begin_oauth(conn, user_id: str, provider: str, connection_id: Optional[str] 
             RETURNING *
             """
         ),
-        {"user_id": user_id, "provider": provider, "display_name": definition.name if definition else provider},
+        {
+            "user_id": owner_id,
+            "provider": provider,
+            "display_name": definition.name if definition else provider,
+            "connected_by": connected_by,
+        },
     )
     from docsgpt.storage.db.base_repository import row_to_dict
 
     return row_to_dict(result.fetchone())
 
 
-def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, account: str) -> dict:
+def complete_oauth(
+    conn,
+    state_row: dict,
+    provider: str,
+    token_info: dict,
+    account: str,
+    *,
+    connected_by: Optional[str] = None,
+    replace: bool = False,
+) -> dict:
     """Store a finished OAuth sign-in and return the connection it belongs to.
 
     Signing in to an account that already has a connection updates that
@@ -1003,12 +1096,21 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
         provider: ``google_drive``, ``share_point`` or ``confluence``.
         token_info: Sanitised token info from the provider.
         account: The account's email or name, shown as "Connected as".
+        connected_by: The person who finished a team's sign-in (the flow's
+            person, re-checked as Admin by the caller); None for a personal one.
+        replace: Rewrite the team connection ``state_row`` in place with the
+            new account (the flow's ``replace_account``).
 
     Returns:
         The connection now holding the sign-in.
+
+    Raises:
+        NotImplementedError: ``replace`` (not built yet).
     """
     import uuid
 
+    if replace:
+        raise NotImplementedError("replacing a team connection's account is not built yet")
     repo = ConnectorSessionsRepository(conn)
     target = state_row
     definition = catalog.get_definition(provider)
@@ -1022,7 +1124,7 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
         # The row belongs to another account (a reconnect that signed in as someone else).
         target = repo.create(
             state_row["user_id"], provider, connector_key=provider, auth_kind="oauth",
-            display_name=display_name, account_label=account, status=STATUS_PENDING,
+            display_name=display_name, account_label=account, status=STATUS_PENDING, connected_by=connected_by,
         ) or repo.find_account(state_row["user_id"], provider, server_url=None, account_label=account)
     write_secrets(
         conn,
@@ -1178,9 +1280,14 @@ def _mcp_row(conn, user_id: str, base_url: str, connection_id: Optional[str], *,
 
 
 def read_mcp_secrets(user_id: str, base_url: str, connection_id: Optional[str] = None) -> dict:
-    """The MCP OAuth ``tokens`` and ``client_info`` of a server connection."""
+    """The MCP OAuth ``tokens`` and ``client_info`` of a server connection.
+
+    Raises:
+        ConnectionUnavailable: The connection is a paused team account.
+    """
     with db_readonly() as conn:
         row = _mcp_row(conn, user_id, base_url, connection_id)
+        ensure_account_usable(conn, row)
     if row is None:
         return {}
     return load_secrets(row) or {}
@@ -1206,7 +1313,8 @@ def update_mcp_secrets(
 
     Raises:
         ConnectionUnavailable: ``connection_id`` names no connection of this
-            user for this server (removed, or another server's).
+            user for this server (removed, or another server's), or the
+            connection is a paused team account.
     """
     from docsgpt.security.encryption import CredentialDecryptionError
 
@@ -1215,6 +1323,7 @@ def update_mcp_secrets(
         row = _mcp_row(conn, user_id, base_url, connection_id, lock=True)
         if row is None and connection_id:
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
+        ensure_account_usable(conn, row)
         if row is None:
             row = repo.merge_session_data(user_id, mcp_provider(base_url), base_url, {})
         try:

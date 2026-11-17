@@ -229,3 +229,30 @@ def payer_for(identity: Optional[str], agent_id: Optional[str] = None) -> Option
     if not is_principal_id(identity):
         return str(identity)
     return agent_access_payer(agent_id)
+
+
+def connection_payer(conn: Any, row: Mapping[str, Any], *, checks: Optional[Any] = None) -> Optional[str]:
+    """Who pays for a scheduled sync of a connection's sources, read at run time.
+
+    A team's connection bills the person who connected it, unless its account
+    is paused (:data:`~docsgpt.quotas.pause.ACCOUNT_PAUSES`): then nobody does
+    and nothing runs. Their allowance is not checked here (a run checks it as
+    it bills). A personal connection bills its owner.
+
+    Args:
+        conn: Open connection.
+        row: The ``connector_sessions`` row (``user_id``, ``connected_by``).
+        checks: The request's :class:`~docsgpt.quotas.pause.PayerChecks`; a fresh one when None.
+
+    Returns:
+        A person's id, or None when nobody can be billed.
+    """
+    # Imported here: the pause module reads the published-access payer from this one.
+    from docsgpt.quotas.pause import connection_pause
+
+    owner = row.get("user_id")
+    if not is_principal_id(owner):
+        return str(owner) if owner else None
+    if connection_pause(conn, row, checks=checks) is not None:
+        return None
+    return str(row["connected_by"])
