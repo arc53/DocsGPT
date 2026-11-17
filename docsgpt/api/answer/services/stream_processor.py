@@ -57,7 +57,7 @@ from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_t
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-from docsgpt.api.user.resource_access import resolve, resource_owner
+from docsgpt.api.user.resource_access import resolve, resource_owner, team_item_reach
 from docsgpt.api.user.team_sharing import can_access
 from docsgpt.api.owner_pause import AgentPausedError, refuse_if_owner_deactivated
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -1440,20 +1440,32 @@ class StreamProcessor:
                 # too: a teammate there is not a link user.
                 is_team_shared = False
                 via_team_role = False
+                receiving_team = None
                 if not is_owner and user_id:
                     try:
                         ra = resolve(conn, "agent", str(agent["id"]), user_id)
                         is_team_shared = ra is not None and ra.can("use")
-                        via_team_role = is_team_shared and ra.is_team_item
+                        # A member of the agent's team, not someone it reaches
+                        # through a share with their own team.
+                        via_team_role = is_team_shared and ra.is_team_item and not ra.via_team_id
+                        if is_team_shared and ra.via_team_id:
+                            receiving_team = team_item_reach(
+                                conn, user_id, "agent", str(agent["id"]),
+                                prefer_team=self._receiving_team_preference(user_id),
+                            ) or ra.via_team_id
                     except Exception:
                         logger.error(
                             "team access check failed for agent run", exc_info=True
                         )
                         is_team_shared = False
+                        receiving_team = None
                 # The team's chat: a member, or the team's own principal
-                # (an API-key or /v1 run). A link user's chat stays theirs.
+                # (an API-key or /v1 run). Someone the agent is shared with
+                # through another team chats in that receiving team, so the
+                # chat and its usage are that team's. A link user's chat
+                # stays theirs.
                 self._agent_team_id = (
-                    team_of_principal(agent_owner) if (is_owner or via_team_role) else None
+                    team_of_principal(agent_owner) if (is_owner or via_team_role) else receiving_team
                 )
 
                 # Anyone else needs the agent's link or its key: knowing the
@@ -1497,6 +1509,28 @@ class StreamProcessor:
         except Exception as e:
             logger.error(f"Error in get_agent_key: {str(e)}", exc_info=True)
             raise
+
+    def _receiving_team_preference(self, caller: str) -> Optional[str]:
+        """The team a shared agent's chat should live in when it reaches ``caller`` through several.
+
+        The existing chat's team first, then the workspace the request names.
+        A named workspace the caller isn't in prefers nothing here: the
+        workspace check refuses it later with its own code.
+
+        Args:
+            caller: The signed-in person.
+
+        Returns:
+            Optional[str]: A team id, or None to take the oldest share.
+        """
+        existing = self._existing_conversation(caller)
+        if existing is not None:
+            return str(existing["team_id"]) if existing.get("team_id") else None
+        try:
+            _, team_id = self._named_workspace(caller)
+        except ChatWorkspaceError:
+            return None
+        return team_id
 
     def _holds_agent_key(self, agent: Dict[str, Any]) -> bool:
         """Whether the request carries ``agent``'s own API key.
