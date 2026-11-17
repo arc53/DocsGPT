@@ -1039,3 +1039,17 @@ class TestAllowance:
         assert len(fake.calls) == 1
         assert events[-1]["type"] == "error" and events[-1]["code"] == "quota"
         assert events[-1]["message"].startswith("Usage quota reached")
+
+    def test_a_turn_stopped_at_the_allowance_logs_one_line_without_a_traceback(self, monkeypatch, caplog):
+        from docsgpt.quotas import run_limits
+
+        limits = _OneCallLeft()
+        monkeypatch.setattr(run_limits.RunLimits, "start", classmethod(lambda cls, payer, **kw: limits))
+        fake = _LimitedFake(calls(tool_call("get_prompt", {"prompt_id": "default"}, "c1")),
+                            calls(tool_call("submit_proposal", PROPOSAL, "c2")))
+
+        with caplog.at_level("INFO", logger="docsgpt.drafter.runner"):
+            _run(fake)
+
+        stops = [r for r in caplog.records if r.name == "docsgpt.drafter.runner" and "allowance" in r.getMessage()]
+        assert len(stops) == 1 and stops[0].exc_info is None

@@ -317,7 +317,13 @@ def _failure_event(error: BaseException, fallback: str) -> dict:
 
 def _log_failure(what: str, error: BaseException) -> None:
     """Log a failed model call or build: one line for a refused key (``model_auth``, an expected setup problem whose
-    message may quote the key), the traceback for anything else."""
+    message may quote the key), one line for a turn stopped at the caller's allowance (expected, not a fault), the
+    traceback for anything else."""
+    from docsgpt.quotas.run_limits import RunLimitReached
+
+    if isinstance(error, RunLimitReached):
+        logger.info("drafter: %s: the caller's allowance is used up (%s)", what, error.error_type)
+        return
     if is_auth_failure(error):
         status = getattr(error, "status_code", None)
         logger.warning("drafter: %s: model_auth (%s%s)", what, type(error).__name__,
