@@ -38,6 +38,7 @@ from docsgpt.security.zip_archive import (
     ZipExtractionError,
     ZipExtractionLimits,
 )
+from docsgpt.security.mirror_path import InvalidMirrorPath, validate_mirror_path
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
 )
@@ -494,8 +495,9 @@ class _UploadStager:
         current_name: The file being staged, for an error message.
     """
 
-    def __init__(self, temp_dir: str) -> None:
+    def __init__(self, temp_dir: str, *, preserve_paths: bool = False) -> None:
         self.temp_dir = temp_dir
+        self.preserve_paths = preserve_paths
         self.pending: list[tuple[str, str]] = []
         self.file_name_map: dict[str, str] = {}
         self.current_name = "uploaded archive"
@@ -515,13 +517,30 @@ class _UploadStager:
         # loose file and a ZIP member, or two names that clean up the same,
         # would otherwise overwrite each other.
         claimed_paths: set[str] = set()
+        mirror_directories: dict[str, str] = {}
 
         for index, file in enumerate(files):
             # A folder upload names each file by its path inside the folder;
             # keep that tree under the source, as a ZIP does.
             original_path = (file.filename or "").replace("\\", "/")
             original_filename = os.path.basename(original_path)
-            safe_path = _safe_relative_upload_path(original_path, folder_names)
+            safe_path = (
+                validate_mirror_path(file.filename or "")
+                if self.preserve_paths
+                else _safe_relative_upload_path(original_path, folder_names)
+            )
+            if self.preserve_paths:
+                key = safe_path.casefold()
+                if key in claimed_paths or key in mirror_directories:
+                    raise InvalidMirrorPath("Mirror paths overlap or differ only by case")
+                directory = posixpath.dirname(safe_path)
+                while directory:
+                    directory_key = directory.casefold()
+                    if directory_key in claimed_paths or mirror_directories.setdefault(
+                        directory_key, directory
+                    ) != directory:
+                        raise InvalidMirrorPath("Mirror directories overlap or differ only by case")
+                    directory = posixpath.dirname(directory)
             safe_file = posixpath.basename(safe_path)
             self.current_name = safe_zip_error_message(original_filename or safe_file, max_chars=200)
 
@@ -531,7 +550,7 @@ class _UploadStager:
             copy_upload_to_path(file, temp_file_path)
             _enforce_audio_path_size_limit(temp_file_path, safe_file)
 
-            if zipfile.is_zipfile(temp_file_path) and not safe_file.lower().endswith(_OFFICE_SUFFIXES):
+            if not self.preserve_paths and zipfile.is_zipfile(temp_file_path) and not safe_file.lower().endswith(_OFFICE_SUFFIXES):
                 extract_dir = os.path.join(upload_dir, "extracted")
                 extract_zip_safely(temp_file_path, extract_dir, archive_limits, archive_budget)
                 # A ZIP inside an uploaded folder unpacks where it sat.
@@ -550,8 +569,8 @@ class _UploadStager:
                         claimed_paths.add(rel_path)
                         self.pending.append((local_path, rel_path))
             else:
-                rel_path = _unique_file_path(safe_path, claimed_paths)
-                claimed_paths.add(rel_path)
+                rel_path = safe_path if self.preserve_paths else _unique_file_path(safe_path, claimed_paths)
+                claimed_paths.add(rel_path.casefold() if self.preserve_paths else rel_path)
                 if original_filename:
                     self.file_name_map[rel_path] = original_filename
                 self.pending.append((temp_file_path, rel_path))
@@ -600,6 +619,9 @@ class UploadFile(Resource):
                 "user": fields.String(required=True, description="User ID"),
                 "name": fields.String(required=True, description="Job name"),
                 "file": fields.Raw(required=True, description="File(s) to upload"),
+                "preserve_paths": fields.Boolean(
+                    description="Preserve relative file paths from multipart filenames",
+                ),
             },
         )
     )
@@ -667,7 +689,7 @@ class UploadFile(Resource):
             # later oversized file/archive cannot leave a partially accepted
             # source behind. All ZIPs in the request share one expansion budget.
             with tempfile.TemporaryDirectory() as temp_dir:
-                stager = _UploadStager(temp_dir)
+                stager = _UploadStager(temp_dir, preserve_paths=request.form.get("preserve_paths") == "true")
                 stager.stage(files)
                 file_name_map = stager.file_name_map
                 for local_path, rel_path in stager.pending:
@@ -702,6 +724,10 @@ class UploadFile(Resource):
             if predetermined_task_id is not None:
                 ingest_kwargs["task_id"] = predetermined_task_id
             task = ingest.apply_async(**ingest_kwargs)
+        except InvalidMirrorPath as err:
+            if scoped_key:
+                _release_claim(scoped_key)
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except AudioFileTooLargeError:
             if scoped_key:
                 _release_claim(scoped_key)
@@ -1065,21 +1091,24 @@ class ManageSourceFiles(Resource):
                 "operation": fields.String(
                     required=True,
                     description=(
-                        "Operation: 'add', 'remove', 'remove_directory', or 'sync' (the uploaded files and ZIPs "
-                        "become the source's whole file set; files not in the upload are removed)"
+                        "Operation: 'add', 'remove', 'remove_directory', 'sync' (replace all files), "
+                        "or 'sync_delta' (apply changed files and explicit deletions)"
                     ),
                 ),
                 "file_paths": fields.List(
                     fields.String,
                     required=False,
-                    description="File paths to remove (for remove operation)",
+                    description="JSON array of relative paths to remove for remove or sync_delta",
                 ),
                 "directory_path": fields.String(
                     required=False,
                     description="Directory path to remove (for remove_directory operation)",
                 ),
                 "file": fields.Raw(
-                    required=False, description="Files to add (for add operation) or the new file set (for sync)"
+                    required=False, description="Files for add, sync, or sync_delta",
+                ),
+                "preserve_paths": fields.Boolean(
+                    description="Preserve relative file paths for sync. Always enabled for sync_delta.",
                 ),
                 "parent_dir": fields.String(
                     required=False,
@@ -1118,12 +1147,12 @@ class ManageSourceFiles(Resource):
                 ),
                 400,
             )
-        if operation not in ["add", "remove", "remove_directory", "sync"]:
+        if operation not in ["add", "remove", "remove_directory", "sync", "sync_delta"]:
             return make_response(
                 jsonify(
                     {
                         "success": False,
-                        "message": "operation must be 'add', 'remove', 'remove_directory', or 'sync'",
+                        "message": "operation must be 'add', 'remove', 'remove_directory', 'sync', or 'sync_delta'",
                     }
                 ),
                 400,
@@ -1297,14 +1326,24 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-            elif operation == "sync":
+            elif operation in ("sync", "sync_delta"):
+                delta = operation == "sync_delta"
+                deleted = set()
+                if delta:
+                    try:
+                        paths = json.loads(request.form.get("file_paths", "[]"))
+                        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+                            raise ValueError("Expected a list of paths")
+                        deleted = {validate_mirror_path(path) for path in paths}
+                    except ValueError:
+                        return make_response(jsonify({"success": False, "message": "Invalid file_paths"}), 400)
                 files = [file for file in request.files.getlist("file") if file.filename]
                 if parent_dir:
                     return make_response(
                         jsonify(
                             {
                                 "success": False,
-                                "message": "parent_dir cannot be used with sync, which replaces the whole source",
+                                "message": f"parent_dir cannot be used with {operation}",
                             }
                         ),
                         400,
@@ -1317,7 +1356,7 @@ class ManageSourceFiles(Resource):
                         jsonify({"success": False, "message": "This source keeps no files to sync"}),
                         400,
                     )
-                if not files:
+                if not files and not delta:
                     return make_response(
                         jsonify({"success": False, "message": "No files provided for sync operation"}),
                         400,
@@ -1341,9 +1380,9 @@ class ManageSourceFiles(Resource):
                 # files the upload no longer has are removed only once the new
                 # ones are in place. The reingest re-embeds only what changed.
                 with tempfile.TemporaryDirectory() as temp_dir:
-                    stager = _UploadStager(temp_dir)
+                    stager = _UploadStager(temp_dir, preserve_paths=delta or request.form.get("preserve_paths") == "true")
                     stager.stage(files)
-                    if not stager.pending:
+                    if not stager.pending and not delta:
                         # An empty ZIP, or one of folders only: syncing it
                         # would remove every file of the source.
                         if scoped_key:
@@ -1367,16 +1406,22 @@ class ManageSourceFiles(Resource):
                     # delete outside this source's folder.
                     if rel_path == ".." or rel_path.startswith("../"):
                         continue
-                    if storage_path.endswith("/") or rel_path in synced:
+                    if storage_path.endswith("/") or rel_path in synced or (delta and rel_path not in deleted):
                         continue
                     storage.delete_file(storage_path)
                     removed_files.append(rel_path)
                 removed_files.sort()
 
+                updated_file_name_map = (
+                    {path: name for path, name in file_name_map.items() if path not in deleted}
+                    if delta
+                    else {}
+                )
+                updated_file_name_map.update(stager.file_name_map)
                 with db_session() as conn:
                     SourcesRepository(conn).update(
                         resolved_source_id, owner,
-                        {"file_name_map": dict(stager.file_name_map)},
+                        {"file_name_map": updated_file_name_map},
                     )
 
                 from docsgpt.api.user.tasks import reingest_source_task
@@ -1643,6 +1688,10 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
+        except InvalidMirrorPath as err:
+            if scoped_key and not claim_transferred:
+                _release_claim(scoped_key)
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except (UploadTooLargeError, AudioFileTooLargeError) as err:
             if scoped_key and not claim_transferred:
                 _release_claim(scoped_key)
