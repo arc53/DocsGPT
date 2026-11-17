@@ -406,6 +406,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/user/models/<string:model_id>", "DELETE"): _rule("models:write"),
     ("/api/user/models/test", "POST"): _rule("models:write"),
     ("/api/user/models/<string:model_id>/test", "POST"): _rule("models:write"),
+    ("/api/user/models/<string:model_id>/copy", "POST"): _rule("models:write"),
     # Workflows
     # A workflow graph names sources, tools and prompts inside its nodes, out of reach of ``refs``.
     ("/api/workflows", "POST"): _rule("workflows:write", blocked_by=_WORKFLOW_CONTENT_FAMILIES),

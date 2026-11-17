@@ -8,6 +8,8 @@
   ``owner=team`` the models of the team the workspace header names.
 - ``POST /api/user/models/<id>/test`` — sanity-check the upstream
   endpoint with a tiny request.
+- ``POST /api/user/models/<id>/copy`` — copy one's own model into a team
+  one administers, its key re-sealed for the team.
 
 A list or create is the caller's own unless it says ``owner=team``; a route
 about one model loads it by id and goes by its owner, never the header
@@ -38,14 +40,19 @@ from docsgpt.storage.db.repositories.user_custom_models import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
 from docsgpt.workspaces.context import current_workspace, parse_workspace_ref, WorkspaceError
-from docsgpt.workspaces.principal import team_of_principal
+from docsgpt.workspaces.principal import canonical_team_id, principal_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
 from docsgpt.workspaces.team_models import (
+    CODE_MODEL_NOT_FOUND,
     CODE_NOT_AVAILABLE_TO_TOKENS,
+    MODEL_ACTIONS,
     ModelDenied,
     authorize_model,
     creation_owner,
     is_team_model,
     listed_owner,
+    matching_model,
+    model_access,
     model_fields,
     wants_team,
 )
@@ -539,6 +546,101 @@ class UserModelResource(Resource):
 
         ModelRegistry.invalidate_user(owner_id)
         return make_response(jsonify(body), 200)
+
+
+@models_ns.route("/user/models/<string:model_id>/copy")
+class UserModelCopyResource(Resource):
+    @api.doc(
+        description=(
+            "Copy the caller's own custom model into a team where they are an Admin or the Owner (body: "
+            "team_id). The team's copy has its key re-sealed for the team and names the caller as the one who "
+            "added it; the caller's model is left as it was. 409 model_already_in_team when the team already "
+            "has a model with the same base URL and upstream model id. In the app only."
+        )
+    )
+    def post(self, model_id):
+        user_id, err = _user_id_or_401()
+        if err:
+            return err
+        data = request.get_json(silent=True) or {}
+        try:
+            with db_session() as conn:
+                repo = UserCustomModelsRepository(conn)
+                row = repo.get_by_id(model_id)
+                access = model_access(conn, row, user_id)
+                # Only a person's own model is copied; a team's or anyone else's doesn't exist for this.
+                if access is None or access.is_team:
+                    return ModelDenied(404, CODE_MODEL_NOT_FOUND, "Model not found").response()
+                if _is_token():
+                    return _token_refused()
+                principal, err = _copy_target(conn, user_id, data.get("team_id"))
+                if err:
+                    return err
+                existing = matching_model(repo.list_for_user(principal), row["base_url"], row["upstream_model_id"])
+                if existing is not None:
+                    return make_response(jsonify({
+                        "success": False, "error": "model_already_in_team", "model_id": str(existing["id"]),
+                        "message": "The team already has this model",
+                    }), 409)
+                api_key = repo.get_decrypted_api_key(str(row["id"]), user_id)
+                if not api_key:
+                    return make_response(jsonify({
+                        "success": False, "error": "credentials_unreadable",
+                        "message": "This model's key can't be read. Replace it, then copy the model.",
+                    }), 409)
+                # A fresh row the principal owns, its key sealed for the team; the person's row stays as it was.
+                copied = repo.create(
+                    user_id=principal,
+                    upstream_model_id=row["upstream_model_id"],
+                    display_name=row["display_name"],
+                    description=row.get("description") or "",
+                    base_url=row["base_url"],
+                    api_key_plaintext=api_key,
+                    capabilities=row.get("capabilities") or {},
+                    enabled=bool(row.get("enabled", True)),
+                    created_by=user_id,
+                )
+                _audit_team_model(
+                    conn, user_id, "team.model_added", copied, display_name=copied["display_name"],
+                    upstream_model_id=copied["upstream_model_id"], copied=True,
+                )
+                body = _row_to_response(conn, copied, user_id)
+        except Exception as e:
+            current_app.logger.error(f"Error copying a custom model to a team: {e}", exc_info=True)
+            return make_response(jsonify({"success": False}), 500)
+
+        ModelRegistry.invalidate_user(principal)
+        return make_response(jsonify(body), 201)
+
+
+def _copy_target(conn, user_id: str, team_id) -> tuple:
+    """The principal of the team a model is copied into, when ``user_id`` may add models there.
+
+    Args:
+        conn: Open connection.
+        user_id: The person copying.
+        team_id: The body's ``team_id``.
+
+    Returns:
+        ``(principal, None)``, or ``(None, error response)``: 400 ``team_id_required``, 404
+        ``workspace_not_found`` outside the team, 403 ``workspace_role_required`` below Admin.
+    """
+    if not isinstance(team_id, str) or not team_id.strip():
+        return None, make_response(jsonify({
+            "success": False, "error": "team_id_required", "message": "Pick the team to copy the model to",
+        }), 400)
+    try:
+        canonical = canonical_team_id(team_id.strip())
+    except ValueError:
+        canonical = None
+    role = team_role_for(conn, user_id, canonical) if canonical else None
+    if role is None:
+        return None, WorkspaceError(404, "workspace_not_found", "Workspace not found").response()
+    if not role_at_least(role, MODEL_ACTIONS["manage"]):
+        return None, WorkspaceError(
+            403, "workspace_role_required", "Only the team's Admins add models for it",
+        ).response()
+    return principal_id(canonical), None
 
 
 def _run_connection_test(

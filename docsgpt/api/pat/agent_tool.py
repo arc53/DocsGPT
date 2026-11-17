@@ -759,6 +759,7 @@ LEFT_OUT: dict[str, tuple[tuple[str, str], ...]] = {
         ("/api/user/models/<string:model_id>", "DELETE"),
         ("/api/user/models/test", "POST"),
         ("/api/user/models/<string:model_id>/test", "POST"),
+        ("/api/user/models/<string:model_id>/copy", "POST"),
     ),
     "needs a file upload, a stream, or an agent API key the tool does not have": (
         ("/api/upload", "POST"),
