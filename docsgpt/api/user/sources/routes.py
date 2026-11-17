@@ -246,17 +246,20 @@ def team_connection_sync_refusal(conn, doc: dict, owner: str, actor: str) -> Opt
     return None
 
 
-def connection_sync_pauses(conn, rows: list) -> dict:
+def connection_sync_pauses(conn, rows: list, owner_id: str) -> dict:
     """Why each listed team source reading through its team's connection won't sync, by source id.
 
     Derived on every read: an account pause (the person who connected it is
     deactivated, left the team or lost the Admin role, or nobody is recorded)
     holds for every source of the connection; out of allowance only for those
-    that sync on a schedule, since a person's Sync now is paid by them.
+    that sync on a schedule, since a person's Sync now is paid by them. Only
+    the workspace's own sources are given one: why a team's account is paused,
+    and which connection, stay in that team when it shares a source.
 
     Args:
         conn: Open connection.
         rows: The listed ``sources`` rows.
+        owner_id: Who owns the workspace's own sources: the caller, or the team's principal.
 
     Returns:
         ``{source_id: {reason, until, left_team, connection_id}}`` for the paused ones.
@@ -268,7 +271,7 @@ def connection_sync_pauses(conn, rows: list) -> dict:
     paused: dict = {}
     for row in rows:
         connection_id = _connection_id(row)
-        if not connection_id or not is_principal_id(row.get("user_id")):
+        if not connection_id or not is_principal_id(row.get("user_id")) or str(row.get("user_id")) != owner_id:
             continue
         if connection_id not in connections:
             connections[connection_id] = _team_connection_of(conn, row)
@@ -480,7 +483,7 @@ class CombinedJson(Resource):
                     switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
                 filing = SourceFiling(conn, workspace.owner_id)
                 creators = creator_payloads(conn, user, [*indexes, *shared_sources])
-                sync_pauses = connection_sync_pauses(conn, [*indexes, *shared_sources])
+                sync_pauses = connection_sync_pauses(conn, [*indexes, *shared_sources], workspace.owner_id)
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
             # equivalent for dev; re-sort defensively.
@@ -722,7 +725,7 @@ class PaginatedSources(Resource):
                     conn, "source", [str(doc["id"]) for doc in window]
                 )
                 creators = creator_payloads(conn, user, window)
-                sync_pauses = connection_sync_pauses(conn, window)
+                sync_pauses = connection_sync_pauses(conn, window, workspace.owner_id)
 
             paginated_docs = []
             for doc in window:

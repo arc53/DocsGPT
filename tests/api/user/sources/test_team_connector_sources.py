@@ -478,6 +478,22 @@ class TestListedPause:
 
         assert rows[src]["sync_paused"] is None
 
+    def test_another_team_it_is_shared_with_does_not_see_the_accounts_pause(self, app, pg_conn, team, listing):
+        """Why a team's account is paused, and which connection, stay in that team."""
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+        principal = principal_id(team)
+        src = _source(pg_conn, principal, _connection(pg_conn, principal, "adam"))
+        _set_role(pg_conn, team, "adam", None)
+        other = str(TeamsRepository(pg_conn).create("QA", f"qa-{uuid.uuid4().hex[:6]}", "quinn")["id"])
+        TeamMembersRepository(pg_conn).add_member(other, "quinn", role="team_admin")
+        TeamItemSharesRepository(pg_conn).share(team, other, "source", src, "alice")
+
+        rows = _listed(app, pg_conn, "quinn", other, listing)
+
+        assert src in rows
+        assert rows[src]["sync_paused"] is None
+
 
 class TestUsageTab:
     def test_a_paused_connection_is_listed_with_who_pays(self, pg_conn, team, monkeypatch):
