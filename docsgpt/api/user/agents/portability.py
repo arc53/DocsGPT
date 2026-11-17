@@ -1270,9 +1270,15 @@ def _find_custom_model(customs: list, spec_model: dict, *, by_endpoint: bool = F
         by_endpoint: Match on the endpoint and upstream id alone (case and trailing slash aside), so a team
             reuses its model whatever it is called; otherwise the name must match too.
 
+    An entry without a base URL (an export by someone who may not see the team model's endpoint) is matched by
+    its ``ref`` among ``customs`` alone, so it comes back into the workspace that owns the model and nowhere else.
+
     Returns:
         The matching row, or None.
     """
+    if not spec_model.get("base_url"):
+        ref = str(spec_model.get("ref") or "").strip().lower()
+        return next((dict(row) for row in customs if ref and str(row.get("id")).lower() == ref), None)
     if by_endpoint:
         return matching_model(customs, spec_model.get("base_url"), spec_model.get("upstream_model_id"))
     for row in customs:

@@ -212,6 +212,52 @@ class TestTeamApply:
         assert not _node_config(pg_conn, agent["workflow_id"], principal).get("model_id")
 
 
+class TestEditorsExportBack:
+    """An Editor's export leaves a team model's endpoint out but keeps its ``ref``: brought back into the same
+    team, the ref names the team's own model, so the agent and its workflow nodes keep it."""
+
+    def test_an_agent_keeps_the_teams_model(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        theirs = _model(pg_conn, principal)
+        source = AgentsRepository(pg_conn).create(principal, "Helper", "draft", models=[theirs],
+                                                  default_model_id=theirs, created_by=EDITOR)
+        from docsgpt.api.user.agents.portability import parse_agent_yaml, serialize_agent
+
+        doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, source, principal, model_endpoints=False)))
+        doc["metadata"] = {}
+        assert "base_url" not in doc["spec"]["model"]["available"][0]
+
+        plan = plan_import(pg_conn, EDITOR, doc, workspace=_team_ws(tid, principal))
+        assert plan["models"] == [{"display_name": "Team Llama", "status": "reuse", "requires_secrets": []}]
+        result = apply_import(pg_conn, EDITOR, doc, workspace=_team_ws(tid, principal))
+        agent = _agent(pg_conn, result["agent_id"], principal)
+        assert agent["models"] == [theirs] and agent["default_model_id"] == theirs
+
+    def test_a_workflow_node_keeps_the_teams_model(self, pg_conn, any_model_id):
+        tid, principal = _team(pg_conn)
+        theirs = _model(pg_conn, principal)
+        source = _workflow_agent(pg_conn, principal, {"model_id": theirs})
+        from docsgpt.api.user.agents.portability import parse_agent_yaml, serialize_agent
+
+        doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, source, principal, model_endpoints=False)))
+        doc["metadata"] = {}
+        result = apply_import(pg_conn, EDITOR, doc, workspace=_team_ws(tid, principal))
+        agent = _agent(pg_conn, result["agent_id"], principal)
+        assert _node_config(pg_conn, agent["workflow_id"], principal)["model_id"] == theirs
+
+    def test_a_ref_resolves_only_among_the_workspaces_own_models(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        _other_tid, other_principal = _team(pg_conn, owner="olga", name="Other")
+        foreign = _model(pg_conn, other_principal, "Foreign", created_by="olga")
+        entry = {k: v for k, v in SPEC.items() if k != "base_url"} | {"ref": foreign}
+
+        plan = plan_import(pg_conn, EDITOR, _models_doc(entry), workspace=_team_ws(tid, principal))
+        assert plan["models"][0]["status"] == "unavailable"
+        result = apply_import(pg_conn, EDITOR, _models_doc(entry), workspace=_team_ws(tid, principal))
+        agent = _agent(pg_conn, result["agent_id"], principal)
+        assert not agent.get("models") and not agent.get("default_model_id")
+
+
 class TestPersonal:
     def test_a_teams_model_id_is_refused(self, pg_conn, any_model_id):
         tid, principal = _team(pg_conn)
