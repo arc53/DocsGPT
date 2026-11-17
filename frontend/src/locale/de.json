@@ -3381,6 +3381,7 @@
       "connectionStatus": {
         "connected": "Verbunden",
         "disconnected": "Getrennt",
+        "paused": "Pausiert",
         "pending": "Wartet auf Anmeldung"
       },
       "createFailed": "Der Konnektor konnte nicht hinzugefügt werden. Versuche es erneut.",
@@ -3644,6 +3645,7 @@
         "custom": "Eigener",
         "disabledByAdmin": "Vom Admin deaktiviert",
         "needsAdminSetup": "Admin-Einrichtung nötig",
+        "paused": "Pausiert",
         "reconnect": "Neu verbinden"
       },
       "statusFilterLabel": "Nach Status filtern",
@@ -3655,6 +3657,44 @@
       },
       "subtitle": "Verbinde DocsGPT mit den Diensten, die dein Team nutzt. Eine Verbindung kann Inhalte ins Wissen synchronisieren und Agenten Werkzeuge geben.",
       "syncContent": "Inhalte synchronisieren",
+      "team": {
+        "adminOnly": "Nur Team-Admins können die Konten des Teams verbinden oder ändern.",
+        "connectForTeam": "Für das Team verbinden",
+        "connectedBy": "Verbunden von {{name}}",
+        "connectedByYou": "Von dir verbunden",
+        "emptyAdmin": "Für das Team ist noch kein Konto verbunden. Verbinde eins, dann kann es jeder im Team nutzen.",
+        "emptyMember": "Für das Team ist noch kein Konto verbunden. Ein Team-Admin kann eins verbinden.",
+        "errors": {
+          "accountAlreadyConnected": "Dieses Konto ist für das Team bereits verbunden. Nutze diese Verbindung.",
+          "adminRequired": "Nur Team-Admins können das mit den Konten des Teams tun.",
+          "connectPersonalFirst": "Verbinde zuerst unter Persönlich dein eigenes Konto für diesen Dienst. Dann meldet sich jede Person mit ihrem eigenen an.",
+          "invalidOwner": "Es war nicht klar, ob das Konto dir oder dem Team gehören soll. Lade die Seite neu und versuche es noch einmal.",
+          "memberModeNotAllowed": "Ein Admin hat festgelegt, dass dieser Dienst ein gemeinsames Konto nutzt. Darum kann sich nicht jede Person mit ihrem eigenen anmelden.",
+          "notFound": "Diese Verbindung gibt es nicht mehr, oder du kannst sie nicht sehen.",
+          "paused": "Dieses Team-Konto ist pausiert. Ein Team-Admin kann es neu verbinden.",
+          "personalOnly": "Eine Quelle des Teams kann nur über ein Konto lesen, das für das Team verbunden ist. Ein Team-Admin kann eins unter Konnektoren verbinden.",
+          "pickerOwnerOnly": "Nur wer dieses Konto verbunden hat, kann auswählen, was daraus synchronisiert wird.",
+          "teamConnectionOutside": "Es nutzt ein Werkzeug auf einem Konto, das für das Team verbunden ist. Solche Werkzeuge funktionieren nur für Mitglieder des Teams in der App.",
+          "teamConnectionOutsideNamed": "Es nutzt {{tools}} auf einem Konto, das für das Team verbunden ist. Solche Werkzeuge funktionieren nur für Mitglieder des Teams in der App.",
+          "teamWorkspaceRequired": "Wechsle zum Team, um ein Konto dafür zu verbinden."
+        },
+        "notice": "Diese Konten gehören dem Team. Deine eigenen Konten findest du unter Persönlich.",
+        "paused": "Pausiert: {{reason}}",
+        "pausedHintAdmin": "Verbinde es mit deinem Konto neu oder trenne es.",
+        "pausedHintMember": "Ein Team-Admin kann es neu verbinden.",
+        "pausedUnknown": "Pausiert",
+        "pickerOwnerOnly": "Nur {{name}} hat dieses Konto verbunden und kann auswählen, was daraus synchronisiert wird.",
+        "reconnect": {
+          "body": "{{name}} hat dieses Konto verbunden. Wenn du neu verbindest, nutzt das Team ab jetzt dein Konto, und du bezahlst seine Synchronisierungen.",
+          "bodyUnnamed": "Wenn du neu verbindest, nutzt das Team ab jetzt dein Konto, und du bezahlst seine Synchronisierungen.",
+          "confirm": "Mit meinem Konto neu verbinden",
+          "dropNote": "Dateien, die dein Konto nicht öffnen kann, fallen bei der nächsten Synchronisierung weg. Du kannst sie in der Quelle erneut auswählen.",
+          "sources_one": "{{formatted}} Quelle synchronisiert daraus:",
+          "sources_other": "{{formatted}} Quellen synchronisieren daraus:",
+          "title": "Mit deinem Konto neu verbinden?"
+        },
+        "teamAccount": "Team-Konto"
+      },
       "unverified": "Dieser Server wurde nicht von DocsGPT geprüft. Verbinde nur Server, denen du vertraust.",
       "wizard": {
         "account": "Konto",

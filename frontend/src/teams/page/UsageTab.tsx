@@ -1,6 +1,7 @@
 import {
   Bot,
   KeyRound,
+  Plug,
   RefreshCw,
   Repeat,
   type LucideIcon,
@@ -67,6 +68,7 @@ const PAUSED_ICONS: Record<TeamUsagePausedItem['type'], LucideIcon> = {
   schedule: Repeat,
   outside_access: KeyRound,
   source_sync: RefreshCw,
+  connection: Plug,
 };
 
 type Amount = { tokens: number; cost: number };
@@ -334,6 +336,15 @@ export default function UsageTab({ team, role }: UsageTabProps) {
       title = item.name?.trim() || t('payer.team.paused.unnamed');
       kindLine = t('payer.team.paused.sync');
       reason = t('payer.team.paused.syncNoPayer');
+    } else if (item.type === 'connection') {
+      // A team's account: why it is paused, under whoever connected it.
+      const payer = payerOf(item.paid_by, me);
+      title = item.name?.trim() || t('payer.team.paused.unnamed');
+      kindLine = t('settings.connectors.team.teamAccount');
+      reason = pauseReasonText(t, item.paused_for, payer.label, team.name, {
+        you: payer.you,
+        language,
+      });
     } else {
       const payer = payerOf(item.paid_by, me);
       reason = pauseReasonText(t, item.paused_for, payer.label, team.name, {

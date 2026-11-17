@@ -3505,6 +3505,7 @@
       "connectionStatus": {
         "connected": "Conectado",
         "disconnected": "Desconectado",
+        "paused": "En pausa",
         "pending": "Esperando el inicio de sesión"
       },
       "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
@@ -3776,6 +3777,7 @@
         "custom": "Personalizado",
         "disabledByAdmin": "Desactivado por el administrador",
         "needsAdminSetup": "Requiere configuración del administrador",
+        "paused": "En pausa",
         "reconnect": "Reconectar"
       },
       "statusFilterLabel": "Filtrar por estado",
@@ -3787,6 +3789,45 @@
       },
       "subtitle": "Conecta DocsGPT a los servicios que usa tu equipo. Una conexión puede sincronizar contenido en Conocimiento y dar herramientas a los agentes.",
       "syncContent": "Sincronizar contenido",
+      "team": {
+        "adminOnly": "Solo los administradores del equipo pueden conectar o cambiar las cuentas del equipo.",
+        "connectForTeam": "Conectar para el equipo",
+        "connectedBy": "Conectada por {{name}}",
+        "connectedByYou": "Conectada por ti",
+        "emptyAdmin": "Aún no hay cuentas conectadas para el equipo. Conecta una y todo el equipo podrá usarla.",
+        "emptyMember": "Aún no hay cuentas conectadas para el equipo. Un administrador del equipo puede conectar una.",
+        "errors": {
+          "accountAlreadyConnected": "El equipo ya tiene esta cuenta conectada. Usa esa conexión.",
+          "adminRequired": "Solo los administradores del equipo pueden hacer esto con las cuentas del equipo.",
+          "connectPersonalFirst": "Primero conecta tu propia cuenta de este servicio en Personal. Luego cada persona inicia sesión con la suya.",
+          "invalidOwner": "No se pudo saber si esta cuenta es tuya o del equipo. Recarga la página e inténtalo de nuevo.",
+          "memberModeNotAllowed": "Un administrador configuró este servicio para usar una sola cuenta compartida, así que cada persona no puede iniciar sesión con la suya.",
+          "notFound": "Esta conexión ya no existe o no puedes verla.",
+          "paused": "Esta cuenta del equipo está en pausa. Un administrador del equipo puede reconectarla.",
+          "personalOnly": "Una fuente del equipo solo puede leer a través de una cuenta conectada para el equipo. Un administrador del equipo puede conectar una en Conectores.",
+          "pickerOwnerOnly": "Solo quien conectó esta cuenta puede elegir qué sincronizar desde ella.",
+          "teamConnectionOutside": "Usa una herramienta en una cuenta conectada para el equipo. Esas herramientas solo funcionan para los miembros del equipo, en la app.",
+          "teamConnectionOutsideNamed": "Usa {{tools}}, en una cuenta conectada para el equipo. Esas herramientas solo funcionan para los miembros del equipo, en la app.",
+          "teamWorkspaceRequired": "Cambia al equipo para conectar una cuenta para él."
+        },
+        "notice": "Estas cuentas son del equipo. Tus propias cuentas están en Personal.",
+        "paused": "En pausa: {{reason}}",
+        "pausedHintAdmin": "Reconéctala con tu cuenta o desconéctala.",
+        "pausedHintMember": "Un administrador del equipo puede reconectarla.",
+        "pausedUnknown": "En pausa",
+        "pickerOwnerOnly": "Solo {{name}}, que conectó esta cuenta, puede elegir qué sincronizar desde ella.",
+        "reconnect": {
+          "body": "{{name}} conectó esta cuenta. Si la reconectas, el equipo usará tu cuenta a partir de ahora y tú pagarás sus sincronizaciones.",
+          "bodyUnnamed": "Si la reconectas, el equipo usará tu cuenta a partir de ahora y tú pagarás sus sincronizaciones.",
+          "confirm": "Reconectar con mi cuenta",
+          "dropNote": "Los archivos que tu cuenta no pueda abrir se quitarán en la próxima sincronización. Puedes volver a elegirlos desde la fuente.",
+          "sources_many": "{{formatted}} fuentes se sincronizan desde ella:",
+          "sources_one": "{{formatted}} fuente se sincroniza desde ella:",
+          "sources_other": "{{formatted}} fuentes se sincronizan desde ella:",
+          "title": "¿Reconectar con tu cuenta?"
+        },
+        "teamAccount": "Cuenta del equipo"
+      },
       "unverified": "DocsGPT no ha revisado este servidor. Conecta solo servidores de confianza.",
       "wizard": {
         "account": "Cuenta",

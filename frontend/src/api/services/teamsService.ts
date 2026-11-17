@@ -28,10 +28,15 @@ export type TeamMember = {
   granted_at?: string | null;
   /**
    * What the member pays for on the team's agents: running schedules they
-   * set, and agents whose outside access they pay for. Sent to the team's
-   * owner and admins only.
+   * set, agents whose outside access they pay for, and the team's accounts
+   * they connected (whose syncs they pay for; absent on older servers).
+   * Sent to the team's owner and admins only.
    */
-  pays_for?: { schedules: number; outside_access: number };
+  pays_for?: {
+    schedules: number;
+    outside_access: number;
+    connections?: number;
+  };
 };
 
 const TEAM_ROLES: ReadonlySet<string> = new Set([

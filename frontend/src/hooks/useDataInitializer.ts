@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import {
   loadConnectors,
+  loadTeamConnectors,
   selectConnectorsEnabled,
   setConnectorsEnabled,
 } from '../connectors/connectorsSlice';
@@ -23,7 +24,10 @@ import {
 } from '../preferences/preferenceSlice';
 import { analyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import type { AppDispatch } from '../store';
-import { captureWorkspace } from '../workspace/requestWorkspace';
+import {
+  captureWorkspace,
+  PERSONAL_WORKSPACE,
+} from '../workspace/requestWorkspace';
 import { loadWorkspaces, selectWorkspaceId } from '../workspace/workspaceSlice';
 
 /**
@@ -92,6 +96,14 @@ export default function useDataInitializer(
     if (isAuthLoading || !connectorsEnabled) return;
     dispatch(loadConnectors({ token }));
   }, [isAuthLoading, connectorsEnabled, token, dispatch]);
+
+  // A team's own connections load on each switch to it (kept per team, so
+  // the last list shows meanwhile); the caller's own list above stays.
+  useEffect(() => {
+    if (isAuthLoading || !connectorsEnabled) return;
+    if (!workspaceId || workspaceId === PERSONAL_WORKSPACE) return;
+    dispatch(loadTeamConnectors({ token, teamId: workspaceId }));
+  }, [isAuthLoading, connectorsEnabled, token, workspaceId, dispatch]);
 
   // Connector sign-ins used to leave a session token in localStorage. Link
   // each one to its server-side connection once, then forget it.

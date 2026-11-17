@@ -3402,6 +3402,7 @@
       "connectionStatus": {
         "connected": "Connected",
         "disconnected": "Disconnected",
+        "paused": "Paused",
         "pending": "Waiting for sign-in"
       },
       "createFailed": "Could not add the connector. Try again.",
@@ -3665,6 +3666,7 @@
         "custom": "Custom",
         "disabledByAdmin": "Disabled by admin",
         "needsAdminSetup": "Needs admin setup",
+        "paused": "Paused",
         "reconnect": "Reconnect"
       },
       "statusFilterLabel": "Filter by status",
@@ -3676,6 +3678,44 @@
       },
       "subtitle": "Connect DocsGPT to the services your team uses. A connection can sync content into Knowledge and give agents tools.",
       "syncContent": "Sync content",
+      "team": {
+        "adminOnly": "Only team Admins can connect or change the team's accounts.",
+        "connectForTeam": "Connect for the team",
+        "connectedBy": "Connected by {{name}}",
+        "connectedByYou": "Connected by you",
+        "emptyAdmin": "No accounts connected for the team yet. Connect one and everyone in the team can use it.",
+        "emptyMember": "No accounts connected for the team yet. A team Admin can connect one.",
+        "errors": {
+          "accountAlreadyConnected": "The team already has this account connected. Use that connection instead.",
+          "adminRequired": "Only team Admins can do this with the team's accounts.",
+          "connectPersonalFirst": "Connect your own account for this service in Personal first. Each person then signs in with their own.",
+          "invalidOwner": "Couldn't tell whether this account is yours or the team's. Reload the page and try again.",
+          "memberModeNotAllowed": "An admin set this service to use one shared account, so people can't each sign in with their own.",
+          "notFound": "This connection no longer exists, or you can't see it.",
+          "paused": "This team account is paused. A team Admin can reconnect it.",
+          "personalOnly": "A team's source can only read through an account connected for the team. A team Admin can connect one on the Connectors page.",
+          "pickerOwnerOnly": "Only the person who connected this account can choose what to sync from it.",
+          "teamConnectionOutside": "It uses a tool on an account connected for the team. Those tools work only for the team's members, in the app.",
+          "teamConnectionOutsideNamed": "It uses {{tools}}, on an account connected for the team. Those tools work only for the team's members, in the app.",
+          "teamWorkspaceRequired": "Switch to the team to connect an account for it."
+        },
+        "notice": "These accounts belong to the team. Your own accounts are in Personal.",
+        "paused": "Paused: {{reason}}",
+        "pausedHintAdmin": "Reconnect it with your account, or disconnect it.",
+        "pausedHintMember": "A team Admin can reconnect it.",
+        "pausedUnknown": "Paused",
+        "pickerOwnerOnly": "Only {{name}}, who connected this account, can choose what to sync from it.",
+        "reconnect": {
+          "body": "{{name}} connected this account. If you reconnect, the team uses your account from now on, and you pay for its syncs.",
+          "bodyUnnamed": "If you reconnect, the team uses your account from now on, and you pay for its syncs.",
+          "confirm": "Reconnect with my account",
+          "dropNote": "Files your account can't open drop out at the next sync. You can pick them again from the source.",
+          "sources_one": "{{formatted}} source syncs from it:",
+          "sources_other": "{{formatted}} sources sync from it:",
+          "title": "Reconnect with your account?"
+        },
+        "teamAccount": "Team account"
+      },
       "unverified": "This server is not reviewed by DocsGPT. Only connect servers you trust.",
       "wizard": {
         "account": "Account",

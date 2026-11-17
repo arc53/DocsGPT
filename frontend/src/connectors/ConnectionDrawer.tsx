@@ -92,6 +92,8 @@ const STATUS_VARIANT: Record<
 > = {
   connected: 'success',
   reconnect_needed: 'warning',
+  // A team's account nobody can use until an Admin reconnects it.
+  paused: 'warning',
   disconnected: 'neutral',
   error: 'warning',
   pending: 'neutral',

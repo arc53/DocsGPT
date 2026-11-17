@@ -82,6 +82,17 @@ export type TeamUsagePausedItem =
       paid_by?: PersonRef | null;
     }
   | {
+      /** A team's account whose syncs and use are paused. */
+      type: 'connection';
+      /** The connection's id. */
+      id: string;
+      name?: string | null;
+      connector_key?: string | null;
+      paused_for: PausedFor;
+      /** Who connected it, and so pays for its syncs. */
+      paid_by?: PersonRef | null;
+    }
+  | {
       type: 'source_sync';
       id: string;
       name?: string | null;

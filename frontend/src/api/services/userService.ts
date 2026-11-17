@@ -426,14 +426,16 @@ const userService = {
   // The source's own connection syncs it; no browser token is involved.
   syncConnector: (docId: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SYNC_CONNECTOR, { source_id: docId }, token),
+  // `owner: 'team'` signs a new account in for the current team (Admins).
   getConnectorAuthUrl: (
     provider: string,
     token: string | null,
     connectionId?: string,
     install?: boolean,
+    owner?: 'personal' | 'team',
   ): Promise<any> =>
     apiClient.get(
-      endpoints.USER.CONNECTOR_AUTH(provider, connectionId, install),
+      endpoints.USER.CONNECTOR_AUTH(provider, connectionId, install, owner),
       token,
     ),
   completeConnectorAuth: (

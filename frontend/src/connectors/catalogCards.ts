@@ -6,11 +6,12 @@ import type { ConnectorDefinition } from './types';
  */
 export const STATE_ORDER: Record<ConnectorDefinition['state'], number> = {
   reconnect: 0,
-  connected: 1,
-  available: 2,
-  custom: 3,
-  needs_setup: 4,
-  disabled: 5,
+  paused: 1,
+  connected: 2,
+  available: 3,
+  custom: 4,
+  needs_setup: 5,
+  disabled: 6,
 };
 
 /** Sorts catalog cards by `STATE_ORDER`, keeping catalog order within one. */
@@ -44,9 +45,11 @@ export const mergeParts = (
   const all = [connector, ...parts];
   const state = all.some((c) => c.state === 'reconnect')
     ? 'reconnect'
-    : all.some((c) => c.state === 'connected')
-      ? 'connected'
-      : connector.state;
+    : all.some((c) => c.state === 'paused')
+      ? 'paused'
+      : all.some((c) => c.state === 'connected')
+        ? 'connected'
+        : connector.state;
   return {
     ...connector,
     capabilities: Array.from(new Set(all.flatMap((c) => c.capabilities))),

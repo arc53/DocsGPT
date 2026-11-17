@@ -47,7 +47,9 @@ export type ResourceStateReason =
   | ResourceSponsorReason
   | 'connection_needs_reconnect'
   | 'connection_removed'
-  | 'connector_disabled';
+  | 'connector_disabled'
+  // A team's account it uses is paused (whoever connected it left).
+  | 'connection_paused';
 
 /** Something to know about an item that runs (`ResourceState.note`). */
 export type ResourceStateNote = 'per_user_account';

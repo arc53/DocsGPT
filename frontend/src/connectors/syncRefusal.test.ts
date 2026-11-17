@@ -47,6 +47,25 @@ describe('syncRefusal', () => {
     );
   });
 
+  it("words a team account's refusal, even on a 403", () => {
+    const paused = {
+      success: false,
+      error: 'connection_paused',
+      code: 'connection_paused',
+      paused_for: { reason: 'payer_left', until: null, left_team: true },
+    };
+    expect(syncRefusal(t, paused, { status: 409 })).toBe(
+      'settings.connectors.team.errors.paused',
+    );
+    expect(
+      syncRefusal(
+        t,
+        { error: 'connection_admin_required' },
+        { status: 403, forbidden: true },
+      ),
+    ).toBe('settings.connectors.team.errors.adminRequired');
+  });
+
   it('falls back to the generic line', () => {
     expect(syncRefusal(t, null)).toBe(key('syncFailed'));
     expect(syncRefusal(t, { success: false }, { fallback: 'generic' })).toBe(

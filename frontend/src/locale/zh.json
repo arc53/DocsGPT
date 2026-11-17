@@ -3354,6 +3354,7 @@
       "connectionStatus": {
         "connected": "已连接",
         "disconnected": "已断开",
+        "paused": "已暂停",
         "pending": "等待登录"
       },
       "createFailed": "无法添加连接器。请重试。",
@@ -3611,6 +3612,7 @@
         "custom": "自定义",
         "disabledByAdmin": "已被管理员停用",
         "needsAdminSetup": "需要管理员设置",
+        "paused": "已暂停",
         "reconnect": "重新连接"
       },
       "statusFilterLabel": "按状态筛选",
@@ -3622,6 +3624,43 @@
       },
       "subtitle": "将 DocsGPT 连接到团队使用的服务。一个连接可以把内容同步到知识库，也可以为智能体提供工具。",
       "syncContent": "同步内容",
+      "team": {
+        "adminOnly": "只有团队管理员可以连接或更改团队的账号。",
+        "connectForTeam": "为团队连接",
+        "connectedBy": "由 {{name}} 连接",
+        "connectedByYou": "由你连接",
+        "emptyAdmin": "还没有为团队连接任何账号。连接一个后，团队里的每个人都能使用。",
+        "emptyMember": "还没有为团队连接任何账号。团队管理员可以连接一个。",
+        "errors": {
+          "accountAlreadyConnected": "团队已经连接了此账号。请使用那个连接。",
+          "adminRequired": "只有团队管理员可以对团队的账号执行此操作。",
+          "connectPersonalFirst": "请先在“个人”中连接你自己的此服务账号。之后每个人都用自己的账号登录。",
+          "invalidOwner": "无法确定此账号属于你还是团队。请刷新页面后重试。",
+          "memberModeNotAllowed": "管理员已将此服务设为使用一个共享账号，因此不能每个人用自己的账号登录。",
+          "notFound": "此连接已不存在，或你无权查看。",
+          "paused": "此团队账号已暂停。团队管理员可以重新连接它。",
+          "personalOnly": "团队的来源只能通过为团队连接的账号读取。团队管理员可以在“连接器”页面连接一个。",
+          "pickerOwnerOnly": "只有连接此账号的人可以选择从中同步哪些内容。",
+          "teamConnectionOutside": "它使用了为团队连接的账号上的工具。这类工具只能由团队成员在应用内使用。",
+          "teamConnectionOutsideNamed": "它使用了为团队连接的账号上的 {{tools}}。这类工具只能由团队成员在应用内使用。",
+          "teamWorkspaceRequired": "请切换到该团队，再为它连接账号。"
+        },
+        "notice": "这些账号属于团队。你自己的账号在“个人”中。",
+        "paused": "已暂停：{{reason}}",
+        "pausedHintAdmin": "用你的账号重新连接，或断开连接。",
+        "pausedHintMember": "团队管理员可以重新连接它。",
+        "pausedUnknown": "已暂停",
+        "pickerOwnerOnly": "只有连接此账号的 {{name}} 可以选择从中同步哪些内容。",
+        "reconnect": {
+          "body": "此账号由 {{name}} 连接。重新连接后，团队今后将使用你的账号，同步费用由你支付。",
+          "bodyUnnamed": "重新连接后，团队今后将使用你的账号，同步费用由你支付。",
+          "confirm": "用我的账号重新连接",
+          "dropNote": "你的账号无法打开的文件会在下次同步时移除。你可以在来源中重新选择它们。",
+          "sources_other": "有 {{formatted}} 个来源从中同步：",
+          "title": "用你的账号重新连接？"
+        },
+        "teamAccount": "团队账号"
+      },
       "unverified": "此服务器未经 DocsGPT 审核。请只连接你信任的服务器。",
       "wizard": {
         "account": "账号",

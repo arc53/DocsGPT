@@ -22,9 +22,17 @@ vi.mock('../preferences/chatPrompt', () => ({
 vi.mock('../utils/providerUtils', () => ({
   claimLegacySessionTokens: () => undefined,
 }));
+const connectors = vi.hoisted(() => ({
+  enabled: false,
+  teamLoads: [] as string[],
+}));
 vi.mock('../connectors/connectorsSlice', () => ({
   loadConnectors: () => ({ type: 'test/noop' }),
-  selectConnectorsEnabled: () => false,
+  loadTeamConnectors: ({ teamId }: { teamId: string }) => {
+    connectors.teamLoads.push(teamId);
+    return { type: 'test/noop' };
+  },
+  selectConnectorsEnabled: () => connectors.enabled,
   setConnectorsEnabled: () => ({ type: 'test/noop' }),
 }));
 
@@ -60,6 +68,8 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   getConversations.mockReset();
+  connectors.enabled = false;
+  connectors.teamLoads = [];
 });
 
 afterEach(() => {
@@ -96,5 +106,31 @@ describe('the sidebar chat list across a switch', () => {
     expect(
       store.getState().preference.conversations.data?.map((c) => c.id),
     ).toEqual(['team-chat']);
+  });
+});
+
+describe("a team's connections across a switch", () => {
+  it('loads the team list for each team switched to, and none in Personal', async () => {
+    connectors.enabled = true;
+    getConversations.mockResolvedValue({ data: [], loading: false });
+    const store = makeStore();
+    await act(async () =>
+      root.render(
+        <Provider store={store}>
+          <Init />
+        </Provider>,
+      ),
+    );
+    expect(connectors.teamLoads).toEqual([]);
+    await act(async () => {
+      store.dispatch(switchWorkspace('t1'));
+    });
+    await act(async () => {
+      store.dispatch(switchWorkspace('personal'));
+    });
+    await act(async () => {
+      store.dispatch(switchWorkspace('t2'));
+    });
+    expect(connectors.teamLoads).toEqual(['t1', 't2']);
   });
 });

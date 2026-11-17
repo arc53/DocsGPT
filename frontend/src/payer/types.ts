@@ -73,10 +73,22 @@ export type SchedulePayerFields = {
   can_take_over?: boolean;
 };
 
-/** A source's `sync_paused`: its scheduled sync has nobody to pay for it. */
+/**
+ * A source's `sync_paused`. A stored flag reads `{reason: 'sync_no_payer',
+ * since}`: its scheduled sync has nobody to pay for it. A source synced
+ * through a team's account reads why that account is paused instead
+ * (`{reason, until, left_team, connection_id}`, `reason` a `PauseReason`);
+ * an allowance pause shows only on a scheduled source.
+ */
 export type SourceSyncPaused = {
-  reason: 'sync_no_payer' | string;
+  reason: 'sync_no_payer' | PauseReason | string;
   since?: string | null;
+  /** ISO; for `payer_out_of_allowance`, the allowance's reset. */
+  until?: string | null;
+  /** For `payer_left`: true when whoever connected the account left the team. */
+  left_team?: boolean | null;
+  /** The team connection the source syncs through. */
+  connection_id?: string | null;
 };
 
 /** Whether a value read from the server is a known pause. */

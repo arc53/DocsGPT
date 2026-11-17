@@ -3355,6 +3355,7 @@
       "connectionStatus": {
         "connected": "已連線",
         "disconnected": "已中斷連線",
+        "paused": "已暫停",
         "pending": "等待登入"
       },
       "createFailed": "無法新增連接器。請再試一次。",
@@ -3613,6 +3614,7 @@
         "custom": "自訂",
         "disabledByAdmin": "已被管理員停用",
         "needsAdminSetup": "需要管理員設定",
+        "paused": "已暫停",
         "reconnect": "重新連線"
       },
       "statusFilterLabel": "依狀態篩選",
@@ -3624,6 +3626,43 @@
       },
       "subtitle": "將 DocsGPT 連接到團隊使用的服務。一個連線可以把內容同步到知識庫，也可以為代理提供工具。",
       "syncContent": "同步內容",
+      "team": {
+        "adminOnly": "只有團隊管理員可以連線或變更團隊的帳號。",
+        "connectForTeam": "為團隊連線",
+        "connectedBy": "由 {{name}} 連線",
+        "connectedByYou": "由你連線",
+        "emptyAdmin": "還沒有為團隊連線任何帳號。連線一個後，團隊裡的每個人都能使用。",
+        "emptyMember": "還沒有為團隊連線任何帳號。團隊管理員可以連線一個。",
+        "errors": {
+          "accountAlreadyConnected": "團隊已經連線了此帳號。請使用那個連線。",
+          "adminRequired": "只有團隊管理員可以對團隊的帳號執行此操作。",
+          "connectPersonalFirst": "請先在「個人」中連線你自己的此服務帳號。之後每個人都用自己的帳號登入。",
+          "invalidOwner": "無法確定此帳號屬於你還是團隊。請重新整理頁面後再試一次。",
+          "memberModeNotAllowed": "管理員已將此服務設為使用一個共用帳號，因此不能每個人用自己的帳號登入。",
+          "notFound": "此連線已不存在，或你無權檢視。",
+          "paused": "此團隊帳號已暫停。團隊管理員可以重新連線它。",
+          "personalOnly": "團隊的來源只能透過為團隊連線的帳號讀取。團隊管理員可以在「連接器」頁面連線一個。",
+          "pickerOwnerOnly": "只有連線此帳號的人可以選擇要從中同步哪些內容。",
+          "teamConnectionOutside": "它使用了為團隊連線的帳號上的工具。這類工具只能由團隊成員在應用程式內使用。",
+          "teamConnectionOutsideNamed": "它使用了為團隊連線的帳號上的 {{tools}}。這類工具只能由團隊成員在應用程式內使用。",
+          "teamWorkspaceRequired": "請切換到該團隊，再為它連線帳號。"
+        },
+        "notice": "這些帳號屬於團隊。你自己的帳號在「個人」中。",
+        "paused": "已暫停：{{reason}}",
+        "pausedHintAdmin": "用你的帳號重新連線，或中斷連線。",
+        "pausedHintMember": "團隊管理員可以重新連線它。",
+        "pausedUnknown": "已暫停",
+        "pickerOwnerOnly": "只有連線此帳號的 {{name}} 可以選擇要從中同步哪些內容。",
+        "reconnect": {
+          "body": "此帳號由 {{name}} 連線。重新連線後，團隊今後將使用你的帳號，同步費用由你支付。",
+          "bodyUnnamed": "重新連線後，團隊今後將使用你的帳號，同步費用由你支付。",
+          "confirm": "用我的帳號重新連線",
+          "dropNote": "你的帳號無法開啟的檔案會在下次同步時移除。你可以在來源中重新選擇它們。",
+          "sources_other": "有 {{formatted}} 個來源從中同步：",
+          "title": "要用你的帳號重新連線嗎？"
+        },
+        "teamAccount": "團隊帳號"
+      },
       "unverified": "此伺服器未經 DocsGPT 審查。請只連接你信任的伺服器。",
       "wizard": {
         "account": "帳號",

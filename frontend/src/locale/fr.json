@@ -3505,6 +3505,7 @@
       "connectionStatus": {
         "connected": "Connecté",
         "disconnected": "Déconnecté",
+        "paused": "En pause",
         "pending": "En attente de connexion"
       },
       "createFailed": "Impossible d’ajouter le connecteur. Réessayez.",
@@ -3776,6 +3777,7 @@
         "custom": "Personnalisé",
         "disabledByAdmin": "Désactivé par un admin",
         "needsAdminSetup": "Configuration admin requise",
+        "paused": "En pause",
         "reconnect": "Reconnecter"
       },
       "statusFilterLabel": "Filtrer par statut",
@@ -3787,6 +3789,45 @@
       },
       "subtitle": "Connectez DocsGPT aux services utilisés par votre équipe. Une connexion peut synchroniser du contenu dans Connaissances et fournir des outils aux agents.",
       "syncContent": "Synchroniser du contenu",
+      "team": {
+        "adminOnly": "Seuls les administrateurs de l’équipe peuvent connecter ou modifier les comptes de l’équipe.",
+        "connectForTeam": "Connecter pour l’équipe",
+        "connectedBy": "Connecté par {{name}}",
+        "connectedByYou": "Connecté par vous",
+        "emptyAdmin": "Aucun compte n’est encore connecté pour l’équipe. Connectez-en un et toute l’équipe pourra l’utiliser.",
+        "emptyMember": "Aucun compte n’est encore connecté pour l’équipe. Un administrateur de l’équipe peut en connecter un.",
+        "errors": {
+          "accountAlreadyConnected": "Ce compte est déjà connecté pour l’équipe. Utilisez cette connexion.",
+          "adminRequired": "Seuls les administrateurs de l’équipe peuvent faire cela avec les comptes de l’équipe.",
+          "connectPersonalFirst": "Connectez d’abord votre propre compte pour ce service dans Personnel. Chacun se connecte ensuite avec le sien.",
+          "invalidOwner": "Impossible de savoir si ce compte est le vôtre ou celui de l’équipe. Rechargez la page et réessayez.",
+          "memberModeNotAllowed": "Un administrateur a configuré ce service pour utiliser un seul compte partagé, chacun ne peut donc pas se connecter avec le sien.",
+          "notFound": "Cette connexion n’existe plus, ou vous ne pouvez pas la voir.",
+          "paused": "Ce compte de l’équipe est en pause. Un administrateur de l’équipe peut le reconnecter.",
+          "personalOnly": "Une source de l’équipe ne peut lire qu’à travers un compte connecté pour l’équipe. Un administrateur de l’équipe peut en connecter un dans Connecteurs.",
+          "pickerOwnerOnly": "Seule la personne qui a connecté ce compte peut choisir ce qui en est synchronisé.",
+          "teamConnectionOutside": "Il utilise un outil sur un compte connecté pour l’équipe. Ces outils ne fonctionnent que pour les membres de l’équipe, dans l’application.",
+          "teamConnectionOutsideNamed": "Il utilise {{tools}}, sur un compte connecté pour l’équipe. Ces outils ne fonctionnent que pour les membres de l’équipe, dans l’application.",
+          "teamWorkspaceRequired": "Passez à l’équipe pour connecter un compte pour elle."
+        },
+        "notice": "Ces comptes appartiennent à l’équipe. Vos propres comptes sont dans Personnel.",
+        "paused": "En pause : {{reason}}",
+        "pausedHintAdmin": "Reconnectez-le avec votre compte, ou déconnectez-le.",
+        "pausedHintMember": "Un administrateur de l’équipe peut le reconnecter.",
+        "pausedUnknown": "En pause",
+        "pickerOwnerOnly": "Seul {{name}}, qui a connecté ce compte, peut choisir ce qui en est synchronisé.",
+        "reconnect": {
+          "body": "{{name}} a connecté ce compte. Si vous le reconnectez, l’équipe utilisera désormais votre compte et vous paierez ses synchronisations.",
+          "bodyUnnamed": "Si vous le reconnectez, l’équipe utilisera désormais votre compte et vous paierez ses synchronisations.",
+          "confirm": "Reconnecter avec mon compte",
+          "dropNote": "Les fichiers que votre compte ne peut pas ouvrir disparaîtront à la prochaine synchronisation. Vous pourrez les choisir de nouveau depuis la source.",
+          "sources_many": "{{formatted}} sources s’en synchronisent :",
+          "sources_one": "{{formatted}} source s’en synchronise :",
+          "sources_other": "{{formatted}} sources s’en synchronisent :",
+          "title": "Reconnecter avec votre compte ?"
+        },
+        "teamAccount": "Compte de l’équipe"
+      },
       "unverified": "Ce serveur n’a pas été vérifié par DocsGPT. Ne connectez que des serveurs de confiance.",
       "wizard": {
         "account": "Compte",

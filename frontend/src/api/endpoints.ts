@@ -154,25 +154,34 @@ const endpoints = {
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',
+    /** A team tool that runs on each person's own account (Editors). */
+    CREATE_MEMBER_TOOL: '/api/tools/member',
     UPDATE_TOOL_STATUS: '/api/update_tool_status',
     UPDATE_TOOL: '/api/update_tool',
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
+    // `owner=team` signs an account in for the team the workspace header
+    // names (Admins); without it the account is the caller's own.
     CONNECTOR_AUTH: (
       provider: string,
       connectionId?: string,
       install?: boolean,
+      owner?: 'personal' | 'team',
     ) =>
       `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
         connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
-      }${install ? '&install=1' : ''}`,
+      }${install ? '&install=1' : ''}${owner === 'team' ? '&owner=team' : ''}`,
     CONNECTOR_AUTH_COMPLETE: '/api/connectors/auth/complete',
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
     CONNECTORS_CATALOG: '/api/connectors/catalog',
+    /** The catalog's states for the header's team's connections. */
+    CONNECTORS_CATALOG_TEAM: '/api/connectors/catalog?owner=team',
     CONNECTIONS: '/api/connections',
+    /** The header's team's connections (any member). */
+    CONNECTIONS_TEAM: '/api/connections?owner=team',
     CONNECTION: (id: string) => `/api/connections/${encodeURIComponent(id)}`,
     CONNECTION_DISCONNECT: (id: string) =>
       `/api/connections/${encodeURIComponent(id)}/disconnect`,
