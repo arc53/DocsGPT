@@ -3387,6 +3387,7 @@
         "mcp_resend": "メールを送信し、連絡先、オーディエンス、ドメインを管理します。",
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
+        "mcp_supabase": "テーブルの一覧表示、SQL の実行、ログの確認、Supabase プロジェクトの管理を行います。",
         "mcp_trello": "Trello のボードやカードを検索し、カードを作成・更新します。",
         "mcp_twelvedata": "株式、為替、暗号資産、ETF の相場、価格履歴、テクニカル指標、ファンダメンタルズを調べます。",
         "mcp_zapier": "Zapier MCP アカウントで有効にしたアクションを使って、接続済みアプリの情報を読み取ったり更新したりします。",
@@ -3458,6 +3459,7 @@
       },
       "fieldHints": {
         "github_access_token": "fine-grained トークンに Contents と Metadata の読み取り権限を付与します。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みも付与します。<link>GitHub でトークンを作成</link>",
+        "mcp_supabase_project_ref": "Supabase ダッシュボードの Project Settings > General からコピーしてください。この接続はこのプロジェクトにのみアクセスします。",
         "telegram_chat_id": "メッセージはこのチャットにのみ送られます。ボットを追加してメッセージを送り、<link>getUpdates</link> でチャット ID を確認します。"
       },
       "fields": {
@@ -3469,6 +3471,7 @@
         "client_secret": "クライアントシークレット",
         "endpoint_url": "カスタムエンドポイント URL",
         "github_access_token": "個人用アクセストークン",
+        "mcp_supabase_project_ref": "プロジェクト ID",
         "ntfy_token": "アクセストークン",
         "number_posts": "投稿数",
         "postgres_token": "接続文字列",
@@ -3671,6 +3674,7 @@
         "toolsHeading": "ツール ({{formatted}})",
         "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度試すか、オフにして続行してください。",
         "tryInChat": "チャットで試す",
+        "urlParameterInvalid": "この値を確認してください。想定された形式ではありません。",
         "waiting": "開いたウィンドウで {{name}} へのサインインを完了してください。"
       }
     },
@@ -3796,6 +3800,7 @@
         "cancel": "キャンセル",
         "descriptionLabel": "説明（任意）",
         "descriptionPlaceholder": "エージェントが適切なデバイスを選べるように表示されます。",
+        "expired": "このコードは期限切れです。新しいコードを生成してデバイスをペアリングしてください。",
         "formSubtitle": "新しいデバイスの名前、説明、承認モードを設定します。",
         "fullAccessWarning": "フルアクセス: エージェントは確認なしでこのマシン上の任意のコマンドを実行できます。安全のための拒否リストは引き続き適用されます。",
         "installLink": "docsgpt-cliがない場合はインストール",

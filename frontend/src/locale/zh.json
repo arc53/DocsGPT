@@ -3386,6 +3386,7 @@
         "mcp_resend": "发送电子邮件并管理联系人、受众和域名。",
         "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
+        "mcp_supabase": "列出数据表、运行 SQL、查看日志并管理 Supabase 项目。",
         "mcp_trello": "查找 Trello 看板和卡片，并创建和更新卡片。",
         "mcp_twelvedata": "查询股票、外汇、加密货币和 ETF 的行情、历史价格、技术指标和基本面数据。",
         "mcp_zapier": "使用 Zapier MCP 账户中启用的操作读取或更新已连接的应用。",
@@ -3457,6 +3458,7 @@
       },
       "fieldHints": {
         "github_access_token": "细粒度令牌，授予 Contents 和 Metadata 的读取权限。如需让智能体进行更改，还需授予 Issues 和 Pull requests 的读写权限。<link>在 GitHub 上创建令牌</link>",
+        "mcp_supabase_project_ref": "在 Supabase 控制台的 Project Settings > General 中复制。此连接只能访问该项目。",
         "telegram_chat_id": "消息只会发送到此聊天。添加机器人并给它发一条消息，然后用 <link>getUpdates</link> 找到聊天 ID。"
       },
       "fields": {
@@ -3468,6 +3470,7 @@
         "client_secret": "客户端密钥",
         "endpoint_url": "自定义端点 URL",
         "github_access_token": "个人访问令牌",
+        "mcp_supabase_project_ref": "项目 ID",
         "ntfy_token": "访问令牌",
         "number_posts": "帖子数量",
         "postgres_token": "连接字符串",
@@ -3669,6 +3672,7 @@
         "toolsHeading": "工具（{{formatted}}）",
         "toolsUnavailable": "无法访问 {{name}} 的工具。请重试，或将其关闭以继续。",
         "tryInChat": "在聊天中试试",
+        "urlParameterInvalid": "请检查此值：格式不符合要求。",
         "waiting": "请在打开的窗口中完成 {{name}} 登录。"
       }
     },
@@ -3794,6 +3798,7 @@
         "cancel": "取消",
         "descriptionLabel": "描述（可选）",
         "descriptionPlaceholder": "对智能体可见，以便其选择正确的设备。",
+        "expired": "此代码已过期。请生成新代码以配对设备。",
         "formSubtitle": "为新设备设置名称、描述和审批模式。",
         "fullAccessWarning": "完全访问：智能体无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
         "installLink": "还没有 docsgpt-cli？安装它",

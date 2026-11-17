@@ -56,6 +56,18 @@ A server's tool descriptions reach the model verbatim, so a hostile server can p
 Once enabled, the agent can call these tools during conversations. Queries, requested URLs, and any supplied objectives or context are sent to Parallel. Only enable the connection for agents whose data may be shared with this service.
 </Callout>
 
+## Supabase
+
+The Supabase preset asks for a project ID before you sign in, and the connection reaches that project only. Copy the ID from **Project Settings** > **General** in your Supabase dashboard. Signing in again keeps the connection on the same project, and a Supabase tool removed from Tools comes back on it too. Project-scoped mode drops Supabase's account-management tools, such as listing and managing projects.
+
+Supabase's plain URL reaches every project the signed-in account can see, so DocsGPT refuses it: a custom MCP server at `mcp.supabase.com` needs `project_ref` as well. To also run SQL with read-only database access, add Supabase as a custom MCP server with both parameters:
+
+```
+https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true
+```
+
+Use a development project for testing rather than a production one.
+
 ## Authentication Types
 
 | Auth Type | Config Fields |

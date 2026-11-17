@@ -41,7 +41,12 @@ from docsgpt.api.user.resource_access import (
 from docsgpt.api.user.received_shares import received_into
 from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
-from docsgpt.connectors.catalog import base_url, definition_for_tool
+from docsgpt.connectors.catalog import (
+    UrlParametersRequired,
+    base_url,
+    check_url_parameters,
+    definition_for_tool,
+)
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.connectors.service import account_tool_names
 from docsgpt.connectors.permissions import action_access, owner_credential_writes
@@ -559,6 +564,28 @@ def _api_tool_fixed_values_changed(new_config: dict, existing_config: dict) -> b
             elif (before.get(key) or after.get(key))[1] is not None:
                 return True
     return False
+
+
+def _mcp_url_parameters_refused(tool_name: Optional[str], config: Optional[dict]):
+    """A 400 when an MCP tool's new URL is at a preset's server and lacks a parameter it needs, else None.
+
+    The same check as ``/api/mcp_server/save``, so these routes can't put a
+    tool back on a preset's plain URL (Supabase's without its project ref).
+
+    Args:
+        tool_name: The tool's template name.
+        config: The incoming ``config``.
+
+    Returns:
+        The response to send, or None to go on.
+    """
+    if tool_name != "mcp_tool" or not isinstance(config, dict) or "server_url" not in config:
+        return None
+    try:
+        check_url_parameters(str(config.get("server_url") or "").strip())
+    except UrlParametersRequired as exc:
+        return make_response(jsonify({"success": False, "message": str(exc)}), 400)
+    return None
 
 
 def _connection_server_moved(tool_doc: dict, new_config: Optional[dict]) -> bool:
@@ -1129,6 +1156,9 @@ class CreateTool(Resource):
                             jsonify({"success": False, "message": f"Invalid server URL: {exc}"}),
                             400,
                         )
+            refused = _mcp_url_parameters_refused(data["name"], data.get("config"))
+            if refused is not None:
+                return refused
             tool_instance = tool_manager.tools.get(data["name"])
             if not tool_instance:
                 return make_response(
@@ -1411,6 +1441,9 @@ class UpdateTool(Resource):
                         check_oauth_mcp_owner_only(ra, existing_config, data["config"])
                     if _connection_server_moved(tool_doc, data["config"]):
                         return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                    refused = _mcp_url_parameters_refused(tool_name, data["config"])
+                    if refused is not None:
+                        return refused
                     if tool_name == "api_tool":
                         check_api_tool_fixed_values(ra, data["config"], existing_config)
                     if tool_name == "api_tool" and not _api_tool_config_needs_credentials(
@@ -1559,6 +1592,9 @@ class UpdateToolConfig(Resource):
                             )
                 if _connection_server_moved(tool_doc, data["config"]):
                     return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                refused = _mcp_url_parameters_refused(tool_name, data["config"])
+                if refused is not None:
+                    return refused
                 if tool_name == "api_tool":
                     check_api_tool_fixed_values(ra, data["config"], tool_doc.get("config"))
                 tool_instance = tool_manager.tools.get(tool_name)

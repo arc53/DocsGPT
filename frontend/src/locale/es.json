@@ -3537,6 +3537,7 @@
         "mcp_resend": "Envía correos electrónicos y gestiona contactos, audiencias y dominios.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
+        "mcp_supabase": "Lista tablas, ejecuta SQL, lee registros y administra proyectos de Supabase.",
         "mcp_trello": "Busca tableros y tarjetas de Trello, y crea y actualiza tarjetas.",
         "mcp_twelvedata": "Consulta cotizaciones, historial de precios, indicadores técnicos y datos fundamentales de acciones, divisas, criptomonedas y ETF.",
         "mcp_zapier": "Usa las acciones habilitadas en tu cuenta de Zapier MCP para leer o actualizar aplicaciones conectadas.",
@@ -3610,6 +3611,7 @@
       },
       "fieldHints": {
         "github_access_token": "Detallado, con acceso de lectura a Contents y Metadata. Para que los agentes hagan cambios, también lectura y escritura en Issues y Pull requests. <link>Crear un token en GitHub</link>",
+        "mcp_supabase_project_ref": "Cópialo desde Project Settings > General en tu panel de Supabase. La conexión solo accede a este proyecto.",
         "telegram_chat_id": "Los mensajes van solo a este chat. Añade el bot, envíale un mensaje y busca el ID del chat con <link>getUpdates</link>."
       },
       "fields": {
@@ -3621,6 +3623,7 @@
         "client_secret": "Secreto de cliente",
         "endpoint_url": "URL de endpoint personalizada",
         "github_access_token": "Token de acceso personal",
+        "mcp_supabase_project_ref": "ID del proyecto",
         "ntfy_token": "Token de acceso",
         "number_posts": "Número de publicaciones",
         "postgres_token": "Cadena de conexión",
@@ -3836,6 +3839,7 @@
         "toolsHeading": "Herramientas ({{formatted}})",
         "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo o desactívalas para continuar.",
         "tryInChat": "Probar en el chat",
+        "urlParameterInvalid": "Revisa este valor: no tiene el formato esperado.",
         "waiting": "Termina de iniciar sesión en {{name}} en la ventana que se abrió."
       }
     },
@@ -3962,6 +3966,7 @@
         "cancel": "Cancelar",
         "descriptionLabel": "Descripción (opcional)",
         "descriptionPlaceholder": "Visible para el agente para que pueda elegir el dispositivo correcto.",
+        "expired": "Este código ha caducado. Genera uno nuevo para emparejar el dispositivo.",
         "formSubtitle": "Define un nombre, una descripción y un modo de aprobación para el nuevo dispositivo.",
         "fullAccessWarning": "Acceso completo: los agentes pueden ejecutar cualquier comando en esta máquina sin preguntar. La lista de denegación de seguridad sigue aplicándose.",
         "installLink": "¿No tienes docsgpt-cli? Instálalo",

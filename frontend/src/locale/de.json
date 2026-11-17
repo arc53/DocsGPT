@@ -3413,6 +3413,7 @@
         "mcp_resend": "E-Mails senden sowie Kontakte, Zielgruppen und Domains verwalten.",
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
+        "mcp_supabase": "Tabellen auflisten, SQL ausführen, Protokolle lesen und Supabase-Projekte verwalten.",
         "mcp_trello": "Trello-Boards und -Karten finden sowie Karten erstellen und aktualisieren.",
         "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
         "mcp_zapier": "Mit den in deinem Zapier-MCP-Konto aktivierten Aktionen verbundene Apps lesen oder aktualisieren.",
@@ -3484,6 +3485,7 @@
       },
       "fieldHints": {
         "github_access_token": "Feingranular, mit Lesezugriff auf „Contents“ und „Metadata“. Für Änderungen durch Agenten außerdem Lese- und Schreibzugriff auf „Issues“ und „Pull requests“. <link>Token auf GitHub erstellen</link>",
+        "mcp_supabase_project_ref": "Kopiere sie in deinem Supabase-Dashboard unter Project Settings > General. Die Verbindung erreicht nur dieses Projekt.",
         "telegram_chat_id": "Nachrichten gehen nur an diesen Chat. Füge den Bot hinzu, sende ihm eine Nachricht und finde die Chat-ID mit <link>getUpdates</link>."
       },
       "fields": {
@@ -3495,6 +3497,7 @@
         "client_secret": "Client-Secret",
         "endpoint_url": "Eigene Endpunkt-URL",
         "github_access_token": "Persönliches Zugriffstoken",
+        "mcp_supabase_project_ref": "Projekt-ID",
         "ntfy_token": "Zugriffstoken",
         "number_posts": "Anzahl der Beiträge",
         "postgres_token": "Verbindungszeichenfolge",
@@ -3702,6 +3705,7 @@
         "toolsHeading": "Werkzeuge ({{formatted}})",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
         "tryInChat": "Im Chat ausprobieren",
+        "urlParameterInvalid": "Prüfe diesen Wert: Er hat nicht das erwartete Format.",
         "waiting": "Schließe die Anmeldung bei {{name}} im geöffneten Fenster ab."
       }
     },
@@ -3827,6 +3831,7 @@
         "cancel": "Abbrechen",
         "descriptionLabel": "Beschreibung (optional)",
         "descriptionPlaceholder": "Für den Agenten sichtbar, damit er das richtige Gerät wählen kann.",
+        "expired": "Dieser Code ist abgelaufen. Generiere einen neuen, um das Gerät zu koppeln.",
         "formSubtitle": "Lege Name, Beschreibung und Genehmigungsmodus für das neue Gerät fest.",
         "fullAccessWarning": "Vollzugriff: Agenten können auf diesem Rechner jeden Befehl ohne Nachfrage ausführen. Die Sicherheits-Sperrliste gilt weiterhin.",
         "installLink": "Du hast docsgpt-cli noch nicht? Installiere es",

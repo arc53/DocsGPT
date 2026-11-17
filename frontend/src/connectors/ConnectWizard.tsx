@@ -61,7 +61,12 @@ import {
   selectConnections,
   syncStarted,
 } from './connectorsSlice';
-import { connectorDescription, connectorName, isKeyHint } from './i18n';
+import {
+  connectorDescription,
+  connectorLocaleKey,
+  connectorName,
+  isKeyHint,
+} from './i18n';
 import { isMcpOpenPreset, reconnectsInPlace } from './launchRules';
 import LinearPicker, {
   EMPTY_LINEAR_SELECTION,
@@ -77,6 +82,11 @@ import type {
   ConnectorAuthKind,
   ConnectorDefinition,
 } from './types';
+import {
+  urlParameterValid,
+  urlParametersValid,
+  withUrlParameters,
+} from './urlParameters';
 
 export type WizardMode = 'connect' | 'reconnect' | 'sync' | 'done';
 
@@ -338,8 +348,42 @@ export default function ConnectWizard({
     connector.auth_kind === 'mcp_oauth' && !!connector.mcp_url;
   const isOpenMcp = isMcpOpenPreset(connector);
   const mcp = useMcpOAuth();
+  // A preset that needs URL parameters (Supabase's project ref) asks for
+  // them before signing in; a reconnect starts from the ones it was saved
+  // with, so it stays on the same project.
+  const urlFields = useMemo(
+    () => (isMcpPreset || isOpenMcp ? (connector.url_parameters ?? []) : []),
+    [connector.url_parameters, isMcpPreset, isOpenMcp],
+  );
+  const savedUrlValues = connection?.url_parameters;
+  const [urlValues, setUrlValues] = useState<Record<string, string>>(
+    () => savedUrlValues ?? {},
+  );
+  useEffect(() => {
+    if (savedUrlValues)
+      setUrlValues((current) =>
+        Object.keys(current).length ? current : savedUrlValues,
+      );
+  }, [savedUrlValues]);
+  const urlValuesReady = urlParametersValid(urlFields, urlValues);
+  const urlErrors = Object.fromEntries(
+    urlFields
+      .filter(
+        (field) =>
+          (urlValues[field.key] ?? '').trim() &&
+          !urlParameterValid(field, urlValues[field.key]),
+      )
+      .map((field) => [
+        field.key,
+        t('settings.connectors.wizard.urlParameterInvalid'),
+      ]),
+  );
+  const presetUrl = () =>
+    connector.mcp_url
+      ? withUrlParameters(connector.mcp_url, urlFields, urlValues)
+      : '';
   const mcpConfig = (): McpOAuthConfig => ({
-    server_url: connector.mcp_url ?? '',
+    server_url: presetUrl(),
     auth_type: 'oauth',
     oauth_scopes: connector.oauth_scopes ?? [],
     timeout: 30,
@@ -414,7 +458,7 @@ export default function ConnectWizard({
     setError('');
     saveMcp(
       {
-        server_url: connector.mcp_url ?? '',
+        server_url: presetUrl(),
         auth_type: 'none',
         timeout: 30,
       },
@@ -825,6 +869,16 @@ export default function ConnectWizard({
           fields={connector.credential_fields}
           values={credentials}
           onChange={setCredentials}
+        />
+      )}
+      {urlFields.length > 0 && (
+        <CredentialForm
+          connectorKey={connectorLocaleKey(connector.key)}
+          idPrefix={`connect-${connectorLocaleKey(connector.key)}`}
+          fields={urlFields}
+          values={urlValues}
+          onChange={setUrlValues}
+          errors={urlErrors}
         />
       )}
       {canName && (
@@ -1247,6 +1301,7 @@ export default function ConnectWizard({
           pending={
             isOpenMcp ? pending : isMcpPreset && (mcp.pending || pending)
           }
+          disabled={!urlValuesReady}
         />
       ) : (
         <ModalActions
