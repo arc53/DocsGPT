@@ -3849,7 +3849,6 @@
         },
         "addedBy": "Hinzugefügt von {{name}}",
         "addedByYou": "Von dir hinzugefügt",
-        "adminOnly": "Nur Team-Admins können die Modelle des Teams hinzufügen oder ändern.",
         "copy": {
           "action": "In ein Team kopieren",
           "body": "Das Team bekommt eine eigene Kopie von {{name}} mit deinem API-Schlüssel. Dein Modell bleibt, wie es ist.",
@@ -3860,7 +3859,6 @@
           "title": "In ein Team kopieren"
         },
         "delete": {
-          "body": "Agenten und Workflows des Teams, die es nutzen, laufen danach mit dem Standardmodell.",
           "fellBack": "Jetzt mit dem Standardmodell: {{names}}",
           "mayBeUsed": "Agenten und Workflows des Teams, die es nutzen, laufen danach mit dem Standardmodell. Dies kann nicht rückgängig gemacht werden.",
           "usedBy": "Genutzt von {{names}}, die danach mit dem Standardmodell laufen. Dies kann nicht rückgängig gemacht werden."

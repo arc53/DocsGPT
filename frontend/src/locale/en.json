@@ -3870,7 +3870,6 @@
         },
         "addedBy": "Added by {{name}}",
         "addedByYou": "Added by you",
-        "adminOnly": "Only team Admins can add or change the team's models.",
         "copy": {
           "action": "Copy to a team",
           "body": "The team gets its own copy of {{name}} with your API key. Your model stays as it is.",
@@ -3881,7 +3880,6 @@
           "title": "Copy to a team"
         },
         "delete": {
-          "body": "The team's agents and workflows that use it will run on the default model instead.",
           "fellBack": "Now on the default model: {{names}}",
           "mayBeUsed": "Any of the team's agents and workflows that use it will run on the default model instead. This can't be undone.",
           "usedBy": "Used by {{names}}, which will run on the default model instead. This can't be undone."

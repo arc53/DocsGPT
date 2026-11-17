@@ -3988,7 +3988,6 @@
         },
         "addedBy": "Añadido por {{name}}",
         "addedByYou": "Añadido por ti",
-        "adminOnly": "Solo los administradores del equipo pueden añadir o cambiar los modelos del equipo.",
         "copy": {
           "action": "Copiar a un equipo",
           "body": "El equipo recibe su propia copia de {{name}} con tu clave de API. Tu modelo queda como está.",
@@ -3999,7 +3998,6 @@
           "title": "Copiar a un equipo"
         },
         "delete": {
-          "body": "Los agentes y flujos de trabajo del equipo que lo usan pasarán a usar el modelo predeterminado.",
           "fellBack": "Ahora con el modelo predeterminado: {{names}}",
           "mayBeUsed": "Los agentes y flujos de trabajo del equipo que lo usan pasarán a usar el modelo predeterminado. No se puede deshacer.",
           "usedBy": "Lo usan {{names}}, que pasarán a usar el modelo predeterminado. No se puede deshacer."

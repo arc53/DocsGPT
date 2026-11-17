@@ -3988,7 +3988,6 @@
         },
         "addedBy": "Ajouté par {{name}}",
         "addedByYou": "Ajouté par vous",
-        "adminOnly": "Seuls les administrateurs de l’équipe peuvent ajouter ou modifier les modèles de l’équipe.",
         "copy": {
           "action": "Copier dans une équipe",
           "body": "L’équipe reçoit sa propre copie de {{name}}, avec votre clé API. Votre modèle reste tel quel.",
@@ -3999,7 +3998,6 @@
           "title": "Copier dans une équipe"
         },
         "delete": {
-          "body": "Les agents et workflows de l’équipe qui l’utilisent passeront au modèle par défaut.",
           "fellBack": "Désormais sur le modèle par défaut : {{names}}",
           "mayBeUsed": "Les agents et workflows de l’équipe qui l’utilisent passeront au modèle par défaut. Cette action est irréversible.",
           "usedBy": "Utilisé par {{names}}, qui passeront au modèle par défaut. Cette action est irréversible."
