@@ -190,6 +190,11 @@ class SchedulerTool(Tool):
             return f"Error: {exc}"
 
         with db_readonly() as conn:
+            if not _may_set_schedules(conn, self.agent_id, self.schedule_user):
+                return (
+                    "Error: you can't schedule tasks on this team agent. "
+                    "Ask someone who manages its schedules (an Editor or above in its team)."
+                )
             count = SchedulesRepository(conn).count_active_for_user(self.schedule_user)
             unfinished = _unfinished_workflow(conn, self.agent_id)
         if (
@@ -337,6 +342,34 @@ def _iso_utc(value: Any) -> Optional[str]:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _may_set_schedules(conn, agent_id: Optional[str], person: Optional[str]) -> bool:
+    """Whether ``person`` may set a schedule on the agent the chat runs.
+
+    On a team's agent a schedule runs, and stays visible, only while the
+    person it belongs to may manage that agent's schedules, so a viewer, a
+    public-link visitor or a member of a team it is shared with is refused
+    here rather than left with a schedule that never runs. A personal agent
+    keeps its own rules (the run checks them at fire time).
+
+    Args:
+        conn: Open database connection.
+        agent_id: The agent the task is bound to, or None for an agentless one.
+        person: Who the schedule would belong to.
+
+    Returns:
+        bool: False when the task must be refused.
+    """
+    if not agent_id:
+        return True
+    # Imported here: the API package imports this tool module.
+    from docsgpt.api.user.resource_access import resolve, resource_owner
+
+    if not is_principal_id(resource_owner(conn, "agent", str(agent_id))):
+        return True
+    access = resolve(conn, "agent", str(agent_id), person) if person else None
+    return access is not None and access.can("manage_schedules")
 
 
 def _unfinished_workflow(conn, agent_id: Optional[str]) -> bool:
