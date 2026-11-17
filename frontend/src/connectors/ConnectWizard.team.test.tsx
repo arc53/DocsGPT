@@ -308,6 +308,46 @@ describe('ConnectWizard for a team', () => {
     );
   });
 
+  it("another Admin's key reconnect fills every field, and a key the team already has reads in the app's words", async () => {
+    const teamBot = teamDrive({
+      connector_key: 'telegram',
+      name: 'Telegram',
+      auth_kind: 'api_key',
+      account_label: '…1c26',
+    });
+    service.getConnection.mockResolvedValue({
+      success: true,
+      connection: { ...teamBot, sources: [], tools: [] },
+    });
+    service.reconnect.mockResolvedValue({
+      success: false,
+      error: 'account_already_connected',
+      connection_id: 'conn-t2',
+    });
+    await render(
+      base,
+      { mode: 'reconnect', connectionId: 'conn-t1' },
+      { connections: [teamBot] },
+    );
+    // Nothing of the old key is kept: the required field starts empty.
+    expect(button('settings.connectors.team.reconnect.confirm')?.disabled).toBe(
+      true,
+    );
+    await typeInto(
+      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
+      '123:abc',
+    );
+    await click('settings.connectors.team.reconnect.confirm');
+    expect(service.reconnect).toHaveBeenCalledWith(
+      'conn-t1',
+      { credentials: { token: '123:abc' } },
+      expect.anything(),
+    );
+    expect(text()).toContain(
+      'settings.connectors.team.errors.accountAlreadyConnected',
+    );
+  });
+
   it('a sign-in connects for the team', async () => {
     await render(drive);
     expect(auth.options).toHaveBeenLastCalledWith(
