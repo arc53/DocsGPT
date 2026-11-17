@@ -14,12 +14,14 @@ import {
   MOVE_ERROR_CODES,
   MOVE_KINDS,
   MOVE_WITH_REASONS,
+  cannotMoveDetail,
   cannotMoveEffectKey,
   cannotMoveReasonKey,
   moveErrorKey,
   moveErrorMessage,
   moveKindKey,
   moveWithReasonKey,
+  modelRemapLines,
   nameList,
   payerName,
 } from './movePlanCopy';
@@ -65,6 +67,11 @@ describe('move plan copy', () => {
     'workspace.move.droppedShares.title',
     'workspace.move.droppedShares.description',
     'workspace.move.droppedShares.with',
+    'workspace.move.reasons.custom_model_out',
+    'workspace.move.customModelHint',
+    'workspace.move.modelRemaps.title',
+    'workspace.move.modelRemaps.in',
+    'workspace.move.modelRemaps.out',
   ];
 
   it('covers every reason, effect and code the backend sends', () => {
@@ -123,6 +130,51 @@ describe('move plan copy', () => {
 
   it.each(Object.entries(LOCALES))('%s has every string', (_name, tree) => {
     expect(keys.filter((key) => !hasKey(tree, key))).toEqual([]);
+  });
+
+  it("says how to keep a custom model the team doesn't have, going in", () => {
+    expect(
+      cannotMoveDetail(t, 'custom_model', 'removed_from_holder', 'in'),
+    ).toBe(
+      'workspace.move.reasons.custom_model ' +
+        'workspace.move.effects.removed_from_holder ' +
+        'workspace.move.customModelHint',
+    );
+  });
+
+  it("names a team's custom model going out, with no hint", () => {
+    expect(
+      cannotMoveDetail(t, 'custom_model', 'removed_from_holder', 'out'),
+    ).toBe(
+      'workspace.move.reasons.custom_model_out ' +
+        'workspace.move.effects.removed_from_holder',
+    );
+  });
+
+  it('words other reasons as before', () => {
+    expect(cannotMoveDetail(t, 'remote_device', 'stays', 'in')).toBe(
+      'workspace.move.reasons.remote_device workspace.move.effects.stays',
+    );
+  });
+
+  it('says which custom model each remapped one becomes', () => {
+    const remaps = [
+      {
+        from_id: 'a',
+        from_name: 'Mistral',
+        to_id: 'b',
+        to_name: 'Mistral (team)',
+      },
+      { from_id: 'c', from_name: null, to_id: 'd', to_name: null },
+    ];
+    expect(modelRemapLines(t, remaps, 'in')).toEqual([
+      'workspace.move.modelRemaps.in(from=Mistral,to=Mistral (team))',
+      'workspace.move.modelRemaps.in(from=workspace.move.kinds.model,to=workspace.move.kinds.model)',
+    ]);
+    expect(modelRemapLines(t, remaps.slice(0, 1), 'out')).toEqual([
+      'workspace.move.modelRemaps.out(from=Mistral,to=Mistral (team))',
+    ]);
+    expect(modelRemapLines(t, undefined, 'in')).toEqual([]);
   });
 
   it('reads an unknown code as a failed move', () => {

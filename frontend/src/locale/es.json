@@ -5812,6 +5812,7 @@
       },
       "comesAlong": "Se mueve también",
       "comesWith": "Se mueve con \"{{name}}\"",
+      "customModelHint": "Para conservarlo, añádelo antes al equipo en Modelos personalizados.",
       "done": {
         "personal": "\"{{name}}\" ya está en tu espacio Personal.",
         "team": "\"{{name}}\" ahora pertenece a {{team}}."
@@ -5858,6 +5859,11 @@
         "tool": "Herramienta"
       },
       "listSeparator": ", ",
+      "modelRemaps": {
+        "in": "\"{{from}}\" → \"{{to}}\" del equipo",
+        "out": "\"{{from}}\" → tu \"{{to}}\"",
+        "title": "Cambia a un modelo personalizado equivalente"
+      },
       "needsAdmin_many": "{{names}} son accesibles desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traerlos. Desactiva primero su acceso externo o pídeselo a un administrador.",
       "needsAdmin_one": "{{names}} es accesible desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traer eso. Desactiva primero su acceso externo o pídeselo a un administrador.",
       "needsAdmin_other": "{{names}} son accesibles desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traerlos. Desactiva primero su acceso externo o pídeselo a un administrador.",
@@ -5892,7 +5898,8 @@
         "connection_account": "Conectado con una cuenta que se queda en este espacio de trabajo.",
         "connector_synced": "Sincronizado desde una cuenta que se queda en este espacio de trabajo.",
         "credentials_unreadable": "Su secreto guardado ya no se puede leer.",
-        "custom_model": "Un modelo personalizado personal.",
+        "custom_model": "Un modelo personalizado personal que el equipo no tiene.",
+        "custom_model_out": "Un modelo personalizado del equipo que tú no tienes.",
         "in_knowledge_folder": "Archivado en una carpeta que lee el agente; solo vienen sus fuentes.",
         "not_yours": "Es de otra persona, así que no puedes moverlo.",
         "remote_device": "Se ejecuta en un dispositivo vinculado."

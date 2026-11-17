@@ -5599,6 +5599,7 @@
       },
       "comesAlong": "Kommt mit",
       "comesWith": "Kommt mit \"{{name}}\" mit",
+      "customModelHint": "Um es zu behalten, füge es zuerst unter „Eigene Modelle“ zum Team hinzu.",
       "done": {
         "personal": "\"{{name}}\" liegt jetzt in deinem persönlichen Bereich.",
         "team": "\"{{name}}\" gehört jetzt {{team}}."
@@ -5644,6 +5645,11 @@
         "tool": "Werkzeug"
       },
       "listSeparator": ", ",
+      "modelRemaps": {
+        "in": "\"{{from}}\" → \"{{to}}\" des Teams",
+        "out": "\"{{from}}\" → dein Modell \"{{to}}\"",
+        "title": "Wechselt zu einem passenden eigenen Modell"
+      },
       "needsAdmin_one": "{{names}} ist von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und nur ein Admin von {{team}} darf das hereinbringen. Schalte den Zugriff von außen zuerst aus oder frage einen Admin.",
       "needsAdmin_other": "{{names}} sind von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und nur ein Admin von {{team}} darf sie hereinbringen. Schalte ihren Zugriff von außen zuerst aus oder frage einen Admin.",
       "noFolder": "Kein Ordner",
@@ -5675,7 +5681,8 @@
         "connection_account": "Mit einem Konto angemeldet, das in diesem Arbeitsbereich bleibt.",
         "connector_synced": "Aus einem Konto synchronisiert, das in diesem Arbeitsbereich bleibt.",
         "credentials_unreadable": "Sein gespeichertes Geheimnis ist nicht mehr lesbar.",
-        "custom_model": "Ein persönliches eigenes Modell.",
+        "custom_model": "Ein persönliches eigenes Modell, das das Team nicht hat.",
+        "custom_model_out": "Ein eigenes Modell des Teams, das du nicht hast.",
         "in_knowledge_folder": "Liegt in einem Ordner, den der Agent liest; nur dessen Quellen kommen mit.",
         "not_yours": "Gehört jemand anderem, daher kannst du es nicht verschieben.",
         "remote_device": "Läuft auf einem gekoppelten Gerät."

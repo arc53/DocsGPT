@@ -75,6 +75,39 @@ export const cannotMoveReasonKey = (reason: string): string =>
 export const cannotMoveEffectKey = (effect: string): string =>
   `workspace.move.effects.${effect === 'stays' ? 'stays' : 'removed_from_holder'}`;
 
+/**
+ * Why an item can't come and what happens to it, as one row description.
+ * A custom model reads by direction: going in, the mover's has no match in
+ * the team (and the hint says how to keep it); going out, the team's has no
+ * match among the mover's.
+ *
+ * Args:
+ *   t: The translator.
+ *   reason: The row's `reason`.
+ *   effect: The row's `effect`.
+ *   direction: `in` to a team, `out` to Personal.
+ *
+ * Returns:
+ *   The reason, the effect and any hint, as sentences.
+ */
+export function cannotMoveDetail(
+  t: TFunction,
+  reason: string,
+  effect: string,
+  direction: 'in' | 'out',
+): string {
+  const customModel = reason === 'custom_model';
+  return [
+    customModel && direction === 'out'
+      ? t('workspace.move.reasons.custom_model_out')
+      : t(cannotMoveReasonKey(reason)),
+    t(cannotMoveEffectKey(effect)),
+    ...(customModel && direction === 'in'
+      ? [t('workspace.move.customModelHint')]
+      : []),
+  ].join(' ');
+}
+
 export const moveWithReasonKey = (reason: string): string =>
   `workspace.move.withReasons.${
     (MOVE_WITH_REASONS as readonly string[]).includes(reason)
@@ -133,6 +166,41 @@ export function payerName(
   const ref = typeof person === 'string' ? { user_id: person } : person;
   if (me && ref.user_id === me) return t('workspace.move.payerYou');
   return ref.label || t('workspace.move.someone');
+}
+
+/** A custom model the move swaps for the other side's match (`model_remaps`). */
+export type ModelRemap = {
+  from_id: string;
+  from_name: string | null;
+  to_id: string;
+  to_name: string | null;
+};
+
+/**
+ * One line per custom model the move swaps for a match with the same
+ * endpoint and model on the other side ("Mistral" → the team's "Mistral").
+ *
+ * Args:
+ *   t: The translator.
+ *   remaps: The plan's `model_remaps`, if any.
+ *   direction: `in` to a team, `out` to Personal.
+ *
+ * Returns:
+ *   The lines, in the plan's order.
+ */
+export function modelRemapLines(
+  t: TFunction,
+  remaps: readonly ModelRemap[] | null | undefined,
+  direction: 'in' | 'out',
+): string[] {
+  const model = t('workspace.move.kinds.model');
+  return (remaps ?? []).map((row) =>
+    t(`workspace.move.modelRemaps.${direction}`, {
+      from: row.from_name || model,
+      to: row.to_name || model,
+      ...noEscape,
+    }),
+  );
 }
 
 const names = (rows: unknown): string[] =>

@@ -56,8 +56,8 @@ import useWorkspace from '../useWorkspace';
 import { loadWorkspaces } from '../workspaceSlice';
 import {
   borrowMessage,
-  cannotMoveEffectKey,
-  cannotMoveReasonKey,
+  cannotMoveDetail,
+  modelRemapLines,
   moveErrorMessage,
   moveKindKey,
   moveWithReasonKey,
@@ -564,6 +564,8 @@ function PlanBody({
   const kind = (type: string) => t(moveKindKey(type));
 
   const teamLocked = plan.team_locked_agents ?? [];
+  const remaps = plan.model_remaps ?? [];
+  const remapLines = modelRemapLines(t, remaps, direction);
   const sharedRefs = plan.shared_refs ?? [];
   const droppedShares = plan.dropped_shares ?? [];
 
@@ -759,6 +761,28 @@ function PlanBody({
         </section>
       ) : null}
 
+      {remaps.length > 0 ? (
+        // Custom models don't move: the other side's match takes over.
+        <section className="flex flex-col gap-1">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('workspace.move.modelRemaps.title')}
+            count={remaps.length}
+          />
+          <ListRows>
+            {remaps.map((row, index) => (
+              <ListRow
+                key={row.from_id}
+                wrap
+                leading={<span className="mt-0.5">{kindIcon('model')}</span>}
+                title={remapLines[index]}
+              />
+            ))}
+          </ListRows>
+        </section>
+      ) : null}
+
       {plan.cannot_move.length > 0 ? (
         <section className="flex flex-col gap-1">
           <SectionHeader
@@ -774,9 +798,12 @@ function PlanBody({
                 wrap
                 leading={<span className="mt-0.5">{kindIcon(row.type)}</span>}
                 title={named(row.name)}
-                description={`${kind(row.type)} · ${t(
-                  cannotMoveReasonKey(row.reason),
-                )} ${t(cannotMoveEffectKey(row.effect))}`}
+                description={`${kind(row.type)} · ${cannotMoveDetail(
+                  t,
+                  row.reason,
+                  row.effect,
+                  direction,
+                )}`}
               />
             ))}
           </ListRows>

@@ -5620,6 +5620,7 @@
       },
       "comesAlong": "Moves along",
       "comesWith": "Moves with \"{{name}}\"",
+      "customModelHint": "To keep it, add it to the team on Custom models first.",
       "done": {
         "personal": "\"{{name}}\" is in your Personal workspace now.",
         "team": "\"{{name}}\" now belongs to {{team}}."
@@ -5665,6 +5666,11 @@
         "tool": "Tool"
       },
       "listSeparator": ", ",
+      "modelRemaps": {
+        "in": "\"{{from}}\" → the team's \"{{to}}\"",
+        "out": "\"{{from}}\" → your \"{{to}}\"",
+        "title": "Switches to a matching custom model"
+      },
       "needsAdmin_one": "{{names}} can be reached from outside the team (a key, public link or webhook), and only an Admin of {{team}} brings that in. Turn its outside access off first, or ask an Admin.",
       "needsAdmin_other": "{{names}} can be reached from outside the team (a key, public link or webhook), and only an Admin of {{team}} brings those in. Turn their outside access off first, or ask an Admin.",
       "noFolder": "No folder",
@@ -5696,7 +5702,8 @@
         "connection_account": "Signed in with an account that stays in this workspace.",
         "connector_synced": "Synced from an account that stays in this workspace.",
         "credentials_unreadable": "Its saved secret can't be read any more.",
-        "custom_model": "A personal custom model.",
+        "custom_model": "A personal custom model the team doesn't have.",
+        "custom_model_out": "A team's custom model you don't have.",
         "in_knowledge_folder": "Filed in a folder the agent reads; only its sources come along.",
         "not_yours": "Someone else's, so it isn't yours to move.",
         "remote_device": "Runs on a paired device."

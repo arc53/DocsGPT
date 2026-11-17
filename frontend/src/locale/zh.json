@@ -5562,6 +5562,7 @@
       },
       "comesAlong": "一起移动",
       "comesWith": "随“{{name}}”一起移动",
+      "customModelHint": "要保留它，请先在自定义模型中将它添加到团队。",
       "done": {
         "personal": "“{{name}}”现在位于您的个人空间。",
         "team": "“{{name}}”现在归 {{team}} 所有。"
@@ -5607,6 +5608,11 @@
         "tool": "工具"
       },
       "listSeparator": "、",
+      "modelRemaps": {
+        "in": "“{{from}}” → 团队的“{{to}}”",
+        "out": "“{{from}}” → 您的“{{to}}”",
+        "title": "切换为匹配的自定义模型"
+      },
       "needsAdmin_one": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），只有 {{team}} 的管理员才能将其移入。请先关闭其外部访问，或请管理员处理。",
       "needsAdmin_other": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），只有 {{team}} 的管理员才能将其移入。请先关闭其外部访问，或请管理员处理。",
       "noFolder": "无文件夹",
@@ -5638,7 +5644,8 @@
         "connection_account": "使用留在此工作区的账号登录。",
         "connector_synced": "从留在此工作区的账号同步。",
         "credentials_unreadable": "其保存的密钥已无法读取。",
-        "custom_model": "个人自定义模型。",
+        "custom_model": "团队没有的个人自定义模型。",
+        "custom_model_out": "您没有的团队自定义模型。",
         "in_knowledge_folder": "位于智能体读取的文件夹中；只有其中的来源会一起移动。",
         "not_yours": "属于其他人，您无法移动。",
         "remote_device": "在已配对的设备上运行。"

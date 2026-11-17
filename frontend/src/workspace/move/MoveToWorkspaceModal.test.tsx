@@ -468,6 +468,49 @@ describe('MoveToWorkspaceModal', () => {
     expect(submit()?.disabled).toBe(false);
   });
 
+  it("says which custom model the team's match replaces, and how to keep one without a match", async () => {
+    api.planMove.mockResolvedValue({
+      ok: true,
+      status: 200,
+      plan: fullPlan({
+        model_remaps: [
+          {
+            from_id: 'm1',
+            from_name: 'Mistral',
+            to_id: 'm2',
+            to_name: 'Ops Mistral',
+          },
+        ],
+      }),
+    });
+    await render();
+    expect(text()).toContain('workspace.move.modelRemaps.title');
+    expect(text()).toContain(
+      'workspace.move.modelRemaps.in(from=Mistral,to=Ops Mistral)',
+    );
+    expect(text()).toContain('workspace.move.customModelHint');
+  });
+
+  it("names a team's custom model without a match going out, with no hint", async () => {
+    api.planMove.mockResolvedValue({
+      ok: true,
+      status: 200,
+      plan: fullPlan({
+        to: {
+          workspace: { kind: 'personal', team_id: null, name: 'Personal' },
+          folder: null,
+        },
+      }),
+    });
+    await render(
+      { from: { kind: 'team', team_id: 't1' } },
+      makeStore('t1', 'admin'),
+    );
+    expect(text()).toContain('workspace.move.reasons.custom_model_out');
+    expect(text()).not.toContain('workspace.move.customModelHint');
+    expect(text()).not.toContain('workspace.move.modelRemaps.title');
+  });
+
   it('lists the shares with other teams a move out ends', async () => {
     api.planMove.mockResolvedValue({
       ok: true,

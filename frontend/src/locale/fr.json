@@ -5812,6 +5812,7 @@
       },
       "comesAlong": "Déplacé aussi",
       "comesWith": "Déplacé avec « {{name}} »",
+      "customModelHint": "Pour le garder, ajoutez-le d’abord à l’équipe dans Modèles personnalisés.",
       "done": {
         "personal": "« {{name}} » est désormais dans votre espace Personnel.",
         "team": "« {{name}} » appartient désormais à {{team}}."
@@ -5858,6 +5859,11 @@
         "tool": "Outil"
       },
       "listSeparator": ", ",
+      "modelRemaps": {
+        "in": "« {{from}} » → « {{to}} » de l’équipe",
+        "out": "« {{from}} » → votre « {{to}} »",
+        "title": "Passe à un modèle personnalisé équivalent"
+      },
       "needsAdmin_many": "{{names}} sont accessibles depuis l’extérieur de l’équipe (clé, lien public ou webhook), et seul un administrateur de {{team}} peut les y faire entrer. Désactivez d’abord leur accès externe, ou demandez à un administrateur.",
       "needsAdmin_one": "{{names}} est accessible depuis l’extérieur de l’équipe (clé, lien public ou webhook), et seul un administrateur de {{team}} peut l’y faire entrer. Désactivez d’abord son accès externe, ou demandez à un administrateur.",
       "needsAdmin_other": "{{names}} sont accessibles depuis l’extérieur de l’équipe (clé, lien public ou webhook), et seul un administrateur de {{team}} peut les y faire entrer. Désactivez d’abord leur accès externe, ou demandez à un administrateur.",
@@ -5892,7 +5898,8 @@
         "connection_account": "Connecté avec un compte qui reste dans cet espace de travail.",
         "connector_synced": "Synchronisé depuis un compte qui reste dans cet espace de travail.",
         "credentials_unreadable": "Son secret enregistré n’est plus lisible.",
-        "custom_model": "Un modèle personnalisé personnel.",
+        "custom_model": "Un modèle personnalisé personnel que l’équipe n’a pas.",
+        "custom_model_out": "Un modèle personnalisé de l’équipe que vous n’avez pas.",
         "in_knowledge_folder": "Classé dans un dossier que l’agent lit ; seules ses sources suivent.",
         "not_yours": "Appartient à quelqu’un d’autre, vous ne pouvez donc pas le déplacer.",
         "remote_device": "S’exécute sur un appareil associé."
