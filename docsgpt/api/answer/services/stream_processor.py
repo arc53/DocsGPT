@@ -310,7 +310,7 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
         usable row in run order.
     """
     from docsgpt.api.user.folder_knowledge import folder_source_ids
-    from docsgpt.api.user.resource_access import authorized_holder_sources, log_stopped, reader_refusal
+    from docsgpt.api.user.resource_access import authorized_holder_sources, reader_sources
 
     primary_id = agent.get("source_id")
     refs = [primary_id, *(agent.get("extra_source_ids") or [])]
@@ -319,13 +319,10 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
     rows: List[dict] = []
     seen: set = set()
     authorized = authorized_holder_sources(conn, "agent", agent, refs)
-    for sid in folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent):
-        # A folder's team sources reach a run's reader only as a direct ref would.
-        refused = reader_refusal(conn, agent, "source", sid)
-        if refused:
-            log_stopped("agent", agent, "source", sid, refused)
-            continue
-        authorized.append(sid)
+    # A folder's team sources reach a run's reader only as a direct ref would.
+    authorized += reader_sources(
+        conn, "agent", agent, folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
+    )
     for sid in authorized:
         source_doc = sources_repo.get_by_id(str(sid))
         if not source_doc or str(source_doc["id"]) in seen:

@@ -2453,12 +2453,14 @@ class WorkflowEngine:
         if not owner:
             return source_ids
         from docsgpt.api.user.folder_knowledge import folder_source_ids
+        from docsgpt.api.user.resource_access import reader_sources
         from docsgpt.storage.db.session import db_readonly
 
         holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
         try:
             with db_readonly() as conn:
-                extra = folder_source_ids(conn, folders, "workflow", holder)
+                # A folder's team sources reach the run's reader only as a node's own source would.
+                extra = reader_sources(conn, "workflow", holder, folder_source_ids(conn, folders, "workflow", holder))
         except Exception:
             logger.exception("Workflow node knowledge folders could not be read; dropping them.")
             return source_ids

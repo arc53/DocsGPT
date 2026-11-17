@@ -1242,6 +1242,31 @@ def reader_refusal(
     return _team_reach_reason(conn, resource_type, str(resource_id), reader)
 
 
+def reader_sources(conn: Connection, holder_type: str, holder: Optional[dict], source_ids: Iterable) -> list:
+    """``source_ids`` without the team sources the run's reader may not have, each one left out logged.
+
+    For sources that reach a holder another way than its refs (its knowledge
+    folders), so they are judged as a direct ref would be (:func:`reader_refusal`).
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+        source_ids: The ids, in run order.
+
+    Returns:
+        list: The ids kept, in order.
+    """
+    kept: list = []
+    for sid in source_ids or []:
+        refused = reader_refusal(conn, holder, "source", str(sid))
+        if refused:
+            log_stopped(holder_type, holder, "source", sid, refused)
+            continue
+        kept.append(sid)
+    return kept
+
+
 def ref_access(
     conn: Connection, holder_type: str, holder: Optional[dict], resource_type: str, resource_id: str
 ) -> RefAccess:

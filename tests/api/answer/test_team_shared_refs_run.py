@@ -270,6 +270,26 @@ class TestTheRunGuard:
         with run_reader("vera"):
             assert len(authorized_agent_sources(use_conn, holder)[1]) == 1
 
+    def test_a_workflow_nodes_folder_sources_are_guarded_too(self, use_conn, world, monkeypatch):
+        from types import SimpleNamespace
+
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+
+        folder = str(FoldersRepository(use_conn).create("eddie", "Ops docs", resource_type="source")["id"])
+        FolderItemsRepository(use_conn).file("eddie", "source", world["items"]["source"], folder)
+
+        @contextmanager
+        def _yield():
+            yield use_conn
+
+        monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", _yield)
+        engine = WorkflowEngine.__new__(WorkflowEngine)
+        engine.agent = SimpleNamespace(workflow_row={"id": str(uuid.uuid4()), "user_id": "eddie"})
+        monkeypatch.setattr(engine, "_workflow_owner_id", lambda: "eddie")
+        assert engine._with_folder_sources([], [folder]) == [world["items"]["source"]]
+        with run_reader("oscar"):
+            assert engine._with_folder_sources([], [folder]) == []
+
     def test_a_team_agent_keeps_its_own_teams_items_for_whoever_it_is_shared_with(self, use_conn, world):
         holder = _holder(use_conn, world["ops_p"], world)
         with run_reader("rita"):
