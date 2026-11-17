@@ -199,6 +199,7 @@ def serialize_connection(row: dict, counts: Optional[dict] = None) -> dict:
         "source_count": counts.get("sources", 0),
         "tool_count": counts.get("tools", 0),
         "credential_mode": row.get("credential_mode"),
+        "url_parameters": connection_url_parameters(row),
     }
 
 
@@ -1369,18 +1370,24 @@ def builtin_mcp_config(definition: Optional[ConnectorDefinition], writes: bool =
     return {"server_url": url, "auth_type": "bearer", "transport_type": "http", "timeout": 30}
 
 
-def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dict]:
+def preset_mcp_config(
+    definition: Optional[ConnectorDefinition], connection: Optional[dict] = None,
+) -> Optional[dict]:
     """Tool config of an MCP preset, as its connect flow saves it.
 
     The OAuth tokens are not part of it: they stay on the connection, which
     the tool is linked to, and the executor signs in with them at run time.
-    A keyless preset (``auth_kind: mcp``, such as draw.io) uses no auth.
+    A keyless preset (``auth_kind: mcp``, such as draw.io) uses no auth. A
+    preset that needs URL parameters gets the values its connection kept
+    (see :func:`remember_url_parameters`).
 
     Args:
         definition: The connector.
+        connection: The connection the tool is for.
 
     Returns:
-        The config, or None when the connector is not an MCP preset.
+        The config, or None when the connector is not an MCP preset, or
+        needs URL parameters the connection has no valid values for.
     """
     if (
         definition is None
@@ -1389,8 +1396,11 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
         or "mcp_tool" not in definition.tool_templates
     ):
         return None
+    server_url = catalog.preset_url(definition, connection_url_parameters(connection))
+    if server_url is None:
+        return None
     config = {
-        "server_url": definition.mcp_url,
+        "server_url": server_url,
         "auth_type": "oauth" if definition.auth_kind == "mcp_oauth" else "none",
         "timeout": 30,
         "transport_type": "auto",
@@ -1400,19 +1410,65 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
     return config
 
 
-def connection_mcp_config(definition: Optional[ConnectorDefinition], writes: bool = False) -> Optional[dict]:
+def connection_mcp_config(
+    definition: Optional[ConnectorDefinition], writes: bool = False, connection: Optional[dict] = None,
+) -> Optional[dict]:
     """Config of the MCP tool setup can create for a connection: a built-in's or a preset's.
 
     Args:
         definition: The connector.
         writes: For a built-in connector, use its write endpoint (see
             :func:`builtin_mcp_config`).
+        connection: The connection, for a preset that needs URL parameters.
 
     Returns:
         The config, or None when setup creates no MCP tool for this connector
-        (a custom server's tool comes only from its save flow).
+        (a custom server's tool comes only from its save flow, and a preset
+        that needs URL parameters gets one only once they are known).
     """
-    return builtin_mcp_config(definition, writes=writes) or preset_mcp_config(definition)
+    return builtin_mcp_config(definition, writes=writes) or preset_mcp_config(definition, connection)
+
+
+def connection_url_parameters(connection: Optional[dict]) -> dict:
+    """The URL parameter values a connection kept for its preset's server.
+
+    Args:
+        connection: The connection row.
+
+    Returns:
+        Parameter key to value; empty when none were kept.
+    """
+    session_data = _json((connection or {}).get("session_data")) or {}
+    values = session_data.get("url_parameters") if isinstance(session_data, dict) else None
+    return dict(values) if isinstance(values, dict) else {}
+
+
+def remember_url_parameters(conn, connection_id: Optional[str], server_url: Optional[str]) -> None:
+    """Keep on a connection the URL parameters a saved server URL carries.
+
+    A preset's tool deleted from Tools is rebuilt from its connection (see
+    :func:`ensure_connection_tools`), which otherwise knows only the
+    server's origin; the reconnect form also prefills them from here. They
+    are not secret, so they live in ``session_data`` beside driver state.
+
+    Args:
+        conn: Open connection inside a transaction.
+        connection_id: The connection the saved tool is linked to.
+        server_url: The URL the tool was saved with.
+    """
+    values = catalog.url_parameter_values(server_url)
+    if not connection_id or not values:
+        return
+    repo = ConnectorSessionsRepository(conn)
+    row = repo.get(str(connection_id))
+    if row is None:
+        return
+    session_data = _json(row.get("session_data")) or {}
+    session_data = dict(session_data) if isinstance(session_data, dict) else {}
+    if session_data.get("url_parameters") == values:
+        return
+    session_data["url_parameters"] = values
+    repo.update(str(connection_id), {"session_data": session_data})
 
 
 def mcp_tool_description(config: dict) -> str:
@@ -1459,7 +1515,7 @@ def needs_mcp_discovery(conn, connection: dict) -> bool:
     an MCP preset whose tool was deleted, while the connection has no such tool.
     """
     definition = catalog.get_definition(catalog.connector_key_for_row(connection))
-    if connection_mcp_config(definition) is None:
+    if connection_mcp_config(definition, connection=connection) is None:
         return False
     have = {tool.get("name") for tool in ConnectorSessionsRepository(conn).list_tools(str(connection["id"]))}
     return "mcp_tool" not in have
@@ -1497,7 +1553,7 @@ def ensure_connection_tools(
     if not definition or not definition.tool_templates:
         return existing
     have = {tool.get("name") for tool in existing}
-    mcp_config = connection_mcp_config(definition, writes=mcp_writes)
+    mcp_config = connection_mcp_config(definition, writes=mcp_writes, connection=connection)
     created = []
     for template in definition.tool_templates:
         if template in have:
@@ -1843,6 +1899,41 @@ def connector_is_enabled(policies: dict, connector_key: Optional[str]) -> bool:
     return definition is None or definition.configured
 
 
+def connector_is_enabled_for_row(policies: dict, row: dict) -> bool:
+    """Whether every connector switch that governs a connection row leaves it on.
+
+    A connection's identity follows its server: a custom MCP row whose origin
+    a preset now claims is reported as that preset
+    (:func:`catalog.connector_key_for_row`). Its *policy* must not follow so
+    freely. The row is still stored as ``custom_mcp``, and that is the
+    connector an admin turning "Allow custom MCP servers" off decided about;
+    a preset, needing no server settings, is on by default. Asking the
+    preset's switch alone would let a preset shipping for an origin someone
+    had already connected by hand silently re-enable a connection an admin
+    had switched off — no sign-in, no admin action. So both switches apply,
+    and the row is off while either is: shipping the preset decides nothing
+    on its own. An admin turning custom MCP back on makes it usable again
+    with no reconnect, as does re-establishing the connection under the
+    preset, after which its stored ``connector_key`` is the preset's and
+    only the preset's switch is left to ask.
+
+    Args:
+        policies: ``connector_key`` to policy row, from :func:`load_policies`.
+        row: A ``connector_sessions`` row.
+
+    Returns:
+        False when the connector the row is reported as, or the one it is
+        still stored as, is turned off.
+    """
+    key = catalog.connector_key_for_row(row)
+    if not connector_is_enabled(policies, key):
+        return False
+    stored = row.get("connector_key")
+    if stored == "custom_mcp" and key != "custom_mcp":
+        return connector_is_enabled(policies, "custom_mcp")
+    return True
+
+
 def load_policies(conn) -> dict[str, dict]:
     """Every connector's policy, with custom MCP and write switches folded in.
 
@@ -1889,7 +1980,7 @@ def connector_enabled(conn, row: dict) -> bool:
     Returns:
         False when the connector (or custom MCP servers) is turned off.
     """
-    return connector_is_enabled(load_policies(conn), catalog.connector_key_for_row(row))
+    return connector_is_enabled_for_row(load_policies(conn), row)
 
 
 def ensure_connector_allowed(conn, connector_key: Optional[str]) -> None:

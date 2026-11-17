@@ -3217,6 +3217,7 @@
         "mcp_resend": "Envoyez des e-mails et gérez contacts, audiences et domaines.",
         "mcp_sentry": "Consultez les tickets, événements et versions Sentry.",
         "mcp_stripe": "Consultez les clients, paiements et abonnements dans Stripe.",
+        "mcp_supabase": "Listez les tables, exécutez du SQL, consultez les journaux et gérez les projets Supabase.",
         "mcp_trello": "Trouvez des tableaux et cartes Trello, et créez ou modifiez des cartes.",
         "mcp_twelvedata": "Consultez cotations, historique des cours, indicateurs techniques et données fondamentales des actions, devises, cryptos et ETF.",
         "mcp_zapier": "Utilisez les actions activées dans votre compte Zapier MCP pour lire ou modifier les applications connectées.",
@@ -3290,6 +3291,7 @@
       },
       "fieldHints": {
         "github_access_token": "Précis (fine-grained), avec accès en lecture à Contents et Metadata. Pour les modifications par l’agent, ajoutez aussi la lecture et l’écriture sur Issues et Pull requests. <link>Créer un jeton sur GitHub</link>",
+        "mcp_supabase_project_ref": "Copiez-le depuis Project Settings > General dans votre tableau de bord Supabase. La connexion n’accède qu’à ce projet.",
         "telegram_chat_id": "Les messages sont envoyés uniquement à cette conversation. Ajoutez le bot, envoyez-lui un message, puis trouvez l’ID de la conversation avec <link>getUpdates</link>."
       },
       "fields": {
@@ -3301,6 +3303,7 @@
         "client_secret": "Secret client",
         "endpoint_url": "URL de point de terminaison personnalisée",
         "github_access_token": "Jeton d’accès personnel",
+        "mcp_supabase_project_ref": "ID du projet",
         "ntfy_token": "Jeton d’accès",
         "number_posts": "Nombre de publications",
         "postgres_token": "Chaîne de connexion",
@@ -3512,6 +3515,7 @@
         "toolsHeading": "Outils ({{formatted}})",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez, ou désactivez-les pour continuer.",
         "tryInChat": "Essayer dans une conversation",
+        "urlParameterInvalid": "Vérifiez cette valeur : elle n'a pas le format attendu.",
         "waiting": "Terminez la connexion à {{name}} dans la fenêtre qui s’est ouverte."
       }
     },

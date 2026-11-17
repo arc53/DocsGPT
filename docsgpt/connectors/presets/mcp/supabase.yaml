@@ -1,0 +1,16 @@
+# Supabase's plain URL reaches every project the signed-in account can see,
+# so each connection names one project; see url_parameters in README.md.
+key: mcp:supabase
+name: Supabase
+description: List tables, run SQL, read logs and manage Supabase projects.
+icon: supabase
+category: database
+mcp_url: https://mcp.supabase.com/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://supabase.com/docs/guides/getting-started/mcp
+url_parameters:
+  - key: project_ref
+    label: Project ID
+    pattern: "[a-z]{20}"
+    hint: Copy it from Project Settings > General in your Supabase dashboard. The connection reaches this project only.

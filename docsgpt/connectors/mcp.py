@@ -92,7 +92,7 @@ def discover_connection_actions(user_id: str, connection: dict, writes: bool = F
         Exception: The server could not be reached or listed.
     """
     definition = catalog.get_definition(catalog.connector_key_for_row(connection))
-    config = service.connection_mcp_config(definition, writes=writes)
+    config = service.connection_mcp_config(definition, writes=writes, connection=connection)
     if config is None:
         raise ValueError("This connector has no MCP server")
     try:
