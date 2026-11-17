@@ -16,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 
+import { TEAM_ERROR_KEYS } from '../api/services/teamsService';
 import userService from '../api/services/userService';
 import RoleMeta, { showsRole } from '../components/RoleMeta';
 import { canMoveToFolder } from '../components/folders/folderFiling';
@@ -57,6 +58,7 @@ import { can, canOpenShare } from '../utils/accessUtils';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '../utils/browserUtils';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
 import { canAgent } from './agentAccess';
 import { Agent } from './types';
@@ -212,6 +214,8 @@ export default function AgentCard({
     // them.
     user: ownedMenu,
     sharedWithYou: ownedMenu,
+    // Another team's agent: its `allowed_actions` hold only use and pin.
+    teamShared: ownedMenu,
     // Discovered (link-opened) agents: the card itself opens the agent.
     shared: [
       pinOption,
@@ -225,10 +229,17 @@ export default function AgentCard({
   };
   const menuOptions = menuOptionsConfig[section] || [];
 
+  // The workspace's agents and the ones shared with the caller or the team
+  // open into a chat once published.
+  const opensChat =
+    section === 'user' ||
+    section === 'sharedWithYou' ||
+    section === 'teamShared';
+
   const handleClick = () => {
     // Shared agents open and run like the caller's own published ones (the
     // run and GetAgent routes authorize them server-side).
-    if (section === 'user' || section === 'sharedWithYou') {
+    if (opensChat) {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
         navigate(agent.id ? agentChatPath(agent.id) : '/c/new');
@@ -276,7 +287,12 @@ export default function AgentCard({
       if (!response.ok) {
         const message = await response
           .json()
-          .then((data) => data?.message)
+          .then((data) =>
+            // A locked team's agents stay in; say so in the app's words.
+            data?.error === 'team_locked'
+              ? t(TEAM_ERROR_KEYS.team_locked)
+              : data?.message,
+          )
           .catch(() => null);
         // Server-side refusals (e.g. a workflow referencing too many
         // resources) carry an actionable message; flag it so the catch can
@@ -345,14 +361,14 @@ export default function AgentCard({
   // Same rule as handleClick: a Discovered card always opens, the
   // workspace's or a shared agent once it's published.
   const canOpen =
-    section === 'shared' ||
-    ((section === 'user' || section === 'sharedWithYou') &&
-      agent.status === 'published');
-  // Who added a team agent or owns a shared one, and the reader's role on a
-  // shared one; nothing on the caller's own.
+    section === 'shared' || (opensChat && agent.status === 'published');
+  // Who added a team agent or owns a shared one, the reader's role on a
+  // shared one, and the team another team's agent comes from; nothing on the
+  // caller's own.
   const creator = showsCreator(agent);
   const role = showsRole(agent);
-  const hasMeta = creator || role || Boolean(folderLabel);
+  const sharedFrom = showsSharedFrom(agent);
+  const hasMeta = creator || role || sharedFrom || Boolean(folderLabel);
   const title = (
     <CardTitle title={agent.name} className="truncate">
       {agent.name}
@@ -410,6 +426,7 @@ export default function AgentCard({
               </MetaItem>
             ) : null}
             {creator ? <CreatorMeta item={agent} /> : null}
+            {sharedFrom ? <SharedFromMeta item={agent} /> : null}
             {role ? <RoleMeta item={agent} /> : null}
           </MetaLine>
         </CardFooter>

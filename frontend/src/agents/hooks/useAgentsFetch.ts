@@ -38,8 +38,9 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   const [isLoading, setIsLoading] = useState<Record<AgentSectionId, boolean>>({
     template: true,
     user: true,
-    // Shared with you is split out of the same /api/get_agents payload, so
-    // its loading state tracks the user fetch.
+    // Shared with you and Shared with this team are split out of the same
+    // /api/get_agents payload, so their loading state tracks the user fetch.
+    teamShared: true,
     sharedWithYou: true,
     shared: true,
   });
@@ -68,7 +69,12 @@ export function useAgentsFetch(): UseAgentsFetchResult {
     } catch (error) {
       if (workspace.isCurrent()) dispatch(setAgents([]));
     } finally {
-      setIsLoading((prev) => ({ ...prev, user: false, sharedWithYou: false }));
+      setIsLoading((prev) => ({
+        ...prev,
+        user: false,
+        teamShared: false,
+        sharedWithYou: false,
+      }));
     }
   }, [token, dispatch]);
 
@@ -101,6 +107,7 @@ export function useAgentsFetch(): UseAgentsFetchResult {
     setIsLoading({
       template: true,
       user: true,
+      teamShared: true,
       sharedWithYou: true,
       shared: true,
     });
@@ -115,6 +122,7 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   const isAllLoaded =
     !isLoading.template &&
     !isLoading.user &&
+    !isLoading.teamShared &&
     !isLoading.sharedWithYou &&
     !isLoading.shared;
 

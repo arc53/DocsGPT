@@ -940,6 +940,10 @@
         "emptyState": "此团队还没有智能体。",
         "title": "智能体"
       },
+      "teamShared": {
+        "description": "其他团队与此团队共享的智能体，团队中的每个人都可以与之聊天。",
+        "emptyState": "还没有其他团队与此团队共享智能体。"
+      },
       "template": {
         "description": "DocsGPT提供的智能体",
         "emptyState": "未找到模板智能体。",

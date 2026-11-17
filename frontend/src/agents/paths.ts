@@ -20,6 +20,8 @@ const FILTER_SLUGS: Record<Exclude<AgentFilterTab, 'all'>, string> = {
   template: 'templates',
   user: 'mine',
   sharedWithYou: 'shared-with-you',
+  // A team's: what other teams shared with it.
+  teamShared: 'shared-with-team',
   // The old Team section's address: the list reads it as Shared with you in
   // Personal and as the team's agents in a team.
   team: 'team',

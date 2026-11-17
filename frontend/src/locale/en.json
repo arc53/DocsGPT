@@ -962,6 +962,10 @@
         "emptyState": "This team has no agents yet.",
         "title": "Agents"
       },
+      "teamShared": {
+        "description": "Agents other teams shared with this team. Everyone in it can chat with them.",
+        "emptyState": "No other team has shared an agent with this team yet."
+      },
       "template": {
         "description": "Agents provided by DocsGPT",
         "emptyState": "No template agents found.",

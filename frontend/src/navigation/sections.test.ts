@@ -154,6 +154,7 @@ describe('AGENTS_SECTION', () => {
       'all',
       'template',
       'user',
+      'teamShared',
       'sharedWithYou',
       'shared',
     ]);
@@ -173,7 +174,20 @@ describe('AGENTS_SECTION', () => {
       );
     expect(keys(false)).toContain('sharedWithYou');
     expect(keys(false)).toContain('shared');
-    expect(keys(true)).toEqual(['all', 'template', 'user']);
+    expect(keys(true)).toEqual(['all', 'template', 'user', 'teamShared']);
+  });
+
+  it('shows Shared with this team only in a team', () => {
+    const keys = (inTeam: boolean) =>
+      getVisibleGroups(AGENTS_SECTION, { inTeam }).flatMap((g) =>
+        g.items.map((i) => i.key),
+      );
+    expect(keys(false)).not.toContain('teamShared');
+    const item = getSectionItems(AGENTS_SECTION).find(
+      (i) => i.key === 'teamShared',
+    )!;
+    expect(item.path).toBe('/agents/manage/shared-with-team');
+    expect(item.labelKey).toBe('workspace.page.sharedFromTeams.title');
   });
 });
 

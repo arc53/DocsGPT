@@ -53,6 +53,7 @@ import {
   AgentSectionId,
   agentSectionsConfig,
   PERSONAL_ONLY_SECTIONS,
+  TEAM_ONLY_SECTIONS,
 } from './agents.config';
 import AgentTypeModal from './components/AgentTypeModal';
 import SectionShell from '../navigation/SectionShell';
@@ -75,19 +76,22 @@ import { Agent } from './types';
 const TILE_GRID =
   'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
 
+/** Whether this workspace has a section at all (see `agents.config`). */
+const inWorkspace = (id: AgentSectionId, inTeam: boolean): boolean =>
+  !(inTeam ? PERSONAL_ONLY_SECTIONS : TEAM_ONLY_SECTIONS).includes(id);
+
 /**
  * The filter a route asks for, as this workspace reads it: the old Team
- * address is Shared with you in Personal and the team's agents in a team, and
- * a team, where nothing is shared in, shows everything for Shared with you
- * and Discovered.
+ * address is Shared with you in Personal and the team's agents in a team,
+ * and a section the workspace doesn't have (Shared with you and Discovered
+ * in a team, Shared with this team in Personal) shows everything.
  */
 export function workspaceFilter(
   filter: AgentFilterTab,
   inTeam: boolean,
 ): Exclude<AgentFilterTab, 'team'> {
   if (filter === 'team') return inTeam ? 'user' : 'sharedWithYou';
-  if (inTeam && PERSONAL_ONLY_SECTIONS.includes(filter as AgentSectionId))
-    return 'all';
+  if (filter !== 'all' && !inWorkspace(filter, inTeam)) return 'all';
   return filter;
 }
 
@@ -177,8 +181,9 @@ export default function AgentsList() {
     agentFolders(tree, matchingFolders(tree, query));
 
   const visibleSections = agentSectionsConfig.filter((config) => {
-    // Nothing is shared into a team: no Shared with you, no Discovered.
-    if (inTeam && PERSONAL_ONLY_SECTIONS.includes(config.id)) return false;
+    // A team has no Shared with you or Discovered; Personal no Shared with
+    // this team.
+    if (!inWorkspace(config.id, inTeam)) return false;
     if (activeFilter !== 'all') {
       return config.id === activeFilter;
     }
@@ -633,7 +638,9 @@ function AgentSection({
   const title =
     config.id === 'sharedWithYou'
       ? t('workspace.page.sharedWithYou')
-      : t(`${copy}.title`);
+      : config.id === 'teamShared'
+        ? t('workspace.page.sharedFromTeams.title')
+        : t(`${copy}.title`);
   const offerNewAgent = config.showNewAgentButton && canCreate;
 
   const updateAgents = (updatedAgents: Agent[]) => {

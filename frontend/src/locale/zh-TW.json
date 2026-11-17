@@ -940,6 +940,10 @@
         "emptyState": "此團隊還沒有代理。",
         "title": "代理"
       },
+      "teamShared": {
+        "description": "其他團隊與此團隊分享的代理，團隊中的每個人都可以與之聊天。",
+        "emptyState": "還沒有其他團隊與此團隊分享代理。"
+      },
       "template": {
         "description": "DocsGPT提供的代理",
         "emptyState": "未找到範本代理。",

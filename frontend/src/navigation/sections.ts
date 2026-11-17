@@ -66,8 +66,10 @@ export type SectionItem = {
   leavesSection?: boolean;
   /** Hidden when the backend reports this feature off (`/api/config`). */
   feature?: 'connectors' | 'analytics';
-  /** Hidden in a team workspace (nothing is shared into a team). */
+  /** Hidden in a team workspace (people share with a person, not a team). */
   personalOnly?: boolean;
+  /** Hidden in Personal (other teams share with a team). */
+  teamOnly?: boolean;
 };
 
 /** Items sharing a heading in the nav. */
@@ -373,6 +375,13 @@ export const AGENTS_SECTION: Section = {
           icon: User,
         },
         {
+          key: 'teamShared',
+          path: agentsFilterPath('teamShared'),
+          labelKey: 'workspace.page.sharedFromTeams.title',
+          icon: Users,
+          teamOnly: true,
+        },
+        {
           key: 'sharedWithYou',
           path: agentsFilterPath('sharedWithYou'),
           // The old Team section's address lands here in Personal.
@@ -575,7 +584,8 @@ export function getVisibleGroups(
         (item) =>
           (!item.adminOnly || isAdmin) &&
           (!item.feature || features[item.feature] !== false) &&
-          (!item.personalOnly || !inTeam),
+          (!item.personalOnly || !inTeam) &&
+          (!item.teamOnly || inTeam),
       ),
     }))
     .filter((group) => group.items.length > 0);

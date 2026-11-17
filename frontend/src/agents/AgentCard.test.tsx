@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   goToLevel: vi.fn(),
   deleteAgent: vi.fn(),
+  exportAgent: vi.fn(),
   submitResult: undefined as void | Promise<unknown>,
 }));
 
@@ -20,7 +21,7 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('../api/services/userService', () => ({
-  default: { deleteAgent: mocks.deleteAgent },
+  default: { deleteAgent: mocks.deleteAgent, exportAgent: mocks.exportAgent },
 }));
 
 vi.mock('../navigation/SidebarLevelProvider', () => ({
@@ -352,6 +353,61 @@ describe('AgentCard menu', () => {
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'preference/setSelectedAgent' }),
+    );
+  });
+
+  // Another team's agent shared with this team: the receivers chat with it
+  // and pin it, nothing more.
+  const received = (): Agent => ({
+    ...agentWith('viewer', VIEWER_ACTIONS),
+    ownership: 'team',
+    origin: 'team_shared',
+    workspace: { kind: 'team', team_id: 'dev' },
+    shared_from: { team_id: 'ops', name: 'Operations' },
+  });
+
+  it("offers only Pin (and who has access) on another team's agent", async () => {
+    await render(received(), 'teamShared');
+    expect(await menuLabels()).toEqual([
+      'agents.shareWithTeam',
+      'agents.card.pin',
+    ]);
+  });
+
+  it('names the team a shared agent comes from, with no role', async () => {
+    await render(received(), 'teamShared');
+    expect(
+      container.querySelector('[data-testid="shared-from-meta"]')?.textContent,
+    ).toBe('workspace.page.sharedFromTeams.from');
+    expect(container.querySelector('[data-testid="role-meta"]')).toBeNull();
+    expect(container.querySelector('[data-testid="creator-meta"]')).toBeNull();
+  });
+
+  it("opens the chat with another team's published agent", async () => {
+    await render(received(), 'teamShared');
+    await act(async () =>
+      container
+        .querySelector<HTMLElement>('[data-slot="card"] > button')!
+        .click(),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'preference/setSelectedAgent' }),
+    );
+  });
+
+  it("says a locked team's agent can't be exported, in the app's words", async () => {
+    mocks.exportAgent.mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ error: 'team_locked' }),
+    });
+    await render(agentWith('owner', OWNER_ACTIONS), 'user');
+    const items = await openMenu();
+    await act(async () =>
+      items.find((i) => i.textContent === 'agents.exportAgent')!.click(),
+    );
+    await act(async () => undefined);
+    expect(document.body.textContent).toContain(
+      'settings.teams.errors.teamLocked',
     );
   });
 
