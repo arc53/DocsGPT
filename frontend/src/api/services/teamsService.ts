@@ -4,6 +4,7 @@ import { connectionErrorMessage } from '../../connectors/connectionErrors';
 import type { OutsideAccess, PersonRef } from '../../payer/types';
 import type { ItemOrigin } from '../../workspace/itemOrigin';
 import apiClient from '../client';
+import { ApiError, apiErrorFrom } from './apiError';
 import endpoints from '../endpoints';
 
 /** A person's role in a team: one role on everything the team owns. */
@@ -306,22 +307,10 @@ export type ResourceSettingsResponse = {
  * `code` its stable `error` code when it sent one, `body` the whole answer
  * (a team that still owns items names them in `counts`).
  */
-export class TeamsApiError extends Error {
-  status: number;
-  code?: string;
-  body?: Record<string, unknown>;
-
-  constructor(
-    status: number,
-    message: string,
-    code?: string,
-    body?: Record<string, unknown>,
-  ) {
-    super(message);
+export class TeamsApiError extends ApiError {
+  constructor(...args: ConstructorParameters<typeof ApiError>) {
+    super(...args);
     this.name = 'TeamsApiError';
-    this.status = status;
-    this.code = code;
-    this.body = body;
   }
 }
 
@@ -433,24 +422,7 @@ const json = async (response: Response | unknown) => {
   const r = response as Response;
   if (!r || !('json' in r) || typeof r.json !== 'function') return r as unknown;
   if (typeof r.ok === 'boolean' && !r.ok) {
-    let message = `Request failed (${r.status})`;
-    let code: string | undefined;
-    let parsed: Record<string, unknown> | undefined;
-    try {
-      const body = await r.json();
-      if (body && typeof body === 'object') parsed = body;
-      if (body && typeof body.error === 'string' && body.error) {
-        code = body.error;
-      }
-      if (body && typeof body.message === 'string' && body.message) {
-        message = body.message;
-      } else if (code) {
-        message = code;
-      }
-    } catch {
-      // Not JSON: keep the generic message.
-    }
-    throw new TeamsApiError(r.status, message, code, parsed);
+    throw await apiErrorFrom(r, TeamsApiError, { codeAsMessage: true });
   }
   return r.json();
 };

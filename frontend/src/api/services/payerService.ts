@@ -10,6 +10,7 @@ import type {
   SchedulePayerFields,
 } from '../../payer/types';
 import apiClient from '../client';
+import { ApiError, apiErrorFrom } from './apiError';
 import endpoints from '../endpoints';
 
 /** One budget of a quota bucket; `limit` null is unlimited. */
@@ -147,22 +148,10 @@ export type TakeOverOutsideAccessResult = {
  * A non-2xx answer from a payer call: `code` is the server's `error` code
  * (`max_schedules`, `workspace_role_required`…), `message` its own text.
  */
-export class PayerApiError extends Error {
-  status: number;
-  code?: string;
-  body?: Record<string, unknown>;
-
-  constructor(
-    status: number,
-    message: string,
-    code?: string,
-    body?: Record<string, unknown>,
-  ) {
-    super(message);
+export class PayerApiError extends ApiError {
+  constructor(...args: ConstructorParameters<typeof ApiError>) {
+    super(...args);
     this.name = 'PayerApiError';
-    this.status = status;
-    this.code = code;
-    this.body = body;
   }
 }
 
@@ -203,21 +192,8 @@ export function payerErrorMessage(
   return key ? (t as (key: string) => string)(key) : fallback;
 }
 
-const refusal = async (r: Response): Promise<PayerApiError> => {
-  let message = `Request failed (${r.status})`;
-  let code: string | undefined;
-  let body: Record<string, unknown> | undefined;
-  try {
-    const parsed = await r.json();
-    if (parsed && typeof parsed === 'object') body = parsed;
-    if (typeof parsed?.error === 'string' && parsed.error) code = parsed.error;
-    if (typeof parsed?.message === 'string' && parsed.message)
-      message = parsed.message;
-  } catch {
-    // Not JSON (a proxy's page, a bare 404): keep the generic message.
-  }
-  return new PayerApiError(r.status, message, code, body);
-};
+const refusal = (r: Response): Promise<PayerApiError> =>
+  apiErrorFrom(r, PayerApiError);
 
 const json = async <T>(r: Response): Promise<T> => {
   if (!r.ok) throw await refusal(r);
