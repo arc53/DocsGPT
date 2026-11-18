@@ -385,3 +385,72 @@ class TestGraphExtractionOfATeamConnectorSource:
         _, payers = self._run(pg_conn, task_self, monkeypatch, src, principal, actor_id="eddie")
 
         assert payers == ["eddie"]
+
+
+class TestOneLookupPerSyncPass:
+    """A scheduled sync pass reads each team connection and each person's team role once, however many sources."""
+
+    @pytest.fixture
+    def dispatched(self, monkeypatch) -> list:
+        calls: list = []
+        monkeypatch.setattr(worker, "_dispatch_scheduled_sync", lambda key, **kw: calls.append(kw) or "dispatched")
+        return calls
+
+    def _seed(self, conn, principal, row, count):
+        for i in range(count):
+            _link(conn, SourcesRepository(conn).create(
+                f"Bucket {i}", user_id=principal, created_by="eddie", type="s3", remote_data={"bucket": f"b{i}"},
+                sync_frequency="daily",
+            ), row)
+            _source(conn, principal, row, created_by="eddie")
+            SourcesRepository(conn).create(
+                f"Site {i}", user_id=principal, created_by="eddie", type="website",
+                remote_data={"entries": [{"url": f"https://x{i}.io/", "mode": "site"}]}, sync_frequency="daily",
+            )
+
+    def _statements(self, conn, task_self) -> tuple:
+        from sqlalchemy import event
+
+        statements: list[str] = []
+
+        def _count(_conn, _cursor, statement, *args):
+            statements.append(statement)
+
+        event.listen(conn, "before_cursor_execute", _count)
+        try:
+            counts = worker.sync_worker(task_self, "daily")
+        finally:
+            event.remove(conn, "before_cursor_execute", _count)
+        return counts, statements
+
+    def test_the_same_queries_for_one_source_of_each_kind_or_many(
+        self, pg_conn, patch_worker_db, quota_db, task_self, queued, dispatched,
+    ):
+        _, principal = _team(pg_conn)
+        row = _connection(pg_conn, principal, "adam")
+        self._seed(pg_conn, principal, row, 1)
+        one_counts, one = self._statements(pg_conn, task_self)
+
+        self._seed(pg_conn, principal, row, 3)
+        many_counts, many = self._statements(pg_conn, task_self)
+
+        assert one_counts["sync_dispatched"] == 3 and many_counts["sync_dispatched"] == 12
+        assert len(many) == len(one)
+
+    def test_each_source_still_gets_its_own_payer(
+        self, pg_conn, patch_worker_db, quota_db, task_self, queued, dispatched,
+    ):
+        tid, principal = _team(pg_conn)
+        row = _connection(pg_conn, principal, "adam")
+        self._seed(pg_conn, principal, row, 2)
+        SourcesRepository(pg_conn).create(
+            "Vera's site", user_id=principal, created_by="vera", type="website",
+            remote_data={"entries": [{"url": "https://v.io/", "mode": "site"}]}, sync_frequency="daily",
+        )
+        TeamMembersRepository(pg_conn).add_member(tid, "vera", role="team_viewer")
+
+        counts = worker.sync_worker(task_self, "daily")
+
+        assert sorted(call.get("actor_id") for call in dispatched) == ["adam"] * 2 + ["eddie"] * 2
+        assert queued.call_count == 2
+        assert counts["sync_no_payer"] == 1

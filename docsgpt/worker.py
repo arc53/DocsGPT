@@ -1685,13 +1685,14 @@ def _creator_field(user: str, actor_id: Optional[str]) -> Dict[str, str]:
     return {"created_by": actor} if is_principal_id(user) and actor else {}
 
 
-def _team_payer(conn: Any, owner: str, created_by: Optional[str]) -> Optional[str]:
+def _team_payer(conn: Any, owner: str, created_by: Optional[str], checks: Optional[Any] = None) -> Optional[str]:
     """The person who added a team's source, while they may still add knowledge there (Editor or above).
 
     Args:
         conn: Open connection.
         owner: The source's owner (a team's principal).
         created_by: ``sources.created_by``.
+        checks: A sync pass's ``PayerChecks``, so each person's role is read once per pass.
 
     Returns:
         Their id, or ``None`` when they are gone, demoted to Viewer, or unknown.
@@ -1700,16 +1701,21 @@ def _team_payer(conn: Any, owner: str, created_by: Optional[str]) -> Optional[st
     person = _person(created_by)
     if team_id is None or person is None:
         return None
-    return person if role_at_least(team_role_for(conn, person, team_id), "editor") else None
+    role = checks.team_role(conn, person, team_id) if checks is not None else team_role_for(conn, person, team_id)
+    return person if role_at_least(role, "editor") else None
 
 
-def _team_connection(conn: Any, owner: str, connection_id: Optional[str]) -> Optional[Dict[str, Any]]:
+def _team_connection(
+    conn: Any, owner: str, connection_id: Optional[str], rows: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     """The team connection a team's source reads through, or None when it reads through none.
 
     Args:
         conn: Open connection.
         owner: The source's owner.
         connection_id: ``sources.connection_id``.
+        rows: A sync pass's connection rows by id (missing ones read and kept), so
+            sources that share a connection read it once per pass.
 
     Returns:
         The ``connector_sessions`` row when ``owner`` is a team's principal and the
@@ -1720,7 +1726,13 @@ def _team_connection(conn: Any, owner: str, connection_id: Optional[str]) -> Opt
 
     if not connection_id or not is_principal_id(owner):
         return None
-    row = ConnectorSessionsRepository(conn).get(str(connection_id))
+    key = str(connection_id)
+    if rows is not None and key in rows:
+        row = rows[key]
+    else:
+        row = ConnectorSessionsRepository(conn).get(key)
+        if rows is not None:
+            rows[key] = row
     if row is None or str(row.get("user_id")) != str(owner):
         return None
     return row
@@ -2478,7 +2490,7 @@ SYNC_PAUSED_KEY = "sync_paused"
 SYNC_NO_PAYER = "sync_no_payer"
 
 
-def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any) -> Optional[str]:
+def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any, checks: Optional[Any] = None) -> Optional[str]:
     """Who a team source's scheduled sync bills, flagging the source when nobody can.
 
     The person who added the source pays while they are still an Editor or
@@ -2489,6 +2501,7 @@ def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any) -> Optional[str]:
     Args:
         doc: The source row (``id``, ``user_id``, ``created_by``).
         metadata: Its parsed ``metadata``.
+        checks: The pass's ``PayerChecks``, so each person's role is read once.
 
     Returns:
         The payer, or ``None`` to skip the sync.
@@ -2497,7 +2510,7 @@ def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any) -> Optional[str]:
     source_id = str(doc.get("id"))
     flagged = isinstance(metadata, dict) and SYNC_PAUSED_KEY in metadata
     with db_session() as conn:
-        payer = _team_payer(conn, owner, doc.get("created_by"))
+        payer = _team_payer(conn, owner, doc.get("created_by"), checks=checks)
         repo = SourcesRepository(conn)
         if payer is None and not flagged:
             repo.set_metadata_key(
@@ -2509,7 +2522,9 @@ def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any) -> Optional[str]:
     return payer
 
 
-def _connection_sync_actor(doc: Dict[str, Any], checks: Any) -> Tuple[bool, Optional[str]]:
+def _connection_sync_actor(
+    doc: Dict[str, Any], checks: Any, connections: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, Optional[str]]:
     """Whether a team's source syncs through the team's connection, and who its scheduled sync bills.
 
     Never raises: a failed lookup reads as nobody to bill, so the source waits
@@ -2518,6 +2533,7 @@ def _connection_sync_actor(doc: Dict[str, Any], checks: Any) -> Tuple[bool, Opti
     Args:
         doc: The source row (``id``, ``user_id``, ``connection_id``).
         checks: The tick's ``PayerChecks``.
+        connections: The tick's connection rows by id (``_team_connection``).
 
     Returns:
         ``(False, None)`` when it reads through no connection of its team (the
@@ -2526,7 +2542,7 @@ def _connection_sync_actor(doc: Dict[str, Any], checks: Any) -> Tuple[bool, Opti
     """
     try:
         with db_readonly() as conn:
-            connection = _team_connection(conn, doc.get("user_id"), doc.get("connection_id"))
+            connection = _team_connection(conn, doc.get("user_id"), doc.get("connection_id"), rows=connections)
             if connection is None:
                 return False, None
             return True, _scheduled_connection_payer(conn, connection, checks=checks)
@@ -2551,8 +2567,9 @@ def sync_worker(self, frequency):
         )
         rows = result.fetchall()
 
-    # One tick asks about each person (role, account, allowance) once.
+    # One tick asks about each person (role, account, allowance) and reads each team connection once.
     checks = PayerChecks()
+    connections: Dict[str, Any] = {}
     for row in rows:
         doc = dict(row._mapping)
         name = doc.get("name")
@@ -2574,7 +2591,7 @@ def sync_worker(self, frequency):
         # the person who connected the team's account can't pay for it.
         if source_type and source_type.startswith("connector"):
             through_connection, payer = (
-                _connection_sync_actor(doc, checks) if is_principal_id(user) else (False, user)
+                _connection_sync_actor(doc, checks, connections) if is_principal_id(user) else (False, user)
             )
             if not doc.get("connection_id") or payer is None:
                 sync_counts["sync_skipped"] += 1
@@ -2622,9 +2639,9 @@ def sync_worker(self, frequency):
         actor = None
         if is_principal_id(user):
             try:
-                through_connection, actor = _connection_sync_actor(doc, checks)
+                through_connection, actor = _connection_sync_actor(doc, checks, connections)
                 if not through_connection:
-                    actor = _scheduled_sync_payer(doc, metadata)
+                    actor = _scheduled_sync_payer(doc, metadata, checks)
             except Exception:  # noqa: BLE001 - one source must not stop the tick
                 actor = None
                 logging.exception("Could not find who pays for the sync of source %s", doc_id)
