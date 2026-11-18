@@ -231,96 +231,74 @@ class TestWikiFolder:
         assert not [row for row in SourcesRepository(pg_conn).list_for_user(USER) if row["name"] == "Runbook"]
 
 
-class TestWorkerFiling:
-    def test_files_the_new_source_for_the_uploader(self, pg_conn):
-        from docsgpt.worker import _file_new_source
+class TestIndexUploadFiling:
+    """``/api/upload_index`` files a new source in the folder its upload asked for, in the write that creates it."""
 
+    def _post(self, conn, source_id, folder_id=None, **extra):
+        from docsgpt.api.internal.routes import internal
+
+        app = Flask(__name__)
+        app.register_blueprint(internal)
+        form = {"user": USER, "name": "job", "tokens": "1", "retriever": "classic", "id": source_id,
+                "type": "local", **extra}
+        if folder_id is not None:
+            form["folder_id"] = folder_id
         @contextmanager
         def _yield():
-            yield pg_conn
+            yield conn
 
+        internal_routes = "docsgpt.api.internal.routes"
+        with patch(f"{internal_routes}.db_session", _yield), patch(f"{internal_routes}.settings.INTERNAL_KEY", "k"), patch(
+            f"{internal_routes}.settings.VECTOR_STORE", "pgvector"
+        ), patch(f"{internal_routes}.StorageCreator.get_storage", return_value=MagicMock()):
+            with app.test_client() as client:
+                return client.post("/api/upload_index", headers={"X-Internal-Key": "k"}, data=form)
+
+    def test_files_the_new_source_for_the_uploader(self, pg_conn):
         folder = FoldersRepository(pg_conn).create(USER, "K", resource_type="source")
-        source = str(SourcesRepository(pg_conn).create("s", user_id=USER)["id"])
-        with patch("docsgpt.worker.db_session", _yield):
-            _file_new_source(USER, source, folder["id"])
-            # A folder that went away meanwhile is skipped quietly.
-            _file_new_source(USER, source, str(uuid.uuid4()))
+        source = str(uuid.uuid4())
+        assert self._post(pg_conn, source, folder["id"]).json == {"status": "ok"}
         assert FolderItemsRepository(pg_conn).filing(USER, "source", source) == folder["id"]
 
+    def test_a_folder_gone_meanwhile_stores_the_source_unfiled(self, pg_conn):
+        source = str(uuid.uuid4())
+        theirs = FoldersRepository(pg_conn).create(OTHER, "K", resource_type="source")
+        for folder_id in (str(uuid.uuid4()), theirs["id"]):
+            assert self._post(pg_conn, source, folder_id).json == {"status": "ok"}
+        assert SourcesRepository(pg_conn).get(source, USER) is not None
+        assert FolderItemsRepository(pg_conn).filing(USER, "source", source) is None
+
+    def test_no_folder_files_nothing(self, pg_conn):
+        source = str(uuid.uuid4())
+        assert self._post(pg_conn, source).json == {"status": "ok"}
+        assert FolderItemsRepository(pg_conn).filing(USER, "source", source) is None
+
     def test_a_replay_keeps_a_move_made_meanwhile(self, pg_conn):
-        from docsgpt.worker import _file_new_source
-
-        @contextmanager
-        def _yield():
-            yield pg_conn
-
-        upload_folder = FoldersRepository(pg_conn).create(USER, "K", resource_type="source")
-        moved_to = FoldersRepository(pg_conn).create(USER, "L", resource_type="source")
-        source = str(SourcesRepository(pg_conn).create("s", user_id=USER)["id"])
+        """A retried ingest finds its source stored: the write updates it and files nothing."""
+        folders = FoldersRepository(pg_conn)
+        upload_folder = folders.create(USER, "K", resource_type="source")
+        moved_to = folders.create(USER, "L", resource_type="source")
+        source = str(uuid.uuid4())
         items = FolderItemsRepository(pg_conn)
-        with patch("docsgpt.worker.db_session", _yield):
-            _file_new_source(USER, source, upload_folder["id"])
-            items.file(USER, "source", source, moved_to["id"])
-            _file_new_source(USER, source, upload_folder["id"])
+        self._post(pg_conn, source, upload_folder["id"])
+        items.file(USER, "source", source, moved_to["id"])
+        self._post(pg_conn, source, upload_folder["id"])
         assert items.filing(USER, "source", source) == moved_to["id"]
 
     def test_a_replay_keeps_a_move_to_the_top_level(self, pg_conn):
-        """The source the first attempt stored already exists: the replay files nothing."""
-        from docsgpt.worker import _upload_folder_for_new_source
-
-        @contextmanager
-        def _yield():
-            yield pg_conn
-
         folder = FoldersRepository(pg_conn).create(USER, "K", resource_type="source")
-        source = str(SourcesRepository(pg_conn).create("s", user_id=USER)["id"])
-        with patch("docsgpt.worker.db_readonly", _yield):
-            assert _upload_folder_for_new_source(source, folder["id"]) is None
-            fresh = str(uuid.uuid4())
-            assert _upload_folder_for_new_source(fresh, folder["id"]) == folder["id"]
-            assert _upload_folder_for_new_source(fresh, None) is None
+        source = str(uuid.uuid4())
+        items = FolderItemsRepository(pg_conn)
+        self._post(pg_conn, source, folder["id"])
+        items.file(USER, "source", source, None)
+        self._post(pg_conn, source, folder["id"])
+        assert items.filing(USER, "source", source) is None
 
-    def test_a_database_error_is_retried(self, pg_conn):
-        from sqlalchemy.exc import OperationalError
-
-        from docsgpt.worker import _file_new_source
-
-        @contextmanager
-        def _yield():
-            yield pg_conn
-
+    def test_an_upload_stored_before_the_worker_lost_its_answer_is_filed(self, pg_conn):
+        """The first attempt's write stored and filed it; the worker timing out before the answer changes nothing."""
         folder = FoldersRepository(pg_conn).create(USER, "K", resource_type="source")
-        source = str(SourcesRepository(pg_conn).create("s", user_id=USER)["id"])
-        from docsgpt.api.user.folders import service
-
-        real = service.file_new_source
-        calls = []
-
-        def _flaky(*args):
-            calls.append(args)
-            if len(calls) < 3:
-                raise OperationalError("SELECT 1", {}, Exception("connection reset"))
-            return real(*args)
-
-        with patch("docsgpt.worker.db_session", _yield), patch.object(service, "file_new_source", _flaky), \
-                patch("time.sleep") as sleep:
-            _file_new_source(USER, source, folder["id"])
-        assert len(calls) == 3
-        assert sleep.call_count == 2
+        source = str(uuid.uuid4())
+        self._post(pg_conn, source, folder["id"])
+        # The retry's write, after the worker never heard back.
+        self._post(pg_conn, source, folder["id"])
         assert FolderItemsRepository(pg_conn).filing(USER, "source", source) == folder["id"]
-
-    def test_gives_up_after_three_database_errors(self, pg_conn):
-        from sqlalchemy.exc import OperationalError
-
-        from docsgpt.api.user.folders import service
-        from docsgpt.worker import _file_new_source
-
-        @contextmanager
-        def _yield():
-            yield pg_conn
-
-        failing = MagicMock(side_effect=OperationalError("SELECT 1", {}, Exception("down")))
-        with patch("docsgpt.worker.db_session", _yield), patch.object(service, "file_new_source", failing), \
-                patch("time.sleep"):
-            _file_new_source(USER, str(uuid.uuid4()), str(uuid.uuid4()))
-        assert failing.call_count == 3

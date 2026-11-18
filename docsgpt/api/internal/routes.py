@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 import logging
 from typing import Optional
 
+from docsgpt.api.user.folders.service import file_new_source
 from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import settings
 from docsgpt.decisions.backends.http import INTERNAL_ROUTES
@@ -64,6 +65,8 @@ def upload_index_files():
     For FAISS the form carries index.faiss and index.pkl; index.json, which
     names the index.faiss it belongs to, is built here from the pickle and
     stored with them. An unreadable pickle answers 400 and stores nothing.
+    A new source is filed in the ``folder_id`` its upload asked for, in the
+    write that creates it; a source that exists already keeps its filing.
     """
     if "user" not in request.form:
         return {"status": "no user"}
@@ -82,6 +85,7 @@ def upload_index_files():
     directory_structure = request.form.get("directory_structure")
     file_name_map = request.form.get("file_name_map")
     config = request.form.get("config")
+    folder_id = request.form.get("folder_id")
 
     if config:
         try:
@@ -209,7 +213,7 @@ def upload_index_files():
             # The row's own owner: a sync's source may have moved to another workspace since it was queued.
             repo.update(str(existing["id"]), existing.get("user_id") or user, update_fields)
         else:
-            repo.create(
+            created = repo.create(
                 job_name,
                 source_id=source_id if looks_like_uuid(source_id) else None,
                 user_id=user,
@@ -231,6 +235,9 @@ def upload_index_files():
                 # Who added it: a team's source (``user`` is its principal) names the person.
                 created_by=request.form.get("created_by") or None,
             )
+            # Stored and filed together: a retried ingest finds the source and
+            # leaves its filing alone, so a move made since is kept.
+            file_new_source(conn, user, str(created["id"]), folder_id)
     return {"status": "ok"}
 
 

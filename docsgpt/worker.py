@@ -874,7 +874,7 @@ def ingest_worker(
             Knowledge source made from chat attachments). The copy runs here
             rather than in the request; a retry copies again, harmlessly.
         folder_id (str|None): One of the uploader's source folders to file
-            the new source in once it is stored.
+            the new source in; the API files it in the write that stores it.
         actor_id (str|None): The uploader, when ``user`` is a team's principal:
             the new source names them as its creator, and its events reach them.
 
@@ -1079,9 +1079,9 @@ def ingest_worker(
             if config:
                 file_data["config"] = json.dumps(config)
 
-            filing_folder = _upload_folder_for_new_source(source_id_for_events, folder_id)
+            if folder_id:
+                file_data["folder_id"] = folder_id
             upload_index(vector_store_path, file_data)
-            _file_new_source(user, source_id_for_events, filing_folder)
             _publish_source_event(
                 user,
                 actor_id,
@@ -2108,15 +2108,14 @@ def remote_worker(
                 logging.warning(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
-        filing_folder = _upload_folder_for_new_source(source_id_for_events, folder_id)
+        if folder_id and operation_mode != "sync":
+            file_data["folder_id"] = folder_id
         refused = _upload_refusal(upload_index(full_path, file_data))
         if refused:
             # No website report either: nothing was stored.
             return _skip_refused_sync(self, user, source_id_for_events, name_job, loader, refused, actor_id)
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
-        if operation_mode != "sync":
-            _file_new_source(user, source_id_for_events, filing_folder)
         website_fields = {}
         if loader == "website":
             website_fields = _record_website_report(
@@ -4786,75 +4785,6 @@ def _with_connection_credentials(source_data, connection_id: str, owner: Optiona
     return {**dict(source_data or {}), **credentials}
 
 
-#: Attempts at filing a new source when the database errors.
-_FILING_ATTEMPTS = 3
-
-
-def _upload_folder_for_new_source(source_id: str, folder_id: Optional[str]) -> Optional[str]:
-    """The folder an ingest still files its source into: none once the source exists.
-
-    Read before the source is stored. An attempt that finds it stored already
-    is a replay (a lost worker, or an autoretry after the upload), and the
-    first attempt filed it; its owner may have moved it since, to the top
-    level included, which leaves no filing to compare against.
-
-    Args:
-        source_id: The source this ingest stores.
-        folder_id: The folder its upload asked for, or None.
-
-    Returns:
-        Optional[str]: ``folder_id``, or None when the source exists. A failed
-        read keeps ``folder_id`` (filing is insert-only either way).
-    """
-    if not folder_id:
-        return None
-    try:
-        with db_readonly() as conn:
-            exists = SourcesRepository(conn).get_by_id(str(source_id)) is not None
-    except Exception:
-        logging.warning("Could not tell whether source %s exists before filing it", source_id, exc_info=True)
-        return folder_id
-    return None if exists else folder_id
-
-
-def _file_new_source(user: str, source_id: str, folder_id: Optional[str]) -> None:
-    """File a source the ingest just stored into the folder its upload asked for.
-
-    Best effort: the source stands without it, so a failure (the folder was
-    deleted meanwhile) is logged, not raised. A database error is tried
-    again a couple of times, since the source is already stored and the
-    ingest reports completed either way. Filing is insert-only, so a source
-    filed already keeps its folder.
-
-    Args:
-        user: The source's owner: the uploader in Personal, the team's principal for a team upload.
-        source_id: The new source.
-        folder_id: A folder of the owner's tree, or None.
-    """
-    if not folder_id:
-        return
-    import time
-
-    from sqlalchemy.exc import InterfaceError, OperationalError
-
-    from docsgpt.api.user.folders import service
-
-    for attempt in range(1, _FILING_ATTEMPTS + 1):
-        try:
-            with db_session() as conn:
-                service.file_new_source(conn, user, str(source_id), str(folder_id))
-            return
-        except (OperationalError, InterfaceError) as err:
-            # A dropped connection or a busy database passes; anything else won't.
-            failure: BaseException = err
-            if attempt < _FILING_ATTEMPTS:
-                time.sleep(0.5 * attempt)
-        except Exception as err:
-            failure = err
-            break
-    logging.warning("Could not file source %s into folder %s", source_id, folder_id, exc_info=failure)
-
-
 def _require_own_connection(connection_id: Any, owner: str) -> None:
     """Refuse to read a source's files through a connection its owner doesn't own.
 
@@ -5506,14 +5436,13 @@ def _ingest_connector(
                         upd_err,
                     )
 
-            filing_folder = _upload_folder_for_new_source(source_id_for_events, folder_id)
+            if folder_id and operation_mode != "sync":
+                file_data["folder_id"] = folder_id
             refused = _upload_refusal(upload_index(vector_store_path, file_data))
             if refused:
                 return _skip_refused_sync(self, user, source_id_for_events, job_name, source_type, refused, actor_id)
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
-            if operation_mode != "sync":
-                _file_new_source(user, source_id_for_events, filing_folder)
 
             # Ensure we mark the task as complete
             self.update_state(
