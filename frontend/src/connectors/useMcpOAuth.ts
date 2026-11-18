@@ -19,12 +19,39 @@ export type McpOAuthConfig = {
  */
 export type McpOAuthOwner = { owner?: 'team'; connection_id?: string };
 
+/**
+ * What the sign-in tests: whose it is, and `id`, the saved tool being signed
+ * in again, so the server can test with the settings it keeps for it.
+ */
+export type McpOAuthTarget = McpOAuthOwner & { id?: string };
+
+/** A tool the server listed once signed in. */
+export type McpOAuthTool = { name: string; description?: string };
+
+/**
+ * The server's answer to the test that refused it, for wording a refusal by
+ * its code (a team's sign-in it already holds, say).
+ */
+export type McpOAuthRefusal = {
+  body: Record<string, unknown>;
+  status?: number;
+};
+
 type Handlers = {
   /** Signed in: `taskId` is the OAuth task to save with (null when the
-   * server already had a valid sign-in). */
-  onDone: (result: { taskId: string | null }) => void;
-  onError: (message: string) => void;
+   * server already had a valid sign-in), `tools` what the server listed,
+   * `message` the server's own words when no new sign-in was needed. */
+  onDone: (result: {
+    taskId: string | null;
+    tools?: McpOAuthTool[];
+    message?: string;
+  }) => void;
+  /** `refusal` is set when the test itself was refused, not the sign-in. */
+  onError: (message: string, refusal?: McpOAuthRefusal) => void;
 };
+
+const toolsOf = (value: unknown): McpOAuthTool[] | undefined =>
+  Array.isArray(value) ? (value as McpOAuthTool[]) : undefined;
 
 /**
  * Sign in to an MCP server over OAuth from a click. The pop-up opens blank
@@ -38,7 +65,9 @@ type Handlers = {
  * starting again, tell the server to stop the attempt, which frees the
  * worker for the next sign-in instead of leaving it waiting for a callback.
  * `blockedUrl` is set when the browser blocked the pop-up anyway, so the
- * caller can offer the link.
+ * caller can offer the link (`openBlocked` opens it from a click and keeps
+ * the window, so it closes when the sign-in ends). `awaiting` is true once
+ * the server has queued the sign-in and waits for the provider.
  */
 export default function useMcpOAuth() {
   const token = useSelector(selectToken);
@@ -84,7 +113,7 @@ export default function useMcpOAuth() {
     async (
       config: McpOAuthConfig,
       handlers: Handlers,
-      owner: McpOAuthOwner = {},
+      target: McpOAuthTarget = {},
     ) => {
       // Starting again abandons the previous attempt.
       if (taskIdRef.current) stopOnServer(taskIdRef.current);
@@ -102,7 +131,7 @@ export default function useMcpOAuth() {
       );
       try {
         const response = await userService.testMCPConnection(
-          { config, ...owner },
+          { config, ...target },
           token,
         );
         const result = await response.json();
@@ -120,8 +149,17 @@ export default function useMcpOAuth() {
         }
         const done = handlersRef.current;
         finish();
-        if (result.success) done?.onDone({ taskId: null });
-        else done?.onError(result.message || result.error || '');
+        if (result.success)
+          done?.onDone({
+            taskId: null,
+            tools: toolsOf(result.tools),
+            message: result.message,
+          });
+        else
+          done?.onError(result.message || result.error || '', {
+            body: result,
+            status: response.status,
+          });
       } catch {
         if (handlersRef.current !== handlers) return;
         finish();
@@ -158,7 +196,7 @@ export default function useMcpOAuth() {
         const done = handlersRef.current;
         const id = taskId;
         finish();
-        done?.onDone({ taskId: id });
+        done?.onDone({ taskId: id, tools: toolsOf(payload.tools) });
         return;
       } else if (event.type === 'mcp.oauth.failed') {
         const done = handlersRef.current;
@@ -169,5 +207,20 @@ export default function useMcpOAuth() {
     }
   }, [events, taskId, finish]);
 
-  return { start, cancel, pending, blockedUrl };
+  // The blocked link, opened from the caller's click: a window opened there
+  // is allowed, and kept so the sign-in's end closes it.
+  const openBlocked = useCallback(() => {
+    if (!blockedUrl) return;
+    const popup = window.open(blockedUrl, 'mcpOAuth', 'width=600,height=700');
+    if (popup) popupRef.current = popup;
+  }, [blockedUrl]);
+
+  return {
+    start,
+    cancel,
+    pending,
+    awaiting: taskId !== null,
+    blockedUrl,
+    openBlocked,
+  };
 }
