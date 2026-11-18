@@ -474,6 +474,21 @@ def _collect(
             })
         return roles_box[0].get(owner)
 
+    can_edit_by_owner: dict[str, bool] = {}
+
+    def _can_edit(owner: str) -> bool:
+        # The caller's role and the team's policy depend on the owner alone: worked out once per owner,
+        # not once per agent and resource.
+        if owner not in can_edit_by_owner:
+            role = _team_role(owner)
+            can_edit_by_owner[owner] = owner == user_id or (
+                role is not None
+                and "view" in workspace_allowed_actions(
+                    "agent", role, policy=team_policy(conn, team_of_principal(owner))
+                )
+            )
+        return can_edit_by_owner[owner]
+
     def _can_open(agent_id: str, owner: str) -> bool:
         if agent_allowlist is not None and agent_id not in agent_allowlist:
             return False
@@ -490,15 +505,8 @@ def _collect(
         if ref_key not in wanted:
             continue
         if _can_open(agent_id, owner):
-            role = _team_role(owner)
-            can_edit = owner == user_id or (
-                role is not None
-                and "view" in workspace_allowed_actions(
-                    "agent", role, policy=team_policy(conn, team_of_principal(owner))
-                )
-            )
-            listed[ref_key][agent_id] = (name, agent_type or "classic", can_edit, status)
-            if owner != user_id and role is None:
+            listed[ref_key][agent_id] = (name, agent_type or "classic", _can_edit(owner), status)
+            if owner != user_id and _team_role(owner) is None:
                 shared_listed.add(agent_id)
         elif ref_key in deletable:
             hidden[ref_key].add(agent_id)

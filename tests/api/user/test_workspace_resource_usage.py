@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from docsgpt.api.user.resource_usage import used_by_many
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -58,3 +60,64 @@ class TestTeamUsage:
         source, _agent = _setup(pg_conn)
         usage = used_by_many(pg_conn, STRANGER, "source", [source], deletable_ids=[])
         assert usage[source] == {"agents": [], "others": 0}
+
+
+def _uses(conn, sources: int, agents: int) -> tuple[list[str], set[str]]:
+    """A new team whose classic agents name every one of its sources and read them through a folder too,
+    beside as many workflow agents reading the same folder; return the source ids and the agent ids."""
+    from sqlalchemy import text
+
+    from tests.workspaces.move_support import file, folder, workflow
+
+    _tid, principal = _team(conn)
+    repo = SourcesRepository(conn)
+    ids = [str(repo.create(f"doc {i}", user_id=principal)["id"]) for i in range(sources)]
+    shelf = folder(conn, principal, "Shelf")
+    for sid in ids:
+        file(conn, principal, "source", sid, shelf)
+    used: set[str] = set()
+    for i in range(agents):
+        used.add(str(AgentsRepository(conn).create(
+            principal, f"bot {i}", "published", extra_source_ids=ids, knowledge_folder_ids=[shelf]
+        )["id"]))
+        wid = workflow(conn, principal, f"flow {i}", nodes=[{"folders": [shelf]}])
+        conn.execute(text("UPDATE workflows SET current_graph_version = 1 WHERE id = CAST(:i AS uuid)"), {"i": wid})
+        used.add(str(AgentsRepository(conn).create(
+            principal, f"flow {i}", "published", agent_type="workflow", workflow_id=wid
+        )["id"]))
+    return ids, used
+
+
+def _statements(conn, user, ids, deletable):
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def _count(_conn, _cursor, statement, *args):
+        statements.append(statement)
+
+    event.listen(conn, "before_cursor_execute", _count)
+    try:
+        usage = used_by_many(conn, user, "source", ids, deletable_ids=deletable)
+    finally:
+        event.remove(conn, "before_cursor_execute", _count)
+    return usage, statements
+
+
+class TestTeamUsageQueryCount:
+    """However many sources and agents a team has, its usage is read in the same number of queries."""
+
+    @pytest.mark.parametrize("deletable", [False, True])
+    def test_team_actions_are_worked_out_once_per_owning_team(self, pg_conn, deletable):
+        ids, agents = _uses(pg_conn, 12, 4)
+        usage, statements = _statements(pg_conn, EDITOR, ids, ids if deletable else [])
+        assert sum("outside_policy FROM teams" in s for s in statements) <= 1
+        for sid in ids:
+            assert {a["id"] for a in usage[sid]["agents"]} == agents
+            assert all(a["can_edit"] for a in usage[sid]["agents"]) and usage[sid]["others"] == 0
+
+    def test_a_viewer_reads_the_same_agents_without_their_editors(self, pg_conn):
+        ids, agents = _uses(pg_conn, 3, 2)
+        usage, _ = _statements(pg_conn, VIEWER, ids, [])
+        for sid in ids:
+            assert {(a["id"], a["can_edit"]) for a in usage[sid]["agents"]} == {(a, False) for a in agents}
