@@ -508,6 +508,34 @@ def _custom_model_refusal(conn, owner_id: str, data: dict, graph: Optional[dict]
     )
 
 
+def _team_items_by_save(
+    conn, agent: dict, update_fields: dict, inline_graph: Optional[dict], *, with_current: bool,
+) -> tuple[dict, list[dict], list[dict]]:
+    """The team items an agent save adds, and the tools on a team's account it uses after it and adds.
+
+    Both read the agent's workflow and stored graph as they are before the save writes it, so they share one
+    :class:`WorkflowReads`; a call after the owner lock is taken builds its own.
+
+    Args:
+        conn: Open database connection.
+        agent: The stored agent row.
+        update_fields: The columns the save writes.
+        inline_graph: The graph the save brings, if any.
+        with_current: Read the team's tools the agent uses even when the save changes none of its items (a save
+            that mints a key).
+
+    Returns:
+        ``(team items added by owning team, team's-account tools after the save, those the save adds)``.
+    """
+    reads = WorkflowReads(conn)
+    nodes = inline_graph["nodes"] if inline_graph is not None else None
+    team_added = _team_refs_added_by_save(conn, agent, update_fields, nodes, reads=reads)
+    connection_tools, connection_tools_added = _team_connection_tools_by_save(
+        conn, agent, update_fields, nodes, with_current=with_current, reads=reads,
+    )
+    return team_added, connection_tools, connection_tools_added
+
+
 def _reject(message: str, user: str, field: str = "-"):
     """Log a request-validation rejection at WARN and return its 400 response.
 
@@ -1999,25 +2027,30 @@ class UpdateAgent(Resource):
                     ):
                         newly_generated_key = str(uuid.uuid4())
                         update_fields["key"] = newly_generated_key
-                # Both checks below read the agent's workflow and stored graph as they are before the save
-                # writes it, so they share those reads.
-                save_reads = WorkflowReads(conn)
-                # A team's items the save adds must reach everyone the agent is shared with (checked
-                # below); a share made at the same time takes the same lock, so one sees the other.
-                team_added = _team_refs_added_by_save(
-                    conn, existing_agent, update_fields, inline_graph["nodes"] if inline_graph is not None else None,
-                    reads=save_reads,
-                )
-                # A tool on the team's account stays inside the team (checked below, under the same lock).
-                connection_tools, connection_tools_added = _team_connection_tools_by_save(
-                    conn, existing_agent, update_fields,
-                    inline_graph["nodes"] if inline_graph is not None else None,
-                    with_current=bool(newly_generated_key), reads=save_reads,
+                # The team's items and team's-account tools the save adds, judged below against who the
+                # agent reaches. Read here to tell whether the save takes the owner lock, and again under it.
+                team_added, connection_tools, connection_tools_added = _team_items_by_save(
+                    conn, existing_agent, update_fields, inline_graph, with_current=bool(newly_generated_key),
                 )
                 if newly_generated_key or has_outside_access(existing_agent) or team_added or connection_tools_added:
                     # The borrowed-item checks below run wholly before or after a move of the owner's
                     # items. Taken before the graph save locks its workflow row, which a move updates.
                     lock_owner_items(conn, owner_id)
+                    # Lock, then read again: a publish, public link, share or save that held the lock has
+                    # committed, and every check below judges the agent as it left it (its key, link, webhook
+                    # and items), not as it was before the wait.
+                    existing_agent = agents_repo.get_by_id(pg_agent_id)
+                    if not existing_agent:
+                        return make_response(
+                            jsonify({"success": False, "message": "Agent not found or not authorized"}), 404,
+                        )
+                    if newly_generated_key and existing_agent.get("key"):
+                        # Published while this save waited: the key it got stays.
+                        update_fields.pop("key", None)
+                        newly_generated_key = None
+                    team_added, connection_tools, connection_tools_added = _team_items_by_save(
+                        conn, existing_agent, update_fields, inline_graph, with_current=bool(newly_generated_key),
+                    )
 
                 # A workflow agent's graph: an inline one is checked for shape
                 # on a draft and in full on an agent that runs. Without one, an

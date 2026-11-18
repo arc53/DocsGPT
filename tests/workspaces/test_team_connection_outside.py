@@ -27,6 +27,7 @@ from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from tests.api.user.agents.test_workspace_agents import (
     ADMIN,
+    EDITOR,
     OWNER,
     _agent,
     _call,
@@ -47,6 +48,11 @@ def app():
 def w(pg_conn):
     """Ops (alice owner, adam admin, eddie editor, vera viewer) with a GitHub account adam connected for it and
     a tool on it; Dev, a team adam is in too."""
+    return _world(pg_conn)
+
+
+def _world(pg_conn) -> dict:
+    """See :func:`w`."""
     tid, principal = _team(pg_conn)
     cid = str(ConnectorSessionsRepository(pg_conn).create(
         principal, "github", connector_key="github", auth_kind="oauth",
@@ -224,3 +230,107 @@ class TestShareDialog:
 
         ra = SimpleNamespace(resource_type="tool", resource_id=_member_tool(pg_conn, w["principal"]))
         assert _warning_kind(pg_conn, ra) == "tool_member"
+
+
+@pytest.mark.fresh_db
+class TestSaveDuringAPublish:
+    """A publish, a public link and a save adding the team's tool each hold the owner lock while they check and
+    write; one waiting on another judges the agent as the other left it."""
+
+    @staticmethod
+    def _world(engine) -> tuple[dict, str]:
+        with engine.begin() as conn:
+            w = _world(conn)
+            return w, _agent(conn, w["principal"], chunks=2, retriever="classic")
+
+    def test_a_save_adding_the_tool_while_a_publish_mints_a_key_waits_and_is_refused(self, pg_engine):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.workspaces.locks import lock_owner_items
+        from tests.workspaces.test_workspace_move_races import _call as _route_call
+        from tests.workspaces.test_workspace_move_races import _race, _routes_on
+
+        w, aid = self._world(pg_engine)
+
+        def publish(conn) -> None:
+            # What a publish does: take the owner lock, then give the agent a key.
+            lock_owner_items(conn, w["principal"])
+            AgentsRepository(conn).update(aid, w["principal"], {
+                "status": "published", "key": f"k-{uuid.uuid4().hex}", "access_payer_id": ADMIN,
+            })
+
+        def save(_conn):
+            return _route_call(UpdateAgent, "put", f"/api/update_agent/{aid}", EDITOR, args=(aid,),
+                               json={"tools": [w["tool"]]})
+
+        with _routes_on(pg_engine.begin):
+            out = _race(pg_engine, publish, save)
+
+        assert "error" not in out, out
+        status, payload = out["result"]
+        assert status == 409, payload
+        assert payload["error"] == TEAM_CONNECTION_OUTSIDE
+        with pg_engine.connect() as conn:
+            row = _row(conn, aid)
+            assert row["key"] and not row["tools"]
+
+    def test_a_publish_waiting_on_a_save_that_added_the_tool_mints_no_key(self, pg_engine):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.workspaces.locks import lock_owner_items
+        from tests.workspaces.test_workspace_move_races import _call as _route_call
+        from tests.workspaces.test_workspace_move_races import _race, _routes_on
+
+        w, aid = self._world(pg_engine)
+
+        def save(conn) -> None:
+            # What a save adding the team's tool does: take the owner lock, then write the tool.
+            lock_owner_items(conn, w["principal"])
+            AgentsRepository(conn).update(aid, w["principal"], {"tools": [w["tool"]]})
+
+        def publish(_conn):
+            return _route_call(UpdateAgent, "put", f"/api/update_agent/{aid}", ADMIN, args=(aid,),
+                               json={"status": "published"})
+
+        with _routes_on(pg_engine.begin):
+            out = _race(pg_engine, save, publish)
+
+        assert "error" not in out, out
+        status, payload = out["result"]
+        assert status == 200, payload
+        assert "key" not in payload
+        with pg_engine.connect() as conn:
+            row = _row(conn, aid)
+            assert row["status"] == "published"
+            assert [str(t) for t in row["tools"]] == [w["tool"]]
+            assert not row["key"]
+
+    def test_a_publish_waiting_on_another_keeps_the_key_it_minted(self, pg_engine):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.workspaces.locks import lock_owner_items
+        from tests.workspaces.test_workspace_move_races import _call as _route_call
+        from tests.workspaces.test_workspace_move_races import _race, _routes_on
+
+        w, aid = self._world(pg_engine)
+        first_key = f"k-{uuid.uuid4().hex}"
+
+        def publish(conn) -> None:
+            lock_owner_items(conn, w["principal"])
+            AgentsRepository(conn).update(aid, w["principal"], {
+                "status": "published", "key": first_key, "access_payer_id": ADMIN,
+            })
+
+        def publish_again(_conn):
+            return _route_call(UpdateAgent, "put", f"/api/update_agent/{aid}", ADMIN, args=(aid,),
+                               json={"status": "published"})
+
+        with _routes_on(pg_engine.begin):
+            out = _race(pg_engine, publish, publish_again)
+
+        assert "error" not in out, out
+        status, payload = out["result"]
+        assert status == 200, payload
+        assert "key" not in payload
+        with pg_engine.connect() as conn:
+            assert _row(conn, aid)["key"] == first_key
