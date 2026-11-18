@@ -60,16 +60,11 @@ from docsgpt.api.user.team_sharing import (
     can_access,
     visible_with_access,
 )
-from docsgpt.agents.default_tools import is_synthesized_tool_id
 from docsgpt.storage.db.repositories.agents import (
     AgentsRepository,
     expose_prompt_preset,
     is_agent_prompt_ref,
 )
-from docsgpt.storage.db.repositories.user_custom_models import (
-    UserCustomModelsRepository,
-)
-from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
@@ -93,7 +88,6 @@ from docsgpt.api.user.folder_knowledge import (
     FOLDER_NOT_ACCESSIBLE,
     FolderRefError,
     folder_confirmations,
-    owned_source_folders,
     parse_folder_refs,
     plan_folder_confirmations,
     resolve_folder_details,
@@ -117,6 +111,9 @@ from docsgpt.api.user.agents.graph_checks import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
 from docsgpt.workspaces.locks import lock_owner_items
+# The adoption strip of a template's tools and graph node refs, under the names this module's callers use.
+from docsgpt.workspaces.node_refs import adoptable_tool_ids as _filter_adoptable_tool_ids
+from docsgpt.workspaces.node_refs import adoption_node_transform as _strip_foreign_node_refs
 from docsgpt.workspaces.principal import is_principal_id
 from docsgpt.utils import (
     check_required_fields,
@@ -2764,75 +2761,6 @@ class GetTemplateAgents(Resource):
         except Exception as e:
             current_app.logger.error(f"Template agents fetch error: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
-
-def _filter_adoptable_tool_ids(conn, user: str, tool_ids) -> list:
-    """Keep only tool ids the adopter can actually run.
-
-    Builtin synthetic ids resolve for everyone; a ``user_tools`` row must be
-    the adopter's own — the runtime resolves tools strictly owner-scoped, so
-    a template owner's tool id would just be dropped (with a log line) on
-    every run. Filtering at adopt time makes the gap visible in the builder
-    instead of at run time.
-    """
-    tools_repo = UserToolsRepository(conn)
-    kept = []
-    for tid in tool_ids or []:
-        tid = str(tid)
-        if is_synthesized_tool_id(tid) or (
-            looks_like_uuid(tid) and tools_repo.get_any(tid, user)
-        ):
-            kept.append(tid)
-    return kept
-
-
-def _strip_foreign_node_refs(conn, user: str):
-    """Build a ``clone_to_user`` node-config transform for adoption.
-
-    Agent nodes carry raw tool/source/model ids from the template owner. The
-    engine resolves all three owner-scoped at run time (dropping misses with
-    only a log line), so unresolvable refs would survive the clone as ghost
-    references — shown in the builder, never used. Strip them instead, so
-    the adopter sees empty fields to fill in.
-    """
-
-    def transform(node_type: str, config: dict) -> dict:
-        if node_type != "agent":
-            return config
-        # Node settings may sit nested under ``config`` — mirror the engine,
-        # which reads ``node.config.get("config", node.config)``.
-        nested = config.get("config")
-        cfg = nested if isinstance(nested, dict) else config
-        if cfg.get("tools"):
-            cfg["tools"] = _filter_adoptable_tool_ids(conn, user, cfg["tools"])
-        if cfg.get("sources"):
-            sources = cfg["sources"]
-            if not isinstance(sources, list):
-                sources = [sources]
-            cfg["sources"] = [
-                str(s)
-                for s in sources
-                if s and can_access(conn, "source", str(s), user)
-            ]
-        if cfg.get("folders"):
-            # A knowledge folder is its owner's filing: keep only the adopter's own.
-            folders = cfg["folders"] if isinstance(cfg["folders"], list) else [cfg["folders"]]
-            cfg["folders"] = owned_source_folders(conn, folders, user)
-        model_id = cfg.get("model_id")
-        if (
-            model_id
-            and looks_like_uuid(str(model_id))
-            and not UserCustomModelsRepository(conn).get(str(model_id), user)
-        ):
-            cfg["model_id"] = None
-        if cfg is not config:
-            # Flat leftovers of these keys are ignored by the engine but would
-            # carry the template owner's raw ids along; drop them.
-            for key in ("tools", "sources", "folders", "model_id"):
-                config.pop(key, None)
-        return config
-
-    return transform
 
 
 @agents_ns.route("/adopt_agent")

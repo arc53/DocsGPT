@@ -103,6 +103,7 @@ from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsR
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.workspaces.context import PERSONAL, Workspace, WorkspaceError, require_workspace_role
 from docsgpt.workspaces.locks import lock_owner_items
+from docsgpt.workspaces.node_refs import NodeRetention, adoption_retention, node_transform
 from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_LOCKED, may_take_outside, team_policy
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 from docsgpt.workspaces.roles import from_stored_role, role_rank, team_role_for
@@ -1626,10 +1627,7 @@ class _Executor:
     def _strip_nodes(self) -> None:
         if not self.plan.workflows:
             return
-        # Lazy: the agents routes import much of the API.
-        from docsgpt.api.user.agents.routes import _strip_foreign_node_refs
-
-        transform = _strip_foreign_node_refs(self.conn, self.new)
+        transform = node_transform(self._node_retention())
         rows = self.conn.execute(
             text("SELECT id::text, node_type, config FROM workflow_nodes WHERE workflow_id = ANY(CAST(:w AS uuid[]))"),
             {"w": list(self.plan.workflows)},
@@ -1637,93 +1635,50 @@ class _Executor:
         for node_id, node_type, config in rows:
             if not isinstance(config, dict):
                 continue
-            prepared = self._remap_node_model(node_type, self._uuid_node_refs(node_type, copy.deepcopy(config)))
-            before = copy.deepcopy(prepared)
-            stripped = self._keep_shared(node_type, before, transform(node_type, prepared))
-            stripped = self._kept_node_sources(node_type, stripped)
+            stripped = transform(node_type, copy.deepcopy(config))
             if stripped != config:
                 self.conn.execute(
                     text("UPDATE workflow_nodes SET config = CAST(:c AS jsonb) WHERE id = CAST(:i AS uuid)"),
                     {"c": json.dumps(stripped), "i": node_id},
                 )
 
-    def _keep_shared(self, node_type: str, before: dict, after: dict) -> dict:
-        """Put back an agent node's refs the plan keeps through a share; the strip keeps only the new owner's.
+    def _node_retention(self) -> NodeRetention:
+        """What a moved workflow's agent nodes keep of the refs they name.
 
-        Args:
-            node_type: The node's type.
-            before: The node config before the strip.
-            after: The stripped config (changed in place).
-
-        Returns:
-            dict: ``after``, with each kept ref in its first place.
-        """
-        if node_type != "agent" or not self.plan.shared_refs:
-            return after
-        cfg_before = before.get("config") if isinstance(before.get("config"), dict) else before
-        cfg_after = after.get("config") if isinstance(after.get("config"), dict) else after
-        for key, kind in (("tools", "tool"), ("sources", "source")):
-            values = cfg_before.get(key)
-            values = values if isinstance(values, list) else [values] if values else []
-            if not any((kind, str(v).lower()) in self.plan.shared_refs for v in values if v):
-                continue
-            stayed = {str(v) for v in cfg_after.get(key) or []}
-            cfg_after[key] = [
-                str(v) for v in values if v and (str(v) in stayed or (kind, str(v).lower()) in self.plan.shared_refs)
-            ]
-        return after
-
-    def _kept_node_sources(self, node_type: str, config: dict) -> dict:
-        """Keep only the agent node's sources the agent itself may keep.
-
-        The adoption strip keeps any source the new owner can open, and a team admin moving out can still open
-        the team's (a connector-synced one, one another team shares with it): the keyed personal workflow
-        would go on reading them. A node keeps what the new owner owns, or what the plan keeps through a share.
-
-        Args:
-            node_type: The node's type.
-            config: The stripped node config (changed in place).
+        What the new owner may use, as an adopted template's nodes keep, and what the plan keeps because
+        another team shares it with the target team. A source must also be one the agent itself may keep:
+        the new owner may open more (a team admin moving out still opens the team's connector-synced sources
+        and those another team shares with it), and the moved workflow would go on reading them. A tool or
+        source named by its Mongo id is checked by the uuid the plan resolved, and a custom model by the new
+        owner's match the plan listed; any other custom model is removed.
 
         Returns:
-            dict: ``config``.
+            The policy.
         """
-        if node_type != "agent":
-            return config
-        nested = config.get("config")
-        cfg = nested if isinstance(nested, dict) else config
-        if isinstance(cfg.get("sources"), list):
-            cfg["sources"] = [s for s in cfg["sources"] if s and self._kept("source", s)]
-        return config
+        adopted = adoption_retention(self.conn, self.new)
+        shared = self.plan.shared_refs
 
-    def _uuid_node_refs(self, node_type: str, config: dict) -> dict:
-        """Rewrite an agent node's tool and source refs that name an item by its Mongo id to the item's uuid.
+        def keep_tool(tool_id: str) -> bool:
+            return ("tool", tool_id.lower()) in shared or adopted.keep_tool(tool_id)
 
-        The strip that follows keeps only uuids, so an old id the plan resolved would otherwise be dropped.
-        """
-        if node_type != "agent":
-            return config
-        nested = config.get("config")
-        cfg = nested if isinstance(nested, dict) else config
-        for key, legacy in (("tools", self.plan.legacy_tools), ("sources", self.plan.legacy_sources)):
-            values = cfg.get(key)
-            if not values or not legacy:
-                continue
-            values = values if isinstance(values, list) else [values]
-            cfg[key] = [legacy.get(str(v).lower(), v) if v else v for v in values]
-        return config
+        def keep_source(source_id: str) -> bool:
+            if ("source", source_id.lower()) in shared:
+                return True
+            return adopted.keep_source(source_id) and self._kept("source", source_id)
 
-    def _remap_node_model(self, node_type: str, config: dict) -> dict:
-        """Point an agent node at the new owner's match of its custom model, as the plan listed.
+        def resolve(kind: str, value: Any) -> Any:
+            if kind == "model":
+                return self._remapped(value)
+            legacy = self.plan.legacy_tools if kind == "tool" else self.plan.legacy_sources
+            return legacy.get(str(value).lower(), value)
 
-        The strip that follows removes any custom model the new owner doesn't own.
-        """
-        if node_type != "agent" or not self.plan.model_remaps:
-            return config
-        nested = config.get("config")
-        cfg = nested if isinstance(nested, dict) else config
-        if cfg.get("model_id"):
-            cfg["model_id"] = self._remapped(cfg["model_id"])
-        return config
+        return NodeRetention(
+            keep_tool=keep_tool,
+            keep_source=keep_source,
+            keep_folders=adopted.keep_folders,
+            keep_model=adopted.keep_model,
+            resolve=resolve,
+        )
 
     def _refile(self, in_moving_folder: set) -> None:
         target = self.plan.target_folder_id

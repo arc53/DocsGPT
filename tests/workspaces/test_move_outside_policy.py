@@ -187,6 +187,29 @@ class TestItemsSharedIntoTheTargetTeam:
         assert config["config"]["sources"] == [items["source"]]
         assert config["config"]["tools"] == [items["tool"]]
 
+    def test_a_workflow_node_keeps_shared_and_moved_refs_in_place_and_drops_the_rest(self, pg_conn):
+        ops, dev, dev_p, items = self._world(pg_conn)
+        own_tool, own_src = tool(pg_conn, "eddie"), source(pg_conn, "eddie", "Mine")
+        olgas_tool = tool(pg_conn, "olga")
+        unshared = source(pg_conn, team(pg_conn, owner="olga", name="Far", members=(("eddie", "team_editor"),))[1])
+        wid = workflow(pg_conn, "eddie", nodes=[{
+            "tools": [olgas_tool],
+            "config": {
+                "tools": [olgas_tool, items["tool"], own_tool],
+                "sources": [unshared, items["source"], own_src],
+                "model_id": "gpt-4o",
+            },
+        }])
+        ag = agent(pg_conn, "eddie", "Flow", agent_type="workflow", workflow_id=wid)
+        apply(pg_conn, "eddie", body(dev, [("agent", ag)]))
+        config = pg_conn.execute(
+            text("SELECT config FROM workflow_nodes WHERE workflow_id = CAST(:w AS uuid)"), {"w": wid}
+        ).scalar()
+        assert config["config"] == {
+            "tools": [items["tool"], own_tool], "sources": [items["source"], own_src], "model_id": "gpt-4o",
+        }
+        assert "tools" not in config
+
     def test_a_share_paused_by_a_lock_still_keeps_the_ref(self, pg_conn):
         ops, dev, dev_p, items = self._world(pg_conn)
         ag = agent(pg_conn, "eddie", "Helper", source_id=items["source"])
