@@ -22,7 +22,7 @@ import logging
 import re
 import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
-from urllib.parse import SplitResult, urljoin, urlparse, urlsplit
+from urllib.parse import SplitResult, unquote, urljoin, urlparse, urlsplit
 
 import requests
 import tldextract
@@ -148,6 +148,7 @@ class SiteScope:
         path_prefix: str = "",
         include_subdomains: bool = False,
         skip: Iterable[str] = (),
+        exclude_private_paths: bool = False,
     ):
         """
         Args:
@@ -156,6 +157,7 @@ class SiteScope:
             path_prefix: Only paths under this one (``/docs/``); empty for all.
             include_subdomains: Also accept other hosts of the same registered
                 domain (``docs.example.co.uk`` for ``example.co.uk``).
+            exclude_private_paths: Refuse common account, checkout and administration path segments.
             skip: Exact page URLs, or sections written ``https://host/path/*``.
                 A page rule ignores ``www.`` as ``page_key`` does; a section
                 matches its host exactly (see ``_in_section``).
@@ -169,6 +171,7 @@ class SiteScope:
             self.port = None
         self.domain = _registered_domain(self.host)
         self.include_subdomains = include_subdomains
+        self.exclude_private_paths = exclude_private_paths
         # Spelled as page keys spell paths, so ``/Café`` and ``/Caf%C3%A9`` are one prefix.
         prefix = normalized_path("/" + (path_prefix or "").strip().strip("/")).strip("/")
         self.path_prefix = "/" + prefix if prefix else ""
@@ -211,6 +214,12 @@ class SiteScope:
                 return False
             if is_ambiguous_path(parsed.path):
                 return False
+            if self.exclude_private_paths:
+                segments = set(unquote(parsed.path).lower().split("/"))
+                blocked = {"admin", "wp-admin", "wp-login.php", "account", "my-account", "login", "logout",
+                           "register", "cart", "checkout", "api", "dashboard", "private", "auth"}
+                if segments & blocked or parsed.query:
+                    return False
             if self.path_prefix:
                 path = normalized_path(parsed.path) or "/"
                 if path.rstrip("/") != self.path_prefix and not path.startswith(self.path_prefix + "/"):
@@ -578,7 +587,10 @@ def parse_website_config(
             raise WebsiteConfigError(
                 f"A skip rule is longer than {MAX_URL_LENGTH} characters", "url_too_long", {"max_length": MAX_URL_LENGTH},
             )
-    return {"entries": entries, "skip": skip, "keep_links": bool(raw.get("keep_links"))}
+    result = {"entries": entries, "skip": skip, "keep_links": bool(raw.get("keep_links"))}
+    if raw.get("exclude_private_paths") is True:
+        result["exclude_private_paths"] = True
+    return result
 
 
 class WebsiteLoader(BaseRemote):
@@ -651,7 +663,10 @@ class WebsiteLoader(BaseRemote):
                         "url": entry["url"], "found_with": None, "pages": 0, "limit_reached": True,
                     })
                     continue
-                docs, report = self._load_site(entry, config["skip"], keep_links, pages_left, fetches)
+                docs, report = self._load_site(
+                    entry, config["skip"], keep_links, pages_left, fetches,
+                    exclude_private_paths=config.get("exclude_private_paths", False),
+                )
                 site_reports.append(report)
             added = 0
             for doc in docs:
@@ -691,6 +706,7 @@ class WebsiteLoader(BaseRemote):
     @staticmethod
     def _load_site(
         entry: Dict[str, Any], skip: List[str], keep_links: bool, budget: int, fetches: FetchBudget,
+        exclude_private_paths: bool = False,
     ) -> Tuple[List[Document], Dict[str, Any]]:
         """Load one whole-site entry through its sitemap, else by following links.
 
@@ -700,6 +716,7 @@ class WebsiteLoader(BaseRemote):
             keep_links: Keep the URL of links inside sentences.
             budget: The most pages the source has left; lowers the entry's limit.
             fetches: The load's fetch budget, charged for discovery and pages.
+            exclude_private_paths: Exclude account, administrative and checkout paths.
 
         Returns:
             The pages, and a report: the start URL, ``found_with`` (``sitemap``,
@@ -707,7 +724,10 @@ class WebsiteLoader(BaseRemote):
         """
         url = entry["url"]
         limit = max(1, min(_clamp_pages(entry.get("max_pages")), budget))
-        scope = SiteScope(url, entry.get("path_prefix", ""), entry.get("include_subdomains", False), skip)
+        scope = SiteScope(
+            url, entry.get("path_prefix", ""), entry.get("include_subdomains", False), skip,
+            exclude_private_paths=exclude_private_paths,
+        )
         discovery = entry.get("discovery", "auto")
         pasted_sitemap = is_sitemap_url(url)
 

@@ -660,6 +660,14 @@ class TestFetchPageRedirects:
         assert response.url == "https://www.x.io/docs/"
         assert hops.calls == ["https://x.io/docs", "https://x.io/docs/", "https://www.x.io/docs/"]
 
+    def test_rejects_out_of_scope_redirect_before_fetching_destination(self):
+        """A public redirect must not fetch a different customer's site or a skipped path."""
+        hops = _Hops({"https://x.io/docs": (302, {"Location": "https://other.io/private"}, b"")})
+        with patch("docsgpt.parser.remote.page_content.pinned_fetch_bytes", hops):
+            with pytest.raises(RedirectError, match="approved crawl scope"):
+                fetch_page("https://x.io/docs", accept_redirect=lambda url: url.startswith("https://x.io/docs"))
+        assert hops.calls == ["https://x.io/docs"]
+
     def test_a_page_that_does_not_redirect_keeps_its_address(self):
         response, _ = self._fetch({"https://x.io/docs": self.PAGE})
 

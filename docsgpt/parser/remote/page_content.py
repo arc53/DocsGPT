@@ -15,7 +15,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Any, Dict, List, Optional, Sequence, Tuple, Union
 from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit, urlunsplit
 
 import idna
@@ -152,6 +152,7 @@ def fetch_page(
     timeout: float = 30.0,
     truncate: bool = True,
     budget: Optional["FetchBudget"] = None,
+    accept_redirect: Optional[Callable[[str], bool]] = None,
 ) -> requests.Response:
     """GET ``url`` through the SSRF-pinned fetcher, reading at most ``max_bytes``.
 
@@ -171,6 +172,7 @@ def fetch_page(
         timeout: Seconds per connect and read.
         truncate: Keep the first ``max_bytes`` of a larger body; ``False``
             raises ``ResponseTooLargeError`` instead.
+        accept_redirect: Optional crawl scope checked before requesting a redirect destination.
         budget: The load's fetch budget, charged one fetch per redirect hop
             (the caller has paid for the first request).
 
@@ -219,6 +221,8 @@ def fetch_page(
                 return response
         if hop == MAX_REDIRECTS:
             raise RedirectError(f"{url} took more than {MAX_REDIRECTS} redirects")
+        if accept_redirect is not None and not accept_redirect(target):
+            raise RedirectError("Redirect destination is outside the approved crawl scope")
         if has_userinfo(target):
             raise CredentialsInUrlError(f"{url} redirects to an address with credentials; not following it")
         if target in seen:

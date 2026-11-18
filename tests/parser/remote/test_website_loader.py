@@ -1633,3 +1633,12 @@ class TestDiscoveryGuard:
         # The pinned fetch refuses a private address itself: no DNS, no request.
         assert discover_sitemaps("http://127.0.0.1/") == []
         assert discover_sitemaps("http://169.254.169.254/") == []
+
+
+def test_pilot_scope_blocks_nested_private_paths_and_query_endpoints():
+    """Pilot ingestion excludes private areas before fetching even under locale prefixes."""
+    scope = SiteScope("https://example.com", exclude_private_paths=True)
+    assert scope.accepts("https://example.com/fa/products/notebook")
+    assert not scope.accepts("https://example.com/fa/account/orders")
+    assert not scope.accepts("https://example.com/en/%63heckout")
+    assert not scope.accepts("https://example.com/?action=login")

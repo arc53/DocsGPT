@@ -55,6 +55,7 @@ def _crawl(responses: dict, start="http://example.com/", limit=10, accept=None):
 
     def fetch(url: str, *_, **kwargs):
         fetched.append(url)
+        assert kwargs.pop("accept_redirect") == crawler._on_site
         assert kwargs == {"timeout": 30, "budget": None}
         if url not in responses:
             raise AssertionError(f"Unexpected request for URL: {url}")

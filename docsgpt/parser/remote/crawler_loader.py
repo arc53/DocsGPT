@@ -125,7 +125,9 @@ class CrawlerLoader(BaseRemote):
             try:
                 # Capped at the page size gate: the links come from the same
                 # bytes the document does.
-                response = fetch_page(current_url, timeout=30, budget=self.budget)
+                response = fetch_page(
+                    current_url, timeout=30, budget=self.budget, accept_redirect=self._on_site,
+                )
                 response.raise_for_status()
                 page_url = final_url(response, current_url)
                 keep = keep_seed if is_seed else True
