@@ -2361,9 +2361,11 @@ def _items_before_import(conn, owner: str, target: dict) -> Optional[tuple[dict,
     agent = AgentsRepository(conn).get(str(target["agent_id"]), owner)
     if agent is None:
         return None
-    from docsgpt.api.user.agents.graph_checks import agent_team_connection_tools, agent_team_refs
+    from docsgpt.api.user.agents.graph_checks import WorkflowReads, agent_team_connection_tools, agent_team_refs
 
-    return agent, agent_team_refs(conn, agent), {t["id"] for t in agent_team_connection_tools(conn, agent)}
+    reads = WorkflowReads(conn)
+    refs = agent_team_refs(conn, agent, reads=reads)
+    return agent, refs, {t["id"] for t in agent_team_connection_tools(conn, agent, reads=reads)}
 
 
 def _refuse_import_over(conn, before: Optional[tuple[dict, dict, set]], fields: dict, actor: str) -> None:
@@ -2385,6 +2387,7 @@ def _refuse_import_over(conn, before: Optional[tuple[dict, dict, set]], fields: 
     if before is None:
         return
     from docsgpt.api.user.agents.graph_checks import (
+        WorkflowReads,
         added_team_refs,
         agent_team_connection_tools,
         agent_team_refs,
@@ -2394,10 +2397,12 @@ def _refuse_import_over(conn, before: Optional[tuple[dict, dict, set]], fields: 
 
     agent, had_refs, had_tools = before
     after = {**agent, **fields}
-    added = added_team_refs(had_refs, agent_team_refs(conn, after))
+    # Read once the graph is written, so not shared with the reads made before it.
+    reads = WorkflowReads(conn)
+    added = added_team_refs(had_refs, agent_team_refs(conn, after, reads=reads))
     refusal = team_items_shared_outside_refusal(conn, [agent], added, actor)
     if refusal is None:
-        added_tools = [t for t in agent_team_connection_tools(conn, after) if t["id"] not in had_tools]
+        added_tools = [t for t in agent_team_connection_tools(conn, after, reads=reads) if t["id"] not in had_tools]
         refusal = team_connection_added_refusal(conn, [agent], added_tools)
     if refusal is not None:
         body, status = refusal

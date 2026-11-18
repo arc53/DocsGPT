@@ -96,6 +96,7 @@ from docsgpt.api.user.folder_knowledge import (
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.api.user.received_shares import in_request_workspace, is_received, received_into
 from docsgpt.api.user.agents.graph_checks import (
+    WorkflowReads,
     agent_borrowed_refs as _agent_borrowed_refs,
     agent_team_connection_tools as _agent_team_connection_tools,
     graph_validation_failed as _graph_validation_failed,
@@ -1428,9 +1429,10 @@ class CreateAgent(Resource):
                 # owner's own chats, keyless.
                 key_view = {**build_data, "user_id": owner_id}
                 key_nodes = graph_save.graph["nodes"] if graph_save is not None else None
+                key_reads = WorkflowReads(conn)
                 if key and (
-                    _agent_borrowed_refs(conn, key_view, nodes=key_nodes)
-                    or _agent_team_connection_tools(conn, key_view, nodes=key_nodes)
+                    _agent_borrowed_refs(conn, key_view, nodes=key_nodes, reads=key_reads)
+                    or _agent_team_connection_tools(conn, key_view, nodes=key_nodes, reads=key_reads)
                 ):
                     key = ""
                     build_data["key"] = key
@@ -1997,16 +1999,20 @@ class UpdateAgent(Resource):
                     ):
                         newly_generated_key = str(uuid.uuid4())
                         update_fields["key"] = newly_generated_key
+                # Both checks below read the agent's workflow and stored graph as they are before the save
+                # writes it, so they share those reads.
+                save_reads = WorkflowReads(conn)
                 # A team's items the save adds must reach everyone the agent is shared with (checked
                 # below); a share made at the same time takes the same lock, so one sees the other.
                 team_added = _team_refs_added_by_save(
                     conn, existing_agent, update_fields, inline_graph["nodes"] if inline_graph is not None else None,
+                    reads=save_reads,
                 )
                 # A tool on the team's account stays inside the team (checked below, under the same lock).
                 connection_tools, connection_tools_added = _team_connection_tools_by_save(
                     conn, existing_agent, update_fields,
                     inline_graph["nodes"] if inline_graph is not None else None,
-                    with_current=bool(newly_generated_key),
+                    with_current=bool(newly_generated_key), reads=save_reads,
                 )
                 if newly_generated_key or has_outside_access(existing_agent) or team_added or connection_tools_added:
                     # The borrowed-item checks below run wholly before or after a move of the owner's

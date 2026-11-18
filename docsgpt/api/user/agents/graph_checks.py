@@ -164,7 +164,67 @@ def refuse_unfinished_graph(conn, agent: dict) -> Optional[object]:
     return graph_validation_failed(errors) if errors else None
 
 
-def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list:
+class WorkflowReads:
+    """The workflow rows and stored graphs that several checks of one operation read, each read once.
+
+    The agent checks below each read a workflow agent's workflow and its stored graph. One operation that runs
+    several of them at the same point passes one of these to each, so the reads happen once. Build one per point:
+    the graph a save or import writes changes the stored graph, so a check after the write takes a new one.
+    Keyed by workflow id and owner, as the reads are.
+
+    Args:
+        conn: Open database connection.
+    """
+
+    def __init__(self, conn) -> None:
+        self._conn = conn
+        self._workflows: dict[tuple[str, Optional[str]], Optional[dict]] = {}
+        self._nodes: dict[tuple[str, Optional[str]], list] = {}
+
+    @staticmethod
+    def _key(agent: dict) -> Optional[tuple[str, Optional[str]]]:
+        return (str(agent["workflow_id"]), agent.get("user_id")) if agent.get("workflow_id") else None
+
+    def workflow(self, agent: dict) -> Optional[dict]:
+        """The agent's workflow row as its owner has it, or None.
+
+        Args:
+            agent: The agent row, or the row as a save would leave it.
+
+        Returns:
+            The workflow row, or None when the agent has none or the owner doesn't have it.
+        """
+        key = self._key(agent)
+        if key is None:
+            return None
+        if key not in self._workflows:
+            self._workflows[key] = WorkflowsRepository(self._conn).get(key[0], key[1])
+        return self._workflows[key]
+
+    def nodes(self, agent: dict, nodes: Optional[list] = None) -> list:
+        """``nodes`` when given, else the agent's stored graph nodes in builder shape (empty without a workflow).
+
+        Args:
+            agent: The agent row, or the row as a save would leave it.
+            nodes: The nodes a save brings, if any.
+
+        Returns:
+            list: The nodes.
+        """
+        if nodes is not None:
+            return nodes
+        workflow = self.workflow(agent)
+        if workflow is None:
+            return []
+        key = self._key(agent)
+        if key not in self._nodes:
+            self._nodes[key] = stored_graph(self._conn, workflow)[0]
+        return self._nodes[key]
+
+
+def agent_borrowed_refs(
+    conn, agent: dict, nodes: Optional[list] = None, *, reads: Optional[WorkflowReads] = None,
+) -> list:
     """The tools and sources an agent uses that its owner reaches only through a grant, and another team's prompt.
 
     Its own tools and sources, the sources of its knowledge folders, and for
@@ -180,6 +240,7 @@ def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list
             and the ref fields; ``id`` once it exists).
         nodes: A workflow agent's nodes in builder shape, when the save
             brings them; else its stored graph is read.
+        reads: The operation's reads of workflows, shared with its other checks; else a new one.
 
     Returns:
         list: The borrowed ``(type, id)`` pairs.
@@ -201,9 +262,9 @@ def agent_borrowed_refs(conn, agent: dict, nodes: Optional[list] = None) -> list
             found.append(("prompt", prompt_id))
     if agent.get("agent_type") != "workflow":
         return found
-    workflow = WorkflowsRepository(conn).get(str(agent["workflow_id"]), owner) if agent.get("workflow_id") else None
-    if nodes is None:
-        nodes = stored_graph(conn, workflow)[0] if workflow else []
+    reads = reads or WorkflowReads(conn)
+    workflow = reads.workflow(agent)
+    nodes = reads.nodes(agent, nodes)
     for ref in borrowed_refs(
         conn, owner, _node_refs(nodes), _node_folder_refs(nodes),
         holder_type="workflow" if workflow else None, holder=workflow,
@@ -224,10 +285,11 @@ def refuse_borrowed_outside_access(conn, agent: dict, user: str) -> Optional[obj
     Returns:
         The error response, or None when the agent may get one.
     """
-    tools = agent_team_connection_tools(conn, agent)
+    reads = WorkflowReads(conn)
+    tools = agent_team_connection_tools(conn, agent, reads=reads)
     if tools:
         return make_response(jsonify(team_connection_outside_body(tools)), 409)
-    borrowed = agent_borrowed_refs(conn, agent)
+    borrowed = agent_borrowed_refs(conn, agent, reads=reads)
     if not borrowed:
         return None
     body, status = borrowed_refusal(conn, borrowed, user, agent)
@@ -282,25 +344,23 @@ def team_connection_tools(conn, tool_ids) -> list[dict]:
     return [found[tid] for tid in ids if tid in found]
 
 
-def agent_team_connection_tools(conn, agent: dict, nodes: Optional[list] = None) -> list[dict]:
+def agent_team_connection_tools(
+    conn, agent: dict, nodes: Optional[list] = None, *, reads: Optional[WorkflowReads] = None,
+) -> list[dict]:
     """The tools on a team's account that an agent uses: its own, and a workflow agent's node tools.
 
     Args:
         conn: Open database connection.
         agent: The agent row, or the row as a save would leave it.
         nodes: A workflow agent's nodes in builder shape, when the save brings them; else its stored graph.
+        reads: The operation's reads of workflows, shared with its other checks; else a new one.
 
     Returns:
         list[dict]: See :func:`team_connection_tools`.
     """
     tool_ids = [rid for kind, rid in agent_refs(agent) if kind == "tool"]
     if agent.get("agent_type") == "workflow":
-        if nodes is None:
-            owner = agent.get("user_id")
-            workflow = (
-                WorkflowsRepository(conn).get(str(agent["workflow_id"]), owner) if agent.get("workflow_id") else None
-            )
-            nodes = stored_graph(conn, workflow)[0] if workflow else []
+        nodes = (reads or WorkflowReads(conn)).nodes(agent, nodes)
         tool_ids += [rid for kind, rid in _node_refs(nodes) if kind == "tool"]
     return team_connection_tools(conn, tool_ids)
 
@@ -355,6 +415,7 @@ def reaches_outside_team(conn, agents: list[dict]) -> bool:
 
 def team_connection_tools_by_save(
     conn, agent: dict, fields: dict, nodes: Optional[list] = None, *, with_current: bool = False,
+    reads: Optional[WorkflowReads] = None,
 ) -> tuple[list[dict], list[dict]]:
     """The tools on a team's account an agent uses after a save, and those the save adds.
 
@@ -364,6 +425,7 @@ def team_connection_tools_by_save(
         fields: The columns the save writes.
         nodes: The workflow nodes the save brings (an inline graph), if any.
         with_current: Read what the agent uses even when the save changes none of its items.
+        reads: The save's reads of workflows before it writes, shared with its other checks; else a new one.
 
     Returns:
         ``(after, added)``; both empty when the save changes no items and ``with_current`` is off.
@@ -371,11 +433,12 @@ def team_connection_tools_by_save(
     touched = nodes is not None or any(f in fields for f in _REF_FIELDS)
     if not touched and not with_current:
         return [], []
-    before = agent_team_connection_tools(conn, agent)
+    reads = reads or WorkflowReads(conn)
+    before = agent_team_connection_tools(conn, agent, reads=reads)
     if not touched:
         return before, []
     after = agent_team_connection_tools(
-        conn, {**agent, **{f: fields[f] for f in _REF_FIELDS if f in fields}}, nodes=nodes,
+        conn, {**agent, **{f: fields[f] for f in _REF_FIELDS if f in fields}}, nodes=nodes, reads=reads,
     )
     had = {t["id"] for t in before}
     return after, [t for t in after if t["id"] not in had]
@@ -499,7 +562,9 @@ def workflow_team_refs(conn, workflow: Optional[dict], owner_id: Optional[str], 
     return _team_owned(conn, refs, owner_id)
 
 
-def agent_team_refs(conn, agent: dict, nodes: Optional[list] = None) -> TeamRefs:
+def agent_team_refs(
+    conn, agent: dict, nodes: Optional[list] = None, *, reads: Optional[WorkflowReads] = None,
+) -> TeamRefs:
     """The items of teams other than the agent's owner that the agent uses, by team.
 
     Its sources, tools and prompt, its knowledge folders and the sources they
@@ -512,6 +577,7 @@ def agent_team_refs(conn, agent: dict, nodes: Optional[list] = None) -> TeamRefs
             and the ref fields; ``id`` once it exists).
         nodes: A workflow agent's nodes in builder shape, when the save
             brings them; else its stored graph is read.
+        reads: The operation's reads of workflows, shared with its other checks; else a new one.
 
     Returns:
         TeamRefs: ``{team_id: [(type, id), ...]}``, ids lowercased, each once.
@@ -523,9 +589,9 @@ def agent_team_refs(conn, agent: dict, nodes: Optional[list] = None) -> TeamRefs
     found = _team_owned(conn, refs, owner)
     if agent.get("agent_type") != "workflow":
         return found
-    workflow = WorkflowsRepository(conn).get(str(agent["workflow_id"]), owner) if agent.get("workflow_id") else None
-    if nodes is None:
-        nodes = stored_graph(conn, workflow)[0] if workflow else []
+    reads = reads or WorkflowReads(conn)
+    workflow = reads.workflow(agent)
+    nodes = reads.nodes(agent, nodes)
     return merge_team_refs(found, workflow_team_refs(conn, workflow, owner, nodes))
 
 
@@ -554,7 +620,9 @@ def added_team_refs(before: TeamRefs, after: TeamRefs) -> TeamRefs:
 _REF_FIELDS = ("source_id", "extra_source_ids", "prompt_id", "tools", "knowledge_folder_ids", "agent_type", "workflow_id")
 
 
-def team_refs_added_by_save(conn, agent: dict, fields: dict, nodes: Optional[list] = None) -> TeamRefs:
+def team_refs_added_by_save(
+    conn, agent: dict, fields: dict, nodes: Optional[list] = None, *, reads: Optional[WorkflowReads] = None,
+) -> TeamRefs:
     """The team items an agent save adds: those the agent uses after it and didn't before.
 
     Args:
@@ -562,14 +630,18 @@ def team_refs_added_by_save(conn, agent: dict, fields: dict, nodes: Optional[lis
         agent: The stored agent row.
         fields: The columns the save writes.
         nodes: The workflow nodes the save brings (an inline graph), if any.
+        reads: The save's reads of workflows before it writes, shared with its other checks; else a new one.
 
     Returns:
         TeamRefs: The added items by owning team; empty when the save adds none.
     """
     if nodes is None and not any(f in fields for f in _REF_FIELDS):
         return {}
+    reads = reads or WorkflowReads(conn)
     after = {**agent, **{f: fields[f] for f in _REF_FIELDS if f in fields}}
-    return added_team_refs(agent_team_refs(conn, agent), agent_team_refs(conn, after, nodes=nodes))
+    return added_team_refs(
+        agent_team_refs(conn, agent, reads=reads), agent_team_refs(conn, after, nodes=nodes, reads=reads),
+    )
 
 
 def _reaches(conn, item_team: str, ref: tuple[str, str], team_id: str, user_id: Optional[str]) -> bool:
