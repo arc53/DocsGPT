@@ -37,7 +37,7 @@ from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
 from docsgpt.events.keys import stream_key, topic_name
 from docsgpt.streaming.broadcast_channel import Topic
-from docsgpt.workspaces.principal import is_principal_id, route_owner_notice
+from docsgpt.workspaces.principal import ADMIN_NOTICE_KINDS, is_principal_id, route_owner_notice
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,9 @@ def notice_recipients(owner_id: str, actor_id: Optional[str], kind: str) -> list
     """
     from docsgpt.storage.db.session import db_readonly
 
+    if (not actor_id or is_principal_id(actor_id)) and kind not in ADMIN_NOTICE_KINDS:
+        # Nobody to check and no admins to tell: dropped without a read (a parse sends progress per percent).
+        return []
     try:
         with db_readonly() as conn:
             recipients = route_owner_notice(conn, owner_id, actor_id, kind)

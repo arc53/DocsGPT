@@ -1176,7 +1176,7 @@ class TestIngestPoisonEvent:
             published.append((user, event_type, payload, scope))
 
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
             side_effect=_fake_publish,
         ):
             _emit_ingest_poison_event(
@@ -1198,7 +1198,7 @@ class TestIngestPoisonEvent:
         from docsgpt.api.user.tasks import _emit_ingest_poison_event
 
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
         ) as mock_publish:
             _emit_ingest_poison_event("ingest", {"user": "u1"})
 
@@ -1210,7 +1210,7 @@ class TestIngestPoisonEvent:
 
         published = []
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
             side_effect=lambda *a, **k: published.append((a, k)),
         ):
             _emit_ingest_poison_event(

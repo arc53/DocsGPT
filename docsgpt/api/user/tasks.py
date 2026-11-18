@@ -122,29 +122,29 @@ def _emit_ingest_poison_event(task_name, bound):
 
     The guard returns before the worker runs, so the worker's own failed
     event never fires — without this the upload toast spins on "training".
-    It reaches whoever the worker's own event would: for a team's source, the
-    person who started it, never the team's principal.
+    It goes out the way the worker's own event would: for a team's source, to
+    the person who started it while they are still in the team, else to the
+    team's admins, and never to the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import _source_event_recipients, close_failed_ingest_progress
+    from docsgpt.worker import _publish_source_event, close_failed_ingest_progress
 
     close_failed_ingest_progress(source_id)
-    for recipient in _source_event_recipients(user, bound.get("actor_id"), "source.ingest.failed"):
-        publish_user_event(
-            recipient,
-            "source.ingest.failed",
-            {
-                "source_id": str(source_id),
-                "filename": bound.get("filename") or "",
-                "operation": _INGEST_POISON_OPERATION.get(task_name, "upload"),
-                "error": "Ingestion stopped after repeated failures.",
-            },
-            scope={"kind": "source", "id": str(source_id)},
-        )
+    _publish_source_event(
+        user,
+        bound.get("actor_id"),
+        "source.ingest.failed",
+        {
+            "source_id": str(source_id),
+            "filename": bound.get("filename") or "",
+            "operation": _INGEST_POISON_OPERATION.get(task_name, "upload"),
+            "error": "Ingestion stopped after repeated failures.",
+        },
+        scope={"kind": "source", "id": str(source_id)},
+    )
 
 
 # ``dont_autoretry_for=(DocumentParseError,)`` now comes from ``DURABLE_TASK``:
@@ -252,25 +252,25 @@ def _emit_graph_poison_event(task_name, bound):
 
     The guard returns before the worker runs, so the worker's own failed event
     never fires — without this the build UI spins forever. For a team's source
-    it reaches the person who started the build, never the team's principal.
+    it reaches the person who started the build while they are still in the
+    team, never the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import _source_event_recipients
+    from docsgpt.worker import _publish_source_event
 
-    for recipient in _source_event_recipients(user, bound.get("actor_id"), "graph.extract.failed"):
-        publish_user_event(
-            recipient,
-            "graph.extract.failed",
-            {
-                "source_id": str(source_id),
-                "error": "Graph extraction stopped after repeated failures.",
-            },
-            scope={"kind": "source", "id": str(source_id)},
-        )
+    _publish_source_event(
+        user,
+        bound.get("actor_id"),
+        "graph.extract.failed",
+        {
+            "source_id": str(source_id),
+            "error": "Graph extraction stopped after repeated failures.",
+        },
+        scope={"kind": "source", "id": str(source_id)},
+    )
 
 
 @celery.task(**DURABLE_TASK)

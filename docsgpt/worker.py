@@ -26,7 +26,7 @@ from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget
 from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
-from docsgpt.events.publisher import _notify_monitors, publish_user_event
+from docsgpt.events.publisher import publish_user_event
 from docsgpt.guardrails import injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
 from docsgpt.parser.connectors.base import ConnectorAuthError
@@ -81,7 +81,7 @@ from docsgpt.storage.db.repositories.wiki_pages import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.storage.storage_creator import StorageCreator
-from docsgpt.workspaces.principal import ADMIN_NOTICE_KINDS, is_principal_id, route_owner_notice, team_of_principal
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least, team_role_for
 from docsgpt.upload_limits import (
     enforce_parseable_attachment,
@@ -1619,48 +1619,36 @@ def _person(user_id: Optional[str]) -> Optional[str]:
     return str(user_id) if user_id and not is_principal_id(user_id) else None
 
 
-def _source_event_recipients(user: str, actor_id: Optional[str], event_type: str) -> List[str]:
-    """Who hears an event about a source.
+def _source_event_recipients(user: str, actor_id: Optional[str]) -> List[str]:
+    """Who hears an event about a person's source.
 
-    A person's source: the owner, and whoever asked for the change when that
-    is someone else (a team editor of a shared source). A team's source: its
-    principal's stream is read by nobody, so the event goes to the person who
-    started the work; with nobody, a failure reaches the team's admins and
-    anything else is dropped (``route_owner_notice``).
+    The owner, and whoever asked for the change when that is someone else (a
+    team editor of a shared source). A team's source is not handled here: its
+    events go through the publisher's routing (``_publish_source_event``).
 
     Args:
-        user: The source's owner.
+        user: The source's owner, a person.
         actor_id: The person who asked for the change, if any.
-        event_type: The event type; it decides whether admins hear a failure nobody asked for.
 
     Returns:
         The person ids to publish to, owner first.
     """
     actor = _person(actor_id)
-    if not is_principal_id(user):
-        return ([user] if user else []) + ([actor] if actor and actor != str(user) else [])
-    if actor:
-        return [actor]
-    if event_type not in ADMIN_NOTICE_KINDS:
-        # Progress and the like: dropped without a read (a parse sends one per percent).
-        return []
-    try:
-        with db_readonly() as conn:
-            return route_owner_notice(conn, user, None, event_type)
-    except Exception:  # noqa: BLE001 - a notice must never fail the job
-        logging.warning("Could not find who hears %s for %s", event_type, user, exc_info=True)
-        return []
+    return ([user] if user else []) + ([actor] if actor and actor != str(user) else [])
 
 
 def _progress_recipients(user: str, actor_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     """``(user_id, actor_id)`` for the embedding pipeline's progress events.
 
-    The pipeline sends to its ``user_id`` and to a different ``actor_id``; for
-    a team's source that is the person who started the ingest, or nobody.
+    The pipeline sends to its ``user_id`` and to a different ``actor_id``. A
+    team's source with someone who started the ingest is published once to its
+    principal, naming them: the publisher sends it on to them only while they
+    are still in the team. With nobody, progress goes nowhere.
     """
     if not is_principal_id(user):
         return user, actor_id
-    return _person(actor_id), None
+    actor = _person(actor_id)
+    return (user, actor) if actor else (None, None)
 
 
 def _mark_ingest_running(user: str, actor_id: Optional[str], queued: Dict[str, Any]) -> None:
@@ -1805,10 +1793,11 @@ def _publish_source_event(
 
     A team editor changes a source they don't own: the job runs as the owner,
     and without a copy of its events the editor's view would never see it end.
-    For a team's source the person who asked hears it instead of the team's
-    principal (``_source_event_recipients``), and the ingest monitors hear it
-    once under the principal: they match a team's source by its owner, and a
-    person's copy wakes none, so without that no member's monitor would fire.
+    A team's source is published once to its principal, naming the person who
+    asked: the publisher sends it to them while they are still in the team
+    (someone removed mid-ingest hears nothing more; a failure then reaches the
+    team's admins), and wakes the ingest monitors once under the principal.
+    They match a team's source by its owner, and a person's copy wakes none.
 
     Args:
         user: The source's owner.
@@ -1820,9 +1809,11 @@ def _publish_source_event(
     if event_type == "source.ingest.queued":
         payload = _with_workspace(user, payload)
     if is_principal_id(user):
-        # Even when nobody is told (a scheduled sync's success): the monitors still watch the source.
-        _notify_monitors(user, event_type, payload)
-    for recipient in _source_event_recipients(user, actor_id, event_type):
+        # The publisher wakes the monitors once under the principal (even when nobody is told, as for a
+        # scheduled sync's success) and checks, event by event, that whoever started the work is still in the team.
+        publish_user_event(user, event_type, payload, actor_id=_person(actor_id), **kwargs)
+        return
+    for recipient in _source_event_recipients(user, actor_id):
         publish_user_event(recipient, event_type, payload, **kwargs)
 
 

@@ -51,6 +51,18 @@ class TestEventsReachThePerson:
         assert published.recipients("source.ingest.failed") == ["eddie"]
         assert principal not in published.users
 
+    def test_someone_removed_before_their_reingest_ends_hears_nothing(
+        self, pg_conn, patch_worker_db, task_self, published,
+    ):
+        tid, principal = _team(pg_conn)
+        src = SourcesRepository(pg_conn).create("Docs", user_id=principal, type="website")
+        TeamMembersRepository(pg_conn).remove_member(tid, "eddie")
+
+        worker.reingest_source_worker(task_self, str(src["id"]), principal, actor_id="eddie")
+
+        assert "eddie" not in published.users
+        assert published.recipients("source.ingest.failed") == ["adam", "alice"]
+
     def test_a_failure_nobody_asked_for_reaches_the_teams_admins(
         self, pg_conn, patch_worker_db, task_self, published,
     ):

@@ -256,7 +256,6 @@ class TestSourceEventsWakeIngestMonitors:
         calls = []
         # The redis fixture silences the hook; put the real one back and record what reaches the monitors.
         monkeypatch.setattr(publisher, "_notify_monitors", _REAL_NOTIFY_MONITORS)
-        monkeypatch.setattr(worker, "_notify_monitors", _REAL_NOTIFY_MONITORS)
         monkeypatch.setattr(tick, "on_ingest_event", lambda user_id, event_type, payload: calls.append(user_id))
         monkeypatch.setattr(worker, "db_readonly", db_readonly_of(db))
         return calls
@@ -288,3 +287,108 @@ class TestSourceEventsWakeIngestMonitors:
 
 
 _REAL_NOTIFY_MONITORS = publisher._notify_monitors
+
+
+class TestTeamSourceEventsReachOnlyMembers:
+    """A team source's events reach the person who started the work only while they are still in the team."""
+
+    @pytest.fixture
+    def heard(self, db, redis, monkeypatch):
+        from docsgpt import worker
+
+        calls = []
+        monkeypatch.setattr(publisher, "_notify_monitors", lambda user_id, *a: calls.append(user_id))
+        monkeypatch.setattr(worker, "db_readonly", db_readonly_of(db))
+        return calls
+
+    @pytest.mark.parametrize(
+        "event_type", ["source.ingest.queued", "source.ingest.progress", "source.ingest.completed"]
+    )
+    def test_someone_removed_during_the_ingest_hears_nothing(self, db, redis, heard, event_type):
+        from docsgpt.worker import _publish_source_event
+
+        tid, principal = _team(db)
+        TeamMembersRepository(db).remove_member(tid, "eddie")
+
+        _publish_source_event(principal, "eddie", event_type, {"source_id": "s"}, scope={"kind": "source", "id": "s"})
+
+        assert redis.streams == []
+
+    def test_a_failure_after_the_starter_was_removed_reaches_the_admins_not_them(self, db, redis, heard):
+        from docsgpt.worker import _publish_source_event
+
+        tid, principal = _team(db)
+        TeamMembersRepository(db).remove_member(tid, "eddie")
+
+        _publish_source_event(principal, "eddie", "source.ingest.failed", {"source_id": "s"})
+
+        assert _users(redis.streams) == ["adam", "alice"]
+
+    @pytest.mark.parametrize("event_type", ["source.ingest.completed", "source.ingest.failed"])
+    def test_a_current_member_still_hears_it_and_the_monitors_fire_once(self, db, redis, heard, event_type):
+        from docsgpt.worker import _publish_source_event
+
+        _, principal = _team(db)
+
+        _publish_source_event(principal, "eddie", event_type, {"source_id": "s"}, scope={"kind": "source", "id": "s"})
+
+        assert _users(redis.streams) == ["eddie"]
+        assert heard == [principal]
+
+    def test_embedding_progress_reaches_a_current_member_but_not_someone_removed(self, db, redis):
+        from docsgpt.worker import _progress_recipients
+
+        tid, principal = _team(db)
+        user_id, actor_id = _progress_recipients(principal, "eddie")
+        publisher.publish_user_event(user_id, "source.ingest.progress", {"current": 60}, actor_id=actor_id)
+        assert _users(redis.streams) == ["eddie"]
+
+        TeamMembersRepository(db).remove_member(tid, "eddie")
+        publisher.publish_user_event(user_id, "source.ingest.progress", {"current": 70}, actor_id=actor_id)
+        assert _users(redis.streams) == ["eddie"]
+
+    @pytest.mark.parametrize("task_name", ["ingest", "reingest_source_task"])
+    def test_a_poisoned_ingest_skips_someone_removed_and_tells_the_admins(self, db, redis, heard, task_name):
+        from docsgpt import worker
+        from docsgpt.api.user import tasks
+
+        tid, principal = _team(db)
+        TeamMembersRepository(db).remove_member(tid, "eddie")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(worker, "close_failed_ingest_progress", lambda *a, **k: None)
+            tasks._emit_ingest_poison_event(task_name, {"user": principal, "source_id": "s", "actor_id": "eddie"})
+
+        assert _users(redis.streams) == ["adam", "alice"]
+        assert heard == [principal]
+
+    def test_a_poisoned_graph_build_skips_someone_removed(self, db, redis, heard):
+        from docsgpt.api.user import tasks
+
+        tid, principal = _team(db)
+        TeamMembersRepository(db).remove_member(tid, "eddie")
+
+        tasks._emit_graph_poison_event("extract_graph", {"user": principal, "source_id": "s", "actor_id": "eddie"})
+
+        assert redis.streams == []
+
+    def test_a_poisoned_graph_build_still_tells_a_current_member(self, db, redis, heard):
+        from docsgpt.api.user import tasks
+
+        _, principal = _team(db)
+
+        tasks._emit_graph_poison_event("extract_graph", {"user": principal, "source_id": "s", "actor_id": "eddie"})
+
+        assert _users(redis.streams) == ["eddie"]
+
+    def test_progress_nobody_started_is_dropped_without_a_read(self, redis, monkeypatch):
+        from docsgpt.worker import _publish_source_event
+
+        def _no_db():
+            raise AssertionError("a progress event nobody started must not read the database")
+
+        monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", _no_db)
+
+        _publish_source_event(principal_id(uuid.uuid4()), None, "source.ingest.progress", {"source_id": "s"})
+
+        assert redis.streams == []

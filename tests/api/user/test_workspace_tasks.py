@@ -2,7 +2,8 @@
 
 A team's source runs as the team's principal, so its ingest slots are keyed
 by the person who started it (one busy member doesn't block the team), and a
-poisoned task's terminal event reaches that person, never the principal.
+poisoned task's terminal event goes through the publisher's team routing,
+naming that person (it reaches them while they are still in the team).
 """
 
 from __future__ import annotations
@@ -49,32 +50,34 @@ class TestSlotsKeyedByActor:
 
 
 class TestPoisonEventRouting:
-    def test_a_poisoned_team_ingest_tells_the_actor(self, monkeypatch):
+    def test_a_poisoned_team_ingest_is_routed_to_the_actor(self, monkeypatch):
         from docsgpt.api.user import tasks
 
         sent = []
         monkeypatch.setattr("docsgpt.worker.close_failed_ingest_progress", lambda *a, **k: None)
         monkeypatch.setattr(
-            "docsgpt.events.publisher.publish_user_event", lambda user, kind, payload, **kw: sent.append(user),
+            "docsgpt.worker.publish_user_event",
+            lambda user, kind, payload, **kw: sent.append((user, kw.get("actor_id"))),
         )
 
         tasks._emit_ingest_poison_event(
             "reingest_source_task", {"user": PRINCIPAL, "source_id": "s1", "actor_id": "eddie"},
         )
 
-        assert sent == ["eddie"]
+        assert sent == [(PRINCIPAL, "eddie")]
 
-    def test_a_poisoned_team_graph_build_tells_the_actor(self, monkeypatch):
+    def test_a_poisoned_team_graph_build_is_routed_to_the_actor(self, monkeypatch):
         from docsgpt.api.user import tasks
 
         sent = []
         monkeypatch.setattr(
-            "docsgpt.events.publisher.publish_user_event", lambda user, kind, payload, **kw: sent.append(user),
+            "docsgpt.worker.publish_user_event",
+            lambda user, kind, payload, **kw: sent.append((user, kw.get("actor_id"))),
         )
 
         tasks._emit_graph_poison_event("extract_graph", {"user": PRINCIPAL, "source_id": "s1", "actor_id": "eddie"})
 
-        assert sent == ["eddie"]
+        assert sent == [(PRINCIPAL, "eddie")]
 
     def test_a_poisoned_personal_ingest_still_tells_the_owner(self, monkeypatch):
         from docsgpt.api.user import tasks
@@ -82,12 +85,13 @@ class TestPoisonEventRouting:
         sent = []
         monkeypatch.setattr("docsgpt.worker.close_failed_ingest_progress", lambda *a, **k: None)
         monkeypatch.setattr(
-            "docsgpt.events.publisher.publish_user_event", lambda user, kind, payload, **kw: sent.append(user),
+            "docsgpt.worker.publish_user_event",
+            lambda user, kind, payload, **kw: sent.append((user, kw.get("actor_id"))),
         )
 
         tasks._emit_ingest_poison_event("ingest", {"user": "sam", "source_id": "s1"})
 
-        assert sent == ["sam"]
+        assert sent == [("sam", None)]
 
 
 class TestTaskSignatures:
