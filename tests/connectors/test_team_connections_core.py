@@ -92,6 +92,23 @@ def _team_row(conn, team_id, connected_by="adam", **kw):
     return _connection(conn, principal_id(team_id), connected_by, **kw)
 
 
+@contextmanager
+def _counting(conn):
+    """Collect every statement ``conn`` runs inside the block."""
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    event.listen(conn, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(conn, "before_cursor_execute", record)
+
+
 # ---------------------------------------------------------------------------
 # Who may do what
 # ---------------------------------------------------------------------------
@@ -363,6 +380,17 @@ class TestAccountUsable:
         assert service.read_secrets(ConnectorSessionsRepository(pg_conn).get(str(row["id"])))["tokens"] == {
             "access_token": "t"
         }
+
+    def test_a_pasted_key_checks_the_account_once(self, pg_conn, team):
+        row = _team_row(pg_conn, team, "adam", secrets={"credentials": {"api_key": "sk-12345678"}},
+                        auth_kind="api_key", provider="linear")
+        with _patch_db(pg_conn):
+            with _counting(pg_conn) as one_check:
+                assert service.ensure_account_usable(pg_conn, row) is None
+            with _counting(pg_conn) as read:
+                assert service.access_credentials(row) == {"api_key": "sk-12345678"}
+
+        assert one_check and len(read) == len(one_check)
 
     def test_a_personal_account_is_never_paused_here(self, pg_conn):
         row = _connection(pg_conn, "lena", secrets={"credentials": {"api_key": "sk-12345678"}}, auth_kind="api_key",

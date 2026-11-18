@@ -935,6 +935,15 @@ def get_credentials(row: dict) -> dict:
         ConnectionUnavailable: Disconnected, flagged, a paused team account, or undecryptable.
     """
     ensure_account_usable(None, row)
+    return _pasted_credentials(row)
+
+
+def _pasted_credentials(row: dict) -> dict:
+    """:func:`get_credentials` once the account is known to be usable.
+
+    Raises:
+        ConnectionUnavailable: Disconnected, flagged, or undecryptable.
+    """
     status = normalize_status(row)
     if status in (STATUS_DISCONNECTED, STATUS_RECONNECT):
         raise ConnectionUnavailable(f"Connection is {status}", connection_id=str(row["id"]), status=status)
@@ -963,7 +972,8 @@ def access_credentials(row: dict) -> dict:
         if status in (STATUS_DISCONNECTED, STATUS_RECONNECT):
             raise ConnectionUnavailable(f"Connection is {status}", connection_id=str(row["id"]), status=status)
         return {"access_token": get_valid_token_info(str(row["id"])).get("access_token")}
-    return get_credentials(row)
+    # The account was just checked: get_credentials would check it again.
+    return _pasted_credentials(row)
 
 
 def connection_parameters(row: Optional[dict]) -> dict:
