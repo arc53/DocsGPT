@@ -21,9 +21,11 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let container: HTMLDivElement;
 let root: Root;
 let latest: UseFolderTree;
+const seen: UseFolderTree['tree'][] = [];
 
 function Consumer() {
   latest = useFolderTree();
+  seen.push(latest.tree);
   return null;
 }
 
@@ -53,6 +55,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   getFolders.mockReset();
+  seen.length = 0;
   setRequestWorkspace(PERSONAL_WORKSPACE, 0);
 });
 
@@ -133,5 +136,21 @@ describe('useFolderTree', () => {
     const list = selectFolderTree(store.getState());
     expect(list.items.map((f) => f.id)).toEqual(['team']);
     expect(list.loaded).toBe(true);
+  });
+
+  it('builds the tree once for every screen that reads it', async () => {
+    getFolders.mockImplementation(() => Promise.resolve(answer(['b', 'a'])));
+    const store = makeStore();
+    await act(async () => {
+      root.render(
+        <Provider store={store}>
+          <Consumer />
+          <Consumer />
+        </Provider>,
+      );
+    });
+    const [first, second] = seen.slice(-2);
+    expect(first).toBe(second);
+    expect(first.children.get(null)?.map((f) => f.id)).toEqual(['a', 'b']);
   });
 });

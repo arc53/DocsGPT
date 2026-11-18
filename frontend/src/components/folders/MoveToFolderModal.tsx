@@ -41,9 +41,8 @@ import {
   folderRootLabel,
 } from './folderCopy';
 import FolderNameModal from './FolderNameModal';
-import { selectFolderTree } from './foldersSlice';
+import { selectFolderIndex, selectFolderTree } from './foldersSlice';
 import {
-  buildFolderTree,
   canCreateIn,
   childFolders,
   folderMoveCheck,
@@ -117,7 +116,7 @@ export default function MoveToFolderModal({
   const list = useSelector(selectFolderTree);
   const inTeam = useSelector(selectFoldersInTeam);
   const actions = useFolderActions(kind);
-  const tree = useMemo(() => buildFolderTree(list.items), [list.items]);
+  const tree = useSelector(selectFolderIndex);
 
   // The level open in the list (null: the top level).
   const [level, setLevel] = useState<string | null>(null);

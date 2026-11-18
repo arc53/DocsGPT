@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { selectToken } from '../../preferences/preferenceSlice';
@@ -6,9 +6,10 @@ import type { AppDispatch } from '../../store';
 import {
   type FolderListState,
   loadFolders,
+  selectFolderIndex,
   selectFolderTree,
 } from './foldersSlice';
-import { buildFolderTree, type FolderTree } from './folderTree';
+import type { FolderTree } from './folderTree';
 
 export type UseFolderTree = {
   /** The tree's folders and where its load stands. */
@@ -28,7 +29,7 @@ export function useFolderTree(): UseFolderTree {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const list = useSelector(selectFolderTree);
-  const tree = useMemo(() => buildFolderTree(list.items), [list.items]);
+  const tree = useSelector(selectFolderIndex);
   const reload = useCallback(
     () => void dispatch(loadFolders({ token, force: true })),
     [dispatch, token],

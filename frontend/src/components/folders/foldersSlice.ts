@@ -7,6 +7,7 @@ import {
 import userService from '../../api/services/userService';
 import { captureWorkspace } from '../../workspace/requestWorkspace';
 import { switchWorkspace } from '../../workspace/workspaceSlice';
+import { buildFolderTree, type FolderTree } from './folderTree';
 import type { Folder, ItemKind } from './types';
 
 /** The workspace's folder tree and where its load stands. */
@@ -48,6 +49,21 @@ const EMPTY = emptyList();
 /** The workspace's folder tree and its load state. */
 export const selectFolderTree = (state: RootLike): FolderListState =>
   state.folders?.tree ?? EMPTY;
+
+let indexed: { items: Folder[]; tree: FolderTree } | null = null;
+
+/**
+ * The folders as a tree (parents, children, trails), built once per list
+ * the server sent and shared by every page and picker that reads it. Keyed
+ * on the list itself rather than the whole state, so any change to the list
+ * rebuilds it and nothing else does.
+ */
+export const selectFolderIndex = (state: RootLike): FolderTree => {
+  const { items } = selectFolderTree(state);
+  if (indexed?.items !== items)
+    indexed = { items, tree: buildFolderTree(items) };
+  return indexed.tree;
+};
 
 /** What a load rejects with when the app switched workspace meanwhile. */
 const STALE = 'stale_workspace';

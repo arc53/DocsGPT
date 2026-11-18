@@ -62,7 +62,9 @@ export function buildFolderTree(folders: Folder[]): FolderTree {
   const children = new Map<string | null, Folder[]>();
   for (const folder of folders) {
     const parent = parentOf.get(folder.id) ?? null;
-    children.set(parent, [...(children.get(parent) ?? []), folder]);
+    const siblings = children.get(parent);
+    if (siblings) siblings.push(folder);
+    else children.set(parent, [folder]);
   }
   for (const [key, list] of children)
     children.set(key, sortFoldersByName(list));

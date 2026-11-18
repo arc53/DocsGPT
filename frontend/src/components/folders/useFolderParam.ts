@@ -4,8 +4,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
 
 import { showActionToast } from '../../notifications/actionToastSlice';
-import { selectFolderTree } from './foldersSlice';
-import { buildFolderTree, folderPath, type FolderTree } from './folderTree';
+import { selectFolderIndex, selectFolderTree } from './foldersSlice';
+import { folderPath, type FolderTree } from './folderTree';
 import type { Folder, ItemKind } from './types';
 
 /** The URL parameter that holds the open folder. */
@@ -40,7 +40,7 @@ export function useFolderParam(kind?: ItemKind): FolderParam {
   const dispatch = useDispatch();
   const [searchParams, setSearchParams] = useSearchParams();
   const list = useSelector(selectFolderTree);
-  const tree = useMemo(() => buildFolderTree(list.items), [list.items]);
+  const tree = useSelector(selectFolderIndex);
   const folderId = searchParams.get(FOLDER_PARAM) || null;
 
   const setFolder = useCallback(
