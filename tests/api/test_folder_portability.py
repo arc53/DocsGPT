@@ -233,3 +233,52 @@ class TestWorkflow:
         result = apply_import(pg_conn, IMPORTER, doc)
         created = AgentsRepository(pg_conn).get(result["agent_id"], IMPORTER)
         assert _node_folders(pg_conn, created["workflow_id"], IMPORTER) == [mine]
+
+
+class _CountedRows(list):
+    """Folder rows that count how often they are walked."""
+
+    walks = 0
+
+    def __iter__(self):
+        type(self).walks += 1
+        return super().__iter__()
+
+
+class TestFolderFinder:
+    def test_path_first_then_the_first_listed_folder_of_the_name(self, pg_conn):
+        from docsgpt.api.user.agents.portability import _FolderFinder
+
+        carriers = _folder(pg_conn, IMPORTER, "Carriers")
+        first_eu = _folder(pg_conn, IMPORTER, "EU", parent=carriers)
+        archive = _folder(pg_conn, IMPORTER, "Archive")
+        archived_eu = _folder(pg_conn, IMPORTER, "eu", parent=archive)
+        finder = _FolderFinder(pg_conn, IMPORTER)
+
+        assert finder.find({"path": [" archive", "EU "], "name": "EU"}) == archived_eu
+        assert finder.find({"name": "CARRIERS"}) == carriers
+        # The tree lists oldest first (rows made in one transaction tie on time and go by id).
+        listed = [str(f["id"]) for f in FoldersRepository(pg_conn).list_for_user(IMPORTER)]
+        first_of_name = min((first_eu, archived_eu), key=listed.index)
+        assert finder.find({"path": ["Nope"], "name": "eu"}) == first_of_name
+        assert finder.find({"path": ["Nope"]}) is None
+        assert finder.find({"name": " "}) is None
+        assert finder.path_names(archived_eu) == ["Archive", "eu"]
+
+    def test_matching_entries_walks_the_tree_once(self, pg_conn):
+        from unittest.mock import patch
+
+        from docsgpt.api.user.agents.portability import _FolderFinder
+
+        top = _folder(pg_conn, IMPORTER, "Carriers")
+        for name in ("EU", "US", "Asia"):
+            _folder(pg_conn, IMPORTER, name, parent=top)
+        rows = _CountedRows(FoldersRepository(pg_conn).list_for_user(IMPORTER))
+        with patch.object(FoldersRepository, "list_for_user", return_value=rows):
+            finder = _FolderFinder(pg_conn, IMPORTER)
+        built = _CountedRows.walks
+
+        for entry in ({"path": ["Carriers", "US"]}, {"name": "asia"}, {"path": ["x"], "name": "missing"}):
+            finder.find(entry)
+
+        assert _CountedRows.walks == built

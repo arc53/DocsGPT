@@ -1625,8 +1625,15 @@ class _FolderFinder:
         from docsgpt.api.user.folders.service import folder_paths
         from docsgpt.storage.db.repositories.folders import FoldersRepository
 
-        self._folders = FoldersRepository(conn).list_for_user(owner)
-        self._paths = folder_paths(self._folders)
+        folders = FoldersRepository(conn).list_for_user(owner)
+        self._paths = folder_paths(folders)
+        # Indexed once, oldest first, so each entry is one lookup and the first folder of a path or name wins.
+        self._by_path: dict[tuple, str] = {}
+        self._by_name: dict[str, str] = {}
+        for folder in folders:
+            fid = str(folder["id"])
+            self._by_path.setdefault(self._key(p["name"] for p in self._paths.get(fid, [])), fid)
+            self._by_name.setdefault(str(folder.get("name") or "").strip().casefold(), fid)
 
     @staticmethod
     def _key(names) -> tuple:
@@ -1640,18 +1647,13 @@ class _FolderFinder:
         """The id of the tree's folder an entry names, or None."""
         path = entry.get("path")
         if isinstance(path, list) and path:
-            wanted = self._key(path)
-            for folder in self._folders:
-                fid = str(folder["id"])
-                if self._key(p["name"] for p in self._paths.get(fid, [])) == wanted:
-                    return fid
+            match = self._by_path.get(self._key(path))
+            if match is not None:
+                return match
         name = str(entry.get("name") or "").strip().casefold()
         if not name:
             return None
-        for folder in self._folders:
-            if str(folder.get("name") or "").strip().casefold() == name:
-                return str(folder["id"])
-        return None
+        return self._by_name.get(name)
 
 
 class _FolderHandle(NamedTuple):
