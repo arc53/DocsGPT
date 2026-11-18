@@ -334,3 +334,31 @@ class TestSaveDuringAPublish:
         assert "key" not in payload
         with pg_engine.connect() as conn:
             assert _row(conn, aid)["key"] == first_key
+
+    def test_a_public_link_waiting_on_a_save_that_added_the_tool_is_refused(self, pg_engine):
+        from docsgpt.api.user.agents.sharing import ShareAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.workspaces.locks import lock_owner_items
+        from tests.workspaces.test_workspace_move_races import _call as _route_call
+        from tests.workspaces.test_workspace_move_races import _race, _routes_on
+
+        w, aid = self._world(pg_engine)
+        with pg_engine.begin() as conn:
+            AgentsRepository(conn).update(aid, w["principal"], {"status": "published"})
+
+        def save(conn) -> None:
+            lock_owner_items(conn, w["principal"])
+            AgentsRepository(conn).update(aid, w["principal"], {"tools": [w["tool"]]})
+
+        def share(_conn):
+            return _route_call(ShareAgent, "put", "/api/share_agent", ADMIN, json={"id": aid, "shared": True})
+
+        with _routes_on(pg_engine.begin):
+            out = _race(pg_engine, save, share)
+
+        assert "error" not in out, out
+        status, payload = out["result"]
+        assert status == 409, payload
+        assert payload["error"] == TEAM_CONNECTION_OUTSIDE
+        with pg_engine.connect() as conn:
+            assert not _row(conn, aid)["shared"]

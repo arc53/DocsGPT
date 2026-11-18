@@ -409,6 +409,12 @@ class ShareAgent(Resource):
                     if refusal is None and not (agent.get("shared") and agent.get("shared_token")):
                         # A move of the owner's items runs wholly before this check or after this link.
                         lock_owner_items(conn, owner_id)
+                        # Lock, then read again: a save that held the lock has committed the items it added.
+                        agent = repo.get_by_id(ra.resource_id)
+                        if not agent:
+                            return make_response(
+                                jsonify({"success": False, "message": "Agent not found"}), 404
+                            )
                         refusal = refuse_borrowed_outside_access(conn, agent, user)
                     if refusal is not None:
                         return refusal
