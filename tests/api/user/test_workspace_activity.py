@@ -180,3 +180,98 @@ class TestRoutes:
         team = _get(ListArtifacts, "/api/artifacts", "vera", tid).get_json()["artifacts"]
         assert [a["id"] for a in team] == [ids[ours]]
         assert _get(ListArtifacts, "/api/artifacts", "eve", tid).status_code == 404
+
+
+class TestWorkflowRunsListWhereTheyWereStarted:
+    """A workflow run lists in the workspace of the chat that started it, while its runner may read it.
+
+    A team's workflow agent shared into another team runs in that team's chats: its runs are that team's, as
+    the run-access check lets its members read them; a run that names no chat stays with the workflow's team.
+    """
+
+    def _setup(self, conn):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        owner, owner_principal = _team(conn)
+        workflow = str(WorkflowsRepository(conn).create(owner_principal, "flow")["id"])
+        agent = str(AgentsRepository(conn).create(
+            owner_principal, "Flow", "published", key=f"k-{uuid.uuid4()}", workflow_id=workflow,
+            agent_type="workflow",
+        )["id"])
+        receiving = str(TeamsRepository(conn).create("Sales", f"s-{uuid.uuid4().hex[:6]}", "sam")["id"])
+        TeamMembersRepository(conn).add_member(receiving, "sam", role="team_admin")
+        TeamMembersRepository(conn).add_member(receiving, "dana", role="team_viewer")
+        TeamItemSharesRepository(conn).share(owner, receiving, "agent", agent, "alice")
+        return owner, receiving, workflow, agent
+
+    def _chat_message(self, conn, user, team_id, *, running=False) -> str:
+        repo = ConversationsRepository(conn)
+        cid = str(repo.create(user, "Chat", team_id=team_id, visibility="listed")["id"])
+        status = "streaming" if running else "complete"
+        message = repo.reserve_message(
+            cid, prompt="q", placeholder_response="...", request_id=str(uuid.uuid4()), status=status,
+        )
+        return str(message["id"])
+
+    def _run(self, conn, workflow, agent, user, *, started_by=None, status="completed") -> str:
+        from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+
+        inputs = {"query": "q", "agent_id": agent}
+        if started_by:
+            inputs["started_by"] = started_by
+        ended = None if status == "running" else _now()
+        return str(WorkflowRunsRepository(conn).create(
+            workflow, user, status, inputs=inputs, started_at=_now() - timedelta(minutes=1), ended_at=ended,
+        )["id"])
+
+    @staticmethod
+    def _history(conn, user, team_id=None) -> list:
+        return [r["id"] for r in list_history(conn, user, team_id=team_id, kind="workflow")["runs"]]
+
+    def test_a_run_from_a_receiving_teams_chat_lists_in_that_team(self, pg_conn):
+        owner, receiving, workflow, agent = self._setup(pg_conn)
+        run = self._run(pg_conn, workflow, agent, "dana", started_by=self._chat_message(pg_conn, "dana", receiving))
+
+        assert self._history(pg_conn, "dana", receiving) == [run]
+        assert self._history(pg_conn, "dana") == []
+        assert self._history(pg_conn, "dana", owner) == []
+
+    def test_a_running_one_folds_into_its_chat_in_that_team(self, pg_conn):
+        _, receiving, workflow, agent = self._setup(pg_conn)
+        message = self._chat_message(pg_conn, "dana", receiving, running=True)
+        self._run(pg_conn, workflow, agent, "dana", started_by=message, status="running")
+
+        running = build_now(pg_conn, "dana", workspace=_ws(receiving))["running"]
+
+        assert [(r["kind"], r.get("workflow")) for r in running] == [("chat", True)]
+        assert build_now(pg_conn, "dana")["running"] == []
+
+    def test_it_leaves_the_team_when_the_share_is_revoked(self, pg_conn):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+
+        _, receiving, workflow, agent = self._setup(pg_conn)
+        message = self._chat_message(pg_conn, "dana", receiving, running=True)
+        self._run(pg_conn, workflow, agent, "dana", started_by=self._chat_message(pg_conn, "dana", receiving))
+        self._run(pg_conn, workflow, agent, "dana", started_by=message, status="running")
+        TeamItemSharesRepository(pg_conn).revoke(receiving, "agent", agent)
+
+        assert self._history(pg_conn, "dana", receiving) == []
+        running = build_now(pg_conn, "dana", workspace=_ws(receiving))["running"]
+        assert [r["kind"] for r in running] == ["chat"] and not running[0].get("workflow")
+
+    def test_the_owning_teams_own_runs_stay_in_it(self, pg_conn):
+        owner, _, workflow, agent = self._setup(pg_conn)
+        from_chat = self._run(pg_conn, workflow, agent, "eddie", started_by=self._chat_message(pg_conn, "eddie", owner))
+        unnamed = self._run(pg_conn, workflow, agent, "eddie")
+
+        assert sorted(self._history(pg_conn, "eddie", owner)) == sorted([from_chat, unnamed])
+        assert self._history(pg_conn, "eddie") == []
+
+    def test_someone_outside_both_teams_never_sees_it(self, pg_conn):
+        _, _, workflow, agent = self._setup(pg_conn)
+        # A public link's chat lives in the chatter's Personal; the run check refuses them, so Activity does too.
+        self._run(pg_conn, workflow, agent, "pat", started_by=self._chat_message(pg_conn, "pat", None))
+
+        assert self._history(pg_conn, "pat") == []
+        assert build_now(pg_conn, "pat")["running"] == []

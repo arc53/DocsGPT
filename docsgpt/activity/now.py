@@ -22,6 +22,7 @@ from docsgpt.activity.common import (
     owner_team_sql,
     query_rows,
     schedule_team_sql,
+    workflow_run_team_sql,
     workspace_params,
 )
 from docsgpt.activity.flags import list_runs
@@ -31,6 +32,7 @@ from docsgpt.agents.scheduler_utils import ScheduleValidationError, cron_runs
 from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.workflow_runs import run_reach_sql
 from docsgpt.workspaces.context import Workspace
 from docsgpt.workspaces.principal import canonical_team_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least
@@ -274,7 +276,7 @@ def _running_schedule_runs(conn: Connection, user_id: str, team_id: Optional[str
 
 
 def _running_workflows(conn: Connection, user_id: str, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Workflow runs still going in one workspace (the workflow's), with the step they are on.
+    """Workflow runs still going in one workspace (the one each was started in), with the step they are on.
 
     Most are folded into the chat, scheduled run or webhook that started them
     (``_fold_workflows``); the agent is the one that ran it (several can share
@@ -298,9 +300,14 @@ def _running_workflows(conn: Connection, user_id: str, team_id: Optional[str] = 
         ) a ON TRUE
         WHERE r.user_id = :user_id AND r.status = 'running'
           AND {workflow_in_workspace}
+          AND {in_reach}
         ORDER BY r.started_at ASC
         LIMIT :limit
-        """.format(workflow_in_workspace=in_workspace_sql(owner_team_sql("w.user_id"))),
+        """.format(
+            workflow_in_workspace=in_workspace_sql(workflow_run_team_sql("r", "w")),
+            # Only while the runner may still read it (the run-access rule).
+            in_reach=run_reach_sql("r", "w", ":user_id"),
+        ),
         {"user_id": user_id, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     return [

@@ -8,7 +8,9 @@ Five sources are folded into one row shape with one status vocabulary
   has no table of its own).
 - **workflow**: ``workflow_runs`` that ended, except those a webhook or
   scheduled run already lists (its trace names the workflow run, and a
-  scheduled one is also named by the run's ``started_by``).
+  scheduled one is also named by the run's ``started_by``). A run lists in
+  the workspace it was started in (``workflow_run_team_sql``) while its
+  runner may still read it.
 - **job**: ``background_jobs`` that ended.
 - **monitor**: ``conversation_wakes`` a monitor, trigger link or approval
   link delivered to its conversation.
@@ -24,9 +26,16 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from docsgpt.activity.common import WS_PARAM, owner_team_sql, schedule_team_sql, workspace_params
+from docsgpt.activity.common import (
+    WS_PARAM,
+    owner_team_sql,
+    schedule_team_sql,
+    workflow_run_team_sql,
+    workspace_params,
+)
 from docsgpt.activity.labels import tool_labels
 from docsgpt.storage.db.base_repository import like_escape, row_to_dict
+from docsgpt.storage.db.repositories.workflow_runs import run_reach_sql
 
 KINDS = ("schedule", "webhook", "workflow", "job", "monitor")
 STATUSES = ("success", "failed", "timeout", "skipped", "cancelled")
@@ -104,7 +113,7 @@ _WORKFLOW = f"""
            NULL::text AS schedule_id, NULL::text AS trace_id,
            r.id::text AS workflow_run_id,
            NULL::text AS error_type, NULL::text AS error,
-           {owner_team_sql("w.user_id")} AS ws_team
+           {workflow_run_team_sql("r", "w")} AS ws_team
     FROM workflow_runs r
     JOIN workflows w ON w.id = r.workflow_id
     LEFT JOIN LATERAL (
@@ -119,6 +128,8 @@ _WORKFLOW = f"""
     WHERE r.user_id = :user_id
       AND r.status IN ('completed', 'failed')
       AND COALESCE(r.ended_at, r.started_at) > now() - make_interval(days => :days)
+      -- Only while the runner may still read it (the run-access rule).
+      AND {run_reach_sql("r", "w", ":user_id")}
       AND NOT EXISTS (
           SELECT 1 FROM request_traces t
           WHERE t.workflow_run_id = r.id AND t.source IN ('webhook', 'schedule')

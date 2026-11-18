@@ -47,6 +47,33 @@ def schedule_team_sql(schedule: str = "s", agent: str = "a") -> str:
     )
 
 
+def workflow_run_team_sql(run: str = "r", workflow: str = "w") -> str:
+    """SQL for a workflow run's workspace team (as text): where it was started.
+
+    A run started from a chat or API answer names that message
+    (``inputs.started_by``) and belongs to its conversation's workspace: a
+    team's workflow agent shared into another team runs in that team's chats.
+    Any other run (a builder preview, a scheduled or webhook run, one from
+    before ``started_by``) belongs to its workflow's team, NULL for a person's.
+
+    Args:
+        run: The ``workflow_runs`` alias.
+        workflow: The alias of ``workflows`` joined on the run's workflow.
+
+    Returns:
+        str: A parenthesized SQL text expression; NULL for Personal.
+    """
+    # '' stands for a Personal chat until the end, so it isn't taken for "no chat" and replaced by the workflow's
+    # team. The CASE keeps a starter that isn't a uuid from failing the cast.
+    return (
+        "(NULLIF(COALESCE((SELECT COALESCE(ws_rc.team_id::text, '') FROM conversation_messages ws_rm"
+        " JOIN conversations ws_rc ON ws_rc.id = ws_rm.conversation_id"
+        f" WHERE ws_rm.id = CASE WHEN {run}.inputs ->> 'started_by'"
+        " ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'"
+        f" THEN CAST({run}.inputs ->> 'started_by' AS uuid) END), {owner_team_sql(workflow + '.user_id')}), ''))"
+    )
+
+
 def in_workspace_sql(team_expr: str) -> str:
     """SQL that holds when ``team_expr`` (a team id as text, NULL for Personal) is the request's workspace.
 

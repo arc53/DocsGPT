@@ -48,6 +48,31 @@ def shared_run_sql(run: str, workflow: str, user_param: str) -> str:
     )
 
 
+def run_reach_sql(run: str, workflow: str, user_param: str) -> str:
+    """SQL that holds while the user may still reach the workflow a run ran (the run-access rule).
+
+    A person's workflow always; a team's while the user is in that team (its
+    owner, or a member), or while the workflow's agent the run went through
+    is shared into a team they are in (:func:`shared_run_sql`). Whose run it
+    is stays the caller's own check.
+
+    Args:
+        run: The SQL alias of the ``workflow_runs`` row.
+        workflow: The SQL alias of its ``workflows`` row.
+        user_param: The bound parameter naming the user, with its colon (``:user_id``).
+
+    Returns:
+        str: A parenthesized boolean SQL expression.
+    """
+    return (
+        f"(left({workflow}.user_id, 8) <> '__team__'"
+        f" OR EXISTS (SELECT 1 FROM teams wrr_t WHERE '__team__' || wrr_t.id::text = {workflow}.user_id"
+        f" AND (wrr_t.owner_id = {user_param} OR EXISTS (SELECT 1 FROM team_members wrr_m"
+        f" WHERE wrr_m.team_id = wrr_t.id AND wrr_m.user_id = {user_param})))"
+        f" OR {shared_run_sql(run, workflow, user_param)})"
+    )
+
+
 class WorkflowRunsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -230,12 +255,8 @@ class WorkflowRunsRepository:
         """
         clauses = [
             "user_id = :user_id",
-            "NOT EXISTS (SELECT 1 FROM workflows w WHERE w.id = workflow_runs.workflow_id"
-            " AND left(w.user_id, 8) = '__team__'"
-            " AND NOT EXISTS (SELECT 1 FROM teams t WHERE '__team__' || t.id::text = w.user_id"
-            " AND (t.owner_id = :user_id OR EXISTS (SELECT 1 FROM team_members m"
-            " WHERE m.team_id = t.id AND m.user_id = :user_id)))"
-            f" AND NOT {shared_run_sql('workflow_runs', 'w', ':user_id')})",
+            "EXISTS (SELECT 1 FROM workflows w WHERE w.id = workflow_runs.workflow_id"
+            f" AND {run_reach_sql('workflow_runs', 'w', ':user_id')})",
         ]
         params: dict = {"user_id": user_id, "limit": int(limit)}
         if agent_ids is not None:
