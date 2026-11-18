@@ -30,7 +30,7 @@ export function useFolderTree(): UseFolderTree {
   const list = useSelector(selectFolderTree);
   const tree = useMemo(() => buildFolderTree(list.items), [list.items]);
   const reload = useCallback(
-    () => void dispatch(loadFolders({ token })),
+    () => void dispatch(loadFolders({ token, force: true })),
     [dispatch, token],
   );
   useEffect(() => {

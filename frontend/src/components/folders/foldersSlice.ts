@@ -41,6 +41,14 @@ const emptyList = (): FolderListState => ({
 
 const initialState: FoldersState = { tree: emptyList() };
 
+type RootLike = { folders?: FoldersState };
+
+const EMPTY = emptyList();
+
+/** The workspace's folder tree and its load state. */
+export const selectFolderTree = (state: RootLike): FolderListState =>
+  state.folders?.tree ?? EMPTY;
+
 /** What a load rejects with when the app switched workspace meanwhile. */
 const STALE = 'stale_workspace';
 
@@ -52,23 +60,38 @@ const STALE = 'stale_workspace';
  * rather than an empty list. An answer that comes back after a switch to
  * another workspace is dropped.
  *
+ * Screens that mount together each ask for the tree; while a load is out,
+ * another plain load is skipped (nothing is dispatched for it) and they all
+ * read the answer of the one already out. A change that needs the server's
+ * tree after it passes `force`: its load goes out anyway and, started last,
+ * is the one applied. A workspace switch empties the tree, so the next load
+ * goes out for the new workspace.
+ *
  * Args:
  *   token: The session token.
  *   type: Ignored; the tree holds every kind. Kept so callers that name
  *     their page's kind still compile.
+ *   force: Load even when a load is already out (after a change).
  */
 export const loadFolders = createAsyncThunk<
   Folder[],
-  { token: string | null; type?: ItemKind },
-  { rejectValue: typeof STALE }
->('folders/load', async ({ token }, { rejectWithValue }) => {
-  const workspace = captureWorkspace();
-  const response = await userService.getFolders(token);
-  if (!response?.ok) throw new Error('Failed to load folders');
-  const data = await response.json();
-  if (!workspace.isCurrent()) return rejectWithValue(STALE);
-  return Array.isArray(data?.folders) ? (data.folders as Folder[]) : [];
-});
+  { token: string | null; type?: ItemKind; force?: boolean },
+  { rejectValue: typeof STALE; state: RootLike }
+>(
+  'folders/load',
+  async ({ token }, { rejectWithValue }) => {
+    const workspace = captureWorkspace();
+    const response = await userService.getFolders(token);
+    if (!response?.ok) throw new Error('Failed to load folders');
+    const data = await response.json();
+    if (!workspace.isCurrent()) return rejectWithValue(STALE);
+    return Array.isArray(data?.folders) ? (data.folders as Folder[]) : [];
+  },
+  {
+    condition: ({ force }, { getState }) =>
+      Boolean(force) || !selectFolderTree(getState()).loading,
+  },
+);
 
 const foldersSlice = createSlice({
   name: 'folders',
@@ -128,14 +151,6 @@ const foldersSlice = createSlice({
       });
   },
 });
-
-type RootLike = { folders?: FoldersState };
-
-const EMPTY = emptyList();
-
-/** The workspace's folder tree and its load state. */
-export const selectFolderTree = (state: RootLike): FolderListState =>
-  state.folders?.tree ?? EMPTY;
 
 /**
  * The folder list and its load state. Every kind reads the same tree; the

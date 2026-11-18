@@ -261,7 +261,7 @@ export default function MoveToWorkspaceModal({
     if (!result) return;
     if (result.ok) {
       setDone(true);
-      void dispatch(loadFolders({ token }));
+      void dispatch(loadFolders({ token, force: true }));
       // Sources moved (on their own or with an agent or folder) left this
       // workspace: the pickers must stop offering them here.
       void dispatch(reloadSourceDocs(token));

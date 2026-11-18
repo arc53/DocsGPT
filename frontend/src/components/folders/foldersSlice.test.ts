@@ -86,7 +86,9 @@ describe('foldersSlice', () => {
       );
     const store = makeStore();
     const first = store.dispatch(loadFolders({ type: 'agent', token: null }));
-    await store.dispatch(loadFolders({ type: 'source', token: null }));
+    await store.dispatch(
+      loadFolders({ type: 'source', token: null, force: true }),
+    );
     releaseFirst({
       ok: true,
       json: () =>
@@ -98,6 +100,44 @@ describe('foldersSlice', () => {
     expect(selectFolders('agent')(store.getState()).map((f) => f.id)).toEqual([
       'new',
     ]);
+  });
+
+  it('skips a plain load while one is out, but not a forced one', async () => {
+    let release: (value: unknown) => void = () => undefined;
+    getFolders
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      )
+      .mockImplementationOnce(() =>
+        ok({ folders: [{ id: 'after', name: 'After', parent_id: null }] }),
+      );
+    const store = makeStore();
+    const first = store.dispatch(loadFolders({ token: null }));
+    const skipped = await store.dispatch(loadFolders({ token: null }));
+    expect(loadFolders.rejected.match(skipped) && skipped.meta.condition).toBe(
+      true,
+    );
+    expect(getFolders).toHaveBeenCalledTimes(1);
+    // A change made meanwhile still reads the server's tree after it.
+    await store.dispatch(loadFolders({ token: null, force: true }));
+    expect(getFolders).toHaveBeenCalledTimes(2);
+    release({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          folders: [{ id: 'before', name: 'Before', parent_id: null }],
+        }),
+    });
+    await first;
+    expect(selectFolderTree(store.getState()).items.map((f) => f.id)).toEqual([
+      'after',
+    ]);
+    // Once nothing is out, a plain load goes out again (a page visit).
+    await store.dispatch(loadFolders({ token: null }));
+    expect(getFolders).toHaveBeenCalledTimes(3);
   });
 
   it('drops an answer from the workspace the app has left', async () => {

@@ -105,7 +105,7 @@ export function useFolderActions(kind: ItemKind): FolderActions {
   const token = useSelector(selectToken);
 
   const reload = useCallback(
-    () => dispatch(loadFolders({ token })),
+    () => dispatch(loadFolders({ token, force: true })),
     [dispatch, token],
   );
 
