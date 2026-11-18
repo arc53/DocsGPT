@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Iterable, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from docsgpt.connectors import catalog
 from docsgpt.connectors.catalog import ConnectorDefinition
@@ -20,6 +20,9 @@ from docsgpt.storage.db.repositories.connector_sessions import (
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
+
+if TYPE_CHECKING:
+    from docsgpt.connectors.team import ConnectionAccess
 
 STATUS_CONNECTED = "connected"
 STATUS_RECONNECT = "reconnect_needed"
@@ -1026,6 +1029,10 @@ def _api_key_account(
         candidate = f"{label} ({suffix})"
 
 
+class MissingCredentials(ValueError):
+    """Pasted credentials leave a required field empty."""
+
+
 def api_key_credentials(definition, credentials: dict) -> dict:
     """The pasted credentials a connection stores: every required field, only known fields, no blanks.
 
@@ -1037,14 +1044,14 @@ def api_key_credentials(definition, credentials: dict) -> dict:
         The credentials to store.
 
     Raises:
-        ValueError: A required credential field is missing.
+        MissingCredentials: A required credential field is missing (a ``ValueError``).
     """
     fields = {f.key: f for f in definition.credential_fields} if definition is not None else {}
     if not fields:
         return {k: v for k, v in credentials.items() if v not in (None, "")}
     missing = [f.label for f in fields.values() if f.required and not str(credentials.get(f.key) or "").strip()]
     if missing:
-        raise ValueError(f"Missing credentials: {', '.join(missing)}")
+        raise MissingCredentials(f"Missing credentials: {', '.join(missing)}")
     return {k: v for k, v in credentials.items() if k in fields and v not in (None, "")}
 
 
@@ -1088,6 +1095,88 @@ def replacement_api_key_label(conn, row: dict, definition, credentials: dict, la
             pass
         suffix += 1
         candidate = f"{base} ({suffix})"
+
+
+class ReplacementNeedsAccountName(Exception):
+    """The locked connection says a reconnect replaces the account, and the new account's name wasn't looked up.
+
+    Only for connectors whose account is named by asking the provider (GitHub); the caller looks it up
+    outside the row lock and calls :func:`reconnect_api_key` again with ``label``.
+    """
+
+
+def reconnect_api_key(
+    conn,
+    connection_id: str,
+    user: str,
+    definition,
+    credentials: dict,
+    *,
+    label: Optional[str] = None,
+    names_account: bool = False,
+) -> tuple[dict, ConnectionAccess, bool]:
+    """Store a pasted key on a connection, deciding everything from the row it locks.
+
+    Who may reconnect, whether the key replaces the account or patches it, which fields it must fill and
+    who is recorded as connecting it are all read from the row under ``FOR UPDATE``, so another Admin's
+    reconnect landing first can't have its account patched under someone else's name.
+
+    On a team's connection an Admin other than whoever connected it (or any Admin while the account is
+    paused) replaces the account: every required field, nothing of the old credentials, a label derived
+    from the new key. Otherwise the non-empty fields given overwrite the stored ones.
+
+    Args:
+        conn: Open connection inside a transaction; the row stays locked until it ends.
+        connection_id: The connection.
+        user: The person reconnecting.
+        definition: The connector's catalog entry, or None.
+        credentials: Field key to value, as entered.
+        label: The new account's name, when the caller looked it up (a GitHub login).
+        names_account: The connector names a replaced account by ``label`` only; refuse to replace without it.
+
+    Returns:
+        ``(previous, access, replaced)``: the row as locked before the write, the caller's
+        ``ConnectionAccess`` from it, and whether the account was replaced.
+
+    Raises:
+        ConnectionDenied: The caller may not manage the connection (re-checked under the lock).
+        MissingCredentials: A replacement misses a required field.
+        ReplacementNeedsAccountName: A replacement for a connector that ``names_account`` without ``label``.
+        AccountAlreadyConnected: Another of the owner's connections already holds exactly these credentials.
+    """
+    from docsgpt.connectors.team import authorize_connection
+    from docsgpt.quotas.pause import connection_pause
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    access = authorize_connection(conn, connection_id, user, "manage", for_update=True)
+    locked = dict(access.row)
+    # A paused account is not theirs to patch: a key pasted now takes it over whole.
+    replace = access.is_team and (user != access.connected_by or connection_pause(conn, locked) is not None)
+    if replace:
+        # Another person's key replaces the account: nothing of the old one may stay, so every field is
+        # theirs and the label names their account.
+        credentials = api_key_credentials(definition, credentials)
+        if names_account and not label:
+            raise ReplacementNeedsAccountName()
+        secrets = {"credentials": credentials}
+        fields = {"account_label": replacement_api_key_label(conn, locked, definition, credentials, label)}
+    else:
+        # read_secrets, not load_secrets: flagging an unreadable row would write it from a second
+        # transaction while this one holds its lock. The new credentials replace it anyway.
+        try:
+            stored = read_secrets(locked)
+        except CredentialDecryptionError:
+            stored = {}
+        # Whoever connected it may change one field and keep the others.
+        merged = {**(stored.get("credentials") or {}), **{k: v for k, v in credentials.items() if v}}
+        secrets = {**stored, "credentials": merged}
+        fields = {}
+    if access.is_team:
+        # A team's account is whoever pasted the key that works now.
+        fields["connected_by"] = user
+    write_secrets(conn, locked, secrets, status=STATUS_CONNECTED, last_error=None, **fields)
+    resume_sources(conn, str(locked["id"]))
+    return locked, access, replace
 
 
 def create_api_key_connection(

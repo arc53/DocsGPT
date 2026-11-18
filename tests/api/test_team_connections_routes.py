@@ -779,6 +779,116 @@ class TestReplace:
         assert (row["connected_by"], row["account_label"]) == ("adam", "…dold")
 
 
+@contextmanager
+def _between_read_and_lock(change):
+    """Run ``change(conn, connection_id)`` once, just before the reconnect locks the row."""
+    original = ConnectorSessionsRepository.get_for_update
+    pending = [change]
+
+    def locking(repo, connection_id):
+        if pending:
+            pending.pop()(repo._conn, connection_id)
+        return original(repo, connection_id)
+
+    with patch.object(ConnectorSessionsRepository, "get_for_update", locking):
+        yield
+
+
+def _taken_over_by(user, credentials, label=None):
+    """Another Admin's reconnect landing first: their key, their name on the account."""
+    def change(conn, connection_id):
+        team_owner = ConnectorSessionsRepository(conn).get(connection_id)["user_id"]
+        fields = {"connected_by": user, "encrypted_credentials": encrypt_json({"credentials": credentials},
+                                                                              team_owner)}
+        if label:
+            fields["account_label"] = label
+        ConnectorSessionsRepository(conn).update(connection_id, fields)
+
+    return change
+
+
+class TestReconnectRace:
+    """A reconnect decides from the row it locks, not from what it read before the lock."""
+
+    def test_a_takeover_before_the_lock_makes_a_partial_key_a_replacement(self, app, pg_conn, team):
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="telegram", auth_kind="api_key", label="…dold",
+                        secrets={"credentials": {"token": "123:adam-old", "chat_id": "-100"}})
+        cid = str(old["id"])
+        with _db(pg_conn), _between_read_and_lock(_taken_over_by("ana", {"token": "123:ana-key"}, "…-key")):
+            resp = _call(app, ConnectionReconnect, "post", "/x", "adam",
+                         body={"credentials": {"chat_id": "-200"}}, args=[cid])
+
+        # Ana's account is not Adam's to patch: his one field does not fill a whole key.
+        assert resp.status_code == 400
+        row = ConnectorSessionsRepository(pg_conn).get(cid)
+        assert (row["connected_by"], row["account_label"]) == ("ana", "…-key")
+        assert decrypt_json(row["encrypted_credentials"], principal_id(team))["credentials"] == {
+            "token": "123:ana-key",
+        }
+        assert _audit_events(pg_conn, "team.connection_reconnected") == []
+
+    def test_a_whole_key_after_a_takeover_replaces_the_account(self, app, pg_conn, team):
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="telegram", auth_kind="api_key", label="…dold",
+                        secrets={"credentials": {"token": "123:adam-old", "chat_id": "-100"}})
+        cid = str(old["id"])
+        with _db(pg_conn), _between_read_and_lock(_taken_over_by("ana", {"token": "123:ana-key",
+                                                                        "chat_id": "-300"}, "…-key")):
+            resp = _call(app, ConnectionReconnect, "post", "/x", "adam",
+                         body={"credentials": {"token": "123:adam-fresh"}}, args=[cid])
+
+        assert resp.status_code == 200
+        row = ConnectorSessionsRepository(pg_conn).get(cid)
+        # Nothing of Ana's account stays under Adam's name.
+        assert decrypt_json(row["encrypted_credentials"], principal_id(team))["credentials"] == {
+            "token": "123:adam-fresh",
+        }
+        assert (row["connected_by"], row["account_label"]) == ("adam", "…resh")
+        [(actor, meta)] = _audit_events(pg_conn, "team.connection_reconnected")
+        assert actor == "adam"
+        assert meta["replaced"] is True and meta["previous_connected_by"] == "ana"
+
+    def test_a_github_takeover_before_the_lock_names_the_new_account(self, app, pg_conn, team):
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="github", auth_kind="api_key", label="adam-gh",
+                        secrets={"credentials": {"access_token": "ghp_adam_old"}})
+        cid = str(old["id"])
+        with _db(pg_conn), _between_read_and_lock(_taken_over_by("ana", {"access_token": "ghp_ana"}, "ana-gh")), \
+                patch("docsgpt.connectors.github.token_account", return_value="adam-gh2") as whose:
+            resp = _call(app, ConnectionReconnect, "post", "/x", "adam",
+                         body={"credentials": {"access_token": "ghp_adam_new"}}, args=[cid])
+
+        assert resp.status_code == 200
+        whose.assert_called_once_with("ghp_adam_new")
+        row = ConnectorSessionsRepository(pg_conn).get(cid)
+        assert (row["connected_by"], row["account_label"]) == ("adam", "adam-gh2")
+        assert decrypt_json(row["encrypted_credentials"], principal_id(team))["credentials"] == {
+            "access_token": "ghp_adam_new",
+        }
+
+    def test_an_admin_demoted_before_the_lock_is_refused(self, app, pg_conn, team):
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        old = _team_row(pg_conn, team, "adam", provider="telegram", auth_kind="api_key", label="…dold",
+                        secrets={"credentials": {"token": "123:adam-old"}})
+        cid = str(old["id"])
+        with _db(pg_conn), _between_read_and_lock(lambda conn, _: _set_role(conn, team, "ana", "team_editor")):
+            resp = _call(app, ConnectionReconnect, "post", "/x", "ana",
+                         body={"credentials": {"token": "123:ana-key"}}, args=[cid])
+
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "connection_admin_required"
+        row = ConnectorSessionsRepository(pg_conn).get(cid)
+        assert row["connected_by"] == "adam"
+        assert decrypt_json(row["encrypted_credentials"], principal_id(team))["credentials"] == {
+            "token": "123:adam-old",
+        }
+
+
 class TestCompleteOAuthReplace:
     def test_rewrites_in_place_after_revoking_the_old_grant(self, pg_conn, team):
         old = _team_row(pg_conn, team, "adam", label="adam@example.com",

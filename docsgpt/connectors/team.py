@@ -170,7 +170,9 @@ def connection_access(
     return ConnectionAccess(row, owner, team_id, role, row.get("connected_by"), user)
 
 
-def authorize_connection(conn: Any, connection_id: Any, user: Optional[str], action: str) -> ConnectionAccess:
+def authorize_connection(
+    conn: Any, connection_id: Any, user: Optional[str], action: str, *, for_update: bool = False
+) -> ConnectionAccess:
     """Load a connection and check ``user`` may do ``action`` with it.
 
     Args:
@@ -178,6 +180,8 @@ def authorize_connection(conn: Any, connection_id: Any, user: Optional[str], act
         connection_id: The connection's id.
         user: The person asking (the request's ``sub``).
         action: ``view``, ``sync``, ``manage`` or ``pick``.
+        for_update: Lock the row until the transaction ends, so what is decided from it still holds when
+            it is written.
 
     Returns:
         The person's :class:`ConnectionAccess`.
@@ -190,7 +194,10 @@ def authorize_connection(conn: Any, connection_id: Any, user: Optional[str], act
         ValueError: An unknown action.
     """
     minimum = _minimum(action)
-    row = ConnectorSessionsRepository(conn).get(str(connection_id)) if connection_id else None
+    repo = ConnectorSessionsRepository(conn)
+    row = None
+    if connection_id:
+        row = repo.get_for_update(str(connection_id)) if for_update else repo.get(str(connection_id))
     access = connection_access(conn, row, user) if row else None
     if access is None:
         raise _not_found()

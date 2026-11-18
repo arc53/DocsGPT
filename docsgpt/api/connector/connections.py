@@ -35,7 +35,6 @@ from docsgpt.connectors.team import (
 )
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
-from docsgpt.security.encryption import CredentialDecryptionError
 from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
 from docsgpt.workspaces.principal import team_of_principal
 
@@ -715,64 +714,55 @@ class ConnectionReconnect(Resource):
                 with db_readonly() as conn:
                     # A paused account is not theirs to patch: a key pasted now takes it over whole.
                     replace = connection_pause(conn, row) is not None
+            # ``replace`` so far is read before the lock: it only says what to check and look up first.
+            # The service decides again from the locked row, and asks for the account's name when a
+            # takeover landed in between.
             label = None
-            if replace:
-                # Another person's key replaces the account: nothing of the old one may stay, so every
-                # field is theirs and the label names their account.
-                try:
-                    credentials = service.api_key_credentials(definition, credentials)
-                except ValueError as err:
-                    return _error(str(err), 400)
-                if key == "github":
-                    from docsgpt.connectors import github
+            names_account = key == "github"
+            prepared = False
+            while True:
+                if replace and not prepared:
+                    prepared = True
+                    try:
+                        valid = service.api_key_credentials(definition, credentials)
+                    except ValueError as err:
+                        return _error(str(err), 400)
+                    if names_account:
+                        from docsgpt.connectors import github
 
-                    try:
-                        label = github.token_account(credentials.get("access_token"))
-                    except github.TokenRejected as err:
-                        return _error(str(err), 400, code="invalid_credentials")
-                    except github.RateLimited as err:
-                        return _rate_limited(err)
-                    except service.TransientConnectionError as err:
-                        return _error(str(err), 502)
-            service.ensure_can_store_credentials()
-            with db_session() as conn:
-                locked = ConnectorSessionsRepository(conn).get_for_update(connection_id)
-                # read_secrets, not load_secrets: flagging an unreadable row
-                # would write it from a second transaction while this one
-                # holds its lock. The new credentials replace it anyway.
+                        try:
+                            label = github.token_account(valid.get("access_token"))
+                        except github.TokenRejected as err:
+                            return _error(str(err), 400, code="invalid_credentials")
+                        except github.RateLimited as err:
+                            return _rate_limited(err)
+                        except service.TransientConnectionError as err:
+                            return _error(str(err), 502)
+                service.ensure_can_store_credentials()
                 try:
-                    stored = service.read_secrets(locked)
-                except CredentialDecryptionError:
-                    stored = {}
-                if replace:
-                    try:
-                        relabel = {
-                            "account_label": service.replacement_api_key_label(
-                                conn, locked, definition, credentials, label,
-                            ),
-                        }
-                    except service.AccountAlreadyConnected as err:
-                        return make_response(jsonify({
-                            "success": False, "error": ACCOUNT_ALREADY_CONNECTED, "message": str(err),
-                            "connection_id": err.connection_id,
-                        }), 409)
-                    secrets = {"credentials": credentials}
-                else:
-                    # Whoever connected it may change one field and keep the others.
-                    relabel = {}
-                    merged = {**(stored.get("credentials") or {}), **{k: v for k, v in credentials.items() if v}}
-                    secrets = {**stored, "credentials": merged}
-                # A team's account is whoever pasted the key that works now.
-                named = {"connected_by": user_id} if access.is_team else {}
-                service.write_secrets(
-                    conn, locked, secrets, status=service.STATUS_CONNECTED, last_error=None, **named, **relabel,
-                )
-                service.resume_sources(conn, connection_id)
-                audit_team_connection(
-                    conn, user_id, "team.connection_reconnected", row, replaced=replace,
-                    previous_connected_by=access.connected_by,
-                )
-                connection = _payload(conn, ConnectorSessionsRepository(conn).get(connection_id), user_id)
+                    with db_session() as conn:
+                        previous, locked, replaced = service.reconnect_api_key(
+                            conn, connection_id, user_id, definition, credentials,
+                            label=label, names_account=names_account,
+                        )
+                        audit_team_connection(
+                            conn, user_id, "team.connection_reconnected", previous, replaced=replaced,
+                            previous_connected_by=locked.connected_by,
+                        )
+                        connection = _payload(conn, ConnectorSessionsRepository(conn).get(connection_id), user_id)
+                except service.ReplacementNeedsAccountName:
+                    replace = True
+                    continue
+                except ConnectionDenied as denied:
+                    return denied.response()
+                except service.MissingCredentials as err:
+                    return _error(str(err), 400)
+                except service.AccountAlreadyConnected as err:
+                    return make_response(jsonify({
+                        "success": False, "error": ACCOUNT_ALREADY_CONNECTED, "message": str(err),
+                        "connection_id": err.connection_id,
+                    }), 409)
+                break
         except service.EncryptionKeyNotConfigured as err:
             return _error(str(err), 400, code="encryption_key_default")
         except Exception as err:
