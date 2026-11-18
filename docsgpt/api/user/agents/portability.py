@@ -2339,8 +2339,8 @@ def _apply_workflow(
 def _items_before_import(conn, owner: str, target: dict) -> Optional[tuple[dict, dict, set]]:
     """What the agent an import updates uses before it: another team's items and tools on a team's account.
 
-    Takes ``lock_owner_items`` for the owner first, as an agent save does, so a share or a move made at the same
-    time is either seen by :func:`_refuse_import_over` or sees the import. It is taken before the workflow row
+    Takes ``lock_owner_items`` for the owner before reading the agent, so a publish, share or move made at the
+    same time is either seen by :func:`_refuse_import_over` or sees the import. It is taken before the workflow row
     lock the graph write takes, which a move updates too. Read before the graph is written, since the import
     writes it into the agent's own workflow.
 
@@ -2354,12 +2354,13 @@ def _items_before_import(conn, owner: str, target: dict) -> Optional[tuple[dict,
     """
     if target.get("action") != "update" or not target.get("agent_id"):
         return None
+    # Lock, then read: a publish or share holding the lock commits first, and the checks see its key or share.
+    lock_owner_items(conn, owner)
     agent = AgentsRepository(conn).get(str(target["agent_id"]), owner)
     if agent is None:
         return None
     from docsgpt.api.user.agents.graph_checks import agent_team_connection_tools, agent_team_refs
 
-    lock_owner_items(conn, owner)
     return agent, agent_team_refs(conn, agent), {t["id"] for t in agent_team_connection_tools(conn, agent)}
 
 

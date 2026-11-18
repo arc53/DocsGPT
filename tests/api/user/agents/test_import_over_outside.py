@@ -9,11 +9,14 @@ repositories on ``pg_conn``.
 
 from __future__ import annotations
 
+import threading
+import time
 import uuid
 from unittest.mock import patch
 
 import pytest
 from flask import Flask
+from sqlalchemy import text
 
 import docsgpt.api.user  # noqa: F401  (import order: avoids the tools/tasks cycle)
 from docsgpt.api.user.agents.portability import ImportAgent, ImportRefused, agent_to_yaml, apply_import
@@ -27,6 +30,7 @@ from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.workspaces.context import WORKSPACE_HEADER
+from docsgpt.workspaces.locks import lock_owner_items
 from tests.api.user.test_workspace_portability import ADMIN, EDITOR, _doc, _patch_db, _team, _team_ws
 
 pytestmark = pytest.mark.integration
@@ -35,6 +39,11 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def w(pg_conn):
     """Ops with a GitHub account it owns and a tool on it, a team agent, and Dev, another team."""
+    return _world(pg_conn)
+
+
+def _world(pg_conn) -> dict:
+    """See :func:`w`."""
     tid, principal = _team(pg_conn)
     cid = str(ConnectorSessionsRepository(pg_conn).create(
         principal, "github", connector_key="github", auth_kind="oauth",
@@ -133,3 +142,48 @@ class TestTeamItemSharedOutside:
 
         assert refused.value.status == 409
         assert refused.value.body["error"] == "team_item_shared_outside"
+
+
+def _waiting_on_advisory_lock(engine) -> bool:
+    with engine.connect() as conn:
+        return bool(conn.execute(text(
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' "
+            "AND datname = current_database()"
+        )).scalar())
+
+
+@pytest.mark.fresh_db
+class TestImportDuringAPublish:
+    def test_an_import_waiting_on_a_publish_sees_the_new_key_and_is_refused(self, pg_engine):
+        """A publish holds the owner lock while it mints a key; an import that waits on it reads the agent after."""
+        with pg_engine.begin() as conn:
+            w = _world(conn)
+        out: dict = {}
+
+        def run_import() -> None:
+            try:
+                with pg_engine.begin() as conn:
+                    out["result"] = apply_import(
+                        conn, ADMIN, _over(w), workspace=_team_ws(w["ops"], w["principal"], "admin"),
+                    )
+            except Exception as err:  # noqa: BLE001 - the test reads what the import raised
+                out["error"] = err
+
+        with pg_engine.begin() as conn:
+            # What a publish does: take the owner lock, then give the agent a key.
+            lock_owner_items(conn, w["principal"])
+            AgentsRepository(conn).update(w["agent"], w["principal"],
+                                          {"key": f"k-{uuid.uuid4().hex}", "access_payer_id": ADMIN})
+            thread = threading.Thread(target=run_import)
+            thread.start()
+            deadline = time.monotonic() + 10
+            while thread.is_alive() and not _waiting_on_advisory_lock(pg_engine) and time.monotonic() < deadline:
+                time.sleep(0.02)
+        thread.join(10)
+        assert not thread.is_alive()
+
+        assert isinstance(out.get("error"), ImportRefused), out
+        assert out["error"].body["error"] == TEAM_CONNECTION_OUTSIDE
+        with pg_engine.connect() as conn:
+            row = AgentsRepository(conn).get(w["agent"], w["principal"])
+            assert row["key"] and not row.get("tools")
