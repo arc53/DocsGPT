@@ -427,6 +427,66 @@ describe('ImportAgentModal', () => {
     expect(resolution.sources).toEqual({});
   });
 
+  it('drops a review of a file that is no longer picked, and never imports another file with it', async () => {
+    const planFor = (name: string) =>
+      jsonResponse({
+        success: true,
+        plan: {
+          target: { action: 'create', agent_id: null, matched_by: null },
+          sources: [
+            { name, type: 'local', status: 'missing', target_id: null },
+          ],
+          tools: [],
+          prompt: { status: 'default' },
+          models: [],
+        },
+      });
+    let answerA: (response: Response) => void = () => undefined;
+    service.planImportAgent.mockImplementationOnce(
+      () => new Promise<Response>((resolve) => (answerA = resolve)),
+    );
+    act(() => {
+      root.render(
+        <ImportAgentModal
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+        />,
+      );
+    });
+    const fileA = new File(['name: A\n'], 'a.yaml', {
+      type: 'application/x-yaml',
+    });
+    const fileB = new File(['name: B\n'], 'b.yaml', {
+      type: 'application/x-yaml',
+    });
+    await act(async () => dropzone.onDrop!([fileA], []));
+    await flush();
+    await clickButton('modals.importAgent.review');
+    // B is picked while A is still being read.
+    await act(async () => dropzone.onDrop!([fileB], []));
+    await flush();
+    await act(async () => answerA(planFor('Only in A')));
+    await flush();
+
+    const body = () => document.body.textContent ?? '';
+    expect(body()).not.toContain('Only in A');
+    expect(
+      Array.from(document.querySelectorAll('button')).some(
+        (b) => b.textContent === 'modals.importAgent.import',
+      ),
+    ).toBe(false);
+
+    // Reviewing B shows B's plan, and Import sends the file that plan read.
+    service.planImportAgent.mockResolvedValueOnce(planFor('Only in B'));
+    await clickButton('modals.importAgent.review');
+    expect(service.planImportAgent.mock.calls[1][0]).toBe('name: B\n');
+    expect(body()).toContain('Only in B');
+    expect(body()).not.toContain('Only in A');
+    await clickButton('modals.importAgent.import');
+    expect(service.importAgent).toHaveBeenCalledTimes(1);
+    expect(service.importAgent.mock.calls[0][0].yaml).toBe('name: B\n');
+  });
+
   describe("a team's custom models", () => {
     const reviewModels = async (models: unknown[]) => {
       service.planImportAgent.mockResolvedValue(

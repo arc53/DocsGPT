@@ -1,5 +1,5 @@
 import { TriangleAlert, CircleCheck } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { type FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -116,6 +116,32 @@ type ImportPlan = {
   } | null;
 };
 
+/** What the importer chose for the plan's gaps, sent as the resolution. */
+type Resolutions = {
+  /** A missing source mapped by name to one of the importer's. */
+  sources: Record<string, string>;
+  /** A missing folder mapped by its ref to a folder of the workspace. */
+  folders: Record<string, string>;
+  toolSecrets: Record<string, Record<string, string>>;
+  /** A custom model's key, by its display name. */
+  modelKeys: Record<string, string>;
+};
+
+/** One picked file: its YAML, the server's plan of exactly that YAML, and the mappings made on that plan. */
+type ImportSession = {
+  yaml: string;
+  fileName: string;
+  plan: ImportPlan | null;
+  resolutions: Resolutions;
+};
+
+const EMPTY_SESSION: ImportSession = {
+  yaml: '',
+  fileName: '',
+  plan: null,
+  resolutions: { sources: {}, folders: {}, toolSecrets: {}, modelKeys: {} },
+};
+
 interface ImportAgentModalProps {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
@@ -130,18 +156,39 @@ export default function ImportAgentModal({
   const sourceDocs = useSelector(selectSourceDocs);
   const navigate = useNavigate();
 
-  const [yamlText, setYamlText] = useState<string>('');
-  const [fileName, setFileName] = useState<string>('');
+  // One pick of a file and everything read from it: a new pick replaces the
+  // whole session, so a plan or a mapping never outlives the file it is for.
+  const [session, setSession] = useState<ImportSession>(EMPTY_SESSION);
+  const { yaml: yamlText, fileName, plan, resolutions } = session;
+  const {
+    sources: sourceMap,
+    folders: folderMap,
+    toolSecrets,
+    modelKeys,
+  } = resolutions;
+  // Bumped on every pick and reset: a file read or a review that answers
+  // after the pick changed belongs to a file no longer picked, and is dropped.
+  const pickId = useRef(0);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [plan, setPlan] = useState<ImportPlan | null>(null);
 
-  const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
+  /** Updates one kind of mapping of the current session. */
+  const setResolution = <K extends keyof Resolutions>(
+    key: K,
+    update: (prev: Resolutions[K]) => Resolutions[K],
+  ) =>
+    setSession((prev) => ({
+      ...prev,
+      resolutions: {
+        ...prev.resolutions,
+        [key]: update(prev.resolutions[key]),
+      },
+    }));
+
   // A missing folder mapped by hand to a folder of the workspace's tree,
   // keyed the way the server reads `resolution.folders` (its key, else its
   // path, else its name: whichever is the entry's alone).
-  const [folderMap, setFolderMap] = useState<Record<string, string>>({});
   const folderRefs = useMemo(() => {
     const entries = (plan?.sources ?? []).filter(isFolderEntry);
     const refs = importFolderRefs(entries);
@@ -159,25 +206,21 @@ export default function ImportAgentModal({
         .sort((a, b) => a.label.localeCompare(b.label)),
     [folderTree],
   );
-  const [toolSecrets, setToolSecrets] = useState<
-    Record<string, Record<string, string>>
-  >({});
-  const [modelKeys, setModelKeys] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<string[] | null>(null);
   const [importedStatus, setImportedStatus] = useState<string | null>(null);
   const [goToEditPath, setGoToEditPath] = useState<string | null>(null);
 
-  const reset = () => {
-    setYamlText('');
-    setFileName('');
+  /** Starts a new session: whatever is still in flight is dropped. */
+  const newPick = (next: ImportSession = EMPTY_SESSION) => {
+    pickId.current += 1;
+    setSession(next);
     setLoading(false);
+  };
+
+  const reset = () => {
+    newPick();
     setImporting(false);
     setError(null);
-    setPlan(null);
-    setSourceMap({});
-    setFolderMap({});
-    setToolSecrets({});
-    setModelKeys({});
     setWarnings(null);
     setImportedStatus(null);
     setGoToEditPath(null);
@@ -195,9 +238,12 @@ export default function ImportAgentModal({
       return;
     }
     setError(null);
-    setPlan(null);
-    setFileName(selectedFile.name);
-    setYamlText(await selectedFile.text());
+    newPick({ ...EMPTY_SESSION, fileName: selectedFile.name });
+    const pick = pickId.current;
+    const text = await selectedFile.text();
+    // A later pick read faster than this one: keep the later file.
+    if (pick !== pickId.current) return;
+    setSession((prev) => ({ ...prev, yaml: text }));
   };
 
   const handleDrop = (
@@ -207,8 +253,7 @@ export default function ImportAgentModal({
     // A rejected file never reaches acceptedFiles, so without this the
     // drop is a silent no-op and any previously picked file stays staged.
     if (fileRejections.length > 0) {
-      setFileName('');
-      setYamlText('');
+      newPick();
       setError(t('modals.importAgent.invalidFileType'));
       return;
     }
@@ -217,20 +262,28 @@ export default function ImportAgentModal({
 
   const handleAnalyze = async () => {
     if (!yamlText) return;
+    const pick = pickId.current;
+    const analysed = yamlText;
     setLoading(true);
     setError(null);
     try {
-      const response = await userService.planImportAgent(yamlText, token);
+      const response = await userService.planImportAgent(analysed, token);
       const data = await response.json();
+      if (pick !== pickId.current) return;
       if (!response.ok || !data.success) {
         setError(data.message || t('modals.importAgent.readError'));
         return;
       }
-      setPlan(data.plan as ImportPlan);
+      // The plan joins the session only while it still holds the file read.
+      setSession((prev) =>
+        prev.yaml === analysed
+          ? { ...prev, plan: data.plan as ImportPlan }
+          : prev,
+      );
     } catch {
-      setError(t('modals.importAgent.readError'));
+      if (pick === pickId.current) setError(t('modals.importAgent.readError'));
     } finally {
-      setLoading(false);
+      if (pick === pickId.current) setLoading(false);
     }
   };
 
@@ -260,7 +313,7 @@ export default function ImportAgentModal({
             <Select
               value={folderMap[ref] || ''}
               onValueChange={(value) =>
-                setFolderMap((prev) => mapped(prev, ref, value))
+                setResolution('folders', (prev) => mapped(prev, ref, value))
               }
             >
               <SelectTrigger className="w-full">
@@ -301,7 +354,9 @@ export default function ImportAgentModal({
   };
 
   const handleImport = async () => {
-    if (!plan) return;
+    // The plan and the YAML come from one session, so the file sent is the
+    // file the plan on screen was read from.
+    if (!plan || !yamlText) return;
     setImporting(true);
     setError(null);
 
@@ -361,7 +416,7 @@ export default function ImportAgentModal({
         setGoToEditPath(editPath);
         setWarnings(data.warnings as string[]);
         setImportedStatus((data.status as string) || null);
-        setPlan(null);
+        setSession((prev) => ({ ...prev, plan: null }));
         return;
       }
       handleClose();
@@ -374,7 +429,7 @@ export default function ImportAgentModal({
   };
 
   const setToolSecret = (key: string, field: string, value: string) => {
-    setToolSecrets((prev) => ({
+    setResolution('toolSecrets', (prev) => ({
       ...prev,
       [key]: { ...(prev[key] || {}), [field]: value },
     }));
@@ -546,7 +601,9 @@ export default function ImportAgentModal({
                         <Select
                           value={sourceMap[s.name] || ''}
                           onValueChange={(value) =>
-                            setSourceMap((prev) => mapped(prev, s.name, value))
+                            setResolution('sources', (prev) =>
+                              mapped(prev, s.name, value),
+                            )
                           }
                         >
                           <SelectTrigger className="w-full">
@@ -679,7 +736,7 @@ export default function ImportAgentModal({
                         placeholder={t('modals.importAgent.apiKeyPlaceholder')}
                         value={modelKeys[m.display_name || ''] || ''}
                         onChange={(e) =>
-                          setModelKeys((prev) => ({
+                          setResolution('modelKeys', (prev) => ({
                             ...prev,
                             [m.display_name || '']: e.target.value,
                           }))
